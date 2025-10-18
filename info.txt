@@ -1,0 +1,30 @@
+Creation and activation of the virtual environment
+
+Case SO is Windows 11
+---------------------
+python -m venv venv
+venv\Scripts\Activate.ps1
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+Case SO is MacOS
+---------------------
+Pending
+
+Case SO is Linux
+---------------------
+Pending
+
+Remember 
+- include .venv in the .gitignore file and
+    security/basesecuritypass
+- Frezze the environment 
+    pip freeze > requirements.txt
+- Install dependencies
+    pip install -r requirements.txt
+
+# Create the protectd values
+Create in the root folder the file protected_values.py
+with items:
+    global_shared_key_raw = "String value"
+
+
