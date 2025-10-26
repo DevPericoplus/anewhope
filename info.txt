@@ -8,7 +8,9 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 Case SO is MacOS
 ---------------------
-Pending
+python -m venv venv
+ource venv/bin/activate && echo "Entorno virtual activado: $VIRTUAL_ENV"
+
 
 Case SO is Linux
 ---------------------
@@ -16,7 +18,7 @@ Pending
 
 Remember 
 - include .venv in the .gitignore file and
-    security/basesecuritypass
+    security/basesecuritypass.json
 - Frezze the environment 
     pip freeze > requirements.txt
 - Install dependencies
@@ -28,3 +30,24 @@ with items:
     global_shared_key_raw = "String value"
 
 
+Installatio of ansible environment
+
+Collection
+amazon.aws (Require ansible 2.17 or upper)
+ansible-galaxy collection install amazon.aws
+
+Upgrade
+Upgrade the collection to the latest available version
+ansible-galaxy collection install amazon.aws --upgrade
+
+Automated install
+install -r requirements.yml
+
+requirements.yml
+---
+collections:
+  - name: amazon.aws
+    version: 10.1.2
+
+The python module dependencies
+pip install boto3 botocore    
