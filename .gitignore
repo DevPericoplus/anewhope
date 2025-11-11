@@ -210,3 +210,5 @@ __marimo__/
 # anewhope project
 security/basesecuritypass
 protected_values.py
+
+.venv/
