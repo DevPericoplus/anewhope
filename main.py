@@ -4,6 +4,7 @@ import sys
 from protected_values import *
 #from security.custom_cipher_lib import basic_check_access, custom_encrypt
 import security.custom_cipher_lib as security
+from ollama_integration import OllamaClient
 
 # Global variables
 ready_to_use = False
@@ -73,3 +74,42 @@ else:
     print("--------------------------------")
     recovered_value = security.decrypt_value(fernet_key, encrypted_value)
     print(f"Original value recovered from encrypt value: {recovered_value}")
+
+# Ollama AI Integration
+print("\n" + "="*50)
+print("AI-Enhanced Security with Ollama")
+print("="*50)
+
+try:
+    # Initialize Ollama client with local model
+    ollama_client = OllamaClient(model="llama3.2")
+    
+    # Check Ollama connection
+    if ollama_client.check_connection():
+        print("\n📋 Available Ollama models:")
+        ollama_client.list_models()
+        
+        # Get AI-powered password policy suggestions
+        print("\n🤖 Getting AI-powered security recommendations...")
+        policy_suggestion = ollama_client.suggest_password_policy()
+        if policy_suggestion:
+            print("\n💡 AI Password Policy Recommendations:")
+            print(policy_suggestion)
+        
+        # Analyze current security context
+        security_context = f"""Application: anewhope security system
+Encryption: Fernet-based symmetric encryption
+Key management: File-based key storage
+Operating System: {os.name}"""
+        
+        print("\n🔍 AI Security Analysis:")
+        analysis = ollama_client.analyze_security_context(security_context)
+        if analysis:
+            print(analysis)
+    else:
+        print("\n⚠️  Ollama is not running. Start it with: ollama serve")
+        print("   Install Ollama from: https://ollama.ai")
+        
+except Exception as e:
+    print(f"\n⚠️  Ollama integration error: {e}")
+    print("   Continuing without AI features...")
