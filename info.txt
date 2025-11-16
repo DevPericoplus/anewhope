@@ -14,7 +14,8 @@ ource venv/bin/activate && echo "Entorno virtual activado: $VIRTUAL_ENV"
 
 Case SO is Linux
 ---------------------
-Pending
+python3 -m venv venv
+source venv/bin/activate && echo "Virtual environment activated: $VIRTUAL_ENV"
 
 Remember 
 - include .venv in the .gitignore file and
@@ -50,4 +51,60 @@ collections:
     version: 10.1.2
 
 The python module dependencies
-pip install boto3 botocore    
+pip install boto3 botocore
+
+# Ollama Integration Setup
+---------------------
+
+Ollama provides local AI models for security analysis and recommendations.
+
+## Installation
+
+Windows:
+1. Download from https://ollama.ai
+2. Run the installer
+3. Ollama will start automatically
+
+MacOS:
+brew install ollama
+
+Linux:
+curl -fsSL https://ollama.ai/install.sh | sh
+
+## Starting Ollama
+
+ollama serve
+
+## Pull Models
+
+# Recommended model for security analysis
+ollama pull llama3.2
+
+# Alternative models
+ollama pull llama3.1
+ollama pull mistral
+ollama pull codellama
+
+## List Available Models
+
+ollama list
+
+## Testing Integration
+
+python ollama_integration.py
+
+## Configuration
+
+By default, the application connects to Ollama at:
+- URL: http://localhost:11434
+- Model: llama3.2
+
+To change the model, edit main.py:
+ollama_client = OllamaClient(model="your-model-name")
+
+## Features Enabled by Ollama
+
+- AI-powered security context analysis
+- Password policy recommendations
+- Risk assessment and best practices
+- Intelligent security suggestions
