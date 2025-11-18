@@ -46,6 +46,175 @@ source .venv/bin/activate  # macOS / Linux
 .venv\Scripts\Activate.ps1 # Windows PowerShell
 ```
 
+## Modelo de Dominio
+
+El módulo `src/1_shared_domain/entities/domain_models.py` contiene las entidades centrales del sistema, diseñadas siguiendo principios de Domain-Driven Design (DDD).
+
+### Entidades principales
+
+#### `Organization`
+Representa una organización en el sistema. Múltiples usuarios pueden pertenecer a la misma organización.
+
+**Atributos:**
+- `organization_id`: Identificador único
+- `organization_name`: Nombre de la organización
+- `organization_email`: Email de contacto (validado)
+- `organization_tlf`: Teléfono de contacto
+- `organization_address`: Dirección física
+- `organization_country`: País
+- `organization_state`: Estado/Provincia
+
+**Características:**
+- Validación de email en constructor y setters
+- Métodos: `update_contact_info()`, `is_valid()`
+- Comparación por ID (`__eq__`, `__hash__`)
+
+#### `IdentityGlobal`
+Define tipos de identidad con roles y permisos asociados. Se relaciona con `User` a través de `identity_type_id`.
+
+**Atributos:**
+- `identity_type_id`: Identificador único
+- `identity_type_name`: Nombre del tipo (ej: "Admin", "Usuario")
+- `identity_type_rol`: Rol asociado
+- `identity_type_group_permissions`: Lista de objetos `Permissions`
+
+**Características:**
+- Gestión de permisos: `add_permission()`, `remove_permission()`, `has_permission()`
+- Validaciones en todos los setters
+- Comparación por ID (`__eq__`, `__hash__`)
+
+#### `Permissions`
+Representa un permiso con operaciones CRUD y acciones específicas.
+
+**Atributos:**
+- `id_permission`: Identificador único
+- `permission_name`: Nombre del permiso
+- `permission_description`: Descripción
+- `enable`: Estado habilitado/deshabilitado
+- `create`, `read`, `write`, `delete`, `execute`: Operaciones permitidas
+- `log`: Indica si se registra en log
+- `expired`: Fecha de expiración (`datetime | None`)
+
+**Características:**
+- Métodos: `is_expired()`, `is_active()`, `has_crud_permissions()`, `can_perform_action()`
+- Validación de fecha de expiración
+- Comparación por ID (`__eq__`, `__hash__`)
+
+#### `User`
+Entidad central que representa un usuario del sistema.
+
+**Atributos:**
+- `id`: Identificador único
+- `organization_id`: Relación con `Organization`
+- `identity_type_id`: Relación con `IdentityGlobal`
+- `user_name`, `user_password`, `user_email`, `user_mobile`, `user_otp`
+- `active`, `blocked`: Estados del usuario
+
+**Invariantes:**
+- Un usuario no puede estar activo y bloqueado simultáneamente
+- Email debe tener formato válido
+- Contraseña mínimo 8 caracteres
+- OTP debe tener exactamente 4 dígitos
+
+**Características:**
+- Métodos: `activate_user()`, `deactivate_user()`, `block_user()`, `unblock_user()`, `can_perform_action()`, `generate_otp()`
+- Validaciones completas en todos los setters
+- Comparación por ID (`__eq__`, `__hash__`)
+
+#### `UserExtended`
+Extiende `User` con información de contacto adicional.
+
+**Atributos adicionales:**
+- `contact_info`: Objeto `ContactInfo` (inmutable)
+- `billing_info`: Objeto `ContactInfo` para facturación
+
+#### `UserGoogle`
+Extiende `User` con autenticación OAuth de Google.
+
+**Atributos adicionales:**
+- `google_auth_info`: Objeto `GoogleAuthInfo` con tokens y datos de Google
+
+**Características:**
+- Métodos: `is_token_expired()`, `update_tokens()`
+- Gestión automática de expiración de tokens
+
+### Value Objects
+
+#### `ContactInfo`
+Value Object inmutable para información de contacto.
+
+**Atributos:** `first_name`, `sur_name`, `country`, `state`, `zip_code`, `address`
+
+#### `GoogleAuthInfo`
+Value Object para datos de autenticación Google OAuth.
+
+**Atributos:** `google_id`, `google_access_token`, `google_refresh_token`, `google_token_expires_at`, `google_picture_url`, `google_verified_email`
+
+### Relaciones del modelo
+
+```
+Organization (1) ──< (N) User
+IdentityGlobal (1) ──< (N) User
+IdentityGlobal (1) ──< (N) Permissions
+User (1) ──< (1) UserExtended
+User (1) ──< (1) UserGoogle
+```
+
+### Características de diseño
+
+- **Encapsulación:** Todos los atributos son privados con getters/setters
+- **Validaciones:** Invariantes de dominio validadas en constructores y setters
+- **Excepciones de dominio:** `DomainError` para errores de negocio
+- **Comportamiento rico:** Métodos de dominio en lugar de simples DTOs
+- **Inmutabilidad:** Value Objects como `ContactInfo` son inmutables
+- **Comparación:** Entidades comparables por ID (`__eq__`, `__hash__`)
+
+### Uso
+
+```python
+from src.1_shared_domain.entities.domain_models import (
+    Organization, IdentityGlobal, Permissions, User, UserExtended, UserGoogle
+)
+
+# Crear organización
+org = Organization(
+    organization_id=1,
+    organization_name="Mi Empresa",
+    organization_email="contacto@empresa.com",
+    organization_tlf="+1234567890",
+    organization_address="Calle Principal 123",
+    organization_country="España",
+    organization_state="Madrid"
+)
+
+# Crear permisos
+perm = Permissions(
+    id_permission=1,
+    permission_name="read_users",
+    permission_description="Permite leer usuarios"
+)
+
+# Crear tipo de identidad con permisos
+identity = IdentityGlobal(
+    identity_type_id=1,
+    identity_type_name="Admin",
+    identity_type_rol="Administrator",
+    identity_type_group_permissions=[perm]
+)
+
+# Crear usuario
+user = User(
+    user_id=1,
+    organization_id=org.organization_id,
+    identity_type_id=identity.identity_type_id,
+    user_name="jdoe",
+    password="securepass123",
+    email="jdoe@empresa.com",
+    mobile="+1234567890",
+    otp="1234"
+)
+```
+
 ## Roles y automatización (referencia)
 
 Los roles Ansible importados se encuentran en el repositorio `anh_ansible`. Incluyen BIND, NTPD, NTPDATE, MariaDB, Nginx, Postfix, entre otros, y sirven como apoyo para el despliegue de la plataforma.
