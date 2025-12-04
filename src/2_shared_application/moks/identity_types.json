@@ -1,0 +1,62 @@
+[
+  {
+    "identity_type_id": 1,
+    "identity_type_name": "Global Administrador",
+    "identity_type_rol": "admin",
+    "identity_type_group_permissions": [1, 2, 3, 4, 5, 6]
+  },
+  {
+    "identity_type_id": 2,
+    "identity_type_name": "Tenant admistrator",
+    "identity_type_rol": "user",
+    "identity_type_group_permissions": [7, 8, 9, 10, 11, 12]
+  },
+  {
+    "identity_type_id": 3,
+    "identity_type_name": "Administrative Administrator",
+    "identity_type_rol": "guest",
+    "identity_type_group_permissions": [13, 14, 15, 16, 17, 18]
+  },
+  {
+    "identity_type_id": 4,
+    "identity_type_name": "Operator",
+    "identity_type_rol": "reviewer",
+    "identity_type_group_permissions": [19, 20, 21, 22, 23, 24]
+  },
+  {
+    "identity_type_id": 5,
+    "identity_type_name": "Reviewer",
+    "identity_type_rol": "supervisor",
+    "identity_type_group_permissions": [25, 26, 27, 28, 29, 30]
+  },
+  {
+    "identity_type_id": 6,
+    "identity_type_name": "Reserved type",
+    "identity_type_rol": "editor",
+    "identity_type_group_permissions": [31, 32, 33, 34, 35, 36]
+  },
+  {
+    "identity_type_id": 7,
+    "identity_type_name": "Reserved type 1",
+    "identity_type_rol": "analyst",
+    "identity_type_group_permissions": [37, 38, 39, 40, 41, 42]
+  },
+  {
+    "identity_type_id": 10,
+    "identity_type_name": "Administrador",
+    "identity_type_rol": "Administrador en cliente",
+    "identity_type_group_permissions": [43, 44, 45, 46, 47, 48]
+  },
+  {
+    "identity_type_id": 11,
+    "identity_type_name": "Editor",
+    "identity_type_rol": "Editor en cliente",
+    "identity_type_group_permissions": [49, 50, 1, 2, 3, 4]
+  },
+    {
+        "identity_type_id": 12,
+        "identity_type_name": "Revisor",
+        "identity_type_rol": "Revisor en cliente",
+        "identity_type_group_permissions": [5, 6, 7, 8, 9, 10]
+    }
+]

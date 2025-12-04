@@ -90,6 +90,7 @@ def login_panel() -> rx.Component:
                         border_color=COLORS["border"],
                         color=COLORS["foreground"],
                         width="100%",
+                        border_radius="5px",
                     ),
                     spacing="1",
                 ),
@@ -104,6 +105,7 @@ def login_panel() -> rx.Component:
                         border_color=COLORS["border"],
                         color=COLORS["foreground"],
                         width="100%",
+                        border_radius="5px",
                     ),
                     spacing="1",
                 ),
@@ -118,7 +120,12 @@ def login_panel() -> rx.Component:
                 font_weight="bold",
             ),
             rx.vstack(
-                rx.link("Crear nuevo usuario", color=COLORS["primary"], href="#", font_size="0.9em"),
+                rx.link(
+                    "Crear nuevo usuario",
+                    color=COLORS["primary"],
+                    href="/user_creation?from=main",
+                    font_size="0.9em",
+                ),
                 rx.link("Recordar contraseña", color=COLORS["primary"], href="#", font_size="0.9em"),
                 spacing="1",
             ),
@@ -646,3 +653,17 @@ app = rx.App(
 
 # User portal route
 app.add_page(user_portal, route="/", title="Myllm - Pagina principal")
+
+# User creation route
+import sys
+from pathlib import Path
+# Agregar el directorio 5_web_frontend al path para importar pages
+frontend_dir = Path(__file__).parent.parent
+if str(frontend_dir) not in sys.path:
+    sys.path.insert(0, str(frontend_dir))
+
+try:
+    from pages.user_creation import user_creation_page
+    app.add_page(user_creation_page, route="/user_creation", title="Myllm - Crear Usuario")
+except ImportError as e:
+    print(f"Warning: Could not import user_creation_page: {e}")

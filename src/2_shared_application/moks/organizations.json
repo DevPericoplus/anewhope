@@ -1,0 +1,47 @@
+[
+  {
+    "organization_id": 1,
+    "organization_name": "OpenAI Research",
+    "organization_email": "contact@openai.com",
+    "organization_tlf": "+1-415-555-0191",
+    "organization_address": "1 AI Plaza, San Francisco, CA 94105",
+    "organization_country": "United States",
+    "organization_state": "California"
+  },
+  {
+    "organization_id": 2,
+    "organization_name": "Globex Corporation",
+    "organization_email": "info@globex.com",
+    "organization_tlf": "+44-20-7946-0958",
+    "organization_address": "100 Tower Bridge, London, SE1 2UP",
+    "organization_country": "United Kingdom",
+    "organization_state": "England"
+  },
+  {
+    "organization_id": 3,
+    "organization_name": "Maxestamina",
+    "organization_email": "admin@maxestamina.com",
+    "organization_tlf": "+34-91-123-4567",
+    "organization_address": "Calle Innovación 10, 28043 Madrid",
+    "organization_country": "Spain",
+    "organization_state": "Madrid"
+  },
+  {
+    "organization_id": 4,
+    "organization_name": "Menthol",
+    "organization_email": "admin@menthol.com",
+    "organization_tlf": "+346986998",
+    "organization_address": "calle huertas 16",
+    "organization_country": "España",
+    "organization_state": "Madrid"
+  },
+  {
+    "organization_id": 5,
+    "organization_name": "Sicpa",
+    "organization_email": "admin@sicpa.com",
+    "organization_tlf": "+347895621",
+    "organization_address": "Calle velazquez 33",
+    "organization_country": "España",
+    "organization_state": "Madrid"
+  }
+]
