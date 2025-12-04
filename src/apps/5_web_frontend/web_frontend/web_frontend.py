@@ -4,13 +4,13 @@ from pathlib import Path
 
 COLORS = {
     "background": "#1a1a1a",
-    "card": "#4b5563",
+    "card": "#6B6B6B",
     "foreground": "#f2f2f5",
     "primary": "#22c55e",
     "secondary": "#383854",
     "border": "#000000",
     "input": "#383854",
-    "muted_foreground": "#a6a6b8",
+    "muted_foreground": "#E0E0E0",
     "accent": "#22c55e",
 }
 
