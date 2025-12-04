@@ -7,5 +7,6 @@ config = rx.Config(
     app_name="web_frontend",
     db_url="sqlite:///reflex.db",
     env=rx.Env.DEV,
+    disable_plugins=["reflex.plugins.sitemap.SitemapPlugin"],
 )
 

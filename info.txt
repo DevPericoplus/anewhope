@@ -50,4 +50,10 @@ collections:
     version: 10.1.2
 
 The python module dependencies
-pip install boto3 botocore    
+pip install boto3 botocore   
+
+
+cd /Users/administrator/develop/anewhope
+source .venv314/bin/activate
+cd src/apps/5_web_frontend
+reflex run

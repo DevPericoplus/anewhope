@@ -111,6 +111,8 @@ class Organization:
 
     @organization_id.setter
     def organization_id(self, value: int) -> None:
+        if value <= 0:
+            raise DomainError(f"Organization ID must be positive, got: {value}")
         self._organization_id = value
 
     @property
@@ -142,7 +144,9 @@ class Organization:
 
     @organization_tlf.setter
     def organization_tlf(self, value: str) -> None:
-        self._organization_tlf = value
+        if not value or not value.strip():
+            raise DomainError("Organization phone cannot be empty")
+        self._organization_tlf = value.strip()
 
     @property
     def organization_address(self) -> str:
@@ -151,7 +155,9 @@ class Organization:
 
     @organization_address.setter
     def organization_address(self, value: str) -> None:
-        self._organization_address = value
+        if not value or not value.strip():
+            raise DomainError("Organization address cannot be empty")
+        self._organization_address = value.strip()
 
     @property
     def organization_country(self) -> str:
@@ -160,7 +166,9 @@ class Organization:
 
     @organization_country.setter
     def organization_country(self, value: str) -> None:
-        self._organization_country = value
+        if not value or not value.strip():
+            raise DomainError("Organization country cannot be empty")
+        self._organization_country = value.strip()
 
     @property
     def organization_state(self) -> str:
@@ -386,6 +394,8 @@ class Permissions:
 
     @id_permission.setter
     def id_permission(self, value: int) -> None:
+        if value <= 0:
+            raise DomainError(f"Permission ID must be positive, got: {value}")
         self._id_permission = value
 
     @property
@@ -637,6 +647,8 @@ class User:
 
     @id.setter
     def id(self, value: int) -> None:
+        if value <= 0:
+            raise DomainError(f"User ID must be positive, got: {value}")
         self._id = value
 
     @property
