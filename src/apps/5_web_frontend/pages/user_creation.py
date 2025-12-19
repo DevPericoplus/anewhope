@@ -327,6 +327,10 @@ class UserCreationState(rx.State):
     # Diccionario con los datos del usuario creado (serializable para Reflex)
     created_user: Optional[dict] = None
     
+    # Variables para almacenar IP y user agent del request actual
+    _current_client_ip: str = ""
+    _current_user_agent: str = ""
+    
     def secure_access(self):
         """
         Valida el acceso desde la página principal y limpia todos los campos del formulario.
@@ -389,49 +393,63 @@ class UserCreationState(rx.State):
     
     def log_user_creation_security(self, user_id: int):
         """
-        Registra la creación del usuario en el log de seguridad llamando al endpoint API.
+        Registra la creación del usuario en el log de seguridad.
+        
+        En Reflex 0.8.21, podemos obtener IP y user agent desde router_data.headers.
+        Usamos estos valores para crear un request mock que se pasa a la función de logging.
         
         Args:
             user_id: Identificador del usuario creado.
         """
         try:
-            import json
-            # Llamar al endpoint API que tiene acceso al request HTTP
-            # El endpoint se ejecutará en el servidor con acceso al request real
-            url = "/api/log_security_action"
-            payload = {
-                "action": "Created user",
-                "entity_id": user_id,
-            }
+            logger.debug(f"Intentando registrar log de seguridad para usuario {user_id}")
             
-            # En Reflex, hacemos una petición HTTP al endpoint API usando rx.call_script
+            # Crear un objeto request mock con IP y user agent
+            class MockRequest:
+                """Mock del request HTTP con IP y user agent."""
+                def __init__(self, ip: str, user_agent: str):
+                    self.headers = {"user-agent": user_agent}
+                    self.client = type("Client", (), {"host": ip})()
+                    self.scope = {"client": (ip, 0)}
+            
+            # Intentar obtener IP y user agent desde router_data
+            request_mock = None
+            ip = None
+            user_agent = None
+            
             try:
-                rx.call_script(
-                    f"""
-                    fetch('{url}', {{
-                        method: 'POST',
-                        headers: {{'Content-Type': 'application/json'}},
-                        body: JSON.stringify({json.dumps(payload)})
-                    }})
-                    .then(response => response.json())
-                    .then(data => {{
-                        if (data.success) {{
-                            console.log('Log de seguridad registrado exitosamente');
-                        }} else {{
-                            console.error('Error en log de seguridad:', data.error);
-                        }}
-                    }})
-                    .catch(error => console.error('Error al llamar endpoint de log:', error));
-                    """
-                )
+                # En Reflex 0.8.21, podemos acceder a los headers desde router_data
+                if hasattr(self, "router_data"):
+                    headers = self.router_data.get("headers", {})
+                    
+                    # Obtener la IP desde x-forwarded-for (para proxies) o usar 127.0.0.1 como fallback
+                    ip = headers.get("x-forwarded-for", "127.0.0.1")
+                    # Si hay múltiples IPs (proxies), tomar la primera
+                    if "," in ip:
+                        ip = ip.split(",")[0].strip()
+                    
+                    # Obtener el User-Agent
+                    user_agent = headers.get("user-agent", "Unknown Browser")
+                    
+                    # Crear request mock con los valores obtenidos
+                    request_mock = MockRequest(ip, user_agent)
+                    logger.debug(f"IP obtenida desde router_data: {ip}, User agent: {user_agent[:50]}")
+                else:
+                    logger.debug("router_data no está disponible en el estado")
             except Exception as e:
-                # Si no se puede usar call_script, registrar sin IP/user agent usando la función directamente
-                logger.warning(f"No se pudo llamar al endpoint API: {e}")
-                _register_security_action("Created user", user_id, None)
+                logger.debug(f"Error al obtener IP/user agent desde router_data: {e}")
+            
+            # Registrar usando la función de logging
+            if _log_security_action_function:
+                result = _register_security_action("Created user", user_id, request_mock)
+                if result:
+                    logger.info(f"Log de seguridad registrado para usuario {user_id} (IP: {ip or 'N/A'}, UA: {user_agent[:30] if user_agent else 'N/A'})")
+                else:
+                    logger.warning(f"No se pudo registrar el log de seguridad para usuario {user_id}")
+            else:
+                logger.error("Función de logging de seguridad no disponible")
         except Exception as e:
-            logger.error(f"Error al registrar log de seguridad: {e}")
-            # Fallback: intentar registrar sin request
-            _register_security_action("Created user", user_id, None)
+            logger.error(f"Error al registrar log de seguridad: {e}", exc_info=True)
     
     def on_mount(self):
         """Se ejecuta automáticamente cuando se monta el componente."""
@@ -939,7 +957,8 @@ class UserCreationState(rx.State):
                     self.message_type = "success"
                     
                     # Registrar la creación del usuario en el log de seguridad
-                    # Llamamos al endpoint API que tiene acceso al request HTTP
+                    # Intentamos obtener IP y user agent desde el cliente usando JavaScript
+                    # y luego llamamos al endpoint API
                     self.log_user_creation_security(user_id_int)
                 else:
                     self.message = "Error al guardar el usuario en el sistema"
