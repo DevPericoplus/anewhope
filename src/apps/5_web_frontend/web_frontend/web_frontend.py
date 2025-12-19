@@ -671,8 +671,8 @@ try:
     try:
         import logging
         import json
-        from fastapi import Request
-        from fastapi.responses import JSONResponse
+        from starlette.requests import Request
+        from starlette.responses import JSONResponse
         
         logger_api = logging.getLogger(__name__)
         
@@ -705,51 +705,62 @@ try:
                     status_code=500,
                 )
         
-        # Intentar registrar usando add_all_routes_endpoint
+        # Intentar registrar el endpoint usando diferentes métodos
         endpoint_registered = False
+        
+        # Método 1: Acceder directamente al objeto Starlette/FastAPI usando _api (atributo privado de Reflex)
         try:
-            # Verificar la firma de add_all_routes_endpoint
-            import inspect
-            sig = inspect.signature(app.add_all_routes_endpoint)
-            params = list(sig.parameters.keys())
-            
-            if len(params) >= 2:
-                # Si acepta parámetros, intentar usarlo
-                app.add_all_routes_endpoint(
-                    path="/api/log_security_action",
-                    handler=log_security_action_api,
+            if hasattr(app, "_api") and app._api is not None:
+                starlette_app = app._api
+                # Starlette usa add_route en lugar de decoradores
+                starlette_app.add_route(
+                    "/api/log_security_action",
+                    log_security_action_api,
                     methods=["POST"],
                 )
                 endpoint_registered = True
-                logger_api.info("✅ Endpoint API registrado usando add_all_routes_endpoint")
-            else:
-                logger_api.debug("add_all_routes_endpoint no acepta los parámetros esperados")
+                logger_api.info("✅ Endpoint API registrado usando app._api (Starlette)")
         except Exception as e:
-            logger_api.debug(f"add_all_routes_endpoint no funcionó: {e}")
+            logger_api.debug(f"Error al acceder a app._api: {e}")
         
-        # Si no se registró, intentar método alternativo
+        # Método 2: Intentar usar add_api_route si está disponible
         if not endpoint_registered:
             try:
-                # Intentar acceder al objeto FastAPI subyacente
+                if hasattr(app, "add_api_route"):
+                    app.add_api_route(
+                        path="/api/log_security_action",
+                        endpoint=log_security_action_api,
+                        methods=["POST"],
+                    )
+                    endpoint_registered = True
+                    logger_api.info("✅ Endpoint API registrado usando add_api_route")
+            except Exception as e:
+                logger_api.debug(f"add_api_route no funcionó: {e}")
+        
+        # Método 3: Intentar acceder al objeto FastAPI subyacente usando otros atributos
+        if not endpoint_registered:
+            try:
                 fastapi_app = None
-                if hasattr(app, "_app"):
-                    fastapi_app = app._app
-                elif hasattr(app, "api"):
+                
+                # Intentar diferentes formas de acceder al objeto FastAPI
+                if hasattr(app, "api") and app.api is not None:
                     fastapi_app = app.api
-                elif hasattr(app, "fastapi_app"):
+                elif hasattr(app, "_app") and app._app is not None:
+                    fastapi_app = app._app
+                elif hasattr(app, "fastapi_app") and app.fastapi_app is not None:
                     fastapi_app = app.fastapi_app
                 
                 if fastapi_app:
+                    # Registrar el endpoint usando el decorador de FastAPI
                     fastapi_app.post("/api/log_security_action")(log_security_action_api)
                     endpoint_registered = True
                     logger_api.info("✅ Endpoint API registrado usando FastAPI directamente")
-                else:
-                    logger_api.warning("No se pudo acceder al objeto FastAPI de Reflex")
             except Exception as e2:
-                logger_api.warning(f"Error al registrar endpoint con método alternativo: {e2}")
+                logger_api.debug(f"Error al registrar endpoint con FastAPI: {e2}")
         
         if not endpoint_registered:
             logger_api.warning("⚠️ No se pudo registrar el endpoint API. El logging funcionará sin IP/user agent.")
+            logger_api.info("💡 El logging de seguridad seguirá funcionando usando router_data en lugar del endpoint API.")
     except ImportError as e:
         import logging
         logger_api = logging.getLogger(__name__)

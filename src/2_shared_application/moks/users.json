@@ -4,7 +4,7 @@
     "organization_id": 1,
     "identity_type_id": 1,
     "user_name": "adminone",
-    "user_password": "T100@T100.go",
+    "user_password": "gAAAAABpRXkTf8_53UBsB7niyelbcWYuOD7eBC5JCdbzaWzZkJV59L_qFkPqctusUAx9ueuSrS1C3GNQ6i9a2nDoQ3jBamvzyg==",
     "user_email": "adminone@myllm.ai",
     "user_mobile": "+341234567",
     "user_otp": "3296",
@@ -32,7 +32,7 @@
     "organization_id": 1,
     "identity_type_id": 1,
     "user_name": "admintwo",
-    "user_password": "T100@T100.quen",
+    "user_password": "gAAAAABpRXkT2r63sqwKvXWLX6bN0q66HjXLiDjz78P9fh3RzRjRfMqk6IptbGt6ZyN5ClVlW03cTsaXNrFy9eOLVVClGPmvMg==",
     "user_email": "admintwo@myllm.ai",
     "user_mobile": "+341234569",
     "user_otp": "3296",
@@ -60,7 +60,7 @@
     "organization_id": 1,
     "identity_type_id": 1,
     "user_name": "admin3",
-    "user_password": "T100@T100.now",
+    "user_password": "gAAAAABpRXkTpINr1Ue15XLtkhk4n6rwJmPrV_FIyRvhJ6FoFUw_LfA-gQi9BgkBdYZ1cXAw9wNKgP5MXI9igr8qGVIYjDW4zg==",
     "user_email": "admint3@yllm.ai",
     "user_mobile": "+341234565",
     "user_otp": "3296",
@@ -88,7 +88,7 @@
     "organization_id": 1,
     "identity_type_id": 1,
     "user_name": "admin4",
-    "user_password": "T123456789.op",
+    "user_password": "gAAAAABpRXkTIaw2YMzwWjZpAzbM1f0uuISF3XZMu6AsYSVGLAvqOn5XgBODwG1qfx8uEEHWu1Lfo0e8-81QYbX0Xae_lOPs0Q==",
     "user_email": "info@cuatro.com",
     "user_mobile": "+341235689",
     "user_otp": "9467",
@@ -109,6 +109,34 @@
       "state": "salamanca",
       "zip_code": "35087",
       "address": "calle del uno para dos"
+    }
+  },
+  {
+    "user_id": 5,
+    "organization_id": 1,
+    "identity_type_id": 1,
+    "user_name": "adminexample",
+    "user_password": "gAAAAABpRW_6FWIIa-dJz2NzZKTgoUsAjwjda42E5VwnMIvWCbDIfIptmCwEAfeFqm58gU4JMMDZuHpdSpwv4HnmVSq2f6yldQ==",
+    "user_email": "info@local.loc",
+    "user_mobile": "+341235684",
+    "user_otp": "9467",
+    "active": true,
+    "blocked": false,
+    "contact_info": {
+      "first_name": "Perico",
+      "sur_name": "Plus",
+      "country": "España",
+      "state": "Madrid",
+      "zip_code": "28043",
+      "address": "calle gomeznarro 187"
+    },
+    "billing_info": {
+      "first_name": "Perico",
+      "sur_name": "Plus",
+      "country": "España",
+      "state": "Madrid",
+      "zip_code": "28043",
+      "address": "calle gomeznarro 187"
     }
   }
 ]

@@ -233,6 +233,35 @@ except Exception as e:
 # Ruta del archivo de log de seguridad para esta aplicación
 _SECURITY_LOG_PATH = Path(__file__).parent.parent / "logs" / "frontend_secure.log"
 
+# Cargar módulo de cifrado para cifrar contraseñas
+_cipher_module = None
+_fernet_instance = None
+
+try:
+    import importlib.util
+    cipher_module_path = (
+        Path(__file__).parent.parent.parent.parent
+        / "2_shared_application"
+        / "security"
+        / "custom_cipher_lib.py"
+    )
+    if cipher_module_path.exists():
+        spec = importlib.util.spec_from_file_location("custom_cipher_lib", cipher_module_path)
+        if spec and spec.loader:
+            _cipher_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(_cipher_module)
+            
+            # Cargar la clave Fernet
+            fernet_key_path = cipher_module_path.parent / "basesecuritypass.json"
+            _fernet_instance = _cipher_module.load_fernet_key_from_file(fernet_key_path)
+            logger.info("Módulo de cifrado cargado exitosamente")
+        else:
+            logger.warning("No se pudo cargar el módulo de cifrado")
+    else:
+        logger.warning("El módulo de cifrado no existe")
+except Exception as e:
+    logger.error(f"Error al cargar módulo de cifrado: {e}")
+
 # Función para registrar acciones de seguridad (será llamada desde el endpoint API)
 def _register_security_action(action: str, entity_id: Optional[int], request: Any) -> bool:
     """
@@ -898,13 +927,28 @@ class UserCreationState(rx.State):
                 return
             
             try:
-                # Crear objeto User
+                # Cifrar la contraseña antes de crear el objeto User
+                encrypted_password = self.user_password  # Por defecto, sin cifrar
+                try:
+                    if _cipher_module and _fernet_instance:
+                        # Cifrar la contraseña usando el módulo y la instancia Fernet cargados
+                        encrypted_password_bytes = _cipher_module.encrypt_value(_fernet_instance, self.user_password)
+                        # Convertir bytes a string para almacenar en JSON
+                        encrypted_password = encrypted_password_bytes.decode('utf-8')
+                        logger.debug("Contraseña cifrada exitosamente")
+                    else:
+                        logger.warning("El módulo de cifrado no está disponible, la contraseña se guardará sin cifrar")
+                except Exception as e:
+                    logger.error(f"Error al cifrar la contraseña: {e}")
+                    # Continuar sin cifrar si hay error
+                
+                # Crear objeto User con la contraseña cifrada
                 user = User(
                     user_id=user_id_int,
                     organization_id=org_id_int,
                     identity_type_id=identity_id_int,
                     user_name=self.user_name.strip(),
-                    password=self.user_password,
+                    password=encrypted_password,
                     email=self.user_email.strip().lower(),
                     mobile=self.user_mobile.strip(),
                     otp=self.user_otp,
@@ -1794,7 +1838,9 @@ def user_creation_page() -> rx.Component:
         rx.script(
             """
             // Observar cambios en el estado del modal y devolver el foco cuando se cierre
-            let previousModalState = false;
+            if (typeof window.previousPasswordModalState === 'undefined') {
+                window.previousPasswordModalState = false;
+            }
             const checkModalState = () => {
                 // El estado se actualiza en el servidor, así que usamos un pequeño delay
                 setTimeout(() => {
@@ -1807,10 +1853,10 @@ def user_creation_page() -> rx.Component:
             // Ejecutar el check periódicamente cuando el modal está visible
             setInterval(() => {
                 const modal = document.querySelector('[data-modal="password_validation"]');
-                if (modal && modal.style.display !== 'none' && !previousModalState) {
-                    previousModalState = true;
-                } else if ((!modal || modal.style.display === 'none') && previousModalState) {
-                    previousModalState = false;
+                if (modal && modal.style.display !== 'none' && !window.previousPasswordModalState) {
+                    window.previousPasswordModalState = true;
+                } else if ((!modal || modal.style.display === 'none') && window.previousPasswordModalState) {
+                    window.previousPasswordModalState = false;
                     checkModalState();
                 }
             }, 100);
@@ -1820,7 +1866,9 @@ def user_creation_page() -> rx.Component:
         rx.script(
             """
             // Observar cambios en el estado del modal de coincidencia y devolver el foco cuando se cierre
-            let previousPasswordMatchModalState = false;
+            if (typeof window.previousPasswordMatchModalState === 'undefined') {
+                window.previousPasswordMatchModalState = false;
+            }
             const checkPasswordMatchModalState = () => {
                 // El estado se actualiza en el servidor, así que usamos un pequeño delay
                 setTimeout(() => {
@@ -1841,10 +1889,10 @@ def user_creation_page() -> rx.Component:
                         break;
                     }
                 }
-                if (passwordMatchModal && passwordMatchModal.style.display !== 'none' && !previousPasswordMatchModalState) {
-                    previousPasswordMatchModalState = true;
-                } else if ((!passwordMatchModal || passwordMatchModal.style.display === 'none') && previousPasswordMatchModalState) {
-                    previousPasswordMatchModalState = false;
+                if (passwordMatchModal && passwordMatchModal.style.display !== 'none' && !window.previousPasswordMatchModalState) {
+                    window.previousPasswordMatchModalState = true;
+                } else if ((!passwordMatchModal || passwordMatchModal.style.display === 'none') && window.previousPasswordMatchModalState) {
+                    window.previousPasswordMatchModalState = false;
                     checkPasswordMatchModalState();
                 }
             }, 100);

@@ -43,5 +43,50 @@
     "organization_address": "Calle velazquez 33",
     "organization_country": "España",
     "organization_state": "Madrid"
+  },
+  {
+    "organization_id": 6,
+    "organization_name": "myllm",
+    "organization_email": "admin@myllm.ia",
+    "organization_tlf": "+345678901",
+    "organization_address": "c/ base 19",
+    "organization_country": "España",
+    "organization_state": "Madrid"
+  },
+  {
+    "organization_id": 7,
+    "organization_name": "myllm_alternative",
+    "organization_email": "myllm_alternative",
+    "organization_tlf": "+348975632",
+    "organization_address": "calle segunda base 18",
+    "organization_country": "España",
+    "organization_state": "vigo"
+  },
+  {
+    "organization_id": 8,
+    "organization_name": "myllm_aother",
+    "organization_email": "myllmtest",
+    "organization_tlf": "+3458796251",
+    "organization_address": "c alle uno",
+    "organization_country": "españa",
+    "organization_state": "sevilla"
+  },
+  {
+    "organization_id": 9,
+    "organization_name": "cuatro",
+    "organization_email": "ifo@cuatro.es",
+    "organization_tlf": "+347891256",
+    "organization_address": "calle no se",
+    "organization_country": "España",
+    "organization_state": "Sevilla"
+  },
+  {
+    "organization_id": 10,
+    "organization_name": "local",
+    "organization_email": "admin@local.loc",
+    "organization_tlf": "+341237856",
+    "organization_address": "calle aguas 34",
+    "organization_country": "España",
+    "organization_state": "Bilbao"
   }
 ]
