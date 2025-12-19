@@ -1,8 +1,15 @@
 """Utilidades de seguridad comunes para aplicaciones web con Reflex."""
 import datetime
+import json
 import logging
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional, Any, Tuple
+
+try:
+    import requests
+except ImportError:
+    requests = None
+    logging.warning("El módulo 'requests' no está instalado. La funcionalidad de SMS no estará disponible.")
 
 logger = logging.getLogger(__name__)
 
@@ -142,3 +149,145 @@ def log_security_action(
     except Exception as e:
         logger.error(f"Error al escribir en el log de seguridad {log_file_path}: {e}")
         return False
+
+# SMS provider https://www.infobip.com/es
+
+def get_sms_api_credentials() -> Tuple[str, str]:
+    """
+    Obtiene los valores de sms_api_url y sms_api_key del archivo protected_values.py.
+
+    Returns:
+        Tupla (sms_api_url, sms_api_key)
+
+    Raises:
+        FileNotFoundError: Si el archivo protected_values.py no existe.
+        ValueError: Si alguna de las variables no se encuentra o no es válida.
+    
+    Nota:
+        Este método lee y ejecuta de manera controlada las variables del archivo
+        protected_values.py que debe estar en el directorio raíz del proyecto.
+    """
+    # Ruta relativa (se asume que el archivo está en el root del repo/proyecto)
+    protected_values_path = Path(__file__).parent.parent.parent.parent / "protected_values.py"
+    if not protected_values_path.exists():
+        # El archivo no existe en la ruta esperada
+        raise FileNotFoundError(f"No se encontró protected_values.py en {protected_values_path}")
+
+    # Leer el contenido y extraer las variables requeridas
+    namespace = {}
+    with open(protected_values_path, "r", encoding="utf-8") as f:
+        exec(f.read(), {}, namespace)
+
+    sms_api_url = namespace.get("sms_api_url")
+    sms_api_key = namespace.get("sms_api_key")
+
+    if not sms_api_url or not sms_api_key:
+        raise ValueError("sms_api_url o sms_api_key no se encontraron en protected_values.py")
+
+    return sms_api_url, sms_api_key
+
+
+def send_message_by_sms(otp: str, phone_number: str) -> bool:
+    """
+    Envía un mensaje SMS con un código OTP a un número de teléfono usando la API de Infobip.
+    
+    Args:
+        otp: Código OTP de 4 dígitos a enviar en el mensaje.
+        phone_number: Número de teléfono del destinatario en formato internacional (ej: +34639775978).
+    
+    Returns:
+        True si el mensaje se envió exitosamente, False en caso contrario.
+    
+    Raises:
+        FileNotFoundError: Si no se encuentra el archivo protected_values.py.
+        ValueError: Si las credenciales de la API no están disponibles.
+        ImportError: Si el módulo 'requests' no está instalado.
+        requests.RequestException: Si hay un error en la comunicación con la API.
+    
+    Nota:
+        - Utiliza las credenciales obtenidas de get_sms_api_credentials().
+        - El mensaje enviado será: "Su código OTP es: {otp}".
+        - La función valida que el OTP tenga 4 dígitos antes de enviar.
+        - Requiere que el módulo 'requests' esté instalado.
+    """
+    # Verificar que requests esté disponible
+    if requests is None:
+        logger.error("El módulo 'requests' no está instalado. Instálalo con: pip install requests")
+        return False
+    
+    # Validar que el OTP tenga 4 dígitos
+    if not otp or len(otp) != 4 or not otp.isdigit():
+        logger.error(f"El OTP debe tener exactamente 4 dígitos. OTP recibido: {otp}")
+        return False
+    
+    # Validar formato del número de teléfono
+    if not phone_number or not phone_number.startswith("+"):
+        logger.error(
+            f"El número de teléfono debe estar en formato internacional (ej: +34639775978). "
+            f"Recibido: {phone_number}"
+        )
+        return False
+    
+    try:
+        # Obtener credenciales de la API
+        sms_api_url, sms_api_key = get_sms_api_credentials()
+        
+        # Construir el endpoint de la API de Infobip
+        # La URL base ya viene completa desde protected_values.py
+        endpoint = f"{sms_api_url}/sms/2/text/advanced"
+        
+        # Preparar headers
+        headers = {
+            "Authorization": f"App {sms_api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        
+        # Preparar el payload según la documentación de Infobip
+        payload = {
+            "messages": [
+                {
+                    "from": "ServiceSMS",  # Remitente por defecto (puede configurarse)
+                    "destinations": [
+                        {"to": phone_number}
+                    ],
+                    "text": f"Su código OTP es: {otp}",
+                }
+            ]
+        }
+        
+        # Enviar la solicitud POST
+        logger.info(f"Enviando SMS con OTP {otp} al número {phone_number}")
+        response = requests.post(
+            endpoint,
+            headers=headers,
+            data=json.dumps(payload),
+            timeout=30,  # Timeout de 30 segundos
+        )
+        
+        # Verificar la respuesta
+        if response.status_code == 200:
+            logger.info(f"SMS enviado exitosamente al número {phone_number}")
+            response_data = response.json()
+            logger.debug(f"Respuesta de la API: {response_data}")
+            return True
+        else:
+            logger.error(
+                f"Error al enviar SMS. Código de estado: {response.status_code}, "
+                f"Respuesta: {response.text}"
+            )
+            return False
+            
+    except FileNotFoundError as e:
+        logger.error(f"Error al obtener credenciales: {e}")
+        return False
+    except ValueError as e:
+        logger.error(f"Error de validación de credenciales: {e}")
+        return False
+    except requests.RequestException as e:
+        logger.error(f"Error de comunicación con la API de Infobip: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Error inesperado al enviar SMS: {e}", exc_info=True)
+        return False
+
