@@ -1,13 +1,14 @@
 import reflex as rx
 from typing import Optional
 import sys
+import random
 from pathlib import Path
 
 # Agregar el path para importar módulos del dominio
 domain_entities_path = Path(__file__).parent.parent.parent.parent / "1_shared_domain" / "entities"
 sys.path.insert(0, str(domain_entities_path))
 
-# Intentar importar la función de validación de organización
+# Intentar importar las funciones de validación de organización
 try:
     import importlib.util
     org_module_path = domain_entities_path / "organization.py"
@@ -26,6 +27,59 @@ try:
         create_organization = None
 except Exception:
     get_organization_by_name_exist = None
+    create_organization = None
+
+# Intentar importar las funciones de validación de usuario
+try:
+    import importlib.util
+    user_module_path = domain_entities_path / "user.py"
+    if user_module_path.exists():
+        spec = importlib.util.spec_from_file_location("user", user_module_path)
+        if spec and spec.loader:
+            user_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(user_module)
+            get_user_by_email_exist = user_module.get_user_by_email_exist
+            get_user_by_mobile_exist = user_module.get_user_by_mobile_exist
+        else:
+            get_user_by_email_exist = None
+            get_user_by_mobile_exist = None
+    else:
+        get_user_by_email_exist = None
+        get_user_by_mobile_exist = None
+except Exception:
+    get_user_by_email_exist = None
+    get_user_by_mobile_exist = None
+
+# Intentar importar las clases de dominio (User, ContactInfo, UserExtended)
+try:
+    import importlib.util
+    domain_models_path = domain_entities_path / "domain_models.py"
+    if domain_models_path.exists():
+        spec = importlib.util.spec_from_file_location("domain_models", domain_models_path)
+        if spec and spec.loader:
+            domain_models_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(domain_models_module)
+            User = domain_models_module.User
+            ContactInfo = domain_models_module.ContactInfo
+            UserExtended = domain_models_module.UserExtended
+        else:
+            User = None
+            ContactInfo = None
+            UserExtended = None
+    else:
+        User = None
+        ContactInfo = None
+        UserExtended = None
+except Exception:
+    User = None
+    ContactInfo = None
+    UserExtended = None
+
+# Importar el adaptador
+try:
+    from ..adapters.api_client import save_user_to_json
+except Exception:
+    save_user_to_json = None
 
 # Importar los colores de la página principal
 COLORS = {
@@ -76,6 +130,7 @@ class UserCreationState(rx.State):
     billing_state: str = ""
     billing_zip_code: str = ""
     billing_address: str = ""
+    has_different_billing_address: bool = False
     
     # Mensaje de estado
     message: str = ""
@@ -83,6 +138,7 @@ class UserCreationState(rx.State):
     show_org_error_modal: bool = False  # Controla si se muestra el modal de error de organización
     show_org_creation_modal: bool = False  # Controla si se muestra el modal de creación de organización
     show_password_validation_modal: bool = False  # Controla si se muestra el modal de validación de contraseña
+    show_password_match_error_modal: bool = False  # Controla si se muestra el modal de error de coincidencia de contraseñas
     
     # Campos para el formulario de creación de organización
     org_email: str = ""
@@ -128,6 +184,7 @@ class UserCreationState(rx.State):
         self.billing_state = ""
         self.billing_zip_code = ""
         self.billing_address = ""
+        self.has_different_billing_address = False
         
         # Limpiar campos de organización
         self.org_email = ""
@@ -141,6 +198,7 @@ class UserCreationState(rx.State):
         self.message_type = ""
         self.show_org_error_modal = False
         self.show_org_creation_modal = False
+        self.show_password_match_error_modal = False
         self.created_user = None
         
         # Validar acceso desde la página principal
@@ -371,12 +429,81 @@ class UserCreationState(rx.State):
     
     def set_user_password_confirm(self, value: str):
         self.user_password_confirm = value
+
+    def on_password_confirm_blur(self):
+        """Se ejecuta cuando se pierde el foco en el campo de confirmación de contraseña."""
+        # Validar que ambas contraseñas tengan contenido y coincidan
+        if self.user_password_confirm and self.user_password_confirm.strip():
+            if self.user_password != self.user_password_confirm:
+                self.show_password_match_error_modal = True
+            else:
+                self.show_password_match_error_modal = False
+        else:
+            self.show_password_match_error_modal = False
+
+    def close_password_match_error_modal(self):
+        """Cierra el modal de error de coincidencia de contraseñas y devuelve el foco al input de confirmación."""
+        self.show_password_match_error_modal = False
     
     def set_user_email(self, value: str):
         self.user_email = value
     
+    def on_user_email_blur(self):
+        """Valida si el email ya existe cuando se pierde el foco."""
+        if not self.user_email or not self.user_email.strip():
+            # Limpiar mensaje si el campo está vacío
+            if self.message_type == "error" and "email" in self.message.lower():
+                self.message = ""
+                self.message_type = ""
+            return  # No validar si está vacío
+        
+        # Verificar si la función de validación está disponible
+        if get_user_by_email_exist is None:
+            return  # No hacer nada si la función no está disponible
+        
+        try:
+            # Verificar si el email existe
+            if get_user_by_email_exist(self.user_email.strip()):
+                self.message = f"El email '{self.user_email.strip()}' ya está registrado en el sistema"
+                self.message_type = "error"
+            else:
+                # Limpiar mensaje si la validación es exitosa
+                if self.message_type == "error" and "email" in self.message.lower():
+                    self.message = ""
+                    self.message_type = ""
+        except Exception:
+            # En caso de error, no mostrar mensaje para no interrumpir al usuario
+            pass
+    
     def set_user_mobile(self, value: str):
         self.user_mobile = value
+    
+    def on_user_mobile_blur(self):
+        """Valida si el teléfono ya existe cuando se pierde el foco."""
+        if not self.user_mobile or not self.user_mobile.strip():
+            # Limpiar mensaje si el campo está vacío
+            if self.message_type == "error" and "teléfono" in self.message.lower() or "móvil" in self.message.lower():
+                self.message = ""
+                self.message_type = ""
+            return  # No validar si está vacío
+        
+        # Verificar si la función de validación está disponible
+        if get_user_by_mobile_exist is None:
+            return  # No hacer nada si la función no está disponible
+        
+        try:
+            # Verificar si el teléfono existe
+            if get_user_by_mobile_exist(self.user_mobile.strip()):
+                self.message = f"El teléfono '{self.user_mobile.strip()}' ya está registrado en el sistema"
+                self.message_type = "error"
+            else:
+                # Limpiar mensaje si la validación es exitosa
+                if self.message_type == "error" and ("teléfono" in self.message.lower() or "móvil" in self.message.lower()):
+                    self.message = ""
+                    self.message_type = ""
+        except Exception:
+            # En caso de error, no mostrar mensaje para no interrumpir al usuario
+            pass
     
     def set_user_otp(self, value: str):
         self.user_otp = value
@@ -423,6 +550,10 @@ class UserCreationState(rx.State):
     def set_billing_address(self, value: str):
         self.billing_address = value
     
+    def set_has_different_billing_address(self, value: bool):
+        """Establece si el usuario tiene una dirección de facturación diferente."""
+        self.has_different_billing_address = value
+    
     def save_user(self):
         """Crea el objeto UserExtended en memoria."""
         try:
@@ -445,15 +576,34 @@ class UserCreationState(rx.State):
                 self.message_type = "error"
                 return
             
+            # Verificar si el email ya existe
+            if get_user_by_email_exist is not None:
+                try:
+                    if get_user_by_email_exist(self.user_email.strip()):
+                        self.message = f"El email '{self.user_email.strip()}' ya está registrado en el sistema"
+                        self.message_type = "error"
+                        return
+                except Exception:
+                    pass  # Continuar si hay error en la verificación
+            
             if not self.user_mobile or not self.user_mobile.strip():
                 self.message = "El número de móvil es requerido"
                 self.message_type = "error"
                 return
             
+            # Verificar si el teléfono ya existe
+            if get_user_by_mobile_exist is not None:
+                try:
+                    if get_user_by_mobile_exist(self.user_mobile.strip()):
+                        self.message = f"El teléfono '{self.user_mobile.strip()}' ya está registrado en el sistema"
+                        self.message_type = "error"
+                        return
+                except Exception:
+                    pass  # Continuar si hay error en la verificación
+            
+            # Generar OTP aleatorio de 4 dígitos si no está presente o no es válido
             if not self.user_otp or len(self.user_otp) != 4 or not self.user_otp.isdigit():
-                self.message = "El OTP debe tener exactamente 4 dígitos"
-                self.message_type = "error"
-                return
+                self.user_otp = f"{random.randint(1000, 9999)}"
             
             # Validar campos de contacto
             if not self.contact_first_name or not self.contact_first_name.strip():
@@ -495,39 +645,71 @@ class UserCreationState(rx.State):
                 self.message_type = "error"
                 return
             
-            # Crear el objeto UserExtended en memoria (simulado como diccionario)
-            # En el futuro se creará el objeto real de dominio
-            self.created_user = {
-                "user_id": user_id_int,
-                "organization_id": org_id_int,
-                "identity_type_id": identity_id_int,
-                "user_name": self.user_name.strip(),
-                "user_password": self.user_password,
-                "user_email": self.user_email.strip().lower(),
-                "user_mobile": self.user_mobile.strip(),
-                "user_otp": self.user_otp,
-                "active": self.active,
-                "blocked": self.blocked,
-                "contact_info": {
-                    "first_name": self.contact_first_name.strip(),
-                    "sur_name": self.contact_sur_name.strip(),
-                    "country": self.contact_country.strip(),
-                    "state": self.contact_state.strip(),
-                    "zip_code": self.contact_zip_code.strip(),
-                    "address": self.contact_address.strip(),
-                },
-                "billing_info": {
-                    "first_name": self.billing_first_name.strip() if self.billing_first_name.strip() else self.contact_first_name.strip(),
-                    "sur_name": self.billing_sur_name.strip() if self.billing_sur_name.strip() else self.contact_sur_name.strip(),
-                    "country": self.billing_country.strip() if self.billing_country.strip() else self.contact_country.strip(),
-                    "state": self.billing_state.strip() if self.billing_state.strip() else self.contact_state.strip(),
-                    "zip_code": self.billing_zip_code.strip() if self.billing_zip_code.strip() else self.contact_zip_code.strip(),
-                    "address": self.billing_address.strip() if self.billing_address.strip() else self.contact_address.strip(),
-                },
-            }
+            # Crear el objeto UserExtended usando las clases de dominio
+            if User is None or ContactInfo is None or UserExtended is None:
+                self.message = "Error: Las clases de dominio no están disponibles"
+                self.message_type = "error"
+                return
             
-            self.message = f"Usuario {self.user_name} creado exitosamente en memoria (ID: {user_id_int})"
-            self.message_type = "success"
+            if save_user_to_json is None:
+                self.message = "Error: El adaptador no está disponible"
+                self.message_type = "error"
+                return
+            
+            try:
+                # Crear objeto User
+                user = User(
+                    user_id=user_id_int,
+                    organization_id=org_id_int,
+                    identity_type_id=identity_id_int,
+                    user_name=self.user_name.strip(),
+                    password=self.user_password,
+                    email=self.user_email.strip().lower(),
+                    mobile=self.user_mobile.strip(),
+                    otp=self.user_otp,
+                    active=self.active,
+                    blocked=self.blocked,
+                )
+                
+                # Crear objeto ContactInfo para información de contacto
+                contact_info = ContactInfo(
+                    first_name=self.contact_first_name.strip(),
+                    sur_name=self.contact_sur_name.strip(),
+                    country=self.contact_country.strip(),
+                    state=self.contact_state.strip(),
+                    zip_code=self.contact_zip_code.strip(),
+                    address=self.contact_address.strip(),
+                )
+                
+                # Crear objeto ContactInfo para información de facturación
+                # Si no hay dirección de facturación diferente, usar la de contacto
+                billing_info = ContactInfo(
+                    first_name=self.billing_first_name.strip() if self.billing_first_name.strip() else self.contact_first_name.strip(),
+                    sur_name=self.billing_sur_name.strip() if self.billing_sur_name.strip() else self.contact_sur_name.strip(),
+                    country=self.billing_country.strip() if self.billing_country.strip() else self.contact_country.strip(),
+                    state=self.billing_state.strip() if self.billing_state.strip() else self.contact_state.strip(),
+                    zip_code=self.billing_zip_code.strip() if self.billing_zip_code.strip() else self.contact_zip_code.strip(),
+                    address=self.billing_address.strip() if self.billing_address.strip() else self.contact_address.strip(),
+                )
+                
+                # Crear objeto UserExtended
+                user_extended = UserExtended(
+                    user=user,
+                    contact_info=contact_info,
+                    billing_info=billing_info if self.has_different_billing_address else None,
+                )
+                
+                # Guardar el usuario usando el adaptador
+                if save_user_to_json(user_extended):
+                    self.created_user = user_extended
+                    self.message = f"Usuario {self.user_name} creado exitosamente (ID: {user_id_int})"
+                    self.message_type = "success"
+                else:
+                    self.message = "Error al guardar el usuario en el sistema"
+                    self.message_type = "error"
+            except Exception as e:
+                self.message = f"Error al crear el usuario: {str(e)}"
+                self.message_type = "error"
             
         except Exception as e:
             self.message = f"Error al crear el usuario: {str(e)}"
@@ -759,6 +941,65 @@ def organization_creation_modal() -> rx.Component:
             z_index="1000",
         ),
     )
+def password_match_error_modal() -> rx.Component:
+    """Modal centrado para mostrar el error de coincidencia de contraseñas."""
+    return rx.cond(
+        UserCreationState.show_password_match_error_modal,
+        rx.fragment(
+            # Overlay oscuro de fondo
+            rx.box(
+                width="100vw",
+                height="100vh",
+                background_color="rgba(0, 0, 0, 0.7)",
+                position="fixed",
+                top="0",
+                left="0",
+                z_index="1000",
+            ),
+            # Modal centrado
+            rx.box(
+                rx.vstack(
+                    rx.heading(
+                        "Error de Contraseña",
+                        size="6",
+                        color=COLORS["foreground"],
+                        margin_bottom="1em",
+                    ),
+                    rx.text(
+                        "La contraseña no coincide",
+                        color=COLORS["foreground"],
+                        font_size="1em",
+                        text_align="center",
+                        margin_bottom="2em",
+                    ),
+                    rx.button(
+                        "Entendido",
+                        on_click=UserCreationState.close_password_match_error_modal,
+                        background_color=COLORS["primary"],
+                        color=COLORS["background"],
+                        font_weight="bold",
+                        padding="0.75em 2em",
+                        border_radius="0.5em",
+                        width="200px",
+                    ),
+                    spacing="2",
+                    align_items="center",
+                    padding="2em",
+                ),
+                background_color=COLORS["card"],
+                border=f"2px solid {COLORS['border']}",
+                border_radius="1em",
+                box_shadow="0 10px 40px rgba(0, 0, 0, 0.5)",
+                position="fixed",
+                top="50%",
+                left="50%",
+                transform="translate(-50%, -50%)",
+                z_index="1001",
+                min_width="400px",
+                max_width="600px",
+            ),
+        ),
+    )
 
 
 def password_validation_modal() -> rx.Component:
@@ -857,6 +1098,8 @@ def user_creation_page() -> rx.Component:
         organization_creation_modal(),
         # Modal de validación de contraseña (si está activo)
         password_validation_modal(),
+        # Modal de error de coincidencia de contraseñas (si está activo)
+        password_match_error_modal(),
         # Header
         rx.hstack(
             rx.heading("Crear Nuevo Usuario", size="6", color=COLORS["foreground"]),
@@ -930,7 +1173,9 @@ def user_creation_page() -> rx.Component:
                             rx.input(
                                 placeholder="Repita la contraseña",
                                 type_="password",
+                                id="user_password_confirm_input",
                                 on_change=UserCreationState.set_user_password_confirm,
+                                on_blur=UserCreationState.on_password_confirm_blur,
                                 value=UserCreationState.user_password_confirm,
                                 background_color=COLORS["input"],
                                 border_color=COLORS["border"],
@@ -950,6 +1195,7 @@ def user_creation_page() -> rx.Component:
                             rx.input(
                                 placeholder="usuario@ejemplo.com",
                                 on_change=UserCreationState.set_user_email,
+                                on_blur=UserCreationState.on_user_email_blur,
                                 value=UserCreationState.user_email,
                                 background_color=COLORS["input"],
                                 border_color=COLORS["border"],
@@ -965,6 +1211,7 @@ def user_creation_page() -> rx.Component:
                             rx.input(
                                 placeholder="+1234567890",
                                 on_change=UserCreationState.set_user_mobile,
+                                on_blur=UserCreationState.on_user_mobile_blur,
                                 value=UserCreationState.user_mobile,
                                 background_color=COLORS["input"],
                                 border_color=COLORS["border"],
@@ -1088,6 +1335,13 @@ def user_creation_page() -> rx.Component:
                         spacing="1",
                         width="110%",
                     ),
+                    rx.checkbox(
+                        "Tengo una dirección de facturación diferente",
+                        checked=UserCreationState.has_different_billing_address,
+                        on_change=UserCreationState.set_has_different_billing_address,
+                        color=COLORS["foreground"],
+                        margin_top="1em",
+                    ),
                     spacing="2",
                 ),
                 padding="1.5em",
@@ -1097,15 +1351,17 @@ def user_creation_page() -> rx.Component:
                 width="100%",
                 margin_bottom="1em",
             ),
-            # Sección: Información de Facturación (Opcional)
-            rx.vstack(
-                rx.heading("Información de Facturación (Opcional)", size="6", color=COLORS["foreground"], margin_bottom="1em"),
-                rx.text(
-                    "Si no se completa, se usará la información de contacto",
-                    font_size="0.9em",
-                    color=COLORS["muted_foreground"],
-                    margin_bottom="1em",
-                ),
+            # Sección: Información de Facturación (Opcional) - Solo se muestra si el checkbox está marcado
+            rx.cond(
+                UserCreationState.has_different_billing_address,
+                rx.vstack(
+                    rx.heading("Información de Facturación (Opcional)", size="6", color=COLORS["foreground"], margin_bottom="1em"),
+                    rx.text(
+                        "Si no se completa, se usará la información de contacto",
+                        font_size="0.9em",
+                        color=COLORS["muted_foreground"],
+                        margin_bottom="1em",
+                    ),
                 rx.vstack(
                     rx.hstack(
                         rx.vstack(
@@ -1206,12 +1462,13 @@ def user_creation_page() -> rx.Component:
                     ),
                     spacing="2",
                 ),
-                padding="1.5em",
-                background_color=COLORS["card"],
-                border=f"1px solid {COLORS['border']}",
-                border_radius="0.5em",
-                width="100%",
-                margin_bottom="1em",
+                    padding="1.5em",
+                    background_color=COLORS["card"],
+                    border=f"1px solid {COLORS['border']}",
+                    border_radius="0.5em",
+                    width="100%",
+                    margin_bottom="1em",
+                ),
             ),
             # Mensaje de estado (solo para mensajes que no sean de organización)
             # Si show_org_error_modal es True, no mostrar el mensaje normal (se muestra en el modal)
@@ -1299,6 +1556,40 @@ def user_creation_page() -> rx.Component:
                 } else if ((!modal || modal.style.display === 'none') && previousModalState) {
                     previousModalState = false;
                     checkModalState();
+                }
+            }, 100);
+            """,
+        ),
+        # Script para devolver el foco al input de confirmación de contraseña cuando se cierra el modal
+        rx.script(
+            """
+            // Observar cambios en el estado del modal de coincidencia y devolver el foco cuando se cierre
+            let previousPasswordMatchModalState = false;
+            const checkPasswordMatchModalState = () => {
+                // El estado se actualiza en el servidor, así que usamos un pequeño delay
+                setTimeout(() => {
+                    const input = document.getElementById('user_password_confirm_input');
+                    if (input) {
+                        input.focus();
+                    }
+                }, 150);
+            };
+            // Ejecutar el check periódicamente cuando el modal está visible
+            setInterval(() => {
+                // Buscar el modal por su contenido único (texto "La contraseña no coincide")
+                const modals = document.querySelectorAll('[style*="z-index: 1001"]');
+                let passwordMatchModal = null;
+                for (let modal of modals) {
+                    if (modal.textContent && modal.textContent.includes('La contraseña no coincide')) {
+                        passwordMatchModal = modal;
+                        break;
+                    }
+                }
+                if (passwordMatchModal && passwordMatchModal.style.display !== 'none' && !previousPasswordMatchModalState) {
+                    previousPasswordMatchModalState = true;
+                } else if ((!passwordMatchModal || passwordMatchModal.style.display === 'none') && previousPasswordMatchModalState) {
+                    previousPasswordMatchModalState = false;
+                    checkPasswordMatchModalState();
                 }
             }, 100);
             """,
