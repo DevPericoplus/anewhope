@@ -58,14 +58,18 @@ assistance.
 
 ## Application Services
 
+All application folders (numbered folders in `src/apps/`) follow a standard structure:
+- **`logs/`**: Directory for application-specific log files (e.g., security logs, error logs).
+- **`tests/`**: Directory for unit tests and integration tests specific to the application.
+
 | Path / Responsibility | Agent | Purpose |
 | --- | --- | --- |
-| `src/apps/3_backend/` (API + persistence) | `@backend-conductor` | Implement application services, adapters, controllers and database integration. |
-| `src/apps/4_trainer/` (fine-tuning pipelines) | `@trainer-maestro` | Manage training jobs, GPU orchestration and experiment tracking. |
-| `src/apps/5_web_frontend/` (Reflex UI) | `@frontend-visionary` | Build Reflex components, pages and API clients for end users. |
-| `src/apps/6_web_backoffice/` (Reflex UI) | `@frontend-visionary` | Build Reflex components, pages and API clients for administrative users. |
-| `src/apps/7_service_frontend/` (service frontend) | `@frontend-visionary` | Build service-specific frontend components and interfaces. |
-| `src/apps/8_service_backend/` (service backend) | `@backend-conductor` | Implement service-specific backend logic and APIs. |
+| `src/apps/3_backend/` (API + persistence) | `@backend-conductor` | Implement application services, adapters, controllers and database integration. Contains `logs/` and `tests/` directories. |
+| `src/apps/4_trainer/` (fine-tuning pipelines) | `@trainer-maestro` | Manage training jobs, GPU orchestration and experiment tracking. Contains `logs/` and `tests/` directories. |
+| `src/apps/5_web_frontend/` (Reflex UI) | `@frontend-visionary` | Build Reflex components, pages and API clients for end users. Contains `logs/` (e.g., `frontend_secure.log`) and `tests/` directories. |
+| `src/apps/6_web_backoffice/` (Reflex UI) | `@frontend-visionary` | Build Reflex components, pages and API clients for administrative users. Contains `logs/` and `tests/` directories. |
+| `src/apps/7_service_frontend/` (service frontend) | `@frontend-visionary` | Build service-specific frontend components and interfaces. Contains `logs/` and `tests/` directories. |
+| `src/apps/8_service_backend/` (service backend) | `@backend-conductor` | Implement service-specific backend logic and APIs. Contains `logs/` and `tests/` directories. |
 
 ## Infrastructure & Root
 
@@ -75,6 +79,23 @@ assistance.
 | `main.py` (root entry point) | `@backend-conductor` | Main application entry point and orchestration. |
 | `src/main.py` (src entry point) | `@backend-conductor` | Source-level entry point for services. |
 | `protected_values.py` (sensitive config) | `@security-sentinel` | Manage sensitive configuration values and secrets. |
+
+## Standard Directory Structure
+
+All numbered application folders in `src/apps/` (e.g., `3_backend/`, `4_trainer/`, `5_web_frontend/`, `6_web_backoffice/`, `7_service_frontend/`, `8_service_backend/`) must include:
+
+- **`logs/`**: Application-specific log files directory
+  - Contains log files for security events, errors, and application-specific logging
+  - Example: `5_web_frontend/logs/frontend_secure.log`
+  - Includes `.gitkeep` file to ensure the directory is tracked in git (when empty)
+
+- **`tests/`**: Application-specific test directory
+  - Contains unit tests and integration tests for the application
+  - Must include `__init__.py` to make it a Python package
+  - Uses `pytest` as the testing framework
+  - Example: `5_web_frontend/tests/test_user_creation.py`
+
+**Note:** When creating new numbered application folders, ensure both `logs/` and `tests/` directories are created with appropriate initialization files.
 
 ## Coding Standards & Language Rules
 
