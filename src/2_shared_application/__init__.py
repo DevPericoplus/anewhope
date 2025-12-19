@@ -1,0 +1,2 @@
+"""Módulo de aplicación compartida"""
+

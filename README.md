@@ -6,7 +6,6 @@ Proyecto para gestionar infraestructura, aplicaciones y flujos de personalizaci�
 
 - `info.txt`: guía rápida para crear y activar el entorno virtual, además de notas de operación.
 - `protected_values.py`: variables sensibles requeridas por los procesos de cifrado.
-- `security/`: librería de utilidades criptográficas y secretos (`custom_cipher_lib.py`, `basesecuritypass.json`).
 - `src/`: monorepo con organización hexagonal y dominios compartidos.
   - `main.py`: punto de entrada central para orquestar servicios.
   - `config/`: configuración compartida.
@@ -17,6 +16,7 @@ Proyecto para gestionar infraestructura, aplicaciones y flujos de personalizaci�
   - `2_shared_application/`: contratos y DTOs compartidos.
     - `interfaces/`
     - `dtos/`
+    - `security/`: librería de utilidades criptográficas y secretos (`custom_cipher_lib.py`, `basesecuritypass.json`).
   - `apps/`: implementaciones específicas por servicio.
     - `3_backend/`: API REST principal (gestión y orquestación).
       - `1_domain/`

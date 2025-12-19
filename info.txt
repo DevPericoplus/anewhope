@@ -18,7 +18,7 @@ Pending
 
 Remember 
 - include .venv in the .gitignore file and
-    security/basesecuritypass.json
+    src/2_shared_application/security/basesecuritypass.json
 - Frezze the environment 
     pip freeze > requirements.txt
 - Install dependencies
@@ -57,3 +57,6 @@ cd /Users/administrator/develop/anewhope
 source .venv314/bin/activate
 cd src/apps/5_web_frontend
 reflex run
+
+Activacion visual editor
+Toggle Visual Editor

@@ -208,7 +208,7 @@ marimo/_lsp/
 __marimo__/
 
 # anewhope project
-security/basesecuritypass
+src/2_shared_application/security/basesecuritypass
 protected_values.py
 
 .venv/

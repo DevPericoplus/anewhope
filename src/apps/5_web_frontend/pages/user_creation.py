@@ -82,6 +82,7 @@ class UserCreationState(rx.State):
     message_type: str = ""  # "success" o "error"
     show_org_error_modal: bool = False  # Controla si se muestra el modal de error de organización
     show_org_creation_modal: bool = False  # Controla si se muestra el modal de creación de organización
+    show_password_validation_modal: bool = False  # Controla si se muestra el modal de validación de contraseña
     
     # Campos para el formulario de creación de organización
     org_email: str = ""
@@ -320,6 +321,53 @@ class UserCreationState(rx.State):
     
     def set_user_password(self, value: str):
         self.user_password = value
+    
+    def password_validation(self) -> bool:
+        """
+        Valida que la contraseña cumple con las siguientes reglas:
+        - Longitud mínima de 8 caracteres
+        - Al menos un carácter en mayúsculas
+        - Al menos un carácter numérico
+        - Al menos uno de los caracteres especiales: @#|.$%&
+        
+        Returns:
+            bool: True si la contraseña cumple todas las reglas, False en caso contrario
+        """
+        password = self.user_password
+        
+        # Validar longitud mínima
+        if len(password) < 8:
+            return False
+        
+        # Validar al menos una mayúscula
+        if not any(c.isupper() for c in password):
+            return False
+        
+        # Validar al menos un número
+        if not any(c.isdigit() for c in password):
+            return False
+        
+        # Validar al menos un carácter especial
+        special_chars = "@#|.$%&"
+        if not any(c in special_chars for c in password):
+            return False
+        
+        return True
+    
+    def on_password_blur(self):
+        """Se ejecuta cuando se pierde el foco en el campo de contraseña."""
+        # Solo validar si hay contenido
+        if self.user_password and self.user_password.strip():
+            if not self.password_validation():
+                self.show_password_validation_modal = True
+        else:
+            # Si está vacío, cerrar el modal si está abierto
+            self.show_password_validation_modal = False
+    
+    def close_password_validation_modal(self):
+        """Cierra el modal de validación de contraseña y devuelve el foco al input de contraseña."""
+        self.show_password_validation_modal = False
+        # El foco se devolverá mediante JavaScript en el componente del botón
     
     def set_user_password_confirm(self, value: str):
         self.user_password_confirm = value
@@ -713,6 +761,91 @@ def organization_creation_modal() -> rx.Component:
     )
 
 
+def password_validation_modal() -> rx.Component:
+    """Modal centrado para mostrar las reglas de validación de contraseña."""
+    return rx.cond(
+        UserCreationState.show_password_validation_modal,
+        rx.fragment(
+            # Overlay oscuro de fondo
+            rx.box(
+                width="100vw",
+                height="100vh",
+                background_color="rgba(0, 0, 0, 0.7)",
+                position="fixed",
+                top="0",
+                left="0",
+                z_index="1000",
+            ),
+            # Modal centrado
+            rx.box(
+                rx.vstack(
+                    rx.heading(
+                        "Requisitos de Contraseña",
+                        size="6",
+                        color=COLORS["foreground"],
+                        margin_bottom="1em",
+                    ),
+                    rx.text(
+                        "La contraseña debe cumplir las siguientes reglas:",
+                        color=COLORS["muted_foreground"],
+                        font_size="1em",
+                        margin_bottom="1em",
+                    ),
+                    rx.vstack(
+                        rx.text(
+                            "• Longitud mínima de 8 caracteres",
+                            color=COLORS["foreground"],
+                            font_size="0.95em",
+                        ),
+                        rx.text(
+                            "• Al menos un carácter en mayúsculas",
+                            color=COLORS["foreground"],
+                            font_size="0.95em",
+                        ),
+                        rx.text(
+                            "• Al menos un carácter numérico",
+                            color=COLORS["foreground"],
+                            font_size="0.95em",
+                        ),
+                        rx.text(
+                            "• Al menos uno de los siguientes caracteres especiales: @ # | . $ % &",
+                            color=COLORS["foreground"],
+                            font_size="0.95em",
+                        ),
+                        spacing="1",
+                        align_items="flex-start",
+                        margin_bottom="2em",
+                    ),
+                    rx.button(
+                        "Entendido",
+                        on_click=UserCreationState.close_password_validation_modal,
+                        background_color=COLORS["primary"],
+                        color=COLORS["background"],
+                        font_weight="bold",
+                        padding="0.75em 2em",
+                        border_radius="0.5em",
+                        width="200px",
+                    ),
+                    spacing="2",
+                    align_items="center",
+                    padding="2em",
+                ),
+                background_color=COLORS["card"],
+                border=f"2px solid {COLORS['border']}",
+                border_radius="1em",
+                box_shadow="0 10px 40px rgba(0, 0, 0, 0.5)",
+                position="fixed",
+                top="50%",
+                left="50%",
+                transform="translate(-50%, -50%)",
+                z_index="1001",
+                min_width="400px",
+                max_width="600px",
+            ),
+        ),
+    )
+
+
 def user_creation_page() -> rx.Component:
     """Página de creación de usuario."""
     # Ejecutar secure_access al cargar la página
@@ -722,6 +855,8 @@ def user_creation_page() -> rx.Component:
         organization_error_modal(),
         # Modal de creación de organización (si está activo)
         organization_creation_modal(),
+        # Modal de validación de contraseña (si está activo)
+        password_validation_modal(),
         # Header
         rx.hstack(
             rx.heading("Crear Nuevo Usuario", size="6", color=COLORS["foreground"]),
@@ -777,7 +912,9 @@ def user_creation_page() -> rx.Component:
                             rx.input(
                                 placeholder="Mínimo 8 caracteres",
                                 type_="password",
+                                id="user_password_input",
                                 on_change=UserCreationState.set_user_password,
+                                on_blur=UserCreationState.on_password_blur,
                                 value=UserCreationState.user_password,
                                 background_color=COLORS["input"],
                                 border_color=COLORS["border"],
@@ -1139,6 +1276,32 @@ def user_creation_page() -> rx.Component:
             justify_content="center",
             padding="2em",
             width="100%",
+        ),
+        # Script para devolver el foco al input de contraseña cuando se cierra el modal
+        rx.script(
+            """
+            // Observar cambios en el estado del modal y devolver el foco cuando se cierre
+            let previousModalState = false;
+            const checkModalState = () => {
+                // El estado se actualiza en el servidor, así que usamos un pequeño delay
+                setTimeout(() => {
+                    const input = document.getElementById('user_password_input');
+                    if (input) {
+                        input.focus();
+                    }
+                }, 150);
+            };
+            // Ejecutar el check periódicamente cuando el modal está visible
+            setInterval(() => {
+                const modal = document.querySelector('[data-modal="password_validation"]');
+                if (modal && modal.style.display !== 'none' && !previousModalState) {
+                    previousModalState = true;
+                } else if ((!modal || modal.style.display === 'none') && previousModalState) {
+                    previousModalState = false;
+                    checkModalState();
+                }
+            }, 100);
+            """,
         ),
         background_color=COLORS["background"],
         width="100%",
