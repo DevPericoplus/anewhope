@@ -1,2 +1,58 @@
-[]
-
+[
+  {
+    "user_id": 1,
+    "organization_id": 1,
+    "identity_type_id": 1,
+    "user_name": "adminone",
+    "user_password": "T100@T100.go",
+    "user_email": "adminone@myllm.ai",
+    "user_mobile": "+341234567",
+    "user_otp": "3296",
+    "active": true,
+    "blocked": false,
+    "contact_info": {
+      "first_name": "admin",
+      "sur_name": "one internal",
+      "country": "España",
+      "state": "Madrid",
+      "zip_code": "28045",
+      "address": "c/ base 15"
+    },
+    "billing_info": {
+      "first_name": "worker",
+      "sur_name": "admin one",
+      "country": "españa",
+      "state": "Barcelona",
+      "zip_code": "45087",
+      "address": "Aveinguda diagonal 18"
+    }
+  },
+  {
+    "user_id": 2,
+    "organization_id": 1,
+    "identity_type_id": 1,
+    "user_name": "admintwo",
+    "user_password": "T100@T100.quen",
+    "user_email": "admintwo@myllm.ai",
+    "user_mobile": "+341234569",
+    "user_otp": "3296",
+    "active": true,
+    "blocked": false,
+    "contact_info": {
+      "first_name": "admintwo",
+      "sur_name": "one internal",
+      "country": "España",
+      "state": "Vigo",
+      "zip_code": "280499",
+      "address": "c/ segunda base 45"
+    },
+    "billing_info": {
+      "first_name": "admintwo",
+      "sur_name": "one internal",
+      "country": "España",
+      "state": "Vigo",
+      "zip_code": "280499",
+      "address": "c/ segunda base 45"
+    }
+  }
+]

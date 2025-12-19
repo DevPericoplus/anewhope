@@ -1,12 +1,21 @@
 import reflex as rx
-from typing import Optional
+from typing import Optional, Any
 import sys
 import random
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Agregar el path para importar módulos del dominio
 domain_entities_path = Path(__file__).parent.parent.parent.parent / "1_shared_domain" / "entities"
-sys.path.insert(0, str(domain_entities_path))
+domain_entities_parent = domain_entities_path.parent
+
+# Agregar tanto el directorio de entities como su padre al path
+if str(domain_entities_path) not in sys.path:
+    sys.path.insert(0, str(domain_entities_path))
+if str(domain_entities_parent) not in sys.path:
+    sys.path.insert(0, str(domain_entities_parent))
 
 # Intentar importar las funciones de validación de organización
 try:
@@ -51,35 +60,203 @@ except Exception:
     get_user_by_mobile_exist = None
 
 # Intentar importar las clases de dominio (User, ContactInfo, UserExtended)
+User = None
+ContactInfo = None
+UserExtended = None
+
 try:
     import importlib.util
     domain_models_path = domain_entities_path / "domain_models.py"
-    if domain_models_path.exists():
-        spec = importlib.util.spec_from_file_location("domain_models", domain_models_path)
-        if spec and spec.loader:
-            domain_models_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(domain_models_module)
-            User = domain_models_module.User
-            ContactInfo = domain_models_module.ContactInfo
-            UserExtended = domain_models_module.UserExtended
-        else:
-            User = None
-            ContactInfo = None
-            UserExtended = None
+    
+    if not domain_models_path.exists():
+        print(f"ERROR: El archivo domain_models.py no existe en: {domain_models_path}")
+        logger.warning(f"El archivo domain_models.py no existe en: {domain_models_path}")
     else:
-        User = None
-        ContactInfo = None
-        UserExtended = None
-except Exception:
+        print(f"INFO: Cargando domain_models desde: {domain_models_path}")
+        logger.debug(f"Intentando cargar domain_models desde: {domain_models_path}")
+        
+        # Intentar importación directa primero (más simple)
+        try:
+            # Intentar importar directamente si el path está configurado
+            import importlib
+            domain_models_module = importlib.import_module("entities.domain_models")
+            print("INFO: Importación directa exitosa")
+        except ModuleNotFoundError as import_error:
+            print(f"INFO: Importación directa falló, usando importlib.util: {import_error}")
+            # Si falla, usar importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "domain_models", 
+                str(domain_models_path),
+                submodule_search_locations=[str(domain_entities_path)]
+            )
+            if spec is None:
+                error_msg = "No se pudo crear el spec para domain_models"
+                print(f"ERROR: {error_msg}")
+                logger.error(error_msg)
+                raise ImportError(error_msg)
+            elif spec.loader is None:
+                error_msg = "El loader del spec es None para domain_models"
+                print(f"ERROR: {error_msg}")
+                logger.error(error_msg)
+                raise ImportError(error_msg)
+            else:
+                domain_models_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(domain_models_module)
+                print("INFO: Módulo cargado con importlib.util")
+        
+        # Verificar que las clases existan en el módulo
+        if hasattr(domain_models_module, "User"):
+            User = domain_models_module.User
+            print("INFO: Clase User cargada exitosamente")
+            logger.debug("Clase User cargada exitosamente")
+        else:
+            error_msg = "La clase User no se encuentra en domain_models"
+            print(f"ERROR: {error_msg}")
+            logger.error(error_msg)
+            print(f"DEBUG: Atributos disponibles en el módulo: {dir(domain_models_module)}")
+        
+        if hasattr(domain_models_module, "ContactInfo"):
+            ContactInfo = domain_models_module.ContactInfo
+            print("INFO: Clase ContactInfo cargada exitosamente")
+            logger.debug("Clase ContactInfo cargada exitosamente")
+        else:
+            error_msg = "La clase ContactInfo no se encuentra en domain_models"
+            print(f"ERROR: {error_msg}")
+            logger.error(error_msg)
+        
+        if hasattr(domain_models_module, "UserExtended"):
+            UserExtended = domain_models_module.UserExtended
+            print("INFO: Clase UserExtended cargada exitosamente")
+            logger.debug("Clase UserExtended cargada exitosamente")
+        else:
+            error_msg = "La clase UserExtended no se encuentra en domain_models"
+            print(f"ERROR: {error_msg}")
+            logger.error(error_msg)
+                
+except Exception as e:
+    error_msg = f"Error al importar clases de dominio: {e}"
+    print(f"ERROR: {error_msg}")
+    print(f"ERROR: Traceback: {type(e).__name__}: {e}")
+    import traceback
+    traceback.print_exc()
+    logger.error(error_msg, exc_info=True)
     User = None
     ContactInfo = None
     UserExtended = None
 
 # Importar el adaptador
+save_user_to_json = None
 try:
-    from ..adapters.api_client import save_user_to_json
-except Exception:
+    import importlib.util
+    # Ruta al adaptador
+    current_file_path = Path(__file__)
+    adapter_path = current_file_path.parent.parent / "adapters" / "api_client.py"
+    
+    if not adapter_path.exists():
+        print(f"ERROR: El archivo api_client.py no existe en: {adapter_path}")
+        logger.warning(f"El archivo api_client.py no existe en: {adapter_path}")
+    else:
+        print(f"INFO: Cargando adaptador desde: {adapter_path}")
+        logger.debug(f"Intentando cargar adaptador desde: {adapter_path}")
+        
+        # Agregar el directorio de adapters al path si no está
+        adapters_dir = str(adapter_path.parent)
+        if adapters_dir not in sys.path:
+            sys.path.insert(0, adapters_dir)
+        
+        # Usar importlib.util directamente (los módulos con números no se pueden importar directamente)
+        spec = importlib.util.spec_from_file_location(
+            "api_client",
+            str(adapter_path),
+            submodule_search_locations=[adapters_dir]
+        )
+        if spec is None:
+            error_msg = "No se pudo crear el spec para api_client"
+            print(f"ERROR: {error_msg}")
+            logger.error(error_msg)
+            raise ImportError(error_msg)
+        elif spec.loader is None:
+            error_msg = "El loader del spec es None para api_client"
+            print(f"ERROR: {error_msg}")
+            logger.error(error_msg)
+            raise ImportError(error_msg)
+        else:
+            api_client_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(api_client_module)
+            print("INFO: Adaptador cargado con importlib.util")
+        
+        # Verificar que la función exista en el módulo
+        if hasattr(api_client_module, "save_user_to_json"):
+            save_user_to_json = api_client_module.save_user_to_json
+            print("INFO: Función save_user_to_json cargada exitosamente")
+            logger.debug("Función save_user_to_json cargada exitosamente")
+        else:
+            error_msg = "La función save_user_to_json no se encuentra en api_client"
+            print(f"ERROR: {error_msg}")
+            logger.error(error_msg)
+            print(f"DEBUG: Atributos disponibles en el módulo: {dir(api_client_module)}")
+                
+except Exception as e:
+    error_msg = f"Error al importar adaptador: {e}"
+    print(f"ERROR: {error_msg}")
+    print(f"ERROR: Traceback: {type(e).__name__}: {e}")
+    import traceback
+    traceback.print_exc()
+    logger.error(error_msg, exc_info=True)
     save_user_to_json = None
+
+# Cargar módulo de seguridad común usando importlib (módulo con nombre que empieza con número)
+_common_security_module = None
+_log_security_action_function = None
+
+try:
+    import importlib.util
+    common_security_path = (
+        Path(__file__).parent.parent.parent.parent
+        / "2_shared_application"
+        / "security"
+        / "common_security.py"
+    )
+    if common_security_path.exists():
+        spec = importlib.util.spec_from_file_location("common_security", common_security_path)
+        if spec and spec.loader:
+            _common_security_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(_common_security_module)
+            _log_security_action_function = getattr(_common_security_module, "log_security_action", None)
+            if _log_security_action_function:
+                logger.info("Módulo common_security cargado exitosamente con log_security_action")
+            else:
+                logger.warning("Módulo common_security cargado pero log_security_action no encontrado")
+except Exception as e:
+    logger.error(f"Error al cargar módulo common_security: {e}")
+
+# Ruta del archivo de log de seguridad para esta aplicación
+_SECURITY_LOG_PATH = Path(__file__).parent.parent / "logs" / "frontend_secure.log"
+
+# Función para registrar acciones de seguridad (será llamada desde el endpoint API)
+def _register_security_action(action: str, entity_id: Optional[int], request: Any) -> bool:
+    """
+    Función auxiliar para registrar acciones de seguridad.
+    Será llamada desde el endpoint API que se creará en web_frontend.py.
+    
+    Args:
+        action: Descripción de la acción realizada.
+        entity_id: Identificador opcional de la entidad relacionada.
+        request: Objeto de solicitud HTTP (puede ser None).
+    
+    Returns:
+        True si el log se escribió exitosamente, False en caso contrario.
+    """
+    if _log_security_action_function:
+        return _log_security_action_function(
+            request=request,
+            action=action,
+            entity_id=entity_id,
+            log_file_path=_SECURITY_LOG_PATH,
+        )
+    else:
+        logger.error("log_security_action_function no está disponible")
+        return False
 
 # Importar los colores de la página principal
 COLORS = {
@@ -147,7 +324,7 @@ class UserCreationState(rx.State):
     org_country: str = ""
     org_state: str = ""
     
-    # Objeto UserExtended creado en memoria
+    # Diccionario con los datos del usuario creado (serializable para Reflex)
     created_user: Optional[dict] = None
     
     def secure_access(self):
@@ -209,6 +386,52 @@ class UserCreationState(rx.State):
         if self.from_page != "main":
             # Redirigir a la página principal si se accede directamente por URL
             return rx.redirect("/")
+    
+    def log_user_creation_security(self, user_id: int):
+        """
+        Registra la creación del usuario en el log de seguridad llamando al endpoint API.
+        
+        Args:
+            user_id: Identificador del usuario creado.
+        """
+        try:
+            import json
+            # Llamar al endpoint API que tiene acceso al request HTTP
+            # El endpoint se ejecutará en el servidor con acceso al request real
+            url = "/api/log_security_action"
+            payload = {
+                "action": "Created user",
+                "entity_id": user_id,
+            }
+            
+            # En Reflex, hacemos una petición HTTP al endpoint API usando rx.call_script
+            try:
+                rx.call_script(
+                    f"""
+                    fetch('{url}', {{
+                        method: 'POST',
+                        headers: {{'Content-Type': 'application/json'}},
+                        body: JSON.stringify({json.dumps(payload)})
+                    }})
+                    .then(response => response.json())
+                    .then(data => {{
+                        if (data.success) {{
+                            console.log('Log de seguridad registrado exitosamente');
+                        }} else {{
+                            console.error('Error en log de seguridad:', data.error);
+                        }}
+                    }})
+                    .catch(error => console.error('Error al llamar endpoint de log:', error));
+                    """
+                )
+            except Exception as e:
+                # Si no se puede usar call_script, registrar sin IP/user agent usando la función directamente
+                logger.warning(f"No se pudo llamar al endpoint API: {e}")
+                _register_security_action("Created user", user_id, None)
+        except Exception as e:
+            logger.error(f"Error al registrar log de seguridad: {e}")
+            # Fallback: intentar registrar sin request
+            _register_security_action("Created user", user_id, None)
     
     def on_mount(self):
         """Se ejecuta automáticamente cuando se monta el componente."""
@@ -701,9 +924,23 @@ class UserCreationState(rx.State):
                 
                 # Guardar el usuario usando el adaptador
                 if save_user_to_json(user_extended):
-                    self.created_user = user_extended
+                    # Convertir UserExtended a diccionario para almacenarlo en el estado (serializable)
+                    self.created_user = {
+                        "user_id": user_extended.id,
+                        "organization_id": user_extended.id_org,
+                        "identity_type_id": user_extended.id_type,
+                        "user_name": user_extended.user_name,
+                        "user_email": user_extended.user_email,
+                        "user_mobile": user_extended.user_mobile,
+                        "active": user_extended.active,
+                        "blocked": user_extended.blocked,
+                    }
                     self.message = f"Usuario {self.user_name} creado exitosamente (ID: {user_id_int})"
                     self.message_type = "success"
+                    
+                    # Registrar la creación del usuario en el log de seguridad
+                    # Llamamos al endpoint API que tiene acceso al request HTTP
+                    self.log_user_creation_security(user_id_int)
                 else:
                     self.message = "Error al guardar el usuario en el sistema"
                     self.message_type = "error"
@@ -1599,4 +1836,5 @@ def user_creation_page() -> rx.Component:
         min_height="100vh",
         spacing="0",
     )
+
 
