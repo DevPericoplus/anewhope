@@ -667,56 +667,96 @@ try:
     app.add_page(user_creation_page, route="/user_creation", title="Myllm - Crear Usuario")
     
     # Registrar endpoint API para logging de seguridad
-    # En Reflex 0.8.21, accedemos al objeto FastAPI subyacente
+    # En Reflex 0.8.21, intentamos registrar el endpoint usando diferentes métodos
     try:
         import logging
+        import json
+        from fastapi import Request
+        from fastapi.responses import JSONResponse
+        
         logger_api = logging.getLogger(__name__)
         
-        # Intentar acceder al objeto FastAPI subyacente de Reflex
-        # Reflex usa FastAPI internamente, podemos acceder a través de app._app o app.api
-        fastapi_app = None
-        if hasattr(app, "_app"):
-            fastapi_app = app._app
-        elif hasattr(app, "api"):
-            fastapi_app = app.api
-        elif hasattr(app, "fastapi_app"):
-            fastapi_app = app.fastapi_app
-        
-        if fastapi_app:
+        async def log_security_action_api(request: Request):
+            """
+            Endpoint API para registrar acciones de seguridad.
+            Tiene acceso al request HTTP para obtener IP y user agent.
+            """
             try:
-                from fastapi import Request
+                body = await request.json()
+                action = body.get("action", "")
+                entity_id = body.get("entity_id")
                 
-                @fastapi_app.post("/api/log_security_action")
-                async def log_security_action_api(request: Request):
-                    """
-                    Endpoint API para registrar acciones de seguridad.
-                    Tiene acceso al request HTTP para obtener IP y user agent.
-                    """
-                    try:
-                        body = await request.json()
-                        action = body.get("action", "")
-                        entity_id = body.get("entity_id")
-                        
-                        if not action:
-                            return {"success": False, "error": "action es requerido"}
-                        
-                        # Usar la función de common_security para registrar la acción
-                        success = _register_security_action(action, entity_id, request)
-                        return {"success": success}
-                    except Exception as e:
-                        logger_api.error(f"Error en endpoint log_security_action_api: {e}")
-                        return {"success": False, "error": str(e)}
+                if not action:
+                    return JSONResponse(
+                        content={"success": False, "error": "action es requerido"},
+                        status_code=400,
+                    )
                 
-                print("INFO: Endpoint API de seguridad registrado exitosamente")
-            except ImportError:
-                logger_api.warning("FastAPI no está disponible, el endpoint API no se registrará")
+                # Usar la función de common_security para registrar la acción
+                success = _register_security_action(action, entity_id, request)
+                return JSONResponse(
+                    content={"success": success},
+                    status_code=200 if success else 500,
+                )
             except Exception as e:
-                logger_api.warning(f"No se pudo registrar el endpoint API: {e}")
-        else:
-            logger_api.warning("No se pudo acceder al objeto FastAPI de Reflex")
+                logger_api.error(f"Error en endpoint log_security_action_api: {e}", exc_info=True)
+                return JSONResponse(
+                    content={"success": False, "error": str(e)},
+                    status_code=500,
+                )
+        
+        # Intentar registrar usando add_all_routes_endpoint
+        endpoint_registered = False
+        try:
+            # Verificar la firma de add_all_routes_endpoint
+            import inspect
+            sig = inspect.signature(app.add_all_routes_endpoint)
+            params = list(sig.parameters.keys())
+            
+            if len(params) >= 2:
+                # Si acepta parámetros, intentar usarlo
+                app.add_all_routes_endpoint(
+                    path="/api/log_security_action",
+                    handler=log_security_action_api,
+                    methods=["POST"],
+                )
+                endpoint_registered = True
+                logger_api.info("✅ Endpoint API registrado usando add_all_routes_endpoint")
+            else:
+                logger_api.debug("add_all_routes_endpoint no acepta los parámetros esperados")
+        except Exception as e:
+            logger_api.debug(f"add_all_routes_endpoint no funcionó: {e}")
+        
+        # Si no se registró, intentar método alternativo
+        if not endpoint_registered:
+            try:
+                # Intentar acceder al objeto FastAPI subyacente
+                fastapi_app = None
+                if hasattr(app, "_app"):
+                    fastapi_app = app._app
+                elif hasattr(app, "api"):
+                    fastapi_app = app.api
+                elif hasattr(app, "fastapi_app"):
+                    fastapi_app = app.fastapi_app
+                
+                if fastapi_app:
+                    fastapi_app.post("/api/log_security_action")(log_security_action_api)
+                    endpoint_registered = True
+                    logger_api.info("✅ Endpoint API registrado usando FastAPI directamente")
+                else:
+                    logger_api.warning("No se pudo acceder al objeto FastAPI de Reflex")
+            except Exception as e2:
+                logger_api.warning(f"Error al registrar endpoint con método alternativo: {e2}")
+        
+        if not endpoint_registered:
+            logger_api.warning("⚠️ No se pudo registrar el endpoint API. El logging funcionará sin IP/user agent.")
+    except ImportError as e:
+        import logging
+        logger_api = logging.getLogger(__name__)
+        logger_api.warning(f"FastAPI no está disponible: {e}")
     except Exception as e:
         import logging
         logger_api = logging.getLogger(__name__)
-        logger_api.warning(f"Could not register security logging API endpoint: {e}")
+        logger_api.warning(f"Error al registrar endpoint API de seguridad: {e}", exc_info=True)
 except ImportError as e:
     print(f"Warning: Could not import user_creation_page: {e}")

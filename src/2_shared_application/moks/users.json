@@ -54,5 +54,61 @@
       "zip_code": "280499",
       "address": "c/ segunda base 45"
     }
+  },
+  {
+    "user_id": 3,
+    "organization_id": 1,
+    "identity_type_id": 1,
+    "user_name": "admin3",
+    "user_password": "T100@T100.now",
+    "user_email": "admint3@yllm.ai",
+    "user_mobile": "+341234565",
+    "user_otp": "3296",
+    "active": true,
+    "blocked": false,
+    "contact_info": {
+      "first_name": "admin3",
+      "sur_name": "one internal",
+      "country": "España",
+      "state": "Vigo",
+      "zip_code": "280499",
+      "address": "c/ segunda base 45"
+    },
+    "billing_info": {
+      "first_name": "admin3",
+      "sur_name": "one internal",
+      "country": "España",
+      "state": "Vigo",
+      "zip_code": "280499",
+      "address": "c/ segunda base 45"
+    }
+  },
+  {
+    "user_id": 4,
+    "organization_id": 1,
+    "identity_type_id": 1,
+    "user_name": "admin4",
+    "user_password": "T123456789.op",
+    "user_email": "info@cuatro.com",
+    "user_mobile": "+341235689",
+    "user_otp": "9467",
+    "active": true,
+    "blocked": false,
+    "contact_info": {
+      "first_name": "Javier",
+      "sur_name": "fernandez lopez",
+      "country": "España",
+      "state": "salamanca",
+      "zip_code": "35087",
+      "address": "calle del uno para dos"
+    },
+    "billing_info": {
+      "first_name": "Javier",
+      "sur_name": "fernandez lopez",
+      "country": "España",
+      "state": "salamanca",
+      "zip_code": "35087",
+      "address": "calle del uno para dos"
+    }
   }
 ]
