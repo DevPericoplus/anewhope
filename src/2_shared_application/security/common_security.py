@@ -152,20 +152,22 @@ def log_security_action(
 
 # SMS provider https://www.infobip.com/es
 
-def get_sms_api_credentials() -> Tuple[str, str]:
+def get_sms_api_credentials() -> Tuple[str, str, str]:
     """
-    Obtiene los valores de sms_api_url y sms_api_key del archivo protected_values.py.
+    Obtiene los valores de sms_api_url, sms_api_key y sms_sender_id del archivo protected_values.py.
 
     Returns:
-        Tupla (sms_api_url, sms_api_key)
+        Tupla (sms_api_url, sms_api_key, sms_sender_id)
+        Si sms_sender_id no está definido, retorna "ServiceSMS" por defecto.
 
     Raises:
         FileNotFoundError: Si el archivo protected_values.py no existe.
-        ValueError: Si alguna de las variables no se encuentra o no es válida.
+        ValueError: Si alguna de las variables requeridas no se encuentra o no es válida.
     
     Nota:
         Este método lee y ejecuta de manera controlada las variables del archivo
         protected_values.py que debe estar en el directorio raíz del proyecto.
+        El sms_sender_id puede ser un remitente alfanumérico o un número de teléfono.
     """
     # Ruta relativa (se asume que el archivo está en el root del repo/proyecto)
     protected_values_path = Path(__file__).parent.parent.parent.parent / "protected_values.py"
@@ -180,11 +182,84 @@ def get_sms_api_credentials() -> Tuple[str, str]:
 
     sms_api_url = namespace.get("sms_api_url")
     sms_api_key = namespace.get("sms_api_key")
+    sms_sender_id = namespace.get("sms_sender_id", "ServiceSMS")  # Valor por defecto
 
     if not sms_api_url or not sms_api_key:
         raise ValueError("sms_api_url o sms_api_key no se encontraron en protected_values.py")
 
-    return sms_api_url, sms_api_key
+    return sms_api_url, sms_api_key, sms_sender_id
+
+
+def send_sms_details_to_log(
+    otp: str,
+    phone_number: str,
+    success: bool,
+    response_data: Optional[dict] = None,
+    error_message: Optional[str] = None,
+) -> bool:
+    """
+    Registra los detalles del envío de un SMS en el archivo de log de seguridad.
+    
+    Escribe en el archivo frontend_secure.log con el formato CSV:
+    fecha,ip,webbrowser,action,entity_id
+    
+    Args:
+        otp: Código OTP que se intentó enviar.
+        phone_number: Número de teléfono destinatario.
+        success: True si el SMS se envió exitosamente, False en caso contrario.
+        response_data: Datos de respuesta de la API (opcional, solo si success=True).
+        error_message: Mensaje de error (opcional, solo si success=False).
+    
+    Returns:
+        True si el log se escribió exitosamente, False en caso contrario.
+    
+    Nota:
+        - El archivo de log se encuentra en: src/apps/5_web_frontend/logs/frontend_secure.log
+        - El formato de fecha es: YYYY-MM-DD-HH:MM (igual que otros logs de seguridad)
+        - La acción registrada será "SMS enviado"
+        - El entity_id incluirá el número de teléfono y el OTP
+    """
+    # Ruta al archivo de log del frontend
+    project_root = Path(__file__).parent.parent.parent.parent
+    log_file_path = project_root / "src" / "apps" / "5_web_frontend" / "logs" / "frontend_secure.log"
+    
+    # Obtener fecha en el formato correcto (YYYY-MM-DD-HH:MM)
+    now = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M")
+    
+    # Construir entity_id con información relevante
+    # Incluimos el número de teléfono y el OTP para trazabilidad
+    entity_id = f"{phone_number}|OTP:{otp}"
+    if success and response_data:
+        # Incluir información de la respuesta de la API si está disponible
+        try:
+            # Intentar extraer messageId o status de la respuesta
+            if isinstance(response_data, dict):
+                message_id = response_data.get("messages", [{}])[0].get("messageId", "")
+                if message_id:
+                    entity_id += f"|MsgID:{message_id}"
+        except (KeyError, IndexError, TypeError):
+            pass  # Si no se puede extraer, continuar sin esa información
+    elif not success and error_message:
+        entity_id += f"|Error:{error_message[:50]}"  # Limitar longitud del error
+    
+    # IP y webbrowser vacíos (no hay request HTTP en este contexto)
+    ip = ""
+    webbrowser = ""
+    action = "SMS enviado"
+    
+    # Construir línea de log en formato CSV
+    log_line = f"{now},{ip},{webbrowser},{action},{entity_id}\n"
+    
+    # Escribir registro (crear archivo y directorio si no existen)
+    try:
+        log_file_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_file_path.open("a", encoding="utf-8") as log_file:
+            log_file.write(log_line)
+        logger.debug(f"Detalles de SMS registrados en log: {phone_number} - OTP: {otp} - Success: {success}")
+        return True
+    except Exception as e:
+        logger.error(f"Error al escribir en el log de SMS {log_file_path}: {e}")
+        return False
 
 
 def send_message_by_sms(otp: str, phone_number: str) -> bool:
@@ -213,11 +288,13 @@ def send_message_by_sms(otp: str, phone_number: str) -> bool:
     # Verificar que requests esté disponible
     if requests is None:
         logger.error("El módulo 'requests' no está instalado. Instálalo con: pip install requests")
+        send_sms_details_to_log(otp, phone_number or "N/A", success=False, error_message="requests module not installed")
         return False
     
     # Validar que el OTP tenga 4 dígitos
     if not otp or len(otp) != 4 or not otp.isdigit():
         logger.error(f"El OTP debe tener exactamente 4 dígitos. OTP recibido: {otp}")
+        send_sms_details_to_log(otp, phone_number or "N/A", success=False, error_message=f"OTP inválido: {otp}")
         return False
     
     # Validar formato del número de teléfono
@@ -226,11 +303,12 @@ def send_message_by_sms(otp: str, phone_number: str) -> bool:
             f"El número de teléfono debe estar en formato internacional (ej: +34639775978). "
             f"Recibido: {phone_number}"
         )
+        send_sms_details_to_log(otp, phone_number or "N/A", success=False, error_message=f"Número de teléfono inválido: {phone_number}")
         return False
     
     try:
         # Obtener credenciales de la API
-        sms_api_url, sms_api_key = get_sms_api_credentials()
+        sms_api_url, sms_api_key, sms_sender_id = get_sms_api_credentials()
         
         # Construir el endpoint de la API de Infobip
         # La URL base ya viene completa desde protected_values.py
@@ -247,7 +325,7 @@ def send_message_by_sms(otp: str, phone_number: str) -> bool:
         payload = {
             "messages": [
                 {
-                    "from": "ServiceSMS",  # Remitente por defecto (puede configurarse)
+                    "from": sms_sender_id,  # Remitente configurable desde protected_values.py
                     "destinations": [
                         {"to": phone_number}
                     ],
@@ -257,7 +335,7 @@ def send_message_by_sms(otp: str, phone_number: str) -> bool:
         }
         
         # Enviar la solicitud POST
-        logger.info(f"Enviando SMS con OTP {otp} al número {phone_number}")
+        logger.info(f"Enviando SMS con OTP {otp} al número {phone_number} desde remitente '{sms_sender_id}'")
         response = requests.post(
             endpoint,
             headers=headers,
@@ -267,27 +345,60 @@ def send_message_by_sms(otp: str, phone_number: str) -> bool:
         
         # Verificar la respuesta
         if response.status_code == 200:
-            logger.info(f"SMS enviado exitosamente al número {phone_number}")
             response_data = response.json()
-            logger.debug(f"Respuesta de la API: {response_data}")
+            logger.info(f"SMS enviado exitosamente al número {phone_number}")
+            logger.debug(f"Respuesta completa de la API: {json.dumps(response_data, indent=2)}")
+            
+            # Verificar el estado de entrega en la respuesta
+            # La API de Infobip puede retornar 200 pero con información sobre el estado de entrega
+            try:
+                if "messages" in response_data:
+                    for msg in response_data.get("messages", []):
+                        status = msg.get("status", {})
+                        status_name = status.get("name", "UNKNOWN")
+                        status_description = status.get("description", "")
+                        message_id = msg.get("messageId", "")
+                        
+                        logger.info(
+                            f"Estado del mensaje (ID: {message_id}): {status_name} - {status_description}"
+                        )
+                        
+                        # Si el estado no es "PENDING_ACCEPTED" o similar, puede haber un problema
+                        if status_name not in ["PENDING_ACCEPTED", "PENDING", "ACCEPTED"]:
+                            logger.warning(
+                                f"⚠️ El mensaje puede no haberse enviado correctamente. "
+                                f"Estado: {status_name} - {status_description}"
+                            )
+            except Exception as e:
+                logger.debug(f"No se pudo analizar el estado de entrega: {e}")
+            
+            # Registrar en log de seguridad
+            send_sms_details_to_log(otp, phone_number, success=True, response_data=response_data)
             return True
         else:
+            error_msg = f"Status:{response.status_code}|{response.text[:100]}"
             logger.error(
                 f"Error al enviar SMS. Código de estado: {response.status_code}, "
                 f"Respuesta: {response.text}"
             )
+            # Registrar en log de seguridad
+            send_sms_details_to_log(otp, phone_number, success=False, error_message=error_msg)
             return False
             
     except FileNotFoundError as e:
         logger.error(f"Error al obtener credenciales: {e}")
+        send_sms_details_to_log(otp, phone_number, success=False, error_message=f"FileNotFoundError: {str(e)}")
         return False
     except ValueError as e:
         logger.error(f"Error de validación de credenciales: {e}")
+        send_sms_details_to_log(otp, phone_number, success=False, error_message=f"ValueError: {str(e)}")
         return False
     except requests.RequestException as e:
         logger.error(f"Error de comunicación con la API de Infobip: {e}")
+        send_sms_details_to_log(otp, phone_number, success=False, error_message=f"RequestException: {str(e)}")
         return False
     except Exception as e:
         logger.error(f"Error inesperado al enviar SMS: {e}", exc_info=True)
+        send_sms_details_to_log(otp, phone_number, success=False, error_message=f"Exception: {str(e)}")
         return False
 

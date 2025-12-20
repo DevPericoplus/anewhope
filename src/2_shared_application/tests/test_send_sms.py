@@ -34,11 +34,20 @@ def test_send_sms_with_otp():
     phone_number = "+34639775978"
     otp_code = "6969"
     
+    # Obtener información de configuración
+    try:
+        sms_api_url, _, sms_sender_id = common_security.get_sms_api_credentials()
+    except Exception as e:
+        print(f"❌ Error al obtener credenciales: {e}")
+        raise
+    
     print(f"\n{'='*60}")
     print("TEST DE ENVÍO DE SMS CON INFOBIP")
     print(f"{'='*60}")
     print(f"Número de teléfono: {phone_number}")
     print(f"Código OTP: {otp_code}")
+    print(f"Remitente (Sender ID): {sms_sender_id}")
+    print(f"API URL: {sms_api_url}")
     print(f"{'='*60}\n")
     
     # Intentar enviar el SMS
@@ -48,6 +57,7 @@ def test_send_sms_with_otp():
         if result:
             print("✅ SMS enviado exitosamente")
             print(f"   El mensaje con OTP '{otp_code}' fue enviado a {phone_number}")
+            print(f"   Remitente usado: '{sms_sender_id}'")
         else:
             print("❌ Error al enviar el SMS")
             print("   Revisa los logs para más detalles")
