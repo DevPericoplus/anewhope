@@ -2,7 +2,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,73 @@ def get_user_by_mobile_exist(user_mobile: str) -> bool:
         if normalized_mobile == normalized_input:
             return True
     return False
+
+
+def get_user_by_email(user_email: str) -> Optional[dict[str, Any]]:
+    """
+    Obtiene un usuario por su email.
+
+    La comparación ignora mayúsculas/minúsculas.
+
+    Args:
+        user_email: Email del usuario a buscar.
+
+    Returns:
+        Diccionario con los datos del usuario si existe, None en caso contrario.
+    """
+    users = _load_users()
+    if not users:
+        return None
+
+    normalized_input = user_email.strip().lower()
+    for user in users:
+        user_email_value = user.get("user_email", "")
+        if user_email_value.strip().lower() == normalized_input:
+            return user
+    return None
+
+
+def update_user_password_and_otp(user_email: str, new_password: str, new_otp: str) -> bool:
+    """
+    Actualiza la contraseña y el OTP de un usuario existente.
+
+    Args:
+        user_email: Email del usuario a actualizar.
+        new_password: Nueva contraseña (ya cifrada).
+        new_otp: Nuevo código OTP.
+
+    Returns:
+        True si la actualización fue exitosa, False en caso contrario.
+    """
+    data_file = _get_users_file_path()
+    users = _load_users()
+    if not users:
+        logger.warning("No hay usuarios en el archivo")
+        return False
+
+    normalized_input = user_email.strip().lower()
+    user_found = False
+    
+    for user in users:
+        user_email_value = user.get("user_email", "")
+        if user_email_value.strip().lower() == normalized_input:
+            user["user_password"] = new_password
+            user["user_otp"] = new_otp
+            user_found = True
+            logger.info(f"Usuario {user_email} actualizado: contraseña y OTP modificados")
+            break
+    
+    if not user_found:
+        logger.warning(f"Usuario con email {user_email} no encontrado")
+        return False
+    
+    try:
+        with open(data_file, "w", encoding="utf-8") as f:
+            json.dump(users, f, indent=2, ensure_ascii=False)
+        return True
+    except (OSError, json.JSONDecodeError) as e:
+        logger.error(f"Error al guardar usuario actualizado en {data_file}: {e}")
+        return False
 
 
 def create_user(user_data: dict[str, Any]) -> bool:

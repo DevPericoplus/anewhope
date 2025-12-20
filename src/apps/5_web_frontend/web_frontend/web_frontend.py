@@ -126,7 +126,7 @@ def login_panel() -> rx.Component:
                     href="/user_creation?from=main",
                     font_size="0.9em",
                 ),
-                rx.link("Recordar contraseña", color=COLORS["primary"], href="#", font_size="0.9em"),
+                rx.link("Recordar contraseña", color=COLORS["primary"], href="/change_password?from=main", font_size="0.9em"),
                 spacing="1",
             ),
             spacing="2",
@@ -148,7 +148,7 @@ def sidebar_menu() -> rx.Component:
                 *[
                     rx.button(
                         item.title(),
-                        on_click=lambda i=item: State.set_user_menu(i),
+                        on_click=lambda _, i=item: State.set_user_menu(i),
                         background_color=rx.cond(
                             State.user_active_menu == item,
                             COLORS["primary"],
@@ -290,7 +290,7 @@ def dashboard_tabs() -> rx.Component:
             *[
                 rx.button(
                     label,
-                    on_click=lambda t=tab_id: set_tab(t),
+                    on_click=lambda _, t=tab_id: set_tab(t),
                     background_color=rx.cond(
                         active_tab == tab_id,
                         COLORS["primary"],
@@ -662,9 +662,36 @@ frontend_dir = Path(__file__).parent.parent
 if str(frontend_dir) not in sys.path:
     sys.path.insert(0, str(frontend_dir))
 
+# Inicializar variables
+_register_security_action = None
+
 try:
     from pages.user_creation import user_creation_page, _register_security_action
     app.add_page(user_creation_page, route="/user_creation", title="Myllm - Crear Usuario")
+    print("✅ Ruta /user_creation registrada exitosamente")
+except ImportError as e:
+    print(f"⚠️ Warning: Could not import user_creation_page: {e}")
+    import traceback
+    traceback.print_exc()
+except Exception as e:
+    print(f"❌ Error al registrar ruta /user_creation: {e}")
+    import traceback
+    traceback.print_exc()
+
+try:
+    from pages.change_password import change_password_page
+    app.add_page(change_password_page, route="/change_password", title="Myllm - Recordar Contraseña")
+    print("✅ Ruta /change_password registrada exitosamente")
+except ImportError as e:
+    print(f"⚠️ Warning: Could not import change_password_page: {e}")
+    import traceback
+    traceback.print_exc()
+except Exception as e:
+    print(f"❌ Error al registrar ruta /change_password: {e}")
+    import traceback
+    traceback.print_exc()
+
+if _register_security_action:
     
     # Registrar endpoint API para logging de seguridad
     # En Reflex 0.8.21, intentamos registrar el endpoint usando diferentes métodos
@@ -693,7 +720,11 @@ try:
                     )
                 
                 # Usar la función de common_security para registrar la acción
-                success = _register_security_action(action, entity_id, request)
+                if _register_security_action:
+                    success = _register_security_action(action, entity_id, request)
+                else:
+                    success = False
+                    logger_api.warning("_register_security_action no está disponible")
                 return JSONResponse(
                     content={"success": success},
                     status_code=200 if success else 500,
@@ -769,5 +800,3 @@ try:
         import logging
         logger_api = logging.getLogger(__name__)
         logger_api.warning(f"Error al registrar endpoint API de seguridad: {e}", exc_info=True)
-except ImportError as e:
-    print(f"Warning: Could not import user_creation_page: {e}")

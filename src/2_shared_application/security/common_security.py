@@ -234,11 +234,25 @@ def send_sms_details_to_log(
         try:
             # Intentar extraer messageId o status de la respuesta
             if isinstance(response_data, dict):
-                message_id = response_data.get("messages", [{}])[0].get("messageId", "")
-                if message_id:
-                    entity_id += f"|MsgID:{message_id}"
-        except (KeyError, IndexError, TypeError):
-            pass  # Si no se puede extraer, continuar sin esa información
+                messages = response_data.get("messages", [])
+                if messages and isinstance(messages, list) and len(messages) > 0:
+                    msg = messages[0]
+                    message_id = msg.get("messageId", "")
+                    if message_id:
+                        entity_id += f"|MsgID:{message_id}"
+                    
+                    # Incluir estado del mensaje si está disponible
+                    status = msg.get("status", {})
+                    if isinstance(status, dict):
+                        status_name = status.get("name", "")
+                        status_description = status.get("description", "")
+                        if status_name:
+                            entity_id += f"|Status:{status_name}"
+                        if status_description:
+                            # Limitar longitud de la descripción
+                            entity_id += f"|Desc:{status_description[:30]}"
+        except (KeyError, IndexError, TypeError) as e:
+            logger.debug(f"No se pudo extraer información de la respuesta: {e}")
     elif not success and error_message:
         entity_id += f"|Error:{error_message[:50]}"  # Limitar longitud del error
     
@@ -347,10 +361,11 @@ def send_message_by_sms(otp: str, phone_number: str) -> bool:
         if response.status_code == 200:
             response_data = response.json()
             logger.info(f"SMS enviado exitosamente al número {phone_number}")
-            logger.debug(f"Respuesta completa de la API: {json.dumps(response_data, indent=2)}")
+            logger.info(f"Respuesta completa de la API: {json.dumps(response_data, indent=2)}")
             
             # Verificar el estado de entrega en la respuesta
             # La API de Infobip puede retornar 200 pero con información sobre el estado de entrega
+            sms_actually_sent = True
             try:
                 if "messages" in response_data:
                     for msg in response_data.get("messages", []):
@@ -364,17 +379,25 @@ def send_message_by_sms(otp: str, phone_number: str) -> bool:
                         )
                         
                         # Si el estado no es "PENDING_ACCEPTED" o similar, puede haber un problema
-                        if status_name not in ["PENDING_ACCEPTED", "PENDING", "ACCEPTED"]:
+                        # Estados comunes de Infobip: PENDING, PENDING_ACCEPTED, ACCEPTED, DELIVERED, REJECTED, etc.
+                        if status_name not in ["PENDING", "PENDING_ACCEPTED", "ACCEPTED", "DELIVERED", "DELIVERED_TO_HANDSET"]:
                             logger.warning(
                                 f"⚠️ El mensaje puede no haberse enviado correctamente. "
                                 f"Estado: {status_name} - {status_description}"
                             )
+                            # Si el estado es REJECTED o similar, registrar como error
+                            if status_name in ["REJECTED", "UNDELIVERABLE", "EXPIRED", "MESSAGE_NOT_SENT"]:
+                                logger.error(
+                                    f"❌ El SMS fue rechazado o no se pudo entregar. "
+                                    f"Estado: {status_name} - {status_description}"
+                                )
+                                sms_actually_sent = False
             except Exception as e:
                 logger.debug(f"No se pudo analizar el estado de entrega: {e}")
             
             # Registrar en log de seguridad
-            send_sms_details_to_log(otp, phone_number, success=True, response_data=response_data)
-            return True
+            send_sms_details_to_log(otp, phone_number, success=sms_actually_sent, response_data=response_data)
+            return sms_actually_sent
         else:
             error_msg = f"Status:{response.status_code}|{response.text[:100]}"
             logger.error(

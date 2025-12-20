@@ -24,7 +24,7 @@
       "country": "españa",
       "state": "Barcelona",
       "zip_code": "45087",
-      "address": "Aveinguda diagonal 18"
+      "address": "Avinguda diagonal 18"
     }
   },
   {
@@ -60,10 +60,10 @@
     "organization_id": 1,
     "identity_type_id": 1,
     "user_name": "admin3",
-    "user_password": "gAAAAABpRXkTpINr1Ue15XLtkhk4n6rwJmPrV_FIyRvhJ6FoFUw_LfA-gQi9BgkBdYZ1cXAw9wNKgP5MXI9igr8qGVIYjDW4zg==",
+    "user_password": "gAAAAABpRtiwORUZfP34f-Sfxhx8dBbo4tO5oJSllGBc69ZmWo9XCaeF71gbSXIoxPEUqICi9oTLfBW3Q30-M17p71FoyLsuwj49Rj7AvO1aphUxcpS19yc=",
     "user_email": "admint3@yllm.ai",
     "user_mobile": "+34639775978",
-    "user_otp": "3296",
+    "user_otp": "8705",
     "active": true,
     "blocked": false,
     "contact_info": {
@@ -88,10 +88,10 @@
     "organization_id": 1,
     "identity_type_id": 1,
     "user_name": "admin4",
-    "user_password": "gAAAAABpRXkTIaw2YMzwWjZpAzbM1f0uuISF3XZMu6AsYSVGLAvqOn5XgBODwG1qfx8uEEHWu1Lfo0e8-81QYbX0Xae_lOPs0Q==",
+    "user_password": "gAAAAABpRtyNgmlHIR-UZ_DwNQyAEx3LLdkLeTaK7xurmx_Et-bkTZZuVdApQsi8M3mtb0ug0cpsYT5pvh24p8uK5FmpGuiQEi0BzYTioui9j-HhjlsgqCQ=",
     "user_email": "info@cuatro.com",
     "user_mobile": "+34639775978",
-    "user_otp": "9467",
+    "user_otp": "7794",
     "active": true,
     "blocked": false,
     "contact_info": {
