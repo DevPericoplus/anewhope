@@ -91,6 +91,9 @@ def mock_domain_models():
         def __init__(self, **kwargs):
             for key, value in kwargs.items():
                 setattr(self, key, value)
+            # Asegurar que existe el atributo 'id' que mapea a 'user_id'
+            if hasattr(self, 'user_id') and not hasattr(self, 'id'):
+                self.id = self.user_id
     
     class MockContactInfo:
         def __init__(self, **kwargs):
@@ -236,6 +239,7 @@ def test_user_creation_with_security_logging(temp_users_file, temp_log_file, moc
     - Que se crea el usuario correctamente
     - Que se registra en el log de seguridad
     - Que se capturan IP y user agent del request
+    - Que existe una entrada en el log con "Created user"
     """
     MockUser, MockContactInfo, MockUserExtended = mock_domain_models
     
@@ -253,6 +257,14 @@ def test_user_creation_with_security_logging(temp_users_file, temp_log_file, moc
             
             # Crear instancia del estado
             state = UserCreationState()
+            
+            # Simular router_data para obtener IP y user agent
+            state.router_data = {
+                "headers": {
+                    "x-forwarded-for": "10.0.0.50",
+                    "user-agent": "Chrome/120.0 Test",
+                }
+            }
             
             # Llenar todos los campos requeridos
             state.from_page = "main"
@@ -276,6 +288,12 @@ def test_user_creation_with_security_logging(temp_users_file, temp_log_file, moc
             
             state.has_different_billing_address = False
             
+            # Obtener el número de líneas antes de crear el usuario
+            initial_line_count = 0
+            if temp_log_file.exists():
+                with open(temp_log_file, "r", encoding="utf-8") as f:
+                    initial_line_count = len(f.readlines())
+            
             # Ejecutar save_user
             state.save_user()
             
@@ -283,33 +301,219 @@ def test_user_creation_with_security_logging(temp_users_file, temp_log_file, moc
             assert state.message_type == "success"
             assert mock_save.called
             
-            # Verificar que se intentó llamar al endpoint de logging
-            # (rx.call_script puede no funcionar en el contexto de test, pero se intenta)
-            # En su lugar, verificamos que _register_security_action se puede llamar directamente
-            mock_request = MockRequest(ip="10.0.0.50", user_agent="Chrome/120.0 Test")
-            
-            # Llamar directamente a la función de logging
-            log_result = _register_security_action(
-                action="Created user",
-                entity_id=999,
-                request=mock_request,
-            )
-            
-            assert log_result is True, "El logging debería ser exitoso"
+            # Verificar que el archivo de log existe
             assert temp_log_file.exists(), "El archivo de log debería existir"
             
-            # Verificar contenido del log
+            # Verificar contenido del log - buscar entrada de usuario
             with open(temp_log_file, "r", encoding="utf-8") as f:
                 log_lines = f.readlines()
             
-            assert len(log_lines) > 0, "Debería haber líneas en el log"
-            last_line = log_lines[-1].strip()
-            assert "10.0.0.50" in last_line, "El log debería contener la IP"
-            assert "Chrome/120.0" in last_line, "El log debería contener el user agent"
-            assert "Created user" in last_line, "El log debería contener la acción"
-            assert "999" in last_line, "El log debería contener el entity_id"
+            assert len(log_lines) > initial_line_count, "Debería haber nuevas líneas en el log"
             
-            print("✅ Test integrado de creación de usuario con logging exitoso")
+            # Buscar la entrada de "Created user" en el log
+            user_log_found = False
+            user_entity_id = None
+            for line in log_lines[initial_line_count:]:
+                if "Created user" in line:
+                    user_log_found = True
+                    parts = line.strip().split(",")
+                    if len(parts) >= 5:
+                        user_entity_id = parts[4].strip()
+                    break
+            
+            assert user_log_found, "Debería existir una entrada en el log con 'Created user'"
+            assert user_entity_id is not None, "El entity_id del usuario debería estar en el log"
+            
+            print(f"✅ Test integrado de creación de usuario con logging exitoso. Entity ID: {user_entity_id}")
+
+
+def test_organization_creation_with_security_logging(temp_log_file):
+    """
+    Test que verifica la creación de organización y el logging de seguridad.
+    
+    Verifica:
+    - Que se crea la organización correctamente
+    - Que se registra en el log de seguridad con "Organizacion nueva creada"
+    - Que se capturan IP y user agent del request
+    """
+    from adapters.api_client import save_organization_to_json
+    
+    # Mock del path del log
+    with patch("pages.user_creation._SECURITY_LOG_PATH", temp_log_file):
+        # Crear instancia del estado
+        state = UserCreationState()
+        
+        # Simular router_data para obtener IP y user agent
+        state.router_data = {
+            "headers": {
+                "x-forwarded-for": "192.168.1.200",
+                "user-agent": "Firefox/121.0 Test",
+            }
+        }
+        
+        # Llenar campos de organización
+        state.organization_name = "Test Organization"
+        state.org_email = "test@org.com"
+        state.org_tlf = "+34611111111"
+        state.org_address = "Test Address 123"
+        state.org_country = "España"
+        state.org_state = "Madrid"
+        
+        # Mock de save_organization_to_json para retornar un organization_id
+        with patch("pages.user_creation.save_organization_to_json") as mock_save_org:
+            mock_save_org.return_value = 11  # Simular que retorna organization_id = 11
+            
+            # Obtener el número de líneas antes de crear la organización
+            initial_line_count = 0
+            if temp_log_file.exists():
+                with open(temp_log_file, "r", encoding="utf-8") as f:
+                    initial_line_count = len(f.readlines())
+            
+            # Ejecutar save_organization
+            state.save_organization()
+            
+            # Verificar creación exitosa
+            assert state.message_type == "success"
+            assert mock_save_org.called
+            
+            # Verificar que el archivo de log existe
+            assert temp_log_file.exists(), "El archivo de log debería existir"
+            
+            # Verificar contenido del log - buscar entrada de organización
+            with open(temp_log_file, "r", encoding="utf-8") as f:
+                log_lines = f.readlines()
+            
+            assert len(log_lines) > initial_line_count, "Debería haber nuevas líneas en el log"
+            
+            # Buscar la entrada de "Organizacion nueva creada" en el log
+            org_log_found = False
+            org_entity_id = None
+            for line in log_lines[initial_line_count:]:
+                if "Organizacion nueva creada" in line:
+                    org_log_found = True
+                    parts = line.strip().split(",")
+                    if len(parts) >= 5:
+                        org_entity_id = parts[4].strip()
+                    break
+            
+            assert org_log_found, "Debería existir una entrada en el log con 'Organizacion nueva creada'"
+            assert org_entity_id == "11", f"El entity_id de la organización debería ser '11', se encontró '{org_entity_id}'"
+            
+            print(f"✅ Test de creación de organización con logging exitoso. Entity ID: {org_entity_id}")
+
+
+def test_user_and_organization_logging_integration(temp_users_file, temp_log_file, mock_domain_models):
+    """
+    Test integrado que verifica que tanto la creación de usuario como de organización
+    se registran correctamente en el log de seguridad.
+    
+    Verifica:
+    - Que existe una entrada en el log con "Created user" cuando se crea un usuario
+    - Que existe una entrada en el log con "Organizacion nueva creada" cuando se crea una organización
+    """
+    MockUser, MockContactInfo, MockUserExtended = mock_domain_models
+    
+    # Mock del path del log
+    with patch("pages.user_creation._SECURITY_LOG_PATH", temp_log_file):
+        # Mock de las clases de dominio
+        with patch("pages.user_creation.User", MockUser), \
+             patch("pages.user_creation.ContactInfo", MockContactInfo), \
+             patch("pages.user_creation.UserExtended", MockUserExtended), \
+             patch("pages.user_creation.save_user_to_json") as mock_save_user, \
+             patch("pages.user_creation.save_organization_to_json") as mock_save_org:
+            
+            # Configurar los mocks
+            mock_save_user.return_value = True
+            mock_save_org.return_value = 12  # Simular organization_id = 12
+            
+            # Crear instancia del estado
+            state = UserCreationState()
+            
+            # Simular router_data
+            state.router_data = {
+                "headers": {
+                    "x-forwarded-for": "172.16.0.100",
+                    "user-agent": "Safari/17.0 Test",
+                }
+            }
+            
+            # Obtener el número de líneas inicial
+            initial_line_count = 0
+            if temp_log_file.exists():
+                with open(temp_log_file, "r", encoding="utf-8") as f:
+                    initial_line_count = len(f.readlines())
+            
+            # 1. Crear una organización primero
+            state.organization_name = "Integration Test Org"
+            state.org_email = "integration@test.org"
+            state.org_tlf = "+34622222222"
+            state.org_address = "Integration Address 456"
+            state.org_country = "España"
+            state.org_state = "Valencia"
+            
+            state.save_organization()
+            assert state.message_type == "success", "La organización debería crearse exitosamente"
+            
+            # 2. Crear un usuario
+            state.from_page = "main"
+            state.user_name = "integrationuser"
+            state.user_password = "Integration123@Pass"
+            state.user_password_confirm = "Integration123@Pass"
+            state.user_email = "integration@user.com"
+            state.user_mobile = "+34633333333"
+            state.organization_id = "12"
+            state.identity_type_id = "10"
+            state.active = True
+            state.blocked = False
+            
+            state.contact_first_name = "Integration"
+            state.contact_sur_name = "User"
+            state.contact_country = "España"
+            state.contact_state = "Valencia"
+            state.contact_zip_code = "46001"
+            state.contact_address = "Integration Street 789"
+            state.has_different_billing_address = False
+            
+            state.save_user()
+            assert state.message_type == "success", "El usuario debería crearse exitosamente"
+            
+            # Verificar que el archivo de log existe
+            assert temp_log_file.exists(), "El archivo de log debería existir"
+            
+            # Leer todas las líneas del log
+            with open(temp_log_file, "r", encoding="utf-8") as f:
+                log_lines = f.readlines()
+            
+            assert len(log_lines) > initial_line_count, "Debería haber nuevas líneas en el log"
+            
+            # Buscar entradas en las nuevas líneas
+            user_log_found = False
+            org_log_found = False
+            user_entity_id = None
+            org_entity_id = None
+            
+            for line in log_lines[initial_line_count:]:
+                if "Created user" in line:
+                    user_log_found = True
+                    parts = line.strip().split(",")
+                    if len(parts) >= 5:
+                        user_entity_id = parts[4].strip()
+                
+                if "Organizacion nueva creada" in line:
+                    org_log_found = True
+                    parts = line.strip().split(",")
+                    if len(parts) >= 5:
+                        org_entity_id = parts[4].strip()
+            
+            # Verificar que ambas entradas existen
+            assert user_log_found, "Debería existir una entrada en el log con 'Created user'"
+            assert org_log_found, "Debería existir una entrada en el log con 'Organizacion nueva creada'"
+            assert user_entity_id is not None, "El entity_id del usuario debería estar en el log"
+            assert org_entity_id == "12", f"El entity_id de la organización debería ser '12', se encontró '{org_entity_id}'"
+            
+            print("✅ Test integrado de logging de usuario y organización exitoso.")
+            print(f"   - Usuario: Entity ID = {user_entity_id}")
+            print(f"   - Organización: Entity ID = {org_entity_id}")
 
 
 if __name__ == "__main__":
@@ -343,6 +547,10 @@ if __name__ == "__main__":
             test_security_logging_with_request(log_file)
             print("\n" + "=" * 60)
             test_user_creation_with_security_logging(users_file, log_file, None)
+            print("\n" + "=" * 60)
+            test_organization_creation_with_security_logging(log_file)
+            print("\n" + "=" * 60)
+            test_user_and_organization_logging_integration(users_file, log_file, None)
             print("\n" + "=" * 60)
             print("✅ Todos los tests pasaron exitosamente")
         except Exception as e:

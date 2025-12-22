@@ -17,26 +17,42 @@ if str(domain_entities_path) not in sys.path:
 if str(domain_entities_parent) not in sys.path:
     sys.path.insert(0, str(domain_entities_parent))
 
-# Intentar importar las funciones de validación de organización
+# Intentar importar el adaptador para organizaciones
 try:
     import importlib.util
-    org_module_path = domain_entities_path / "organization.py"
-    if org_module_path.exists():
-        spec = importlib.util.spec_from_file_location("organization", org_module_path)
+    adapter_path = Path(__file__).parent.parent / "adapters" / "api_client.py"
+    if adapter_path.exists():
+        spec = importlib.util.spec_from_file_location("api_client", adapter_path)
         if spec and spec.loader:
-            org_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(org_module)
-            get_organization_by_name_exist = org_module.get_organization_by_name_exist
-            create_organization = org_module.create_organization
+            api_client_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(api_client_module)
+            if hasattr(api_client_module, "check_organization_name_exists"):
+                check_organization_name_exists = api_client_module.check_organization_name_exists
+            else:
+                check_organization_name_exists = None
+            if hasattr(api_client_module, "save_organization_to_json"):
+                save_organization_to_json = api_client_module.save_organization_to_json
+            else:
+                save_organization_to_json = None
+            print("INFO: Funciones de organización del adaptador cargadas exitosamente")
+            logger.debug("Funciones de organización del adaptador cargadas exitosamente")
         else:
-            get_organization_by_name_exist = None
-            create_organization = None
+            check_organization_name_exists = None
+            save_organization_to_json = None
+            logger.warning("No se pudo cargar el adaptador de organizaciones")
     else:
-        get_organization_by_name_exist = None
-        create_organization = None
-except Exception:
-    get_organization_by_name_exist = None
-    create_organization = None
+        check_organization_name_exists = None
+        save_organization_to_json = None
+        logger.warning("El adaptador no existe")
+except Exception as e:
+    error_msg = f"Error al importar adaptador de organizaciones: {e}"
+    print(f"ERROR: {error_msg}")
+    print(f"ERROR: Traceback: {type(e).__name__}: {e}")
+    import traceback
+    traceback.print_exc()
+    logger.error(error_msg, exc_info=True)
+    check_organization_name_exists = None
+    save_organization_to_json = None
 
 # Intentar importar las funciones de validación de usuario
 try:
@@ -185,7 +201,7 @@ try:
             spec.loader.exec_module(api_client_module)
             print("INFO: Adaptador cargado con importlib.util")
         
-        # Verificar que la función exista en el módulo
+        # Verificar que las funciones existan en el módulo
         if hasattr(api_client_module, "save_user_to_json"):
             save_user_to_json = api_client_module.save_user_to_json
             print("INFO: Función save_user_to_json cargada exitosamente")
@@ -195,6 +211,15 @@ try:
             print(f"ERROR: {error_msg}")
             logger.error(error_msg)
             print(f"DEBUG: Atributos disponibles en el módulo: {dir(api_client_module)}")
+        
+        # Cargar función para verificar duplicados de nombre de usuario
+        if hasattr(api_client_module, "check_user_name_exists"):
+            check_user_name_exists = api_client_module.check_user_name_exists
+            print("INFO: Función check_user_name_exists cargada exitosamente")
+            logger.debug("Función check_user_name_exists cargada exitosamente")
+        else:
+            check_user_name_exists = None
+            logger.warning("La función check_user_name_exists no se encuentra en api_client")
                 
 except Exception as e:
     error_msg = f"Error al importar adaptador: {e}"
@@ -204,6 +229,7 @@ except Exception as e:
     traceback.print_exc()
     logger.error(error_msg, exc_info=True)
     save_user_to_json = None
+    check_user_name_exists = None
 
 # Cargar módulo de seguridad común usando importlib (módulo con nombre que empieza con número)
 _common_security_module = None
@@ -345,6 +371,8 @@ class UserCreationState(rx.State):
     show_org_creation_modal: bool = False  # Controla si se muestra el modal de creación de organización
     show_password_validation_modal: bool = False  # Controla si se muestra el modal de validación de contraseña
     show_password_match_error_modal: bool = False  # Controla si se muestra el modal de error de coincidencia de contraseñas
+    show_username_validation_modal: bool = False  # Controla si se muestra el modal de validación de nombre de usuario
+    show_username_duplicate_modal: bool = False  # Controla si se muestra el modal de error de nombre de usuario duplicado
     
     # Campos para el formulario de creación de organización
     org_email: str = ""
@@ -409,6 +437,8 @@ class UserCreationState(rx.State):
         self.show_org_error_modal = False
         self.show_org_creation_modal = False
         self.show_password_match_error_modal = False
+        self.show_username_validation_modal = False
+        self.show_username_duplicate_modal = False
         self.created_user = None
         
         # Validar acceso desde la página principal
@@ -480,6 +510,66 @@ class UserCreationState(rx.State):
         except Exception as e:
             logger.error(f"Error al registrar log de seguridad: {e}", exc_info=True)
     
+    def log_organization_creation_security(self, organization_id: int):
+        """
+        Registra la creación de la organización en el log de seguridad.
+        
+        En Reflex 0.8.21, podemos obtener IP y user agent desde router_data.headers.
+        Usamos estos valores para crear un request mock que se pasa a la función de logging.
+        
+        Args:
+            organization_id: Identificador de la organización creada.
+        """
+        try:
+            logger.debug(f"Intentando registrar log de seguridad para organización {organization_id}")
+            
+            # Crear un objeto request mock con IP y user agent
+            class MockRequest:
+                """Mock del request HTTP con IP y user agent."""
+                def __init__(self, ip: str, user_agent: str):
+                    self.headers = {"user-agent": user_agent}
+                    self.client = type("Client", (), {"host": ip})()
+                    self.scope = {"client": (ip, 0)}
+            
+            # Intentar obtener IP y user agent desde router_data
+            request_mock = None
+            ip = None
+            user_agent = None
+            
+            try:
+                # En Reflex 0.8.21, podemos acceder a los headers desde router_data
+                if hasattr(self, "router_data"):
+                    headers = self.router_data.get("headers", {})
+                    
+                    # Obtener la IP desde x-forwarded-for (para proxies) o usar 127.0.0.1 como fallback
+                    ip = headers.get("x-forwarded-for", "127.0.0.1")
+                    # Si hay múltiples IPs (proxies), tomar la primera
+                    if "," in ip:
+                        ip = ip.split(",")[0].strip()
+                    
+                    # Obtener el User-Agent
+                    user_agent = headers.get("user-agent", "Unknown Browser")
+                    
+                    # Crear request mock con los valores obtenidos
+                    request_mock = MockRequest(ip, user_agent)
+                    logger.debug(f"IP obtenida desde router_data: {ip}, User agent: {user_agent[:50]}")
+                else:
+                    logger.debug("router_data no está disponible en el estado")
+            except Exception as e:
+                logger.debug(f"Error al obtener IP/user agent desde router_data: {e}")
+            
+            # Registrar usando la función de logging
+            if _log_security_action_function:
+                result = _register_security_action("Organizacion nueva creada", organization_id, request_mock)
+                if result:
+                    logger.info(f"Log de seguridad registrado para organización {organization_id} (IP: {ip or 'N/A'}, UA: {user_agent[:30] if user_agent else 'N/A'})")
+                else:
+                    logger.warning(f"No se pudo registrar el log de seguridad para organización {organization_id}")
+            else:
+                logger.error("Función de logging de seguridad no disponible")
+        except Exception as e:
+            logger.error(f"Error al registrar log de seguridad: {e}", exc_info=True)
+    
     def on_mount(self):
         """Se ejecuta automáticamente cuando se monta el componente."""
         # Obtener parámetros de query string del router
@@ -528,7 +618,7 @@ class UserCreationState(rx.State):
         self.org_state = value
     
     def save_organization(self):
-        """Guarda la nueva organización usando create_organization."""
+        """Guarda la nueva organización usando el adaptador."""
         try:
             # Validaciones básicas
             if not self.organization_name or not self.organization_name.strip():
@@ -541,35 +631,33 @@ class UserCreationState(rx.State):
                 self.message_type = "error"
                 return
             
-            # Crear un objeto simple que simule Organization para create_organization
-            # create_organization espera un objeto con atributos organization_*
-            class SimpleOrganization:
-                def __init__(self, name, email, tlf, address, country, state):
-                    self.organization_name = name
-                    self.organization_email = email
-                    self.organization_tlf = tlf
-                    self.organization_address = address
-                    self.organization_country = country
-                    self.organization_state = state
-            
-            org_obj = SimpleOrganization(
-                name=self.organization_name.strip(),
-                email=self.org_email.strip(),
-                tlf=self.org_tlf.strip() if self.org_tlf else "",
-                address=self.org_address.strip() if self.org_address else "",
-                country=self.org_country.strip() if self.org_country else "",
-                state=self.org_state.strip() if self.org_state else "",
-            )
-            
-            # Llamar a create_organization si está disponible
-            if create_organization is None:
-                self.message = "Error: función create_organization no disponible"
+            # Verificar que el adaptador esté disponible
+            if save_organization_to_json is None:
+                self.message = "Error: adaptador de organizaciones no disponible"
                 self.message_type = "error"
+                logger.error("El adaptador save_organization_to_json no está disponible")
                 return
             
-            if create_organization(org_obj):
+            # Crear diccionario con los datos de la organización
+            organization_data = {
+                "organization_name": self.organization_name.strip(),
+                "organization_email": self.org_email.strip(),
+                "organization_tlf": self.org_tlf.strip() if self.org_tlf else "",
+                "organization_address": self.org_address.strip() if self.org_address else "",
+                "organization_country": self.org_country.strip() if self.org_country else "",
+                "organization_state": self.org_state.strip() if self.org_state else "",
+            }
+            
+            # Llamar al adaptador para guardar la organización
+            organization_id = save_organization_to_json(organization_data)
+            if organization_id is not None:
                 self.message = f"Organización '{self.organization_name.strip()}' creada exitosamente"
                 self.message_type = "success"
+                logger.info(f"Organización '{self.organization_name.strip()}' creada exitosamente a través del adaptador con ID: {organization_id}")
+                
+                # Registrar la creación en el log de seguridad
+                self.log_organization_creation_security(organization_id)
+                
                 # Cerrar el modal
                 self.show_org_creation_modal = False
                 # Limpiar campos del formulario
@@ -581,10 +669,13 @@ class UserCreationState(rx.State):
             else:
                 self.message = "Error al guardar la organización"
                 self.message_type = "error"
+                logger.error("Error al guardar la organización a través del adaptador")
                 
         except Exception as e:
-            self.message = f"Error al crear la organización: {str(e)}"
+            error_msg = f"Error al crear la organización: {str(e)}"
+            self.message = error_msg
             self.message_type = "error"
+            logger.error(error_msg, exc_info=True)
     
     def set_user_id(self, value: str):
         self.user_id = value
@@ -609,7 +700,7 @@ class UserCreationState(rx.State):
             self.show_org_creation_modal = False
     
     def validate_organization_name(self):
-        """Valida si el nombre de organización ya existe cuando cambia el valor."""
+        """Valida si el nombre de organización ya existe usando el adaptador."""
         if not self.organization_name or not self.organization_name.strip():
             # Limpiar mensaje si el campo está vacío
             if self.message_type == "error" and "organización" in self.message.lower():
@@ -617,16 +708,18 @@ class UserCreationState(rx.State):
                 self.message_type = ""
             return  # No validar si está vacío
         
-        # Verificar si la función de validación está disponible
-        if get_organization_by_name_exist is None:
+        # Verificar si la función del adaptador está disponible
+        if check_organization_name_exists is None:
+            logger.warning("La función check_organization_name_exists del adaptador no está disponible")
             return  # No hacer nada si la función no está disponible
         
         try:
-            # Verificar si la organización existe
-            if get_organization_by_name_exist(self.organization_name.strip()):
+            # Verificar si la organización existe usando el adaptador
+            if check_organization_name_exists(self.organization_name.strip()):
                 self.message = f"La organización '{self.organization_name.strip()}' ya existe en el sistema"
                 self.message_type = "error"
                 self.show_org_error_modal = True  # Mostrar el modal
+                logger.info(f"Organización duplicada detectada: {self.organization_name.strip()}")
             else:
                 # Si la organización NO existe y el campo tiene al menos 3 caracteres, mostrar el modal de creación
                 # Solo mostrar si no está ya abierto para evitar múltiples aperturas
@@ -639,13 +732,111 @@ class UserCreationState(rx.State):
                     self.show_org_error_modal = False
         except Exception as e:
             # Log del error para debugging
-            print(f"Error validando organización: {e}")
+            logger.error(f"Error validando organización: {e}", exc_info=True)
     
     def set_identity_type_id(self, value: str):
         self.identity_type_id = value
     
     def set_user_name(self, value: str):
-        self.user_name = value
+        """Establece el nombre de usuario y elimina espacios en blanco automáticamente."""
+        # Eliminar espacios en blanco automáticamente
+        self.user_name = value.replace(" ", "")
+        # Limpiar mensaje de error previo de nombre de usuario cuando el usuario está escribiendo
+        # (solo si el mensaje es sobre nombre de usuario)
+        if self.message_type == "error" and "nombre de usuario" in self.message.lower():
+            self.message = ""
+            self.message_type = ""
+    
+    def username_validation(self) -> bool:
+        """
+        Valida que el nombre de usuario cumple con las siguientes reglas:
+        - Longitud mínima de 3 caracteres
+        - Longitud máxima de 20 caracteres
+        - Solo caracteres alfanuméricos y guiones bajos
+        - Sin espacios en blanco
+        
+        Returns:
+            bool: True si el nombre de usuario cumple todas las reglas, False en caso contrario
+        """
+        username = self.user_name.strip()
+        
+        # Validar longitud mínima
+        if len(username) < 3:
+            return False
+        
+        # Validar longitud máxima
+        if len(username) > 20:
+            return False
+        
+        # Validar que solo contenga caracteres alfanuméricos y guiones bajos
+        if not username.replace("_", "").isalnum():
+            return False
+        
+        # Validar que no tenga espacios (aunque ya se eliminan en set_user_name)
+        if " " in username:
+            return False
+        
+        return True
+    
+    def on_user_name_blur(self):
+        """Valida el nombre de usuario cuando pierde el foco."""
+        logger.info(f"on_user_name_blur llamado con user_name: '{self.user_name}'")
+        if self.user_name and self.user_name.strip():
+            username_stripped = self.user_name.strip()
+            logger.info(f"Validando nombre de usuario: '{username_stripped}'")
+            if not self.username_validation():
+                # Si no pasa la validación de formato, mostrar modal
+                logger.info(f"Nombre de usuario '{username_stripped}' no pasa validación de formato")
+                self.show_username_validation_modal = True
+                # Limpiar mensaje de error previo si había uno de duplicado
+                if self.message_type == "error" and "ya está registrado" in self.message.lower():
+                    self.message = ""
+                    self.message_type = ""
+            else:
+                # Si pasa la validación de formato, verificar duplicados
+                logger.info(f"Nombre de usuario '{username_stripped}' pasa validación de formato, verificando duplicados...")
+                self.show_username_validation_modal = False
+                if check_user_name_exists is not None:
+                    try:
+                        username_exists = check_user_name_exists(username_stripped)
+                        logger.info(f"Resultado de check_user_name_exists('{username_stripped}'): {username_exists}")
+                        if username_exists:
+                            # Usuario duplicado encontrado - mostrar modal
+                            logger.warning(f"Nombre de usuario duplicado detectado: {username_stripped}")
+                            self.show_username_duplicate_modal = True
+                            # Limpiar mensaje de error previo si había uno
+                            self.message = ""
+                            self.message_type = ""
+                        else:
+                            # Usuario no existe, cerrar modal si estaba abierto
+                            logger.info(f"Nombre de usuario '{username_stripped}' no existe, está disponible")
+                            self.show_username_duplicate_modal = False
+                            # Limpiar mensaje de error si había uno de nombre de usuario
+                            if self.message_type == "error" and "nombre de usuario" in self.message.lower() and "ya está registrado" in self.message.lower():
+                                self.message = ""
+                                self.message_type = ""
+                    except Exception as e:
+                        error_msg = f"Error al verificar duplicados de nombre de usuario: {e}"
+                        logger.error(error_msg, exc_info=True)
+                        self.message = f"Error al verificar el nombre de usuario. Por favor, intente nuevamente."
+                        self.message_type = "error"
+                else:
+                    logger.warning("check_user_name_exists no está disponible")
+                    self.message = "Error: El sistema de validación no está disponible. Por favor, contacte al administrador."
+                    self.message_type = "error"
+        else:
+            # Si está vacío, cerrar el modal si está abierto
+            logger.info("Nombre de usuario vacío, cerrando modal")
+            self.show_username_validation_modal = False
+            # No limpiar el mensaje si está vacío, puede ser que el usuario esté editando
+    
+    def close_username_validation_modal(self):
+        """Cierra el modal de validación de nombre de usuario y devuelve el foco al input."""
+        self.show_username_validation_modal = False
+    
+    def close_username_duplicate_modal(self):
+        """Cierra el modal de error de nombre de usuario duplicado."""
+        self.show_username_duplicate_modal = False
     
     def set_user_password(self, value: str):
         self.user_password = value
@@ -721,8 +912,8 @@ class UserCreationState(rx.State):
     def on_user_email_blur(self):
         """Valida si el email ya existe cuando se pierde el foco."""
         if not self.user_email or not self.user_email.strip():
-            # Limpiar mensaje si el campo está vacío
-            if self.message_type == "error" and "email" in self.message.lower():
+            # Limpiar mensaje solo si es un error de email (no de nombre de usuario)
+            if self.message_type == "error" and "email" in self.message.lower() and "nombre de usuario" not in self.message.lower():
                 self.message = ""
                 self.message_type = ""
             return  # No validar si está vacío
@@ -737,8 +928,8 @@ class UserCreationState(rx.State):
                 self.message = f"El email '{self.user_email.strip()}' ya está registrado en el sistema"
                 self.message_type = "error"
             else:
-                # Limpiar mensaje si la validación es exitosa
-                if self.message_type == "error" and "email" in self.message.lower():
+                # Limpiar mensaje solo si es un error de email (no de nombre de usuario)
+                if self.message_type == "error" and "email" in self.message.lower() and "nombre de usuario" not in self.message.lower():
                     self.message = ""
                     self.message_type = ""
         except Exception:
@@ -751,8 +942,8 @@ class UserCreationState(rx.State):
     def on_user_mobile_blur(self):
         """Valida si el teléfono ya existe cuando se pierde el foco."""
         if not self.user_mobile or not self.user_mobile.strip():
-            # Limpiar mensaje si el campo está vacío
-            if self.message_type == "error" and "teléfono" in self.message.lower() or "móvil" in self.message.lower():
+            # Limpiar mensaje solo si es un error de teléfono (no de nombre de usuario)
+            if self.message_type == "error" and ("teléfono" in self.message.lower() or "móvil" in self.message.lower()) and "nombre de usuario" not in self.message.lower():
                 self.message = ""
                 self.message_type = ""
             return  # No validar si está vacío
@@ -767,8 +958,8 @@ class UserCreationState(rx.State):
                 self.message = f"El teléfono '{self.user_mobile.strip()}' ya está registrado en el sistema"
                 self.message_type = "error"
             else:
-                # Limpiar mensaje si la validación es exitosa
-                if self.message_type == "error" and ("teléfono" in self.message.lower() or "móvil" in self.message.lower()):
+                # Limpiar mensaje solo si es un error de teléfono (no de nombre de usuario)
+                if self.message_type == "error" and ("teléfono" in self.message.lower() or "móvil" in self.message.lower()) and "nombre de usuario" not in self.message.lower():
                     self.message = ""
                     self.message_type = ""
         except Exception:
@@ -835,6 +1026,24 @@ class UserCreationState(rx.State):
                 self.message = "El nombre de usuario es requerido"
                 self.message_type = "error"
                 return
+            
+            # Validar formato del nombre de usuario
+            if not self.username_validation():
+                self.message = "El nombre de usuario no cumple con los requisitos de formato"
+                self.message_type = "error"
+                self.show_username_validation_modal = True
+                return
+            
+            # Verificar duplicados a través del adaptador
+            if check_user_name_exists is not None:
+                try:
+                    if check_user_name_exists(self.user_name.strip()):
+                        self.message = f"El nombre de usuario '{self.user_name.strip()}' ya está registrado en el sistema"
+                        self.message_type = "error"
+                        return
+                except Exception as e:
+                    logger.error(f"Error al verificar duplicados de nombre de usuario: {e}")
+                    # Continuar si hay error en la verificación
             
             if not self.user_password or len(self.user_password) < 8:
                 self.message = "La contraseña debe tener al menos 8 caracteres"
@@ -1387,6 +1596,169 @@ def password_validation_modal() -> rx.Component:
     )
 
 
+def username_validation_modal() -> rx.Component:
+    """Modal centrado para mostrar las reglas de validación de nombre de usuario."""
+    return rx.cond(
+        UserCreationState.show_username_validation_modal,
+        rx.fragment(
+            # Overlay oscuro de fondo
+            rx.box(
+                width="100vw",
+                height="100vh",
+                background_color="rgba(0, 0, 0, 0.7)",
+                position="fixed",
+                top="0",
+                left="0",
+                z_index="1000",
+            ),
+            # Modal centrado
+            rx.box(
+                rx.vstack(
+                    rx.heading(
+                        "Requisitos de Nombre de Usuario",
+                        size="6",
+                        color=COLORS["foreground"],
+                        margin_bottom="1em",
+                    ),
+                    rx.text(
+                        "El nombre de usuario debe cumplir las siguientes reglas:",
+                        color=COLORS["muted_foreground"],
+                        font_size="1em",
+                        margin_bottom="1em",
+                    ),
+                    rx.vstack(
+                        rx.text(
+                            "• Longitud mínima de 3 caracteres",
+                            color=COLORS["foreground"],
+                            font_size="0.95em",
+                        ),
+                        rx.text(
+                            "• Longitud máxima de 20 caracteres",
+                            color=COLORS["foreground"],
+                            font_size="0.95em",
+                        ),
+                        rx.text(
+                            "• Solo caracteres alfanuméricos y guiones bajos (_)",
+                            color=COLORS["foreground"],
+                            font_size="0.95em",
+                        ),
+                        rx.text(
+                            "• Sin espacios en blanco",
+                            color=COLORS["foreground"],
+                            font_size="0.95em",
+                        ),
+                        spacing="1",
+                        align_items="flex-start",
+                        margin_bottom="2em",
+                    ),
+                    rx.button(
+                        "Entendido",
+                        on_click=UserCreationState.close_username_validation_modal,
+                        background_color=COLORS["primary"],
+                        color=COLORS["background"],
+                        font_weight="bold",
+                        padding="0.75em 2em",
+                        border_radius="0.5em",
+                        width="200px",
+                    ),
+                    spacing="2",
+                    align_items="center",
+                    padding="2em",
+                ),
+                background_color=COLORS["card"],
+                border=f"2px solid {COLORS['border']}",
+                border_radius="1em",
+                box_shadow="0 10px 40px rgba(0, 0, 0, 0.5)",
+                position="fixed",
+                top="50%",
+                left="50%",
+                transform="translate(-50%, -50%)",
+                z_index="1001",
+                min_width="400px",
+                max_width="600px",
+            ),
+        ),
+    )
+
+
+def username_duplicate_error_modal() -> rx.Component:
+    """Modal centrado para mostrar el error de nombre de usuario duplicado."""
+    return rx.cond(
+        UserCreationState.show_username_duplicate_modal,
+        rx.fragment(
+            # Overlay oscuro de fondo
+            rx.box(
+                width="100vw",
+                height="100vh",
+                background_color="rgba(0, 0, 0, 0.7)",
+                position="fixed",
+                top="0",
+                left="0",
+                z_index="1000",
+            ),
+            # Modal centrado
+            rx.box(
+                rx.vstack(
+                    rx.heading(
+                        "Nombre de Usuario No Disponible",
+                        size="6",
+                        color=COLORS["foreground"],
+                        margin_bottom="1em",
+                    ),
+                    rx.vstack(
+                        rx.text(
+                            "El nombre de usuario",
+                            color=COLORS["foreground"],
+                            font_size="1em",
+                            text_align="center",
+                        ),
+                        rx.text(
+                            UserCreationState.user_name,
+                            color=COLORS["primary"],
+                            font_size="1.1em",
+                            font_weight="bold",
+                            text_align="center",
+                        ),
+                        rx.text(
+                            "ya está registrado en el sistema. Por favor, elija otro nombre de usuario.",
+                            color=COLORS["foreground"],
+                            font_size="1em",
+                            text_align="center",
+                        ),
+                        spacing="1",
+                        align_items="center",
+                        margin_bottom="2em",
+                    ),
+                    rx.button(
+                        "Entendido",
+                        on_click=UserCreationState.close_username_duplicate_modal,
+                        background_color=COLORS["primary"],
+                        color=COLORS["background"],
+                        font_weight="bold",
+                        padding="0.75em 2em",
+                        border_radius="0.5em",
+                        width="200px",
+                    ),
+                    spacing="2",
+                    align_items="center",
+                    padding="2em",
+                ),
+                background_color=COLORS["card"],
+                border=f"2px solid {COLORS['border']}",
+                border_radius="1em",
+                box_shadow="0 10px 40px rgba(0, 0, 0, 0.5)",
+                position="fixed",
+                top="50%",
+                left="50%",
+                transform="translate(-50%, -50%)",
+                z_index="1001",
+                min_width="400px",
+                max_width="600px",
+            ),
+        ),
+    )
+
+
 def user_creation_page() -> rx.Component:
     """Página de creación de usuario."""
     # Ejecutar secure_access al cargar la página
@@ -1400,6 +1772,10 @@ def user_creation_page() -> rx.Component:
         password_validation_modal(),
         # Modal de error de coincidencia de contraseñas (si está activo)
         password_match_error_modal(),
+        # Modal de validación de nombre de usuario (si está activo)
+        username_validation_modal(),
+        # Modal de error de nombre de usuario duplicado (si está activo)
+        username_duplicate_error_modal(),
         # Header
         rx.hstack(
             rx.heading("Crear Nuevo Usuario", size="6", color=COLORS["foreground"]),
@@ -1418,8 +1794,9 @@ def user_creation_page() -> rx.Component:
                         rx.vstack(
                             rx.text("Nombre de Usuario *", font_size="0.9em", color=COLORS["muted_foreground"]),
                             rx.input(
-                                placeholder="Ingrese el nombre de usuario",
+                                placeholder="Mínimo 3 caracteres, solo letras, números y _",
                                 on_change=UserCreationState.set_user_name,
+                                on_blur=UserCreationState.on_user_name_blur,
                                 value=UserCreationState.user_name,
                                 background_color=COLORS["input"],
                                 border_color=COLORS["border"],
@@ -1448,6 +1825,57 @@ def user_creation_page() -> rx.Component:
                         ),
                         spacing="4",
                         width="100%",
+                    ),
+                    # Subpanel informativo con reglas de validación de nombre de usuario
+                    rx.vstack(
+                        rx.text(
+                            "Requisitos del nombre de usuario:",
+                            font_size="0.85em",
+                            font_weight="bold",
+                            color=COLORS["foreground"],
+                            margin_top="0.5em",
+                        ),
+                        rx.vstack(
+                            rx.hstack(
+                                rx.text("•", color=COLORS["primary"], font_weight="bold", margin_right="0.5em"),
+                                rx.text(
+                                    "Mínimo 3 caracteres, máximo 20 caracteres",
+                                    font_size="0.8em",
+                                    color=COLORS["muted_foreground"],
+                                ),
+                                spacing="1",
+                                align_items="start",
+                            ),
+                            rx.hstack(
+                                rx.text("•", color=COLORS["primary"], font_weight="bold", margin_right="0.5em"),
+                                rx.text(
+                                    "Solo letras, números y guiones bajos (_)",
+                                    font_size="0.8em",
+                                    color=COLORS["muted_foreground"],
+                                ),
+                                spacing="1",
+                                align_items="start",
+                            ),
+                            rx.hstack(
+                                rx.text("•", color=COLORS["primary"], font_weight="bold", margin_right="0.5em"),
+                                rx.text(
+                                    "Sin espacios en blanco",
+                                    font_size="0.8em",
+                                    color=COLORS["muted_foreground"],
+                                ),
+                                spacing="1",
+                                align_items="start",
+                            ),
+                            spacing="1",
+                            padding="0.75em",
+                            background_color=COLORS["secondary"],
+                            border_radius="0.5em",
+                            border=f"1px solid {COLORS['border']}",
+                            width="100%",
+                        ),
+                        spacing="1",
+                        width="100%",
+                        margin_bottom="0.5em",
                     ),
                     rx.hstack(
                         rx.vstack(
@@ -1488,6 +1916,67 @@ def user_creation_page() -> rx.Component:
                         ),
                         spacing="2",
                         width="100%",
+                    ),
+                    # Subpanel informativo con reglas de validación de contraseña
+                    rx.vstack(
+                        rx.text(
+                            "Requisitos de la contraseña:",
+                            font_size="0.85em",
+                            font_weight="bold",
+                            color=COLORS["foreground"],
+                            margin_top="0.5em",
+                        ),
+                        rx.vstack(
+                            rx.hstack(
+                                rx.text("•", color=COLORS["primary"], font_weight="bold", margin_right="0.5em"),
+                                rx.text(
+                                    "Mínimo 8 caracteres",
+                                    font_size="0.8em",
+                                    color=COLORS["muted_foreground"],
+                                ),
+                                spacing="1",
+                                align_items="start",
+                            ),
+                            rx.hstack(
+                                rx.text("•", color=COLORS["primary"], font_weight="bold", margin_right="0.5em"),
+                                rx.text(
+                                    "Al menos una letra mayúscula",
+                                    font_size="0.8em",
+                                    color=COLORS["muted_foreground"],
+                                ),
+                                spacing="1",
+                                align_items="start",
+                            ),
+                            rx.hstack(
+                                rx.text("•", color=COLORS["primary"], font_weight="bold", margin_right="0.5em"),
+                                rx.text(
+                                    "Al menos un número",
+                                    font_size="0.8em",
+                                    color=COLORS["muted_foreground"],
+                                ),
+                                spacing="1",
+                                align_items="start",
+                            ),
+                            rx.hstack(
+                                rx.text("•", color=COLORS["primary"], font_weight="bold", margin_right="0.5em"),
+                                rx.text(
+                                    "Al menos un carácter especial (@ # | . $ % &)",
+                                    font_size="0.8em",
+                                    color=COLORS["muted_foreground"],
+                                ),
+                                spacing="1",
+                                align_items="start",
+                            ),
+                            spacing="1",
+                            padding="0.75em",
+                            background_color=COLORS["secondary"],
+                            border_radius="0.5em",
+                            border=f"1px solid {COLORS['border']}",
+                            width="100%",
+                        ),
+                        spacing="1",
+                        width="100%",
+                        margin_bottom="0.5em",
                     ),
                     rx.hstack(
                         rx.vstack(

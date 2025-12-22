@@ -92,6 +92,30 @@ def get_user_by_mobile_exist(user_mobile: str) -> bool:
     return False
 
 
+def get_user_by_name_exist(user_name: str) -> bool:
+    """
+    Verifica si existe un usuario con el nombre de usuario dado.
+
+    La comparación ignora mayúsculas/minúsculas.
+
+    Args:
+        user_name: Nombre de usuario a verificar.
+
+    Returns:
+        True si el usuario existe, False en caso contrario.
+    """
+    users = _load_users()
+    if not users:
+        return False
+
+    normalized_input = user_name.strip().lower()
+    for user in users:
+        user_name_value = user.get("user_name", "")
+        if user_name_value.strip().lower() == normalized_input:
+            return True
+    return False
+
+
 def get_user_by_email(user_email: str) -> Optional[dict[str, Any]]:
     """
     Obtiene un usuario por su email.
