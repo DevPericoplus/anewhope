@@ -5,6 +5,7 @@ services:
     build:
       context: ../../..
       dockerfile: src/apps/7_service_frontend/Dockerfile
+    entrypoint: ["/app/entrypoint.sh"]
     env_file:
       - .env
     environment:
