@@ -80,8 +80,10 @@ def main() -> None:
         logger.info(f"Valor cifrado: {encrypted_value}")
         logger.info("--------------------------------")
 
-        recovered_value = security.decrypt_value(fernet_key, encrypted_value)
-        logger.info(f"Valor original recuperado del valor cifrado: {recovered_value}")
+        decrypted_value, _ = security.decrypt_value(fernet_key, encrypted_value)
+        logger.info(
+            f"Valor original recuperado del valor cifrado: {decrypted_value}"
+        )
     else:
         logger.warning(f"Error: el archivo {secret_key_file} no existe")
         security.initialize_fernet_environment()
@@ -91,8 +93,10 @@ def main() -> None:
         encrypted_value = security.encrypt_value(fernet_key, insecure_value_to_encrypt)
         logger.info(f"Valor cifrado: {encrypted_value}")
         logger.info("--------------------------------")
-        recovered_value = security.decrypt_value(fernet_key, encrypted_value)
-        logger.info(f"Valor original recuperado del valor cifrado: {recovered_value}")
+        decrypted_value, _ = security.decrypt_value(fernet_key, encrypted_value)
+        logger.info(
+            f"Valor original recuperado del valor cifrado: {decrypted_value}"
+        )
 
 
 if __name__ == "__main__":

@@ -607,7 +607,7 @@ class User:
             raise DomainError(f"Invalid email format: {email}")
         if not mobile or not mobile.strip():
             raise DomainError("Mobile number cannot be empty")
-        if not otp or len(otp) != 4:
+        if not otp or len(otp) != 4 or not otp.isdigit():
             raise DomainError("OTP must be exactly 4 digits")
         
         # Invariante: usuario no puede estar activo y bloqueado simultáneamente

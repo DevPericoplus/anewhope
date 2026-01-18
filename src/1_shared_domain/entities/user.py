@@ -178,7 +178,7 @@ def update_user_password_and_otp(user_email: str, new_password: str, new_otp: st
         with open(data_file, "w", encoding="utf-8") as f:
             json.dump(users, f, indent=2, ensure_ascii=False)
         return True
-    except (OSError, json.JSONDecodeError) as e:
+    except (OSError, TypeError, ValueError) as e:
         logger.error(f"Error al guardar usuario actualizado en {data_file}: {e}")
         return False
 
@@ -231,7 +231,7 @@ def create_user(user_data: dict[str, Any]) -> bool:
             json.dump(users, f, indent=2, ensure_ascii=False)
         logger.info(f"Usuario creado exitosamente con ID: {next_id}")
         return True
-    except (OSError, json.JSONDecodeError) as e:
+    except (OSError, TypeError, ValueError) as e:
         logger.error(f"Error al guardar usuario en {data_file}: {e}")
         return False
 
