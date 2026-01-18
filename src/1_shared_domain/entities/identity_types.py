@@ -12,13 +12,13 @@ def _get_identity_types_file_path() -> Path:
     Obtiene la ruta del archivo JSON de tipos de identidad (datos mock).
 
     Returns:
-        Ruta al archivo identity_types.json.
+        Ruta al archivo roles.json.
     """
     return (
         Path(__file__).parent.parent.parent
         / "2_shared_application"
         / "moks"
-        / "identity_types.json"
+        / "roles.json"
     )
 
 

@@ -1,0 +1,47 @@
+[
+  {
+    "id_user": 1,
+    "id_organization": 1,
+    "identity_type_id": 1,
+    "create_date": "18/01/26-10:44",
+    "modification_date": "",
+    "id_modifier_user": 1,
+    "active": true
+  },
+  {
+    "id_user": 2,
+    "id_organization": 1,
+    "identity_type_id": 1,
+    "create_date": "18/01/26-10:44",
+    "modification_date": "",
+    "id_modifier_user": 1,
+    "active": true
+  },
+  {
+    "id_user": 3,
+    "id_organization": 1,
+    "identity_type_id": 1,
+    "create_date": "18/01/26-10:44",
+    "modification_date": "",
+    "id_modifier_user": 1,
+    "active": true
+  },
+  {
+    "id_user": 4,
+    "id_organization": 1,
+    "identity_type_id": 1,
+    "create_date": "18/01/26-10:44",
+    "modification_date": "",
+    "id_modifier_user": 1,
+    "active": true
+  },
+  {
+    "id_user": 5,
+    "id_organization": 1,
+    "identity_type_id": 1,
+    "create_date": "18/01/26-10:44",
+    "modification_date": "",
+    "id_modifier_user": 1,
+    "active": true
+  }
+]

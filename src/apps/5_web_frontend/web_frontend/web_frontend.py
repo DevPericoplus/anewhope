@@ -1,6 +1,9 @@
-import reflex as rx
-from typing import Optional
 from pathlib import Path
+from typing import Optional
+
+import reflex as rx
+
+from adapters.api_client import get_user_permissions, login_user, refresh_tokens
 
 COLORS = {
     "background": "#1a1a1a",
@@ -22,8 +25,15 @@ class State(rx.State):
     user_active_menu: str = "inicio"
     user_username: str = ""
     user_password: str = ""
+    user_otp: str = ""
     user_logged_in: bool = False
     user_active_tab: str = "resumen"
+    access_token: str = ""
+    session_token: str = ""
+    user_id: int = 0
+    organization_id: int = 0
+    user_permissions: list[dict[str, str]] = []
+    login_error: str = ""
     
     def set_user_menu(self, menu: str):
         """Set active menu item for user portal."""
@@ -36,17 +46,61 @@ class State(rx.State):
     def set_user_password(self, password: str):
         """Set user password."""
         self.user_password = password
+
+    def set_user_otp(self, otp: str):
+        """Set user OTP."""
+        self.user_otp = otp
     
     def user_login(self):
         """Handle user portal login."""
-        if self.user_username and self.user_password:
-            self.user_logged_in = True
+        if not self.user_username or not self.user_password or not self.user_otp:
+            self.login_error = "Debe ingresar usuario, contraseña y OTP"
+            return
+
+        response = login_user(self.user_username, self.user_password, self.user_otp)
+        access_token = response.get("access_token")
+        session_token = response.get("session_token")
+        if not access_token or not session_token:
+            self.login_error = "No se pudo autenticar con el middleware"
+            return
+
+        self.user_id = int(response.get("user_id", 0))
+        self.organization_id = int(response.get("organization_id", 0))
+        self.access_token = access_token
+        self.session_token = session_token
+        self.user_logged_in = True
+        self.login_error = ""
+
+        permissions_response = get_user_permissions(access_token, session_token)
+        self.user_permissions = permissions_response.get("permissions", [])
     
     def user_logout(self):
         """Handle user portal logout."""
         self.user_logged_in = False
         self.user_username = ""
         self.user_password = ""
+        self.user_otp = ""
+        self.access_token = ""
+        self.session_token = ""
+        self.user_id = 0
+        self.organization_id = 0
+        self.user_permissions = []
+        self.login_error = ""
+
+    def refresh_session_tokens(self):
+        """Renueva los tokens de sesión mediante el middleware."""
+
+        if not self.session_token:
+            self.login_error = "No hay sesión activa para renovar"
+            return
+        response = refresh_tokens(self.session_token)
+        access_token = response.get("access_token")
+        session_token = response.get("session_token")
+        if not access_token or not session_token:
+            self.login_error = "No se pudieron renovar los tokens"
+            return
+        self.access_token = access_token
+        self.session_token = session_token
     
     def set_user_tab(self, tab: str):
         """Set active tab for user dashboard."""
@@ -109,6 +163,20 @@ def login_panel() -> rx.Component:
                     ),
                     spacing="1",
                 ),
+                rx.vstack(
+                    rx.text("OTP", font_size="0.9em", color=COLORS["muted_foreground"]),
+                    rx.input(
+                        placeholder="Ingrese su OTP",
+                        on_change=State.set_user_otp,
+                        value=State.user_otp,
+                        background_color=COLORS["input"],
+                        border_color=COLORS["border"],
+                        color=COLORS["foreground"],
+                        width="100%",
+                        border_radius="5px",
+                    ),
+                    spacing="1",
+                ),
                 spacing="2",
             ),
             rx.button(
@@ -118,6 +186,12 @@ def login_panel() -> rx.Component:
                 color=COLORS["background"],
                 width="100%",
                 font_weight="bold",
+            ),
+            rx.text(
+                State.login_error,
+                color="red",
+                font_size="0.85em",
+                display=rx.cond(State.login_error != "", "block", "none"),
             ),
             rx.vstack(
                 rx.link(
@@ -662,11 +736,8 @@ frontend_dir = Path(__file__).parent.parent
 if str(frontend_dir) not in sys.path:
     sys.path.insert(0, str(frontend_dir))
 
-# Inicializar variables
-_register_security_action = None
-
 try:
-    from pages.user_creation import user_creation_page, _register_security_action
+    from pages.user_creation import user_creation_page
     app.add_page(user_creation_page, route="/user_creation", title="Myllm - Crear Usuario")
     print("✅ Ruta /user_creation registrada exitosamente")
 except ImportError as e:
@@ -690,113 +761,3 @@ except Exception as e:
     print(f"❌ Error al registrar ruta /change_password: {e}")
     import traceback
     traceback.print_exc()
-
-if _register_security_action:
-    
-    # Registrar endpoint API para logging de seguridad
-    # En Reflex 0.8.21, intentamos registrar el endpoint usando diferentes métodos
-    try:
-        import logging
-        import json
-        from starlette.requests import Request
-        from starlette.responses import JSONResponse
-        
-        logger_api = logging.getLogger(__name__)
-        
-        async def log_security_action_api(request: Request):
-            """
-            Endpoint API para registrar acciones de seguridad.
-            Tiene acceso al request HTTP para obtener IP y user agent.
-            """
-            try:
-                body = await request.json()
-                action = body.get("action", "")
-                entity_id = body.get("entity_id")
-                
-                if not action:
-                    return JSONResponse(
-                        content={"success": False, "error": "action es requerido"},
-                        status_code=400,
-                    )
-                
-                # Usar la función de common_security para registrar la acción
-                if _register_security_action:
-                    success = _register_security_action(action, entity_id, request)
-                else:
-                    success = False
-                    logger_api.warning("_register_security_action no está disponible")
-                return JSONResponse(
-                    content={"success": success},
-                    status_code=200 if success else 500,
-                )
-            except Exception as e:
-                logger_api.error(f"Error en endpoint log_security_action_api: {e}", exc_info=True)
-                return JSONResponse(
-                    content={"success": False, "error": str(e)},
-                    status_code=500,
-                )
-        
-        # Intentar registrar el endpoint usando diferentes métodos
-        endpoint_registered = False
-        
-        # Método 1: Acceder directamente al objeto Starlette/FastAPI usando _api (atributo privado de Reflex)
-        try:
-            if hasattr(app, "_api") and app._api is not None:
-                starlette_app = app._api
-                # Starlette usa add_route en lugar de decoradores
-                starlette_app.add_route(
-                    "/api/log_security_action",
-                    log_security_action_api,
-                    methods=["POST"],
-                )
-                endpoint_registered = True
-                logger_api.info("✅ Endpoint API registrado usando app._api (Starlette)")
-        except Exception as e:
-            logger_api.debug(f"Error al acceder a app._api: {e}")
-        
-        # Método 2: Intentar usar add_api_route si está disponible
-        if not endpoint_registered:
-            try:
-                if hasattr(app, "add_api_route"):
-                    app.add_api_route(
-                        path="/api/log_security_action",
-                        endpoint=log_security_action_api,
-                        methods=["POST"],
-                    )
-                    endpoint_registered = True
-                    logger_api.info("✅ Endpoint API registrado usando add_api_route")
-            except Exception as e:
-                logger_api.debug(f"add_api_route no funcionó: {e}")
-        
-        # Método 3: Intentar acceder al objeto FastAPI subyacente usando otros atributos
-        if not endpoint_registered:
-            try:
-                fastapi_app = None
-                
-                # Intentar diferentes formas de acceder al objeto FastAPI
-                if hasattr(app, "api") and app.api is not None:
-                    fastapi_app = app.api
-                elif hasattr(app, "_app") and app._app is not None:
-                    fastapi_app = app._app
-                elif hasattr(app, "fastapi_app") and app.fastapi_app is not None:
-                    fastapi_app = app.fastapi_app
-                
-                if fastapi_app:
-                    # Registrar el endpoint usando el decorador de FastAPI
-                    fastapi_app.post("/api/log_security_action")(log_security_action_api)
-                    endpoint_registered = True
-                    logger_api.info("✅ Endpoint API registrado usando FastAPI directamente")
-            except Exception as e2:
-                logger_api.debug(f"Error al registrar endpoint con FastAPI: {e2}")
-        
-        if not endpoint_registered:
-            logger_api.warning("⚠️ No se pudo registrar el endpoint API. El logging funcionará sin IP/user agent.")
-            logger_api.info("💡 El logging de seguridad seguirá funcionando usando router_data en lugar del endpoint API.")
-    except ImportError as e:
-        import logging
-        logger_api = logging.getLogger(__name__)
-        logger_api.warning(f"FastAPI no está disponible: {e}")
-    except Exception as e:
-        import logging
-        logger_api = logging.getLogger(__name__)
-        logger_api.warning(f"Error al registrar endpoint API de seguridad: {e}", exc_info=True)

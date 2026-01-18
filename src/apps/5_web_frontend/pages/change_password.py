@@ -37,7 +37,7 @@ except Exception as e:
 # Cargar módulo de seguridad común
 _common_security_module = None
 _send_message_by_sms = None
-_log_security_action_function = None
+log_security_action = None
 
 try:
     import importlib.util
@@ -53,14 +53,32 @@ try:
             _common_security_module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(_common_security_module)
             _send_message_by_sms = getattr(_common_security_module, "send_message_by_sms", None)
-            _log_security_action_function = getattr(_common_security_module, "log_security_action", None)
-            if _send_message_by_sms and _log_security_action_function:
+            if _send_message_by_sms:
                 logger.info("Módulo common_security cargado exitosamente")
 except Exception as e:
     logger.error(f"Error al cargar módulo common_security: {e}")
 
-# Ruta del archivo de log de seguridad para esta aplicación
-_SECURITY_LOG_PATH = Path(__file__).parent.parent / "logs" / "frontend_secure.log"
+# Intentar importar el adaptador para logging de seguridad
+try:
+    import importlib.util
+    adapter_path = Path(__file__).parent.parent / "adapters" / "api_client.py"
+    if adapter_path.exists():
+        spec = importlib.util.spec_from_file_location("api_client", adapter_path)
+        if spec and spec.loader:
+            api_client_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(api_client_module)
+            if hasattr(api_client_module, "log_security_action"):
+                log_security_action = api_client_module.log_security_action
+                logger.info("Función log_security_action cargada exitosamente")
+            else:
+                log_security_action = None
+                logger.warning("log_security_action no está disponible en api_client")
+    else:
+        log_security_action = None
+        logger.warning("api_client.py no existe para logging")
+except Exception as e:
+    log_security_action = None
+    logger.error(f"Error al cargar api_client para logging: {e}")
 
 # Cargar módulo de cifrado para cifrar contraseñas
 _cipher_module = None
@@ -87,29 +105,18 @@ try:
 except Exception as e:
     logger.error(f"Error al cargar módulo de cifrado: {e}")
 
-# Función para registrar acciones de seguridad
-def _register_security_action(action: str, entity_id: Optional[int], request: Any) -> bool:
-    """
-    Función auxiliar para registrar acciones de seguridad.
-    
-    Args:
-        action: Descripción de la acción realizada.
-        entity_id: Identificador opcional de la entidad relacionada.
-        request: Objeto de solicitud HTTP (puede ser None).
-    
-    Returns:
-        True si el log se escribió exitosamente, False en caso contrario.
-    """
-    if _log_security_action_function:
-        return _log_security_action_function(
-            request=request,
-            action=action,
-            entity_id=entity_id,
-            log_file_path=_SECURITY_LOG_PATH,
-        )
-    else:
-        logger.error("log_security_action_function no está disponible")
-        return False
+def _log_security_action(action: str, entity_id: Optional[int], ip: str, user_agent: str) -> None:
+    """Envía el log de seguridad al middleware."""
+
+    if log_security_action is None:
+        logger.warning("log_security_action no está disponible")
+        return
+    try:
+        result = log_security_action(action, entity_id, ip, user_agent)
+        if not result:
+            logger.warning("No se pudo registrar el log de seguridad en el middleware")
+    except Exception as exc:
+        logger.error(f"Error al registrar log en middleware: {exc}", exc_info=True)
 
 # Importar los colores de la página principal
 COLORS = {
@@ -459,16 +466,7 @@ class ChangePasswordState(rx.State):
             user_id: Identificador del usuario.
         """
         try:
-            # Crear un objeto request mock con IP y user agent
-            class MockRequest:
-                """Mock del request HTTP con IP y user agent."""
-                def __init__(self, ip: str, user_agent: str):
-                    self.headers = {"user-agent": user_agent}
-                    self.client = type("Client", (), {"host": ip})()
-                    self.scope = {"client": (ip, 0)}
-            
             # Intentar obtener IP y user agent desde router_data
-            request_mock = None
             ip = None
             user_agent = None
             
@@ -479,16 +477,15 @@ class ChangePasswordState(rx.State):
                     if "," in ip:
                         ip = ip.split(",")[0].strip()
                     user_agent = headers.get("user-agent", "Unknown Browser")
-                    request_mock = MockRequest(ip, user_agent)
                     logger.debug(f"IP obtenida desde router_data: {ip}, User agent: {user_agent[:50]}")
             except Exception as e:
                 logger.debug(f"Error al obtener IP/user agent desde router_data: {e}")
             
-            # Registrar usando la función de logging
-            if _log_security_action_function:
-                result = _register_security_action(action, user_id, request_mock)
-                if result:
-                    logger.info(f"Log de seguridad registrado: {action} (user_id: {user_id})")
+            if ip is None:
+                ip = "127.0.0.1"
+            if user_agent is None:
+                user_agent = "Unknown Browser"
+            _log_security_action(action, user_id, ip, user_agent)
         except Exception as e:
             logger.error(f"Error al registrar log de seguridad: {e}", exc_info=True)
 

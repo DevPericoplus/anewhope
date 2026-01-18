@@ -46,6 +46,30 @@ source .venv/bin/activate  # macOS / Linux
 .venv\Scripts\Activate.ps1 # Windows PowerShell
 ```
 
+## Servicio frontend en contenedor
+
+El servicio `7_service_frontend` puede ejecutarse de forma independiente en Docker.
+
+```bash
+cp src/apps/7_service_frontend/.env.example src/apps/7_service_frontend/.env
+docker compose -f src/apps/7_service_frontend/docker-compose.yml up --build
+```
+
+Variables relevantes (ver `src/apps/7_service_frontend/.env.example`):
+- `JWT_ACCESS_SECRET`
+- `JWT_SESSION_SECRET`
+- `JWT_ALGORITHM`
+- `BACKEND_BASE_URL`
+- `SERVICE_HOST`
+- `SERVICE_PORT`
+- `SERVICE_RELOAD`
+- `USERS_DATA_PATH`
+- `ORGANIZATIONS_DATA_PATH`
+- `FERNET_KEY_PATH`
+
+Dependencias del servicio (pip):
+- `src/apps/7_service_frontend/requirements.txt`
+
 ## Modelo de Dominio
 
 El módulo `src/1_shared_domain/entities/domain_models.py` contiene las entidades centrales del sistema, diseñadas siguiendo principios de Domain-Driven Design (DDD).
@@ -213,6 +237,58 @@ user = User(
     mobile="+1234567890",
     otp="1234"
 )
+```
+
+## Roles y permisos (mock)
+
+- `src/2_shared_application/moks/roles.json`: define roles. El atributo
+  `identity_type_group_permissions` contiene una lista de permisos básicos.
+- `src/2_shared_application/moks/basic_permissions.json`: catálogo de permisos básicos.
+- `src/2_shared_application/moks/manage_roles_by_org.json`: asigna roles a
+  usuarios dentro de una organización.
+
+En la gestión de permisos del token JWT se incluyen `user_id`, `organization_id`
+e `identity_type_id` para resolver los permisos asociados.
+
+Estructura de `manage_roles_by_org.json`:
+```
+{
+  "id_user": 1,
+  "id_organization": 1,
+  "identity_type_id": 2,
+  "create_date": "18/01/26-10:30",
+  "modification_date": "",
+  "id_modifier_user": 1,
+  "active": true
+}
+```
+
+El campo `identity_type_id` permite consultar los permisos del rol en
+`basic_permissions.json`.
+
+## Logging de seguridad
+
+Las escrituras de logs de seguridad se realizan en el middleware (`7_service_frontend`).
+El frontend solo envía la acción al endpoint `/security/log`.
+
+Archivo de log (middleware):
+- `src/apps/7_service_frontend/logs/middleware_secure.log`
+
+### Estructura JWT (middleware)
+
+El middleware emite dos tokens:
+- **Access Token** (15 min)
+- **Session Token** (45 min)
+
+Payload mínimo común en ambos:
+```
+{
+  "user_id": 1,
+  "organization_id": 1,
+  "identity_type_id": 2,
+  "iat": 1700000000,
+  "exp": 1700000900
+}
 ```
 
 ## Roles y automatización (referencia)

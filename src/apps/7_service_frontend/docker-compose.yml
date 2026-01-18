@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  service_frontend:
+    build:
+      context: ../../..
+      dockerfile: src/apps/7_service_frontend/Dockerfile
+    env_file:
+      - .env
+    environment:
+      SERVICE_HOST: "0.0.0.0"
+      SERVICE_PORT: "8002"
+    ports:
+      - "8002:8002"

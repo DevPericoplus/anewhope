@@ -1,7 +1,10 @@
-"""Adaptador para comunicación con la capa de dominio."""
+"""Adaptador para comunicación con la capa de dominio y middleware."""
 import importlib.util
+import json
 import logging
-import sys
+import os
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +15,6 @@ _domain_entities_path = (
     Path(__file__).parent.parent.parent.parent / "1_shared_domain" / "entities"
 )
 _user_module_path = _domain_entities_path / "user.py"
-_organization_module_path = _domain_entities_path / "organization.py"
 
 # Cargar el módulo de dominio de usuarios
 _create_user_function = None
@@ -27,23 +29,6 @@ if _user_module_path.exists():
             _get_user_by_name_exist_function = getattr(user_module, "get_user_by_name_exist", None)
     except Exception as e:
         logger.error(f"Error al cargar el módulo de usuarios: {e}")
-
-# Cargar el módulo de dominio de organizaciones
-_create_organization_function = None
-_get_organization_by_name_exist_function = None
-if _organization_module_path.exists():
-    try:
-        spec = importlib.util.spec_from_file_location("organization", _organization_module_path)
-        if spec and spec.loader:
-            organization_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(organization_module)
-            _create_organization_function = organization_module.create_organization
-            _get_organization_by_name_exist_function = getattr(
-                organization_module, "get_organization_by_name_exist", None
-            )
-    except Exception as e:
-        logger.error(f"Error al cargar el módulo de organizaciones: {e}")
-
 
 def check_user_name_exists(user_name: str) -> bool:
     """
@@ -70,27 +55,19 @@ def check_user_name_exists(user_name: str) -> bool:
 
 def save_user_to_json(user_extended: Any) -> bool:
     """
-    Guarda un usuario UserExtended en el archivo users.json a través del adaptador.
-    
-    Convierte el objeto UserExtended a un diccionario y lo pasa a la función
-    create_user de la capa de dominio.
-    
+    Guarda un usuario UserExtended a través del middleware.
+
     Args:
         user_extended: Objeto UserExtended a guardar.
     
     Returns:
         True si el usuario se guardó exitosamente, False en caso contrario.
     """
-    if _create_user_function is None:
-        logger.error("La función create_user no está disponible")
-        return False
-    
     try:
         # Convertir UserExtended a diccionario
         user_dict = _user_extended_to_dict(user_extended)
-        
-        # Llamar a la función de dominio
-        return _create_user_function(user_dict)
+        response = _request_middleware("POST", "/users", payload=user_dict)
+        return isinstance(response.get("user_id"), int)
     except Exception as e:
         logger.error(f"Error al guardar usuario a través del adaptador: {e}")
         return False
@@ -140,36 +117,30 @@ def _user_extended_to_dict(user_extended: Any) -> dict[str, Any]:
     }
 
 
+
+
 def check_organization_name_exists(organization_name: str) -> bool:
     """
     Verifica si existe una organización con el nombre dado.
-    
-    Utiliza la función get_organization_by_name_exist del módulo de dominio.
-    
+
     Args:
         organization_name: Nombre de la organización a verificar.
     
     Returns:
         True si la organización existe, False en caso contrario.
     """
-    if _get_organization_by_name_exist_function is None:
-        logger.warning("La función get_organization_by_name_exist no está disponible")
-        return False
-    
-    try:
-        return _get_organization_by_name_exist_function(organization_name)
-    except Exception as e:
-        logger.error(f"Error al verificar nombre de organización: {e}")
-        return False
+    response = _request_middleware(
+        "POST",
+        "/organizations/check-name",
+        payload={"organization_name": organization_name},
+    )
+    return bool(response.get("exists", False))
 
 
 def save_organization_to_json(organization_data: dict[str, Any]) -> int | None:
     """
-    Guarda una organización en el archivo organizations.json a través del adaptador.
-    
-    Convierte el diccionario de datos de organización a un objeto simple
-    y lo pasa a la función create_organization de la capa de dominio.
-    
+    Guarda una organización mediante el middleware.
+
     Args:
         organization_data: Diccionario con los datos de la organización.
             Debe contener las siguientes claves:
@@ -183,61 +154,88 @@ def save_organization_to_json(organization_data: dict[str, Any]) -> int | None:
     Returns:
         organization_id (int) si la organización se guardó exitosamente, None en caso contrario.
     """
-    if _create_organization_function is None:
-        logger.error("La función create_organization no está disponible")
-        return None
-    
+    response = _request_middleware("POST", "/organizations", payload=organization_data)
+    organization_id = response.get("organization_id")
+    if isinstance(organization_id, int):
+        return organization_id
+    logger.error("No se pudo crear la organización en el middleware")
+    return None
+
+
+def _get_middleware_base_url() -> str:
+    """Obtiene la URL base del middleware desde el entorno."""
+
+    return os.environ.get("MIDDLEWARE_BASE_URL", "http://localhost:8002").rstrip("/")
+
+
+def _request_middleware(
+    method: str, path: str, payload: dict[str, Any] | None = None, headers: dict[str, str] | None = None
+) -> dict[str, Any]:
+    """Realiza una petición HTTP al middleware y retorna JSON."""
+
+    url = f"{_get_middleware_base_url()}{path}"
+    body = None
+    request_headers = {"Content-Type": "application/json"}
+    if headers:
+        request_headers.update(headers)
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+
+    request = urllib.request.Request(url, data=body, headers=request_headers, method=method)
     try:
-        # Crear un objeto simple que simule Organization para create_organization
-        # create_organization espera un objeto con atributos organization_*
-        class SimpleOrganization:
-            def __init__(self, name: str, email: str, tlf: str = "", address: str = "", country: str = "", state: str = ""):
-                self.organization_name = name
-                self.organization_email = email
-                self.organization_tlf = tlf
-                self.organization_address = address
-                self.organization_country = country
-                self.organization_state = state
-        
-        org_obj = SimpleOrganization(
-            name=organization_data.get("organization_name", "").strip(),
-            email=organization_data.get("organization_email", "").strip(),
-            tlf=organization_data.get("organization_tlf", "").strip(),
-            address=organization_data.get("organization_address", "").strip(),
-            country=organization_data.get("organization_country", "").strip(),
-            state=organization_data.get("organization_state", "").strip(),
-        )
-        
-        # Llamar a la función de dominio
-        if _create_organization_function(org_obj):
-            # Obtener el organization_id de la organización recién creada
-            # Buscar la organización por nombre en el archivo JSON
-            import json
-            org_file_path = (
-                Path(__file__).parent.parent.parent.parent
-                / "2_shared_application"
-                / "moks"
-                / "organizations.json"
-            )
-            if org_file_path.exists():
-                try:
-                    with open(org_file_path, "r", encoding="utf-8") as f:
-                        orgs = json.load(f)
-                    # Buscar la organización por nombre (normalizado)
-                    org_name = organization_data.get("organization_name", "").strip()
-                    for org in orgs:
-                        if org.get("organization_name", "").strip() == org_name:
-                            org_id = org.get("organization_id")
-                            if isinstance(org_id, int):
-                                logger.info(f"Organización creada con ID: {org_id}")
-                                return org_id
-                    logger.warning(f"No se encontró el ID de la organización '{org_name}' después de crearla")
-                except Exception as e:
-                    logger.error(f"Error al leer organizations.json para obtener el ID: {e}")
-            return None
-        else:
-            return None
-    except Exception as e:
-        logger.error(f"Error al guardar organización a través del adaptador: {e}")
-        return None
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        try:
+            error_payload = exc.read().decode("utf-8")
+            logger.error(f"Error HTTP desde middleware: {exc.code} - {error_payload}")
+        except Exception:
+            logger.error(f"Error HTTP desde middleware: {exc.code}")
+        return {}
+    except urllib.error.URLError as exc:
+        logger.error(f"No se pudo contactar con el middleware: {exc}")
+        return {}
+    except json.JSONDecodeError:
+        logger.error("Respuesta del middleware no es JSON válido")
+        return {}
+
+
+def login_user(user_name: str, password: str, otp: str) -> dict[str, Any]:
+    """Solicita autenticación al middleware."""
+
+    payload = {"user_name": user_name, "password": password, "otp": otp}
+    return _request_middleware("POST", "/login", payload=payload)
+
+
+def refresh_tokens(session_token: str) -> dict[str, Any]:
+    """Solicita renovación de tokens al middleware."""
+
+    return _request_middleware(
+        "POST", "/refresh-token", headers={"X-Session-Token": session_token}
+    )
+
+
+def get_user_permissions(access_token: str, session_token: str) -> dict[str, Any]:
+    """Consulta permisos del usuario en el middleware."""
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "X-Session-Token": session_token,
+    }
+    return _request_middleware("GET", "/permissions", headers=headers)
+
+
+def log_security_action(
+    action: str, entity_id: int | None, ip: str, user_agent: str
+) -> bool:
+    """Registra una acción de seguridad en el middleware."""
+
+    payload = {
+        "action": action,
+        "entity_id": entity_id,
+        "ip": ip,
+        "user_agent": user_agent,
+    }
+    response = _request_middleware("POST", "/security/log", payload=payload)
+    return bool(response.get("success"))
 

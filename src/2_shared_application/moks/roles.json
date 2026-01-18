@@ -1,0 +1,121 @@
+[
+  {
+    "identity_type_id": 1,
+    "identity_type_name": "Administrador global",
+    "identity_type_rol": "Global Administrador",
+    "identity_type_group_permissions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ]
+  },
+  {
+    "identity_type_id": 2,
+    "identity_type_name": "Administrador de la organización",
+    "identity_type_rol": "Organization administrator",
+    "identity_type_group_permissions": [
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "identity_type_id": 3,
+    "identity_type_name": "Editor de la organización",
+    "identity_type_rol": "Organization Editor",
+    "identity_type_group_permissions": [
+      3,
+      4
+    ]
+  },
+  {
+    "identity_type_id": 4,
+    "identity_type_name": "Lector de la organización",
+    "identity_type_rol": "Organization reader",
+    "identity_type_group_permissions": [
+      4
+    ]
+  },
+  {
+    "identity_type_id": 5,
+    "identity_type_name": "Auditor de la organización",
+    "identity_type_rol": "Organization Auditor",
+    "identity_type_group_permissions": [
+      5
+    ]
+  },
+  {
+    "identity_type_id": 6,
+    "identity_type_name": "Tipo reservado 0",
+    "identity_type_rol": "Reserverd type 0",
+    "identity_type_group_permissions": [
+      6
+    ]
+  },
+  {
+    "identity_type_id": 7,
+    "identity_type_name": "Tipo reservado 1",
+    "identity_type_rol": "Reserved type 1",
+    "identity_type_group_permissions": [
+      7
+    ]
+  },
+  {
+    "identity_type_id": 8,
+    "identity_type_name": "Tipo reservado 2",
+    "identity_type_rol": "Reserved type 2",
+    "identity_type_group_permissions": [
+      8
+    ]
+  },
+  {
+    "identity_type_id": 9,
+    "identity_type_name": "Tipo reservado 3",
+    "identity_type_rol": "Reserved type 3",
+    "identity_type_group_permissions": [
+      9
+    ]
+  },
+  {
+    "identity_type_id": 10,
+    "identity_type_name": "Agente administrador para la organización",
+    "identity_type_rol": "Administrator Agent for the organization",
+    "identity_type_group_permissions": [
+      10,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "identity_type_id": 11,
+    "identity_type_name": "Agente editor para la organización",
+    "identity_type_rol": "Editor Agent for the organization",
+    "identity_type_group_permissions": [
+      11,
+      3,
+      4
+    ]
+  },
+  {
+    "identity_type_id": 12,
+    "identity_type_name": "Agente lector para la organización",
+    "identity_type_rol": "Agente lector para la organización",
+    "identity_type_group_permissions": [
+      12,
+      4
+    ]
+  },
+  {
+    "identity_type_id": 13,
+    "identity_type_name": "Agente auditor para la organización",
+    "identity_type_rol": "Auditor Agent for the organization",
+    "identity_type_group_permissions": [
+      13,
+      5
+    ]
+  }
+]

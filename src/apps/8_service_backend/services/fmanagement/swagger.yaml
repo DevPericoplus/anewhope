@@ -1,0 +1,295 @@
+openapi: 3.0.0
+info:
+  title: File Management Operations API (FMO)
+  description: Robust API for managing files and folders with versioning, hierarchical listing, and comparison capabilities.
+  version: 1.0.0
+servers:
+  - url: http://localhost:1666
+    description: Local development server
+
+paths:
+  /fmo:
+    get:
+      summary: Perform file/folder operations (view, delete, rename, create)
+      parameters:
+        - $ref: '#/components/parameters/iduser'
+        - $ref: '#/components/parameters/basepath'
+        - $ref: '#/components/parameters/orgpath'
+        - $ref: '#/components/parameters/prjpath'
+        - $ref: '#/components/parameters/versionpath'
+        - $ref: '#/components/parameters/subfolders'
+        - $ref: '#/components/parameters/filename'
+        - $ref: '#/components/parameters/extfile'
+        - name: operation
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [view, delete, rename, create]
+        - $ref: '#/components/parameters/new_filename'
+        - $ref: '#/components/parameters/new_extfile'
+      responses:
+        '200':
+          description: Operation successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  status: { type: string }
+                  path: { type: string }
+                  content: { type: string, description: "Content of file (for view operation)" }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+    post:
+      summary: Upload a file
+      parameters:
+        - $ref: '#/components/parameters/iduser'
+        - $ref: '#/components/parameters/basepath'
+        - $ref: '#/components/parameters/orgpath'
+        - $ref: '#/components/parameters/prjpath'
+        - $ref: '#/components/parameters/versionpath'
+        - $ref: '#/components/parameters/subfolders'
+        - $ref: '#/components/parameters/filename'
+        - $ref: '#/components/parameters/extfile'
+        - name: operation
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [upload]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: File uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  path: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /fmo/list:
+    get:
+      summary: Get recursive directory listing
+      parameters:
+        - $ref: '#/components/parameters/iduser'
+        - $ref: '#/components/parameters/basepath'
+        - $ref: '#/components/parameters/orgpath'
+        - $ref: '#/components/parameters/prjpath'
+        - $ref: '#/components/parameters/versionpath'
+        - $ref: '#/components/parameters/subfolders'
+      responses:
+        '200':
+          description: Hierarchical listing retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  path: { type: string }
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FileItem'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /fmo/newversion:
+    post:
+      summary: Clone a version to a new incremented version
+      parameters:
+        - $ref: '#/components/parameters/iduser'
+        - $ref: '#/components/parameters/basepath'
+        - $ref: '#/components/parameters/orgpath'
+        - $ref: '#/components/parameters/prjpath'
+        - $ref: '#/components/parameters/versionpath'
+      responses:
+        '200':
+          description: New version created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  message: { type: string }
+                  old_version: { type: string }
+                  new_version: { type: string }
+                  path: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /fmo/diffversion:
+    get:
+      summary: Compare two versions recursively
+      parameters:
+        - $ref: '#/components/parameters/iduser'
+        - $ref: '#/components/parameters/basepath'
+        - $ref: '#/components/parameters/orgpath'
+        - $ref: '#/components/parameters/prjpath'
+        - $ref: '#/components/parameters/versionpath'
+        - $ref: '#/components/parameters/compare_versionpath'
+      responses:
+        '200':
+          description: Comparison results retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  base: { type: string }
+                  target: { type: string }
+                  diff:
+                    $ref: '#/components/schemas/DiffResult'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  parameters:
+    iduser:
+      name: iduser
+      in: query
+      required: true
+      schema: { type: integer }
+    basepath:
+      name: basepath
+      in: query
+      required: true
+      schema: { type: string }
+    orgpath:
+      name: orgpath
+      in: query
+      required: true
+      schema: { type: string }
+    prjpath:
+      name: prjpath
+      in: query
+      required: true
+      schema: { type: string }
+    versionpath:
+      name: versionpath
+      in: query
+      required: true
+      schema: { type: string }
+    subfolders:
+      name: subfolders
+      in: query
+      required: false
+      schema: { type: string }
+    filename:
+      name: filename
+      in: query
+      required: false
+      schema: { type: string }
+    extfile:
+      name: extfile
+      in: query
+      required: false
+      schema: { type: string }
+    new_filename:
+      name: new_filename
+      in: query
+      required: false
+      schema: { type: string }
+    new_extfile:
+      name: new_extfile
+      in: query
+      required: false
+      schema: { type: string }
+    compare_versionpath:
+      name: compare_versionpath
+      in: query
+      required: true
+      schema: { type: string }
+
+  schemas:
+    FileItem:
+      type: object
+      properties:
+        name: { type: string }
+        is_dir: { type: boolean }
+        size_bytes: { type: integer, format: int64 }
+        size_kb: { type: number, format: float }
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileItem'
+
+    DiffItem:
+      type: object
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [file, folder, mixed] }
+        status: { type: string, enum: [added, removed, modified, type_mismatch] }
+
+    DiffResult:
+      type: object
+      properties:
+        added:
+          type: array
+          items: { $ref: '#/components/schemas/DiffItem' }
+        removed:
+          type: array
+          items: { $ref: '#/components/schemas/DiffItem' }
+        modified:
+          type: array
+          items: { $ref: '#/components/schemas/DiffItem' }
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+    Forbidden:
+      description: Permission denied
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+    NotFound:
+      description: File or directory not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+              path: { type: string }
+    InternalError:
+      description: Execution error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+              details: { type: string }
