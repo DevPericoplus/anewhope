@@ -81,8 +81,9 @@ def main() -> None:
         logger.info("--------------------------------")
 
         decrypted_value, _ = security.decrypt_value(fernet_key, encrypted_value)
+        decrypted_text = _decode_decrypted_value(decrypted_value)
         logger.info(
-            f"Valor original recuperado del valor cifrado: {decrypted_value}"
+            f"Valor original recuperado del valor cifrado: {decrypted_text}"
         )
     else:
         logger.warning(f"Error: el archivo {secret_key_file} no existe")
@@ -94,9 +95,19 @@ def main() -> None:
         logger.info(f"Valor cifrado: {encrypted_value}")
         logger.info("--------------------------------")
         decrypted_value, _ = security.decrypt_value(fernet_key, encrypted_value)
+        decrypted_text = _decode_decrypted_value(decrypted_value)
         logger.info(
-            f"Valor original recuperado del valor cifrado: {decrypted_value}"
+            f"Valor original recuperado del valor cifrado: {decrypted_text}"
         )
+
+
+def _decode_decrypted_value(value: bytes) -> str:
+    """Convierte el valor descifrado a texto UTF-8 de forma segura."""
+
+    try:
+        return value.decode("utf-8")
+    except UnicodeDecodeError:
+        return value.decode("utf-8", errors="replace")
 
 
 if __name__ == "__main__":

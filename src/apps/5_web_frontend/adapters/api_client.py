@@ -165,7 +165,7 @@ def save_organization_to_json(organization_data: dict[str, Any]) -> int | None:
 def _get_middleware_base_url() -> str:
     """Obtiene la URL base del middleware desde el entorno."""
 
-    return os.environ.get("MIDDLEWARE_BASE_URL", "http://localhost:8002").rstrip("/")
+    return os.environ.get("MIDDLEWARE_BASE_URL", "http://localhost:8007").rstrip("/")
 
 
 def _request_middleware(
