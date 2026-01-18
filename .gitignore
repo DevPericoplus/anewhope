@@ -214,3 +214,4 @@ protected_values.py
 .venv/
 .venv314/
 .venv_middleware/
+.venv_frontend/

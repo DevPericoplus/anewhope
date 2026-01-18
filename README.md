@@ -70,6 +70,17 @@ Variables relevantes (ver `src/apps/7_service_frontend/.env.example`):
 Dependencias del servicio (pip):
 - `src/apps/7_service_frontend/requirements.txt`
 
+## Web frontend (Reflex)
+
+Regla de puertos: cada aplicación usa **8000 + el primer número del nombre de la carpeta**.
+
+- `5_web_frontend` → **8005**
+- `6_web_backoffice` → **8006** (reservado)
+- `7_service_frontend` → **8007**
+- `8_service_backend` → **8008** (reservado)
+
+La aplicación web (`5_web_frontend`) usa **puerto backend fijo 8005** para el servidor interno de Reflex. Esto se configura en `src/apps/5_web_frontend/rxconfig.py` con `backend_port=8005` y no debe cambiarse para evitar conflictos con el middleware.
+
 ## Modelo de Dominio
 
 El módulo `src/1_shared_domain/entities/domain_models.py` contiene las entidades centrales del sistema, diseñadas siguiendo principios de Domain-Driven Design (DDD).

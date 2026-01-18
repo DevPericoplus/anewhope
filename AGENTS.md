@@ -97,6 +97,17 @@ All numbered application folders in `src/apps/` (e.g., `3_backend/`, `4_trainer/
 
 **Note:** When creating new numbered application folders, ensure both `logs/` and `tests/` directories are created with appropriate initialization files.
 
+## Regla de puertos (estándar)
+
+Cada aplicación usa **puerto fijo 8000 + el primer número del nombre de su carpeta**:
+
+- `5_web_frontend` → **8005**
+- `6_web_backoffice` → **8006** (reservado)
+- `7_service_frontend` → **8007**
+- `8_service_backend` → **8008** (reservado)
+
+La intención es identificar servicios por puerto en el host, manteniendo una asignación estable.
+
 ## Coding Standards & Language Rules
 
 ### Language Usage Guidelines

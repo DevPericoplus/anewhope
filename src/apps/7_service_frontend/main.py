@@ -17,7 +17,7 @@ def main() -> None:
     )
 
     host = os.environ.get("SERVICE_HOST", "0.0.0.0")
-    port = int(os.environ.get("SERVICE_PORT", "8002"))
+    port = int(os.environ.get("SERVICE_PORT", "8007"))
     reload_enabled = os.environ.get("SERVICE_RELOAD", "false").lower() == "true"
 
     uvicorn.run(
