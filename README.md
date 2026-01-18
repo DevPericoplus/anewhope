@@ -277,6 +277,179 @@ Estructura de `manage_roles_by_org.json`:
 El campo `identity_type_id` permite consultar los permisos del rol en
 `basic_permissions.json`.
 
+## Interfaces compartidas (aplicación)
+
+Los contratos en `src/2_shared_application/interfaces/` desacoplan el acceso a
+las entidades de dominio de la infraestructura (JSON hoy, MariaDB mañana).
+
+- `basic_permissions_repository.py`: `BasicPermissionsRepository`
+- `manage_roles_by_org_repository.py`: `ManageRolesByOrgRepository`
+- `roles_repository.py`: `RolesRepository`
+- `user_repository.py`: `UserRepository`
+- `organization_repository.py`: `OrganizationRepository`
+- `identity_global_repository.py`: `IdentityGlobalRepository`
+- `permissions_repository.py`: `PermissionsRepository`
+- `tenant_repository.py`: `TenantRepository`
+- `dataset_repository.py`: `DatasetRepository`
+- `model_version_repository.py`: `ModelVersionRepository`
+
+### Ejemplos de implementación en adaptadores
+
+Ejemplos simplificados (sin datos reales) para implementar repositorios desde
+JSON o desde MariaDB usando DTOs. Los adaptadores viven en la capa de
+infraestructura y transforman datos externos a entidades de dominio.
+
+```python
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Iterable
+
+from src.1_shared_domain.security_hierarchy import Roles
+from src.2_shared_application.interfaces.roles_repository import RolesRepository
+
+
+class RolesJsonRepository(RolesRepository):
+    """Repositorio basado en JSON para roles (solo ejemplo)."""
+
+    def __init__(self, json_path: Path) -> None:
+        self._json_path = json_path
+
+    def fetch_roles(self) -> Roles:
+        records = _read_json_list(self._json_path)
+        # El dominio valida estructura al construir
+        return Roles.from_records(records)
+
+
+def _read_json_list(json_path: Path) -> list[dict[str, object]]:
+    """Lee una lista JSON de forma segura."""
+
+    with json_path.open("r", encoding="utf-8") as file_handler:
+        data = json.load(file_handler)
+    if not isinstance(data, list):
+        raise ValueError("El JSON debe contener una lista")
+    return data
+```
+
+```python
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Protocol
+
+from src.1_shared_domain.entities.domain_models import User
+from src.2_shared_application.interfaces.user_repository import UserRepository
+
+
+@dataclass(frozen=True)
+class UserDto:
+    """DTO simulado retornado por MariaDB."""
+
+    id: int
+    organization_id: int
+    identity_type_id: int
+    user_name: str
+    user_password: str
+    user_email: str
+    user_mobile: str
+    user_otp: str
+    active: bool
+    blocked: bool
+
+
+class UsersMariaDbAdapter(UserRepository):
+    """Repositorio simulado que mapea DTOs a entidad de dominio."""
+
+    def __init__(self, gateway: "UserQueryGateway") -> None:
+        self._gateway = gateway
+
+    def get_by_id(self, user_id: int) -> User | None:
+        dto = self._gateway.fetch_by_id(user_id)
+        if dto is None:
+            return None
+        return _map_user(dto)
+
+    def get_by_email(self, user_email: str) -> User | None:
+        dto = self._gateway.fetch_by_email(user_email)
+        if dto is None:
+            return None
+        return _map_user(dto)
+
+    def get_by_name(self, user_name: str) -> User | None:
+        dto = self._gateway.fetch_by_name(user_name)
+        if dto is None:
+            return None
+        return _map_user(dto)
+
+    def exists_by_email(self, user_email: str) -> bool:
+        return self._gateway.exists_by_email(user_email)
+
+    def exists_by_mobile(self, user_mobile: str) -> bool:
+        return self._gateway.exists_by_mobile(user_mobile)
+
+    def exists_by_name(self, user_name: str) -> bool:
+        return self._gateway.exists_by_name(user_name)
+
+    def save(self, user: User) -> User:
+        dto = self._gateway.insert_user(user)
+        return _map_user(dto)
+
+    def update_password_and_otp(
+        self, user_email: str, new_password: str, new_otp: str
+    ) -> bool:
+        return self._gateway.update_password_and_otp(
+            user_email, new_password, new_otp
+        )
+
+
+class UserQueryGateway(Protocol):
+    """Gateway simulado hacia MariaDB."""
+
+    def fetch_by_id(self, user_id: int) -> UserDto | None:
+        """Obtiene un usuario por id."""
+
+    def fetch_by_email(self, user_email: str) -> UserDto | None:
+        """Obtiene un usuario por email."""
+
+    def fetch_by_name(self, user_name: str) -> UserDto | None:
+        """Obtiene un usuario por nombre."""
+
+    def exists_by_email(self, user_email: str) -> bool:
+        """Verifica existencia por email."""
+
+    def exists_by_mobile(self, user_mobile: str) -> bool:
+        """Verifica existencia por teléfono."""
+
+    def exists_by_name(self, user_name: str) -> bool:
+        """Verifica existencia por nombre."""
+
+    def insert_user(self, user: User) -> UserDto:
+        """Inserta y retorna el DTO persistido."""
+
+    def update_password_and_otp(
+        self, user_email: str, new_password: str, new_otp: str
+    ) -> bool:
+        """Actualiza contraseña y OTP en base de datos."""
+
+
+def _map_user(dto: UserDto) -> User:
+    """Convierte un DTO en entidad de dominio."""
+
+    return User(
+        user_id=dto.id,
+        organization_id=dto.organization_id,
+        identity_type_id=dto.identity_type_id,
+        user_name=dto.user_name,
+        password=dto.user_password,
+        email=dto.user_email,
+        mobile=dto.user_mobile,
+        otp=dto.user_otp,
+        active=dto.active,
+        blocked=dto.blocked,
+    )
+```
+
 ## Logging de seguridad
 
 Las escrituras de logs de seguridad se realizan en el middleware (`7_service_frontend`).

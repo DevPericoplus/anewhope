@@ -57,7 +57,7 @@ def main() -> None:
     else:
         logger.warning("El sistema de cifrado no está disponible")
 
-    security_path = project_root / SECURITY_LOCAL_FOLDER / "basesecuritypass"
+    security_path = project_root / SECURITY_LOCAL_FOLDER / SECURITY_FILE_NAME
     if security_path.exists():
         logger.info("El archivo de seguridad está disponible")
     else:

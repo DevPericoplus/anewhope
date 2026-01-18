@@ -1,5 +1,6 @@
 """Módulo de utilidades criptográficas para cifrado y descifrado de valores sensibles."""
 import json
+import base64
 import logging
 import sys
 from pathlib import Path
@@ -252,7 +253,9 @@ def verify_encrypted_value(fernet_instance: Fernet, encrypted_value: bytes) -> b
         return False
 
 
-def decrypt_value(fernet_instance: Fernet, cipher_value_encrypted: bytes) -> tuple[bytes, str]:
+def decrypt_value(
+    fernet_instance: Fernet, cipher_value_encrypted: bytes
+) -> tuple[bytes, str]:
     """
     Descifra un valor cifrado usando una instancia Fernet.
 
@@ -262,15 +265,27 @@ def decrypt_value(fernet_instance: Fernet, cipher_value_encrypted: bytes) -> tup
 
     Returns:
         Tupla con (valor descifrado como bytes, valor cifrado como string).
+        El segundo valor es una representación segura del cifrado: se intenta
+        UTF-8 y, si falla, se usa base64.
     """
     try:
         insecure_values = fernet_instance.decrypt(cipher_value_encrypted)
-        encrypted_value_str = cipher_value_encrypted.decode()
+        encrypted_value_str = _bytes_to_safe_str(cipher_value_encrypted)
         logger.debug(f"Valores inseguros: {cipher_value_encrypted}")
         logger.debug(f"Valor no cifrado: {encrypted_value_str}")
         return insecure_values, encrypted_value_str
     except Exception as e:
         logger.error(f"Error al descifrar: {e}")
-        secure_value_encrypted = cipher_value_encrypted.decode()
+        secure_value_encrypted = _bytes_to_safe_str(cipher_value_encrypted)
         logger.debug(f"Valor cifrado seguro: {secure_value_encrypted}")
         return b"", secure_value_encrypted
+
+
+def _bytes_to_safe_str(value: bytes) -> str:
+    """Convierte bytes a string de forma segura (UTF-8 o base64)."""
+
+    try:
+        return value.decode("utf-8")
+    except UnicodeDecodeError:
+        # Evita errores con bytes no UTF-8
+        return base64.urlsafe_b64encode(value).decode("ascii")
