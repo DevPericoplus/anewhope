@@ -1,9 +1,11 @@
 """Utilidades de seguridad comunes para aplicaciones web con Reflex."""
+import ast
 import datetime
 import json
 import logging
+import os
 from pathlib import Path
-from typing import Optional, Any, Tuple
+from typing import Any, Optional, Tuple
 
 try:
     import requests
@@ -152,40 +154,91 @@ def log_security_action(
 
 # SMS provider https://www.infobip.com/es
 
+def _load_sms_credentials_from_file(protected_values_path: Path) -> dict[str, str]:
+    """Carga credenciales desde protected_values.py sin ejecutar código."""
+
+    try:
+        content = protected_values_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise FileNotFoundError(
+            f"No se pudo leer protected_values.py en {protected_values_path}"
+        ) from exc
+
+    try:
+        tree = ast.parse(content, filename=str(protected_values_path))
+    except SyntaxError as exc:
+        raise ValueError("protected_values.py no es válido") from exc
+
+    allowed_keys = {"sms_api_url", "sms_api_key", "sms_sender_id"}
+    values: dict[str, str] = {}
+
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets = [node.target]
+        else:
+            continue
+
+        for target in targets:
+            if isinstance(target, ast.Name) and target.id in allowed_keys:
+                try:
+                    literal_value = ast.literal_eval(node.value)
+                except (ValueError, SyntaxError) as exc:
+                    raise ValueError(
+                        f"Valor inválido para {target.id} en protected_values.py"
+                    ) from exc
+                if not isinstance(literal_value, str):
+                    raise ValueError(
+                        f"{target.id} debe ser una cadena en protected_values.py"
+                    )
+                values[target.id] = literal_value
+
+    return values
+
+
 def get_sms_api_credentials() -> Tuple[str, str, str]:
     """
-    Obtiene los valores de sms_api_url, sms_api_key y sms_sender_id del archivo protected_values.py.
+    Obtiene credenciales SMS desde variables de entorno o protected_values.py.
 
     Returns:
-        Tupla (sms_api_url, sms_api_key, sms_sender_id)
+        Tupla (sms_api_url, sms_api_key, sms_sender_id).
         Si sms_sender_id no está definido, retorna "ServiceSMS" por defecto.
 
     Raises:
-        FileNotFoundError: Si el archivo protected_values.py no existe.
+        FileNotFoundError: Si no existe protected_values.py cuando se requiere.
         ValueError: Si alguna de las variables requeridas no se encuentra o no es válida.
-    
+
     Nota:
-        Este método lee y ejecuta de manera controlada las variables del archivo
-        protected_values.py que debe estar en el directorio raíz del proyecto.
-        El sms_sender_id puede ser un remitente alfanumérico o un número de teléfono.
+        - Prioriza variables de entorno: SMS_API_URL, SMS_API_KEY, SMS_SENDER_ID.
+        - Si no están definidas, lee protected_values.py de forma segura
+          (sin ejecutar código).
+        - El sms_sender_id puede ser un remitente alfanumérico o un número de teléfono.
     """
-    # Ruta relativa (se asume que el archivo está en el root del repo/proyecto)
-    protected_values_path = Path(__file__).parent.parent.parent.parent / "protected_values.py"
+    sms_api_url = os.environ.get("SMS_API_URL")
+    sms_api_key = os.environ.get("SMS_API_KEY")
+    sms_sender_id = os.environ.get("SMS_SENDER_ID", "ServiceSMS")
+
+    if sms_api_url and sms_api_key:
+        return sms_api_url, sms_api_key, sms_sender_id
+
+    protected_values_path = (
+        Path(__file__).parent.parent.parent.parent / "protected_values.py"
+    )
     if not protected_values_path.exists():
-        # El archivo no existe en la ruta esperada
-        raise FileNotFoundError(f"No se encontró protected_values.py en {protected_values_path}")
+        raise FileNotFoundError(
+            f"No se encontró protected_values.py en {protected_values_path}"
+        )
 
-    # Leer el contenido y extraer las variables requeridas
-    namespace = {}
-    with open(protected_values_path, "r", encoding="utf-8") as f:
-        exec(f.read(), {}, namespace)
-
-    sms_api_url = namespace.get("sms_api_url")
-    sms_api_key = namespace.get("sms_api_key")
-    sms_sender_id = namespace.get("sms_sender_id", "ServiceSMS")  # Valor por defecto
+    values = _load_sms_credentials_from_file(protected_values_path)
+    sms_api_url = values.get("sms_api_url")
+    sms_api_key = values.get("sms_api_key")
+    sms_sender_id = values.get("sms_sender_id", "ServiceSMS")
 
     if not sms_api_url or not sms_api_key:
-        raise ValueError("sms_api_url o sms_api_key no se encontraron en protected_values.py")
+        raise ValueError(
+            "sms_api_url o sms_api_key no se encontraron en protected_values.py"
+        )
 
     return sms_api_url, sms_api_key, sms_sender_id
 

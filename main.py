@@ -11,16 +11,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Agregar src al path para importar módulos
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
+
 # Importar valores protegidos de forma explícita
 try:
     from protected_values import global_shared_key_raw  # noqa: E402
 except ImportError as e:
     logger.warning(f"No se pudo importar protected_values: {e}")
     global_shared_key_raw = None
-
-# Agregar src al path para importar módulos
-project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
 
 # Importar módulo de seguridad desde la nueva ubicación usando importlib
 security_module_path = (

@@ -49,7 +49,7 @@ class RoleDto(BaseModel):
             identity_type_id=self.identity_type_id,
             identity_type_name=self.identity_type_name,
             identity_type_rol=self.identity_type_rol,
-            identity_type_group_permissions=self.identity_type_group_permissions,
+            identity_type_group_permissions=tuple(self.identity_type_group_permissions),
         )
 
     @classmethod
@@ -60,7 +60,7 @@ class RoleDto(BaseModel):
             identity_type_id=role.identity_type_id,
             identity_type_name=role.identity_type_name,
             identity_type_rol=role.identity_type_rol,
-            identity_type_group_permissions=role.identity_type_group_permissions,
+            identity_type_group_permissions=list(role.identity_type_group_permissions),
         )
 
 

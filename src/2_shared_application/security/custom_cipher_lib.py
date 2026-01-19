@@ -120,6 +120,7 @@ def _create_empty_file(file_path: Path) -> bool:
         True si se creó exitosamente.
     """
     try:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.touch()
         return True
     except OSError as e:
@@ -142,6 +143,7 @@ def store_fernet_key_to_file(encrypted_value: str, file_path: Optional[Path] = N
         file_path = _get_secret_key_file_path()
 
     try:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         data_to_save = {"fernet_key": encrypted_value}
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(data_to_save, f, indent=4)
