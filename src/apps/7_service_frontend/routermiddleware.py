@@ -547,6 +547,17 @@ class RouterMiddleware:
             )
         )
 
+    def _get_activity_log_path(self) -> Path:
+        """Resuelve la ruta del log de actividad del middleware."""
+
+        root_path = Path(__file__).resolve().parents[3]
+        return Path(
+            os.environ.get(
+                "ACTIVITY_LOG_PATH",
+                root_path / "src/apps/7_service_frontend/logs/middleware_activiy.log",
+            )
+        )
+
     def log_security_action(
         self, action: str, entity_id: int | None, ip: str, user_agent: str
     ) -> bool:
@@ -564,6 +575,26 @@ class RouterMiddleware:
         except OSError as exc:
             self._logger.error(
                 "Error al escribir log de seguridad en %s: %s", log_path, exc
+            )
+            return False
+
+    def log_activity_action(
+        self, action: str, entity_id: int | None, ip: str, user_agent: str
+    ) -> bool:
+        """Registra una acción operativa en el log de actividad."""
+
+        log_path = self._get_activity_log_path()
+        now = datetime.now().strftime("%Y-%m-%d-%H:%M")
+        entity_id_str = str(entity_id) if entity_id is not None else ""
+        log_line = f"{now},{ip},{user_agent},{action},{entity_id_str}\n"
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as file_handle:
+                file_handle.write(log_line)
+            return True
+        except OSError as exc:
+            self._logger.error(
+                "Error al escribir log de actividad en %s: %s", log_path, exc
             )
             return False
 

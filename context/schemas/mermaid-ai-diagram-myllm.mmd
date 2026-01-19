@@ -1,0 +1,57 @@
+flowchart TD
+    %% Roles de Usuario
+    subgraph Roles
+        U_Cliente["Usuario Cliente"]
+        U_MYllm["Usuario MYllm"]
+    end
+
+    %% FrontEnd Server
+    subgraph FrontEnd_Server [FrontEnd Server]
+        direction TB
+        Nginx{"Nginx"}
+        Web[5_web_frontend]
+        Backoffice[6_web_Backoffice]
+        ServiceFrontend[7_Service_Frontend]
+        Nginx -- "Acceso publico (Web de usuarios)" --> Web
+        Nginx -- "Acceso privado (Web de Gestion)" --> Backoffice
+        Web --> ServiceFrontend
+        Backoffice --> ServiceFrontend
+    end
+
+    %% BackEnd Server
+    subgraph BackEnd_Server [BackEnd Server]
+        ServiceBackend[8_service_backend]
+        Backend[3_Backend]
+        DB_Maria[(MariaDB Database)]
+        ServiceBackend -- "Backend Core" --> Backend
+        Backend --> DB_Maria
+    end
+
+    %% Trainer Server
+    subgraph Trainer_Server [Trainer Server]
+        Trainer[4_Trainer]
+        DB_Keras[(Keras Database)]
+        Trainer --> DB_Keras
+    end
+
+    %% Conexiones entre Servidores y Roles
+    U_Cliente --> Nginx
+    U_MYllm --> Nginx
+    ServiceFrontend -- "Middleware" --> ServiceBackend
+    ServiceBackend -- "Backend IA" --> Trainer
+
+    %% Elementos Compartidos
+    subgraph Shared_Components [Componentes Compartidos]
+        Domain["1 Shared domain"]
+        App["2 Shared application"]
+    end
+
+    %% Estilos aproximados
+    style Web fill:#228B22,color:#fff
+    style Backoffice fill:#A0522D,color:#fff
+    style ServiceFrontend fill:#008B8B,color:#fff
+    style ServiceBackend fill:#008B8B,color:#fff
+    style Backend fill:#FF0000,color:#fff
+    style Trainer fill:#9400D3,color:#fff
+    style Nginx fill:#f9f,stroke:#333
+    style Roles fill:#fff,stroke:none

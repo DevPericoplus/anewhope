@@ -79,9 +79,9 @@ class BasicPermissionDto(BaseModel):
         """Convierte el DTO a entidad de dominio."""
 
         return BasicPermission(
-            id=self.id,
-            PermissionName=self.permission_name,
-            PermissionDescription=self.permission_description,
+            permission_id=self.id,
+            permission_name=self.permission_name,
+            permission_description=self.permission_description,
         )
 
     @classmethod
@@ -89,9 +89,9 @@ class BasicPermissionDto(BaseModel):
         """Crea un DTO desde una entidad de dominio."""
 
         return cls(
-            id=permission.id,
-            permission_name=permission.PermissionName,
-            permission_description=permission.PermissionDescription,
+            id=permission.permission_id,
+            permission_name=permission.permission_name,
+            permission_description=permission.permission_description,
         )
 
 
@@ -112,12 +112,12 @@ class ManageRoleByOrgDto(BaseModel):
         """Convierte el DTO a entidad de dominio."""
 
         return ManagedRoleByOrg(
-            id_user=self.id_user,
-            id_organization=self.id_organization,
+            user_id=self.id_user,
+            organization_id=self.id_organization,
             identity_type_id=self.identity_type_id,
             create_date=self.create_date,
             modification_date=self.modification_date,
-            id_modifier_user=self.id_modifier_user,
+            modifier_user_id=self.id_modifier_user,
             active=self.active,
         )
 
@@ -126,11 +126,11 @@ class ManageRoleByOrgDto(BaseModel):
         """Crea un DTO desde una entidad de dominio."""
 
         return cls(
-            id_user=managed_role.id_user,
-            id_organization=managed_role.id_organization,
+            id_user=managed_role.user_id,
+            id_organization=managed_role.organization_id,
             identity_type_id=managed_role.identity_type_id,
             create_date=managed_role.create_date,
             modification_date=managed_role.modification_date,
-            id_modifier_user=managed_role.id_modifier_user,
+            id_modifier_user=managed_role.modifier_user_id,
             active=managed_role.active,
         )

@@ -36,6 +36,27 @@ Proyecto para gestionar infraestructura, aplicaciones y flujos de personalizaci�
 - `infrastructure/`: scripts y utilidades adicionales (pendiente de completar).
 - `test/`: pruebas heredadas o de exploración.
 
+## Diagrama de arquitectura (Mermaid)
+
+El esquema de arquitectura está definido en `context/schemas/mermaid-ai-diagram-myllm.mmd`.
+Resume la relación entre roles de usuario, servidores (frontend, backend y trainer),
+el middleware (`7_service_frontend`), el backend (`3_backend`), el servicio backend
+(`8_service_backend`), y los componentes compartidos (`1_shared_domain`, `2_shared_application`),
+además de las dependencias con Nginx y MariaDB.
+
+### Relación entre servicios (interpretación)
+
+- Dos interfaces web consumen el middleware: `5_web_frontend` y `6_web_backoffice`.
+- El middleware (`7_service_frontend`) enruta hacia el broker backend (`8_service_backend`),
+  que reparte peticiones entre el backend core y el backend IA.
+- El broker decide el destino:
+  - **Operaciones de datos** (MariaDB/MySQL y sistema de ficheros): las atiende el backend core `3_backend`
+    ejecutado en el servidor backend.
+  - **Operaciones de IA** (uso interno y entrenamiento): las atiende `4_trainer`, que tendrá API REST y se
+    ejecutará en el servidor trainer con base de datos vectorial Keras para entrenamientos.
+- La capa de dominio común vive en `src/1_shared_domain/`.
+- La capa de aplicación compartida vive en `src/2_shared_application/`.
+
 ## Entorno virtual
 
 El entorno Python se ubica en `.venv/`. Para activarlo:
@@ -66,6 +87,7 @@ Variables relevantes (ver `src/apps/7_service_frontend/.env.example`):
 - `USERS_DATA_PATH`
 - `ORGANIZATIONS_DATA_PATH`
 - `FERNET_KEY_PATH`
+- `ACTIVITY_LOG_PATH` (opcional, sobrescribe la ruta de `middleware_activiy.log`)
 
 Dependencias del servicio (pip):
 - `src/apps/7_service_frontend/requirements.txt`
@@ -80,6 +102,10 @@ Regla de puertos: cada aplicación usa **8000 + el primer número del nombre de 
 - `8_service_backend` → **8008** (reservado)
 
 La aplicación web (`5_web_frontend`) usa **puerto backend fijo 8005** para el servidor interno de Reflex. Esto se configura en `src/apps/5_web_frontend/rxconfig.py` con `backend_port=8005` y no debe cambiarse para evitar conflictos con el middleware.
+
+## TODO
+
+- Revisar el warning de compatibilidad de Pydantic v1 en Reflex con Python 3.14 cuando haya versión certificada.
 
 ## Modelo de Dominio
 
@@ -457,6 +483,14 @@ El frontend solo envía la acción al endpoint `/security/log`.
 
 Archivo de log (middleware):
 - `src/apps/7_service_frontend/logs/middleware_secure.log`
+
+## Logging de actividad (middleware)
+
+El middleware registra la actividad de las APIs en un log dedicado para trazabilidad.
+Este log captura acciones como autenticación, validaciones y operaciones CRUD.
+
+Archivo de log (middleware):
+- `src/apps/7_service_frontend/logs/middleware_activiy.log`
 
 ### Estructura JWT (middleware)
 

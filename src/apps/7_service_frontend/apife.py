@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated, Any, AsyncIterator
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 try:
@@ -177,6 +177,14 @@ def _extract_bearer_token(raw_token: str | None) -> str:
     return raw_token.strip()
 
 
+def _get_request_metadata(request: Request) -> tuple[str, str]:
+    """Extrae IP y user-agent del request."""
+
+    ip_address = request.client.host if request.client else ""
+    user_agent = request.headers.get("user-agent", "")
+    return ip_address, user_agent
+
+
 def get_session_context(
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
     access_token: Annotated[str | None, Header(alias="Authorization")] = None,
@@ -239,6 +247,7 @@ app = FastAPI(title="Middleware Frontend", lifespan=lifespan)
 @app.post("/login", response_model=LoginResponse)
 async def login_endpoint(
     request: LoginRequest,
+    http_request: Request,
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
 ) -> LoginResponse:
     """Endpoint de autenticación con OTP."""
@@ -246,6 +255,13 @@ async def login_endpoint(
     try:
         tokens = router.authenticate_user(
             user_name=request.user_name, password=request.password, otp=request.otp
+        )
+        ip_address, user_agent = _get_request_metadata(http_request)
+        router.log_activity_action(
+            action="Login",
+            entity_id=tokens.user_id,
+            ip=ip_address,
+            user_agent=user_agent,
         )
         return LoginResponse(
             user_id=tokens.user_id,
@@ -264,6 +280,7 @@ async def login_endpoint(
 
 @app.post("/refresh-token", response_model=RefreshTokenResponse)
 async def refresh_token_endpoint(
+    http_request: Request,
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
     session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
 ) -> RefreshTokenResponse:
@@ -273,6 +290,13 @@ async def refresh_token_endpoint(
         if session_token is None:
             raise TokenValidationError("Token de sesión no proporcionado")
         tokens = router.refresh_tokens(session_token)
+        ip_address, user_agent = _get_request_metadata(http_request)
+        router.log_activity_action(
+            action="Refresh token",
+            entity_id=tokens.user_id,
+            ip=ip_address,
+            user_agent=user_agent,
+        )
         return RefreshTokenResponse(
             user_id=tokens.user_id,
             organization_id=tokens.organization_id,
@@ -295,6 +319,7 @@ async def refresh_token_endpoint(
 
 @app.get("/permissions", response_model=PermissionsResponse)
 async def permissions_endpoint(
+    http_request: Request,
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
     session: Annotated[SessionContext, Depends(get_session_context)],
 ) -> PermissionsResponse:
@@ -302,6 +327,13 @@ async def permissions_endpoint(
 
     try:
         permissions_data = router.get_permissions(session)
+        ip_address, user_agent = _get_request_metadata(http_request)
+        router.log_activity_action(
+            action="Consultar permisos",
+            entity_id=session.user_id,
+            ip=ip_address,
+            user_agent=user_agent,
+        )
         return PermissionsResponse(**permissions_data)
     except BusinessRuleError as exc:
         raise HTTPException(
@@ -313,6 +345,7 @@ async def permissions_endpoint(
 @app.post("/security/log", response_model=SecurityLogResponse)
 async def security_log_endpoint(
     request: SecurityLogRequest,
+    http_request: Request,
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
 ) -> SecurityLogResponse:
     """Endpoint para registrar logs de seguridad."""
@@ -323,29 +356,52 @@ async def security_log_endpoint(
         ip=request.ip,
         user_agent=request.user_agent,
     )
+    ip_address, user_agent = _get_request_metadata(http_request)
+    router.log_activity_action(
+        action="Log de seguridad",
+        entity_id=request.entity_id,
+        ip=ip_address,
+        user_agent=user_agent,
+    )
     return SecurityLogResponse(success=success)
 
 
 @app.post("/organizations/check-name", response_model=OrganizationCheckResponse)
 async def organization_check_endpoint(
     request: OrganizationCheckRequest,
+    http_request: Request,
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
 ) -> OrganizationCheckResponse:
     """Endpoint para validar el nombre de organización."""
 
     exists = router.check_organization_name_exists(request.organization_name)
+    ip_address, user_agent = _get_request_metadata(http_request)
+    router.log_activity_action(
+        action="Validar organización",
+        entity_id=None,
+        ip=ip_address,
+        user_agent=user_agent,
+    )
     return OrganizationCheckResponse(exists=exists)
 
 
 @app.post("/organizations", response_model=OrganizationCreateResponse)
 async def organization_create_endpoint(
     request: OrganizationCreateRequest,
+    http_request: Request,
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
 ) -> OrganizationCreateResponse:
     """Endpoint para crear una organización."""
 
     try:
         organization_id = router.create_organization(request.model_dump())
+        ip_address, user_agent = _get_request_metadata(http_request)
+        router.log_activity_action(
+            action="Crear organización",
+            entity_id=organization_id,
+            ip=ip_address,
+            user_agent=user_agent,
+        )
         return OrganizationCreateResponse(organization_id=organization_id)
     except BusinessRuleError as exc:
         raise HTTPException(
@@ -357,12 +413,20 @@ async def organization_create_endpoint(
 @app.post("/users", response_model=UserCreateResponse)
 async def user_create_endpoint(
     request: UserCreateRequest,
+    http_request: Request,
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
 ) -> UserCreateResponse:
     """Endpoint para crear usuarios."""
 
     try:
         result: UserCreationResult = router.create_user(request.model_dump())
+        ip_address, user_agent = _get_request_metadata(http_request)
+        router.log_activity_action(
+            action="Crear usuario",
+            entity_id=result.user_id,
+            ip=ip_address,
+            user_agent=user_agent,
+        )
         return UserCreateResponse(
             user_id=result.user_id,
             organization_id=result.organization_id,
@@ -378,6 +442,7 @@ async def user_create_endpoint(
 @app.post("/process-data", response_model=ProcessDataResponse)
 async def process_data_endpoint(
     request: ProcessDataRequest,
+    http_request: Request,
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
     session: Annotated[SessionContext, Depends(get_session_context)],
 ) -> ProcessDataResponse:
@@ -385,6 +450,13 @@ async def process_data_endpoint(
 
     try:
         backend_response = await router.process_data(request.payload, session)
+        ip_address, user_agent = _get_request_metadata(http_request)
+        router.log_activity_action(
+            action="Procesar datos",
+            entity_id=session.user_id,
+            ip=ip_address,
+            user_agent=user_agent,
+        )
         return ProcessDataResponse(
             result=backend_response, message="Operación exitosa"
         )

@@ -87,6 +87,7 @@ All numbered application folders in `src/apps/` (e.g., `3_backend/`, `4_trainer/
 - **`logs/`**: Application-specific log files directory
   - Contains log files for security events, errors, and application-specific logging
   - Example: `5_web_frontend/logs/frontend_secure.log`
+  - Example (middleware activity): `7_service_frontend/logs/middleware_activiy.log`
   - Includes `.gitkeep` file to ensure the directory is tracked in git (when empty)
 
 - **`tests/`**: Application-specific test directory
@@ -107,6 +108,39 @@ Cada aplicación usa **puerto fijo 8000 + el primer número del nombre de su car
 - `8_service_backend` → **8008** (reservado)
 
 La intención es identificar servicios por puerto en el host, manteniendo una asignación estable.
+
+## Diagrama de arquitectura (Mermaid)
+
+El esquema de arquitectura del sistema se encuentra en `context/schemas/mermaid-ai-diagram-myllm.mmd`.
+Incluye roles de usuario, servidores frontend/backend/trainer, el flujo entre `5_web_frontend`,
+`6_web_backoffice`, `7_service_frontend`, `8_service_backend`, `3_backend`, y los componentes compartidos.
+
+### Reglas de integración entre servicios
+
+- **Entradas web**: `5_web_frontend` y `6_web_backoffice` consumen el middleware `7_service_frontend`.
+- **Broker backend**: `7_service_frontend` delega en `8_service_backend` para enrutar operaciones.
+  El broker reparte peticiones entre el backend core (datos) y el backend IA (entrenamiento/uso interno).
+- **Destino por tipo de operación**:
+  - Datos (MariaDB/MySQL y sistema de ficheros) → `3_backend` en servidor backend.
+  - IA (uso interno y entrenamiento) → `4_trainer` en servidor trainer (API REST + BD vectorial Keras).
+- **Capas compartidas**:
+  - Dominio común → `src/1_shared_domain/`.
+  - Aplicación común → `src/2_shared_application/`.
+
+### Guía para ubicación de cambios
+
+- Si el cambio afecta a reglas de negocio o entidades compartidas, debe estar en `src/1_shared_domain/`.
+- Si el cambio afecta a contratos, DTOs o utilidades compartidas, debe estar en `src/2_shared_application/`.
+- Si el cambio afecta a flujos web o UX, debe estar en `src/apps/5_web_frontend/` o `src/apps/6_web_backoffice/`.
+- Si el cambio afecta a la orquestación entre servicios web y backend, debe estar en `src/apps/7_service_frontend/`.
+- Si el cambio afecta a persistencia, API core o acceso a MariaDB/sistema de ficheros, debe estar en `src/apps/3_backend/`.
+- Si el cambio afecta a entrenamiento/IA, debe estar en `src/apps/4_trainer/`.
+
+### Impacto en tests
+
+- Cambios en `7_service_frontend` deben considerar tests de integración con `5_web_frontend` y `6_web_backoffice`.
+- Cambios en `8_service_backend` deben considerar integración con `3_backend` y `4_trainer`.
+- Cambios en `1_shared_domain` o `2_shared_application` pueden impactar en todas las apps y requieren tests de contrato.
 
 ## Interfaces compartidas (aplicación)
 
