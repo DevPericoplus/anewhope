@@ -1,18 +1,9 @@
-En Myllm nos especializamos en la creación de modelos LLM (Large Language Models) personalizados, diseñados para satisfacer las necesidades específicas de su organización a través de la integración de tecnologías avanzadas como RAG (Retrieval Augmented Generation) y técnicas de fine-tuning. 
+Impulse su transformación digital con Myllm: 
 
+Modelos de Lenguaje (LLM) a medida. 
+Desarrollamos agentes de IA personalizados mediante RAG y Fine-Tuning, 
+optimizando sus procesos con seguridad nativa y despliegue flexible (Cloud o Local). 
 
-Nuestro equipo desarrolla agentes de inteligencia artificial que optimizan procesos internos y ofrecen soluciones a medida, facilitando así la transformación digital de su empresa.
-
-
-Ofrecemos asesoría experta para la gestión, organización y selección analisis de procesos documentales y datos que alimentarán y enriquecerán su modelo LLM, garantizando máxima relevancia y eficiencia. 
-
-Brindamos opciones flexibles de implementación, tanto en infraestructuras locales como en la nube, adaptándonos a las políticas y exigencias de cada cliente.
-
-Nuestro servicio integral incluye mantenimiento continuo, actualizaciones, y soporte técnico especializado para asegurar el correcto funcionamiento y evolución de los modelos en entornos privados y controlados. 
-
-Implementamos principios de seguridad por diseño durante todo el ciclo de creacion del modelo, reforzando la confidencialidad y protección de sus datos. 
-
-Además, realizamos auditorías exhaustivas bajo demanda, evaluando y mejorando las capacidades y desempeño de los modelos implementados, ajustándonos a los más altos estándares de calidad y cumplimiento.
-
-Confíe en nosotros para llevar su estrategia de IA al siguiente nivel, con soluciones robustas, seguras y alineadas a los objetivos de su organización.
-
+Ofrecemos un servicio integral que incluye desde la consultoría documental 
+hasta el mantenimiento experto y auditorías de desempeño. 
+IA robusta, privada y alineada con sus objetivos de negocio.

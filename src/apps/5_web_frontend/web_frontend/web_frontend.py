@@ -108,16 +108,33 @@ class State(rx.State):
 
 
 def load_presentation_content() -> str:
-    """Load presentation content from external file."""
+    """Carga el contenido de presentación desde un archivo externo."""
     try:
-        # Get the path to presentation.txt relative to this file
+        # Obtiene la ruta de presentation.txt relativa a este archivo
         current_dir = Path(__file__).parent.parent
         presentation_file = current_dir / "presentation.txt"
         with open(presentation_file, "r", encoding="utf-8") as f:
             return f.read().strip()
     except (FileNotFoundError, IOError):
-        # Fallback to default content if file not found
-        return "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+        # Contenido por defecto si el archivo no existe
+        return (
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit. "
+            "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+        )
+
+
+def load_menu_content(filename: str, fallback_text: str) -> str:
+    """Carga contenido de un archivo .txt del menú con fallback."""
+
+    try:
+        # Obtiene la ruta del archivo relativa a este archivo
+        current_dir = Path(__file__).parent.parent
+        content_file = current_dir / filename
+        with open(content_file, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except (FileNotFoundError, IOError):
+        # Contenido por defecto si el archivo no existe
+        return fallback_text
 
 
 def logo() -> rx.Component:
@@ -234,68 +251,85 @@ def sidebar_menu() -> rx.Component:
                             COLORS["foreground"]
                         ),
                         width="100%",
+                        justify_content="flex-start",
                         border="none",
                         padding="0.75em",
                         border_radius="0.5em",
                         cursor="pointer",
+                        text_align="left",
                         _hover={"opacity": "0.8"},
                     )
                     for item in menu_items
                 ],
                 spacing="1",
+                align_items="flex-start",
                 width="100%",
             ),
+            align_items="flex-start",
             width="100%",
         )
 
 
 def info_panel(active_item: str) -> rx.Component:
     """Info panel displaying content based on active menu item."""
-    content_map = {
-        "inicio": "Bienvenido a Myllm",
-        "servicios": "Nuestros Servicios",
-        "proyectos": "Proyectos en Ejecución",
-        "soporte": "Centro de Soporte",
-        "contacto": "Información de Contacto",
-    }
-    
     presentation_text = load_presentation_content()
-    # Split by double newlines to create paragraphs
-    paragraphs = [p.strip() for p in presentation_text.split('\n\n') if p.strip()]
-    
-    # Load logo image - Reflex serves static files from assets/ directory
-    logo_path = "/logo.jpg"
+    services_text = load_menu_content(
+        "services.txt", "Servicios especializados para impulsar sus proyectos de IA."
+    )
+    projects_text = load_menu_content(
+        "proyectos.txt", "Proyectos y entregas en progreso."
+    )
+    support_text = load_menu_content(
+        "soporte.txt", "Soporte técnico y acompañamiento."
+    )
+    contact_text = load_menu_content(
+        "contacto.txt", "Canales de contacto y atención al cliente."
+    )
+
+    heading_text = rx.match(
+        active_item,
+        ("servicios", "Servicios"),
+        ("proyectos", "Proyectos"),
+        ("soporte", "Soporte"),
+        ("contacto", "Contacto"),
+        "Inicio",
+    )
+    content_text = rx.match(
+        active_item,
+        ("servicios", services_text),
+        ("proyectos", projects_text),
+        ("soporte", support_text),
+        ("contacto", contact_text),
+        presentation_text,
+    )
     
     return rx.vstack(
-        rx.heading(content_map.get(active_item, "Inicio"), size="8", color=COLORS["foreground"]),
-        rx.box(
-            rx.image(
-                src=logo_path,
-                alt="Myllm Logo",
-                width="150px",
-                max_width="100%",
-                height="auto",
+        rx.heading(heading_text, size="8", color=COLORS["foreground"]),
+        rx.cond(
+            active_item == "inicio",
+            rx.box(
+                rx.image(
+                    src="/logo.jpg",
+                    alt="Myllm Logo",
+                    width="150px",
+                    max_width="100%",
+                    height="auto",
+                ),
+                width="100%",
+                display="flex",
+                justify_content="center",
+                align_items="center",
+                margin_y="1em",
             ),
-            width="100%",
-            display="flex",
-            justify_content="center",
-            align_items="center",
-            margin_y="1em",
+            rx.box(height="0"),
         ),
-        rx.vstack(
-            *[
-                rx.text(
-                    para,
-                    color=COLORS["muted_foreground"],
-                    font_size="1em",
-                    line_height="1.5em",
-                    margin_bottom="1em" if i < len(paragraphs) - 1 else "0",
-                    white_space="pre-line",
-                    font_family="Inter, system-ui, sans-serif",
-                )
-                for i, para in enumerate(paragraphs)
-            ],
-            spacing="2",
+        rx.text(
+            content_text,
+            color=COLORS["muted_foreground"],
+            font_size="1em",
+            line_height="1.5em",
+            white_space="pre-line",
+            font_family="Inter, system-ui, sans-serif",
             width="100%",
         ),
         rx.flex(
@@ -704,10 +738,12 @@ def user_portal() -> rx.Component:
                     width="75%",
                     background_color=COLORS["background"],
                     padding="0",
+                    height="100%",
                 ),
                 width="100%",
                 spacing="0",
                 flex="1",
+                align_items="stretch",
             ),
             footer(),
             background_color=COLORS["background"],
