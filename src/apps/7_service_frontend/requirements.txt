@@ -1,5 +1,5 @@
-fastapi==0.111.0
-httpx==0.27.0
-cryptography==42.0.7
+fastapi==0.128.0
+httpx==0.28.1
+cryptography==46.0.3
 pytest==9.0.2
-uvicorn==0.30.0
+uvicorn==0.40.0

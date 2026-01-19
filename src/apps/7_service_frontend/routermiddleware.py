@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import secrets
+import sys
 import time
 import unicodedata
 from datetime import datetime
@@ -21,6 +22,35 @@ try:
     from .interfacetobackend import InterfaceToBackend
 except ImportError:  # pragma: no cover - soporte para ejecuciones fuera de paquete
     from interfacetobackend import InterfaceToBackend
+
+
+def _load_dto_module(module_name: str, filename: str) -> Any:
+    """Carga un módulo de DTOs desde el paquete compartido."""
+
+    module_path = (
+        Path(__file__).resolve().parents[3]
+        / "src/2_shared_application/dtos"
+        / filename
+    )
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise BusinessRuleError(
+            "No se pudo cargar el módulo de DTOs compartidos"
+        )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_domain_dtos = _load_dto_module("shared_domain_dtos", "domain_dtos.py")
+_security_dtos = _load_dto_module("shared_security_dtos", "security_dtos.py")
+
+OrganizationDto = _domain_dtos.OrganizationDto
+UserDto = _domain_dtos.UserDto
+RoleDto = _security_dtos.RoleDto
+BasicPermissionDto = _security_dtos.BasicPermissionDto
+ManageRoleByOrgDto = _security_dtos.ManageRoleByOrgDto
 
 
 @dataclass(frozen=True)
@@ -343,22 +373,24 @@ class RouterMiddleware:
             session_expires_at=session_exp,
         )
 
-    def _load_users(self, data_path: Path) -> list[dict[str, Any]]:
+    def _load_users(self, data_path: Path) -> list[UserDto]:
         """Carga los usuarios desde archivo JSON."""
 
         try:
             with data_path.open("r", encoding="utf-8") as file_handle:
-                return json.load(file_handle)
+                records = json.load(file_handle)
         except FileNotFoundError as exc:
             raise BusinessRuleError("El archivo de usuarios no existe") from exc
         except json.JSONDecodeError as exc:
             raise BusinessRuleError("El archivo de usuarios no es válido") from exc
+        return [UserDto.model_validate(record) for record in records]
 
-    def _store_users(self, data_path: Path, users: list[dict[str, Any]]) -> None:
+    def _store_users(self, data_path: Path, users: list[UserDto]) -> None:
         """Guarda los usuarios en el archivo JSON."""
 
         with data_path.open("w", encoding="utf-8") as file_handle:
-            json.dump(users, file_handle, ensure_ascii=False, indent=2)
+            payload = [user.model_dump() for user in users]
+            json.dump(payload, file_handle, ensure_ascii=False, indent=2)
 
     def _get_users_file_path(self) -> Path:
         """Resuelve la ruta del archivo de usuarios."""
@@ -398,11 +430,11 @@ class RouterMiddleware:
             raise BusinessRuleError("No se pudo descifrar la contraseña")
         return decrypted_bytes.decode("utf-8")
 
-    def _rotate_otp(self, user: dict[str, Any]) -> str:
+    def _rotate_otp(self, user: UserDto) -> str:
         """Genera y actualiza el OTP del usuario."""
 
         new_otp = f"{secrets.randbelow(10000):04d}"
-        user["user_otp"] = new_otp
+        user.user_otp = new_otp
         return new_otp
 
     def authenticate_user(self, user_name: str, password: str, otp: str) -> TokenPair:
@@ -411,35 +443,35 @@ class RouterMiddleware:
         users_path = self._get_users_file_path()
         users = self._load_users(users_path)
         user_record = next(
-            (entry for entry in users if entry.get("user_name") == user_name), None
+            (entry for entry in users if entry.user_name == user_name), None
         )
         if user_record is None:
             raise BusinessRuleError("Usuario o credenciales inválidas")
-        if not user_record.get("active") or user_record.get("blocked"):
+        if not user_record.active or user_record.blocked:
             raise BusinessRuleError("El usuario no está habilitado")
 
         decrypted_password = self._decrypt_password(
-            str(user_record.get("user_password", ""))
+            str(user_record.user_password)
         )
         if decrypted_password != password:
             raise BusinessRuleError("Usuario o credenciales inválidas")
 
-        if str(user_record.get("user_otp", "")) != str(otp):
+        if str(user_record.user_otp) != str(otp):
             raise BusinessRuleError("OTP inválido")
 
         self._logger.info(
             "Login exitoso user_id=%s org_id=%s",
-            user_record.get("user_id"),
-            user_record.get("organization_id"),
+            user_record.user_id,
+            user_record.organization_id,
         )
 
         self._rotate_otp(user_record)
         self._store_users(users_path, users)
 
         return self.issue_tokens(
-            int(user_record["user_id"]),
-            int(user_record["organization_id"]),
-            int(user_record["identity_type_id"]),
+            int(user_record.user_id),
+            int(user_record.organization_id),
+            int(user_record.identity_type_id),
         )
 
     def refresh_tokens(self, session_token: str) -> TokenPair:
@@ -482,8 +514,8 @@ class RouterMiddleware:
             (
                 entry
                 for entry in users
-                if entry.get("user_id") == session.user_id
-                and entry.get("organization_id") == session.organization_id
+                if entry.user_id == session.user_id
+                and entry.organization_id == session.organization_id
             ),
             None,
         )
@@ -554,22 +586,26 @@ class RouterMiddleware:
             )
         )
 
-    def _load_organizations(self, data_path: Path) -> list[dict[str, Any]]:
+    def _load_organizations(self, data_path: Path) -> list[OrganizationDto]:
         """Carga las organizaciones desde archivo JSON."""
 
         try:
             with data_path.open("r", encoding="utf-8") as file_handle:
-                return json.load(file_handle)
+                records = json.load(file_handle)
         except FileNotFoundError:
             return []
         except json.JSONDecodeError as exc:
             raise BusinessRuleError("El archivo de organizaciones no es válido") from exc
+        return [OrganizationDto.model_validate(record) for record in records]
 
-    def _store_organizations(self, data_path: Path, organizations: list[dict[str, Any]]) -> None:
+    def _store_organizations(
+        self, data_path: Path, organizations: list[OrganizationDto]
+    ) -> None:
         """Guarda las organizaciones en el archivo JSON."""
 
         with data_path.open("w", encoding="utf-8") as file_handle:
-            json.dump(organizations, file_handle, ensure_ascii=False, indent=2)
+            payload = [org.model_dump() for org in organizations]
+            json.dump(payload, file_handle, ensure_ascii=False, indent=2)
 
     def check_organization_name_exists(self, organization_name: str) -> bool:
         """Verifica si existe una organización con el nombre dado."""
@@ -579,7 +615,7 @@ class RouterMiddleware:
             return False
         normalized_input = self._normalize_text(organization_name)
         for org in organizations:
-            org_name = str(org.get("organization_name", ""))
+            org_name = str(org.organization_name)
             if self._normalize_text(org_name) == normalized_input:
                 return True
         return False
@@ -595,27 +631,23 @@ class RouterMiddleware:
 
         organizations_path = self._get_organizations_file_path()
         organizations = self._load_organizations(organizations_path)
-        existing_ids = [
-            org.get("organization_id", 0)
-            for org in organizations
-            if isinstance(org.get("organization_id"), int)
-        ]
+        existing_ids = [org.organization_id for org in organizations]
         next_id = max(existing_ids, default=0) + 1
-        org_record = {
-            "organization_id": next_id,
-            "organization_name": organization_data.get("organization_name", "").strip(),
-            "organization_email": organization_data.get("organization_email", "").strip(),
-            "organization_tlf": organization_data.get("organization_tlf", "").strip(),
-            "organization_address": organization_data.get("organization_address", "").strip(),
-            "organization_country": organization_data.get("organization_country", "").strip(),
-            "organization_state": organization_data.get("organization_state", "").strip(),
-        }
+        org_record = OrganizationDto(
+            organization_id=next_id,
+            organization_name=organization_data.get("organization_name", "").strip(),
+            organization_email=organization_data.get("organization_email", "").strip(),
+            organization_tlf=organization_data.get("organization_tlf", "").strip(),
+            organization_address=organization_data.get("organization_address", "").strip(),
+            organization_country=organization_data.get("organization_country", "").strip(),
+            organization_state=organization_data.get("organization_state", "").strip(),
+        )
         organizations.append(org_record)
         self._store_organizations(organizations_path, organizations)
         self._logger.info(
             "Organización creada org_id=%s nombre=%s",
             next_id,
-            org_record.get("organization_name"),
+            org_record.organization_name,
         )
         return next_id
 
@@ -652,29 +684,31 @@ class RouterMiddleware:
             )
         )
 
-    def _load_roles(self, data_path: Path) -> list[dict[str, Any]]:
+    def _load_roles(self, data_path: Path) -> list[RoleDto]:
         """Carga los roles desde archivo JSON."""
 
         try:
             with data_path.open("r", encoding="utf-8") as file_handle:
-                return json.load(file_handle)
+                records = json.load(file_handle)
         except FileNotFoundError:
             return []
         except json.JSONDecodeError as exc:
             raise BusinessRuleError("El archivo de roles no es válido") from exc
+        return [RoleDto.model_validate(record) for record in records]
 
-    def _load_basic_permissions(self, data_path: Path) -> list[dict[str, Any]]:
+    def _load_basic_permissions(self, data_path: Path) -> list[BasicPermissionDto]:
         """Carga los permisos básicos desde archivo JSON."""
 
         try:
             with data_path.open("r", encoding="utf-8") as file_handle:
-                return json.load(file_handle)
+                records = json.load(file_handle)
         except FileNotFoundError:
             return []
         except json.JSONDecodeError as exc:
             raise BusinessRuleError(
                 "El archivo de permisos básicos no es válido"
             ) from exc
+        return [BasicPermissionDto.model_validate(record) for record in records]
 
     def _get_permissions_for_role(self, identity_type_id: int) -> list[dict[str, Any]]:
         """Obtiene permisos básicos para un rol."""
@@ -684,39 +718,43 @@ class RouterMiddleware:
             (
                 role
                 for role in roles
-                if role.get("identity_type_id") == identity_type_id
+                if role.identity_type_id == identity_type_id
             ),
             None,
         )
         if role_entry is None:
             return []
 
-        permission_ids = role_entry.get("identity_type_group_permissions", [])
+        permission_ids = role_entry.identity_type_group_permissions
         permissions = self._load_basic_permissions(self._get_basic_permissions_path())
         return [
-            permission
+            permission.model_dump(by_alias=True)
             for permission in permissions
-            if permission.get("id") in permission_ids
+            if permission.id in permission_ids
         ]
 
-    def _load_manage_roles(self, data_path: Path) -> list[dict[str, Any]]:
+    def _load_manage_roles(self, data_path: Path) -> list[ManageRoleByOrgDto]:
         """Carga la asignación de roles por organización."""
 
         try:
             with data_path.open("r", encoding="utf-8") as file_handle:
-                return json.load(file_handle)
+                records = json.load(file_handle)
         except FileNotFoundError:
             return []
         except json.JSONDecodeError as exc:
             raise BusinessRuleError(
                 "El archivo de roles por organización no es válido"
             ) from exc
+        return [ManageRoleByOrgDto.model_validate(record) for record in records]
 
-    def _store_manage_roles(self, data_path: Path, entries: list[dict[str, Any]]) -> None:
+    def _store_manage_roles(
+        self, data_path: Path, entries: list[ManageRoleByOrgDto]
+    ) -> None:
         """Guarda la asignación de roles por organización."""
 
         with data_path.open("w", encoding="utf-8") as file_handle:
-            json.dump(entries, file_handle, ensure_ascii=False, indent=2)
+            payload = [entry.model_dump() for entry in entries]
+            json.dump(payload, file_handle, ensure_ascii=False, indent=2)
 
     def _get_manage_roles_identity_type_id(
         self, organization_id: int, requested_identity_type_id: int | None
@@ -726,7 +764,7 @@ class RouterMiddleware:
         manage_roles_path = self._get_manage_roles_path()
         entries = self._load_manage_roles(manage_roles_path)
         is_first_user = not any(
-            entry.get("id_organization") == organization_id for entry in entries
+            entry.id_organization == organization_id for entry in entries
         )
         if is_first_user:
             return 2
@@ -743,15 +781,15 @@ class RouterMiddleware:
         entries = self._load_manage_roles(manage_roles_path)
         now_str = datetime.now().strftime("%d/%m/%y-%H:%M")
         entries.append(
-            {
-                "id_user": user_id,
-                "id_organization": organization_id,
-                "identity_type_id": identity_type_id,
-                "create_date": now_str,
-                "modification_date": "",
-                "id_modifier_user": 1,
-                "active": True,
-            }
+            ManageRoleByOrgDto(
+                id_user=user_id,
+                id_organization=organization_id,
+                identity_type_id=identity_type_id,
+                create_date=now_str,
+                modification_date="",
+                id_modifier_user=1,
+                active=True,
+            )
         )
         self._store_manage_roles(manage_roles_path, entries)
 
@@ -760,11 +798,7 @@ class RouterMiddleware:
 
         users_path = self._get_users_file_path()
         users = self._load_users(users_path)
-        existing_ids = [
-            user.get("user_id", 0)
-            for user in users
-            if isinstance(user.get("user_id"), int)
-        ]
+        existing_ids = [user.user_id for user in users]
         next_id = max(existing_ids, default=0) + 1
         organization_id = int(user_data.get("organization_id", 1))
         requested_identity_type_id = user_data.get("identity_type_id")
@@ -772,20 +806,20 @@ class RouterMiddleware:
             organization_id, requested_identity_type_id
         )
 
-        user_record = {
-            "user_id": next_id,
-            "organization_id": organization_id,
-            "identity_type_id": identity_type_id,
-            "user_name": str(user_data.get("user_name", "")).strip(),
-            "user_password": user_data.get("user_password", ""),
-            "user_email": str(user_data.get("user_email", "")).strip().lower(),
-            "user_mobile": str(user_data.get("user_mobile", "")).strip(),
-            "user_otp": user_data.get("user_otp", ""),
-            "active": bool(user_data.get("active", True)),
-            "blocked": bool(user_data.get("blocked", False)),
-            "contact_info": user_data.get("contact_info", {}),
-            "billing_info": user_data.get("billing_info", {}),
-        }
+        user_record = UserDto(
+            user_id=next_id,
+            organization_id=organization_id,
+            identity_type_id=identity_type_id,
+            user_name=str(user_data.get("user_name", "")).strip(),
+            user_password=user_data.get("user_password", ""),
+            user_email=str(user_data.get("user_email", "")).strip().lower(),
+            user_mobile=str(user_data.get("user_mobile", "")).strip(),
+            user_otp=user_data.get("user_otp", ""),
+            active=bool(user_data.get("active", True)),
+            blocked=bool(user_data.get("blocked", False)),
+            contact_info=user_data.get("contact_info", {}),
+            billing_info=user_data.get("billing_info", {}),
+        )
         users.append(user_record)
         self._store_users(users_path, users)
         self._create_manage_role_entry(next_id, organization_id, identity_type_id)
