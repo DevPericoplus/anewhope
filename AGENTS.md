@@ -3,7 +3,8 @@
 You are an expert Python developer with a focus on writing clean, maintainable, and high-performance code. Follow these rules strictly when modifying or creating code in this repository.
 
 ## 1. Python Standards & Style
-* **Version:** Target Python 3.10+ features (e.g., structural pattern matching, union types `int | str`).
+* **Version:** Target Python **3.13** features (e.g., structural pattern matching, union types `int | str`).
+* **Límite:** No usar versiones de Python superiores a **3.13** en este repositorio.
 * **Style Guide:** Adhere strictly to **PEP 8**.
 * **Naming Conventions:**
     * Functions and variables: `snake_case`
@@ -126,6 +127,10 @@ Incluye roles de usuario, servidores frontend/backend/trainer, el flujo entre `5
 - **Capas compartidas**:
   - Dominio común → `src/1_shared_domain/`.
   - Aplicación común → `src/2_shared_application/`.
+
+## ADRs
+
+- `src/docs/stack_of_technologies.adr`: decisión de bajar a Python 3.13 por compatibilidad de dependencias.
 
 ### Guía para ubicación de cambios
 

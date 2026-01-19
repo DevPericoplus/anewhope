@@ -2,6 +2,7 @@
 __pycache__/
 *.py[codz]
 *$py.class
+.DS_Store
 
 # C extensions
 *.so
@@ -215,3 +216,5 @@ protected_values.py
 .venv314/
 .venv_middleware/
 .venv_frontend/
+.venv_frontend313/
+.venv_middleware313/

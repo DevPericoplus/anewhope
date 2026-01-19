@@ -54,7 +54,7 @@ pip install boto3 botocore
 
 
 cd /Users/administrator/develop/anewhope
-source .venv314/bin/activate
+source .venv_frontend313/bin/activate
 cd src/apps/5_web_frontend
 reflex run
 

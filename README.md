@@ -57,19 +57,30 @@ además de las dependencias con Nginx y MariaDB.
 - La capa de dominio común vive en `src/1_shared_domain/`.
 - La capa de aplicación compartida vive en `src/2_shared_application/`.
 
+## ADRs
+
+- `src/docs/stack_of_technologies.adr`: justifica el uso de Python 3.13 y el downgrade temporal desde 3.14.
+
 ## Entorno virtual
 
-El entorno Python se ubica en `.venv/`. Para activarlo:
+El proyecto usa **Python 3.13** como versión base. Para evitar conflictos de dependencias, se mantienen
+entornos separados:
+
+- Frontend: `.venv_frontend313`
+- Middleware: `.venv_middleware313`
+
+Ejemplo en macOS / Linux:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # macOS / Linux
-.venv\Scripts\Activate.ps1 # Windows PowerShell
+python3.13 -m venv .venv_frontend313
+source .venv_frontend313/bin/activate
 ```
 
 ## Servicio frontend en contenedor
 
 El servicio `7_service_frontend` puede ejecutarse de forma independiente en Docker.
+Los `Dockerfile` del frontend y middleware usan **Python 3.13** (`python:3.13-slim`) para
+mantener compatibilidad con dependencias.
 
 ```bash
 cp src/apps/7_service_frontend/.env.example src/apps/7_service_frontend/.env
@@ -105,7 +116,8 @@ La aplicación web (`5_web_frontend`) usa **puerto backend fijo 8005** para el s
 
 ## TODO
 
-- Revisar el warning de compatibilidad de Pydantic v1 en Reflex con Python 3.14 cuando haya versión certificada.
+- Evaluar migración a Python 3.14 cuando `pydantic-core` y Reflex certifiquen compatibilidad.
+- Tests verificados con `./full_test.sh` en Python 3.13 sin warning de Pydantic (2026-01-19).
 
 ## Modelo de Dominio
 

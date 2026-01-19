@@ -1,0 +1,39 @@
+# ADR: Stack of Technologies (Python 3.13)
+
+Fecha: 2026-01-19
+Estado: Aceptado
+
+## Contexto
+
+El proyecto estaba trabajando con Python 3.14 en los entornos locales, pero la cadena
+de dependencias (especialmente `pydantic-core` y su integración con PyO3) no ofrece
+soporte estable para 3.14. Esto genera fallos de compilación e incompatibilidades
+al fijar versiones soportadas de Pydantic (por ejemplo, `>=2.10,<2.11`).
+
+Además, Reflex utiliza internamente `pydantic.v1` como capa de compatibilidad dentro
+de Pydantic v2, lo que produce warnings en 3.14. Para mantener un stack estable y
+reproducible, necesitamos una versión de Python con soporte confirmado en las
+dependencias críticas.
+
+## Decisión
+
+Se adopta **Python 3.13** como versión base del proyecto y se deja **Python 3.14
+en desuso** hasta nueva validación. Los entornos locales recomendados pasan a ser:
+
+- `.venv_frontend313` para `5_web_frontend`
+- `.venv_middleware313` para `7_service_frontend`
+
+En esta versión se fija **Pydantic `>=2.10,<2.11`** para evitar el bug reconocido y
+mantener compatibilidad con FastAPI y Reflex.
+
+## Consecuencias
+
+- Las guías y scripts de ejecución deben apuntar a entornos Python 3.13.
+- El stack queda estable con Pydantic 2.10.x y sin fallos de compilación.
+- Se pospone la migración a Python 3.14 hasta que `pydantic-core` y Reflex certifiquen
+  compatibilidad.
+- Se deberá planificar una revisión futura para revalidar 3.14 cuando el ecosistema lo permita.
+
+## Verificación
+
+- `./full_test.sh` ejecutado con Python 3.13 (entornos `.venv_frontend313` y `.venv_middleware313`) sin warning de Pydantic (2026-01-19).

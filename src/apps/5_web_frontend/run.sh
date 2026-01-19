@@ -5,8 +5,8 @@ set -e
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
-# Activar el entorno virtual del frontend
-source "$ROOT_DIR/.venv_frontend/bin/activate"
+# Activar el entorno virtual del frontend (Python 3.13)
+source "$ROOT_DIR/.venv_frontend313/bin/activate"
 
 # Ejecutar la aplicación Reflex desde la ruta actual
 export PYTHONPATH="$ROOT_DIR"
