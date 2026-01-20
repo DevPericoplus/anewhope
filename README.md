@@ -76,6 +76,17 @@ python3.13 -m venv .venv_frontend313
 source .venv_frontend313/bin/activate
 ```
 
+## Scripts útiles
+
+- `clear_caches.sh`: limpia caches de Reflex (`.web`, `.states`) y caches de tooling
+  (`__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.coverage`, `.hypothesis`).
+
+Uso:
+
+```bash
+./clear_caches.sh
+```
+
 ## Servicio frontend en contenedor
 
 El servicio `7_service_frontend` puede ejecutarse de forma independiente en Docker.

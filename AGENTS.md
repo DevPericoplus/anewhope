@@ -36,6 +36,10 @@ You are an expert Python developer with a focus on writing clean, maintainable, 
 * **Async:** If the project uses `asyncio`, ensure tests are handled with `pytest-asyncio`.
 * **Dependencies:** Management is handled via `poetry` or `pip compile` (check `pyproject.toml`). Do not add new dependencies without asking.
 
+### Scripts de mantenimiento
+- `clear_caches.sh`: limpia caches de Reflex (`.web`, `.states`) y caches de tooling
+  (`__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.coverage`, `.hypothesis`).
+
 ## 6. Performance & Security
 * **Complexity:** Avoid $O(n^2)$ operations on large datasets. Use `set` for $O(1)$ lookups.
 * **Secrets:** Never hardcode API keys or credentials. Use `.env` files and `python-dotenv` or Pydantic `BaseSettings`.
