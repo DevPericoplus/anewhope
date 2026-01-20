@@ -13,18 +13,22 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Script `full_test.sh` para ejecutar tests de frontend y middleware de forma secuencial.
 - Integración de logging de seguridad en procesos de creación de usuarios/organizaciones.
 - Funcionalidad de envío de SMS y validaciones relacionadas.
+- Test de seguridad para invalidación de tokens tras logout en el middleware.
 
 ### Changed
 - Estandarización de puertos por regla `8000 + primer dígito del nombre de carpeta`.
 - Ajustes a `run.sh` y `entrypoint.sh` para ejecución local y en contenedor.
 - Mejoras de UX y validaciones en formularios de creación de usuario/organización.
 - Actualización de configuraciones y documentación para el despliegue de servicios.
+- Validación de sesión reforzada para rechazar tokens tras logout.
 
 ### Fixed
 - Validación consistente de OTP (longitud y dígitos) en el dominio.
 - Manejo correcto de errores de serialización al escribir JSON.
 - Desempaquetado correcto del valor devuelto por `decrypt_value()`.
 - Ajustes de imports en tests para ejecución estable desde la raíz.
+- Persistencia de sesiones al autenticar usuarios para no perder el registro creado.
+- Carga segura de `DomainError` en `session.py` para evitar errores de importación.
 
 ## [0.1.0] - 2025-10-16
 

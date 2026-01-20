@@ -57,6 +57,13 @@ class LoginRequest(BaseModel):
     otp: str
 
 
+class LoginOtpRequest(BaseModel):
+    """Payload para solicitar el envío del OTP."""
+
+    user_name: str
+    password: str
+
+
 class LoginResponse(BaseModel):
     """Respuesta del login con tokens."""
 
@@ -66,6 +73,12 @@ class LoginResponse(BaseModel):
     session_token: str
     access_expires_at: int
     session_expires_at: int
+
+
+class LoginOtpResponse(BaseModel):
+    """Respuesta de solicitud de OTP."""
+
+    success: bool
 
 
 class RefreshTokenResponse(BaseModel):
@@ -99,6 +112,12 @@ class SecurityLogRequest(BaseModel):
 
 class SecurityLogResponse(BaseModel):
     """Respuesta del log de seguridad."""
+
+    success: bool
+
+
+class LogoutResponse(BaseModel):
+    """Respuesta del cierre de sesión."""
 
     success: bool
 
@@ -244,6 +263,36 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Middleware Frontend", lifespan=lifespan)
 
 
+@app.post("/login/request-otp", response_model=LoginOtpResponse)
+async def request_login_otp_endpoint(
+    request: LoginOtpRequest,
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+) -> LoginOtpResponse:
+    """Endpoint para solicitar el envío del OTP."""
+
+    try:
+        ip_address, user_agent = _get_request_metadata(http_request)
+        success = router.request_login_otp(
+            user_name=request.user_name,
+            password=request.password,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        router.log_activity_action(
+            action="Solicitar OTP",
+            entity_id=None,
+            ip=ip_address,
+            user_agent=user_agent,
+        )
+        return LoginOtpResponse(success=success)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
 @app.post("/login", response_model=LoginResponse)
 async def login_endpoint(
     request: LoginRequest,
@@ -253,10 +302,14 @@ async def login_endpoint(
     """Endpoint de autenticación con OTP."""
 
     try:
-        tokens = router.authenticate_user(
-            user_name=request.user_name, password=request.password, otp=request.otp
-        )
         ip_address, user_agent = _get_request_metadata(http_request)
+        tokens = router.authenticate_user(
+            user_name=request.user_name,
+            password=request.password,
+            otp=request.otp,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
         router.log_activity_action(
             action="Login",
             entity_id=tokens.user_id,
@@ -289,8 +342,10 @@ async def refresh_token_endpoint(
     try:
         if session_token is None:
             raise TokenValidationError("Token de sesión no proporcionado")
-        tokens = router.refresh_tokens(session_token)
         ip_address, user_agent = _get_request_metadata(http_request)
+        tokens = router.refresh_tokens(
+            session_token, ip_address=ip_address, user_agent=user_agent
+        )
         router.log_activity_action(
             action="Refresh token",
             entity_id=tokens.user_id,
@@ -313,6 +368,33 @@ async def refresh_token_endpoint(
     except TokenValidationError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/logout", response_model=LogoutResponse)
+async def logout_endpoint(
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> LogoutResponse:
+    """Endpoint para cerrar sesión."""
+
+    try:
+        ip_address, user_agent = _get_request_metadata(http_request)
+        success = router.logout_session(
+            session, ip_address=ip_address, user_agent=user_agent
+        )
+        router.log_activity_action(
+            action="Logout",
+            entity_id=session.user_id,
+            ip=ip_address,
+            user_agent=user_agent,
+        )
+        return LogoutResponse(success=success)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
 

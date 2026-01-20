@@ -10,10 +10,11 @@ import json
 import logging
 import os
 import secrets
+import uuid
 import sys
 import time
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -153,6 +154,7 @@ class TokenPair:
     session_token: str
     access_expires_at: int
     session_expires_at: int
+    session_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -175,6 +177,24 @@ def _base64url_encode(value: bytes) -> str:
     """Codifica bytes en base64url sin padding."""
 
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode("utf-8")
+
+
+def _utc_now() -> datetime:
+    """Obtiene la fecha actual en UTC."""
+
+    return datetime.now(tz=timezone.utc)
+
+
+def _to_iso_utc(value: datetime) -> str:
+    """Convierte un datetime a ISO 8601 en UTC."""
+
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _parse_iso_utc(value: str) -> datetime:
+    """Convierte un string ISO 8601 a datetime en UTC."""
+
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 def _decode_jwt(token: str, secret: str, algorithm: str) -> dict[str, Any]:
@@ -243,6 +263,18 @@ def _load_cipher_module(module_path: Path) -> Any:
     return module
 
 
+def _load_common_security_module(module_path: Path) -> Any:
+    """Carga dinámicamente el módulo de seguridad compartida."""
+
+    spec = importlib.util.spec_from_file_location("common_security", module_path)
+    if spec is None or spec.loader is None:
+        raise BusinessRuleError("No se pudo cargar el módulo de seguridad compartida")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["common_security"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 class RouterMiddleware:
     """Orquestador de reglas de negocio y validaciones."""
 
@@ -296,9 +328,12 @@ class RouterMiddleware:
                 "user_id" not in payload
                 or "organization_id" not in payload
                 or "identity_type_id" not in payload
+                or "jti" not in payload
+                or "session_id" not in payload
             ):
                 raise TokenValidationError(
-                    f"El token de {label} no incluye user_id, organization_id e identity_type_id"
+                    "El token de "
+                    f"{label} no incluye user_id, organization_id, identity_type_id, jti o session_id"
                 )
 
         try:
@@ -319,6 +354,34 @@ class RouterMiddleware:
             or access_identity_type_id != session_identity_type_id
         ):
             raise TokenValidationError("Los tokens no corresponden a la misma sesión")
+        if access_payload["session_id"] != session_payload["session_id"]:
+            raise TokenValidationError("Los tokens no corresponden a la misma sesión")
+
+        sessions_path = self._get_sessions_file_path()
+        sessions_data = self._load_sessions_data(sessions_path)
+        session_record = self._find_session_record(
+            sessions_data,
+            access_payload["jti"],
+            session_payload["jti"],
+            access_user_id,
+            access_payload["session_id"],
+        )
+        if session_record is None:
+            raise TokenValidationError("La sesión no está registrada")
+
+        status = session_record.get("status", "inactive")
+        if status != "active":
+            raise TokenValidationError("La sesión no está activa")
+
+        expires_at = session_record.get("expires_at")
+        if expires_at:
+            if _utc_now() >= _parse_iso_utc(expires_at):
+                session_record["status"] = "expired"
+                self._store_sessions_data(sessions_path, sessions_data)
+                raise TokenExpiredError("La sesión ha expirado")
+
+        session_record["last_activity"] = _to_iso_utc(_utc_now())
+        self._store_sessions_data(sessions_path, sessions_data)
 
         return SessionContext(
             user_id=access_user_id,
@@ -334,19 +397,30 @@ class RouterMiddleware:
         return self._validate_tokens(access_token, session_token)
 
     def issue_tokens(
-        self, user_id: int, organization_id: int, identity_type_id: int
+        self,
+        user_id: int,
+        organization_id: int,
+        identity_type_id: int,
+        session_id: str | None = None,
+        ip_address: str = "",
+        user_agent: str = "",
     ) -> TokenPair:
         """Genera los tokens de acceso y sesión."""
 
         now = int(time.time())
         access_exp = now + self._jwt_settings.access_ttl_seconds
         session_exp = now + self._jwt_settings.session_ttl_seconds
+        access_jti = str(uuid.uuid4())
+        session_jti = str(uuid.uuid4())
+        session_id = session_id or str(uuid.uuid4())
         access_payload = {
             "user_id": user_id,
             "organization_id": organization_id,
             "identity_type_id": identity_type_id,
             "iat": now,
             "exp": access_exp,
+            "jti": access_jti,
+            "session_id": session_id,
         }
         session_payload = {
             "user_id": user_id,
@@ -354,6 +428,8 @@ class RouterMiddleware:
             "identity_type_id": identity_type_id,
             "iat": now,
             "exp": session_exp,
+            "jti": session_jti,
+            "session_id": session_id,
         }
         access_token = _encode_jwt(
             access_payload, self._jwt_settings.access_secret, self._jwt_settings.algorithm
@@ -363,6 +439,23 @@ class RouterMiddleware:
             self._jwt_settings.session_secret,
             self._jwt_settings.algorithm,
         )
+        sessions_path = self._get_sessions_file_path()
+        sessions_data = self._load_sessions_data(sessions_path)
+        self._upsert_session_record(
+            sessions_data,
+            session_id=session_id,
+            user_id=user_id,
+            organization_id=organization_id,
+            identity_type_id=identity_type_id,
+            access_jti=access_jti,
+            session_jti=session_jti,
+            expires_at=_to_iso_utc(
+                datetime.fromtimestamp(session_exp, tz=timezone.utc)
+            ),
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        self._store_sessions_data(sessions_path, sessions_data)
         return TokenPair(
             user_id=user_id,
             organization_id=organization_id,
@@ -371,6 +464,7 @@ class RouterMiddleware:
             session_token=session_token,
             access_expires_at=access_exp,
             session_expires_at=session_exp,
+            session_id=session_id,
         )
 
     def _load_users(self, data_path: Path) -> list[UserDto]:
@@ -402,6 +496,177 @@ class RouterMiddleware:
                 root_path / "src/2_shared_application/moks/users.json",
             )
         )
+
+    def _get_sessions_file_path(self) -> Path:
+        """Resuelve la ruta del archivo de sesiones."""
+
+        root_path = Path(__file__).resolve().parents[3]
+        return Path(
+            os.environ.get(
+                "SESSIONS_DATA_PATH",
+                root_path / "src/2_shared_application/moks/sessions.json",
+            )
+        )
+
+    def _load_sessions_data(self, data_path: Path) -> dict[str, Any]:
+        """Carga la estructura de sesiones y logs."""
+
+        if not data_path.exists():
+            return {"sessions": [], "auth_logs": []}
+        try:
+            with data_path.open("r", encoding="utf-8") as file_handle:
+                payload = json.load(file_handle)
+        except json.JSONDecodeError as exc:
+            raise BusinessRuleError("El archivo de sesiones no es válido") from exc
+        if not isinstance(payload, dict):
+            raise BusinessRuleError("La estructura de sesiones no es válida")
+        payload.setdefault("sessions", [])
+        payload.setdefault("auth_logs", [])
+        return payload
+
+    def _store_sessions_data(self, data_path: Path, payload: dict[str, Any]) -> None:
+        """Guarda la estructura de sesiones y logs."""
+
+        data_path.parent.mkdir(parents=True, exist_ok=True)
+        with data_path.open("w", encoding="utf-8") as file_handle:
+            json.dump(payload, file_handle, ensure_ascii=False, indent=2)
+
+    def _find_session_record(
+        self,
+        payload: dict[str, Any],
+        access_jti: str,
+        session_jti: str,
+        user_id: int,
+        session_id: str,
+    ) -> dict[str, Any] | None:
+        """Busca una sesión por los JTIs y el usuario."""
+
+        sessions = payload.get("sessions", [])
+        for session in sessions:
+            tokens = session.get("tokens", {})
+            if (
+                tokens.get("access_token_jti") == access_jti
+                and tokens.get("session_token_jti") == session_jti
+                and session.get("user_id") == user_id
+                and session.get("session_id") == session_id
+            ):
+                return session
+        return None
+
+    def _upsert_session_record(
+        self,
+        payload: dict[str, Any],
+        session_id: str,
+        user_id: int,
+        organization_id: int,
+        identity_type_id: int,
+        access_jti: str,
+        session_jti: str,
+        expires_at: str,
+        ip_address: str,
+        user_agent: str,
+    ) -> None:
+        """Crea o actualiza la sesión en memoria."""
+
+        sessions = payload.get("sessions", [])
+        now_iso = _to_iso_utc(_utc_now())
+        for session in sessions:
+            if session.get("session_id") == session_id:
+                session["tokens"] = {
+                    "access_token_jti": access_jti,
+                    "session_token_jti": session_jti,
+                }
+                session["status"] = "active"
+                session["last_activity"] = now_iso
+                session["expires_at"] = expires_at
+                session["ip_address"] = ip_address
+                session["user_agent"] = user_agent
+                return
+
+        sessions.append(
+            {
+                "session_id": session_id,
+                "user_id": user_id,
+                "organization_id": organization_id,
+                "identity_type_id": identity_type_id,
+                "tokens": {
+                    "access_token_jti": access_jti,
+                    "session_token_jti": session_jti,
+                },
+                "status": "active",
+                "created_at": now_iso,
+                "last_activity": now_iso,
+                "expires_at": expires_at,
+                "ip_address": ip_address,
+                "user_agent": user_agent,
+            }
+        )
+
+    def _append_auth_log(
+        self,
+        payload: dict[str, Any],
+        user_name: str,
+        event: str,
+        status: str,
+        error_code: str | None = None,
+        details: str | None = None,
+        session_id: str | None = None,
+        ip_address: str = "",
+        user_agent: str = "",
+    ) -> None:
+        """Registra un evento de autenticación."""
+
+        auth_logs = payload.get("auth_logs", [])
+        record: dict[str, Any] = {
+            "timestamp": _to_iso_utc(_utc_now()),
+            "user_name": user_name,
+            "event": event,
+            "status": status,
+            "ip_address": ip_address,
+        }
+        if error_code:
+            record["error_code"] = error_code
+        if details:
+            record["details"] = details
+        if session_id:
+            record["session_id"] = session_id
+        if user_agent:
+            record["user_agent"] = user_agent
+        auth_logs.append(record)
+        max_records = 500
+        if len(auth_logs) > max_records:
+            auth_logs = auth_logs[-max_records:]
+        payload["auth_logs"] = auth_logs
+
+    def _count_recent_failed_attempts(
+        self,
+        payload: dict[str, Any],
+        user_name: str,
+        max_attempts: int = 3,
+        window_minutes: int = 10,
+        events: tuple[str, ...] = ("login_attempt",),
+    ) -> int:
+        """Cuenta intentos fallidos consecutivos para el usuario."""
+
+        cutoff = _utc_now() - timedelta(minutes=window_minutes)
+        failures = 0
+        for record in reversed(payload.get("auth_logs", [])):
+            if record.get("user_name") != user_name:
+                continue
+            timestamp = record.get("timestamp")
+            if timestamp:
+                try:
+                    if _parse_iso_utc(timestamp) < cutoff:
+                        break
+                except ValueError:
+                    break
+            if record.get("event") == "login_success":
+                break
+            if record.get("event") in events and record.get("status") == "failed":
+                failures += 1
+                if failures >= max_attempts:
+                    break
+        return failures
 
     def _get_security_key_path(self) -> Path:
         """Resuelve la ruta de la clave Fernet."""
@@ -437,26 +702,254 @@ class RouterMiddleware:
         user.user_otp = new_otp
         return new_otp
 
-    def authenticate_user(self, user_name: str, password: str, otp: str) -> TokenPair:
-        """Valida credenciales, OTP y genera nuevos tokens."""
+    def _load_common_security(self) -> Any:
+        """Carga el módulo common_security desde el paquete compartido."""
+
+        common_security_path = (
+            self._get_security_key_path().parent / "common_security.py"
+        )
+        return _load_common_security_module(common_security_path)
+
+    def request_login_otp(
+        self,
+        user_name: str,
+        password: str,
+        ip_address: str = "",
+        user_agent: str = "",
+    ) -> bool:
+        """Valida credenciales y envía el OTP por SMS."""
 
         users_path = self._get_users_file_path()
         users = self._load_users(users_path)
+        sessions_path = self._get_sessions_file_path()
+        sessions_data = self._load_sessions_data(sessions_path)
         user_record = next(
             (entry for entry in users if entry.user_name == user_name), None
         )
         if user_record is None:
+            self._append_auth_log(
+                sessions_data,
+                user_name=user_name,
+                event="otp_request",
+                status="failed",
+                error_code="USER_NOT_FOUND",
+                details="Usuario no existe",
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            self._store_sessions_data(sessions_path, sessions_data)
             raise BusinessRuleError("Usuario o credenciales inválidas")
         if not user_record.active or user_record.blocked:
+            self._append_auth_log(
+                sessions_data,
+                user_name=user_name,
+                event="otp_request",
+                status="failed",
+                error_code="USER_BLOCKED",
+                details="Usuario bloqueado o inactivo",
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            self._store_sessions_data(sessions_path, sessions_data)
             raise BusinessRuleError("El usuario no está habilitado")
 
         decrypted_password = self._decrypt_password(
             str(user_record.user_password)
         )
         if decrypted_password != password:
+            self._append_auth_log(
+                sessions_data,
+                user_name=user_name,
+                event="otp_request",
+                status="failed",
+                error_code="INVALID_PASSWORD",
+                details="Contraseña inválida",
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            if (
+                self._count_recent_failed_attempts(
+                    sessions_data,
+                    user_name,
+                    events=("login_attempt", "otp_request"),
+                )
+                >= 3
+            ):
+                user_record.blocked = True
+                self._append_auth_log(
+                    sessions_data,
+                    user_name=user_name,
+                    event="login_blocked",
+                    status="blocked",
+                    error_code="TOO_MANY_ATTEMPTS",
+                    details="Usuario bloqueado por intentos fallidos",
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                )
+                self._store_users(users_path, users)
+            self._store_sessions_data(sessions_path, sessions_data)
+            raise BusinessRuleError("Usuario o credenciales inválidas")
+
+        user_otp = str(user_record.user_otp)
+        if len(user_otp) != 4 or not user_otp.isdigit():
+            self._append_auth_log(
+                sessions_data,
+                user_name=user_name,
+                event="otp_request",
+                status="failed",
+                error_code="INVALID_OTP",
+                details="OTP inválido",
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            self._store_sessions_data(sessions_path, sessions_data)
+            raise BusinessRuleError("OTP inválido")
+
+        if not user_record.user_mobile:
+            self._append_auth_log(
+                sessions_data,
+                user_name=user_name,
+                event="otp_request",
+                status="failed",
+                error_code="MOBILE_NOT_FOUND",
+                details="Número móvil no disponible",
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            self._store_sessions_data(sessions_path, sessions_data)
+            raise BusinessRuleError("No hay teléfono asociado al usuario")
+
+        common_security = self._load_common_security()
+        send_sms = getattr(common_security, "send_message_by_sms", None)
+        if send_sms is None:
+            self._append_auth_log(
+                sessions_data,
+                user_name=user_name,
+                event="otp_request",
+                status="failed",
+                error_code="SMS_MODULE_MISSING",
+                details="Función de envío de SMS no disponible",
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            self._store_sessions_data(sessions_path, sessions_data)
+            raise BusinessRuleError("No se pudo enviar el OTP")
+
+        sms_sent = bool(send_sms(user_otp, str(user_record.user_mobile).strip()))
+        self._append_auth_log(
+            sessions_data,
+            user_name=user_name,
+            event="otp_request",
+            status="success" if sms_sent else "failed",
+            error_code=None if sms_sent else "SMS_FAILED",
+            details="OTP enviado por SMS" if sms_sent else "Fallo al enviar SMS",
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        self._store_sessions_data(sessions_path, sessions_data)
+        if not sms_sent:
+            raise BusinessRuleError("No se pudo enviar el OTP")
+        return True
+
+    def authenticate_user(
+        self,
+        user_name: str,
+        password: str,
+        otp: str,
+        ip_address: str = "",
+        user_agent: str = "",
+    ) -> TokenPair:
+        """Valida credenciales, OTP y genera nuevos tokens."""
+
+        users_path = self._get_users_file_path()
+        users = self._load_users(users_path)
+        sessions_path = self._get_sessions_file_path()
+        sessions_data = self._load_sessions_data(sessions_path)
+        user_record = next(
+            (entry for entry in users if entry.user_name == user_name), None
+        )
+        if user_record is None:
+            self._append_auth_log(
+                sessions_data,
+                user_name=user_name,
+                event="login_attempt",
+                status="failed",
+                error_code="USER_NOT_FOUND",
+                details="Usuario no existe",
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            self._store_sessions_data(sessions_path, sessions_data)
+            raise BusinessRuleError("Usuario o credenciales inválidas")
+        if not user_record.active or user_record.blocked:
+            self._append_auth_log(
+                sessions_data,
+                user_name=user_name,
+                event="login_attempt",
+                status="failed",
+                error_code="USER_BLOCKED",
+                details="Usuario bloqueado o inactivo",
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            self._store_sessions_data(sessions_path, sessions_data)
+            raise BusinessRuleError("El usuario no está habilitado")
+
+        decrypted_password = self._decrypt_password(
+            str(user_record.user_password)
+        )
+        if decrypted_password != password:
+            self._append_auth_log(
+                sessions_data,
+                user_name=user_name,
+                event="login_attempt",
+                status="failed",
+                error_code="INVALID_PASSWORD",
+                details="Contraseña inválida",
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            if self._count_recent_failed_attempts(sessions_data, user_name) >= 3:
+                user_record.blocked = True
+                self._append_auth_log(
+                    sessions_data,
+                    user_name=user_name,
+                    event="login_blocked",
+                    status="blocked",
+                    error_code="TOO_MANY_ATTEMPTS",
+                    details="Usuario bloqueado por intentos fallidos",
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                )
+                self._store_users(users_path, users)
+            self._store_sessions_data(sessions_path, sessions_data)
             raise BusinessRuleError("Usuario o credenciales inválidas")
 
         if str(user_record.user_otp) != str(otp):
+            self._append_auth_log(
+                sessions_data,
+                user_name=user_name,
+                event="login_attempt",
+                status="failed",
+                error_code="INVALID_OTP",
+                details="OTP inválido",
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            if self._count_recent_failed_attempts(sessions_data, user_name) >= 3:
+                user_record.blocked = True
+                self._append_auth_log(
+                    sessions_data,
+                    user_name=user_name,
+                    event="login_blocked",
+                    status="blocked",
+                    error_code="TOO_MANY_ATTEMPTS",
+                    details="Usuario bloqueado por intentos fallidos",
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                )
+                self._store_users(users_path, users)
+            self._store_sessions_data(sessions_path, sessions_data)
             raise BusinessRuleError("OTP inválido")
 
         self._logger.info(
@@ -468,13 +961,29 @@ class RouterMiddleware:
         self._rotate_otp(user_record)
         self._store_users(users_path, users)
 
-        return self.issue_tokens(
+        tokens = self.issue_tokens(
             int(user_record.user_id),
             int(user_record.organization_id),
             int(user_record.identity_type_id),
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
+        sessions_data = self._load_sessions_data(sessions_path)
+        self._append_auth_log(
+            sessions_data,
+            user_name=user_name,
+            event="login_success",
+            status="success",
+            session_id=tokens.session_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        self._store_sessions_data(sessions_path, sessions_data)
+        return tokens
 
-    def refresh_tokens(self, session_token: str) -> TokenPair:
+    def refresh_tokens(
+        self, session_token: str, ip_address: str = "", user_agent: str = ""
+    ) -> TokenPair:
         """Renueva los tokens de la sesión vigente."""
 
         session_payload = _decode_jwt(
@@ -500,10 +1009,82 @@ class RouterMiddleware:
                 "Los identificadores del token no son válidos"
             ) from exc
 
+        session_jti = session_payload.get("jti")
+        session_id = session_payload.get("session_id")
+        if session_jti is None or session_id is None:
+            raise TokenValidationError(
+                "El token de sesión no incluye jti o session_id"
+            )
+
+        sessions_path = self._get_sessions_file_path()
+        sessions_data = self._load_sessions_data(sessions_path)
+        session_record = None
+        for session in sessions_data.get("sessions", []):
+            tokens = session.get("tokens", {})
+            if (
+                tokens.get("session_token_jti") == session_jti
+                and session.get("user_id") == user_id
+                and session.get("session_id") == session_id
+            ):
+                session_record = session
+                break
+        if session_record is None:
+            raise TokenValidationError("La sesión no está registrada")
+        if session_record.get("status") != "active":
+            raise TokenValidationError("La sesión no está activa")
+
         self._logger.info(
             "Renovación de tokens user_id=%s org_id=%s", user_id, organization_id
         )
-        return self.issue_tokens(user_id, organization_id, identity_type_id)
+        tokens = self.issue_tokens(
+            user_id,
+            organization_id,
+            identity_type_id,
+            session_id=session_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        self._store_sessions_data(sessions_path, sessions_data)
+        return tokens
+
+    def logout_session(
+        self,
+        session: SessionContext,
+        ip_address: str = "",
+        user_agent: str = "",
+    ) -> bool:
+        """Cierra la sesión activa del usuario."""
+
+        session_id = session.access_payload.get("session_id")
+        if not session_id:
+            raise BusinessRuleError("No se pudo resolver la sesión")
+        sessions_path = self._get_sessions_file_path()
+        sessions_data = self._load_sessions_data(sessions_path)
+        users = self._load_users(self._get_users_file_path())
+        user_name = next(
+            (user.user_name for user in users if user.user_id == session.user_id),
+            str(session.user_id),
+        )
+        session_record = None
+        for record in sessions_data.get("sessions", []):
+            if record.get("session_id") == session_id:
+                session_record = record
+                break
+        if session_record is None:
+            raise BusinessRuleError("La sesión no está registrada")
+        session_record["status"] = "inactive"
+        session_record["last_activity"] = _to_iso_utc(_utc_now())
+        self._append_auth_log(
+            sessions_data,
+            user_name=user_name,
+            event="logout",
+            status="success",
+            session_id=session_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        self._store_sessions_data(sessions_path, sessions_data)
+        return True
 
     def get_permissions(self, session: SessionContext) -> dict[str, Any]:
         """Obtiene los permisos asociados a la sesión."""

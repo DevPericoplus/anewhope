@@ -146,6 +146,24 @@ Incluye roles de usuario, servidores frontend/backend/trainer, el flujo entre `5
 - Cambios en `7_service_frontend` deben considerar tests de integración con `5_web_frontend` y `6_web_backoffice`.
 - Cambios en `8_service_backend` deben considerar integración con `3_backend` y `4_trainer`.
 - Cambios en `1_shared_domain` o `2_shared_application` pueden impactar en todas las apps y requieren tests de contrato.
+- El middleware gestiona sesiones temporales en `src/2_shared_application/moks/sessions.json` (`sessions`, `auth_logs`).
+  Los JWT incluyen `jti` y `session_id`, y se valida estado (`active`, `inactive`, `revoked`, `expired`).
+  Tres intentos fallidos consecutivos en 10 minutos bloquean el usuario (`blocked=true` en `users.json`), por lo que
+  se deben añadir tests de login, logout y validación de sesión cuando se amplíe la cobertura.
+
+Las entidades compartidas de sesión viven en `src/1_shared_domain/entities/session.py` y sus DTOs en
+`src/2_shared_application/dtos/session_dtos.py`, para reutilizar la validación de permisos entre apps.
+
+### Directiva Security by Design
+
+- Los tokens JWT solo son válidos si están vinculados a una sesión **activa** en `sessions.json`
+  con `session_id` y `jti` coincidentes; cualquier logout invalida la sesión y hace que esos tokens
+  dejen de ser aceptados, mitigando el uso indebido por filtración o replay.
+
+### Directiva Security by Default
+
+- Tras logout los tokens emitidos quedan inválidos y solo se generan nuevos tokens cuando el usuario
+  vuelve a autenticarse con credenciales y OTP válidos.
 
 ## Interfaces compartidas (aplicación)
 
@@ -163,6 +181,7 @@ controladores para soportar JSON hoy y MariaDB mañana.
 - `tenant_repository.py`: `TenantRepository`
 - `dataset_repository.py`: `DatasetRepository`
 - `model_version_repository.py`: `ModelVersionRepository`
+- `session_repository.py`: `SessionRepository`
 
 ### Ejemplos de implementación en adaptadores
 
@@ -318,6 +337,87 @@ def _map_user(dto: UserDto) -> User:
         active=dto.active,
         blocked=dto.blocked,
     )
+```
+
+```python
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from src.1_shared_domain.entities.session import Session, SessionStatus
+from src.2_shared_application.interfaces.session_repository import SessionRepository
+
+
+class SessionJsonRepository(SessionRepository):
+    """Repositorio basado en JSON para sesiones (solo ejemplo)."""
+
+    def __init__(self, json_path: Path) -> None:
+        self._json_path = json_path
+
+    def get_by_session_id(self, session_id: str) -> Session | None:
+        records = _read_json_dict(self._json_path).get("sessions", [])
+        for record in records:
+            if record.get("session_id") == session_id:
+                return Session.from_record(record)
+        return None
+
+    def list_by_user_id(self, user_id: int) -> tuple[Session, ...]:
+        records = _read_json_dict(self._json_path).get("sessions", [])
+        sessions = [
+            Session.from_record(record)
+            for record in records
+            if int(record.get("user_id", 0)) == user_id
+        ]
+        return tuple(sessions)
+
+    def save(self, session: Session) -> Session:
+        payload = _read_json_dict(self._json_path)
+        sessions = payload.get("sessions", [])
+        sessions.append(session.to_record())
+        payload["sessions"] = sessions
+        _write_json_dict(self._json_path, payload)
+        return session
+
+    def update_status(
+        self, session_id: str, status: SessionStatus, updated_at=None
+    ) -> bool:
+        payload = _read_json_dict(self._json_path)
+        sessions = payload.get("sessions", [])
+        for record in sessions:
+            if record.get("session_id") == session_id:
+                record["status"] = status.value
+                return True
+        return False
+
+    def update_activity(self, session_id: str, last_activity) -> bool:
+        payload = _read_json_dict(self._json_path)
+        sessions = payload.get("sessions", [])
+        for record in sessions:
+            if record.get("session_id") == session_id:
+                record["last_activity"] = last_activity
+                return True
+        return False
+
+
+def _read_json_dict(json_path: Path) -> dict[str, object]:
+    """Lee un JSON tipo dict de forma segura."""
+
+    if not json_path.exists():
+        return {}
+    with json_path.open("r", encoding="utf-8") as file_handler:
+        data = json.load(file_handler)
+    if not isinstance(data, dict):
+        raise ValueError("El JSON debe contener un objeto")
+    return data
+
+
+def _write_json_dict(json_path: Path, payload: dict[str, object]) -> None:
+    """Escribe un JSON tipo dict de forma segura."""
+
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    with json_path.open("w", encoding="utf-8") as file_handler:
+        json.dump(payload, file_handler, ensure_ascii=False, indent=2)
 ```
 
 ## Coding Standards & Language Rules

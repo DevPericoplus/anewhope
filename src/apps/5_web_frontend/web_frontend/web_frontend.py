@@ -3,7 +3,13 @@ from typing import Optional
 
 import reflex as rx
 
-from adapters.api_client import get_user_permissions, login_user, refresh_tokens
+from adapters.api_client import (
+    get_user_permissions,
+    login_user,
+    logout_user,
+    refresh_tokens,
+    request_login_otp,
+)
 
 COLORS = {
     "background": "#1a1a1a",
@@ -34,6 +40,7 @@ class State(rx.State):
     organization_id: int = 0
     user_permissions: list[dict[str, str]] = []
     login_error: str = ""
+    otp_request_message: str = ""
     
     def set_user_menu(self, menu: str):
         """Set active menu item for user portal."""
@@ -70,12 +77,16 @@ class State(rx.State):
         self.session_token = session_token
         self.user_logged_in = True
         self.login_error = ""
+        self.otp_request_message = ""
+        self.user_active_menu = "inicio"
 
         permissions_response = get_user_permissions(access_token, session_token)
         self.user_permissions = permissions_response.get("permissions", [])
     
     def user_logout(self):
         """Handle user portal logout."""
+        if self.access_token and self.session_token:
+            logout_user(self.access_token, self.session_token)
         self.user_logged_in = False
         self.user_username = ""
         self.user_password = ""
@@ -86,6 +97,9 @@ class State(rx.State):
         self.organization_id = 0
         self.user_permissions = []
         self.login_error = ""
+        self.otp_request_message = ""
+        self.user_active_menu = "inicio"
+        return rx.redirect("/")
 
     def refresh_session_tokens(self):
         """Renueva los tokens de sesión mediante el middleware."""
@@ -101,6 +115,20 @@ class State(rx.State):
             return
         self.access_token = access_token
         self.session_token = session_token
+
+    def request_login_otp(self):
+        """Solicita el código OTP para el login."""
+
+        if not self.user_username or not self.user_password:
+            self.otp_request_message = "Debe ingresar usuario y contraseña"
+            return
+
+        response = request_login_otp(self.user_username, self.user_password)
+        if response.get("success"):
+            self.otp_request_message = "Código OTP enviado por SMS"
+            self.login_error = ""
+            return
+        self.otp_request_message = "No se pudo enviar el código OTP"
     
     def set_user_tab(self, tab: str):
         """Set active tab for user dashboard."""
@@ -180,6 +208,17 @@ def login_panel() -> rx.Component:
                     ),
                     spacing="1",
                 ),
+                rx.button(
+                    "Solicitar código OTP",
+                    on_click=State.request_login_otp,
+                    background_color="transparent",
+                    color=COLORS["primary"],
+                    width="100%",
+                    text_align="left",
+                    padding="0",
+                    justify_content="flex-start",
+                    _hover={"text_decoration": "underline"},
+                ),
                 rx.vstack(
                     rx.text("OTP", font_size="0.9em", color=COLORS["muted_foreground"]),
                     rx.input(
@@ -209,6 +248,12 @@ def login_panel() -> rx.Component:
                 color="red",
                 font_size="0.85em",
                 display=rx.cond(State.login_error != "", "block", "none"),
+            ),
+            rx.text(
+                State.otp_request_message,
+                color=COLORS["muted_foreground"],
+                font_size="0.85em",
+                display=rx.cond(State.otp_request_message != "", "block", "none"),
             ),
             rx.vstack(
                 rx.link(
@@ -688,20 +733,45 @@ def user_portal() -> rx.Component:
         State.user_logged_in,
         rx.vstack(
             rx.hstack(
-                rx.heading("User Portal - Dashboard", size="8", color=COLORS["foreground"]),
+                logo(),
+                rx.box(flex_grow="1"),
                 rx.button(
-                    "Logout",
+                    "Desconectar",
                     on_click=State.user_logout,
                     background_color=COLORS["primary"],
                     color=COLORS["background"],
                 ),
                 width="100%",
-                justify_content="space-between",
                 padding="1em",
                 background_color=COLORS["card"],
                 border_bottom=f"1px solid {COLORS['border']}",
+                align_items="center",
             ),
-            dashboard_tabs(),
+            rx.hstack(
+                rx.box(
+                    rx.vstack(
+                        sidebar_menu(),
+                        spacing="4",
+                        padding="1.5em",
+                    ),
+                    width="25%",
+                    padding="1em",
+                    background_color=COLORS["card"],
+                    border_right=f"1px solid {COLORS['border']}",
+                    height="100%",
+                ),
+                rx.box(
+                    info_panel(State.user_active_menu),
+                    width="75%",
+                    background_color=COLORS["background"],
+                    padding="0",
+                    height="100%",
+                ),
+                width="100%",
+                spacing="0",
+                flex="1",
+                align_items="stretch",
+            ),
             footer(),
             background_color=COLORS["background"],
             width="100%",
@@ -712,7 +782,11 @@ def user_portal() -> rx.Component:
             rx.hstack(
                 logo(),
                 rx.box(flex_grow="1"),
-                rx.text("Pagina principal", color=COLORS["muted_foreground"], font_size="0.9em"),
+                rx.text(
+                    "Pagina principal",
+                    color=COLORS["muted_foreground"],
+                    font_size="0.9em",
+                ),
                 width="100%",
                 padding="1em",
                 background_color=COLORS["card"],

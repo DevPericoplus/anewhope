@@ -97,11 +97,47 @@ Variables relevantes (ver `src/apps/7_service_frontend/.env.example`):
 - `SERVICE_RELOAD`
 - `USERS_DATA_PATH`
 - `ORGANIZATIONS_DATA_PATH`
+- `SESSIONS_DATA_PATH` (opcional, sobrescribe `src/2_shared_application/moks/sessions.json`)
 - `FERNET_KEY_PATH`
 - `ACTIVITY_LOG_PATH` (opcional, sobrescribe la ruta de `middleware_activiy.log`)
 
 Dependencias del servicio (pip):
 - `src/apps/7_service_frontend/requirements.txt`
+
+### Sesiones y auditoría (middleware)
+
+El middleware mantiene un registro temporal de sesiones y auditoría en
+`src/2_shared_application/moks/sessions.json` (estructura `sessions` y `auth_logs`).
+Se añade `jti` y `session_id` a los JWT (HS256) para validar que la sesión está activa
+y no ha sido revocada, y para cerrar sesiones de forma explícita.
+Estados soportados: `active`, `inactive`, `revoked`, `expired`.
+
+Regla de seguridad: tres intentos de login fallidos consecutivos dentro de una ventana de 10 minutos
+registran el bloqueo del usuario en el mock de usuarios (`blocked=true`) hasta nueva intervención.
+
+Endpoint relevante:
+- `POST /logout` invalida la sesión actual (marca `inactive`).
+
+Directiva **security by design**: los tokens no se aceptan si no están vinculados a una sesión activa
+en `sessions.json` con `session_id` y `jti` coincidentes. Al cerrar sesión se invalida la sesión y
+se rechazan tokens antiguos, evitando reutilización si son filtrados.
+
+Directiva **security by default**: cualquier token emitido queda invalidado tras logout; si el usuario
+quiere acceder de nuevo, debe autenticarse con credenciales y OTP para generar una nueva sesión válida.
+
+#### Entidades compartidas de sesión
+
+Para reutilizar la lógica de sesión y permisos entre aplicaciones, se añaden entidades
+compartidas en `src/1_shared_domain/entities/session.py` y DTOs en
+`src/2_shared_application/dtos/session_dtos.py`:
+
+- `SessionStatus`: estados de sesión (`active`, `inactive`, `revoked`, `expired`).
+- `SessionTokenBinding`: JTIs asociados a la sesión.
+- `Session`: entidad principal de sesión con `session_id`, usuario, estado y expiración.
+- `UserSessionContext`: contexto mínimo para validar permisos en otras capas.
+
+El acceso a persistencia se estandariza con el repositorio `SessionRepository` en
+`src/2_shared_application/interfaces/session_repository.py`.
 
 ## Web frontend (Reflex)
 
@@ -193,6 +229,20 @@ Entidad central que representa un usuario del sistema.
 - Métodos: `activate_user()`, `deactivate_user()`, `block_user()`, `unblock_user()`, `can_perform_action()`, `generate_otp()`
 - Validaciones completas en todos los setters
 - Comparación por ID (`__eq__`, `__hash__`)
+
+#### `Session`
+Entidad que representa la sesión activa del usuario y su vínculo con tokens.
+
+**Atributos:**
+- `session_id`: Identificador único de sesión
+- `user_id`, `organization_id`, `identity_type_id`
+- `tokens`: JTIs asociados (`access_token_jti`, `session_token_jti`)
+- `status`: Estado de sesión (`active`, `inactive`, `revoked`, `expired`)
+- `created_at`, `last_activity`, `expires_at`
+
+**Características:**
+- Validación de estructura y expiración
+- Métodos: `is_active()`, `is_expired()`, `mark_inactive()`, `mark_revoked()`
 
 #### `UserExtended`
 Extiende `User` con información de contacto adicional.
@@ -486,6 +536,87 @@ def _map_user(dto: UserDto) -> User:
         active=dto.active,
         blocked=dto.blocked,
     )
+```
+
+```python
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from src.1_shared_domain.entities.session import Session, SessionStatus
+from src.2_shared_application.interfaces.session_repository import SessionRepository
+
+
+class SessionJsonRepository(SessionRepository):
+    """Repositorio basado en JSON para sesiones (solo ejemplo)."""
+
+    def __init__(self, json_path: Path) -> None:
+        self._json_path = json_path
+
+    def get_by_session_id(self, session_id: str) -> Session | None:
+        records = _read_json_dict(self._json_path).get("sessions", [])
+        for record in records:
+            if record.get("session_id") == session_id:
+                return Session.from_record(record)
+        return None
+
+    def list_by_user_id(self, user_id: int) -> tuple[Session, ...]:
+        records = _read_json_dict(self._json_path).get("sessions", [])
+        sessions = [
+            Session.from_record(record)
+            for record in records
+            if int(record.get("user_id", 0)) == user_id
+        ]
+        return tuple(sessions)
+
+    def save(self, session: Session) -> Session:
+        payload = _read_json_dict(self._json_path)
+        sessions = payload.get("sessions", [])
+        sessions.append(session.to_record())
+        payload["sessions"] = sessions
+        _write_json_dict(self._json_path, payload)
+        return session
+
+    def update_status(
+        self, session_id: str, status: SessionStatus, updated_at=None
+    ) -> bool:
+        payload = _read_json_dict(self._json_path)
+        sessions = payload.get("sessions", [])
+        for record in sessions:
+            if record.get("session_id") == session_id:
+                record["status"] = status.value
+                return True
+        return False
+
+    def update_activity(self, session_id: str, last_activity) -> bool:
+        payload = _read_json_dict(self._json_path)
+        sessions = payload.get("sessions", [])
+        for record in sessions:
+            if record.get("session_id") == session_id:
+                record["last_activity"] = last_activity
+                return True
+        return False
+
+
+def _read_json_dict(json_path: Path) -> dict[str, object]:
+    """Lee un JSON tipo dict de forma segura."""
+
+    if not json_path.exists():
+        return {}
+    with json_path.open("r", encoding="utf-8") as file_handler:
+        data = json.load(file_handler)
+    if not isinstance(data, dict):
+        raise ValueError("El JSON debe contener un objeto")
+    return data
+
+
+def _write_json_dict(json_path: Path, payload: dict[str, object]) -> None:
+    """Escribe un JSON tipo dict de forma segura."""
+
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    with json_path.open("w", encoding="utf-8") as file_handler:
+        json.dump(payload, file_handler, ensure_ascii=False, indent=2)
 ```
 
 ## Logging de seguridad

@@ -207,12 +207,29 @@ def login_user(user_name: str, password: str, otp: str) -> dict[str, Any]:
     return _request_middleware("POST", "/login", payload=payload)
 
 
+def request_login_otp(user_name: str, password: str) -> dict[str, Any]:
+    """Solicita el envío del OTP al middleware."""
+
+    payload = {"user_name": user_name, "password": password}
+    return _request_middleware("POST", "/login/request-otp", payload=payload)
+
+
 def refresh_tokens(session_token: str) -> dict[str, Any]:
     """Solicita renovación de tokens al middleware."""
 
     return _request_middleware(
         "POST", "/refresh-token", headers={"X-Session-Token": session_token}
     )
+
+
+def logout_user(access_token: str, session_token: str) -> dict[str, Any]:
+    """Solicita cierre de sesión al middleware."""
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "X-Session-Token": session_token,
+    }
+    return _request_middleware("POST", "/logout", headers=headers)
 
 
 def get_user_permissions(access_token: str, session_token: str) -> dict[str, Any]:
