@@ -13,6 +13,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 try:
+    from .broker_backend_client import BrokerBackendClient
     from .interfacetobackend import BackendCommunicationError, InterfaceToBackend
     from .routermiddleware import (
         BusinessRuleError,
@@ -24,6 +25,7 @@ try:
         get_jwt_settings,
     )
 except ImportError:  # pragma: no cover - soporte para ejecuciones fuera de paquete
+    from broker_backend_client import BrokerBackendClient
     from interfacetobackend import BackendCommunicationError, InterfaceToBackend
     from routermiddleware import (
         BusinessRuleError,
@@ -244,12 +246,33 @@ def get_interface_client(
     return InterfaceToBackend(client=client, base_url=base_url)
 
 
+def _get_broker_base_url() -> str:
+    """Obtiene la URL base del broker backend."""
+
+    try:
+        from protected_values import broker_backend_base_url  # type: ignore
+    except Exception:
+        broker_backend_base_url = "http://localhost:8008"
+    return os.environ.get("BROKER_BACKEND_BASE_URL", broker_backend_base_url)
+
+
+def get_broker_client() -> BrokerBackendClient:
+    """Inyecta el cliente hacia el broker backend."""
+
+    return BrokerBackendClient(base_url=_get_broker_base_url())
+
+
 def get_router_middleware(
     interface: Annotated[InterfaceToBackend, Depends(get_interface_client)],
+    broker_client: Annotated[BrokerBackendClient, Depends(get_broker_client)],
 ) -> RouterMiddleware:
     """Inyecta el orquestador de middleware."""
 
-    return RouterMiddleware(interface=interface, jwt_settings=get_jwt_settings())
+    return RouterMiddleware(
+        interface=interface,
+        jwt_settings=get_jwt_settings(),
+        broker_client=broker_client,
+    )
 
 
 @asynccontextmanager

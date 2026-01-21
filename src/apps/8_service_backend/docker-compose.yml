@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  service_backend:
+    build:
+      context: ../../..
+      dockerfile: src/apps/8_service_backend/Dockerfile
+    entrypoint: ["/app/entrypoint.sh"]
+    environment:
+      SERVICE_HOST: "0.0.0.0"
+      SERVICE_PORT: "8008"
+      CORE_BACKEND_BASE_URL: "http://backend_core:8003"
+    ports:
+      - "8008:8008"

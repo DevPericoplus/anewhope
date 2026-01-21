@@ -6,6 +6,7 @@ Proyecto para gestionar infraestructura, aplicaciones y flujos de personalizaci�
 
 - `info.txt`: guía rápida para crear y activar el entorno virtual, además de notas de operación.
 - `protected_values.py`: variables sensibles requeridas por los procesos de cifrado.
+- `README_DEPLOYMENT.md`: guía de despliegue con verificación SQL y estructura de base de datos.
 - `src/`: monorepo con organización hexagonal y dominios compartidos.
   - `main.py`: punto de entrada central para orquestar servicios.
   - `config/`: configuración compartida.
@@ -111,9 +112,69 @@ Variables relevantes (ver `src/apps/7_service_frontend/.env.example`):
 - `SESSIONS_DATA_PATH` (opcional, sobrescribe `src/2_shared_application/moks/sessions.json`)
 - `FERNET_KEY_PATH`
 - `ACTIVITY_LOG_PATH` (opcional, sobrescribe la ruta de `middleware_activiy.log`)
+- `STORAGE_MODE` (modos: `mock`, `mock_and_db`, `db_only`)
+- `BROKER_BACKEND_BASE_URL` (URL del broker backend)
 
 Dependencias del servicio (pip):
 - `src/apps/7_service_frontend/requirements.txt`
+
+### Modos de almacenamiento (middleware)
+
+El middleware puede operar con tres modos configurables mediante `STORAGE_MODE`:
+
+- `mock`: usa únicamente los ficheros JSON mockeados.
+- `mock_and_db`: usa mocks y replica las escrituras hacia el broker backend.
+- `db_only`: usa exclusivamente el broker backend para lectura/escritura.
+
+Cuando el modo es `mock_and_db` o `db_only`, el middleware delega persistencia en el
+broker backend (`8_service_backend`) mediante `BROKER_BACKEND_BASE_URL`.
+
+### Broker backend y backend core
+
+El broker backend (`8_service_backend`) recibe operaciones desde el middleware y
+las reenvía al backend core (`3_backend`) cuando se trata de datos o filesystem.
+Por ahora, el backend core usa los mocks JSON, pero su capa de infraestructura está
+lista para conectar con MariaDB y la API externa `fmanagement` en futuras iteraciones.
+
+Variables relevantes (broker):
+- `CORE_BACKEND_BASE_URL`
+- `BROKER_ACTIVITY_LOG_PATH` (opcional, ruta del log de actividad)
+
+Variables relevantes (core):
+- `CORE_ACTIVITY_LOG_PATH` (opcional, ruta del log de actividad)
+- `USERS_DATA_PATH`, `ORGANIZATIONS_DATA_PATH`, `ROLES_DATA_PATH`,
+  `BASIC_PERMISSIONS_PATH`, `MANAGE_ROLES_BY_ORG_PATH` (mocks JSON)
+
+### Ejemplos de despliegue en servidores (contenedores)
+
+Servidor **Frontend** (web + middleware):
+
+```bash
+cd /Users/administrator/develop/anewhope
+docker compose -f src/apps/5_web_frontend/docker-compose.yml up --build -d
+docker compose -f src/apps/7_service_frontend/docker-compose.yml up --build -d
+```
+
+Servidor **Backend** (broker + core):
+
+```bash
+cd /Users/administrator/develop/anewhope
+docker compose -f src/apps/3_backend/docker-compose.yml up --build -d
+docker compose -f src/apps/8_service_backend/docker-compose.yml up --build -d
+```
+
+Ejemplo de configuración en el middleware para trabajar con el broker:
+
+```bash
+export STORAGE_MODE=db_only
+export BROKER_BACKEND_BASE_URL=http://<ip-backend>:8008
+```
+
+Ejemplo de configuración en el broker para apuntar al core:
+
+```bash
+export CORE_BACKEND_BASE_URL=http://<ip-backend>:8003
+```
 
 ### Sesiones y auditoría (middleware)
 
@@ -154,6 +215,7 @@ El acceso a persistencia se estandariza con el repositorio `SessionRepository` e
 
 Regla de puertos: cada aplicación usa **8000 + el primer número del nombre de la carpeta**.
 
+- `3_backend` → **8003**
 - `5_web_frontend` → **8005**
 - `6_web_backoffice` → **8006** (reservado)
 - `7_service_frontend` → **8007**
@@ -645,6 +707,13 @@ Este log captura acciones como autenticación, validaciones y operaciones CRUD.
 
 Archivo de log (middleware):
 - `src/apps/7_service_frontend/logs/middleware_activiy.log`
+
+## Logging de actividad (broker y core)
+
+Cada API registra su actividad en logs locales:
+
+- `src/apps/8_service_backend/logs/broker_backend_activity.log`
+- `src/apps/3_backend/logs/backend_core_activity.log`
 
 ### Estructura JWT (middleware)
 

@@ -36,9 +36,18 @@ You are an expert Python developer with a focus on writing clean, maintainable, 
 * **Async:** If the project uses `asyncio`, ensure tests are handled with `pytest-asyncio`.
 * **Dependencies:** Management is handled via `poetry` or `pip compile` (check `pyproject.toml`). Do not add new dependencies without asking.
 
+## 5.1 Documentación de base de datos
+* **Obligatorio:** Cada cambio en la estructura de tablas debe documentarse en
+  `README_DEPLOYMENT.md` (sección "Estructura de base de datos").
+
 ### Scripts de mantenimiento
 - `clear_caches.sh`: limpia caches de Reflex (`.web`, `.states`) y caches de tooling
   (`__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.coverage`, `.hypothesis`).
+
+### Modos de almacenamiento (middleware)
+- `STORAGE_MODE`: `mock` (solo JSON), `mock_and_db` (JSON + replica en broker),
+  `db_only` (solo broker backend).
+- `BROKER_BACKEND_BASE_URL`: URL del broker backend para persistencia.
 
 ## 6. Performance & Security
 * **Complexity:** Avoid $O(n^2)$ operations on large datasets. Use `set` for $O(1)$ lookups.
@@ -107,6 +116,7 @@ All numbered application folders in `src/apps/` (e.g., `3_backend/`, `4_trainer/
 
 Cada aplicación usa **puerto fijo 8000 + el primer número del nombre de su carpeta**:
 
+- `3_backend` → **8003**
 - `5_web_frontend` → **8005**
 - `6_web_backoffice` → **8006** (reservado)
 - `7_service_frontend` → **8007**
@@ -168,6 +178,11 @@ Las entidades compartidas de sesión viven en `src/1_shared_domain/entities/sess
 
 - Tras logout los tokens emitidos quedan inválidos y solo se generan nuevos tokens cuando el usuario
   vuelve a autenticarse con credenciales y OTP válidos.
+
+### Logging de actividad (broker y core)
+
+- `8_service_backend` registra actividad en `src/apps/8_service_backend/logs/broker_backend_activity.log`.
+- `3_backend` registra actividad en `src/apps/3_backend/logs/backend_core_activity.log`.
 
 ## Interfaces compartidas (aplicación)
 

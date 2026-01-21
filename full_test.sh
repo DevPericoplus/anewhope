@@ -12,5 +12,7 @@ deactivate
 
 source .venv_middleware313/bin/activate
 pytest -q --rootdir=src/apps/7_service_frontend src/apps/7_service_frontend/tests
+pytest -q --rootdir=src/apps/8_service_backend src/apps/8_service_backend/tests
+pytest -q --rootdir=src/apps/3_backend src/apps/3_backend/tests
 
 deactivate

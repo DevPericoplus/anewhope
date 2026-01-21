@@ -16,12 +16,21 @@ import time
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
 try:
+    from .broker_backend_client import (
+        BrokerBackendClient,
+        BrokerBackendCommunicationError,
+    )
     from .interfacetobackend import InterfaceToBackend
 except ImportError:  # pragma: no cover - soporte para ejecuciones fuera de paquete
+    from broker_backend_client import (
+        BrokerBackendClient,
+        BrokerBackendCommunicationError,
+    )
     from interfacetobackend import InterfaceToBackend
 
 
@@ -130,6 +139,42 @@ def _load_protected_jwt_settings() -> dict[str, str]:
         }
     except Exception:
         return {}
+
+
+def _load_protected_storage_settings() -> dict[str, str]:
+    """Carga la configuración de almacenamiento desde protected_values.py."""
+
+    try:
+        from protected_values import (  # type: ignore
+            broker_backend_base_url,
+            storage_mode,
+        )
+
+        return {
+            "broker_backend_base_url": broker_backend_base_url,
+            "storage_mode": storage_mode,
+        }
+    except Exception:
+        return {}
+
+
+class StorageMode(str, Enum):
+    """Modos de persistencia de datos."""
+
+    MOCK_ONLY = "mock"
+    MOCK_AND_DB = "mock_and_db"
+    DB_ONLY = "db_only"
+
+
+def _parse_storage_mode(raw_value: str | None) -> StorageMode:
+    """Normaliza el modo de almacenamiento."""
+
+    normalized = (raw_value or "").strip().lower()
+    if normalized == StorageMode.MOCK_AND_DB.value:
+        return StorageMode.MOCK_AND_DB
+    if normalized == StorageMode.DB_ONLY.value:
+        return StorageMode.DB_ONLY
+    return StorageMode.MOCK_ONLY
 
 
 @dataclass(frozen=True)
@@ -278,10 +323,45 @@ def _load_common_security_module(module_path: Path) -> Any:
 class RouterMiddleware:
     """Orquestador de reglas de negocio y validaciones."""
 
-    def __init__(self, interface: InterfaceToBackend, jwt_settings: JwtSettings) -> None:
+    def __init__(
+        self,
+        interface: InterfaceToBackend,
+        jwt_settings: JwtSettings,
+        broker_client: BrokerBackendClient | None = None,
+    ) -> None:
         self._interface = interface
         self._jwt_settings = jwt_settings
         self._logger = logging.getLogger("middlewarefe.router")
+        self._storage_mode = self._get_storage_mode()
+        self._broker_client = broker_client or BrokerBackendClient(
+            base_url=self._get_broker_base_url()
+        )
+
+    def _get_storage_mode(self) -> StorageMode:
+        """Obtiene el modo de almacenamiento configurado."""
+
+        protected = _load_protected_storage_settings()
+        raw_mode = os.environ.get("STORAGE_MODE", protected.get("storage_mode", "mock"))
+        return _parse_storage_mode(raw_mode)
+
+    def _get_broker_base_url(self) -> str:
+        """Obtiene la URL base del broker backend."""
+
+        protected = _load_protected_storage_settings()
+        return os.environ.get(
+            "BROKER_BACKEND_BASE_URL",
+            protected.get("broker_backend_base_url", "http://localhost:8008"),
+        )
+
+    def _should_use_broker_reads(self) -> bool:
+        """Determina si se deben leer datos desde el broker."""
+
+        return self._storage_mode == StorageMode.DB_ONLY
+
+    def _should_replicate(self) -> bool:
+        """Determina si se deben replicar datos en el broker."""
+
+        return self._storage_mode == StorageMode.MOCK_AND_DB
 
     def _validate_token_ttl(
         self, payload: dict[str, Any], max_ttl_seconds: int, token_label: str
@@ -470,6 +550,14 @@ class RouterMiddleware:
     def _load_users(self, data_path: Path) -> list[UserDto]:
         """Carga los usuarios desde archivo JSON."""
 
+        if self._should_use_broker_reads():
+            try:
+                records = self._broker_client.fetch_users()
+            except BrokerBackendCommunicationError as exc:
+                raise BusinessRuleError(
+                    "No se pudo cargar usuarios desde el broker"
+                ) from exc
+            return [UserDto.model_validate(record) for record in records]
         try:
             with data_path.open("r", encoding="utf-8") as file_handle:
                 records = json.load(file_handle)
@@ -482,8 +570,17 @@ class RouterMiddleware:
     def _store_users(self, data_path: Path, users: list[UserDto]) -> None:
         """Guarda los usuarios en el archivo JSON."""
 
+        payload = [user.model_dump() for user in users]
+        if self._should_use_broker_reads() or self._should_replicate():
+            try:
+                self._broker_client.store_users(payload)
+            except BrokerBackendCommunicationError as exc:
+                raise BusinessRuleError(
+                    "No se pudo guardar usuarios en el broker"
+                ) from exc
+        if self._should_use_broker_reads():
+            return
         with data_path.open("w", encoding="utf-8") as file_handle:
-            payload = [user.model_dump() for user in users]
             json.dump(payload, file_handle, ensure_ascii=False, indent=2)
 
     def _get_users_file_path(self) -> Path:
@@ -1201,6 +1298,14 @@ class RouterMiddleware:
     def _load_organizations(self, data_path: Path) -> list[OrganizationDto]:
         """Carga las organizaciones desde archivo JSON."""
 
+        if self._should_use_broker_reads():
+            try:
+                records = self._broker_client.fetch_organizations()
+            except BrokerBackendCommunicationError as exc:
+                raise BusinessRuleError(
+                    "No se pudo cargar organizaciones desde el broker"
+                ) from exc
+            return [OrganizationDto.model_validate(record) for record in records]
         try:
             with data_path.open("r", encoding="utf-8") as file_handle:
                 records = json.load(file_handle)
@@ -1215,8 +1320,17 @@ class RouterMiddleware:
     ) -> None:
         """Guarda las organizaciones en el archivo JSON."""
 
+        payload = [org.model_dump() for org in organizations]
+        if self._should_use_broker_reads() or self._should_replicate():
+            try:
+                self._broker_client.store_organizations(payload)
+            except BrokerBackendCommunicationError as exc:
+                raise BusinessRuleError(
+                    "No se pudo guardar organizaciones en el broker"
+                ) from exc
+        if self._should_use_broker_reads():
+            return
         with data_path.open("w", encoding="utf-8") as file_handle:
-            payload = [org.model_dump() for org in organizations]
             json.dump(payload, file_handle, ensure_ascii=False, indent=2)
 
     def check_organization_name_exists(self, organization_name: str) -> bool:
@@ -1299,6 +1413,12 @@ class RouterMiddleware:
     def _load_roles(self, data_path: Path) -> list[RoleDto]:
         """Carga los roles desde archivo JSON."""
 
+        if self._should_use_broker_reads():
+            try:
+                records = self._broker_client.fetch_roles()
+            except BrokerBackendCommunicationError as exc:
+                raise BusinessRuleError("No se pudo cargar roles desde el broker") from exc
+            return [RoleDto.model_validate(record) for record in records]
         try:
             with data_path.open("r", encoding="utf-8") as file_handle:
                 records = json.load(file_handle)
@@ -1311,6 +1431,14 @@ class RouterMiddleware:
     def _load_basic_permissions(self, data_path: Path) -> list[BasicPermissionDto]:
         """Carga los permisos básicos desde archivo JSON."""
 
+        if self._should_use_broker_reads():
+            try:
+                records = self._broker_client.fetch_basic_permissions()
+            except BrokerBackendCommunicationError as exc:
+                raise BusinessRuleError(
+                    "No se pudo cargar permisos desde el broker"
+                ) from exc
+            return [BasicPermissionDto.model_validate(record) for record in records]
         try:
             with data_path.open("r", encoding="utf-8") as file_handle:
                 records = json.load(file_handle)
@@ -1348,6 +1476,14 @@ class RouterMiddleware:
     def _load_manage_roles(self, data_path: Path) -> list[ManageRoleByOrgDto]:
         """Carga la asignación de roles por organización."""
 
+        if self._should_use_broker_reads():
+            try:
+                records = self._broker_client.fetch_manage_roles()
+            except BrokerBackendCommunicationError as exc:
+                raise BusinessRuleError(
+                    "No se pudo cargar roles por organización desde el broker"
+                ) from exc
+            return [ManageRoleByOrgDto.model_validate(record) for record in records]
         try:
             with data_path.open("r", encoding="utf-8") as file_handle:
                 records = json.load(file_handle)
@@ -1364,8 +1500,17 @@ class RouterMiddleware:
     ) -> None:
         """Guarda la asignación de roles por organización."""
 
+        payload = [entry.model_dump() for entry in entries]
+        if self._should_use_broker_reads() or self._should_replicate():
+            try:
+                self._broker_client.store_manage_roles(payload)
+            except BrokerBackendCommunicationError as exc:
+                raise BusinessRuleError(
+                    "No se pudo guardar roles por organización en el broker"
+                ) from exc
+        if self._should_use_broker_reads():
+            return
         with data_path.open("w", encoding="utf-8") as file_handle:
-            payload = [entry.model_dump() for entry in entries]
             json.dump(payload, file_handle, ensure_ascii=False, indent=2)
 
     def _get_manage_roles_identity_type_id(
