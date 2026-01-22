@@ -61,6 +61,31 @@ _storage_module = _load_storage_module("backend_core_storage")
 
 JsonMockStorageAdapter = _storage_module.JsonMockStorageAdapter
 StorageAdapterError = _storage_module.StorageAdapterError
+build_storage_paths = _storage_module.build_storage_paths
+load_fmanagement_settings = _storage_module.load_fmanagement_settings
+
+
+def _load_fmanagement_module(module_name: str) -> Any:
+    """Carga el cliente de fmanagement desde infraestructura."""
+
+    module_path = (
+        Path(__file__).resolve().parent
+        / "4_infrastructure"
+        / "web"
+        / "fmanagement_client.py"
+    )
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("No se pudo cargar el cliente de fmanagement")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_fmanagement_module = _load_fmanagement_module("backend_core_fmanagement")
+
+FmanagementClient = _fmanagement_module.FmanagementClient
+FmanagementClientError = _fmanagement_module.FmanagementClientError
 
 
 class BackendCoreBusinessError(Exception):
@@ -70,8 +95,13 @@ class BackendCoreBusinessError(Exception):
 class BackendCoreRouter:
     """Orquestador de operaciones del backend core."""
 
-    def __init__(self, storage: JsonMockStorageAdapter) -> None:
+    def __init__(
+        self,
+        storage: JsonMockStorageAdapter,
+        fmanagement_client: FmanagementClient | None = None,
+    ) -> None:
         self._storage = storage
+        self._fmanagement_client = fmanagement_client
         self._logger = logging.getLogger("backend_core.router")
 
     def list_users(self) -> list[UserDto]:
@@ -272,6 +302,112 @@ class BackendCoreRouter:
             "low_level_permissions": low_level_permissions,
         }
 
+    def fmo_operation(
+        self,
+        payload: dict[str, Any],
+        headers: dict[str, str],
+    ) -> dict[str, Any]:
+        """Ejecuta operaciones de fichero/carpeta en fmanagement."""
+
+        client = self._get_fmanagement_client()
+        settings = load_fmanagement_settings()
+        params = self._build_fmo_params(payload, settings.base_path)
+        try:
+            return client.request_json(
+                "GET",
+                "/fmo",
+                params=params,
+                headers=headers,
+            )
+        except FmanagementClientError as exc:
+            raise BackendCoreBusinessError(
+                "No se pudo ejecutar operación en fmanagement"
+            ) from exc
+
+    def fmo_upload(
+        self,
+        payload: dict[str, Any],
+        headers: dict[str, str],
+        file_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Sube un fichero a través de fmanagement."""
+
+        client = self._get_fmanagement_client()
+        settings = load_fmanagement_settings()
+        form = self._build_fmo_params(payload, settings.base_path)
+        try:
+            return client.request_json(
+                "POST",
+                "/fmo",
+                headers=headers,
+                form=form,
+                file_payload=file_payload,
+            )
+        except FmanagementClientError as exc:
+            raise BackendCoreBusinessError(
+                "No se pudo subir fichero en fmanagement"
+            ) from exc
+
+    def list_directory(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Lista estructura de carpetas vía fmanagement."""
+
+        client = self._get_fmanagement_client()
+        settings = load_fmanagement_settings()
+        params = self._build_fmo_params(payload, settings.base_path)
+        try:
+            return client.request_json(
+                "GET",
+                "/fmo/list",
+                params=params,
+                headers=headers,
+            )
+        except FmanagementClientError as exc:
+            raise BackendCoreBusinessError(
+                "No se pudo listar directorios en fmanagement"
+            ) from exc
+
+    def create_new_version(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Crea una nueva versión delegando en fmanagement."""
+
+        client = self._get_fmanagement_client()
+        settings = load_fmanagement_settings()
+        form = self._build_fmo_params(payload, settings.base_path)
+        try:
+            return client.request_json(
+                "POST",
+                "/fmo/newversion",
+                headers=headers,
+                form=form,
+            )
+        except FmanagementClientError as exc:
+            raise BackendCoreBusinessError(
+                "No se pudo crear nueva versión en fmanagement"
+            ) from exc
+
+    def diff_versions(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Compara versiones delegando en fmanagement."""
+
+        client = self._get_fmanagement_client()
+        settings = load_fmanagement_settings()
+        params = self._build_fmo_params(payload, settings.base_path)
+        try:
+            return client.request_json(
+                "GET",
+                "/fmo/diffversion",
+                params=params,
+                headers=headers,
+            )
+        except FmanagementClientError as exc:
+            raise BackendCoreBusinessError(
+                "No se pudo comparar versiones en fmanagement"
+            ) from exc
+
     def _find_low_level_permission(self, permission_id: int) -> dict[str, Any]:
         """Obtiene permisos de bajo nivel asociados a un permiso base."""
 
@@ -321,6 +457,50 @@ class BackendCoreRouter:
             )
         )
         self.store_manage_roles(entries)
+
+    def _get_fmanagement_client(self) -> FmanagementClient:
+        """Obtiene el cliente de fmanagement."""
+
+        if self._fmanagement_client is None:
+            raise BackendCoreBusinessError(
+                "Cliente de fmanagement no configurado"
+            )
+        return self._fmanagement_client
+
+    @staticmethod
+    def _build_fmo_params(
+        payload: dict[str, Any], base_path: str
+    ) -> dict[str, str]:
+        """Construye parámetros esperados por fmanagement."""
+
+        id_organization = int(payload.get("id_organization", 0))
+        id_project = int(payload.get("id_project", 0))
+        version_path = str(payload.get("version_path", "")).strip()
+        subfolders = str(payload.get("subfolders", "")).strip()
+        paths = build_storage_paths(
+            id_organization=id_organization,
+            id_project=id_project,
+            version_path=version_path,
+            subfolders=subfolders,
+        )
+        params = {
+            "iduser": str(payload.get("id_user", 0)),
+            "basepath": base_path,
+            "orgpath": paths["orgpath"],
+            "prjpath": paths["prjpath"],
+            "versionpath": paths["versionpath"],
+            "subfolders": paths["subfolders"],
+            "filename": str(payload.get("filename", "")).strip(),
+            "extfile": str(payload.get("ext_file", "")).strip(),
+            "operation": str(payload.get("operation", "")).strip(),
+            "new_filename": str(payload.get("new_filename", "")).strip(),
+            "new_extfile": str(payload.get("new_extfile", "")).strip(),
+            "compare_versionpath": str(
+                payload.get("compare_version_path", "")
+            ).strip(),
+            "identity_type_id": str(payload.get("identity_type_id", "")).strip(),
+        }
+        return {key: value for key, value in params.items() if value}
 
     @staticmethod
     def _normalize_text(text: str) -> str:

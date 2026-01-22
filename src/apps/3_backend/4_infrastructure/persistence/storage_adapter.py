@@ -6,11 +6,52 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Any
+
+from src.2_shared_application.storage_access_structure import (
+    get_folder_by_id_organization,
+    get_folder_by_id_project,
+)
 
 
 class StorageAdapterError(Exception):
     """Error al interactuar con la persistencia."""
+
+
+@dataclass(frozen=True, slots=True)
+class FmanagementSettings:
+    """Configuración para la API externa de file management."""
+
+    base_url: str
+    base_path: str
+    permissions_source: str
+
+
+def load_fmanagement_settings() -> FmanagementSettings:
+    """Carga configuración de fmanagement desde entorno."""
+
+    base_url = os.environ.get("FMANAGEMENT_BASE_URL", "http://localhost:1666")
+    base_path = os.environ.get("FMANAGEMENT_BASE_PATH", "/data/files/external")
+    permissions_source = os.environ.get("FMANAGEMENT_PERMISSIONS_SOURCE", "mock")
+    return FmanagementSettings(
+        base_url=base_url.rstrip("/"),
+        base_path=base_path,
+        permissions_source=permissions_source,
+    )
+
+
+def build_storage_paths(
+    id_organization: int, id_project: int, version_path: str, subfolders: str = ""
+) -> dict[str, str]:
+    """Construye rutas para operaciones de ficheros a partir de IDs."""
+
+    return {
+        "orgpath": get_folder_by_id_organization(id_organization),
+        "prjpath": get_folder_by_id_project(id_project),
+        "versionpath": version_path,
+        "subfolders": subfolders,
+    }
 def load_mariadb_settings() -> dict[str, Any]:
     """Carga configuración de MariaDB desde entorno o protected_values."""
 

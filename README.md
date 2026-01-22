@@ -78,6 +78,28 @@ Estructura esperada:
 En desarrollo existe un ejemplo en `fmanagement/example`, pero la implementación final
 no debe depender de esa ruta.
 
+#### Endpoints de fmanagement
+
+- `GET /fmo`: operaciones sobre fichero/carpeta con `operation=view|delete|rename|create`.
+  Parámetros clave: `iduser`, `basepath`, `orgpath`, `prjpath`, `versionpath`,
+  `subfolders`, `filename`, `extfile`, `new_filename`, `new_extfile`.
+- `POST /fmo`: subida de fichero (`operation=upload`, `multipart/form-data` con `file`).
+  Parámetros clave: `iduser`, `basepath`, `orgpath`, `prjpath`, `versionpath`,
+  `subfolders`, `filename`, `extfile`.
+- `GET /fmo/list`: listado recursivo de directorios (estructura).
+  Parámetros clave: `iduser`, `basepath`, `orgpath`, `prjpath`, `versionpath`, `subfolders`.
+- `POST /fmo/newversion`: clona una versión a la siguiente (`v001` → `v002`).
+  Parámetros clave: `iduser`, `basepath`, `orgpath`, `prjpath`, `versionpath`.
+- `GET /fmo/diffversion`: compara dos versiones.
+  Parámetros clave: `iduser`, `basepath`, `orgpath`, `prjpath`,
+  `versionpath`, `compare_versionpath`.
+
+Headers requeridos para permisos:
+- `Authorization: Bearer <access_token>`
+- `X-Session-Token: <session_token>`
+
+En modo `db_only` es obligatorio incluir `identity_type_id` (query param).
+
 ## ADRs
 
 - `src/docs/stack_of_technologies.adr`: justifica el uso de Python 3.13 y el downgrade temporal desde 3.14.

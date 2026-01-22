@@ -7,7 +7,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 
 try:
@@ -21,6 +21,8 @@ try:
         RoleDto,
         UserDto,
     )
+    from .4_infrastructure.web.fmanagement_client import FmanagementClient
+    from .4_infrastructure.persistence.storage_adapter import load_fmanagement_settings
 except ImportError:  # pragma: no cover - soporte para ejecuciones fuera de paquete
     import importlib.util
     from pathlib import Path
@@ -40,6 +42,29 @@ except ImportError:  # pragma: no cover - soporte para ejecuciones fuera de paqu
     OrganizationDto = _module.OrganizationDto
     RoleDto = _module.RoleDto
     UserDto = _module.UserDto
+
+    _infra_path = Path(__file__).resolve().parent / "4_infrastructure"
+    _fmanagement_path = _infra_path / "web" / "fmanagement_client.py"
+    _fmanagement_spec = importlib.util.spec_from_file_location(
+        "fmanagement_client", _fmanagement_path
+    )
+    if _fmanagement_spec is None or _fmanagement_spec.loader is None:
+        raise
+    _fmanagement_module = importlib.util.module_from_spec(_fmanagement_spec)
+    _fmanagement_spec.loader.exec_module(_fmanagement_module)
+    FmanagementClient = _fmanagement_module.FmanagementClient
+
+    _storage_path = (
+        _infra_path / "persistence" / "storage_adapter.py"
+    )
+    _storage_spec = importlib.util.spec_from_file_location(
+        "backend_storage_adapter", _storage_path
+    )
+    if _storage_spec is None or _storage_spec.loader is None:
+        raise
+    _storage_module = importlib.util.module_from_spec(_storage_spec)
+    _storage_spec.loader.exec_module(_storage_module)
+    load_fmanagement_settings = _storage_module.load_fmanagement_settings
 
 
 class OrganizationCheckRequest(BaseModel):
@@ -118,6 +143,53 @@ class ProcessDataResponse(BaseModel):
     message: str
 
 
+class FileOperationRequest(BaseModel):
+    """Parámetros para operaciones de ficheros/carpetas."""
+
+    id_user: int
+    id_organization: int
+    id_project: int
+    version_path: str
+    operation: str
+    subfolders: str = ""
+    filename: str = ""
+    ext_file: str = ""
+    new_filename: str = ""
+    new_extfile: str = ""
+    compare_version_path: str = ""
+    identity_type_id: int | None = None
+
+
+class VersionOperationRequest(BaseModel):
+    """Parámetros para operaciones de versiones."""
+
+    id_user: int
+    id_organization: int
+    id_project: int
+    version_path: str
+    identity_type_id: int | None = None
+
+
+class FileOperationResponse(BaseModel):
+    """Respuesta genérica para operaciones de ficheros."""
+
+    result: dict[str, Any] = Field(default_factory=dict)
+
+
+def _build_permission_headers(
+    authorization: str | None,
+    session_token: str | None,
+) -> dict[str, str]:
+    """Construye headers para validar permisos en fmanagement."""
+
+    headers: dict[str, str] = {}
+    if authorization:
+        headers["Authorization"] = authorization
+    if session_token:
+        headers["X-Session-Token"] = session_token
+    return headers
+
+
 def _configure_logging() -> None:
     """Configura logging del backend core."""
 
@@ -183,12 +255,23 @@ def get_storage_adapter() -> JsonMockStorageAdapter:
     )
 
 
+def get_fmanagement_client() -> FmanagementClient:
+    """Inyecta el cliente de fmanagement."""
+
+    settings = load_fmanagement_settings()
+    return FmanagementClient(base_url=settings.base_url)
+
+
 def get_router_core(
     storage: JsonMockStorageAdapter = Depends(get_storage_adapter),
+    fmanagement_client: FmanagementClient = Depends(get_fmanagement_client),
 ) -> BackendCoreRouter:
     """Inyecta el orquestador de backend core."""
 
-    return BackendCoreRouter(storage=storage)
+    return BackendCoreRouter(
+        storage=storage,
+        fmanagement_client=fmanagement_client,
+    )
 
 
 @asynccontextmanager
@@ -428,6 +511,184 @@ def get_permissions(
     except BackendCoreBusinessError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/fmo", response_model=FileOperationResponse)
+def fmo_operation(
+    id_user: int,
+    id_organization: int,
+    id_project: int,
+    version_path: str,
+    operation: str,
+    subfolders: str = "",
+    filename: str = "",
+    ext_file: str = "",
+    new_filename: str = "",
+    new_extfile: str = "",
+    compare_version_path: str = "",
+    identity_type_id: int | None = None,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> FileOperationResponse:
+    """Delegación de operaciones de ficheros/carpetas a fmanagement."""
+
+    payload = FileOperationRequest(
+        id_user=id_user,
+        id_organization=id_organization,
+        id_project=id_project,
+        version_path=version_path,
+        operation=operation,
+        subfolders=subfolders,
+        filename=filename,
+        ext_file=ext_file,
+        new_filename=new_filename,
+        new_extfile=new_extfile,
+        compare_version_path=compare_version_path,
+        identity_type_id=identity_type_id,
+    ).model_dump()
+    headers = _build_permission_headers(authorization, session_token)
+    try:
+        result = router.fmo_operation(payload, headers)
+        return FileOperationResponse(result=result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/fmo", response_model=FileOperationResponse)
+async def fmo_upload(
+    file: UploadFile = File(...),
+    id_user: int = Form(...),
+    id_organization: int = Form(...),
+    id_project: int = Form(...),
+    version_path: str = Form(...),
+    operation: str = Form("upload"),
+    subfolders: str = Form(""),
+    filename: str = Form(""),
+    ext_file: str = Form(""),
+    identity_type_id: int | None = Form(None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> FileOperationResponse:
+    """Delegación de carga de fichero a fmanagement."""
+
+    payload = FileOperationRequest(
+        id_user=id_user,
+        id_organization=id_organization,
+        id_project=id_project,
+        version_path=version_path,
+        operation=operation,
+        subfolders=subfolders,
+        filename=filename,
+        ext_file=ext_file,
+        identity_type_id=identity_type_id,
+    ).model_dump()
+    headers = _build_permission_headers(authorization, session_token)
+    file_payload = {
+        "filename": file.filename,
+        "content": await file.read(),
+        "content_type": file.content_type,
+    }
+    try:
+        result = router.fmo_upload(payload, headers, file_payload)
+        return FileOperationResponse(result=result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/fmo/list", response_model=FileOperationResponse)
+def fmo_list(
+    id_user: int,
+    id_organization: int,
+    id_project: int,
+    version_path: str,
+    subfolders: str = "",
+    identity_type_id: int | None = None,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> FileOperationResponse:
+    """Lista estructura de carpetas vía fmanagement."""
+
+    payload = FileOperationRequest(
+        id_user=id_user,
+        id_organization=id_organization,
+        id_project=id_project,
+        version_path=version_path,
+        operation="list",
+        subfolders=subfolders,
+        identity_type_id=identity_type_id,
+    ).model_dump()
+    headers = _build_permission_headers(authorization, session_token)
+    try:
+        result = router.list_directory(payload, headers)
+        return FileOperationResponse(result=result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/fmo/newversion", response_model=FileOperationResponse)
+def fmo_newversion(
+    payload: VersionOperationRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> FileOperationResponse:
+    """Crea una nueva versión delegando en fmanagement."""
+
+    headers = _build_permission_headers(authorization, session_token)
+    try:
+        result = router.create_new_version(payload.model_dump(), headers)
+        return FileOperationResponse(result=result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/fmo/diffversion", response_model=FileOperationResponse)
+def fmo_diffversion(
+    id_user: int,
+    id_organization: int,
+    id_project: int,
+    version_path: str,
+    compare_version_path: str,
+    identity_type_id: int | None = None,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> FileOperationResponse:
+    """Compara versiones delegando en fmanagement."""
+
+    payload = FileOperationRequest(
+        id_user=id_user,
+        id_organization=id_organization,
+        id_project=id_project,
+        version_path=version_path,
+        compare_version_path=compare_version_path,
+        operation="diffversion",
+        identity_type_id=identity_type_id,
+    ).model_dump()
+    headers = _build_permission_headers(authorization, session_token)
+    try:
+        result = router.diff_versions(payload, headers)
+        return FileOperationResponse(result=result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
 

@@ -45,6 +45,8 @@ You are an expert Python developer with a focus on writing clean, maintainable, 
   headers o permisos) deben documentarse en `README.md` y en `fmanagement/README.md`.
 * **Ruta de datos:** Cualquier cambio en la ruta de almacenamiento
   (`/data/files/external`) debe reflejarse en `README.md` y `README_DEPLOYMENT.md`.
+* **Endpoints:** La lista de endpoints activos de `fmanagement` debe mantenerse
+  actualizada en `README.md` (sección de gestión de ficheros).
 
 ## 5.3 Nomenclatura de carpetas en storage
 * **Obligatorio:** Para construir nombres de carpeta por organización y proyecto
