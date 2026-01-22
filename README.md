@@ -58,6 +58,26 @@ además de las dependencias con Nginx y MariaDB.
 - La capa de dominio común vive en `src/1_shared_domain/`.
 - La capa de aplicación compartida vive en `src/2_shared_application/`.
 
+### Gestión de ficheros (fmanagement)
+
+Las operaciones sobre carpetas y ficheros se delegan desde `3_backend` a la API externa
+`fmanagement` (Go). Esta API usa permisos de bajo nivel y trabaja sobre un volumen
+de datos en el servidor backend.
+
+Ruta de almacenamiento esperada en producción: `/data/files/external`.
+
+Estructura esperada:
+```
+/data/files/external/
+  ORG0001/
+    PRJ00001/
+      v001/
+      v002/
+```
+
+En desarrollo existe un ejemplo en `fmanagement/example`, pero la implementación final
+no debe depender de esa ruta.
+
 ## ADRs
 
 - `src/docs/stack_of_technologies.adr`: justifica el uso de Python 3.13 y el downgrade temporal desde 3.14.

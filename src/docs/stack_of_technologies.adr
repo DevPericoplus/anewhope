@@ -26,12 +26,18 @@ en desuso** hasta nueva validación. Los entornos locales recomendados pasan a s
 En esta versión se fija **Pydantic `>=2.10,<2.11`** para evitar el bug reconocido y
 mantener compatibilidad con FastAPI y Reflex.
 
+Además, las operaciones de **sistema de ficheros** del backend core se delegan en
+la API externa **`fmanagement`** (Go). Esta separación responde a motivos de
+**rendimiento** y **seguridad** para operaciones de alto volumen en disco.
+
 ## Consecuencias
 
 - Las guías y scripts de ejecución deben apuntar a entornos Python 3.13.
 - El stack queda estable con Pydantic 2.10.x y sin fallos de compilación.
 - Se pospone la migración a Python 3.14 hasta que `pydantic-core` y Reflex certifiquen
   compatibilidad.
+- El backend core integra una dependencia operativa con `fmanagement` para acciones
+  sobre carpetas y ficheros.
 - Se deberá planificar una revisión futura para revalidar 3.14 cuando el ecosistema lo permita.
 
 ## Verificación

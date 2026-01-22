@@ -56,3 +56,17 @@ o relaciones), junto con la fecha y una nota breve del motivo.
 - `user_organization_management`: relación usuario-organización y estado.
 - `sessions`: sesiones activas/inactivas para auditoría y seguridad.
 - `auth_logs`: auditoría de login/logout y eventos de autenticación.
+
+## Almacenamiento de ficheros (fmanagement)
+
+La API `fmanagement` opera sobre un volumen dedicado en el servidor backend:
+`/data/files/external`.
+La estructura esperada es:
+
+```
+/data/files/external/
+  ORG0001/
+    PRJ00001/
+      v001/
+      v002/
+```

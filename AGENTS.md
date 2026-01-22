@@ -40,6 +40,12 @@ You are an expert Python developer with a focus on writing clean, maintainable, 
 * **Obligatorio:** Cada cambio en la estructura de tablas debe documentarse en
   `README_DEPLOYMENT.md` (sección "Estructura de base de datos").
 
+## 5.2 Documentación de fmanagement
+* **Obligatorio:** Cambios en el contrato de la API `fmanagement` (endpoints,
+  headers o permisos) deben documentarse en `README.md` y en `fmanagement/README.md`.
+* **Ruta de datos:** Cualquier cambio en la ruta de almacenamiento
+  (`/data/files/external`) debe reflejarse en `README.md` y `README_DEPLOYMENT.md`.
+
 ### Scripts de mantenimiento
 - `clear_caches.sh`: limpia caches de Reflex (`.web`, `.states`) y caches de tooling
   (`__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.coverage`, `.hypothesis`).
