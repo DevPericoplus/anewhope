@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Iterator
-from contextlib import contextmanager
-from typing import Any
+from contextlib import asynccontextmanager, contextmanager
+from typing import Any, AsyncIterator
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
@@ -97,6 +97,7 @@ class PermissionsResponse(BaseModel):
     organization_id: int | None = None
     identity_type_id: int | None = None
     permissions: list[dict[str, Any]] = Field(default_factory=list)
+    low_level_permissions: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProcessDataRequest(BaseModel):
@@ -164,12 +165,15 @@ def get_router_broker(
     return BrokerBackendRouter(core_client=core_client)
 
 
-app = FastAPI(title="Broker Backend", lifespan=None)
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Gestiona el ciclo de vida de la aplicación."""
 
-
-@app.on_event("startup")
-def _startup() -> None:
     _configure_logging()
+    yield
+
+
+app = FastAPI(title="Broker Backend", lifespan=lifespan)
 
 
 @app.get("/users")
@@ -310,6 +314,21 @@ def list_basic_permissions(
 
     try:
         return router.fetch_basic_permissions()
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/low-level-permissions")
+def list_low_level_permissions(
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> list[dict[str, Any]]:
+    """Lista permisos de bajo nivel."""
+
+    try:
+        return router.fetch_low_level_permissions()
     except BrokerBusinessError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

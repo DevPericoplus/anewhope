@@ -46,6 +46,7 @@ def test_middleware_broker_core_flow(tmp_path: Path, monkeypatch: Any) -> None:
     organizations_path = tmp_path / "organizations.json"
     roles_path = tmp_path / "roles.json"
     permissions_path = tmp_path / "basic_permissions.json"
+    low_level_permissions_path = tmp_path / "low_level_permissions.json"
     manage_roles_path = tmp_path / "manage_roles.json"
 
     _write_json(users_path, [])
@@ -84,6 +85,54 @@ def test_middleware_broker_core_flow(tmp_path: Path, monkeypatch: Any) -> None:
             }
         ],
     )
+    _write_json(
+        low_level_permissions_path,
+        [
+            {
+                "id_permissions": 1,
+                "folder_create": True,
+                "folder_delete": True,
+                "folder_rename": True,
+                "folder_read": True,
+                "file_create": True,
+                "file_read": True,
+                "file_update": True,
+                "file_delete": True,
+                "project_create": True,
+                "project_read": True,
+                "project_update": True,
+                "project_delete": True,
+                "version_create": True,
+                "version_read": True,
+                "version_update": True,
+                "version_delete": True,
+                "training_create": True,
+                "training_read": True,
+                "training_update": True,
+                "training_delete": True,
+                "training_start": True,
+                "training_stop": True,
+                "parameters_create": True,
+                "parameters_read": True,
+                "parameters_update": True,
+                "parameters_delete": True,
+                "notifications_create": True,
+                "notifications_read": True,
+                "notifications_update": True,
+                "notifications_delete": True,
+                "user_create": True,
+                "user_read": True,
+                "user_update": True,
+                "user_delete": True,
+                "user_enable": True,
+                "user_disable": True,
+                "folder_list": True,
+                "file_list": True,
+                "project_list": True,
+                "version_list": True,
+            }
+        ],
+    )
     _write_json(manage_roles_path, [])
 
     def _get_adapter() -> Any:
@@ -92,6 +141,7 @@ def test_middleware_broker_core_flow(tmp_path: Path, monkeypatch: Any) -> None:
             organizations_path=organizations_path,
             roles_path=roles_path,
             basic_permissions_path=permissions_path,
+            low_level_permissions_path=low_level_permissions_path,
             manage_roles_path=manage_roles_path,
         )
 
@@ -119,6 +169,9 @@ def test_middleware_broker_core_flow(tmp_path: Path, monkeypatch: Any) -> None:
 
         def fetch_basic_permissions(self) -> list[dict[str, Any]]:
             return core_client.get("/basic-permissions").json()
+
+        def fetch_low_level_permissions(self) -> list[dict[str, Any]]:
+            return core_client.get("/low-level-permissions").json()
 
         def fetch_manage_roles(self) -> list[dict[str, Any]]:
             return core_client.get("/manage-roles-by-org").json()
@@ -170,6 +223,9 @@ def test_middleware_broker_core_flow(tmp_path: Path, monkeypatch: Any) -> None:
 
         def fetch_basic_permissions(self) -> list[dict[str, Any]]:
             return broker_app_client.get("/basic-permissions").json()
+
+        def fetch_low_level_permissions(self) -> list[dict[str, Any]]:
+            return broker_app_client.get("/low-level-permissions").json()
 
         def fetch_manage_roles(self) -> list[dict[str, Any]]:
             return broker_app_client.get("/manage-roles-by-org").json()

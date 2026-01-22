@@ -17,6 +17,10 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Funcionalidad de envío de SMS y validaciones relacionadas.
 - Test de seguridad para invalidación de tokens tras logout en el middleware.
 - Tests unitarios e integración para broker/core y flujo middleware → broker → core.
+- Documentación de la gestión de roles por organización con mapeo dominio/DTO/mock/BD.
+- Documentación de permisos básicos con mapeo dominio/DTO/mock/BD y flujo API.
+- Relación 1 a 1 entre roles y permisos en mocks y esquema de MariaDB.
+- Capa de permisos de bajo nivel con mock exportado desde MariaDB y endpoints API.
 
 ### Changed
 - Estandarización de puertos por regla `8000 + primer dígito del nombre de carpeta`.

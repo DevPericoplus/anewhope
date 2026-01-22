@@ -9,13 +9,19 @@ from .domain_dtos import (
     TenantDto,
     UserDto,
 )
-from .security_dtos import BasicPermissionDto, ManageRoleByOrgDto, RoleDto
+from .security_dtos import (
+    BasicPermissionDto,
+    LowLevelPermissionDto,
+    ManageRoleByOrgDto,
+    RoleDto,
+)
 from .session_dtos import SessionDto, SessionTokenBindingDto, UserSessionContextDto
 
 __all__ = [
     "BasicPermissionDto",
     "DatasetDto",
     "IdentityGlobalDto",
+    "LowLevelPermissionDto",
     "ManageRoleByOrgDto",
     "ModelVersionDto",
     "OrganizationDto",

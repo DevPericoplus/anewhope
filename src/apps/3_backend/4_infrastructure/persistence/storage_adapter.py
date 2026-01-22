@@ -99,6 +99,7 @@ OrganizationDto = _domain_dtos.OrganizationDto
 UserDto = _domain_dtos.UserDto
 RoleDto = _security_dtos.RoleDto
 BasicPermissionDto = _security_dtos.BasicPermissionDto
+LowLevelPermissionDto = _security_dtos.LowLevelPermissionDto
 ManageRoleByOrgDto = _security_dtos.ManageRoleByOrgDto
 
 
@@ -111,12 +112,14 @@ class JsonMockStorageAdapter:
         organizations_path: Path,
         roles_path: Path,
         basic_permissions_path: Path,
+        low_level_permissions_path: Path,
         manage_roles_path: Path,
     ) -> None:
         self._users_path = users_path
         self._organizations_path = organizations_path
         self._roles_path = roles_path
         self._basic_permissions_path = basic_permissions_path
+        self._low_level_permissions_path = low_level_permissions_path
         self._manage_roles_path = manage_roles_path
 
     def load_users(self) -> list[UserDto]:
@@ -154,6 +157,22 @@ class JsonMockStorageAdapter:
 
         records = _load_json_list(self._basic_permissions_path)
         return [BasicPermissionDto.model_validate(record) for record in records]
+
+    def load_low_level_permissions(self) -> list[LowLevelPermissionDto]:
+        """Carga permisos de bajo nivel desde JSON."""
+
+        records = _load_json_list(self._low_level_permissions_path)
+        return [LowLevelPermissionDto.model_validate(record) for record in records]
+
+    def store_low_level_permissions(
+        self, permissions: list[LowLevelPermissionDto]
+    ) -> None:
+        """Guarda permisos de bajo nivel en JSON."""
+
+        _write_json_list(
+            self._low_level_permissions_path,
+            [permission.model_dump() for permission in permissions],
+        )
 
     def load_manage_roles(self) -> list[ManageRoleByOrgDto]:
         """Carga roles por organización desde JSON."""

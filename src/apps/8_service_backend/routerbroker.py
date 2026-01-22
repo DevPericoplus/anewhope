@@ -87,6 +87,16 @@ class BrokerBackendRouter:
                 "No se pudo cargar permisos desde core"
             ) from exc
 
+    def fetch_low_level_permissions(self) -> list[dict[str, Any]]:
+        """Obtiene permisos de bajo nivel desde el backend core."""
+
+        try:
+            return self._core_client.fetch_low_level_permissions()
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo cargar permisos de bajo nivel desde core"
+            ) from exc
+
     def fetch_manage_roles(self) -> list[dict[str, Any]]:
         """Obtiene roles por organización desde el backend core."""
 
@@ -139,7 +149,13 @@ class BrokerBackendRouter:
         """Obtiene permisos desde backend core."""
 
         try:
-            return self._core_client.get_permissions(identity_type_id)
+            response = self._core_client.get_permissions(identity_type_id)
+            self._logger.info(
+                "Consulta permisos role_id=%s low_level=%s",
+                identity_type_id,
+                bool(response.get("low_level_permissions")),
+            )
+            return response
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError("No se pudo cargar permisos desde core") from exc
 

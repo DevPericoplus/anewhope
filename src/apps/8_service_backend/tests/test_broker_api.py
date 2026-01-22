@@ -40,6 +40,7 @@ def _bootstrap_core_mocks(tmp_path: Path) -> dict[str, Path]:
         "organizations": tmp_path / "organizations.json",
         "roles": tmp_path / "roles.json",
         "basic_permissions": tmp_path / "basic_permissions.json",
+        "low_level_permissions": tmp_path / "low_level_permissions.json",
         "manage_roles": tmp_path / "manage_roles_by_org.json",
     }
     _write_json(paths["users"], [])
@@ -65,6 +66,54 @@ def _bootstrap_core_mocks(tmp_path: Path) -> dict[str, Path]:
             }
         ],
     )
+    _write_json(
+        paths["low_level_permissions"],
+        [
+            {
+                "id_permissions": 1,
+                "folder_create": True,
+                "folder_delete": True,
+                "folder_rename": True,
+                "folder_read": True,
+                "file_create": True,
+                "file_read": True,
+                "file_update": True,
+                "file_delete": True,
+                "project_create": True,
+                "project_read": True,
+                "project_update": True,
+                "project_delete": True,
+                "version_create": True,
+                "version_read": True,
+                "version_update": True,
+                "version_delete": True,
+                "training_create": True,
+                "training_read": True,
+                "training_update": True,
+                "training_delete": True,
+                "training_start": True,
+                "training_stop": True,
+                "parameters_create": True,
+                "parameters_read": True,
+                "parameters_update": True,
+                "parameters_delete": True,
+                "notifications_create": True,
+                "notifications_read": True,
+                "notifications_update": True,
+                "notifications_delete": True,
+                "user_create": True,
+                "user_read": True,
+                "user_update": True,
+                "user_delete": True,
+                "user_enable": True,
+                "user_disable": True,
+                "folder_list": True,
+                "file_list": True,
+                "project_list": True,
+                "version_list": True,
+            }
+        ],
+    )
     _write_json(paths["manage_roles"], [])
     return paths
 
@@ -86,6 +135,7 @@ def test_broker_routes(tmp_path: Path) -> None:
             organizations_path=paths["organizations"],
             roles_path=paths["roles"],
             basic_permissions_path=paths["basic_permissions"],
+            low_level_permissions_path=paths["low_level_permissions"],
             manage_roles_path=paths["manage_roles"],
         )
 
@@ -113,6 +163,9 @@ def test_broker_routes(tmp_path: Path) -> None:
 
         def fetch_basic_permissions(self) -> list[dict[str, Any]]:
             return core_client.get("/basic-permissions").json()
+
+        def fetch_low_level_permissions(self) -> list[dict[str, Any]]:
+            return core_client.get("/low-level-permissions").json()
 
         def fetch_manage_roles(self) -> list[dict[str, Any]]:
             return core_client.get("/manage-roles-by-org").json()

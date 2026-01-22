@@ -87,6 +87,12 @@ class CoreBackendClient:
         data = self._request("GET", "/basic-permissions")
         return list(data or [])
 
+    def fetch_low_level_permissions(self) -> list[dict[str, Any]]:
+        """Obtiene la lista de permisos de bajo nivel."""
+
+        data = self._request("GET", "/low-level-permissions")
+        return list(data or [])
+
     def fetch_manage_roles(self) -> list[dict[str, Any]]:
         """Obtiene la lista de roles por organización."""
 

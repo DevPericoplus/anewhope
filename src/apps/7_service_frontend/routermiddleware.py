@@ -60,6 +60,7 @@ OrganizationDto = _domain_dtos.OrganizationDto
 UserDto = _domain_dtos.UserDto
 RoleDto = _security_dtos.RoleDto
 BasicPermissionDto = _security_dtos.BasicPermissionDto
+LowLevelPermissionDto = _security_dtos.LowLevelPermissionDto
 ManageRoleByOrgDto = _security_dtos.ManageRoleByOrgDto
 
 
@@ -1207,12 +1208,43 @@ class RouterMiddleware:
         )
 
         permissions = self._get_permissions_for_role(session.identity_type_id)
+        low_level_permissions = self._get_low_level_permissions_for_role(
+            session.identity_type_id
+        )
         return {
             "user_id": session.user_id,
             "organization_id": session.organization_id,
             "identity_type_id": session.identity_type_id,
             "permissions": permissions,
+            "low_level_permissions": low_level_permissions,
         }
+
+    def has_low_level_permission(
+        self, session: SessionContext, permission_key: str
+    ) -> bool:
+        """Valida un permiso de bajo nivel usando el contexto de sesión."""
+
+        if not permission_key:
+            return False
+        permissions = self._get_low_level_permissions_for_role(
+            session.identity_type_id
+        )
+        value = permissions.get(permission_key)
+        allowed = bool(value)
+        self._logger.info(
+            "Permiso bajo nivel user_id=%s org_id=%s role_id=%s key=%s allowed=%s",
+            session.user_id,
+            session.organization_id,
+            session.identity_type_id,
+            permission_key,
+            allowed,
+        )
+        return allowed
+
+    def can_rename_folder(self, session: SessionContext) -> bool:
+        """Valida si puede renombrar carpetas según permisos de bajo nivel."""
+
+        return self.has_low_level_permission(session, "folder_rename")
 
     def _get_security_log_path(self) -> Path:
         """Resuelve la ruta del log de seguridad del middleware."""
@@ -1410,6 +1442,18 @@ class RouterMiddleware:
             )
         )
 
+    def _get_low_level_permissions_path(self) -> Path:
+        """Resuelve la ruta del archivo de permisos de bajo nivel."""
+
+        root_path = Path(__file__).resolve().parents[3]
+        return Path(
+            os.environ.get(
+                "LOW_LEVEL_PERMISSIONS_PATH",
+                root_path
+                / "src/2_shared_application/moks/low_level_permisions.json",
+            )
+        )
+
     def _load_roles(self, data_path: Path) -> list[RoleDto]:
         """Carga los roles desde archivo JSON."""
 
@@ -1450,6 +1494,30 @@ class RouterMiddleware:
             ) from exc
         return [BasicPermissionDto.model_validate(record) for record in records]
 
+    def _load_low_level_permissions(
+        self, data_path: Path
+    ) -> list[LowLevelPermissionDto]:
+        """Carga permisos de bajo nivel desde archivo JSON."""
+
+        if self._should_use_broker_reads():
+            try:
+                records = self._broker_client.fetch_low_level_permissions()
+            except BrokerBackendCommunicationError as exc:
+                raise BusinessRuleError(
+                    "No se pudo cargar permisos de bajo nivel desde el broker"
+                ) from exc
+            return [LowLevelPermissionDto.model_validate(record) for record in records]
+        try:
+            with data_path.open("r", encoding="utf-8") as file_handle:
+                records = json.load(file_handle)
+        except FileNotFoundError:
+            return []
+        except json.JSONDecodeError as exc:
+            raise BusinessRuleError(
+                "El archivo de permisos de bajo nivel no es válido"
+            ) from exc
+        return [LowLevelPermissionDto.model_validate(record) for record in records]
+
     def _get_permissions_for_role(self, identity_type_id: int) -> list[dict[str, Any]]:
         """Obtiene permisos básicos para un rol."""
 
@@ -1472,6 +1540,35 @@ class RouterMiddleware:
             for permission in permissions
             if permission.id in permission_ids
         ]
+
+    def _get_low_level_permissions_for_role(
+        self, identity_type_id: int
+    ) -> dict[str, Any]:
+        """Obtiene permisos de bajo nivel para un rol."""
+
+        roles = self._load_roles(self._get_roles_path())
+        role_entry = next(
+            (
+                role
+                for role in roles
+                if role.identity_type_id == identity_type_id
+            ),
+            None,
+        )
+        if role_entry is None:
+            return {}
+
+        permission_ids = role_entry.identity_type_group_permissions
+        if not permission_ids:
+            return {}
+
+        permissions = self._load_low_level_permissions(
+            self._get_low_level_permissions_path()
+        )
+        for permission in permissions:
+            if permission.id_permissions == permission_ids[0]:
+                return permission.model_dump()
+        return {}
 
     def _load_manage_roles(self, data_path: Path) -> list[ManageRoleByOrgDto]:
         """Carga la asignación de roles por organización."""

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
@@ -101,6 +102,7 @@ class PermissionsResponse(BaseModel):
     organization_id: int | None = None
     identity_type_id: int | None = None
     permissions: list[dict[str, Any]] = Field(default_factory=list)
+    low_level_permissions: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProcessDataRequest(BaseModel):
@@ -154,6 +156,10 @@ def _get_mock_paths() -> dict[str, str]:
             "BASIC_PERMISSIONS_PATH",
             f"{root}/src/2_shared_application/moks/basic_permissions.json",
         ),
+        "low_level_permissions": os.environ.get(
+            "LOW_LEVEL_PERMISSIONS_PATH",
+            f"{root}/src/2_shared_application/moks/low_level_permisions.json",
+        ),
         "manage_roles": os.environ.get(
             "MANAGE_ROLES_BY_ORG_PATH",
             f"{root}/src/2_shared_application/moks/manage_roles_by_org.json",
@@ -172,6 +178,7 @@ def get_storage_adapter() -> JsonMockStorageAdapter:
         organizations_path=Path(paths["organizations"]),
         roles_path=Path(paths["roles"]),
         basic_permissions_path=Path(paths["basic_permissions"]),
+        low_level_permissions_path=Path(paths["low_level_permissions"]),
         manage_roles_path=Path(paths["manage_roles"]),
     )
 
@@ -184,12 +191,15 @@ def get_router_core(
     return BackendCoreRouter(storage=storage)
 
 
-app = FastAPI(title="Backend Core", lifespan=None)
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Gestiona el ciclo de vida de la aplicación."""
 
-
-@app.on_event("startup")
-def _startup() -> None:
     _configure_logging()
+    yield
+
+
+app = FastAPI(title="Backend Core", lifespan=lifespan)
 
 
 @app.get("/users")
@@ -343,6 +353,33 @@ def list_basic_permissions(
         ) from exc
 
 
+@app.get("/low-level-permissions")
+def list_low_level_permissions(
+    permission_id: int | None = None,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> list[dict[str, Any]] | dict[str, Any]:
+    """Lista permisos de bajo nivel o retorna uno específico."""
+
+    try:
+        permissions = router.list_low_level_permissions()
+        if permission_id is None:
+            return [perm.model_dump() for perm in permissions]
+        match = next(
+            (perm for perm in permissions if perm.id_permissions == permission_id),
+            None,
+        )
+        if match is None:
+            raise BackendCoreBusinessError(
+                "No se encontró el permiso de bajo nivel solicitado"
+            )
+        return match.model_dump()
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+
 @app.get("/manage-roles-by-org")
 def list_manage_roles(
     router: BackendCoreRouter = Depends(get_router_core),
@@ -385,11 +422,9 @@ def get_permissions(
     """Obtiene permisos asociados a un rol."""
 
     try:
-        permissions = router.get_permissions(identity_type_id)
-        return PermissionsResponse(
-            identity_type_id=identity_type_id,
-            permissions=permissions,
-        )
+        response = router.get_permissions(identity_type_id)
+        response["identity_type_id"] = identity_type_id
+        return PermissionsResponse(**response)
     except BackendCoreBusinessError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

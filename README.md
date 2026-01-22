@@ -143,7 +143,8 @@ Variables relevantes (broker):
 Variables relevantes (core):
 - `CORE_ACTIVITY_LOG_PATH` (opcional, ruta del log de actividad)
 - `USERS_DATA_PATH`, `ORGANIZATIONS_DATA_PATH`, `ROLES_DATA_PATH`,
-  `BASIC_PERMISSIONS_PATH`, `MANAGE_ROLES_BY_ORG_PATH` (mocks JSON)
+  `BASIC_PERMISSIONS_PATH`, `LOW_LEVEL_PERMISSIONS_PATH`,
+  `MANAGE_ROLES_BY_ORG_PATH` (mocks JSON)
 
 ### Ejemplos de despliegue en servidores (contenedores)
 
@@ -414,8 +415,10 @@ user = User(
 ## Roles y permisos (mock)
 
 - `src/2_shared_application/moks/roles.json`: define roles. El atributo
-  `identity_type_group_permissions` contiene una lista de permisos básicos.
+  `identity_type_group_permissions` contiene un único permiso básico (relación 1 a 1).
 - `src/2_shared_application/moks/basic_permissions.json`: catálogo de permisos básicos.
+- `src/2_shared_application/moks/low_level_permisions.json`: permisos de bajo nivel
+  asociados 1 a 1 con `basic_permissions.json`.
 - `src/2_shared_application/moks/manage_roles_by_org.json`: asigna roles a
   usuarios dentro de una organización.
 
@@ -438,12 +441,88 @@ Estructura de `manage_roles_by_org.json`:
 El campo `identity_type_id` permite consultar los permisos del rol en
 `basic_permissions.json`.
 
+### Dominio y DTOs (roles por organización)
+
+- **Dominio**: `ManagedRoleByOrg` y `ManageRolesByOrg` en `src/1_shared_domain/security_hierarchy.py`.
+  La entidad expone `user_id`, `organization_id`, `identity_type_id` y metadatos de auditoría.
+- **DTOs**: `ManageRoleByOrgDto` en `src/2_shared_application/dtos/security_dtos.py` mapea los campos
+  `id_user`, `id_organization`, `identity_type_id`, `create_date`, `modification_date`,
+  `id_modifier_user`, `active` hacia la entidad de dominio.
+
+Este mapeo garantiza que el atributo `identity_type_id` del mock se preserve al cruzar capas.
+
+### Persistencia (mock y MariaDB)
+
+- **Mock JSON**: `src/2_shared_application/moks/manage_roles_by_org.json` es la fuente primaria para
+  desarrollo y pruebas en modo `mock`.
+- **MariaDB**: la tabla `user_organization_management` (definida en
+  `anh_ansible_environments/env/macbook/files/init_myllm_core_db.sql`) refleja el mismo concepto con
+  columnas `user_id`, `organization_id`, `identity_type_id`, `created_by_user_id`, `active`.
+- **Carga**: el script de inicialización inserta desde JSON usando `JSON_TABLE()` y transforma
+  `create_date` → `created_at`.
+
+Estado verificado en BD (local): la tabla `user_organization_management` contiene 5 registros y
+respeta los valores de `identity_type_id` del mock.
+
+### Permisos básicos (dominio, DTO, mock y BD)
+
+- **Dominio**: `BasicPermission` y `BasicPermissions` en `src/1_shared_domain/security_hierarchy.py`.
+  El dominio consume `id`, `PermissionName`, `PermissionDescription` y valida su estructura.
+- **DTOs**: `BasicPermissionDto` en `src/2_shared_application/dtos/security_dtos.py` mapea
+  `id` → `permission_id`, `PermissionName` → `permission_name` y
+  `PermissionDescription` → `permission_description`.
+- **Mock JSON**: `src/2_shared_application/moks/basic_permissions.json` es la fuente principal.
+  `PermissionName` se utiliza en el código para verificaciones, y `PermissionDescription`
+  se usa para documentación y mensajes administrativos.
+- **MariaDB**: los datos se cargan en la tabla `permissions` (script
+  `anh_ansible_environments/env/macbook/files/init_myllm_core_db.sql`) mediante `JSON_TABLE()`.
+  La relación entre `identity_types` y `permissions` es **1 a 1** y se controla con
+  claves únicas en `identity_type_permissions`.
+
+Estado verificado en BD (local): la tabla `permissions` contiene 13 registros y conserva los
+`PermissionName`/`PermissionDescription` del mock.
+
+### Permisos de bajo nivel (dominio, DTO, mock y BD)
+
+- **Dominio**: `LowLevelPermission` y `LowLevelPermissions` en `src/1_shared_domain/security_hierarchy.py`.
+  Cada registro utiliza `id_permissions` y flags booleanos por recurso/acción.
+- **DTOs**: `LowLevelPermissionDto` en `src/2_shared_application/dtos/security_dtos.py`.
+- **Mock JSON**: `src/2_shared_application/moks/low_level_permisions.json` exportado desde
+  MariaDB. El `id_permissions` coincide 1 a 1 con `basic_permissions.json` y `roles.json`.
+- **MariaDB**: tabla `low_level_permissions` con relación 1 a 1 con `permissions`.
+
+Uso previsto: el token aporta `identity_type_id`; con ese ID se resuelve el permiso base,
+su descripción y los flags de bajo nivel en la misma cadena de seguridad.
+
+Ejemplo de plantilla para validar una acción concreta desde sesión/JWT:
+
+```python
+def can_rename_folder(session: SessionContext) -> bool:
+    """Valida si el usuario puede renombrar carpetas."""
+
+    permissions = router.get_permissions(session)
+    return bool(permissions.get("low_level_permissions", {}).get("folder_rename"))
+```
+
+### Flujo entre APIs (permisos básicos)
+
+- `7_service_frontend` carga permisos vía JSON o broker (`/basic-permissions`) según `STORAGE_MODE`.
+- `8_service_backend` expone `GET /basic-permissions` y delega al core.
+- `3_backend` expone `GET /basic-permissions` y devuelve los permisos desde el almacenamiento.
+
+### Flujo entre APIs (permisos de bajo nivel)
+
+- `7_service_frontend` carga permisos vía JSON o broker (`/low-level-permissions`) según `STORAGE_MODE`.
+- `8_service_backend` expone `GET /low-level-permissions` y delega al core.
+- `3_backend` expone `GET /low-level-permissions` y devuelve los permisos desde el almacenamiento.
+
 ## Interfaces compartidas (aplicación)
 
 Los contratos en `src/2_shared_application/interfaces/` desacoplan el acceso a
 las entidades de dominio de la infraestructura (JSON hoy, MariaDB mañana).
 
 - `basic_permissions_repository.py`: `BasicPermissionsRepository`
+- `low_level_permissions_repository.py`: `LowLevelPermissionsRepository`
 - `manage_roles_by_org_repository.py`: `ManageRolesByOrgRepository`
 - `roles_repository.py`: `RolesRepository`
 - `user_repository.py`: `UserRepository`

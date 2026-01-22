@@ -101,6 +101,7 @@ class PermissionsResponse(BaseModel):
     organization_id: int
     identity_type_id: int | None = None
     permissions: list[dict[str, Any]] = Field(default_factory=list)
+    low_level_permissions: dict[str, Any] = Field(default_factory=dict)
 
 
 class SecurityLogRequest(BaseModel):

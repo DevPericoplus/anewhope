@@ -239,7 +239,16 @@ def get_user_permissions(access_token: str, session_token: str) -> dict[str, Any
         "Authorization": f"Bearer {access_token}",
         "X-Session-Token": session_token,
     }
-    return _request_middleware("GET", "/permissions", headers=headers)
+    response = _request_middleware("GET", "/permissions", headers=headers)
+    low_level = response.get("low_level_permissions") or {}
+    logger.info(
+        "Consulta permisos middleware user_id=%s org_id=%s role_id=%s low_level=%s",
+        response.get("user_id"),
+        response.get("organization_id"),
+        response.get("identity_type_id"),
+        bool(low_level),
+    )
+    return response
 
 
 def log_security_action(

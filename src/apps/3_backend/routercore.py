@@ -36,6 +36,7 @@ OrganizationDto = _domain_dtos.OrganizationDto
 UserDto = _domain_dtos.UserDto
 RoleDto = _security_dtos.RoleDto
 BasicPermissionDto = _security_dtos.BasicPermissionDto
+LowLevelPermissionDto = _security_dtos.LowLevelPermissionDto
 ManageRoleByOrgDto = _security_dtos.ManageRoleByOrgDto
 
 
@@ -125,6 +126,16 @@ class BackendCoreRouter:
         except StorageAdapterError as exc:
             raise BackendCoreBusinessError(
                 "No se pudo cargar permisos básicos"
+            ) from exc
+
+    def list_low_level_permissions(self) -> list[LowLevelPermissionDto]:
+        """Lista permisos de bajo nivel."""
+
+        try:
+            return self._storage.load_low_level_permissions()
+        except StorageAdapterError as exc:
+            raise BackendCoreBusinessError(
+                "No se pudo cargar permisos de bajo nivel"
             ) from exc
 
     def list_manage_roles(self) -> list[ManageRoleByOrgDto]:
@@ -225,7 +236,7 @@ class BackendCoreRouter:
             "identity_type_id": identity_type_id,
         }
 
-    def get_permissions(self, identity_type_id: int) -> list[dict[str, Any]]:
+    def get_permissions(self, identity_type_id: int) -> dict[str, Any]:
         """Obtiene permisos asociados a un rol."""
 
         roles = self.list_roles()
@@ -234,14 +245,40 @@ class BackendCoreRouter:
             None,
         )
         if role_entry is None:
-            return []
+            self._logger.info(
+                "Consulta permisos role_id=%s sin coincidencias",
+                identity_type_id,
+            )
+            return {"permissions": [], "low_level_permissions": {}}
         permissions = self.list_basic_permissions()
         permission_ids = role_entry.identity_type_group_permissions
-        return [
+        basic_permissions = [
             permission.model_dump(by_alias=True)
             for permission in permissions
             if permission.id in permission_ids
         ]
+        low_level_permissions = {}
+        if permission_ids:
+            permission_id = permission_ids[0]
+            low_level_permissions = self._find_low_level_permission(permission_id)
+        self._logger.info(
+            "Consulta permisos role_id=%s permission_id=%s low_level_keys=%s",
+            identity_type_id,
+            permission_ids[0] if permission_ids else None,
+            list(low_level_permissions.keys()) if low_level_permissions else [],
+        )
+        return {
+            "permissions": basic_permissions,
+            "low_level_permissions": low_level_permissions,
+        }
+
+    def _find_low_level_permission(self, permission_id: int) -> dict[str, Any]:
+        """Obtiene permisos de bajo nivel asociados a un permiso base."""
+
+        for permission in self.list_low_level_permissions():
+            if permission.id_permissions == permission_id:
+                return permission.model_dump()
+        return {}
 
     def process_data(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Procesa datos (placeholder)."""

@@ -24,6 +24,10 @@ class Role:
         _require_int_sequence(
             self.identity_type_group_permissions, "identity_type_group_permissions"
         )
+        if len(self.identity_type_group_permissions) != 1:
+            raise ValueError(
+                "identity_type_group_permissions debe contener exactamente un permiso"
+            )
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "Role":
@@ -69,6 +73,143 @@ class BasicPermission:
             permission_description=permission_description,
         )
 
+
+@dataclass(frozen=True, slots=True)
+class LowLevelPermission:
+    """Representa permisos de bajo nivel asociados a un permiso base."""
+
+    id_permissions: int
+    folder_create: bool
+    folder_delete: bool
+    folder_rename: bool
+    folder_read: bool
+    file_create: bool
+    file_read: bool
+    file_update: bool
+    file_delete: bool
+    project_create: bool
+    project_read: bool
+    project_update: bool
+    project_delete: bool
+    version_create: bool
+    version_read: bool
+    version_update: bool
+    version_delete: bool
+    training_create: bool
+    training_read: bool
+    training_update: bool
+    training_delete: bool
+    training_start: bool
+    training_stop: bool
+    parameters_create: bool
+    parameters_read: bool
+    parameters_update: bool
+    parameters_delete: bool
+    notifications_create: bool
+    notifications_read: bool
+    notifications_update: bool
+    notifications_delete: bool
+    user_create: bool
+    user_read: bool
+    user_update: bool
+    user_delete: bool
+    user_enable: bool
+    user_disable: bool
+    folder_list: bool
+    file_list: bool
+    project_list: bool
+    version_list: bool
+
+    def __post_init__(self) -> None:
+        _require_int(self.id_permissions, "id_permissions")
+        _require_bool(self.folder_create, "folder_create")
+        _require_bool(self.folder_delete, "folder_delete")
+        _require_bool(self.folder_rename, "folder_rename")
+        _require_bool(self.folder_read, "folder_read")
+        _require_bool(self.file_create, "file_create")
+        _require_bool(self.file_read, "file_read")
+        _require_bool(self.file_update, "file_update")
+        _require_bool(self.file_delete, "file_delete")
+        _require_bool(self.project_create, "project_create")
+        _require_bool(self.project_read, "project_read")
+        _require_bool(self.project_update, "project_update")
+        _require_bool(self.project_delete, "project_delete")
+        _require_bool(self.version_create, "version_create")
+        _require_bool(self.version_read, "version_read")
+        _require_bool(self.version_update, "version_update")
+        _require_bool(self.version_delete, "version_delete")
+        _require_bool(self.training_create, "training_create")
+        _require_bool(self.training_read, "training_read")
+        _require_bool(self.training_update, "training_update")
+        _require_bool(self.training_delete, "training_delete")
+        _require_bool(self.training_start, "training_start")
+        _require_bool(self.training_stop, "training_stop")
+        _require_bool(self.parameters_create, "parameters_create")
+        _require_bool(self.parameters_read, "parameters_read")
+        _require_bool(self.parameters_update, "parameters_update")
+        _require_bool(self.parameters_delete, "parameters_delete")
+        _require_bool(self.notifications_create, "notifications_create")
+        _require_bool(self.notifications_read, "notifications_read")
+        _require_bool(self.notifications_update, "notifications_update")
+        _require_bool(self.notifications_delete, "notifications_delete")
+        _require_bool(self.user_create, "user_create")
+        _require_bool(self.user_read, "user_read")
+        _require_bool(self.user_update, "user_update")
+        _require_bool(self.user_delete, "user_delete")
+        _require_bool(self.user_enable, "user_enable")
+        _require_bool(self.user_disable, "user_disable")
+        _require_bool(self.folder_list, "folder_list")
+        _require_bool(self.file_list, "file_list")
+        _require_bool(self.project_list, "project_list")
+        _require_bool(self.version_list, "version_list")
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "LowLevelPermission":
+        """Crea permisos de bajo nivel desde un diccionario."""
+
+        return cls(
+            id_permissions=_require_mapping_int(data, "id_permissions"),
+            folder_create=_require_mapping_bool(data, "folder_create"),
+            folder_delete=_require_mapping_bool(data, "folder_delete"),
+            folder_rename=_require_mapping_bool(data, "folder_rename"),
+            folder_read=_require_mapping_bool(data, "folder_read"),
+            file_create=_require_mapping_bool(data, "file_create"),
+            file_read=_require_mapping_bool(data, "file_read"),
+            file_update=_require_mapping_bool(data, "file_update"),
+            file_delete=_require_mapping_bool(data, "file_delete"),
+            project_create=_require_mapping_bool(data, "project_create"),
+            project_read=_require_mapping_bool(data, "project_read"),
+            project_update=_require_mapping_bool(data, "project_update"),
+            project_delete=_require_mapping_bool(data, "project_delete"),
+            version_create=_require_mapping_bool(data, "version_create"),
+            version_read=_require_mapping_bool(data, "version_read"),
+            version_update=_require_mapping_bool(data, "version_update"),
+            version_delete=_require_mapping_bool(data, "version_delete"),
+            training_create=_require_mapping_bool(data, "training_create"),
+            training_read=_require_mapping_bool(data, "training_read"),
+            training_update=_require_mapping_bool(data, "training_update"),
+            training_delete=_require_mapping_bool(data, "training_delete"),
+            training_start=_require_mapping_bool(data, "training_start"),
+            training_stop=_require_mapping_bool(data, "training_stop"),
+            parameters_create=_require_mapping_bool(data, "parameters_create"),
+            parameters_read=_require_mapping_bool(data, "parameters_read"),
+            parameters_update=_require_mapping_bool(data, "parameters_update"),
+            parameters_delete=_require_mapping_bool(data, "parameters_delete"),
+            notifications_create=_require_mapping_bool(data, "notifications_create"),
+            notifications_read=_require_mapping_bool(data, "notifications_read"),
+            notifications_update=_require_mapping_bool(data, "notifications_update"),
+            notifications_delete=_require_mapping_bool(data, "notifications_delete"),
+            user_create=_require_mapping_bool(data, "user_create"),
+            user_read=_require_mapping_bool(data, "user_read"),
+            user_update=_require_mapping_bool(data, "user_update"),
+            user_delete=_require_mapping_bool(data, "user_delete"),
+            user_enable=_require_mapping_bool(data, "user_enable"),
+            user_disable=_require_mapping_bool(data, "user_disable"),
+            folder_list=_require_mapping_bool(data, "folder_list"),
+            file_list=_require_mapping_bool(data, "file_list"),
+            project_list=_require_mapping_bool(data, "project_list"),
+            version_list=_require_mapping_bool(data, "version_list"),
+        )
 
 @dataclass(frozen=True, slots=True)
 class ManagedRoleByOrg:
@@ -198,6 +339,43 @@ class BasicPermissions:
         """Valida la estructura de permisos proveniente de cualquier fuente."""
 
         return _validate_records(records, BasicPermission.from_dict)
+
+
+class LowLevelPermissions:
+    """Contenedor de permisos de bajo nivel."""
+
+    def __init__(self, items: Sequence[LowLevelPermission]) -> None:
+        self._items = tuple(items)
+
+    @property
+    def items(self) -> tuple[LowLevelPermission, ...]:
+        """Retorna los permisos de bajo nivel en memoria."""
+
+        return self._items
+
+    def get_by_id(self, permission_id: int) -> LowLevelPermission | None:
+        """Obtiene permisos de bajo nivel por `id_permissions`."""
+
+        for permission in self._items:
+            if permission.id_permissions == permission_id:
+                return permission
+        return None
+
+    @classmethod
+    def from_records(
+        cls, records: Iterable[Mapping[str, Any]]
+    ) -> "LowLevelPermissions":
+        """Construye el contenedor desde registros externos."""
+
+        return cls([LowLevelPermission.from_dict(record) for record in records])
+
+    @staticmethod
+    def validate_structure(
+        records: Iterable[Mapping[str, Any]],
+    ) -> tuple[bool, list[str]]:
+        """Valida la estructura de permisos de bajo nivel."""
+
+        return _validate_records(records, LowLevelPermission.from_dict)
 
 
 class ManageRolesByOrg:
