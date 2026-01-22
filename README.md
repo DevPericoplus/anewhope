@@ -536,6 +536,19 @@ def can_rename_folder(session: SessionContext) -> bool:
 - `8_service_backend` expone `GET /low-level-permissions` y delega al core.
 - `3_backend` expone `GET /low-level-permissions` y devuelve los permisos desde el almacenamiento.
 
+## Estructura de almacenamiento (helpers)
+
+En `src/2_shared_application/storage_access_structure.py` se definen helpers
+para construir los nombres de carpetas en disco a partir de IDs numéricos:
+
+```python
+get_folder_by_id_organization(1)  # "ORG0001"
+get_folder_by_id_project(1)       # "PRJ0001"
+```
+
+Estos helpers deben usarse de forma consistente en todas las capas cuando se
+trabaje con rutas del storage (`/data/files/external`).
+
 ## Interfaces compartidas (aplicación)
 
 Los contratos en `src/2_shared_application/interfaces/` desacoplan el acceso a

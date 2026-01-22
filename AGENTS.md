@@ -46,6 +46,12 @@ You are an expert Python developer with a focus on writing clean, maintainable, 
 * **Ruta de datos:** Cualquier cambio en la ruta de almacenamiento
   (`/data/files/external`) debe reflejarse en `README.md` y `README_DEPLOYMENT.md`.
 
+## 5.3 Nomenclatura de carpetas en storage
+* **Obligatorio:** Para construir nombres de carpeta por organización y proyecto
+  se deben usar los helpers de `src/2_shared_application/storage_access_structure.py`
+  (`get_folder_by_id_organization`, `get_folder_by_id_project`). No se permite
+  formatear manualmente los strings `ORGXXXX` o `PRJXXXX` en código de aplicación.
+
 ### Scripts de mantenimiento
 - `clear_caches.sh`: limpia caches de Reflex (`.web`, `.states`) y caches de tooling
   (`__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.coverage`, `.hypothesis`).
