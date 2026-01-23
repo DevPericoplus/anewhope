@@ -76,6 +76,12 @@ You are an expert Python developer with a focus on writing clean, maintainable, 
   habilita/deshabilita la sincronización. Recomendado `0` en producción.
 - **Producción:** `storage_mode` en `protected_values.py` debe estar en `db_only`.
 
+### Sincronización OTP (frontend)
+- **Obligatorio:** Al actualizar OTP, el cambio debe persistirse en JSON y MariaDB
+  de forma sincrónica (modo `mock_and_db` o `db_only`).
+- **Validación:** Debe existir verificación de consistencia entre `users.json` y la
+  tabla `users`, con registro en `src/apps/5_web_frontend/logs/frontend_secure.log`.
+
 ## 6. Performance & Security
 * **Complexity:** Avoid $O(n^2)$ operations on large datasets. Use `set` for $O(1)$ lookups.
 * **Secrets:** Never hardcode API keys or credentials. Use `.env` files and `python-dotenv` or Pydantic `BaseSettings`.

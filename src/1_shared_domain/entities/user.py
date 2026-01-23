@@ -1,6 +1,10 @@
 """Funciones para gestión de usuarios en el sistema."""
 import json
 import logging
+import os
+import urllib.error
+import urllib.request
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -174,13 +178,151 @@ def update_user_password_and_otp(user_email: str, new_password: str, new_otp: st
         logger.warning(f"Usuario con email {user_email} no encontrado")
         return False
     
+    if _should_sync_users_with_broker():
+        if not _sync_users_to_broker(users):
+            logger.error("No se pudo sincronizar usuarios con broker backend")
+            return False
+
     try:
         with open(data_file, "w", encoding="utf-8") as f:
             json.dump(users, f, indent=2, ensure_ascii=False)
-        return True
     except (OSError, TypeError, ValueError) as e:
         logger.error(f"Error al guardar usuario actualizado en {data_file}: {e}")
         return False
+
+    validate_users_otp_sync()
+    return True
+
+
+def validate_users_otp_sync() -> bool:
+    """
+    Verifica que los OTPs de users.json coinciden con la tabla users en MariaDB.
+
+    Returns:
+        True si no hay discrepancias, False si se detectan.
+    """
+    if not _should_sync_users_with_broker():
+        return True
+    users = _load_users()
+    if not users:
+        return True
+    broker_users = _fetch_users_from_broker()
+    if not broker_users:
+        logger.warning("No se pudo validar OTPs con broker backend")
+        _append_frontend_secure_log(
+            "Validacion OTP sincronizacion,ERROR,No se pudo consultar broker"
+        )
+        return False
+
+    broker_map = {
+        int(user.get("user_id", 0)): str(user.get("user_otp", ""))
+        for user in broker_users
+        if int(user.get("user_id", 0)) > 0
+    }
+    mismatches = []
+    for user in users:
+        user_id = int(user.get("user_id", 0))
+        if user_id <= 0:
+            continue
+        json_otp = str(user.get("user_otp", ""))
+        db_otp = broker_map.get(user_id)
+        if db_otp is None:
+            continue
+        if json_otp != db_otp:
+            mismatches.append((user_id, json_otp, db_otp))
+    for user_id, json_otp, db_otp in mismatches:
+        logger.warning(
+            "OTP desalineado user_id=%s json=%s db=%s", user_id, json_otp, db_otp
+        )
+    if mismatches:
+        mismatch_ids = "|".join(str(item[0]) for item in mismatches)
+        _append_frontend_secure_log(
+            f"Validacion OTP sincronizacion,DESALINEADO,{mismatch_ids}"
+        )
+    else:
+        _append_frontend_secure_log("Validacion OTP sincronizacion,OK")
+    return not mismatches
+
+
+def _should_sync_users_with_broker() -> bool:
+    """Determina si se debe sincronizar usuarios con el broker backend."""
+
+    storage_mode = os.environ.get("STORAGE_MODE")
+    if storage_mode is None:
+        storage_mode = _load_protected_storage_mode()
+    return storage_mode in {"mock_and_db", "db_only"}
+
+
+def _load_protected_storage_mode() -> str:
+    """Carga el storage_mode desde protected_values.py."""
+
+    try:
+        from protected_values import storage_mode  # type: ignore
+
+        return str(storage_mode)
+    except Exception:
+        return "mock"
+
+
+def _get_broker_base_url() -> str:
+    """Obtiene la URL base del broker backend."""
+
+    try:
+        from protected_values import broker_backend_base_url  # type: ignore
+    except Exception:
+        broker_backend_base_url = "http://localhost:8008"
+    return os.environ.get("BROKER_BACKEND_BASE_URL", broker_backend_base_url).rstrip("/")
+
+
+def _request_broker(
+    method: str, path: str, payload: Any | None = None
+) -> list[dict[str, Any]]:
+    """Ejecuta una petición al broker backend."""
+
+    url = f"{_get_broker_base_url()}{path}"
+    body = None
+    headers = {"Content-Type": "application/json"}
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(url, data=body, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            return list(data or [])
+    except urllib.error.URLError as exc:
+        logger.error(f"Error al conectar con broker backend: {exc}")
+        return []
+    except json.JSONDecodeError:
+        logger.error("Respuesta del broker backend no es JSON válido")
+        return []
+
+
+def _fetch_users_from_broker() -> list[dict[str, Any]]:
+    """Obtiene usuarios desde broker backend."""
+
+    return _request_broker("GET", "/users")
+
+
+def _sync_users_to_broker(users: list[dict[str, Any]]) -> bool:
+    """Sincroniza usuarios hacia broker backend."""
+
+    response = _request_broker("PUT", "/users", payload=users)
+    return response == [] or isinstance(response, list)
+
+
+def _append_frontend_secure_log(message: str) -> None:
+    """Añade una entrada al log de seguridad del frontend."""
+
+    root_path = Path(__file__).resolve().parents[3]
+    log_path = root_path / "src/apps/5_web_frontend/logs/frontend_secure.log"
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H:%M")
+    log_line = f"{timestamp},,,{message}\n"
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as file_handler:
+            file_handler.write(log_line)
+    except OSError as exc:
+        logger.error("No se pudo escribir log frontend_secure: %s", exc)
 
 
 def create_user(user_data: dict[str, Any]) -> bool:

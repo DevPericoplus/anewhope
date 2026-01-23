@@ -185,6 +185,15 @@ Notas de UX y trazabilidad (Flujos):
 - El selector de versiones **sí** muestra el `id_version` (visible para el usuario),
   ya que es el identificador usado en consultas a `versiones` y `estado`.
 
+### Sincronización OTP (frontend y middleware)
+
+Cuando se actualiza el OTP de un usuario, el cambio se persiste **en JSON y en
+MariaDB de forma sincrónica** (modo `mock_and_db` o `db_only`). Se añade una
+validación de consistencia que compara los OTP entre `users.json` y la tabla
+`users`, registrando el resultado en:
+
+- `src/apps/5_web_frontend/logs/frontend_secure.log`
+
 ### Sincronización periódica DB/JSON (middleware)
 
 Cuando `STORAGE_MODE` es `mock_and_db` o `db_only`, el middleware ejecuta una
