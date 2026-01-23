@@ -13,6 +13,7 @@ from adapters.api_client import (
     request_login_otp,
 )
 from pages.flujos import FlujosState, flujos_diagram, load_flujos_content
+from pages.organizacion import load_organizacion_content
 
 COLORS = {
     "background": "#1a1a1a",
@@ -375,9 +376,7 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
     contact_text = load_menu_content(
         "contacto.txt", "Canales de contacto y atención al cliente."
     )
-    organization_text = load_menu_content(
-        "organizacion.txt", "Gestión y visión general de tu organización."
-    )
+    organization_text = load_organizacion_content()
     technologies_text = load_menu_content(
         "tecnologias.txt", "Tecnologías activas y stack aplicado en tus proyectos."
     )
@@ -438,9 +437,7 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
     return rx.vstack(
         rx.heading(heading_text, size="8", color=COLORS["foreground"]),
         rx.cond(
-            rx.cond(
-                is_logged_in, active_item == "organizacion", active_item == "inicio"
-            ),
+            rx.cond(is_logged_in, False, active_item == "inicio"),
             rx.box(
                 rx.image(
                     src="/logo.jpg",
@@ -472,7 +469,11 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             rx.box(height="0"),
         ),
         rx.cond(
-            rx.cond(is_logged_in, active_item != "flujos", False),
+            rx.cond(
+                is_logged_in,
+                rx.cond(active_item != "flujos", active_item != "organizacion", False),
+                False,
+            ),
             rx.flex(
             rx.box(
                 rx.vstack(
