@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -149,11 +150,13 @@ def _load_protected_storage_settings() -> dict[str, str]:
         from protected_values import (  # type: ignore
             broker_backend_base_url,
             storage_mode,
+            active_sync_db_jsons,
         )
 
         return {
             "broker_backend_base_url": broker_backend_base_url,
             "storage_mode": storage_mode,
+            "active_sync_db_jsons": str(active_sync_db_jsons),
         }
     except Exception:
         return {}
@@ -176,6 +179,54 @@ def _parse_storage_mode(raw_value: str | None) -> StorageMode:
     if normalized == StorageMode.DB_ONLY.value:
         return StorageMode.DB_ONLY
     return StorageMode.MOCK_ONLY
+
+
+@dataclass(frozen=True)
+class _SyncDataset:
+    """Define un dataset para sincronización."""
+
+    name: str
+    json_path: Path
+    key_fields: tuple[str, ...]
+    fetch: Any
+
+
+@dataclass(frozen=True)
+class _SyncDiff:
+    """Resultado de comparación entre broker y JSON."""
+
+    added: list[tuple[Any, ...]]
+    updated: list[tuple[Any, ...]]
+    removed: list[tuple[Any, ...]]
+    invalid_json: list[dict[str, Any]]
+
+    @property
+    def has_changes(self) -> bool:
+        """Indica si hay cambios a aplicar."""
+
+        return bool(self.added or self.updated or self.removed or self.invalid_json)
+
+
+def _build_record_map(
+    records: list[dict[str, Any]], key_fields: tuple[str, ...]
+) -> tuple[dict[tuple[Any, ...], dict[str, Any]], list[dict[str, Any]]]:
+    """Construye un mapa de registros por clave."""
+
+    mapping: dict[tuple[Any, ...], dict[str, Any]] = {}
+    invalid: list[dict[str, Any]] = []
+    for record in records:
+        key = tuple(record.get(field) for field in key_fields)
+        if any(value is None for value in key):
+            invalid.append(record)
+            continue
+        mapping[key] = record
+    return mapping, invalid
+
+
+def _record_signature(record: dict[str, Any]) -> str:
+    """Genera una firma estable para comparar registros."""
+
+    return json.dumps(record, sort_keys=True, ensure_ascii=False, default=str)
 
 
 @dataclass(frozen=True)
@@ -333,6 +384,7 @@ class RouterMiddleware:
         self._interface = interface
         self._jwt_settings = jwt_settings
         self._logger = logging.getLogger("middlewarefe.router")
+        self._sync_logger = self._build_sync_logger()
         self._storage_mode = self._get_storage_mode()
         self._broker_client = broker_client or BrokerBackendClient(
             base_url=self._get_broker_base_url()
@@ -354,6 +406,46 @@ class RouterMiddleware:
             protected.get("broker_backend_base_url", "http://localhost:8008"),
         )
 
+    def _get_sync_log_path(self) -> Path:
+        """Resuelve la ruta del log de sincronización."""
+
+        root_path = Path(__file__).resolve().parents[3]
+        return root_path / "src/apps/7_service_frontend/logs/sync_database_and_jsons.log"
+
+    def _build_sync_logger(self) -> logging.Logger:
+        """Configura el logger específico de sincronización."""
+
+        logger = logging.getLogger("middlewarefe.sync")
+        if any(
+            isinstance(handler, logging.FileHandler)
+            and Path(handler.baseFilename) == self._get_sync_log_path()
+            for handler in logger.handlers
+        ):
+            return logger
+        logger.setLevel(logging.INFO)
+        log_path = self._get_sync_log_path()
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(log_path, encoding="utf-8")
+        formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        return logger
+
+    def _get_sync_interval_seconds(self) -> int:
+        """Obtiene el intervalo de sincronización en segundos."""
+
+        return int(os.environ.get("SYNC_DATABASE_INTERVAL_SECONDS", "300"))
+
+    def _is_sync_enabled(self) -> bool:
+        """Indica si la sincronización periódica está habilitada."""
+
+        protected = _load_protected_storage_settings()
+        raw_value = os.environ.get(
+            "ACTIVE_SYNC_DB_JSONS", protected.get("active_sync_db_jsons", "1")
+        )
+        normalized = str(raw_value).strip().lower()
+        return normalized in {"1", "true", "yes", "on"}
+
     def _should_use_broker_reads(self) -> bool:
         """Determina si se deben leer datos desde el broker."""
 
@@ -363,6 +455,170 @@ class RouterMiddleware:
         """Determina si se deben replicar datos en el broker."""
 
         return self._storage_mode == StorageMode.MOCK_AND_DB
+
+    async def run_periodic_sync(self) -> None:
+        """Ejecuta la sincronización periódica en segundo plano."""
+
+        if self._storage_mode == StorageMode.MOCK_ONLY:
+            self._sync_logger.info(
+                "Sincronización deshabilitada (STORAGE_MODE=mock)."
+            )
+            return
+        if not self._is_sync_enabled():
+            self._sync_logger.info(
+                "Sincronización deshabilitada (ACTIVE_SYNC_DB_JSONS=false)."
+            )
+            return
+        interval = max(self._get_sync_interval_seconds(), 30)
+        self._sync_logger.info(
+            "Sincronización periódica iniciada intervalo=%s segundos", interval
+        )
+        try:
+            while True:
+                await asyncio.to_thread(self.sync_database_and_jsons)
+                await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            self._sync_logger.info("Sincronización periódica detenida.")
+            raise
+
+    def sync_database_and_jsons(self) -> None:
+        """Sincroniza las tablas del broker con los JSON locales."""
+
+        if self._storage_mode == StorageMode.MOCK_ONLY:
+            return
+        if not self._is_sync_enabled():
+            return
+        datasets = [
+            _SyncDataset(
+                name="users",
+                json_path=self._get_users_file_path(),
+                key_fields=("user_id",),
+                fetch=self._broker_client.fetch_users,
+            ),
+            _SyncDataset(
+                name="organizations",
+                json_path=self._get_organizations_file_path(),
+                key_fields=("organization_id",),
+                fetch=self._broker_client.fetch_organizations,
+            ),
+            _SyncDataset(
+                name="roles",
+                json_path=self._get_roles_path(),
+                key_fields=("identity_type_id",),
+                fetch=self._broker_client.fetch_roles,
+            ),
+            _SyncDataset(
+                name="basic_permissions",
+                json_path=self._get_basic_permissions_path(),
+                key_fields=("id",),
+                fetch=self._broker_client.fetch_basic_permissions,
+            ),
+            _SyncDataset(
+                name="low_level_permissions",
+                json_path=self._get_low_level_permissions_path(),
+                key_fields=("id_permissions",),
+                fetch=self._broker_client.fetch_low_level_permissions,
+            ),
+            _SyncDataset(
+                name="manage_roles_by_org",
+                json_path=self._get_manage_roles_path(),
+                key_fields=("id_user", "id_organization"),
+                fetch=self._broker_client.fetch_manage_roles,
+            ),
+        ]
+        for dataset in datasets:
+            self._sync_single_dataset(dataset)
+
+    def _sync_single_dataset(self, dataset: "_SyncDataset") -> None:
+        """Sincroniza un dataset específico con el broker."""
+
+        try:
+            broker_records = dataset.fetch()
+        except BrokerBackendCommunicationError as exc:
+            self._sync_logger.error(
+                "Sincronización fallida dataset=%s error=%s", dataset.name, exc
+            )
+            return
+
+        json_records = self._load_json_list(dataset.json_path)
+        diff = self._diff_records(
+            dataset.name, broker_records, json_records, dataset.key_fields
+        )
+        if diff.has_changes:
+            self._sync_logger.info(
+                "Sincronización dataset=%s añadidos=%s actualizados=%s eliminados=%s",
+                dataset.name,
+                diff.added,
+                diff.updated,
+                diff.removed,
+            )
+            if diff.invalid_json:
+                self._sync_logger.warning(
+                    "Registros JSON inválidos dataset=%s total=%s",
+                    dataset.name,
+                    len(diff.invalid_json),
+                )
+            self._sync_json_list(dataset.json_path, broker_records)
+        else:
+            self._sync_logger.info(
+                "Sin cambios dataset=%s total=%s",
+                dataset.name,
+                len(broker_records),
+            )
+
+    def _load_json_list(self, data_path: Path) -> list[dict[str, Any]]:
+        """Lee un JSON tipo lista desde disco."""
+
+        if not data_path.exists():
+            return []
+        try:
+            with data_path.open("r", encoding="utf-8") as file_handle:
+                payload = json.load(file_handle)
+        except json.JSONDecodeError as exc:
+            self._sync_logger.error(
+                "JSON inválido en %s: %s", data_path.name, exc
+            )
+            return []
+        if not isinstance(payload, list):
+            self._sync_logger.error(
+                "JSON inesperado en %s, se esperaba lista", data_path.name
+            )
+            return []
+        return [record for record in payload if isinstance(record, dict)]
+
+    def _diff_records(
+        self,
+        dataset_name: str,
+        broker_records: list[dict[str, Any]],
+        json_records: list[dict[str, Any]],
+        key_fields: tuple[str, ...],
+    ) -> "_SyncDiff":
+        """Calcula diferencias entre broker y JSON."""
+
+        broker_map, invalid_broker = _build_record_map(broker_records, key_fields)
+        json_map, invalid_json = _build_record_map(json_records, key_fields)
+        if invalid_broker:
+            self._sync_logger.warning(
+                "Registros del broker sin clave dataset=%s total=%s",
+                dataset_name,
+                len(invalid_broker),
+            )
+        broker_keys = set(broker_map.keys())
+        json_keys = set(json_map.keys())
+        added = sorted(broker_keys - json_keys)
+        removed = sorted(json_keys - broker_keys)
+        updated = sorted(
+            key
+            for key in broker_keys & json_keys
+            if _record_signature(broker_map[key])
+            != _record_signature(json_map[key])
+        )
+        return _SyncDiff(
+            added=added,
+            updated=updated,
+            removed=removed,
+            invalid_json=invalid_json,
+        )
 
     def _validate_token_ttl(
         self, payload: dict[str, Any], max_ttl_seconds: int, token_label: str
@@ -558,6 +814,7 @@ class RouterMiddleware:
                 raise BusinessRuleError(
                     "No se pudo cargar usuarios desde el broker"
                 ) from exc
+            self._sync_users_cache(data_path, records)
             return [UserDto.model_validate(record) for record in records]
         try:
             with data_path.open("r", encoding="utf-8") as file_handle:
@@ -579,10 +836,28 @@ class RouterMiddleware:
                 raise BusinessRuleError(
                     "No se pudo guardar usuarios en el broker"
                 ) from exc
-        if self._should_use_broker_reads():
-            return
-        with data_path.open("w", encoding="utf-8") as file_handle:
-            json.dump(payload, file_handle, ensure_ascii=False, indent=2)
+        self._sync_users_cache(data_path, payload)
+
+    def _sync_users_cache(
+        self, data_path: Path, records: list[dict[str, Any]]
+    ) -> None:
+        """Sincroniza el cache local de usuarios con la fuente preferente."""
+
+        self._sync_json_list(data_path, records)
+
+    def _sync_json_list(
+        self, data_path: Path, records: list[dict[str, Any]]
+    ) -> None:
+        """Sincroniza un JSON tipo lista con la fuente preferente."""
+
+        try:
+            data_path.parent.mkdir(parents=True, exist_ok=True)
+            with data_path.open("w", encoding="utf-8") as file_handle:
+                json.dump(records, file_handle, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            self._logger.error(
+                "No se pudo sincronizar %s: %s", data_path.name, exc
+            )
 
     def _get_users_file_path(self) -> Path:
         """Resuelve la ruta del archivo de usuarios."""
@@ -1337,6 +1612,7 @@ class RouterMiddleware:
                 raise BusinessRuleError(
                     "No se pudo cargar organizaciones desde el broker"
                 ) from exc
+            self._sync_json_list(data_path, records)
             return [OrganizationDto.model_validate(record) for record in records]
         try:
             with data_path.open("r", encoding="utf-8") as file_handle:
@@ -1360,10 +1636,7 @@ class RouterMiddleware:
                 raise BusinessRuleError(
                     "No se pudo guardar organizaciones en el broker"
                 ) from exc
-        if self._should_use_broker_reads():
-            return
-        with data_path.open("w", encoding="utf-8") as file_handle:
-            json.dump(payload, file_handle, ensure_ascii=False, indent=2)
+        self._sync_json_list(data_path, payload)
 
     def check_organization_name_exists(self, organization_name: str) -> bool:
         """Verifica si existe una organización con el nombre dado."""
@@ -1462,6 +1735,7 @@ class RouterMiddleware:
                 records = self._broker_client.fetch_roles()
             except BrokerBackendCommunicationError as exc:
                 raise BusinessRuleError("No se pudo cargar roles desde el broker") from exc
+            self._sync_json_list(data_path, records)
             return [RoleDto.model_validate(record) for record in records]
         try:
             with data_path.open("r", encoding="utf-8") as file_handle:
@@ -1482,6 +1756,7 @@ class RouterMiddleware:
                 raise BusinessRuleError(
                     "No se pudo cargar permisos desde el broker"
                 ) from exc
+            self._sync_json_list(data_path, records)
             return [BasicPermissionDto.model_validate(record) for record in records]
         try:
             with data_path.open("r", encoding="utf-8") as file_handle:
@@ -1506,6 +1781,7 @@ class RouterMiddleware:
                 raise BusinessRuleError(
                     "No se pudo cargar permisos de bajo nivel desde el broker"
                 ) from exc
+            self._sync_json_list(data_path, records)
             return [LowLevelPermissionDto.model_validate(record) for record in records]
         try:
             with data_path.open("r", encoding="utf-8") as file_handle:

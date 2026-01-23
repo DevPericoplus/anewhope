@@ -1,3 +1,5 @@
+import base64
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -10,6 +12,7 @@ from adapters.api_client import (
     refresh_tokens,
     request_login_otp,
 )
+from pages.flujos import FlujosState, flujos_diagram, load_flujos_content
 
 COLORS = {
     "background": "#1a1a1a",
@@ -45,6 +48,37 @@ class State(rx.State):
     def set_user_menu(self, menu: str):
         """Set active menu item for user portal."""
         self.user_active_menu = menu
+        if menu == "flujos":
+            organization_id = self.organization_id
+            if organization_id <= 0 and self.access_token:
+                organization_id = self._extract_org_id_from_token(self.access_token)
+                if organization_id > 0:
+                    self.organization_id = organization_id
+            return FlujosState.initialize_from_session(organization_id)
+
+    def on_page_load(self):
+        """Ejecuta acciones al recargar la página."""
+        if self.user_active_menu == "flujos":
+            organization_id = self.organization_id
+            if organization_id <= 0 and self.access_token:
+                organization_id = self._extract_org_id_from_token(self.access_token)
+                if organization_id > 0:
+                    self.organization_id = organization_id
+            return FlujosState.initialize_from_session(organization_id)
+
+    def _extract_org_id_from_token(self, token: str) -> int:
+        """Extrae organization_id desde el payload del JWT."""
+
+        try:
+            parts = token.split(".")
+            if len(parts) < 2:
+                return 0
+            payload = parts[1]
+            padded = payload + "=" * (-len(payload) % 4)
+            data = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+            return int(data.get("organization_id", 0))
+        except Exception:
+            return 0
     
     def set_user_username(self, username: str):
         """Set user username."""
@@ -78,7 +112,7 @@ class State(rx.State):
         self.user_logged_in = True
         self.login_error = ""
         self.otp_request_message = ""
-        self.user_active_menu = "inicio"
+        self.user_active_menu = "organizacion"
 
         permissions_response = get_user_permissions(access_token, session_token)
         self.user_permissions = permissions_response.get("permissions", [])
@@ -274,15 +308,27 @@ def login_panel() -> rx.Component:
         )
 
 
-def sidebar_menu() -> rx.Component:
+def sidebar_menu(is_logged_in: bool) -> rx.Component:
     """Sidebar menu for navigation."""
-    menu_items = ["inicio", "servicios", "proyectos", "soporte", "contacto"]
+    menu_items = rx.cond(
+        is_logged_in,
+        [
+            "organizacion",
+            "tecnologias",
+            "proyecciones",
+            "seguimiento",
+            "flujos",
+            "descargas",
+        ],
+        ["inicio", "servicios", "proyectos", "soporte", "contacto"],
+    )
     
     return rx.vstack(
             rx.text("Menú", font_size="1.1em", font_weight="bold", color=COLORS["foreground"], margin_bottom="1em"),
             rx.vstack(
-                *[
-                    rx.button(
+                rx.foreach(
+                    menu_items,
+                    lambda item: rx.button(
                         item.title(),
                         on_click=lambda _, i=item: State.set_user_menu(i),
                         background_color=rx.cond(
@@ -303,9 +349,8 @@ def sidebar_menu() -> rx.Component:
                         cursor="pointer",
                         text_align="left",
                         _hover={"opacity": "0.8"},
-                    )
-                    for item in menu_items
-                ],
+                    ),
+                ),
                 spacing="1",
                 align_items="flex-start",
                 width="100%",
@@ -315,7 +360,7 @@ def sidebar_menu() -> rx.Component:
         )
 
 
-def info_panel(active_item: str) -> rx.Component:
+def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
     """Info panel displaying content based on active menu item."""
     presentation_text = load_presentation_content()
     services_text = load_menu_content(
@@ -330,28 +375,72 @@ def info_panel(active_item: str) -> rx.Component:
     contact_text = load_menu_content(
         "contacto.txt", "Canales de contacto y atención al cliente."
     )
-
-    heading_text = rx.match(
-        active_item,
-        ("servicios", "Servicios"),
-        ("proyectos", "Proyectos"),
-        ("soporte", "Soporte"),
-        ("contacto", "Contacto"),
-        "Inicio",
+    organization_text = load_menu_content(
+        "organizacion.txt", "Gestión y visión general de tu organización."
     )
-    content_text = rx.match(
-        active_item,
-        ("servicios", services_text),
-        ("proyectos", projects_text),
-        ("soporte", support_text),
-        ("contacto", contact_text),
-        presentation_text,
+    technologies_text = load_menu_content(
+        "tecnologias.txt", "Tecnologías activas y stack aplicado en tus proyectos."
+    )
+    projections_text = load_menu_content(
+        "proyecciones.txt", "Proyecciones, estimaciones y próximos hitos."
+    )
+    tracking_text = load_menu_content(
+        "seguimiento.txt", "Seguimiento de avances, entregas y validaciones."
+    )
+    flows_text = load_flujos_content()
+    downloads_text = load_menu_content(
+        "descargas.txt", "Recursos, informes y entregables para descargar."
+    )
+
+    heading_text = rx.cond(
+        is_logged_in,
+        rx.match(
+            active_item,
+            ("organizacion", "Organizacion"),
+            ("tecnologias", "Tecnologias"),
+            ("proyecciones", "Proyecciones"),
+            ("seguimiento", "Seguimiento"),
+            ("flujos", "Flujos"),
+            ("descargas", "Descargas"),
+            "Organizacion",
+        ),
+        rx.match(
+            active_item,
+            ("servicios", "Servicios"),
+            ("proyectos", "Proyectos"),
+            ("soporte", "Soporte"),
+            ("contacto", "Contacto"),
+            "Inicio",
+        ),
+    )
+    content_text = rx.cond(
+        is_logged_in,
+        rx.match(
+            active_item,
+            ("organizacion", organization_text),
+            ("tecnologias", technologies_text),
+            ("proyecciones", projections_text),
+            ("seguimiento", tracking_text),
+            ("flujos", flows_text),
+            ("descargas", downloads_text),
+            presentation_text,
+        ),
+        rx.match(
+            active_item,
+            ("servicios", services_text),
+            ("proyectos", projects_text),
+            ("soporte", support_text),
+            ("contacto", contact_text),
+            presentation_text,
+        ),
     )
     
     return rx.vstack(
         rx.heading(heading_text, size="8", color=COLORS["foreground"]),
         rx.cond(
-            active_item == "inicio",
+            rx.cond(
+                is_logged_in, active_item == "organizacion", active_item == "inicio"
+            ),
             rx.box(
                 rx.image(
                     src="/logo.jpg",
@@ -377,7 +466,14 @@ def info_panel(active_item: str) -> rx.Component:
             font_family="Inter, system-ui, sans-serif",
             width="100%",
         ),
-        rx.flex(
+        rx.cond(
+            rx.cond(is_logged_in, active_item == "flujos", False),
+            flujos_diagram(),
+            rx.box(height="0"),
+        ),
+        rx.cond(
+            rx.cond(is_logged_in, active_item != "flujos", False),
+            rx.flex(
             rx.box(
                 rx.vstack(
                     rx.text("Perplejidad", color=COLORS["muted_foreground"], font_size="0.9em"),
@@ -417,6 +513,8 @@ def info_panel(active_item: str) -> rx.Component:
             direction="row",
             spacing="4",
             width="100%",
+            ),
+            rx.box(height="0"),
         ),
         spacing="4",
         padding="2em",
@@ -750,7 +848,7 @@ def user_portal() -> rx.Component:
             rx.hstack(
                 rx.box(
                     rx.vstack(
-                        sidebar_menu(),
+                        sidebar_menu(State.user_logged_in),
                         spacing="4",
                         padding="1.5em",
                     ),
@@ -761,7 +859,7 @@ def user_portal() -> rx.Component:
                     height="100%",
                 ),
                 rx.box(
-                    info_panel(State.user_active_menu),
+                    info_panel(State.user_active_menu, State.user_logged_in),
                     width="75%",
                     background_color=COLORS["background"],
                     padding="0",
@@ -771,6 +869,7 @@ def user_portal() -> rx.Component:
                 spacing="0",
                 flex="1",
                 align_items="stretch",
+                background_color=COLORS["card"],
             ),
             footer(),
             background_color=COLORS["background"],
@@ -797,7 +896,7 @@ def user_portal() -> rx.Component:
                 rx.box(
                     rx.vstack(
                         login_panel(),
-                        sidebar_menu(),
+                        sidebar_menu(State.user_logged_in),
                         spacing="4",
                         padding="1.5em",
                     ),
@@ -808,7 +907,7 @@ def user_portal() -> rx.Component:
                     height="100%",
                 ),
                 rx.box(
-                    info_panel(State.user_active_menu),
+                    info_panel(State.user_active_menu, State.user_logged_in),
                     width="75%",
                     background_color=COLORS["background"],
                     padding="0",
@@ -818,6 +917,7 @@ def user_portal() -> rx.Component:
                 spacing="0",
                 flex="1",
                 align_items="stretch",
+                background_color=COLORS["card"],
             ),
             footer(),
             background_color=COLORS["background"],
@@ -836,7 +936,12 @@ app = rx.App(
 )
 
 # User portal route
-app.add_page(user_portal, route="/", title="Myllm - Pagina principal")
+app.add_page(
+    user_portal,
+    route="/",
+    title="Myllm - Pagina principal",
+    on_load=State.on_page_load,
+)
 
 # User creation route
 import sys

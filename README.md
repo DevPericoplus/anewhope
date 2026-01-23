@@ -156,6 +156,8 @@ Variables relevantes (ver `src/apps/7_service_frontend/.env.example`):
 - `ACTIVITY_LOG_PATH` (opcional, sobrescribe la ruta de `middleware_activiy.log`)
 - `STORAGE_MODE` (modos: `mock`, `mock_and_db`, `db_only`)
 - `BROKER_BACKEND_BASE_URL` (URL del broker backend)
+- `SYNC_DATABASE_INTERVAL_SECONDS` (intervalo de sincronización DB/JSON)
+- `ACTIVE_SYNC_DB_JSONS` (switch de sincronización DB/JSON)
 
 Dependencias del servicio (pip):
 - `src/apps/7_service_frontend/requirements.txt`
@@ -170,6 +172,37 @@ El middleware puede operar con tres modos configurables mediante `STORAGE_MODE`:
 
 Cuando el modo es `mock_and_db` o `db_only`, el middleware delega persistencia en el
 broker backend (`8_service_backend`) mediante `BROKER_BACKEND_BASE_URL`.
+
+### Base de datos de proyectos (sin mocks)
+
+La base de datos `myllm_projects_db` **no** tiene espejo en ficheros JSON de
+`src/2_shared_application/moks`. Todas las operaciones contra esta base de datos
+se realizan **directamente en MariaDB**, sin fallback ni sincronización con mocks.
+
+Notas de UX y trazabilidad (Flujos):
+- El selector de proyectos **solo** muestra el nombre del proyecto; el `id` se usa
+  internamente y puede registrarse en logs para trazabilidad.
+- El selector de versiones **sí** muestra el `id_version` (visible para el usuario),
+  ya que es el identificador usado en consultas a `versiones` y `estado`.
+
+### Sincronización periódica DB/JSON (middleware)
+
+Cuando `STORAGE_MODE` es `mock_and_db` o `db_only`, el middleware ejecuta una
+sincronización periódica entre las tablas de MariaDB (vía broker backend) y los
+ficheros JSON locales. Ante diferencias, **prevalece la base de datos** y se
+reescriben los JSON para mantener coherencia.
+
+Configuración:
+- `SYNC_DATABASE_INTERVAL_SECONDS`: intervalo de sincronización en segundos
+  (por defecto `300`, mínimo `30`).
+
+Logs:
+- `src/apps/7_service_frontend/logs/sync_database_and_jsons.log` registra los
+  cambios detectados y las acciones aplicadas para regularizar datos.
+
+Recomendación para producción:
+- `ACTIVE_SYNC_DB_JSONS=0`
+- `storage_mode="db_only"` en `protected_values.py`
 
 ### Broker backend y backend core
 

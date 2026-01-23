@@ -15,6 +15,8 @@ Bloque de verificación (incluido en el script):
 ```sql
 SELECT 'permissions' AS table_name, COUNT(*) AS total FROM permissions
 UNION ALL
+SELECT 'basic_permissions', COUNT(*) FROM basic_permissions
+UNION ALL
 SELECT 'low_level_permissions', COUNT(*) FROM low_level_permissions
 UNION ALL
 SELECT 'identity_types', COUNT(*) FROM identity_types
@@ -43,9 +45,13 @@ cuando se incorporen nuevas funcionalidades o entidades.
 Cada cambio en la estructura debe reflejarse aquí (nuevas tablas, columnas
 o relaciones), junto con la fecha y una nota breve del motivo.
 
+**Nota:** La base `myllm_projects_db` no tiene espejo en JSON. Todas las operaciones
+deben consultar MariaDB directamente, sin fallback a mocks.
+
 ### Tablas actuales
 
 - `permissions`: catálogo de permisos básicos.
+- `basic_permissions`: espejo del JSON de permisos básicos para sincronización.
 - `low_level_permissions`: permisos de bajo nivel asociados 1 a 1 con `permissions`.
 - `identity_types`: tipos de identidad y roles.
 - `identity_type_permissions`: relación **1 a 1** entre tipos de identidad y permisos (claves únicas por `identity_type_id` y `permission_id`).
@@ -56,6 +62,16 @@ o relaciones), junto con la fecha y una nota breve del motivo.
 - `user_organization_management`: relación usuario-organización y estado.
 - `sessions`: sesiones activas/inactivas para auditoría y seguridad.
 - `auth_logs`: auditoría de login/logout y eventos de autenticación.
+
+### Base de datos de proyectos (`myllm_projects_db`)
+
+Relación esperada: `organizaciones` → `proyectos` → `versiones` → `cambios`.
+
+- `organizaciones`: organizaciones (PK `organization_id`).
+- `proyectos`: proyectos por organización (FK `id_organizacion` → `organizaciones.organization_id`).
+- `versiones`: versiones por proyecto (FK `id_proyecto` → `proyectos.id`, FK `id_organizacion` → `organizaciones.organization_id`).
+  - Único por proyecto: `id_proyecto` + `id_version`.
+- `cambios`: cambios por versión (FK `id_version` → `versiones.id`, FK `id_proyecto` → `proyectos.id`, FK `id_organizacion` → `organizaciones.organization_id`).
 
 ## Almacenamiento de ficheros (fmanagement)
 

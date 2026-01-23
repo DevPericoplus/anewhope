@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Annotated, Any, AsyncIterator
 
 import httpx
@@ -281,7 +282,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Gestiona el ciclo de vida de la aplicación."""
 
     _configure_logging()
-    yield
+    broker_client = get_broker_client()
+    async with httpx.AsyncClient() as client:
+        interface = InterfaceToBackend(
+            client=client,
+            base_url=os.environ.get("BACKEND_BASE_URL", "http://localhost:8001"),
+        )
+        router = RouterMiddleware(
+            interface=interface,
+            jwt_settings=get_jwt_settings(),
+            broker_client=broker_client,
+        )
+        sync_task = asyncio.create_task(router.run_periodic_sync())
+        try:
+            yield
+        finally:
+            sync_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await sync_task
+            broker_client.close()
 
 
 app = FastAPI(title="Middleware Frontend", lifespan=lifespan)

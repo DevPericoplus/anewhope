@@ -54,6 +54,10 @@ You are an expert Python developer with a focus on writing clean, maintainable, 
   (`get_folder_by_id_organization`, `get_folder_by_id_project`). No se permite
   formatear manualmente los strings `ORGXXXX` o `PRJXXXX` en código de aplicación.
 
+## 5.4 Base de datos de proyectos (sin mocks)
+* **Obligatorio:** La base `myllm_projects_db` no tiene espejo en JSON. Cualquier
+  operación debe consultarse directamente en MariaDB, sin fallback a mocks.
+
 ### Scripts de mantenimiento
 - `clear_caches.sh`: limpia caches de Reflex (`.web`, `.states`) y caches de tooling
   (`__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.coverage`, `.hypothesis`).
@@ -62,6 +66,15 @@ You are an expert Python developer with a focus on writing clean, maintainable, 
 - `STORAGE_MODE`: `mock` (solo JSON), `mock_and_db` (JSON + replica en broker),
   `db_only` (solo broker backend).
 - `BROKER_BACKEND_BASE_URL`: URL del broker backend para persistencia.
+
+### Sincronización DB/JSON (middleware)
+- **Obligatorio:** El proceso periódico de sincronización DB/JSON debe mantenerse
+  operativo y documentado en `README.md`, incluyendo el log
+  `src/apps/7_service_frontend/logs/sync_database_and_jsons.log` y el intervalo
+  `SYNC_DATABASE_INTERVAL_SECONDS`.
+- **Control:** El switch `active_sync_db_jsons` (o `ACTIVE_SYNC_DB_JSONS` en entorno)
+  habilita/deshabilita la sincronización. Recomendado `0` en producción.
+- **Producción:** `storage_mode` en `protected_values.py` debe estar en `db_only`.
 
 ## 6. Performance & Security
 * **Complexity:** Avoid $O(n^2)$ operations on large datasets. Use `set` for $O(1)$ lookups.
