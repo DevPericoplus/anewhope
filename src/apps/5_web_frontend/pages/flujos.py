@@ -500,7 +500,7 @@ def flujos_diagram() -> rx.Component:
                             ),
                         ),
                         approval_box(
-                            "Validacion Conjunta",
+                            "Validacion",
                             [
                                 (
                                     "Cli",
