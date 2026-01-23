@@ -1,1 +1,1 @@
-La evolucion de proyectos de creacion de modelos LLM es colaborativa y requiere la interaccion de el cliente de la IA de MYllm y del personal tecnico de MYllm. En esta seccion puedes ver la evolucion de cada version de cada proyecto.
+Construimos su modelo de lenguaje en equipo. En esta sección, podrá seguir en tiempo real la evolución y las versiones de nuestro trabajo conjunto.
