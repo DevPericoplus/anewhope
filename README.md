@@ -194,6 +194,20 @@ validación de consistencia que compara los OTP entre `users.json` y la tabla
 
 - `src/apps/5_web_frontend/logs/frontend_secure.log`
 
+### Agentes automáticos por proyecto
+
+Al crear un proyecto, el sistema genera **4 agentes automáticos** asociados a la
+organización y al proyecto, con nombres `agente_rol_organizacion_proyecto` y roles:
+
+- `identity_type_id=10`: administrador
+- `identity_type_id=11`: editor
+- `identity_type_id=12`: lector
+- `identity_type_id=13`: auditor
+
+Estos agentes se almacenan en `users.json` y en la tabla `users` para asegurar
+trazabilidad. El email se construye como `{nombre}@myllm.ai` y el OTP se genera
+con 4 dígitos.
+
 ### Sincronización periódica DB/JSON (middleware)
 
 Cuando `STORAGE_MODE` es `mock_and_db` o `db_only`, el middleware ejecuta una

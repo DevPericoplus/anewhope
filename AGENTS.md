@@ -82,6 +82,11 @@ You are an expert Python developer with a focus on writing clean, maintainable, 
 - **Validación:** Debe existir verificación de consistencia entre `users.json` y la
   tabla `users`, con registro en `src/apps/5_web_frontend/logs/frontend_secure.log`.
 
+### Agentes automáticos por proyecto
+- **Obligatorio:** Al crear un proyecto se generan 4 agentes automáticos con el
+  patrón `agente_rol_organizacion_proyecto` y roles `identity_type_id` 10-13.
+- **Persistencia:** Los agentes deben guardarse en `users.json` y en la tabla `users`.
+
 ## 6. Performance & Security
 * **Complexity:** Avoid $O(n^2)$ operations on large datasets. Use `set` for $O(1)$ lookups.
 * **Secrets:** Never hardcode API keys or credentials. Use `.env` files and `python-dotenv` or Pydantic `BaseSettings`.
