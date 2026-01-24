@@ -175,6 +175,22 @@
       "expires_at": "2026-01-23T21:41:38Z",
       "ip_address": "127.0.0.1",
       "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "d61e0211-53be-4505-bcce-11a1a2e501e0",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "dc61a10b-f977-451a-818c-66119b34045e",
+        "session_token_jti": "277c4338-4f1b-47ad-aa56-325d55065b33"
+      },
+      "status": "active",
+      "created_at": "2026-01-24T15:08:32.695230Z",
+      "last_activity": "2026-01-24T15:08:32.796600Z",
+      "expires_at": "2026-01-24T15:53:32Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
     }
   ],
   "auth_logs": [
@@ -343,6 +359,25 @@
       "status": "success",
       "ip_address": "127.0.0.1",
       "session_id": "e2a25f15-4236-4cd2-b7d6-cf58e34491dc",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-01-24T15:07:52.160076Z",
+      "user_name": "adminone",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "INVALID_OTP",
+      "details": "OTP inválido",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-01-24T15:08:32.696780Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "d61e0211-53be-4505-bcce-11a1a2e501e0",
       "user_agent": "Python-urllib/3.13"
     }
   ]
