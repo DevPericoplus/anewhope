@@ -5,7 +5,7 @@ Proyecto para gestionar infraestructura, aplicaciones y flujos de personalizaci�
 ## Estructura principal
 
 - `info.txt`: guía rápida para crear y activar el entorno virtual, además de notas de operación.
-- `protected_values.py`: variables sensibles requeridas por los procesos de cifrado.
+- `infrastructure/environments/<entorno>/protected_values.py`: variables sensibles por entorno.
 - `README_DEPLOYMENT.md`: guía de despliegue con verificación SQL y estructura de base de datos.
 - `src/`: monorepo con organización hexagonal y dominios compartidos.
   - `main.py`: punto de entrada central para orquestar servicios.
@@ -36,6 +36,158 @@ Proyecto para gestionar infraestructura, aplicaciones y flujos de personalizaci�
 - `monorepo_llm_personalizado/`: estructura de referencia en español utilizada para planificar la migración a `src/`.
 - `infrastructure/`: scripts y utilidades adicionales (pendiente de completar).
 - `test/`: pruebas heredadas o de exploración.
+
+## Configuración por entorno
+
+### Estructura de configuración
+
+El proyecto soporta configuración personalizada por entorno usando tres niveles de archivos:
+
+1. **`.env`** (raíz del proyecto): Selecciona el entorno activo
+   ```
+   environment: macbook
+   ```
+   o en formato shell:
+   ```
+   ENVIRONMENT=macbook
+   ```
+
+2. **`infrastructure/environments/<entorno>/env.yaml`**: Variables públicas y comunes
+   - `storage_mode`: modo de almacenamiento (`mock`, `mock_and_db`, `db_only`)
+   - `active_sync_db_jsons`: habilita/deshabilita sincronización DB/JSON (`"0"` o `"1"`)
+   - `broker_backend_base_url`: URL del broker backend
+   - `core_backend_base_url`: URL del backend core
+   - `middleware_base_url`: URL del middleware
+   - `fmanagement_base_url`: URL de la API de gestión de ficheros
+   - `permissions_source`: fuente de permisos (`mock` o `db`)
+   - `sync_database_interval_seconds`: intervalo de sincronización en segundos
+
+3. **`infrastructure/environments/<entorno>/protected_values.py`**: Variables sensibles
+   - Credenciales de MariaDB
+   - Secrets JWT
+   - Claves de encriptación
+   - Tokens de servicios externos
+
+### Entornos disponibles
+
+- **`macbook`**: Desarrollo local en macOS 14.8.1
+- **`dev`**: Máquinas virtuales VirtualBox con Oracle Linux 10
+- **`pre`**: Instancias AWS con Oracle Linux 10 (preproducción)
+- **`pro`**: Instancias AWS con Oracle Linux 10 (producción)
+
+### Orden de carga
+
+Las aplicaciones cargan la configuración en este orden:
+1. `.env` → determina el entorno activo
+2. `env.yaml` del entorno → variables públicas
+3. `protected_values.py` del entorno → variables sensibles
+
+### Uso en código
+
+Todas las aplicaciones deben usar el helper centralizado para cargar configuración:
+
+```python
+from src.2_shared_application.config.env_settings import (
+    get_environment_name,
+    get_env_value,
+    get_protected_value,
+    load_protected_settings
+)
+
+# Obtener el entorno activo
+env = get_environment_name()  # "macbook", "dev", "pre", "pro"
+
+# Leer variable pública
+storage_mode = get_env_value("storage_mode", "mock")
+
+# Leer variable sensible
+db_password = get_protected_value("writer_password")
+
+# O cargar todos los valores protegidos
+settings = load_protected_settings()
+```
+
+### Exportador de variables
+
+Para generar un archivo de variables de entorno compatible con scripts shell o Docker:
+
+```bash
+# Formato shell
+python infrastructure/export_env.py --environment macbook
+
+# Formato envfile para Docker
+python infrastructure/export_env.py --environment macbook --format envfile
+```
+
+## Entornos y plataformas
+
+- `macbook`: desarrollo local en macOS 14.8.1 (equipo único que asume util01, frontend, backend, trainer).
+- `dev`: virtualización en VirtualBox con Oracle Linux 10 (util01, frontend, backend, trainer).
+- `pre` y `pro`: instancias en AWS con Oracle Linux 10 (util01, frontend, backend, trainer).
+
+## Estrategia de Dockerfiles y despliegue
+
+### Dockerfiles por aplicación
+
+Cada aplicación en `src/apps/*` tiene su propio `Dockerfile` y un script `docker_execution.sh` 
+que facilita la construcción y ejecución del contenedor:
+
+- `src/apps/3_backend/Dockerfile` y `docker_execution.sh`
+- `src/apps/5_web_frontend/Dockerfile` y `docker_execution.sh`
+- `src/apps/6_web_backoffice/Dockerfile` y `docker_execution.sh`
+- `src/apps/7_service_frontend/Dockerfile` y `docker_execution.sh`
+- `src/apps/8_service_backend/Dockerfile` y `docker_execution.sh`
+
+El script `docker_execution.sh` de cada aplicación:
+1. Carga las variables de entorno desde `.env` y `env.yaml` del entorno activo
+2. Construye la imagen Docker con `docker build`
+3. Ejecuta el contenedor exponiendo el puerto fijo de la aplicación
+
+Ejemplo de uso:
+```bash
+cd src/apps/7_service_frontend
+bash docker_execution.sh
+```
+
+### Docker Compose por servidor
+
+Los archivos `docker-compose.yml` están organizados por servidor en `infrastructure/servers/*` 
+y agrupan los servicios que se ejecutarán juntos en cada servidor:
+
+- `infrastructure/servers/frontend/docker-compose.yml`: `nginx`, `5_web_frontend`, 
+  `6_web_backoffice`, `7_service_frontend`
+- `infrastructure/servers/backend/docker-compose.yml`: `8_service_backend`, `3_backend`, 
+  `fmanagement` (Go API), `mariadb`
+- `infrastructure/servers/trainer/docker-compose.yml`: `4_trainer` (placeholder), 
+  `keras_service` (placeholder)
+- `infrastructure/servers/macbook/docker-compose.yml`: solo aplicaciones internas 
+  (MariaDB y Keras nativos)
+
+### Servidor frontend (Linux)
+
+- `infrastructure/servers/frontend/docker-compose.yml`: `nginx`, `5_web_frontend`,
+  `6_web_backoffice`, `7_service_frontend`.
+- Plantilla Nginx para ansible:
+  `infrastructure/servers/frontend/nginx/nginx.conf.template`.
+
+### Servidor backend (Linux)
+
+- `infrastructure/servers/backend/docker-compose.yml`: `8_service_backend`,
+  `3_backend`, `fmanagement` (imagen externa), `mariadb`.
+
+### Servidor trainer (Linux)
+
+- `infrastructure/servers/trainer/docker-compose.yml`: `4_trainer` (placeholder),
+  `keras_service` (placeholder).
+- En macOS se instalará TensorFlow CPU en un venv ` .env_trainer` y Keras 2.15
+  con TensorFlow 2.15. [Keras getting started](https://keras.io/getting_started/)
+
+### Macbook (local)
+
+- `infrastructure/servers/macbook/docker-compose.yml` solo contiene aplicaciones internas.
+- MariaDB se usa nativa (instalada).
+- Nginx se instala con Homebrew y se configura con:
+  `infrastructure/servers/macbook/nginx/nginx.conf`.
 
 ## Diagrama de arquitectura (Mermaid)
 
@@ -104,42 +256,113 @@ En modo `db_only` es obligatorio incluir `identity_type_id` (query param).
 
 - `src/docs/stack_of_technologies.adr`: justifica el uso de Python 3.13 y el downgrade temporal desde 3.14.
 
-## Entorno virtual
+## Entornos virtuales dedicados
 
-El proyecto usa **Python 3.13** como versión base. Para evitar conflictos de dependencias, se mantienen
-entornos separados:
+El proyecto usa **Python 3.13** como versión base. Para evitar conflictos de dependencias y 
+garantizar aislamiento entre servicios, cada aplicación tiene su propio entorno virtual dedicado 
+en la raíz del proyecto:
 
-- Frontend: `.venv_frontend313`
-- Middleware: `.venv_middleware313`
+- **Frontend**: `.venv_frontend313` (usado por `5_web_frontend` y `2_shared_application`)
+- **Middleware**: `.venv_middleware313` (usado por `7_service_frontend`, `8_service_backend`, `3_backend`)
+- **Backend Core**: `.venv_backend313` (alternativa para `3_backend` en desarrollo)
+- **Broker Backend**: `.venv_broker313` (alternativa para `8_service_backend` en desarrollo)
 
-Ejemplo en macOS / Linux:
+### Creación de entornos virtuales
 
 ```bash
+# Frontend
 python3.13 -m venv .venv_frontend313
 source .venv_frontend313/bin/activate
+pip install -r src/apps/5_web_frontend/requirements.txt
+deactivate
+
+# Middleware
+python3.13 -m venv .venv_middleware313
+source .venv_middleware313/bin/activate
+pip install -r src/apps/7_service_frontend/requirements.txt
+deactivate
+
+# Backend Core
+python3.13 -m venv .venv_backend313
+source .venv_backend313/bin/activate
+pip install -r src/apps/3_backend/requirements.txt
+deactivate
+
+# Broker Backend
+python3.13 -m venv .venv_broker313
+source .venv_broker313/bin/activate
+pip install -r src/apps/8_service_backend/requirements.txt
+deactivate
+```
+
+### Ejecución de servicios
+
+Cada aplicación en `src/apps/*` incluye un script `run.sh` que activa automáticamente 
+su entorno virtual dedicado antes de iniciar el servicio:
+
+```bash
+# Backend Core
+cd src/apps/3_backend && bash run.sh
+
+# Broker Backend
+cd src/apps/8_service_backend && bash run.sh
+
+# Middleware
+cd src/apps/7_service_frontend && bash run.sh
+
+# Frontend
+cd src/apps/5_web_frontend && bash run.sh
 ```
 
 ## Scripts útiles
 
-- `clear_caches.sh`: limpia caches de Reflex (`.web`, `.states`) y caches de tooling
-  (`__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.coverage`, `.hypothesis`).
+### full_test.sh
 
-Uso:
+Script de ejecución de tests que valida todos los módulos del proyecto con salida detallada:
+
+```bash
+./full_test.sh
+```
+
+**Características:**
+- Ejecuta tests de forma secuencial por módulo
+- Muestra cada test individual con su estado (PASSED/FAILED)
+- Usa entornos virtuales dedicados automáticamente:
+  - `.venv_frontend313` para `2_shared_application` y `5_web_frontend`
+  - `.venv_middleware313` para `7_service_frontend`, `8_service_backend` y `3_backend`
+- Proporciona separadores visuales entre grupos de tests
+- Salida verbose (`-v`) para máxima trazabilidad
+
+**Módulos testeados:**
+1. `src/2_shared_application/tests` (14 tests): DTOs, helpers, validaciones
+2. `src/apps/5_web_frontend/tests` (23 tests): componentes web, integración middleware
+3. `src/apps/7_service_frontend/tests` (8 tests): middleware, sesiones, permisos
+4. `src/apps/8_service_backend/tests` (1 test): broker backend, routing
+5. `src/apps/3_backend/tests` (1 test): backend core, endpoints
+
+### clear_caches.sh
+
+Script de limpieza de caches de Reflex y herramientas de desarrollo:
 
 ```bash
 ./clear_caches.sh
 ```
 
+**Limpia:**
+- Caches de Reflex: `.web`, `.states`
+- Caches de tooling: `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.coverage`, `.hypothesis`
+
 ## Servicio frontend en contenedor
 
-El servicio `7_service_frontend` puede ejecutarse de forma independiente en Docker.
-Los `Dockerfile` del frontend y middleware usan **Python 3.13** (`python:3.13-slim`) para
-mantener compatibilidad con dependencias.
+El servicio `7_service_frontend` puede ejecutarse de forma independiente en Docker
+usando el compose del servidor frontend.
 
 ```bash
-cp src/apps/7_service_frontend/.env.example src/apps/7_service_frontend/.env
-docker compose -f src/apps/7_service_frontend/docker-compose.yml up --build
+docker compose -f infrastructure/servers/frontend/docker-compose.yml up --build
 ```
+
+Para inyectar variables por entorno, se recomienda generar un envfile con:
+`python infrastructure/export_env.py --environment <entorno> --format envfile`.
 
 Variables relevantes (ver `src/apps/7_service_frontend/.env.example`):
 - `JWT_ACCESS_SECRET`
@@ -225,7 +448,7 @@ Logs:
 
 Recomendación para producción:
 - `ACTIVE_SYNC_DB_JSONS=0`
-- `storage_mode="db_only"` en `protected_values.py`
+- `STORAGE_MODE="db_only"` en `.env`
 
 ### Broker backend y backend core
 

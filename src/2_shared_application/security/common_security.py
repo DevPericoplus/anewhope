@@ -1,9 +1,11 @@
 """Utilidades de seguridad comunes para aplicaciones web con Reflex."""
 import ast
 import datetime
+import importlib.util
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
@@ -222,9 +224,8 @@ def get_sms_api_credentials() -> Tuple[str, str, str]:
     if sms_api_url and sms_api_key:
         return sms_api_url, sms_api_key, sms_sender_id
 
-    protected_values_path = (
-        Path(__file__).parent.parent.parent.parent / "protected_values.py"
-    )
+    env_settings = _load_env_settings_module("shared_env_settings")
+    protected_values_path = env_settings.get_protected_values_path()
     if not protected_values_path.exists():
         raise FileNotFoundError(
             f"No se encontró protected_values.py en {protected_values_path}"
@@ -241,6 +242,22 @@ def get_sms_api_credentials() -> Tuple[str, str, str]:
         )
 
     return sms_api_url, sms_api_key, sms_sender_id
+
+
+def _load_env_settings_module(module_name: str) -> object:
+    """Carga el módulo de configuración compartida."""
+
+    module_path = (
+        Path(__file__).resolve().parents[2]
+        / "2_shared_application/config/env_settings.py"
+    )
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("No se pudo cargar el módulo de configuración")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def send_sms_details_to_log(

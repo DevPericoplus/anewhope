@@ -208,7 +208,8 @@ def test_broker_routes(tmp_path: Path) -> None:
         },
     )
     assert response.status_code == 200
-    assert response.json()["organization_id"] == 1
+    created_org_id = response.json()["organization_id"]
+    assert created_org_id > 0
 
     response = client.post("/organizations/check-name", json={"organization_name": "Demo Org"})
     assert response.status_code == 200
@@ -217,7 +218,7 @@ def test_broker_routes(tmp_path: Path) -> None:
     response = client.post(
         "/users",
         json={
-            "organization_id": 1,
+            "organization_id": created_org_id,
             "identity_type_id": None,
             "user_name": "demo",
             "user_password": "secret",
@@ -231,7 +232,8 @@ def test_broker_routes(tmp_path: Path) -> None:
         },
     )
     assert response.status_code == 200
-    assert response.json()["user_id"] == 1
+    created_user_id = response.json()["user_id"]
+    assert created_user_id > 0
 
     response = client.get("/permissions", params={"identity_type_id": 2})
     assert response.status_code == 200

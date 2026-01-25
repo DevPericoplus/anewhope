@@ -76,6 +76,7 @@ def test_create_user_creates_manage_role_entry(tmp_path: Path, monkeypatch: pyte
     _create_empty_json(users_path)
     _create_empty_json(roles_path)
 
+    monkeypatch.setenv("STORAGE_MODE", "mock")
     monkeypatch.setenv("USERS_DATA_PATH", str(users_path))
     monkeypatch.setenv("MANAGE_ROLES_BY_ORG_PATH", str(roles_path))
 
@@ -121,6 +122,7 @@ def test_create_user_uses_requested_role_for_existing_org(
     _create_empty_json(users_path)
     _create_empty_json(roles_path)
 
+    monkeypatch.setenv("STORAGE_MODE", "mock")
     monkeypatch.setenv("USERS_DATA_PATH", str(users_path))
     monkeypatch.setenv("MANAGE_ROLES_BY_ORG_PATH", str(roles_path))
 

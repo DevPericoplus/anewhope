@@ -24,8 +24,8 @@ Remember
 - Install dependencies
     pip install -r requirements.txt
 
-# Create the protectd values
-Create in the root folder the file protected_values.py
+# Create the protected values
+Create in infrastructure/environments/<entorno>/protected_values.py
 with items:
     global_shared_key_raw = "String value"
 

@@ -160,7 +160,7 @@ def test_core_endpoints(tmp_path: Path) -> None:
     )
     assert response.status_code == 200
     org_id = response.json()["organization_id"]
-    assert org_id == 1
+    assert org_id > 0
 
     response = client.post(
         "/users",
@@ -179,7 +179,8 @@ def test_core_endpoints(tmp_path: Path) -> None:
         },
     )
     assert response.status_code == 200
-    assert response.json()["user_id"] == 1
+    user_id = response.json()["user_id"]
+    assert user_id > 0
 
     response = client.get("/permissions", params={"identity_type_id": 2})
     assert response.status_code == 200

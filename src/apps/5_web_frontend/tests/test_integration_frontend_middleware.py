@@ -63,6 +63,7 @@ def middleware_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestCl
     monkeypatch.setenv("ORGANIZATIONS_DATA_PATH", str(orgs_path))
     monkeypatch.setenv("MANAGE_ROLES_BY_ORG_PATH", str(roles_path))
     monkeypatch.setenv("SECURITY_LOG_PATH", str(log_path))
+    monkeypatch.setenv("STORAGE_MODE", "mock")
 
     service_dir = Path(__file__).resolve().parents[2] / "7_service_frontend"
     if str(service_dir) not in sys.path:

@@ -54,6 +54,22 @@ def _load_dto_module(module_name: str, filename: str) -> Any:
     return module
 
 
+def _load_env_settings_module(module_name: str) -> Any:
+    """Carga el módulo de configuración compartida."""
+
+    module_path = (
+        Path(__file__).resolve().parents[3]
+        / "src/2_shared_application/config/env_settings.py"
+    )
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise BusinessRuleError("No se pudo cargar el módulo de configuración")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 _domain_dtos = _load_dto_module("shared_domain_dtos", "domain_dtos.py")
 _security_dtos = _load_dto_module("shared_security_dtos", "security_dtos.py")
 
@@ -123,43 +139,37 @@ class BusinessRuleError(Exception):
 def _load_protected_jwt_settings() -> dict[str, str]:
     """Carga secretos JWT desde protected_values.py si existe."""
 
-    try:
-        from protected_values import (  # type: ignore
-            jwt_access_secret_key,
-            jwt_session_secret_key,
-            jwt_algorithm,
-            jwt_access_expiration_seconds,
-            jwt_session_expiration_seconds,
-        )
-
-        return {
-            "jwt_access_secret_key": jwt_access_secret_key,
-            "jwt_session_secret_key": jwt_session_secret_key,
-            "jwt_algorithm": jwt_algorithm,
-            "jwt_access_expiration_seconds": jwt_access_expiration_seconds,
-            "jwt_session_expiration_seconds": jwt_session_expiration_seconds,
-        }
-    except Exception:
-        return {}
+    env_settings = _load_env_settings_module("middleware_env_settings")
+    return {
+        "jwt_access_secret_key": env_settings.get_protected_value(
+            "jwt_access_secret_key"
+        ),
+        "jwt_session_secret_key": env_settings.get_protected_value(
+            "jwt_session_secret_key"
+        ),
+        "jwt_algorithm": env_settings.get_protected_value("jwt_algorithm"),
+        "jwt_access_expiration_seconds": env_settings.get_protected_value(
+            "jwt_access_expiration_seconds"
+        ),
+        "jwt_session_expiration_seconds": env_settings.get_protected_value(
+            "jwt_session_expiration_seconds"
+        ),
+    }
 
 
 def _load_protected_storage_settings() -> dict[str, str]:
     """Carga la configuración de almacenamiento desde protected_values.py."""
 
-    try:
-        from protected_values import (  # type: ignore
-            broker_backend_base_url,
-            storage_mode,
-            active_sync_db_jsons,
-        )
-
-        return {
-            "broker_backend_base_url": broker_backend_base_url,
-            "storage_mode": storage_mode,
-            "active_sync_db_jsons": str(active_sync_db_jsons),
-        }
-    except Exception:
-        return {}
+    env_settings = _load_env_settings_module("middleware_env_settings")
+    return {
+        "broker_backend_base_url": env_settings.get_protected_value(
+            "broker_backend_base_url", "http://localhost:8008"
+        ),
+        "storage_mode": env_settings.get_env_value("STORAGE_MODE", "mock"),
+        "active_sync_db_jsons": env_settings.get_env_value(
+            "ACTIVE_SYNC_DB_JSONS", "1"
+        ),
+    }
 
 
 class StorageMode(str, Enum):

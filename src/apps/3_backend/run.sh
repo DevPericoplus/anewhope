@@ -5,8 +5,8 @@ set -e
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
-# Activar el entorno virtual del middleware (Python 3.13)
-source "$ROOT_DIR/.venv_middleware313/bin/activate"
+# Activar el entorno virtual del backend (Python 3.13)
+source "$ROOT_DIR/.venv_backend313/bin/activate"
 
 export PYTHONPATH="$ROOT_DIR"
 python -m src.apps.3_backend.main

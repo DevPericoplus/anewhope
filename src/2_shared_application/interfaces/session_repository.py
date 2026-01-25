@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from src.1_shared_domain.entities.session import Session, SessionStatus
+if TYPE_CHECKING:
+    from src.1_shared_domain.entities.session import Session, SessionStatus
 
 
 class SessionRepository(Protocol):

@@ -210,7 +210,10 @@ __marimo__/
 
 # anewhope project
 src/2_shared_application/security/basesecuritypass.json
-protected_values.py
+infrastructure/environments/macbook/protected_values.py
+infrastructure/environments/dev/protected_values.py
+infrastructure/environments/pre/protected_values.py
+infrastructure/environments/pro/protected_values.py
 
 .venv/
 .venv314/

@@ -160,6 +160,7 @@ def test_low_level_permission_checks(
         ],
     )
 
+    monkeypatch.setenv("STORAGE_MODE", "mock")
     monkeypatch.setenv("USERS_DATA_PATH", str(users_path))
     monkeypatch.setenv("ROLES_DATA_PATH", str(roles_path))
     monkeypatch.setenv("BASIC_PERMISSIONS_PATH", str(basic_permissions_path))

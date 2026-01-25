@@ -1,0 +1,63 @@
+version: "3.9"
+
+services:
+  backend_core:
+    build:
+      context: ../../..
+      dockerfile: src/apps/3_backend/Dockerfile
+    entrypoint: ["/app/entrypoint.sh"]
+    environment:
+      SERVICE_HOST: "0.0.0.0"
+      SERVICE_PORT: "8003"
+      STORAGE_MODE: "${STORAGE_MODE}"
+      BROKER_BACKEND_BASE_URL: "${BROKER_BACKEND_BASE_URL}"
+    ports:
+      - "8003:8003"
+
+  service_backend:
+    build:
+      context: ../../..
+      dockerfile: src/apps/8_service_backend/Dockerfile
+    entrypoint: ["/app/entrypoint.sh"]
+    environment:
+      SERVICE_HOST: "0.0.0.0"
+      SERVICE_PORT: "8008"
+      CORE_BACKEND_BASE_URL: "${CORE_BACKEND_BASE_URL}"
+    ports:
+      - "8008:8008"
+
+  service_frontend:
+    build:
+      context: ../../..
+      dockerfile: src/apps/7_service_frontend/Dockerfile
+    entrypoint: ["/app/entrypoint.sh"]
+    environment:
+      SERVICE_HOST: "0.0.0.0"
+      SERVICE_PORT: "8007"
+      ACTIVE_SYNC_DB_JSONS: "${ACTIVE_SYNC_DB_JSONS}"
+      SYNC_DATABASE_INTERVAL_SECONDS: "${SYNC_DATABASE_INTERVAL_SECONDS}"
+      BROKER_BACKEND_BASE_URL: "${BROKER_BACKEND_BASE_URL}"
+    ports:
+      - "8007:8007"
+
+  web_frontend:
+    build:
+      context: ../../..
+      dockerfile: src/apps/5_web_frontend/Dockerfile
+    entrypoint: ["/app/entrypoint.sh"]
+    environment:
+      SERVICE_HOST: "0.0.0.0"
+      SERVICE_PORT: "8005"
+    ports:
+      - "8005:8005"
+
+  web_backoffice:
+    build:
+      context: ../../..
+      dockerfile: src/apps/6_web_backoffice/Dockerfile
+    entrypoint: ["/app/entrypoint.sh"]
+    environment:
+      SERVICE_HOST: "0.0.0.0"
+      SERVICE_PORT: "8006"
+    ports:
+      - "8006:8006"

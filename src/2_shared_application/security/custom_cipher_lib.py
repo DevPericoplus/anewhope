@@ -1,6 +1,7 @@
 """Módulo de utilidades criptográficas para cifrado y descifrado de valores sensibles."""
-import json
 import base64
+import importlib.util
+import json
 import logging
 import sys
 from pathlib import Path
@@ -26,6 +27,22 @@ def _get_secret_key_file_path() -> Path:
     return Path(__file__).parent / SECRET_KEY_FILE_NAME
 
 
+def _load_env_settings_module(module_name: str) -> object:
+    """Carga el módulo de configuración compartida."""
+
+    module_path = (
+        Path(__file__).resolve().parents[2]
+        / "2_shared_application/config/env_settings.py"
+    )
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("No se pudo cargar el módulo de configuración")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def basic_check_access(basic_string_for_checks: str) -> bool:
     """
     Verifica el acceso básico mediante una cadena de autenticación.
@@ -47,17 +64,19 @@ def load_global_shared_key_raw() -> Optional[str]:
         La clave compartida global como string, o None si hay error.
     """
     try:
-        project_root = _get_project_root()
-        sys.path.insert(0, str(project_root))
-        from protected_values import global_shared_key_raw  # noqa: E402
-
-        logger.info(f"Clave compartida global cargada exitosamente: {global_shared_key_raw[:10]}...")
-        return global_shared_key_raw
-    except ImportError as e:
-        logger.error(f"Error al importar global_shared_key_raw desde protected_values.py: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Error inesperado al cargar global_shared_key_raw: {e}")
+        env_settings = _load_env_settings_module("shared_env_settings")
+        global_shared_key_raw = env_settings.get_protected_value(
+            "global_shared_key_raw"
+        )
+        if not global_shared_key_raw:
+            raise ValueError("global_shared_key_raw no disponible")
+        logger.info(
+            "Clave compartida global cargada exitosamente: %s...",
+            str(global_shared_key_raw)[:10],
+        )
+        return str(global_shared_key_raw)
+    except Exception as exc:
+        logger.error("Error al cargar global_shared_key_raw: %s", exc)
         return None
 
 

@@ -35,6 +35,12 @@ You are an expert Python developer with a focus on writing clean, maintainable, 
 * **Style:** Write small, atomic tests. Use `pytest.fixture` for setup logic.
 * **Async:** If the project uses `asyncio`, ensure tests are handled with `pytest-asyncio`.
 * **Dependencies:** Management is handled via `poetry` or `pip compile` (check `pyproject.toml`). Do not add new dependencies without asking.
+* **Ejecución:** Usar `./full_test.sh` para ejecutar toda la suite de tests con salida detallada.
+* **Entornos virtuales en tests:** 
+  - `.venv_frontend313` ejecuta tests de `2_shared_application` y `5_web_frontend`
+  - `.venv_middleware313` ejecuta tests de `7_service_frontend`, `8_service_backend`, `3_backend`
+* **Variables de entorno en tests:** Los tests deben configurar `STORAGE_MODE=mock` con 
+  `monkeypatch.setenv()` para evitar dependencias de servicios externos.
 
 ## 5.1 Documentación de base de datos
 * **Obligatorio:** Cada cambio en la estructura de tablas debe documentarse en
@@ -74,7 +80,37 @@ You are an expert Python developer with a focus on writing clean, maintainable, 
   `SYNC_DATABASE_INTERVAL_SECONDS`.
 - **Control:** El switch `active_sync_db_jsons` (o `ACTIVE_SYNC_DB_JSONS` en entorno)
   habilita/deshabilita la sincronización. Recomendado `0` en producción.
-- **Producción:** `storage_mode` en `protected_values.py` debe estar en `db_only`.
+- **Producción:** `STORAGE_MODE` en `.env` debe estar en `db_only`.
+
+### Configuración por entorno
+- **Orden de carga:** primero `.env`, luego `env.yaml`, finalmente `protected_values.py` del entorno activo.
+- **Selección de entorno:** `.env` debe definir `environment: <entorno>` o `ENVIRONMENT=<entorno>`.
+- **Variables públicas:** `infrastructure/environments/<entorno>/env.yaml`.
+- **Ubicación sensibles:** `infrastructure/environments/<entorno>/protected_values.py`.
+- **Uso obligatorio:** cargar valores con `src/2_shared_application/config/env_settings.py`.
+- **Prohibido:** importar `protected_values` directamente en código de aplicación.
+- **Plataformas:** `macbook` usa macOS 14.8.1; `dev/pre/pro` usan Oracle Linux 10.
+
+### Entornos virtuales dedicados
+- **Obligatorio:** Cada aplicación principal usa su propio entorno virtual en la raíz:
+  - `.venv_frontend313` → `5_web_frontend`, `2_shared_application`
+  - `.venv_middleware313` → `7_service_frontend`, `8_service_backend`, `3_backend`
+  - `.venv_backend313` → Alternativa para `3_backend` en desarrollo
+  - `.venv_broker313` → Alternativa para `8_service_backend` en desarrollo
+- **Scripts run.sh:** Cada `src/apps/*/run.sh` activa automáticamente su entorno virtual dedicado.
+- **Tests:** El script `full_test.sh` usa `.venv_frontend313` y `.venv_middleware313` según el módulo.
+
+### Dockerfiles y despliegues
+- **Dockerfiles por app:** cada `src/apps/*` debe tener `Dockerfile` y `docker_execution.sh`.
+  - `docker_execution.sh` carga `.env` + `env.yaml` del entorno y ejecuta la imagen.
+  - Expone el puerto fijo asignado según regla: `8000 + <primer_dígito_carpeta>`.
+- **Compose por servidor:** usar `infrastructure/servers/*/docker-compose.yml`.
+  - `frontend/`: nginx, 5_web_frontend, 6_web_backoffice, 7_service_frontend
+  - `backend/`: 8_service_backend, 3_backend, fmanagement, mariadb
+  - `trainer/`: 4_trainer (placeholder), keras_service (placeholder)
+  - `macbook/`: solo aplicaciones internas (sin servicios externos dockerizados)
+- **Macbook:** MariaDB y Keras no se dockerizan; se usan instalaciones nativas.
+- **Linux:** servicios externos (nginx, mariadb, fmanagement) se despliegan en Docker.
 
 ### Sincronización OTP (frontend)
 - **Obligatorio:** Al actualizar OTP, el cambio debe persistirse en JSON y MariaDB
@@ -130,7 +166,7 @@ All application folders (numbered folders in `src/apps/`) follow a standard stru
 | `infrastructure/` (deployment scripts) | `@ops-pilot` | Provision infrastructure, automate deployments and manage environments. |
 | `main.py` (root entry point) | `@backend-conductor` | Main application entry point and orchestration. |
 | `src/main.py` (src entry point) | `@backend-conductor` | Source-level entry point for services. |
-| `protected_values.py` (sensitive config) | `@security-sentinel` | Manage sensitive configuration values and secrets. |
+| `infrastructure/environments/<entorno>/protected_values.py` (sensitive config) | `@security-sentinel` | Manage sensitive configuration values and secrets per environment. |
 
 ## Standard Directory Structure
 

@@ -67,6 +67,7 @@ def test_activity_log_writes_entry(tmp_path: Path, monkeypatch: Any) -> None:
     orgs_path = tmp_path / "organizations.json"
     orgs_path.write_text("[]", encoding="utf-8")
 
+    monkeypatch.setenv("STORAGE_MODE", "mock")
     monkeypatch.setenv("ORGANIZATIONS_DATA_PATH", str(orgs_path))
 
     client = TestClient(_create_test_app(log_path))

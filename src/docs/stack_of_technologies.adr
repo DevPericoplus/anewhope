@@ -39,6 +39,7 @@ la API externa **`fmanagement`** (Go). Esta separación responde a motivos de
 - El backend core integra una dependencia operativa con `fmanagement` para acciones
   sobre carpetas y ficheros.
 - Se deberá planificar una revisión futura para revalidar 3.14 cuando el ecosistema lo permita.
+- Los despliegues se alinean por entorno: macbook (macOS 14.8.1), dev/pre/pro (Oracle Linux 10).
 
 ## Verificación
 

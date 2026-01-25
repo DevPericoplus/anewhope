@@ -4,9 +4,11 @@ from pathlib import Path
 from typing import Any, AsyncGenerator
 
 import asyncio
+import importlib.util
 import logging
 import os
 import subprocess
+import sys
 
 import reflex as rx
 
@@ -38,34 +40,45 @@ FLOW_CARD_OFFSET = "-1.2em"
 def _load_projects_db_settings() -> dict[str, str]:
     """Carga credenciales y nombre de base de datos para proyectos."""
 
-    try:
-        from protected_values import (  # type: ignore
-            mariadb_host,
-            mariadb_port,
-            mariadb_ai_database,
-            mariadb_reader_user,
-            mariadb_reader_password,
-            mariadb_cli_path,
-        )
-    except Exception:
-        mariadb_host = "localhost"
-        mariadb_port = 3306
-        mariadb_ai_database = "myllm_projects_db"
-        mariadb_reader_user = ""
-        mariadb_reader_password = ""
+    env_settings = _load_env_settings_module("frontend_env_settings")
+    protected = env_settings.load_protected_settings()
 
     return {
-        "host": os.environ.get("MARIADB_HOST", str(mariadb_host)),
-        "port": os.environ.get("MARIADB_PORT", str(mariadb_port)),
+        "host": os.environ.get("MARIADB_HOST", str(protected.get("mariadb_host", ""))),
+        "port": os.environ.get(
+            "MARIADB_PORT", str(protected.get("mariadb_port", 3306))
+        ),
         "database": os.environ.get(
-            "MARIADB_PROJECTS_DATABASE", str(mariadb_ai_database)
+            "MARIADB_PROJECTS_DATABASE",
+            str(protected.get("mariadb_ai_database", "myllm_projects_db")),
         ),
-        "user": os.environ.get("MARIADB_READER_USER", mariadb_reader_user),
+        "user": os.environ.get(
+            "MARIADB_READER_USER", protected.get("mariadb_reader_user", "")
+        ),
         "password": os.environ.get(
-            "MARIADB_READER_PASSWORD", mariadb_reader_password
+            "MARIADB_READER_PASSWORD",
+            protected.get("mariadb_reader_password", ""),
         ),
-        "cli_path": os.environ.get("MARIADB_CLI_PATH", mariadb_cli_path),
+        "cli_path": os.environ.get(
+            "MARIADB_CLI_PATH", protected.get("mariadb_cli_path", "")
+        ),
     }
+
+
+def _load_env_settings_module(module_name: str) -> Any:
+    """Carga el módulo de configuración compartida."""
+
+    module_path = (
+        Path(__file__).resolve().parents[4]
+        / "src/2_shared_application/config/env_settings.py"
+    )
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("No se pudo cargar el módulo de configuración")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _run_mysql_query(query: str) -> list[list[str]]:

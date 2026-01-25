@@ -1,0 +1,63 @@
+version: "3.9"
+
+services:
+  service_backend:
+    build:
+      context: ../../..
+      dockerfile: src/apps/8_service_backend/Dockerfile
+    entrypoint: ["/app/entrypoint.sh"]
+    environment:
+      SERVICE_HOST: "0.0.0.0"
+      SERVICE_PORT: "8008"
+      CORE_BACKEND_BASE_URL: "${CORE_BACKEND_BASE_URL}"
+    ports:
+      - "8008:8008"
+
+  backend_core:
+    build:
+      context: ../../..
+      dockerfile: src/apps/3_backend/Dockerfile
+    entrypoint: ["/app/entrypoint.sh"]
+    environment:
+      SERVICE_HOST: "0.0.0.0"
+      SERVICE_PORT: "8003"
+      STORAGE_MODE: "${STORAGE_MODE}"
+      BROKER_BACKEND_BASE_URL: "${BROKER_BACKEND_BASE_URL}"
+      MARIADB_HOST: "${MARIADB_HOST}"
+      MARIADB_PORT: "${MARIADB_PORT}"
+      MARIADB_CORE_DATABASE: "${MARIADB_CORE_DATABASE}"
+      MARIADB_PROJECTS_DATABASE: "${MARIADB_PROJECTS_DATABASE}"
+      MARIADB_ADMIN_USER: "${MARIADB_ADMIN_USER}"
+      MARIADB_ADMIN_PASSWORD: "${MARIADB_ADMIN_PASSWORD}"
+      MARIADB_WRITER_USER: "${MARIADB_WRITER_USER}"
+      MARIADB_WRITER_PASSWORD: "${MARIADB_WRITER_PASSWORD}"
+      MARIADB_READER_USER: "${MARIADB_READER_USER}"
+      MARIADB_READER_PASSWORD: "${MARIADB_READER_PASSWORD}"
+      MARIADB_ROOT_USER: "${MARIADB_ROOT_USER}"
+      MARIADB_ROOT_PASSWORD: "${MARIADB_ROOT_PASSWORD}"
+      MARIADB_ADMIN_DSN: "${MARIADB_ADMIN_DSN}"
+      MARIADB_WRITER_DSN: "${MARIADB_WRITER_DSN}"
+      MARIADB_READER_DSN: "${MARIADB_READER_DSN}"
+      MARIADB_ROOT_DSN: "${MARIADB_ROOT_DSN}"
+      MARIADB_CLI_PATH: "${MARIADB_CLI_PATH}"
+    ports:
+      - "8003:8003"
+
+  fmanagement:
+    image: fmanagement:latest
+    environment:
+      PERMISSIONS_SOURCE: "${PERMISSIONS_SOURCE}"
+      MIDDLEWARE_BASE_URL: "${MIDDLEWARE_BASE_URL}"
+      CORE_BACKEND_BASE_URL: "${CORE_BACKEND_BASE_URL}"
+    ports:
+      - "1666:1666"
+
+  mariadb:
+    image: mariadb:10.6
+    environment:
+      MARIADB_ROOT_PASSWORD: "${MARIADB_ROOT_PASSWORD}"
+      MARIADB_DATABASE: "${MARIADB_CORE_DATABASE}"
+      MARIADB_USER: "${MARIADB_WRITER_USER}"
+      MARIADB_PASSWORD: "${MARIADB_WRITER_PASSWORD}"
+    ports:
+      - "3306:3306"

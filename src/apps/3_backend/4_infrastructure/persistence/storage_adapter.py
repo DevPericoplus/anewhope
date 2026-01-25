@@ -6,14 +6,30 @@ import importlib.util
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Any
 
-from src.2_shared_application.storage_access_structure import (
-    get_folder_by_id_organization,
-    get_folder_by_id_project,
-)
+
+def _load_storage_structure_module():
+    """Carga el módulo de estructura de almacenamiento compartido."""
+    module_path = (
+        Path(__file__).resolve().parents[5]
+        / "src/2_shared_application/storage_access_structure.py"
+    )
+    spec = importlib.util.spec_from_file_location("storage_access_structure", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError("No se pudo cargar storage_access_structure")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["storage_access_structure_backend"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_storage_structure = _load_storage_structure_module()
+get_folder_by_id_organization = _storage_structure.get_folder_by_id_organization
+get_folder_by_id_project = _storage_structure.get_folder_by_id_project
 
 
 class StorageAdapterError(Exception):
@@ -56,61 +72,65 @@ def build_storage_paths(
 def load_mariadb_settings() -> dict[str, Any]:
     """Carga configuración de MariaDB desde entorno o protected_values."""
 
-    try:
-        from protected_values import (  # type: ignore
-            mariadb_host,
-            mariadb_port,
-            mariadb_core_database,
-            mariadb_ai_database,
-            mariadb_admin_user,
-            mariadb_admin_password,
-            mariadb_writer_user,
-            mariadb_writer_password,
-            mariadb_reader_user,
-            mariadb_reader_password,
-            mariadb_root_user,
-            mariadb_root_password,
-            mariadb_admin_dsn,
-            mariadb_writer_dsn,
-            mariadb_reader_dsn,
-            mariadb_root_dsn,
-            mariadb_cli_path,
-        )
-    except Exception as exc:
+    env_settings = _load_env_settings_module("backend_core_env_settings")
+    protected = env_settings.load_protected_settings()
+    if not protected:
         raise StorageAdapterError(
             "No se pudo cargar la configuración de MariaDB desde protected_values"
-        ) from exc
+        )
 
     return {
-        "host": os.environ.get("MARIADB_HOST", mariadb_host),
-        "port": int(os.environ.get("MARIADB_PORT", mariadb_port)),
+        "host": os.environ.get("MARIADB_HOST", protected.get("mariadb_host", "")),
+        "port": int(
+            os.environ.get("MARIADB_PORT", protected.get("mariadb_port", 3306))
+        ),
         "core_database": os.environ.get(
-            "MARIADB_CORE_DATABASE", mariadb_core_database
+            "MARIADB_CORE_DATABASE", protected.get("mariadb_core_database", "")
         ),
         "projects_database": os.environ.get(
-            "MARIADB_PROJECTS_DATABASE", mariadb_ai_database
+            "MARIADB_PROJECTS_DATABASE", protected.get("mariadb_ai_database", "")
         ),
-        "admin_user": os.environ.get("MARIADB_ADMIN_USER", mariadb_admin_user),
+        "admin_user": os.environ.get(
+            "MARIADB_ADMIN_USER", protected.get("mariadb_admin_user", "")
+        ),
         "admin_password": os.environ.get(
-            "MARIADB_ADMIN_PASSWORD", mariadb_admin_password
+            "MARIADB_ADMIN_PASSWORD", protected.get("mariadb_admin_password", "")
         ),
-        "writer_user": os.environ.get("MARIADB_WRITER_USER", mariadb_writer_user),
+        "writer_user": os.environ.get(
+            "MARIADB_WRITER_USER", protected.get("mariadb_writer_user", "")
+        ),
         "writer_password": os.environ.get(
-            "MARIADB_WRITER_PASSWORD", mariadb_writer_password
+            "MARIADB_WRITER_PASSWORD",
+            protected.get("mariadb_writer_password", ""),
         ),
-        "reader_user": os.environ.get("MARIADB_READER_USER", mariadb_reader_user),
+        "reader_user": os.environ.get(
+            "MARIADB_READER_USER", protected.get("mariadb_reader_user", "")
+        ),
         "reader_password": os.environ.get(
-            "MARIADB_READER_PASSWORD", mariadb_reader_password
+            "MARIADB_READER_PASSWORD",
+            protected.get("mariadb_reader_password", ""),
         ),
-        "root_user": os.environ.get("MARIADB_ROOT_USER", mariadb_root_user),
+        "root_user": os.environ.get(
+            "MARIADB_ROOT_USER", protected.get("mariadb_root_user", "")
+        ),
         "root_password": os.environ.get(
-            "MARIADB_ROOT_PASSWORD", mariadb_root_password
+            "MARIADB_ROOT_PASSWORD", protected.get("mariadb_root_password", "")
         ),
-        "admin_dsn": os.environ.get("MARIADB_ADMIN_DSN", mariadb_admin_dsn),
-        "writer_dsn": os.environ.get("MARIADB_WRITER_DSN", mariadb_writer_dsn),
-        "reader_dsn": os.environ.get("MARIADB_READER_DSN", mariadb_reader_dsn),
-        "root_dsn": os.environ.get("MARIADB_ROOT_DSN", mariadb_root_dsn),
-        "cli_path": os.environ.get("MARIADB_CLI_PATH", mariadb_cli_path),
+        "admin_dsn": os.environ.get(
+            "MARIADB_ADMIN_DSN", protected.get("mariadb_admin_dsn", "")
+        ),
+        "writer_dsn": os.environ.get(
+            "MARIADB_WRITER_DSN", protected.get("mariadb_writer_dsn", "")
+        ),
+        "reader_dsn": os.environ.get(
+            "MARIADB_READER_DSN", protected.get("mariadb_reader_dsn", "")
+        ),
+        "root_dsn": os.environ.get(
+            "MARIADB_ROOT_DSN", protected.get("mariadb_root_dsn", "")
+        ),
+        "cli_path": os.environ.get(
+            "MARIADB_CLI_PATH", protected.get("mariadb_cli_path", "")
+        ),
     }
 
 
@@ -132,6 +152,21 @@ def _load_dto_module(module_name: str, filename: str) -> Any:
     import sys
 
     sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_env_settings_module(module_name: str) -> Any:
+    """Carga el módulo de configuración compartida."""
+
+    module_path = (
+        Path(__file__).resolve().parents[5]
+        / "src/2_shared_application/config/env_settings.py"
+    )
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise StorageAdapterError("No se pudo cargar el módulo de configuración")
+    module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
@@ -263,22 +298,16 @@ def _write_json_list(path: Path, payload: list[dict[str, Any]]) -> None:
 def _should_sync_users_to_db() -> bool:
     """Determina si se debe sincronizar users hacia MariaDB."""
 
-    try:
-        from protected_values import storage_mode  # type: ignore
-    except Exception:
-        storage_mode = "mock"
-    mode = os.environ.get("STORAGE_MODE", str(storage_mode))
+    env_settings = _load_env_settings_module("backend_core_env_settings")
+    mode = env_settings.get_env_value("STORAGE_MODE", "mock")
     return mode in {"mock_and_db", "db_only"}
 
 
 def _should_read_users_from_db() -> bool:
     """Determina si se deben leer usuarios desde MariaDB."""
 
-    try:
-        from protected_values import storage_mode  # type: ignore
-    except Exception:
-        storage_mode = "mock"
-    mode = os.environ.get("STORAGE_MODE", str(storage_mode))
+    env_settings = _load_env_settings_module("backend_core_env_settings")
+    mode = env_settings.get_env_value("STORAGE_MODE", "mock")
     return mode == "db_only"
 
 
@@ -375,6 +404,10 @@ def _sync_users_to_mariadb(users: list[UserDto]) -> None:
 
     for user in users:
         payload = user.model_dump()
+        # Construir un solo comando SQL con todas las operaciones
+        sqls = _build_user_upsert_sqls(payload, sql_escape)
+        # Unir todos los SQLs en un solo comando
+        combined_sql = " ".join(sqls)
         cmd = [
             cli_path,
             "-u",
@@ -383,13 +416,13 @@ def _sync_users_to_mariadb(users: list[UserDto]) -> None:
             "--database",
             db_name,
             "-e",
-            _build_user_upsert_sql(payload, sql_escape),
+            combined_sql,
         ]
         subprocess.run(cmd, check=True)
 
 
-def _build_user_upsert_sql(payload: dict[str, Any], escape: Any) -> str:
-    """Construye SQL de upsert para users y tablas asociadas."""
+def _build_user_upsert_sqls(payload: dict[str, Any], escape: Any) -> list[str]:
+    """Construye lista de SQLs de upsert para users y tablas asociadas."""
 
     user_id = int(payload.get("user_id", 0))
     org_id = int(payload.get("organization_id", 0))
@@ -418,28 +451,27 @@ def _build_user_upsert_sql(payload: dict[str, Any], escape: Any) -> str:
     billing_zip = escape(str(billing.get("zip_code", "")))
     billing_address = escape(str(billing.get("address", "")))
 
-    return (
-        "INSERT INTO users (user_id, organization_id, identity_type_id, user_name, "
-        "user_password, user_email, user_mobile, user_otp, active, blocked) VALUES "
-        f"({user_id}, {org_id}, {identity_id}, '{user_name}', '{user_password}', "
-        f\"'{user_email}', '{user_mobile}', '{user_otp}', {active}, {blocked}) "
-        "ON DUPLICATE KEY UPDATE organization_id=VALUES(organization_id), "
-        "identity_type_id=VALUES(identity_type_id), user_name=VALUES(user_name), "
-        "user_password=VALUES(user_password), user_email=VALUES(user_email), "
-        "user_mobile=VALUES(user_mobile), user_otp=VALUES(user_otp), "
-        "active=VALUES(active), blocked=VALUES(blocked); "
-        "INSERT INTO user_contact_info (user_id, first_name, sur_name, country, state, "
-        "zip_code, address) VALUES "
-        f\"({user_id}, '{contact_first}', '{contact_sur}', '{contact_country}', "
-        f\"'{contact_state}', '{contact_zip}', '{contact_address}') "
-        "ON DUPLICATE KEY UPDATE first_name=VALUES(first_name), sur_name=VALUES(sur_name), "
-        "country=VALUES(country), state=VALUES(state), zip_code=VALUES(zip_code), "
-        "address=VALUES(address); "
-        "INSERT INTO user_billing_info (user_id, first_name, sur_name, country, state, "
-        "zip_code, address) VALUES "
-        f\"({user_id}, '{billing_first}', '{billing_sur}', '{billing_country}', "
-        f\"'{billing_state}', '{billing_zip}', '{billing_address}') "
-        "ON DUPLICATE KEY UPDATE first_name=VALUES(first_name), sur_name=VALUES(sur_name), "
-        "country=VALUES(country), state=VALUES(state), zip_code=VALUES(zip_code), "
-        "address=VALUES(address);"
-    )
+    # Retornar lista de SQLs para ejecutar por separado
+    return [
+        # 1. REPLACE en users (más seguro que INSERT... ON DUPLICATE KEY)
+        (
+            "REPLACE INTO users (user_id, organization_id, identity_type_id, user_name, "
+            "user_password, user_email, user_mobile, user_otp, active, blocked) VALUES "
+            f"({user_id}, {org_id}, {identity_id}, '{user_name}', '{user_password}', "
+            f"'{user_email}', '{user_mobile}', '{user_otp}', {active}, {blocked});"
+        ),
+        # 2. REPLACE en user_contact_info
+        (
+            "REPLACE INTO user_contact_info (user_id, first_name, sur_name, country, state, "
+            "zip_code, address) VALUES "
+            f"({user_id}, '{contact_first}', '{contact_sur}', '{contact_country}', "
+            f"'{contact_state}', '{contact_zip}', '{contact_address}');"
+        ),
+        # 3. REPLACE en user_billing_info
+        (
+            "REPLACE INTO user_billing_info (user_id, first_name, sur_name, country, state, "
+            "zip_code, address) VALUES "
+            f"({user_id}, '{billing_first}', '{billing_sur}', '{billing_country}', "
+            f"'{billing_state}', '{billing_zip}', '{billing_address}');"
+        ),
+    ]

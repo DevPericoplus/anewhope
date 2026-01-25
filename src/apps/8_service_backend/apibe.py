@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
+import importlib.util
 import os
+import sys
+from pathlib import Path
 from collections.abc import Iterator
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any, AsyncIterator
@@ -133,11 +136,27 @@ def _configure_logging() -> None:
 def _get_core_base_url() -> str:
     """Obtiene la URL base del backend core."""
 
-    try:
-        from protected_values import core_backend_base_url  # type: ignore
-    except Exception:
-        core_backend_base_url = "http://localhost:8003"
-    return os.environ.get("CORE_BACKEND_BASE_URL", core_backend_base_url)
+    env_settings = _load_env_settings_module("broker_env_settings")
+    protected_base_url = env_settings.get_protected_value(
+        "core_backend_base_url", "http://localhost:8003"
+    )
+    return os.environ.get("CORE_BACKEND_BASE_URL", protected_base_url)
+
+
+def _load_env_settings_module(module_name: str) -> Any:
+    """Carga el módulo de configuración compartida."""
+
+    module_path = (
+        Path(__file__).resolve().parents[3]
+        / "src/2_shared_application/config/env_settings.py"
+    )
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("No se pudo cargar el módulo de configuración")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 @contextmanager

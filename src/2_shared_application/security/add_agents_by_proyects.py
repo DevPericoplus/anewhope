@@ -7,10 +7,41 @@ import json
 import os
 import secrets
 import string
+import sys
 from pathlib import Path
 from typing import Callable
 
-from src.1_shared_domain.entities.agents import AGENT_ROLE_SPECS, build_agent_record
+
+def _load_agents_entities_module():
+    """Carga el módulo de entidades de agentes."""
+
+    module_path = (
+        Path(__file__).resolve().parents[2]
+        / "1_shared_domain/entities/agents.py"
+    )
+    spec = importlib.util.spec_from_file_location("agents_entities", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("No se pudo cargar agents.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["agents_entities"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_env_settings_module(module_name: str) -> object:
+    """Carga el módulo de configuración compartida."""
+
+    module_path = (
+        Path(__file__).resolve().parents[2]
+        / "2_shared_application/config/env_settings.py"
+    )
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("No se pudo cargar el módulo de configuración")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def add_agents_for_project(
@@ -22,6 +53,10 @@ def add_agents_for_project(
     otp_generator: Callable[[], str] | None = None,
 ) -> list[dict[str, object]]:
     """Crea agentes para un proyecto y los persiste en JSON + broker."""
+
+    agents_module = _load_agents_entities_module()
+    AGENT_ROLE_SPECS = agents_module.AGENT_ROLE_SPECS
+    build_agent_record = agents_module.build_agent_record
 
     users_path = users_path or _get_users_file_path()
     users = _load_users(users_path)
@@ -163,12 +198,8 @@ def _should_sync_with_broker() -> bool:
 def _load_storage_mode_from_protected() -> str:
     """Obtiene storage_mode desde protected_values.py."""
 
-    try:
-        from protected_values import storage_mode  # type: ignore
-
-        return str(storage_mode)
-    except Exception:
-        return "mock"
+    env_settings = _load_env_settings_module("shared_env_settings")
+    return env_settings.get_env_value("STORAGE_MODE", "mock")
 
 
 def _sync_users_to_broker(users: list[dict[str, object]]) -> None:
@@ -188,13 +219,11 @@ def _sync_users_to_broker(users: list[dict[str, object]]) -> None:
 def _get_broker_base_url() -> str:
     """Obtiene la URL base del broker backend."""
 
-    try:
-        from protected_values import broker_backend_base_url  # type: ignore
-    except Exception:
-        broker_backend_base_url = "http://localhost:8008"
-    return os.environ.get("BROKER_BACKEND_BASE_URL", broker_backend_base_url).rstrip(
-        "/"
+    env_settings = _load_env_settings_module("shared_env_settings")
+    protected_base_url = env_settings.get_protected_value(
+        "broker_backend_base_url", "http://localhost:8008"
     )
+    return os.environ.get("BROKER_BACKEND_BASE_URL", protected_base_url).rstrip("/")
 
 
 def _get_admin_user(

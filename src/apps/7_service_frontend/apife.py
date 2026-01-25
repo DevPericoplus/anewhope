@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import importlib.util
 import os
+import sys
+from pathlib import Path
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from typing import Annotated, Any, AsyncIterator
@@ -251,11 +254,27 @@ def get_interface_client(
 def _get_broker_base_url() -> str:
     """Obtiene la URL base del broker backend."""
 
-    try:
-        from protected_values import broker_backend_base_url  # type: ignore
-    except Exception:
-        broker_backend_base_url = "http://localhost:8008"
-    return os.environ.get("BROKER_BACKEND_BASE_URL", broker_backend_base_url)
+    env_settings = _load_env_settings_module("middleware_env_settings")
+    protected_base_url = env_settings.get_protected_value(
+        "broker_backend_base_url", "http://localhost:8008"
+    )
+    return os.environ.get("BROKER_BACKEND_BASE_URL", protected_base_url)
+
+
+def _load_env_settings_module(module_name: str) -> Any:
+    """Carga el módulo de configuración compartida."""
+
+    module_path = (
+        Path(__file__).resolve().parents[3]
+        / "src/2_shared_application/config/env_settings.py"
+    )
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("No se pudo cargar el módulo de configuración")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def get_broker_client() -> BrokerBackendClient:

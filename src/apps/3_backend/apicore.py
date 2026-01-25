@@ -10,61 +10,45 @@ from typing import Any, AsyncIterator
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 
-try:
-    from .routercore import (
-        BackendCoreBusinessError,
-        BackendCoreRouter,
-        BasicPermissionDto,
-        JsonMockStorageAdapter,
-        ManageRoleByOrgDto,
-        OrganizationDto,
-        RoleDto,
-        UserDto,
-    )
-    from .4_infrastructure.web.fmanagement_client import FmanagementClient
-    from .4_infrastructure.persistence.storage_adapter import load_fmanagement_settings
-except ImportError:  # pragma: no cover - soporte para ejecuciones fuera de paquete
-    import importlib.util
-    from pathlib import Path
+import importlib.util
+import sys
+from pathlib import Path
 
-    _router_path = Path(__file__).resolve().parent / "routercore.py"
-    _spec = importlib.util.spec_from_file_location("routercore", _router_path)
-    if _spec is None or _spec.loader is None:
-        raise
-    _module = importlib.util.module_from_spec(_spec)
-    _spec.loader.exec_module(_module)
 
-    BackendCoreBusinessError = _module.BackendCoreBusinessError
-    BackendCoreRouter = _module.BackendCoreRouter
-    BasicPermissionDto = _module.BasicPermissionDto
-    JsonMockStorageAdapter = _module.JsonMockStorageAdapter
-    ManageRoleByOrgDto = _module.ManageRoleByOrgDto
-    OrganizationDto = _module.OrganizationDto
-    RoleDto = _module.RoleDto
-    UserDto = _module.UserDto
+def _load_backend_module(module_name: str, module_path: Path) -> Any:
+    """Carga un módulo dinámicamente desde una ruta."""
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"No se pudo cargar {module_name} desde {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
 
-    _infra_path = Path(__file__).resolve().parent / "4_infrastructure"
-    _fmanagement_path = _infra_path / "web" / "fmanagement_client.py"
-    _fmanagement_spec = importlib.util.spec_from_file_location(
-        "fmanagement_client", _fmanagement_path
-    )
-    if _fmanagement_spec is None or _fmanagement_spec.loader is None:
-        raise
-    _fmanagement_module = importlib.util.module_from_spec(_fmanagement_spec)
-    _fmanagement_spec.loader.exec_module(_fmanagement_module)
-    FmanagementClient = _fmanagement_module.FmanagementClient
 
-    _storage_path = (
-        _infra_path / "persistence" / "storage_adapter.py"
-    )
-    _storage_spec = importlib.util.spec_from_file_location(
-        "backend_storage_adapter", _storage_path
-    )
-    if _storage_spec is None or _storage_spec.loader is None:
-        raise
-    _storage_module = importlib.util.module_from_spec(_storage_spec)
-    _storage_spec.loader.exec_module(_storage_module)
-    load_fmanagement_settings = _storage_module.load_fmanagement_settings
+# Cargar routercore
+_router_path = Path(__file__).resolve().parent / "routercore.py"
+_routercore = _load_backend_module("routercore_backend", _router_path)
+
+BackendCoreBusinessError = _routercore.BackendCoreBusinessError
+BackendCoreRouter = _routercore.BackendCoreRouter
+BasicPermissionDto = _routercore.BasicPermissionDto
+JsonMockStorageAdapter = _routercore.JsonMockStorageAdapter
+ManageRoleByOrgDto = _routercore.ManageRoleByOrgDto
+OrganizationDto = _routercore.OrganizationDto
+RoleDto = _routercore.RoleDto
+UserDto = _routercore.UserDto
+
+# Cargar fmanagement_client
+_infra_path = Path(__file__).resolve().parent / "4_infrastructure"
+_fmanagement_path = _infra_path / "web" / "fmanagement_client.py"
+_fmanagement_module = _load_backend_module("fmanagement_client_backend", _fmanagement_path)
+FmanagementClient = _fmanagement_module.FmanagementClient
+
+# Cargar storage_adapter
+_storage_adapter_path = _infra_path / "persistence" / "storage_adapter.py"
+_storage_adapter = _load_backend_module("storage_adapter_backend", _storage_adapter_path)
+load_fmanagement_settings = _storage_adapter.load_fmanagement_settings
 
 
 class OrganizationCheckRequest(BaseModel):

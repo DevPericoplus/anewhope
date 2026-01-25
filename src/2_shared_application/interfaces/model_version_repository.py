@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from src.1_shared_domain.entities.domain_models import ModelVersion
+if TYPE_CHECKING:
+    from src.1_shared_domain.entities.domain_models import ModelVersion
 
 
 class ModelVersionRepository(Protocol):

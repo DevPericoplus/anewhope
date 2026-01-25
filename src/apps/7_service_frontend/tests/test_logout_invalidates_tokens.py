@@ -94,6 +94,7 @@ def test_logout_invalidates_tokens(
     _write_json(users_path, _build_user_payload(password_encrypted))
     _write_json(sessions_path, {"sessions": [], "auth_logs": []})
 
+    monkeypatch.setenv("STORAGE_MODE", "mock")
     monkeypatch.setenv("USERS_DATA_PATH", str(users_path))
     monkeypatch.setenv("SESSIONS_DATA_PATH", str(sessions_path))
     monkeypatch.setenv("FERNET_KEY_PATH", str(key_file))
