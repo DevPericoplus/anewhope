@@ -38,7 +38,7 @@ def build_agent_username(
 def build_agent_email(user_name: str) -> str:
     """Construye el email del agente."""
 
-    return f"{user_name}@myllm.ai"
+    return f"{user_name}@tfmmyllm.ai"
 
 
 def build_agent_record(

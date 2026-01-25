@@ -189,6 +189,71 @@ y agrupan los servicios que se ejecutarán juntos en cada servidor:
 - Nginx se instala con Homebrew y se configura con:
   `infrastructure/servers/macbook/nginx/nginx.conf`.
 
+#### Prerrequisitos para Nginx en macbook
+
+**Herramientas necesarias (se verifican automáticamente):**
+- **Homebrew**: Gestor de paquetes para macOS
+  ```bash
+  # Instalar si no está disponible
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  ```
+
+- **OpenSSL**: Ya instalado en el sistema (OpenSSL 3.5.4)
+  - Ubicación: `/opt/local/bin/openssl`
+  - Usado para generar certificados SSL/TLS autofirmados
+
+**Herramientas opcionales (recomendadas para desarrollo):**
+- **mkcert**: Genera certificados locales de confianza automáticamente
+  ```bash
+  # Instalar con Homebrew
+  brew install mkcert nss
+  
+  # Instalar la CA local (solo una vez)
+  mkcert -install
+  
+  # Generar certificados para localhost
+  mkdir -p /usr/local/etc/nginx/ssl
+  mkcert -key-file /usr/local/etc/nginx/ssl/localhost.key \
+         -cert-file /usr/local/etc/nginx/ssl/localhost.crt \
+         localhost 127.0.0.1 ::1
+  ```
+
+**Generación de certificados SSL con OpenSSL (alternativa):**
+```bash
+# Crear directorio para certificados
+mkdir -p /usr/local/etc/nginx/ssl
+
+# Generar certificado autofirmado (válido por 365 días)
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout /usr/local/etc/nginx/ssl/localhost.key \
+  -out /usr/local/etc/nginx/ssl/localhost.crt \
+  -subj "/C=ES/ST=Madrid/L=Madrid/O=TFM MyLLM/CN=localhost"
+```
+
+**Nota sobre certificados autofirmados:**
+Los certificados generados con OpenSSL mostrarán advertencias de seguridad en el navegador.
+Para desarrollo local sin advertencias, se recomienda usar `mkcert`.
+
+#### Despliegue de Nginx en macbook
+
+Para desplegar y configurar nginx en el entorno macbook, se proporciona el script `deploy_nginx_macbook.sh`:
+
+```bash
+./deploy_nginx_macbook.sh
+```
+
+**Funcionalidades del script:**
+- Verifica e instala nginx con Homebrew solo si no está instalado
+- Copia la configuración desde `infrastructure/servers/macbook/nginx/nginx.conf`
+- Valida la sintaxis del archivo de configuración con `nginx -t`
+- Inicia nginx si está detenido o lo reinicia si ya está en ejecución
+- Muestra el estado final y la URL de acceso (http://localhost:8080)
+
+**Configuración de nginx:**
+- Puerto de escucha: **8080**
+- `/` → Proxy a `5_web_frontend` en puerto **8005**
+- `/backoffice/` → Proxy a `6_web_backoffice` en puerto **8006**
+
 ## Diagrama de arquitectura (Mermaid)
 
 El esquema de arquitectura está definido en `context/schemas/mermaid-ai-diagram-myllm.mmd`.
@@ -428,7 +493,7 @@ organización y al proyecto, con nombres `agente_rol_organizacion_proyecto` y ro
 - `identity_type_id=13`: auditor
 
 Estos agentes se almacenan en `users.json` y en la tabla `users` para asegurar
-trazabilidad. El email se construye como `{nombre}@myllm.ai` y el OTP se genera
+trazabilidad. El email se construye como `{nombre}@tfmmyllm.ai` y el OTP se genera
 con 4 dígitos.
 
 ### Sincronización periódica DB/JSON (middleware)

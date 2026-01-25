@@ -85,5 +85,5 @@ def test_add_agents_for_project_creates_four_agents(tmp_path, monkeypatch):
     assert {agent["identity_type_id"] for agent in agents} == {10, 11, 12, 13}
     assert agents[0]["user_id"] == 2
     assert agents[1]["user_id"] == 3
-    assert agents[0]["user_email"].endswith("@myllm.ai")
+    assert agents[0]["user_email"].endswith("@tfmmyllm.ai")
     assert agents[0]["contact_info"]["country"] == "Oceano"
