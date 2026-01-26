@@ -221,9 +221,10 @@ infrastructure/certificates/**/*.key
 infrastructure/certificates/**/*.crt
 infrastructure/certificates/**/*.csr
 
+# Virtual environments - Official matrix (see AGENTS.md)
 .venv/
-.venv314/
-.venv_middleware/
-.venv_frontend/
+.venv_backend313/
 .venv_frontend313/
+.venv_backoffice313/
 .venv_middleware313/
+.venv_broker313/
