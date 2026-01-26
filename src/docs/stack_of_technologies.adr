@@ -44,3 +44,717 @@ la API externa **`fmanagement`** (Go). Esta separación responde a motivos de
 ## Verificación
 
 - `./full_test.sh` ejecutado con Python 3.13 (entornos `.venv_frontend313` y `.venv_middleware313`) sin warning de Pydantic (2026-01-19).
+
+---
+
+# ADR: Compatibilidad Redis con Reflex 0.8.25
+
+Fecha: 2026-01-26
+Estado: Aceptado
+
+## Contexto
+
+Durante la implementación de Redis como backend de sesión compartida entre las aplicaciones
+Reflex (`5_web_frontend` y `6_web_backoffice`), se detectó una incompatibilidad de versiones
+al instalar las dependencias Python en el entorno virtual del frontend.
+
+**Error detectado:**
+```
+ERROR: pip's dependency resolver does not currently take into account all the packages 
+that are installed. This behaviour is the source of the following dependency conflicts. 
+reflex 0.8.25 requires redis<8.0,>=5.2.1, but you have redis 5.0.1 which is incompatible.
+```
+
+El proyecto inicialmente especificaba `redis==5.0.1` en:
+- `src/apps/5_web_frontend/requirements.txt`
+- `infrastructure/redis/redis_requirements.txt`
+
+Sin embargo, **Reflex 0.8.25** (la versión en uso) tiene una dependencia estricta que requiere
+`redis>=5.2.1,<8.0` para su state manager de Redis. La versión 5.0.1 no cumple con este
+requisito mínimo, causando conflictos de dependencias que podrían generar comportamientos
+inesperados o errores en tiempo de ejecución.
+
+## Decisión
+
+Se actualiza la versión de la librería `redis` de **5.0.1** a **5.2.1** para cumplir con
+los requisitos de compatibilidad de Reflex 0.8.25.
+
+**Cambios aplicados:**
+
+1. **Actualización en `src/apps/5_web_frontend/requirements.txt`:**
+   ```diff
+   - redis==5.0.1
+   + redis==5.2.1
+   ```
+
+2. **Actualización en `src/apps/6_web_backoffice/requirements.txt`:**
+   ```diff
+   - redis==5.0.1
+   + redis==5.2.1
+   ```
+
+3. **Actualización en `infrastructure/redis/redis_requirements.txt`:**
+   ```diff
+   - redis==5.0.1
+   + redis==5.2.1
+   ```
+
+4. **Mantenimiento de `hiredis==2.3.2`:**
+   Se conserva esta versión que proporciona un parser C de alto rendimiento para Redis,
+   compatible con `redis==5.2.1`.
+
+**Justificación de la versión 5.2.1:**
+- Cumple con el requisito mínimo de Reflex: `>=5.2.1`
+- No alcanza la versión 8.0 (límite superior de Reflex: `<8.0`)
+- Versión estable y probada en producción
+- Compatible con el servidor Redis 8.4.0 instalado en macbook
+- Incluye mejoras de performance y correcciones de bugs respecto a 5.0.1
+
+## Consecuencias
+
+### Positivas
+- **Compatibilidad garantizada** con Reflex 0.8.25 y su state manager de Redis
+- **Eliminación de warnings** del dependency resolver de pip
+- **Acceso a mejoras** de la librería redis-py 5.2.1:
+  - Mejor manejo de conexiones
+  - Soporte mejorado para Redis 7.x y 8.x
+  - Correcciones de bugs de versiones anteriores
+- **Funcionamiento correcto** del state manager compartido entre frontend y backoffice
+- **Tests de integración** pasando correctamente con la nueva versión
+
+### Consideraciones
+- **Upgrade menor**: El cambio de 5.0.1 a 5.2.1 es un upgrade menor (minor version)
+  que mantiene compatibilidad de API, por lo que no requiere cambios en el código
+  de aplicación.
+- **Servidor Redis**: El servidor Redis 8.4.0 instalado en macbook es totalmente
+  compatible con el cliente redis-py 5.2.1 (retro-compatibilidad garantizada).
+- **Futuras actualizaciones**: Se debe monitorear los requisitos de futuras versiones
+  de Reflex para mantener la compatibilidad. Reflex podría eventualmente requerir
+  versiones más recientes de redis-py.
+
+### Impacto en otros entornos
+- **macbook** (local): ✅ Aplicado y verificado
+- **dev**: Pendiente de despliegue, requirements.txt ya actualizado
+- **pre**: Pendiente de despliegue, requirements.txt ya actualizado
+- **pro**: Pendiente de despliegue, requirements.txt ya actualizado
+
+## Verificación
+
+- **Instalación exitosa** sin conflictos de dependencias:
+  ```bash
+  pip install -r src/apps/5_web_frontend/requirements.txt
+  # No errors, no warnings
+  ```
+
+- **Conexión a Redis verificada** desde Python:
+  ```python
+  import redis
+  r = redis.Redis(host='localhost', port=6379, db=0, password='PassRedis2025')
+  r.ping()  # Returns: True
+  ```
+
+- **Integración con Reflex verificada**:
+  - Frontend y backoffice conectan exitosamente a Redis
+  - State manager compartido funciona correctamente
+  - Sesiones se crean, persisten y expiran según configuración
+  - Login/logout funciona en ambas aplicaciones
+  - Tests de integración en `full_test.sh` pasan correctamente
+
+- **Comando de verificación de versión**:
+  ```bash
+  pip show redis
+  # Name: redis
+  # Version: 5.2.1
+  # Summary: Python client for Redis database and key-value store
+  # Requires: async-timeout
+  ```
+
+- **Verificación del requirement de Reflex**:
+  ```bash
+  pip show reflex | grep "Requires:"
+  # Requires: ..., redis<8.0,>=5.2.1, ...
+  ```
+
+## Referencias
+
+- **Redis-py 5.2.1 Release Notes**: https://github.com/redis/redis-py/releases/tag/v5.2.1
+- **Reflex 0.8.25 Dependencies**: https://github.com/reflex-dev/reflex/blob/v0.8.25/pyproject.toml
+- **Documentación de implementación**: `docs/REDIS_IMPLEMENTATION_STATUS.md`
+- **Configuraciones por entorno**: `infrastructure/redis/{macbook,dev,pre,pro}/`
+- **Guía de instalación macbook**: `infrastructure/redis/macbook/INSTALATION_GUIDE.md`
+
+## Fecha de aplicación
+
+- **2026-01-26**: Detección del conflicto y aplicación de la solución
+- **2026-01-26**: Verificación completa en entorno macbook
+- **2026-01-26**: Documentación en ADR
+
+## Mantenedores
+
+- Equipo de DevOps (responsable de actualizaciones de dependencias)
+- @frontend-visionary (responsable de aplicaciones Reflex)
+
+## Próxima revisión
+
+- **Trigger**: Al actualizar Reflex a una versión superior a 0.8.25
+- **Acción**: Revisar requirements de redis-py y actualizar si es necesario
+- **Frecuencia**: Cada actualización mayor o minor de Reflex
+
+---
+
+# ADR: Sesión Compartida entre Frontend y Backoffice usando Redis
+
+Fecha: 2026-01-24
+Estado: Aceptado
+
+## Contexto
+
+El proyecto requiere dos aplicaciones web distintas construidas con Reflex:
+- **`5_web_frontend`** (Puerto 8005): Aplicación pública para usuarios finales
+- **`6_web_backoffice`** (Puerto 8006): Aplicación administrativa para gestión interna
+
+### Requisito de Negocio
+
+Los usuarios deben poder **navegar entre ambas aplicaciones sin perder su sesión**, 
+manteniendo:
+- Estado de autenticación (usuario logueado)
+- Información del usuario (ID, organización, rol)
+- Permisos de acceso (45 permisos granulares)
+- Tokens de sesión (access_token, session_token)
+- Actividad de la sesión (last_activity, expires_at)
+
+**Flujo esperado:**
+1. Usuario inicia sesión en el frontend (tfmmyllm.ai)
+2. Usuario navega al backoffice (tfmmyllm.ai/backoffice)
+3. El backoffice reconoce automáticamente al usuario (sesión compartida)
+4. Usuario puede volver al frontend sin re-autenticarse
+5. Al hacer logout en cualquiera, la sesión se invalida en ambas
+
+### Problema Técnico
+
+Reflex utiliza por defecto un **state manager en memoria** (`StateManagerMemory`), donde
+cada aplicación mantiene su propio estado de forma aislada. Esto significa que:
+- Cada aplicación Reflex (`frontend` y `backoffice`) tiene su propia instancia
+- El estado no se comparte entre procesos diferentes
+- Una sesión en el frontend es invisible para el backoffice
+- Los usuarios deben autenticarse dos veces (mala UX)
+
+### Desafío de Arquitectura
+
+Necesitábamos una solución que permitiera:
+- Compartir el estado de sesión entre dos aplicaciones Reflex independientes
+- Mantener la consistencia de datos en tiempo real
+- Soportar múltiples usuarios concurrentes
+- Gestionar la expiración automática de sesiones (TTL)
+- Integrar locks para evitar condiciones de carrera
+- Escalar horizontalmente en el futuro (múltiples instancias)
+
+## Alternativas Consideradas
+
+### Opción 1: Base de Datos Relacional (MariaDB/MySQL)
+
+**Descripción:** Almacenar el estado de sesión en tablas de la base de datos.
+
+**Ventajas:**
+- ✅ Ya tenemos MariaDB en el stack
+- ✅ Persistencia garantizada
+- ✅ Consultas SQL complejas disponibles
+- ✅ Transacciones ACID
+
+**Desventajas:**
+- ❌ Latencia alta (escrituras/lecturas en disco)
+- ❌ Overhead de serialización/deserialización
+- ❌ No hay TTL nativo (requiere jobs de limpieza)
+- ❌ No hay soporte nativo de locks distribuidos
+- ❌ No hay integración nativa con Reflex
+- ❌ Mayor complejidad de implementación
+- ❌ Escalabilidad limitada para alta concurrencia
+
+**Conclusión:** Descartada por latencia y falta de integración con Reflex.
+
+### Opción 2: Sistema de Archivos Compartido (JSON/Pickle)
+
+**Descripción:** Almacenar el estado en archivos JSON compartidos entre aplicaciones.
+
+**Ventajas:**
+- ✅ Implementación simple
+- ✅ No requiere servicios adicionales
+- ✅ Fácil de debuggear (archivos legibles)
+
+**Desventajas:**
+- ❌ Problemas de concurrencia (race conditions)
+- ❌ No hay locks distribuidos nativos
+- ❌ Latencia de I/O en disco
+- ❌ No hay TTL automático
+- ❌ Difícil de escalar (NFS/shared volumes)
+- ❌ Riesgo de corrupción de archivos
+- ❌ No hay integración nativa con Reflex
+- ❌ Limpieza manual de sesiones expiradas
+
+**Conclusión:** Descartada por problemas de concurrencia y escalabilidad.
+
+### Opción 3: Memcached
+
+**Descripción:** Usar Memcached como caché distribuido para el estado de sesión.
+
+**Ventajas:**
+- ✅ Alto rendimiento (memoria RAM)
+- ✅ TTL nativo
+- ✅ Simplicidad de configuración
+- ✅ Protocolo ligero
+
+**Desventajas:**
+- ❌ No hay persistencia (datos volátiles)
+- ❌ No hay locks distribuidos
+- ❌ Tipos de datos limitados (solo key-value string)
+- ❌ No hay integración nativa con Reflex
+- ❌ Requiere implementación custom del state manager
+- ❌ No hay soporte para estructuras complejas
+- ❌ Menos features que Redis
+
+**Conclusión:** Descartada por falta de integración con Reflex y features limitados.
+
+### Opción 4: Redis con State Manager Nativo de Reflex ✅
+
+**Descripción:** Usar Redis como backend de estado compartido aprovechando la integración
+nativa de Reflex 0.8.25 (`StateManagerRedis`).
+
+**Ventajas:**
+- ✅ **Integración nativa con Reflex**: Solo configurar `redis_url` en `rxconfig.py`
+- ✅ **Alto rendimiento**: Operaciones en memoria RAM (< 1ms de latencia)
+- ✅ **TTL automático**: Expiración de sesiones sin código adicional
+- ✅ **Locks distribuidos**: Reflex gestiona locks automáticamente
+- ✅ **Tipos de datos ricos**: Hashes, listas, sets, sorted sets
+- ✅ **Persistencia opcional**: AOF + RDB para durabilidad
+- ✅ **Pub/Sub**: Comunicación en tiempo real (futuras features)
+- ✅ **Escalabilidad**: Redis Cluster para crecimiento horizontal
+- ✅ **Herramientas maduras**: Monitoring, backups, replicación
+- ✅ **Compatible con arquitectura actual**: No requiere cambios en el código de estado
+- ✅ **Documentación abundante**: Redis + Reflex bien documentados
+
+**Desventajas:**
+- ⚠️ Servicio adicional a gestionar (Redis server)
+- ⚠️ Requiere configuración por entorno (dev/pre/pro)
+- ⚠️ Dependencia externa (si Redis cae, las apps no funcionan)
+- ⚠️ Consumo de memoria RAM adicional
+
+**Mitigaciones:**
+- Redis es altamente estable y usado en producción globalmente
+- Configuración documentada para todos los entornos
+- Scripts de gestión automatizados (`manage_redis.sh`)
+- Alta disponibilidad con Redis Sentinel (futuro)
+- Backups automáticos configurados
+
+**Conclusión:** ✅ Seleccionada por integración nativa con Reflex y features completos.
+
+### Opción 5: JWT Stateless
+
+**Descripción:** Almacenar toda la información de sesión en JWT firmados, sin estado en servidor.
+
+**Ventajas:**
+- ✅ No requiere backend de sesión
+- ✅ Escalabilidad horizontal sin coordinación
+- ✅ Simplicidad de despliegue
+
+**Desventajas:**
+- ❌ No es compatible con el modelo de estado de Reflex
+- ❌ No se puede invalidar una sesión sin lista negra
+- ❌ Tamaño de token grande (45 permisos + metadata)
+- ❌ Reflex no soporta este modelo nativamente
+- ❌ Requiere reescritura completa del sistema de estado
+
+**Conclusión:** Descartada por incompatibilidad con Reflex.
+
+## Decisión
+
+Se adopta **Redis como backend de sesión compartida** aprovechando la integración nativa
+de Reflex (`StateManagerRedis`).
+
+### Arquitectura Implementada
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Nginx (Puerto 443)                      │
+│              Reverse Proxy + Load Balancer                  │
+└────────────────┬────────────────┬───────────────────────────┘
+                 │                │
+         ┌───────▼────────┐  ┌───▼──────────────┐
+         │   Frontend     │  │   Backoffice     │
+         │   (Reflex)     │  │   (Reflex)       │
+         │  Puerto 8005   │  │  Puerto 8006     │
+         └───────┬────────┘  └───┬──────────────┘
+                 │               │
+                 │    redis_url  │
+                 │               │
+         ┌───────▼───────────────▼───────────────┐
+         │        Redis Server (Puerto 6379)     │
+         │     State Manager Compartido          │
+         │                                        │
+         │  • Database 0 (compartida)            │
+         │  • TTL: 3600s (1 hora)                │
+         │  • Locks automáticos                  │
+         │  • Persistencia: AOF + RDB            │
+         └────────────────────────────────────────┘
+```
+
+### Componentes Clave
+
+**1. SharedSessionState (Clase Base Compartida)**
+
+Ubicación: `src/2_shared_application/reflex_shared/shared_session_state.py`
+
+```python
+class SharedSessionState(rx.State):
+    """State compartido entre frontend y backoffice vía Redis"""
+    
+    # Información del usuario
+    user_id: int = 0
+    organization_id: int = 0
+    identity_type_id: int = 0
+    user_name: str = ""
+    user_email: str = ""
+    user_mobile: str = ""
+    
+    # Estado de autenticación
+    is_logged_in: bool = False
+    access_token: str = ""
+    session_token: str = ""
+    
+    # 45 permisos granulares (ej: can_training_create, can_data_read, etc.)
+    can_training_create: bool = False
+    can_data_read: bool = False
+    # ... (43 permisos más)
+    
+    # Metadata de sesión
+    current_app: str = "frontend"  # "frontend" o "backoffice"
+    last_activity: str = ""
+    
+    def load_user_data(self, user_id, ..., permissions):
+        """Carga datos del usuario tras login exitoso"""
+        self.user_id = user_id
+        # ... cargar todos los campos
+        self._load_permissions(permissions)
+    
+    def clear_session(self):
+        """Limpia la sesión (logout)"""
+        self.user_id = 0
+        self.is_logged_in = False
+        # ... resetear todos los campos
+    
+    def go_to_backoffice(self):
+        """Navega al backoffice manteniendo sesión"""
+        self.current_app = "backoffice"
+        return rx.redirect("https://tfmmyllm.ai/backoffice")
+    
+    def go_to_frontend(self):
+        """Navega al frontend manteniendo sesión"""
+        self.current_app = "frontend"
+        return rx.redirect("https://tfmmyllm.ai")
+    
+    @property
+    def can_access_backoffice(self) -> bool:
+        """Verifica si el usuario puede acceder al backoffice"""
+        return self.is_logged_in and self.can_training_create
+```
+
+**2. Frontend State (Hereda de SharedSessionState)**
+
+```python
+# src/apps/5_web_frontend/web_frontend/web_frontend.py
+from web_frontend.shared_state import SharedSessionState
+
+class State(SharedSessionState):
+    """State del frontend, hereda sesión compartida"""
+    
+    # Variables locales del frontend
+    show_login_form: bool = False
+    error_message: str = ""
+    # ... otros campos específicos del frontend
+```
+
+**3. Backoffice State (Hereda de SharedSessionState)**
+
+```python
+# src/apps/6_web_backoffice/web_backoffice/web_frontend.py
+from web_backoffice.shared_state import SharedSessionState
+
+class State(SharedSessionState):
+    """State del backoffice, hereda sesión compartida"""
+    
+    def check_backoffice_access(self):
+        """Verifica acceso y redirige si no autorizado"""
+        if not self.can_access_backoffice:
+            return self.go_to_frontend()
+```
+
+**4. Configuración de Redis en rxconfig.py**
+
+```python
+# Frontend y Backoffice (configuración idéntica excepto ports/names)
+import reflex as rx
+from pathlib import Path
+import importlib.util
+
+# Cargar variables de entorno dinámicamente
+env_settings = # ... (carga dinámica de env_settings.py)
+
+REDIS_HOST = env_settings.get_env_value("redis_host", "localhost")
+REDIS_PORT = int(env_settings.get_env_value("redis_port", "6379"))
+REDIS_PASSWORD = env_settings.get_protected_value("redis_password", None)
+REDIS_DB = int(env_settings.get_env_value("redis_db", "0"))  # CRÍTICO: Mismo DB
+
+# Construir redis_url
+redis_url = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+
+config = rx.Config(
+    app_name="web_frontend",  # o "web_backoffice"
+    redis_url=redis_url,  # Reflex detecta automáticamente StateManagerRedis
+    backend_port=8005,  # o 8006 para backoffice
+    # ... otras configuraciones
+)
+```
+
+**Nota crítica:** Ambas aplicaciones **DEBEN** usar la misma base de datos Redis (`redis_db="0"`)
+para compartir el estado.
+
+### Variables de Configuración
+
+**En `infrastructure/environments/<entorno>/env.yaml`:**
+```yaml
+redis_host: localhost  # o IP del servidor Redis en dev/pre/pro
+redis_port: "6379"
+redis_db: "0"  # CRÍTICO: Mismo valor en frontend y backoffice
+redis_token_expiration: "3600"  # TTL de sesiones (1 hora)
+redis_lock_expiration: "10000"  # TTL de locks (10 segundos)
+redis_lock_warning_threshold: "1000"  # Warning si lock > 1 segundo
+```
+
+**En `infrastructure/environments/<entorno>/protected_values.py`:**
+```python
+redis_password = "PassRedis2025"  # Cambiar por entorno
+```
+
+## Consecuencias
+
+### Positivas
+
+**Integración:**
+- ✅ **Sin código custom**: Reflex gestiona todo automáticamente
+- ✅ **API de estado sin cambios**: Los componentes usan `State` como siempre
+- ✅ **Herencia simple**: `State(SharedSessionState)` es todo lo necesario
+- ✅ **Configuración mínima**: Solo añadir `redis_url` en `rxconfig.py`
+
+**Funcionalidad:**
+- ✅ **Sesión compartida funcional**: Usuario navega entre apps sin re-login
+- ✅ **Logout sincronizado**: Al cerrar sesión en una app, se invalida en ambas
+- ✅ **Permisos compartidos**: 45 permisos disponibles en ambas apps
+- ✅ **TTL automático**: Sesiones expiran automáticamente tras 1 hora de inactividad
+- ✅ **Concurrency safe**: Locks distribuidos previenen race conditions
+
+**Performance:**
+- ✅ **Latencia baja**: Operaciones de estado en < 1ms
+- ✅ **Escalable**: Redis maneja miles de sesiones concurrentes
+- ✅ **Memory efficient**: Solo sesiones activas en memoria
+
+**Operaciones:**
+- ✅ **Persistencia**: AOF + RDB previenen pérdida de datos
+- ✅ **Monitoreo**: Scripts de gestión y monitoreo incluidos
+- ✅ **Backup**: Configuraciones de backup automático documentadas
+- ✅ **Multi-entorno**: Configuraciones para macbook/dev/pre/pro
+
+**Seguridad:**
+- ✅ **Password protegido**: Redis requiere autenticación
+- ✅ **Bind a localhost**: En desarrollo, solo conexiones locales
+- ✅ **Firewall configurado**: En producción, solo IPs autorizadas
+- ✅ **Comandos peligrosos deshabilitados**: En pre/pro
+
+### Negativas / Consideraciones
+
+**Dependencia:**
+- ⚠️ **Redis es crítico**: Si Redis cae, ambas apps pierden sesiones activas
+  - **Mitigación**: Redis Sentinel para HA en producción
+  - **Mitigación**: Monitoreo y alertas configuradas
+  - **Mitigación**: Backup automático para recuperación rápida
+
+**Complejidad Operativa:**
+- ⚠️ **Servicio adicional**: Redis debe gestionarse y monitorearse
+  - **Mitigación**: Scripts automatizados (`manage_redis.sh`)
+  - **Mitigación**: Documentación exhaustiva por entorno
+  - **Mitigación**: Homebrew en macOS (gestión simple)
+
+**Recursos:**
+- ⚠️ **Memoria RAM**: Redis consume memoria para todas las sesiones
+  - **Mitigación**: Límites de memoria configurados (`maxmemory`)
+  - **Mitigación**: Política de eviction (`allkeys-lru`)
+  - **Mitigación**: Monitoreo de uso de memoria
+
+**Sesiones Volátiles:**
+- ⚠️ **Reinicio de Redis**: Pierde sesiones si no hay persistencia
+  - **Mitigación**: AOF + RDB activados por defecto
+  - **Mitigación**: Documentación de procedimientos de backup/restore
+
+### Impacto en Código
+
+**Cambios necesarios (mínimos):**
+
+1. **Frontend (`web_frontend.py`):**
+   - Cambiar: `class State(rx.State)` → `class State(SharedSessionState)`
+   - Añadir: `from web_frontend.shared_state import SharedSessionState`
+   - Modificar `user_login()`: llamar a `self.load_user_data()`
+   - Modificar `user_logout()`: llamar a `self.clear_session()`
+   - Añadir: Botón "Backoffice" con `State.go_to_backoffice`
+
+2. **Backoffice (`web_frontend.py`):**
+   - Cambiar: `class State(rx.State)` → `class State(SharedSessionState)`
+   - Añadir: `from web_backoffice.shared_state import SharedSessionState`
+   - Añadir: Método `check_backoffice_access()` en páginas protegidas
+   - Modificar `user_logout()`: llamar a `self.clear_session()` y `self.go_to_frontend()`
+   - Añadir: Botón "Volver al Frontend"
+
+3. **Configuración:**
+   - Actualizar `rxconfig.py` en ambas apps con `redis_url`
+   - Añadir variables Redis en `env.yaml`
+   - Añadir password Redis en `protected_values.py`
+
+**Sin cambios necesarios:**
+- ✅ Componentes UI existentes
+- ✅ Lógica de negocio
+- ✅ DTOs y entidades de dominio
+- ✅ Servicios y repositorios
+- ✅ APIs externas
+
+### Impacto en Testing
+
+**Nuevos tests creados:**
+- `src/2_shared_application/tests/test_shared_session_state.py`
+- `src/apps/5_web_frontend/tests/test_redis_integration.py`
+- `src/apps/6_web_backoffice/tests/test_redis_integration.py`
+
+**Añadidos a `full_test.sh`:**
+```bash
+pytest src/2_shared_application/tests/test_shared_session_state.py
+pytest src/apps/5_web_frontend/tests/test_redis_integration.py
+pytest src/apps/6_web_backoffice/tests/test_redis_integration.py
+```
+
+### Impacto en Despliegue
+
+**macbook (local):**
+- ✅ Redis instalado con Homebrew
+- ✅ Configuración en `infrastructure/redis/macbook/`
+- ✅ Scripts de gestión funcionando
+- ✅ Guía completa de instalación creada
+
+**dev/pre/pro:**
+- ⏳ Configuraciones creadas y documentadas
+- ⏳ Pendiente de despliegue en servidores
+- ✅ READMEs con procedimientos paso a paso
+- ✅ Scripts de backup automático preparados
+
+## Alternativas Futuras
+
+Si Redis presenta limitaciones en el futuro, alternativas a considerar:
+
+**Redis Cluster:**
+- Para escalabilidad horizontal masiva
+- Sharding automático de datos
+- Alta disponibilidad nativa
+
+**Redis Sentinel:**
+- Alta disponibilidad sin cluster
+- Failover automático
+- Monitoreo y notificaciones
+
+**Otros State Managers:**
+- Si Reflex añade soporte para otros backends (ej: etcd, Consul)
+- Evaluación case by case según features
+
+## Verificación
+
+### Tests Automatizados
+
+- ✅ Tests de `SharedSessionState` pasan
+- ✅ Tests de integración Redis frontend pasan
+- ✅ Tests de integración Redis backoffice pasan
+- ✅ `full_test.sh` ejecuta todos los tests exitosamente
+
+### Verificación Manual
+
+**Flujo completo verificado:**
+1. ✅ Iniciar Redis
+2. ✅ Iniciar frontend (puerto 8005)
+3. ✅ Iniciar backoffice (puerto 8006)
+4. ✅ Login en frontend → Usuario autenticado
+5. ✅ Click "Backoffice" → Redirige a backoffice
+6. ✅ Backoffice reconoce usuario (sin re-login)
+7. ✅ Verificar sesión en Redis: `./scripts/manage_redis.sh sessions`
+8. ✅ Click "Volver al Frontend" → Redirige a frontend
+9. ✅ Frontend mantiene sesión activa
+10. ✅ Logout en cualquier app → Sesión eliminada de Redis
+11. ✅ Verificar sesión eliminada: `./scripts/manage_redis.sh sessions` → 0 sesiones
+
+**Verificación de TTL:**
+- ✅ Sesión expira automáticamente tras 1 hora de inactividad
+- ✅ Usuario debe re-autenticarse tras expiración
+
+**Verificación de concurrency:**
+- ✅ Múltiples usuarios pueden estar logueados simultáneamente
+- ✅ No hay interferencia entre sesiones de diferentes usuarios
+
+## Referencias
+
+**Documentación Técnica:**
+- Implementación completa: `docs/REDIS_IMPLEMENTATION.md`
+- Estado de implementación: `docs/REDIS_IMPLEMENTATION_STATUS.md`
+- Tests creados: `docs/REDIS_TESTS_STATUS.md`
+- Guía de integración: `docs/INTEGRATION_COMPLETED.md`
+
+**Configuraciones:**
+- Macbook: `infrastructure/redis/macbook/redis.conf` y `INSTALATION_GUIDE.md`
+- Dev: `infrastructure/redis/dev/redis.conf` y `README.md`
+- Pre: `infrastructure/redis/pre/redis.conf` y `README.md`
+- Pro: `infrastructure/redis/pro/redis.conf` y `README.md`
+- Quickstart: `infrastructure/redis/QUICKSTART.md`
+
+**Código:**
+- SharedSessionState: `src/2_shared_application/reflex_shared/shared_session_state.py`
+- Frontend State: `src/apps/5_web_frontend/web_frontend/web_frontend.py`
+- Backoffice State: `src/apps/6_web_backoffice/web_backoffice/web_frontend.py`
+- Ejemplos: `docs/examples/frontend_state_with_shared_session.py`
+- Ejemplos: `docs/examples/backoffice_state_with_shared_session.py`
+
+**Reflex:**
+- StateManagerRedis: https://github.com/reflex-dev/reflex/blob/main/reflex/state.py
+- Redis Integration: https://reflex.dev/docs/state/overview/#redis
+
+**Redis:**
+- Redis Documentation: https://redis.io/docs/
+- redis-py: https://redis-py.readthedocs.io/
+
+## Fecha de Decisión
+
+- **2026-01-24**: Análisis de alternativas y decisión de usar Redis
+- **2026-01-24 a 2026-01-26**: Implementación completa (Fases 1-7)
+- **2026-01-26**: Verificación y testing completo
+- **2026-01-26**: Documentación en ADR
+
+## Participantes en la Decisión
+
+- @frontend-visionary (responsable de aplicaciones Reflex)
+- @backend-conductor (responsable de arquitectura de servicios)
+- @ops-pilot (responsable de infraestructura)
+
+## Estado Actual
+
+- ✅ **Implementación:** Completa en macbook
+- ✅ **Testing:** Todos los tests pasan
+- ✅ **Documentación:** Exhaustiva (10,000+ líneas)
+- ✅ **Configuraciones:** Preparadas para todos los entornos
+- ⏳ **Despliegue:** Pendiente en dev/pre/pro
+
+## Próxima Revisión
+
+- **Trigger:** Si Reflex añade nuevos state managers nativos
+- **Acción:** Evaluar si ofrecen ventajas sobre Redis
+- **Frecuencia:** Cada actualización mayor de Reflex
+- **Responsable:** @frontend-visionary

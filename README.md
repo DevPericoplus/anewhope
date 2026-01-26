@@ -203,7 +203,10 @@ brew install redis
 # Iniciar Redis (automático en cada boot)
 brew services start redis
 
-# O iniciar manualmente
+# O iniciar manualmente con configuración específica
+redis-server infrastructure/redis/macbook/redis.conf
+
+# O usar configuración por defecto del sistema
 redis-server /usr/local/etc/redis.conf
 
 # Verificar estado
@@ -225,6 +228,7 @@ Redis está configurado con:
 - **Password**: Almacenado en `protected_values.py` de cada entorno
 - **Persistencia AOF**: Activada para durabilidad de datos
 - **TTL sesiones**: 3600 segundos (1 hora, configurable en `env.yaml`)
+- **Archivo de configuración**: `infrastructure/redis/macbook/redis.conf`
 
 **Variables de configuración:**
 
@@ -311,9 +315,24 @@ redis-cli -a $(grep redis_password infrastructure/environments/macbook/protected
 ```
 
 **Documentación completa:**
-- Implementación: `docs/REDIS_IMPLEMENTATION.md`
-- Diseño de conmutación: `docs/SWITCHING_DESIGN.md`
-- **Estado compartido:** `src/2_shared_application/reflex_shared/shared_session_state.py`
+- **ADRs (Decisiones arquitectónicas):**
+  - `src/docs/stack_of_technologies.adr` - ADR: Sesión Compartida Frontend/Backoffice usando Redis
+  - `src/docs/stack_of_technologies.adr` - ADR: Compatibilidad Redis 5.2.1 con Reflex 0.8.25
+- **Implementación técnica:**
+  - Implementación: `docs/REDIS_IMPLEMENTATION.md`
+  - Estado de implementación: `docs/REDIS_IMPLEMENTATION_STATUS.md`
+  - **Despliegue Docker (dev/pre/pro):** `docs/REDIS_DOCKER_DEPLOYMENT.md` ✅ NUEVO
+  - Diseño de conmutación: `docs/SWITCHING_DESIGN.md`
+  - Guía de instalación macbook: `infrastructure/redis/macbook/INSTALATION_GUIDE.md`
+  - Configuraciones por entorno: `infrastructure/redis/{macbook,dev,pre,pro}/`
+  - **Docker Compose:** `infrastructure/servers/frontend/docker-compose.yml` ✅ ACTUALIZADO
+  - **Guía servidor frontend:** `infrastructure/servers/frontend/README.md` ✅ NUEVO
+- **Código:**
+  - **Estado compartido:** `src/2_shared_application/reflex_shared/shared_session_state.py`
+  - Tests de integración: `src/apps/{5_web_frontend,6_web_backoffice}/tests/test_redis_integration.py`
+- **Automatización Docker:**
+  - Scripts por entorno: `infrastructure/redis/{dev,pre,pro}/build_and_run_docker.sh` ✅ NUEVO
+  - Dockerfiles: `infrastructure/redis/{dev,pre,pro}/Dockerfile` ✅ NUEVO
 
 **SharedSessionState:**
 
@@ -1010,9 +1029,41 @@ Headers requeridos para permisos:
 
 En modo `db_only` es obligatorio incluir `identity_type_id` (query param).
 
-## ADRs
+## ADRs (Architecture Decision Records)
 
-- `src/docs/stack_of_technologies.adr`: justifica el uso de Python 3.13 y el downgrade temporal desde 3.14.
+El proyecto documenta decisiones arquitectónicas importantes en:
+
+**`src/docs/stack_of_technologies.adr`** - Contiene 3 ADRs fundamentales:
+
+1. **Python 3.13**: Justifica el uso de Python 3.13 y el downgrade temporal desde 3.14 
+   por incompatibilidades con Pydantic y PyO3.
+   - **Fecha:** 2026-01-19
+   - **Decisión:** Adoptar Python 3.13 como versión base del proyecto
+   - **Razón:** Python 3.14 tiene incompatibilidades con pydantic-core
+
+2. **Compatibilidad Redis 5.2.1 con Reflex 0.8.25**: Documenta la actualización de la 
+   librería redis-py para cumplir con los requisitos de Reflex.
+   - **Fecha:** 2026-01-26
+   - **Decisión:** Actualizar de `redis==5.0.1` a `redis==5.2.1`
+   - **Razón:** Reflex 0.8.25 requiere `redis>=5.2.1,<8.0`
+   - **Impacto:** Compatibilidad garantizada con el state manager de Reflex
+
+3. **Sesión Compartida Frontend/Backoffice usando Redis**: Documenta el análisis de 
+   alternativas y la decisión de usar Redis como backend de sesión compartida.
+   - **Fecha:** 2026-01-24 a 2026-01-26
+   - **Decisión:** Usar Redis con `StateManagerRedis` nativo de Reflex
+   - **Alternativas analizadas:** MariaDB, JSON en disco, Memcached, JWT stateless
+   - **Razón:** Integración nativa con Reflex, alto rendimiento, TTL automático, 
+     locks distribuidos
+   - **Impacto:** Usuarios navegan entre frontend y backoffice sin re-autenticación
+
+**Consultar el ADR completo para detalles de:**
+- Contexto y problema técnico
+- Análisis exhaustivo de alternativas
+- Justificación de decisiones
+- Consecuencias y trade-offs
+- Verificación y testing
+- Referencias y documentación relacionada
 
 ## Entornos virtuales dedicados
 

@@ -106,7 +106,8 @@
 │           └── requirements.txt  ✅ redis==5.2.1
 ├── infrastructure/
 │   ├── redis/
-│   │   └── redis.conf.macbook  ✅ Configuración
+│   │   └── macbook/
+│   │       └── redis.conf  ✅ Configuración
 │   ├── servers/macbook/nginx/
 │   │   └── nginx.conf          ✅ Con rutas /backoffice/*
 │   └── environments/

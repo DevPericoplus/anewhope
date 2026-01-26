@@ -1,39 +1,117 @@
 version: "3.9"
 
 services:
+  # ====================
+  # Redis - State Manager Compartido
+  # ====================
+  redis:
+    image: redis-${ENVIRONMENT:-dev}:8.4.0
+    container_name: redis-${ENVIRONMENT:-dev}
+    build:
+      context: ../../../infrastructure/redis/${ENVIRONMENT:-dev}
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/var/lib/redis
+      - redis-logs:/var/log/redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - frontend-network
+    # Límites de recursos según entorno (ajustar en .env)
+    deploy:
+      resources:
+        limits:
+          cpus: "${REDIS_CPU_LIMIT:-2.0}"
+          memory: "${REDIS_MEMORY_LIMIT:-2g}"
+        reservations:
+          cpus: "${REDIS_CPU_RESERVATION:-1.0}"
+          memory: "${REDIS_MEMORY_RESERVATION:-1g}"
+
+  # ====================
+  # Nginx - Reverse Proxy
+  # ====================
   nginx:
     image: nginx:latest
+    container_name: nginx-frontend
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      web_frontend:
+        condition: service_started
+      web_backoffice:
+        condition: service_started
+    networks:
+      - frontend-network
+    restart: always
 
+  # ====================
+  # Frontend - Aplicación pública
+  # ====================
   web_frontend:
     build:
       context: ../../..
       dockerfile: src/apps/5_web_frontend/Dockerfile
+    container_name: web-frontend
     entrypoint: ["/app/entrypoint.sh"]
     environment:
       SERVICE_HOST: "0.0.0.0"
       SERVICE_PORT: "8005"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
     ports:
       - "8005:8005"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - frontend-network
+    restart: always
 
+  # ====================
+  # Backoffice - Aplicación administrativa
+  # ====================
   web_backoffice:
     build:
       context: ../../..
       dockerfile: src/apps/6_web_backoffice/Dockerfile
+    container_name: web-backoffice
     entrypoint: ["/app/entrypoint.sh"]
     environment:
       SERVICE_HOST: "0.0.0.0"
       SERVICE_PORT: "8006"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
     ports:
       - "8006:8006"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - frontend-network
+    restart: always
 
+  # ====================
+  # Service Frontend - Middleware
+  # ====================
   service_frontend:
     build:
       context: ../../..
       dockerfile: src/apps/7_service_frontend/Dockerfile
+    container_name: service-frontend
     entrypoint: ["/app/entrypoint.sh"]
     environment:
       SERVICE_HOST: "0.0.0.0"
@@ -43,3 +121,25 @@ services:
       BROKER_BACKEND_BASE_URL: "${BROKER_BACKEND_BASE_URL}"
     ports:
       - "8007:8007"
+    networks:
+      - frontend-network
+    restart: always
+
+# ====================
+# Volúmenes persistentes
+# ====================
+volumes:
+  redis-data:
+    name: redis-${ENVIRONMENT:-dev}-data
+    driver: local
+  redis-logs:
+    name: redis-${ENVIRONMENT:-dev}-logs
+    driver: local
+
+# ====================
+# Red interna
+# ====================
+networks:
+  frontend-network:
+    name: frontend-${ENVIRONMENT:-dev}-network
+    driver: bridge
