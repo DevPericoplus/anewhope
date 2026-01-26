@@ -1,5 +1,5 @@
 """
-Configuración de Reflex para la aplicación web frontend
+Configuración de Reflex para la aplicación backoffice
 Con soporte para sesión compartida mediante Redis
 """
 import reflex as rx
@@ -14,11 +14,11 @@ env_settings = importlib.util.module_from_spec(spec)
 sys.modules["env_settings"] = env_settings
 spec.loader.exec_module(env_settings)
 
-# Leer configuración de Redis
+# Leer configuración de Redis (MISMA configuración que frontend)
 REDIS_HOST = env_settings.get_env_value("redis_host", "localhost")
 REDIS_PORT = int(env_settings.get_env_value("redis_port", "6379"))
 REDIS_PASSWORD = env_settings.get_protected_value("redis_password", None)
-REDIS_DB = int(env_settings.get_env_value("redis_db", "0"))
+REDIS_DB = int(env_settings.get_env_value("redis_db", "0"))  # ⚠️ DEBE SER LA MISMA DB que frontend
 
 # Construir URL de Redis
 if REDIS_PASSWORD:
@@ -27,19 +27,18 @@ else:
     redis_url = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 
 config = rx.Config(
-    app_name="web_frontend",
-    db_url="sqlite:///reflex.db",
+    app_name="web_backoffice",
+    db_url="sqlite:///backoffice.db",
     
-    # Configuración de Redis para sesión compartida
-    # Reflex 0.8.25 usa automáticamente Redis cuando se proporciona redis_url
+    # Configuración de Redis para sesión compartida (MISMA que frontend)
+    # Reflex detecta automáticamente Redis y lo usa como state manager
     redis_url=redis_url,
     
     # Configuración de servidor
     env=rx.Env.PROD,
-    backend_port=8005,
-    api_url="https://tfmmyllm.ai",
+    backend_port=8006,
+    api_url="https://tfmmyllm.ai/backoffice",
     backend_host="0.0.0.0",
     
     disable_plugins=["reflex.plugins.sitemap.SitemapPlugin"],
 )
-

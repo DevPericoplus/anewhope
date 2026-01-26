@@ -186,8 +186,178 @@ y agrupan los servicios que se ejecutarán juntos en cada servidor:
 
 - `infrastructure/servers/macbook/docker-compose.yml` solo contiene aplicaciones internas.
 - MariaDB se usa nativa (instalada).
+- **Redis se usa nativo (instalado con Homebrew)** para sesión compartida.
 - Nginx se instala con Homebrew y se configura con:
   `infrastructure/servers/macbook/nginx/nginx.conf`.
+
+#### Redis para sesión compartida
+
+**Instalación en macbook:**
+
+Redis se usa como backend de sesión compartida entre frontend y backoffice, permitiendo que ambas aplicaciones Reflex compartan el state del usuario de forma nativa.
+
+```bash
+# Instalar Redis con Homebrew
+brew install redis
+
+# Iniciar Redis (automático en cada boot)
+brew services start redis
+
+# O iniciar manualmente
+redis-server /usr/local/etc/redis.conf
+
+# Verificar estado
+./scripts/manage_redis.sh status
+
+# Ver sesiones activas
+./scripts/monitor_redis_sessions.py
+
+# Monitoreo continuo
+./scripts/monitor_redis_sessions.py --continuous
+```
+
+**Configuración:**
+
+Redis está configurado con:
+- **Host**: `localhost` (solo conexiones locales)
+- **Puerto**: `6379` (estándar)
+- **Base de datos**: `0` (compartida entre frontend y backoffice)
+- **Password**: Almacenado en `protected_values.py` de cada entorno
+- **Persistencia AOF**: Activada para durabilidad de datos
+- **TTL sesiones**: 3600 segundos (1 hora, configurable en `env.yaml`)
+
+**Variables de configuración:**
+
+En `infrastructure/environments/<entorno>/env.yaml`:
+```yaml
+redis_host: localhost
+redis_port: "6379"
+redis_db: "0"
+redis_token_expiration: "3600"
+redis_lock_expiration: "10000"
+redis_lock_warning_threshold: "1000"
+```
+
+En `infrastructure/environments/<entorno>/protected_values.py`:
+```python
+redis_password = "PassRedis2025"
+```
+
+**Gestión del servicio:**
+
+```bash
+# Script de gestión
+./scripts/manage_redis.sh {install|start|stop|restart|status|cli|flush|sessions|monitor}
+
+# Ejemplos
+./scripts/manage_redis.sh install    # Instalar Redis
+./scripts/manage_redis.sh start      # Iniciar servicio
+./scripts/manage_redis.sh status     # Ver estado
+./scripts/manage_redis.sh sessions   # Listar sesiones activas
+./scripts/manage_redis.sh cli        # Abrir Redis CLI
+```
+
+**Arquitectura de sesión compartida:**
+
+```
+┌─────────────┐         ┌──────────────┐
+│   Frontend  │←────────┤  Redis Server│
+│  (Puerto    │  State  │  (Puerto     │
+│   8005)     │ Shared  │   6379)      │
+└─────────────┘         └──────────────┘
+                              ↑
+┌─────────────┐               │
+│  Backoffice │───────────────┘
+│  (Puerto    │    State Shared
+│   8006)     │
+└─────────────┘
+```
+
+Ambas aplicaciones (frontend y backoffice) comparten automáticamente:
+- Datos del usuario
+- Permisos de bajo nivel
+- Tokens JWT
+- Estado de navegación
+
+**Monitoreo:**
+
+```bash
+# Ver todas las sesiones en tiempo real
+./scripts/monitor_redis_sessions.py
+
+# Salida ejemplo:
+# 📊 MONITOR DE SESIONES REDIS - 2026-01-26 10:30:15
+# ✅ Sesiones activas: 2
+# 
+# 🔑 Session Key: reflex:session:abc123...
+# ⏱️  TTL: 3456 segundos (57 minutos)
+# 👤 Usuario:
+#    ID: 1
+#    Nombre: adminone
+#    Email: adminone@tfmmyllm.ai
+# 🔐 Permisos Críticos:
+#    training_create: ✅
+# 🔧 Acceso Backoffice: ✅ SÍ
+```
+
+**Limpieza de sesiones:**
+
+```bash
+# Limpiar sesiones expiradas manualmente
+./scripts/monitor_redis_sessions.py --cleanup
+
+# Limpiar TODAS las sesiones (⚠️ CUIDADO)
+redis-cli -a $(grep redis_password infrastructure/environments/macbook/protected_values.py | cut -d'"' -f2) FLUSHALL
+```
+
+**Documentación completa:**
+- Implementación: `docs/REDIS_IMPLEMENTATION.md`
+- Diseño de conmutación: `docs/SWITCHING_DESIGN.md`
+- **Estado compartido:** `src/2_shared_application/reflex_shared/shared_session_state.py`
+
+**SharedSessionState:**
+
+El estado de sesión se gestiona mediante la clase `SharedSessionState` que hereda de `rx.State`:
+
+```python
+from src.2_shared_application.reflex_shared import SharedSessionState
+
+class FrontendState(SharedSessionState):
+    """Hereda automáticamente 13 campos de usuario, 45 permisos, tokens JWT y metadata."""
+    pass
+```
+
+**Características:**
+- ✅ 13 campos de usuario (`user_id`, `organization_id`, `user_name`, `user_email`, etc.)
+- ✅ 45 permisos de bajo nivel (`can_data_read`, `can_folder_create`, `can_training_create`, etc.)
+- ✅ 2 tokens JWT (`access_token`, `session_token`)
+- ✅ 4 campos de metadata (`session_id`, `login_time`, `last_activity`, `current_app`)
+- ✅ Métodos: `load_user_data()`, `clear_session()`, `go_to_backoffice()`, `go_to_frontend()`, `logout()`
+- ✅ Propiedades: `can_access_backoffice`, `user_display_name`, `user_display_email`
+
+**Ejemplos de uso:**
+- Frontend: `docs/examples/frontend_state_with_shared_session.py`
+- Backoffice: `docs/examples/backoffice_state_with_shared_session.py`
+
+**Aplicaciones creadas:**
+- ✅ `5_web_frontend`: Puerto 8005, VE `.venv_frontend313`, URL `https://tfmmyllm.ai`
+- ✅ `6_web_backoffice`: Puerto 8006, VE `.venv_backoffice313`, URL `https://tfmmyllm.ai/backoffice`
+
+**Script de clonación:** `scripts/clone_frontend_to_backoffice.sh`
+- Clona automáticamente `5_web_frontend` → `6_web_backoffice`
+- Renombra carpetas, actualiza imports, cambia colores verde→naranja
+- Crea `rxconfig.py` con configuración Redis completa
+- Actualiza `run.sh` para puerto 8006 y entorno `.venv_backoffice313`
+
+**Estado de implementación:**
+- ✅ **Fases 1-7 completadas (100%)** - Redis + SharedSessionState + Integración completa
+- ✅ **Frontend integrado** con herencia de SharedSessionState
+- ✅ **Backoffice integrado** con herencia de SharedSessionState
+- ✅ **Verificación exitosa** de compilación en ambas apps
+- 📚 **Guía completa:** `docs/REDIS_IMPLEMENTATION_STATUS.md`
+- 📋 **Testing:** `docs/INTEGRATION_COMPLETED.md`
+- 🔍 **Script verificación:** `scripts/verify_redis_integration.sh`
+- Actualiza `run.sh` para puerto 8006 y entorno `.venv_backoffice313`
 
 #### Prerrequisitos para Nginx en macbook
 

@@ -1,0 +1,8 @@
+
+reflex==0.8.25
+cryptography==46.0.3
+requests==2.32.5
+
+# Redis para sesión compartida (compatible con Reflex 0.8.25)
+redis==5.2.1
+hiredis==2.3.2

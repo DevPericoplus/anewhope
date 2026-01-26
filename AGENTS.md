@@ -97,8 +97,39 @@ You are an expert Python developer with a focus on writing clean, maintainable, 
   - `.venv_middleware313` → `7_service_frontend`, `8_service_backend`, `3_backend`
   - `.venv_backend313` → Alternativa para `3_backend` en desarrollo
   - `.venv_broker313` → Alternativa para `8_service_backend` en desarrollo
+  - `.venv_backoffice313` → `6_web_backoffice` (cuando se implemente)
 - **Scripts run.sh:** Cada `src/apps/*/run.sh` activa automáticamente su entorno virtual dedicado.
 - **Tests:** El script `full_test.sh` usa `.venv_frontend313` y `.venv_middleware313` según el módulo.
+
+### Redis para sesión compartida
+- **Obligatorio:** Redis 8.x+ instalado y corriendo para compartir state entre frontend y backoffice.
+- **Configuración:**
+  - Host: `localhost` (desarrollo) o IP interna (producción)
+  - Puerto: `6379` (estándar)
+  - Password: almacenado en `protected_values.py` (variable `redis_password`)
+  - Base de datos: `0` (compartida entre todas las apps Reflex)
+  - TTL sesiones: configurable en `env.yaml` (`redis_token_expiration`)
+- **Gestión:** Usar `./scripts/manage_redis.sh {install|start|stop|status|sessions}`
+- **Monitoreo:** `./scripts/monitor_redis_sessions.py` muestra sesiones activas en tiempo real
+- **State manager:** Reflex apps deben usar `state_manager_mode=rx.StateManagerMode.REDIS` en `rxconfig.py`
+- **Arquitectura:**
+  - Frontend (8005) y Backoffice (8006) comparten automáticamente el mismo state vía Redis
+  - Logout en una app invalida sesión en todas
+  - Permisos y datos de usuario sincronizados en tiempo real
+- **Variables en env.yaml:**
+  ```yaml
+  redis_host: localhost
+  redis_port: "6379"
+  redis_db: "0"
+  redis_token_expiration: "3600"  # 1 hora
+  redis_lock_expiration: "10000"
+  redis_lock_warning_threshold: "1000"
+  ```
+- **Variable en protected_values.py:**
+  ```python
+  redis_password = "PassRedis2025"
+  ```
+- **Documentación:** `docs/REDIS_IMPLEMENTATION.md` y `docs/SWITCHING_DESIGN.md`
 
 ### Dockerfiles y despliegues
 - **Dockerfiles por app:** cada `src/apps/*` debe tener `Dockerfile` y `docker_execution.sh`.
@@ -122,6 +153,31 @@ You are an expert Python developer with a focus on writing clean, maintainable, 
 - **Obligatorio:** Al crear un proyecto se generan 4 agentes automáticos con el
   patrón `agente_rol_organizacion_proyecto` y roles `identity_type_id` 10-13.
 - **Persistencia:** Los agentes deben guardarse en `users.json` y en la tabla `users`.
+
+### SharedSessionState (estado compartido Reflex)
+- **Ubicación:** `src/2_shared_application/reflex_shared/shared_session_state.py`
+- **Obligatorio:** Heredar de `SharedSessionState` en `FrontendState` y `BackofficeState`
+- **Campos automáticos:**
+  - 13 campos de usuario (`user_id`, `organization_id`, `user_name`, `user_email`, etc.)
+  - 45 permisos de bajo nivel (`can_data_read`, `can_training_create`, etc.)
+  - 2 tokens JWT (`access_token`, `session_token`)
+  - 4 campos de metadata (`session_id`, `login_time`, `last_activity`, `current_app`)
+- **Métodos obligatorios:**
+  - `load_user_data()`: Cargar datos después del login (solo frontend)
+  - `clear_session()`: Limpiar datos en logout
+  - `go_to_backoffice()`: Navegar al backoffice (actualiza `current_app`)
+  - `go_to_frontend()`: Regresar al frontend
+  - `logout()`: Cerrar sesión en ambas apps
+- **Propiedades:**
+  - `can_access_backoffice`: Verifica `training_create == True`
+  - `user_display_name`: Nombre para UI
+  - `user_display_email`: Email para UI
+- **Sincronización:** Automática vía Redis (ambas apps usan `redis_db: "0"`)
+- **Login:** Solo se hace en frontend; backoffice solo lee datos
+- **Protección:** Todas las páginas de backoffice deben usar `backoffice_guard()`
+- **Ejemplos:**
+  - Frontend: `docs/examples/frontend_state_with_shared_session.py`
+  - Backoffice: `docs/examples/backoffice_state_with_shared_session.py`
 
 ## 6. Performance & Security
 * **Complexity:** Avoid $O(n^2)$ operations on large datasets. Use `set` for $O(1)$ lookups.

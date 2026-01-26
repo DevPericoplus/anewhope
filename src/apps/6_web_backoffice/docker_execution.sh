@@ -1,5 +1,5 @@
 #!/bin/bash
-# Ejecuta el backoffice web en Docker con variables de entorno.
+# Ejecuta el frontend web en Docker con variables de entorno.
 
 set -e
 
@@ -19,8 +19,8 @@ python "$ROOT_DIR/infrastructure/export_env.py" \
   --format envfile \
   --output "$TMP_ENV"
 
-IMAGE_NAME="anewhope-web-backoffice"
-CONTAINER_NAME="anewhope-web-backoffice"
+IMAGE_NAME="anewhope-web-frontend"
+CONTAINER_NAME="anewhope-web-frontend"
 
 docker build -f "$APP_DIR/Dockerfile" -t "$IMAGE_NAME" "$ROOT_DIR"
 docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
@@ -28,8 +28,8 @@ docker run -d \
   --name "$CONTAINER_NAME" \
   --env-file "$TMP_ENV" \
   --env SERVICE_HOST="0.0.0.0" \
-  --env SERVICE_PORT="8006" \
-  -p "8006:8006" \
+  --env SERVICE_PORT="8005" \
+  -p "8005:8005" \
   "$IMAGE_NAME"
 
 rm -f "$TMP_ENV"

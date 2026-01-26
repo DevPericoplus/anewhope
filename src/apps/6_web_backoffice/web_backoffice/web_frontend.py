@@ -14,7 +14,7 @@ from adapters.api_client import (
 )
 from pages.flujos import FlujosState, flujos_diagram, load_flujos_content
 from pages.organizacion import load_organizacion_content
-from web_frontend.shared_state import SharedSessionState
+from web_backoffice.shared_state import SharedSessionState
 
 COLORS = {
     "background": "#1a1a1a",
@@ -30,9 +30,9 @@ COLORS = {
 
 # Define the State class for managing application state
 class State(SharedSessionState):
-    """Main application state with Redis-based session sharing."""
+    """Backoffice state with Redis-based session sharing."""
     
-    # User portal state (campos locales del frontend, no compartidos)
+    # User portal state (campos locales del backoffice, no compartidos)
     user_active_menu: str = "inicio"
     user_username: str = ""
     user_password: str = ""
@@ -46,7 +46,15 @@ class State(SharedSessionState):
     # - user_logged_in, access_token, session_token, user_id, organization_id
     # - user_name, user_email, user_mobile, identity_type_id
     # - 45 permisos (can_training_create, can_folder_rename, etc.)
-    # - Métodos: load_user_data(), clear_session(), go_to_backoffice(), etc.
+    # - Métodos: load_user_data(), clear_session(), go_to_frontend(), etc.
+    
+    def check_backoffice_access(self):
+        """
+        Verifica que el usuario tiene acceso al backoffice.
+        Redirige al frontend si no tiene permiso.
+        """
+        if not self.can_access_backoffice:
+            return self.go_to_frontend()
     
     def set_user_menu(self, menu: str):
         """Set active menu item for user portal."""
@@ -96,59 +104,25 @@ class State(SharedSessionState):
         self.user_otp = otp
     
     def user_login(self):
-        """Handle user portal login."""
-        if not self.user_username or not self.user_password or not self.user_otp:
-            self.login_error = "Debe ingresar usuario, contraseña y OTP"
-            return
-
-        response = login_user(self.user_username, self.user_password, self.user_otp)
-        access_token = response.get("access_token")
-        session_token = response.get("session_token")
-        if not access_token or not session_token:
-            self.login_error = "No se pudo autenticar con el middleware"
-            return
-
-        # Obtener permisos del usuario
-        permissions_response = get_user_permissions(access_token, session_token)
-        permissions_list = permissions_response.get("permissions", [])
-        
-        # Convertir lista de permisos a diccionario para SharedSessionState
-        permissions_dict = {}
-        for perm in permissions_list:
-            perm_name = perm.get("permission_name", "")
-            perm_value = perm.get("permission_value", False)
-            if perm_name:
-                permissions_dict[perm_name] = perm_value
-        
-        # Cargar datos en SharedSessionState (se sincroniza automáticamente con Redis)
-        self.load_user_data(
-            user_id=int(response.get("user_id", 0)),
-            organization_id=int(response.get("organization_id", 0)),
-            identity_type_id=int(response.get("identity_type_id", 0)),
-            user_name=self.user_username,
-            user_email=response.get("email", ""),
-            user_mobile=response.get("mobile", ""),
-            access_token=access_token,
-            session_token=session_token,
-            permissions=permissions_dict,
-        )
-        
-        # Actualizar estado local del frontend
-        self.user_logged_in = True
-        self.login_error = ""
-        self.otp_request_message = ""
-        self.user_active_menu = "organizacion"
-        self.user_permissions = permissions_list  # Mantener lista para compatibilidad UI
+        """
+        Login deshabilitado en backoffice.
+        Los usuarios deben loguearse en el frontend.
+        """
+        self.login_error = "El login debe realizarse desde el sitio principal"
+        return
     
     def user_logout(self):
-        """Handle user portal logout."""
+        """
+        Handle user portal logout.
+        Limpia la sesión y redirige al frontend.
+        """
         if self.access_token and self.session_token:
             logout_user(self.access_token, self.session_token)
         
         # Limpiar SharedSessionState (se sincroniza automáticamente con Redis)
         self.clear_session()
         
-        # Limpiar estado local del frontend
+        # Limpiar estado local del backoffice
         self.user_logged_in = False
         self.user_username = ""
         self.user_password = ""
@@ -158,7 +132,8 @@ class State(SharedSessionState):
         self.otp_request_message = ""
         self.user_active_menu = "inicio"
         
-        return rx.redirect("/")
+        # Redirigir al frontend principal
+        return self.go_to_frontend()
 
     def refresh_session_tokens(self):
         """Renueva los tokens de sesión mediante el middleware."""
@@ -858,22 +833,20 @@ def user_portal() -> rx.Component:
             rx.hstack(
                 logo(),
                 rx.box(flex_grow="1"),
-                # Botón Backoffice (solo si tiene permiso training_create)
-                rx.cond(
-                    State.can_access_backoffice,
-                    rx.button(
-                        "Backoffice",
-                        on_click=State.go_to_backoffice,
-                        background_color="#FF8C00",  # Naranja
-                        color="white",
-                        _hover={"background_color": "#FF7000"},
-                    ),
+                # Botón Volver al Frontend
+                rx.button(
+                    "Volver al Frontend",
+                    on_click=State.go_to_frontend,
+                    background_color="#22c55e",  # Verde del frontend
+                    color="white",
+                    _hover={"background_color": "#1ea34d"},
                 ),
                 rx.button(
                     "Desconectar",
                     on_click=State.user_logout,
-                    background_color=COLORS["primary"],
-                    color=COLORS["background"],
+                    background_color="#FF8C00",  # Naranja
+                    color="white",
+                    _hover={"background_color": "#FF7000"},
                 ),
                 width="100%",
                 padding="1em",

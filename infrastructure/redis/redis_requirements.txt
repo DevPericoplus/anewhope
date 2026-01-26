@@ -1,0 +1,3 @@
+# Dependencias para Redis (compatible con Reflex 0.8.25+)
+redis==5.2.1          # Cliente Redis para Python
+hiredis==2.3.2        # Parser C de alto rendimiento para Redis (opcional pero recomendado)

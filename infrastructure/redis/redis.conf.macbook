@@ -1,0 +1,49 @@
+# Configuración de Redis para desarrollo local (macbook)
+# /usr/local/etc/redis.conf
+
+# Bind a localhost solo (más seguro para desarrollo)
+bind 127.0.0.1
+
+# Puerto por defecto
+port 6379
+
+# Desactivar protección de modo protegido (OK para localhost)
+protected-mode no
+
+# Directorio de trabajo
+dir /usr/local/var/db/redis/
+
+# Archivo de log
+logfile /usr/local/var/log/redis.log
+
+# Nivel de log
+loglevel notice
+
+# Persistencia AOF (Append Only File) para durabilidad
+appendonly yes
+appendfilename "appendonly.aof"
+
+# Snapshot automático
+save 900 1       # Guardar si al menos 1 key cambió en 900 segundos
+save 300 10      # Guardar si al menos 10 keys cambiaron en 300 segundos
+save 60 10000    # Guardar si al menos 10000 keys cambiaron en 60 segundos
+
+# Nombre del archivo de snapshot
+dbfilename dump.rdb
+
+# Configuración de memoria
+maxmemory 256mb
+maxmemory-policy allkeys-lru
+
+# TTL por defecto para las keys de sesión (1 hora)
+# Nota: Esto se configura a nivel de aplicación, no aquí
+
+# Desactivar comandos peligrosos en producción
+# rename-command FLUSHDB ""
+# rename-command FLUSHALL ""
+# rename-command KEYS ""
+
+# Configuración para desarrollo (no usar en producción)
+# Para producción, añadir:
+# requirepass tu-password-seguro-aqui
+# maxclients 10000
