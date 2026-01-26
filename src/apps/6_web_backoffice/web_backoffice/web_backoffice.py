@@ -1,5 +1,8 @@
 import base64
+import importlib.util
 import json
+import logging
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +18,16 @@ from adapters.api_client import (
 from pages.flujos import FlujosState, flujos_diagram, load_flujos_content
 from pages.organizacion import load_organizacion_content
 from web_backoffice.shared_state import SharedSessionState
+
+# Importar logger de actividad usando importlib (el directorio tiene número)
+_activity_logger_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "reflex_shared" / "activity_logger.py"
+_spec = importlib.util.spec_from_file_location("activity_logger", _activity_logger_path)
+_activity_module = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_activity_module)
+
+# Logger de actividad del backoffice
+activity_log = _activity_module.get_backoffice_logger()
+activity_log.log_startup()
 
 COLORS = {
     "background": "#1a1a1a",
@@ -132,6 +145,9 @@ class State(SharedSessionState):
     def set_user_menu(self, menu: str):
         """Set active menu item for user portal."""
         self.user_active_menu = menu
+        # Log de navegación
+        if self.is_logged_in and self.user_id > 0:
+            activity_log.log_navigation(self.user_id, menu)
         if menu == "flujos":
             organization_id = self.organization_id
             if organization_id <= 0 and self.access_token:
@@ -163,11 +179,19 @@ class State(SharedSessionState):
             self.user_id = int(user_id) if user_id else 0
             self.organization_id = int(org_id) if org_id else 0
             self.is_logged_in = True
+            activity_log.log_session_activity(
+                self.user_id, 
+                f"session loaded from URL | org_id={self.organization_id}"
+            )
         
         # Cargar permisos (obligatorio)
+        activity_log.log_middleware_request("/auth/permissions", "GET")
         permission_result = self.load_permissions_from_session()
         if permission_result is not None:
+            activity_log.warning(f"Permission check failed | user_id={self.user_id} | redirecting to frontend")
             return permission_result
+        
+        activity_log.log_session_activity(self.user_id, "permissions loaded successfully")
         
         # Continuar con la lógica de inicialización de componentes
         if self.user_active_menu == "flujos":

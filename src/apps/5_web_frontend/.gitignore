@@ -4,3 +4,7 @@ assets/external/
 __pycache__/
 *.db
 *.py[cod]
+
+# Logs (pero mantener .gitkeep)
+logs/*.log
+!logs/.gitkeep

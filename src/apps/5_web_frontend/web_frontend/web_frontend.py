@@ -1,5 +1,8 @@
 import base64
+import importlib.util
 import json
+import logging
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +18,16 @@ from adapters.api_client import (
 from pages.flujos import FlujosState, flujos_diagram, load_flujos_content
 from pages.organizacion import load_organizacion_content
 from web_frontend.shared_state import SharedSessionState
+
+# Importar logger de actividad usando importlib (el directorio tiene número)
+_activity_logger_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "reflex_shared" / "activity_logger.py"
+_spec = importlib.util.spec_from_file_location("activity_logger", _activity_logger_path)
+_activity_module = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_activity_module)
+
+# Logger de actividad del frontend
+activity_log = _activity_module.get_frontend_logger()
+activity_log.log_startup()
 
 COLORS = {
     "background": "#1a1a1a",
@@ -51,6 +64,9 @@ class State(SharedSessionState):
     def set_user_menu(self, menu: str):
         """Set active menu item for user portal."""
         self.user_active_menu = menu
+        # Log de navegación
+        if self.is_logged_in and self.user_id > 0:
+            activity_log.log_navigation(self.user_id, menu)
         if menu == "flujos":
             organization_id = self.organization_id
             if organization_id <= 0 and self.access_token:
@@ -99,16 +115,20 @@ class State(SharedSessionState):
         """Handle user portal login."""
         if not self.user_username or not self.user_password or not self.user_otp:
             self.login_error = "Debe ingresar usuario, contraseña y OTP"
+            activity_log.warning(f"LOGIN ATTEMPT | incomplete credentials | user={self.user_username or 'empty'}")
             return
 
+        activity_log.log_middleware_request("/auth/login", "POST")
         response = login_user(self.user_username, self.user_password, self.user_otp)
         access_token = response.get("access_token")
         session_token = response.get("session_token")
         if not access_token or not session_token:
             self.login_error = "No se pudo autenticar con el middleware"
+            activity_log.log_user_login(self.user_username, success=False)
             return
 
         # Obtener permisos del usuario
+        activity_log.log_middleware_request("/auth/permissions", "GET")
         permissions_response = get_user_permissions(access_token, session_token)
         permissions_list = permissions_response.get("permissions", [])
         
@@ -116,10 +136,12 @@ class State(SharedSessionState):
         # vienen como diccionario directamente del middleware
         low_level_permissions = permissions_response.get("low_level_permissions", {})
         
+        user_id = int(response.get("user_id", 0))
+        
         # Cargar datos en SharedSessionState con low_level_permissions
         # Estos permisos determinan funcionalidades como acceso al Backoffice
         self.load_user_data(
-            user_id=int(response.get("user_id", 0)),
+            user_id=user_id,
             organization_id=int(response.get("organization_id", 0)),
             identity_type_id=int(response.get("identity_type_id", 0)),
             user_name=self.user_username,
@@ -136,11 +158,23 @@ class State(SharedSessionState):
         self.otp_request_message = ""
         self.user_active_menu = "organizacion"
         self.user_permissions = permissions_list  # basic_permissions para UI
+        
+        # Log de login exitoso
+        activity_log.log_user_login(self.user_username, success=True, user_id=user_id)
     
     def user_logout(self):
         """Handle user portal logout."""
+        # Guardar datos para log antes de limpiar
+        logout_user_id = self.user_id
+        logout_username = self.user_name or self.user_username
+        
         if self.access_token and self.session_token:
+            activity_log.log_middleware_request("/auth/logout", "POST")
             logout_user(self.access_token, self.session_token)
+        
+        # Log de logout
+        if logout_user_id > 0:
+            activity_log.log_user_logout(logout_user_id, logout_username)
         
         # Limpiar SharedSessionState (se sincroniza automáticamente con Redis)
         self.clear_session()
