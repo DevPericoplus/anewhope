@@ -215,6 +215,12 @@ infrastructure/environments/dev/protected_values.py
 infrastructure/environments/pre/protected_values.py
 infrastructure/environments/pro/protected_values.py
 
+# SSL/TLS certificates (private keys and certs)
+infrastructure/certificates/**/*.pem
+infrastructure/certificates/**/*.key
+infrastructure/certificates/**/*.crt
+infrastructure/certificates/**/*.csr
+
 .venv/
 .venv314/
 .venv_middleware/

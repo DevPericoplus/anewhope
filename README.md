@@ -202,7 +202,7 @@ y agrupan los servicios que se ejecutarán juntos en cada servidor:
   - Ubicación: `/opt/local/bin/openssl`
   - Usado para generar certificados SSL/TLS autofirmados
 
-**Herramientas opcionales (recomendadas para desarrollo):**
+**Herramientas recomendadas para desarrollo local:**
 - **mkcert**: Genera certificados locales de confianza automáticamente
   ```bash
   # Instalar con Homebrew
@@ -210,15 +210,197 @@ y agrupan los servicios que se ejecutarán juntos en cada servidor:
   
   # Instalar la CA local (solo una vez)
   mkcert -install
-  
-  # Generar certificados para localhost
-  mkdir -p /usr/local/etc/nginx/ssl
-  mkcert -key-file /usr/local/etc/nginx/ssl/localhost.key \
-         -cert-file /usr/local/etc/nginx/ssl/localhost.crt \
-         localhost 127.0.0.1 ::1
   ```
 
-**Generación de certificados SSL con OpenSSL (alternativa):**
+##### Generación de certificado SSL para tfmmyllm.ai (desarrollo local)
+
+**Prerequisito obligatorio: Instalar mkcert**
+
+Si mkcert no está instalado en tu sistema, debes instalarlo primero:
+
+```bash
+# Instalar mkcert y nss con Homebrew
+brew install mkcert nss
+
+# Instalar la Certificate Authority (CA) local
+mkcert -install
+```
+
+Este paso es **obligatorio** antes de generar certificados. El comando `mkcert -install` instalará una CA local confiable en tu sistema, permitiendo que los navegadores acepten los certificados sin advertencias de seguridad.
+
+---
+
+**Paso 1: Preparar el directorio de certificados**
+```bash
+# Crear directorio para almacenar certificados
+mkdir -p infrastructure/certificates/macbook
+```
+
+**Paso 2: Configurar /etc/hosts (si no está configurado)**
+```bash
+# Añadir entrada al archivo hosts
+echo "127.0.0.1       tfmmyllm.ai" | sudo tee -a /etc/hosts
+```
+
+**Paso 3: Generar certificado con mkcert**
+
+**Opción A - Usar el script automatizado (recomendado):**
+```bash
+# Ejecutar el script de generación
+cd infrastructure/certificates/macbook
+./generate_certs.sh
+```
+
+El script verificará las dependencias, generará los certificados y mostrará información detallada.
+
+**Opción B - Comando manual:**
+```bash
+# Navegar al directorio de certificados
+cd infrastructure/certificates/macbook
+
+# Generar certificado para tfmmyllm.ai y wildcard
+mkcert -key-file tfmmyllm.ai-key.pem \
+       -cert-file tfmmyllm.ai.pem \
+       tfmmyllm.ai "*.tfmmyllm.ai" localhost 127.0.0.1 ::1
+```
+
+**Archivos generados:**
+- `tfmmyllm.ai.pem` - Certificado público
+- `tfmmyllm.ai-key.pem` - Clave privada
+
+**Dominios incluidos en el certificado:**
+- `tfmmyllm.ai` (dominio principal)
+- `*.tfmmyllm.ai` (wildcard para subdominios: www, api, backoffice, etc.)
+- `localhost`, `127.0.0.1`, `::1` (aliases locales)
+
+**Paso 4: Verificar el certificado generado**
+```bash
+# Ver información del certificado
+openssl x509 -in tfmmyllm.ai.pem -text -noout | grep -A 2 "Subject:"
+
+# Ver fecha de expiración
+openssl x509 -in tfmmyllm.ai.pem -noout -dates
+
+# Ver todos los dominios incluidos (SANs)
+openssl x509 -in tfmmyllm.ai.pem -noout -text | grep -A 1 "Subject Alternative Name"
+```
+
+**Validez del certificado:**
+- mkcert genera certificados con validez predeterminada según su versión
+- Versiones recientes: ~10 años (3650 días)
+- La validez exacta depende de la versión instalada de mkcert
+
+**Renovación del certificado:**
+
+Si el certificado expira o necesitas regenerarlo:
+
+```bash
+# Opción 1: Regenerar con el mismo comando
+cd infrastructure/certificates/macbook
+mkcert -key-file tfmmyllm.ai-key.pem \
+       -cert-file tfmmyllm.ai.pem \
+       tfmmyllm.ai "*.tfmmyllm.ai" localhost 127.0.0.1 ::1
+
+# Opción 2: Reinstalar la CA de mkcert (si hay problemas de confianza)
+mkcert -uninstall
+mkcert -install
+# Luego regenerar el certificado con el comando anterior
+
+# Opción 3: Verificar y actualizar mkcert
+brew upgrade mkcert
+mkcert -install
+```
+
+**Después de regenerar, reiniciar nginx:**
+```bash
+./deploy_nginx_macbook.sh
+```
+
+**Notas importantes:**
+- Los certificados de mkcert son automáticamente confiables en navegadores
+- No generan advertencias de seguridad en desarrollo local
+- Los archivos de certificados NO deben commiterse a git (ya están en `.gitignore`)
+- Para producción, usar certificados de Let's Encrypt o una CA comercial
+
+**Configuración de nginx con SSL:**
+
+Los certificados se almacenan en la ruta del proyecto y nginx los referencia mediante rutas absolutas:
+
+**Ubicación de los certificados:**
+```
+/Users/administrator/develop/anewhope/infrastructure/certificates/macbook/
+├── tfmmyllm.ai.pem           # Certificado público
+└── tfmmyllm.ai-key.pem       # Clave privada
+```
+
+**Configuración en nginx:**
+
+El archivo `infrastructure/servers/macbook/nginx/nginx.conf` referencia los certificados con rutas absolutas:
+
+```nginx
+http {
+    # Configuración SSL global
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # Servidor HTTP (puerto 8080) - Redirección a HTTPS
+    server {
+        listen 8080;
+        server_name tfmmyllm.ai *.tfmmyllm.ai;
+        return 301 https://$host$request_uri;
+    }
+
+    # Servidor HTTPS (puerto 443)
+    server {
+        listen 443 ssl;
+        server_name tfmmyllm.ai *.tfmmyllm.ai;
+        
+        # Certificados SSL (rutas absolutas)
+        ssl_certificate /Users/administrator/develop/anewhope/infrastructure/certificates/macbook/tfmmyllm.ai.pem;
+        ssl_certificate_key /Users/administrator/develop/anewhope/infrastructure/certificates/macbook/tfmmyllm.ai-key.pem;
+        
+        # Configuración SSL adicional
+        ssl_session_cache shared:SSL:10m;
+        ssl_session_timeout 10m;
+        
+        # Proxy al frontend
+        location / {
+            proxy_pass http://127.0.0.1:8005;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+        
+        # Proxy al backoffice
+        location /backoffice/ {
+            proxy_pass http://127.0.0.1:8006;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+}
+```
+
+**Características de la configuración:**
+
+1. **Puerto 8080 (HTTP)**: Redirige automáticamente a HTTPS
+2. **Puerto 443 (HTTPS)**: Conexión segura con certificados SSL
+3. **Rutas absolutas**: Los certificados se referencian con la ruta completa del proyecto
+4. **Wildcard support**: Acepta `tfmmyllm.ai` y subdominios (`*.tfmmyllm.ai`)
+5. **Headers proxy**: Incluye `X-Forwarded-Proto` para que las aplicaciones detecten HTTPS
+6. **Protocolos modernos**: TLSv1.2 y TLSv1.3 únicamente
+7. **Caché de sesión SSL**: Mejora el rendimiento de las conexiones HTTPS
+
+**Acceso después de configurar:**
+- HTTP: `http://tfmmyllm.ai:8080` → Redirige a HTTPS
+- HTTPS: `https://tfmmyllm.ai` (puerto 443 por defecto)
+- Backoffice: `https://tfmmyllm.ai/backoffice/`
+
+**Generación de certificados SSL con OpenSSL (alternativa no recomendada):**
 ```bash
 # Crear directorio para certificados
 mkdir -p /usr/local/etc/nginx/ssl
@@ -247,12 +429,353 @@ Para desplegar y configurar nginx en el entorno macbook, se proporciona el scrip
 - Copia la configuración desde `infrastructure/servers/macbook/nginx/nginx.conf`
 - Valida la sintaxis del archivo de configuración con `nginx -t`
 - Inicia nginx si está detenido o lo reinicia si ya está en ejecución
-- Muestra el estado final y la URL de acceso (http://localhost:8080)
+- Muestra el estado final y la URL de acceso
 
 **Configuración de nginx:**
-- Puerto de escucha: **8080**
-- `/` → Proxy a `5_web_frontend` en puerto **8005**
-- `/backoffice/` → Proxy a `6_web_backoffice` en puerto **8006**
+- **Puerto 8080 (HTTP)**: Redirige automáticamente a HTTPS
+- **Puerto 443 (HTTPS)**: Conexión segura con certificados SSL
+- **Frontend principal**: `https://tfmmyllm.ai/` → Proxy a `5_web_frontend` (puerto 8005)
+- **Backoffice**: `https://tfmmyllm.ai/backoffice/` → Proxy a `6_web_backoffice` (puerto 8006)
+
+**URLs de acceso:**
+- Producción (HTTPS): `https://tfmmyllm.ai`
+- Backoffice: `https://tfmmyllm.ai/backoffice/`
+- HTTP (redirige): `http://tfmmyllm.ai:8080` → `https://tfmmyllm.ai`
+
+**Flujo completo de despliegue:**
+
+```bash
+# 1. Instalar mkcert (si no está instalado) - OBLIGATORIO
+# Verificar si mkcert está instalado
+if ! command -v mkcert &> /dev/null; then
+    echo "mkcert no está instalado. Instalando..."
+    brew install mkcert nss
+    mkcert -install
+else
+    echo "mkcert ya está instalado"
+fi
+
+# 2. Generar certificados SSL
+brew install mkcert nss
+mkcert -install
+
+# 2. Generar certificados SSL
+cd infrastructure/certificates/macbook
+./generate_certs.sh
+cd ../../..
+
+# 3. Desplegar nginx con la configuración SSL
+./deploy_nginx_macbook.sh
+
+# 4. Verificar que nginx está corriendo
+curl -I https://tfmmyllm.ai
+```
+
+**Verificación de certificados en nginx:**
+```bash
+# Ver información del certificado usado por nginx
+echo | openssl s_client -connect tfmmyllm.ai:443 2>/dev/null | openssl x509 -noout -dates -subject
+
+# Verificar que los certificados están en la ubicación correcta
+ls -lh infrastructure/certificates/macbook/
+```
+
+### Solución de problemas (Troubleshooting)
+
+#### Problema 1: Error "Not Found" (404) al acceder a https://tfmmyllm.ai
+
+**Síntoma:**
+Al acceder a `https://tfmmyllm.ai` en el navegador, aparece el mensaje "Not Found" en texto plano.
+
+**Causa:**
+El frontend de Reflex no ha cargado correctamente las rutas, o necesita ser reiniciado después de configurar nginx con HTTPS.
+
+**Solución:**
+
+```bash
+# Paso 1: Detener el proceso actual del frontend
+# Encuentra el proceso de Reflex
+ps aux | grep "reflex run" | grep -v grep
+
+# Si hay un proceso corriendo, detenerlo (Ctrl+C en la terminal o usar kill)
+ps aux | grep "reflex run" | grep -v grep | awk '{print $2}' | xargs kill -9
+
+# Paso 2: Reiniciar el frontend
+cd src/apps/5_web_frontend
+bash run.sh
+
+# Paso 3: Esperar a que Reflex compile (~30 segundos)
+# Verás mensajes como:
+# "Compiling:  ✓ (100%)"
+# "App running at: http://localhost:8005"
+
+# Paso 4: Verificar que funciona
+curl -I http://127.0.0.1:8005
+# Debería devolver: HTTP/1.1 200 OK
+
+# Paso 5: Acceder desde el navegador
+# https://tfmmyllm.ai
+```
+
+**Verificación:**
+- ✅ Nginx está corriendo: `brew services list | grep nginx`
+- ✅ Frontend está corriendo: `lsof -i :8005`
+- ✅ Puerto 443 escucha: `lsof -i :443 | grep nginx`
+- ✅ Ruta funciona directamente: `curl -I http://127.0.0.1:8005`
+
+**Nota:** Si el acceso directo al puerto 8005 devuelve 404, el problema es del frontend, no de nginx. Reinicia el frontend siguiendo los pasos anteriores.
+
+---
+
+#### Problema 2: Error "Connection refused" o "ERR_CONNECTION_REFUSED"
+
+**Síntoma:**
+El navegador no puede conectar a `https://tfmmyllm.ai`.
+
+**Causa:**
+Nginx no está corriendo o no está escuchando en el puerto 443.
+
+**Solución:**
+
+```bash
+# Verificar estado de nginx
+brew services list | grep nginx
+
+# Si no está corriendo, iniciarlo
+./deploy_nginx_macbook.sh
+
+# Verificar que escucha en puerto 443
+lsof -i :443 | grep nginx
+
+# Ver logs de nginx para errores
+tail -f /usr/local/var/log/nginx/error.log
+```
+
+---
+
+#### Problema 3: Advertencia de certificado no confiable
+
+**Síntoma:**
+El navegador muestra advertencias de seguridad sobre el certificado SSL.
+
+**Causa:**
+La Certificate Authority (CA) de mkcert no está instalada en el sistema.
+
+**Solución:**
+
+```bash
+# Reinstalar la CA de mkcert
+mkcert -uninstall
+mkcert -install
+
+# Regenerar los certificados
+cd infrastructure/certificates/macbook
+./generate_certs.sh
+
+# Reiniciar nginx
+cd ../../..
+./deploy_nginx_macbook.sh
+
+# Reiniciar el navegador completamente
+# (cierra todas las ventanas y vuelve a abrir)
+```
+
+---
+
+#### Problema 4: Error "Address already in use" en puerto 443 o 8005
+
+**Síntoma:**
+Al iniciar nginx o el frontend aparece el error "Address already in use".
+
+**Solución:**
+
+```bash
+# Para puerto 443 (nginx)
+lsof -i :443
+# Si hay un proceso que no es nginx, detenerlo:
+kill -9 <PID>
+
+# Para puerto 8005 (frontend)
+lsof -i :8005
+# Si hay un proceso viejo de Reflex, detenerlo:
+kill -9 <PID>
+
+# Reiniciar los servicios
+./deploy_nginx_macbook.sh
+cd src/apps/5_web_frontend && bash run.sh
+```
+
+---
+
+#### Problema 5: Nginx muestra "502 Bad Gateway"
+
+**Síntoma:**
+Nginx responde pero con error "502 Bad Gateway".
+
+**Causa:**
+El frontend no está corriendo o no responde en el puerto 8005.
+
+**Solución:**
+
+```bash
+# Verificar que el frontend está corriendo
+lsof -i :8005
+
+# Si no está corriendo, iniciarlo
+cd src/apps/5_web_frontend
+bash run.sh
+
+# Verificar que responde
+curl -I http://127.0.0.1:8005
+
+# Ver logs de nginx
+tail -f /usr/local/var/log/nginx/error.log
+```
+
+---
+
+#### Problema 6: No se encuentra el dominio tfmmyllm.ai
+
+**Síntoma:**
+El navegador dice que no puede encontrar el servidor `tfmmyllm.ai`.
+
+**Causa:**
+El archivo `/etc/hosts` no tiene la entrada para el dominio.
+
+**Solución:**
+
+```bash
+# Verificar si la entrada existe
+grep tfmmyllm.ai /etc/hosts
+
+# Si no existe, añadirla
+echo "127.0.0.1       tfmmyllm.ai" | sudo tee -a /etc/hosts
+
+# Verificar que se añadió correctamente
+grep tfmmyllm.ai /etc/hosts
+
+# Limpiar caché DNS (macOS)
+sudo dscacheutil -flushcache
+sudo killall -HUP mDNSResponder
+```
+
+---
+
+#### Problema 7: Error de WebSocket "Cannot connect to server: websocket error"
+
+**Síntoma:**
+El frontend carga correctamente, pero aparece un mensaje de error: "Cannot connect to server: websocket error. Check if server is reachable at wss://tfmmyllm.ai/_event"
+
+**Causas comunes:**
+
+1. **El frontend no está recogiendo la configuración de `api_url`**: El frontend necesita ser reconstruido desde cero cuando se cambia la configuración en `rxconfig.py`.
+
+2. **Cache del build del frontend**: Los assets compilados pueden tener cacheada una URL anterior.
+
+3. **Los servicios no están sincronizados**: El frontend y el backend pueden estar corriendo en modos diferentes.
+
+**Solución completa:**
+
+```bash
+# Paso 1: Detener todos los procesos de Reflex
+ps aux | grep -E "(reflex|node.*3001|python.*8005)" | grep -v grep | awk '{print $2}' | xargs kill -9
+
+# Paso 2: Limpiar completamente el build del frontend
+cd src/apps/5_web_frontend
+rm -rf .web public
+
+# Paso 3: Activar el entorno virtual
+source ../../../.venv_frontend313/bin/activate
+
+# Paso 4: Verificar que rxconfig.py tiene la configuración correcta
+# Debe contener:
+# api_url="https://tfmmyllm.ai"
+# env=rx.Env.PROD
+# backend_port=8005
+
+# Paso 5: Exportar el frontend desde cero
+reflex export --no-zip
+
+# Paso 6: Reiniciar Reflex en modo producción
+reflex run --env prod
+
+# Paso 7: Esperar a que compile (verás "App Running" en los logs)
+# Frontend debería estar en http://0.0.0.0:3001/
+# Backend debería estar en http://0.0.0.0:8005
+
+# Paso 8: Reiniciar nginx para asegurar configuración
+cd ../../..
+./deploy_nginx_macbook.sh
+
+# Paso 9: Verificar puertos
+lsof -i :3001 -i :8005 | grep LISTEN
+
+# Paso 10: Probar acceso directo
+curl -I http://127.0.0.1:3001  # Frontend
+curl -I http://127.0.0.1:8005/_event  # Backend WebSocket
+
+# Paso 11: Probar a través de Nginx
+curl -I https://tfmmyllm.ai  # Debería devolver 200 OK
+
+# Paso 12: Limpiar caché del navegador
+# - Abrir Developer Tools (F12)
+# - Click derecho en el botón de recargar
+# - Seleccionar "Empty Cache and Hard Reload"
+# O simplemente usar el modo incógnito
+
+# Paso 13: Acceder desde el navegador
+# https://tfmmyllm.ai
+```
+
+**Verificación:**
+- ✅ `rxconfig.py` tiene `api_url="https://tfmmyllm.ai"`
+- ✅ Frontend en puerto 3001: `lsof -i :3001`
+- ✅ Backend en puerto 8005: `lsof -i :8005`
+- ✅ Nginx escuchando en 443: `lsof -i :443 | grep nginx`
+- ✅ Nginx proxying a 3001: Ver `/usr/local/etc/nginx/nginx.conf` location `/`
+- ✅ Nginx proxying `/_event` a 8005: Ver `nginx.conf` location `/_event`
+
+**Nota importante:** En modo producción, Reflex compila los assets del frontend con el valor de `api_url` embebido. Si cambias este valor, debes limpiar el build completo (`rm -rf .web public`) y exportar de nuevo (`reflex export --no-zip`).
+
+---
+
+#### Comandos útiles de diagnóstico
+
+**Script automatizado:**
+```bash
+./diagnose_system.sh
+```
+
+Este script verifica el estado completo del sistema: nginx, frontend, middleware, backend core, broker backend, certificados, /etc/hosts y logs recientes.
+
+**Comandos manuales:**
+```bash
+# Estado completo del sistema
+echo "=== Estado de Nginx ==="
+brew services list | grep nginx
+lsof -i :443 | grep nginx
+
+echo "=== Estado del Frontend ==="
+lsof -i :8005
+
+echo "=== Verificar certificados ==="
+ls -lh infrastructure/certificates/macbook/
+
+echo "=== Test de conectividad ==="
+curl -I https://tfmmyllm.ai 2>&1 | head -5
+
+echo "=== Test directo al frontend ==="
+curl -I http://127.0.0.1:8005
+
+echo "=== Verificar /etc/hosts ==="
+grep tfmmyllm.ai /etc/hosts
+```
+
+**Logs importantes:**
+- Nginx error log: `/usr/local/var/log/nginx/error.log`
+- Nginx access log: `/usr/local/var/log/nginx/access.log`
+- Frontend log: `src/apps/5_web_frontend/logs/frontend_secure.log`
+- Middleware log: `src/apps/7_service_frontend/logs/middleware_activiy.log`
 
 ## Diagrama de arquitectura (Mermaid)
 
@@ -416,6 +939,28 @@ Script de limpieza de caches de Reflex y herramientas de desarrollo:
 **Limpia:**
 - Caches de Reflex: `.web`, `.states`
 - Caches de tooling: `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.coverage`, `.hypothesis`
+
+### diagnose_system.sh
+
+Script de diagnóstico completo del sistema para verificar el estado de todos los servicios y configuraciones:
+
+```bash
+./diagnose_system.sh
+```
+
+**Verifica:**
+- Estado de nginx y puerto 443
+- Estado del frontend (puerto 8005)
+- Estado del middleware (puerto 8007)
+- Estado del backend core (puerto 8003)
+- Estado del broker backend (puerto 8008)
+- Existencia y validez de certificados SSL
+- Conectividad HTTPS y HTTP
+- Configuración de `/etc/hosts`
+- Logs recientes de nginx
+
+**Uso recomendado:**
+Ejecutar este script cuando se presenten problemas de conectividad o después de cambios en la configuración para verificar que todo está funcionando correctamente.
 
 ## Servicio frontend en contenedor
 
