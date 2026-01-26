@@ -551,6 +551,18 @@ class RouterMiddleware:
             return
 
         json_records = self._load_json_list(dataset.json_path)
+        
+        # PROTECCIÓN: No sobrescribir JSON con datos si el broker devuelve vacío
+        # Esto evita perder datos locales cuando el backend no tiene la tabla
+        if not broker_records and json_records:
+            self._sync_logger.warning(
+                "Protección activada dataset=%s: broker devuelve vacío pero JSON tiene %s registros. "
+                "No se sobrescribe para evitar pérdida de datos.",
+                dataset.name,
+                len(json_records),
+            )
+            return
+        
         diff = self._diff_records(
             dataset.name, broker_records, json_records, dataset.key_fields
         )

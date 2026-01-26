@@ -1,1 +1,93 @@
-[]
+[
+  {
+    "id": 1,
+    "permission_name": "Global administrator",
+    "permission_description": "Can manage all organization and All proyect and All versions",
+    "created_at": "2026-01-23T10:52:42",
+    "modified_at": "2026-01-23T10:52:42"
+  },
+  {
+    "id": 2,
+    "permission_name": "Organization Administrator",
+    "permission_description": "Can manage only your organization and All proyect and All versions, all operations allow including, add, delete, rename files and folders",
+    "created_at": "2026-01-23T10:52:42",
+    "modified_at": "2026-01-23T10:52:42"
+  },
+  {
+    "id": 3,
+    "permission_name": "Organization Editor",
+    "permission_description": "Can manage only your organization and All proyect and All versions but can't modify the folder structure, only work with files, only add, view content, delete or rename files",
+    "created_at": "2026-01-23T10:52:42",
+    "modified_at": "2026-01-23T10:52:42"
+  },
+  {
+    "id": 4,
+    "permission_name": "Organization Reader",
+    "permission_description": "Can manage only your organization and All proyect and All versions but only can view the content of the files, not modify the files and folders structure",
+    "created_at": "2026-01-23T10:52:42",
+    "modified_at": "2026-01-23T10:52:42"
+  },
+  {
+    "id": 5,
+    "permission_name": "Organization Auditor",
+    "permission_description": "Can manage only your organization and All proyect and All versions but only can view the structure of files and folders, not view or modify the content of the files or folders",
+    "created_at": "2026-01-23T10:52:42",
+    "modified_at": "2026-01-23T10:52:42"
+  },
+  {
+    "id": 6,
+    "permission_name": "Reserved type 0",
+    "permission_description": "It is only a reserved type without specific permissions",
+    "created_at": "2026-01-23T10:52:42",
+    "modified_at": "2026-01-23T10:52:42"
+  },
+  {
+    "id": 7,
+    "permission_name": "Reserved type 1",
+    "permission_description": "It is only a reserved type without specific permissions",
+    "created_at": "2026-01-23T10:52:42",
+    "modified_at": "2026-01-23T10:52:42"
+  },
+  {
+    "id": 8,
+    "permission_name": "Reserved type 2",
+    "permission_description": "It is only a reserved type without specific permissions",
+    "created_at": "2026-01-23T10:52:42",
+    "modified_at": "2026-01-23T10:52:42"
+  },
+  {
+    "id": 9,
+    "permission_name": "Reserved type 3",
+    "permission_description": "It is only a reserved type without specific permissions",
+    "created_at": "2026-01-23T10:52:42",
+    "modified_at": "2026-01-23T10:52:42"
+  },
+  {
+    "id": 10,
+    "permission_name": "Administrator Agent for the organization",
+    "permission_description": "It is a user with a delegation that can manage only your organization and All proyect and All versions, all operations allow including, add, delete, rename files and folders",
+    "created_at": "2026-01-23T10:52:42",
+    "modified_at": "2026-01-23T10:52:42"
+  },
+  {
+    "id": 11,
+    "permission_name": "Editor Agent for the organization",
+    "permission_description": "It is a user with a delegation that can manage only your organization and All proyect and All versions but can't modify the folder structure, only work with files, only add, view content, delete or rename files",
+    "created_at": "2026-01-23T10:52:42",
+    "modified_at": "2026-01-23T10:52:42"
+  },
+  {
+    "id": 12,
+    "permission_name": "Reader Agent for the organization",
+    "permission_description": "It is a user with a delegation that can manage only your organization and All proyect and All versions but only can view the content of the files, not modify the files and folders structure",
+    "created_at": "2026-01-23T10:52:42",
+    "modified_at": "2026-01-23T10:52:42"
+  },
+  {
+    "id": 13,
+    "permission_name": "Auditor Agent for the organization",
+    "permission_description": "it is a user with delegation that can manage only your organization and All proyect and All versions but only can view the structure of files and folders, not view or modify the content of the files or folders",
+    "created_at": "2026-01-23T10:52:42",
+    "modified_at": "2026-01-23T10:52:42"
+  }
+]
