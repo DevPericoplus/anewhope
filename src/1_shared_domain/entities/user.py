@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -165,6 +166,8 @@ def get_user_by_email(user_email: str) -> Optional[dict[str, Any]]:
 def update_user_password_and_otp(user_email: str, new_password: str, new_otp: str) -> bool:
     """
     Actualiza la contraseña y el OTP de un usuario existente.
+    
+    IMPORTANTE: Ahora incluye retry automático para sincronización con broker.
 
     Args:
         user_email: Email del usuario a actualizar.
@@ -182,32 +185,75 @@ def update_user_password_and_otp(user_email: str, new_password: str, new_otp: st
 
     normalized_input = user_email.strip().lower()
     user_found = False
+    user_id = None
     
     for user in users:
         user_email_value = user.get("user_email", "")
         if user_email_value.strip().lower() == normalized_input:
             user["user_password"] = new_password
             user["user_otp"] = new_otp
+            user_id = user.get("user_id")
             user_found = True
-            logger.info(f"Usuario {user_email} actualizado: contraseña y OTP modificados")
+            logger.info(
+                f"Usuario {user_email} (ID: {user_id}) actualizado: "
+                f"contraseña y OTP modificados"
+            )
             break
     
     if not user_found:
         logger.warning(f"Usuario con email {user_email} no encontrado")
         return False
     
+    # SINCRONIZAR CON BROKER CON RETRY
     if _should_sync_users_with_broker():
-        if not _sync_users_to_broker(users):
-            logger.error("No se pudo sincronizar usuarios con broker backend")
-            return False
+        max_retries = 3
+        sync_success = False
+        
+        for attempt in range(max_retries):
+            if _sync_users_to_broker(users):
+                logger.debug(
+                    f"Usuario {user_id} sincronizado con broker "
+                    f"(intento {attempt + 1}/{max_retries})"
+                )
+                sync_success = True
+                break
+            else:
+                if attempt < max_retries - 1:
+                    sleep_time = 2 ** attempt
+                    logger.warning(
+                        f"Fallo al sincronizar usuario {user_id} con broker "
+                        f"(intento {attempt + 1}/{max_retries}). "
+                        f"Reintentando en {sleep_time}s..."
+                    )
+                    time.sleep(sleep_time)
+        
+        if not sync_success:
+            logger.error(
+                f"No se pudo sincronizar usuario {user_id} con broker backend "
+                f"tras {max_retries} intentos. OTP NO será actualizado para "
+                f"mantener consistencia."
+            )
+            return False  # NO guardar en JSON si todos los intentos fallaron
 
+    # GUARDAR EN JSON
     try:
         with open(data_file, "w", encoding="utf-8") as f:
             json.dump(users, f, indent=2, ensure_ascii=False)
+        logger.info(f"Usuario {user_id} guardado en JSON con nuevo OTP")
     except (OSError, TypeError, ValueError) as e:
         logger.error(f"Error al guardar usuario actualizado en {data_file}: {e}")
+        
+        # Si ya sincronizamos con broker pero falló JSON, inconsistencia crítica
+        if _should_sync_users_with_broker():
+            logger.critical(
+                f"INCONSISTENCIA CRÍTICA: Usuario {user_id} actualizado en broker "
+                f"pero falló guardado en JSON. OTP desincronizado. "
+                f"Requiere corrección manual o sincronización periódica."
+            )
+        
         return False
 
+    # VALIDAR SINCRONIZACIÓN
     validate_users_otp_sync()
     return True
 
@@ -318,10 +364,43 @@ def _fetch_users_from_broker() -> list[dict[str, Any]]:
 
 
 def _sync_users_to_broker(users: list[dict[str, Any]]) -> bool:
-    """Sincroniza usuarios hacia broker backend."""
-
-    response = _request_broker("PUT", "/users", payload=users)
-    return response == [] or isinstance(response, list)
+    """
+    Sincroniza usuarios hacia broker backend con validación estricta.
+    
+    Returns:
+        True si la sincronización fue exitosa, False en caso contrario.
+    """
+    try:
+        response = _request_broker("PUT", "/users", payload=users)
+        
+        # Validación estricta de la respuesta
+        if response is None:
+            logger.error("Broker retornó None (posible timeout o error de servidor)")
+            return False
+        
+        # Si el broker retorna dict con "success", verificarlo
+        if isinstance(response, dict):
+            success = response.get("success", False)
+            if success:
+                logger.debug("Broker confirmó sincronización exitosa")
+                return True
+            else:
+                error_detail = response.get("detail", "Unknown error")
+                logger.error(f"Broker indicó fallo en sincronización: {error_detail}")
+                return False
+        
+        # Si retorna lista, considerar éxito (retro-compatibilidad)
+        if isinstance(response, list):
+            logger.debug("Broker retornó lista (sincronización asumida como exitosa)")
+            return True
+        
+        # Cualquier otro tipo de respuesta es inválida
+        logger.error(f"Broker retornó tipo inválido: {type(response)}")
+        return False
+        
+    except Exception as exc:
+        logger.error(f"Excepción al sincronizar con broker: {exc}", exc_info=True)
+        return False
 
 
 def _append_frontend_secure_log(message: str) -> None:
@@ -342,6 +421,8 @@ def _append_frontend_secure_log(message: str) -> None:
 def create_user(user_data: dict[str, Any]) -> bool:
     """
     Crea una nueva entrada de usuario en el archivo users.json.
+    
+    IMPORTANTE: Ahora sincroniza inmediatamente con broker/MariaDB si es necesario.
 
     Asigna un user_id único y secuencial.
 
@@ -382,12 +463,37 @@ def create_user(user_data: dict[str, Any]) -> bool:
     }
 
     users.append(user_dict)
+    
+    # SINCRONIZAR CON BROKER PRIMERO (si es necesario)
+    if _should_sync_users_with_broker():
+        logger.info(f"Sincronizando nuevo usuario (ID: {next_id}) con broker...")
+        if not _sync_users_to_broker(users):
+            logger.error(
+                f"No se pudo sincronizar nuevo usuario con broker. "
+                f"Usuario NO será creado para mantener consistencia."
+            )
+            return False  # NO guardar en JSON si broker falló
+        logger.debug(f"Usuario {next_id} sincronizado exitosamente con broker")
+    
+    # GUARDAR EN JSON DESPUÉS (solo si broker tuvo éxito o no es necesario)
     try:
         with open(data_file, "w", encoding="utf-8") as f:
             json.dump(users, f, indent=2, ensure_ascii=False)
         logger.info(f"Usuario creado exitosamente con ID: {next_id}")
+        
+        # Validar sincronización
+        validate_users_otp_sync()
+        
         return True
     except (OSError, TypeError, ValueError) as e:
         logger.error(f"Error al guardar usuario en {data_file}: {e}")
+        
+        # Si ya sincronizamos con broker pero falló el JSON, tenemos un problema
+        if _should_sync_users_with_broker():
+            logger.critical(
+                f"INCONSISTENCIA CRÍTICA: Usuario {next_id} guardado en broker "
+                f"pero falló guardado en JSON. Requiere corrección manual."
+            )
+        
         return False
 

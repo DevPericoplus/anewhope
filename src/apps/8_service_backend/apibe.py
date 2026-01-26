@@ -6,6 +6,7 @@ import logging
 import importlib.util
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 from collections.abc import Iterator
 from contextlib import asynccontextmanager, contextmanager
@@ -215,11 +216,17 @@ def store_users(
     payload: list[dict[str, Any]],
     router: BrokerBackendRouter = Depends(get_router_broker),
 ) -> dict[str, Any]:
-    """Guarda usuarios."""
+    """Guarda usuarios con confirmación detallada."""
 
     try:
         router.store_users(payload)
-        return {"success": True}
+        
+        # Retornar respuesta más informativa
+        return {
+            "success": True,
+            "users_count": len(payload),
+            "timestamp": datetime.now().isoformat(),
+        }
     except BrokerBusinessError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

@@ -836,16 +836,47 @@ class RouterMiddleware:
         return [UserDto.model_validate(record) for record in records]
 
     def _store_users(self, data_path: Path, users: list[UserDto]) -> None:
-        """Guarda los usuarios en el archivo JSON."""
+        """Guarda los usuarios en el archivo JSON con retry automático."""
 
         payload = [user.model_dump() for user in users]
+        
         if self._should_use_broker_reads() or self._should_replicate():
-            try:
-                self._broker_client.store_users(payload)
-            except BrokerBackendCommunicationError as exc:
+            max_retries = 3
+            last_exception = None
+            
+            for attempt in range(max_retries):
+                try:
+                    self._broker_client.store_users(payload)
+                    self._logger.debug(
+                        f"Usuarios sincronizados con broker (intento {attempt + 1}/{max_retries})"
+                    )
+                    break  # Éxito, salir del loop
+                except BrokerBackendCommunicationError as exc:
+                    last_exception = exc
+                    if attempt < max_retries - 1:
+                        # Exponential backoff: 1s, 2s, 4s
+                        sleep_time = 2 ** attempt
+                        self._logger.warning(
+                            f"Fallo al sincronizar usuarios con broker "
+                            f"(intento {attempt + 1}/{max_retries}). "
+                            f"Reintentando en {sleep_time}s: {exc}"
+                        )
+                        time.sleep(sleep_time)
+                    else:
+                        # Último intento falló
+                        self._logger.error(
+                            f"Todos los intentos de sincronización con broker fallaron "
+                            f"tras {max_retries} intentos: {exc}"
+                        )
+            
+            # Si todos los intentos fallaron, lanzar excepción
+            if last_exception:
                 raise BusinessRuleError(
-                    "No se pudo guardar usuarios en el broker"
-                ) from exc
+                    f"No se pudo guardar usuarios en broker tras {max_retries} intentos. "
+                    f"OTP NO sincronizado."
+                ) from last_exception
+        
+        # Guardar en JSON (cache local)
         self._sync_users_cache(data_path, payload)
 
     def _sync_users_cache(
