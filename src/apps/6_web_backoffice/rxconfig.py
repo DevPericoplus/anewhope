@@ -36,8 +36,10 @@ config = rx.Config(
     
     # Configuración de servidor
     env=rx.Env.PROD,
+    frontend_port=3002,  # Puerto diferente al frontend (3001)
     backend_port=8006,
-    api_url="https://tfmmyllm.ai/backoffice",
+    api_url="https://tfmmyllm.ai:8443",
+    deploy_url="https://tfmmyllm.ai:8443",
     backend_host="0.0.0.0",
     
     disable_plugins=["reflex.plugins.sitemap.SitemapPlugin"],

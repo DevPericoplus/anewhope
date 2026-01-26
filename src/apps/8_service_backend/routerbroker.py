@@ -77,6 +77,14 @@ class BrokerBackendRouter:
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError("No se pudo cargar roles desde core") from exc
 
+    def store_roles(self, roles: list[dict[str, Any]]) -> None:
+        """Guarda roles en el backend core."""
+
+        try:
+            self._core_client.store_roles(roles)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError("No se pudo guardar roles en core") from exc
+
     def fetch_basic_permissions(self) -> list[dict[str, Any]]:
         """Obtiene permisos básicos desde el backend core."""
 
@@ -87,6 +95,16 @@ class BrokerBackendRouter:
                 "No se pudo cargar permisos desde core"
             ) from exc
 
+    def store_basic_permissions(self, permissions: list[dict[str, Any]]) -> None:
+        """Guarda permisos básicos en el backend core."""
+
+        try:
+            self._core_client.store_basic_permissions(permissions)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo guardar permisos básicos en core"
+            ) from exc
+
     def fetch_low_level_permissions(self) -> list[dict[str, Any]]:
         """Obtiene permisos de bajo nivel desde el backend core."""
 
@@ -95,6 +113,16 @@ class BrokerBackendRouter:
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(
                 "No se pudo cargar permisos de bajo nivel desde core"
+            ) from exc
+
+    def store_low_level_permissions(self, permissions: list[dict[str, Any]]) -> None:
+        """Guarda permisos de bajo nivel en el backend core."""
+
+        try:
+            self._core_client.store_low_level_permissions(permissions)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo guardar permisos de bajo nivel en core"
             ) from exc
 
     def fetch_manage_roles(self) -> list[dict[str, Any]]:

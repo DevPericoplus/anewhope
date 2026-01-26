@@ -1,2 +1,2 @@
-"""Módulo principal de la aplicación web frontend"""
+"""Módulo principal de la aplicación web backoffice"""
 

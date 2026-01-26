@@ -36,11 +36,91 @@ You are an expert Python developer with a focus on writing clean, maintainable, 
 * **Async:** If the project uses `asyncio`, ensure tests are handled with `pytest-asyncio`.
 * **Dependencies:** Management is handled via `poetry` or `pip compile` (check `pyproject.toml`). Do not add new dependencies without asking.
 * **Ejecución:** Usar `./full_test.sh` para ejecutar toda la suite de tests con salida detallada.
-* **Entornos virtuales en tests:** 
-  - `.venv_frontend313` ejecuta tests de `2_shared_application` y `5_web_frontend`
-  - `.venv_middleware313` ejecuta tests de `7_service_frontend`, `8_service_backend`, `3_backend`
-* **Variables de entorno en tests:** Los tests deben configurar `STORAGE_MODE=mock` con 
-  `monkeypatch.setenv()` para evitar dependencias de servicios externos.
+
+### 5.1. Reglas de entornos virtuales en tests
+
+**CRÍTICO:** Los tests deben ejecutarse en el entorno virtual correcto para reflejar las dependencias 
+reales de cada aplicación y evitar falsos positivos o negativos.
+
+#### Matriz de entornos virtuales para tests:
+
+| Entorno Virtual | Tests que ejecuta | Aplicaciones testeadas |
+|-----------------|-------------------|------------------------|
+| `.venv_frontend313` | `2_shared_application/tests`, `5_web_frontend/tests` | Capa compartida, Frontend |
+| `.venv_backoffice313` | `6_web_backoffice/tests` | Backoffice |
+| `.venv_middleware313` | `7_service_frontend/tests`, `8_service_backend/tests`, `3_backend/tests` | Middleware, Broker, Backend Core |
+
+#### Reglas obligatorias:
+
+1. ✅ **Activar entorno virtual correcto:** Cada test DEBE ejecutarse en el entorno virtual de su aplicación
+2. ✅ **No usar entornos compartidos:** Nunca ejecutar tests de frontend con entorno de middleware o viceversa
+3. ✅ **Aislar dependencias:** Los tests NO deben importar módulos de otras aplicaciones fuera de shared
+4. ✅ **Mock de servicios externos:** Los tests deben configurar `STORAGE_MODE=mock` con `monkeypatch.setenv()`
+5. ✅ **Verificar antes de ejecutar:** El script `full_test.sh` valida automáticamente los entornos
+
+#### Ejemplo de test con entorno virtual correcto:
+
+```python
+# ✅ CORRECTO: Test de frontend (se ejecuta con .venv_frontend313)
+# src/apps/5_web_frontend/tests/test_user_creation.py
+
+import pytest
+from unittest.mock import patch
+
+def test_user_creation(monkeypatch):
+    """Test que se ejecuta en .venv_frontend313"""
+    # Aislar de servicios externos
+    monkeypatch.setenv("STORAGE_MODE", "mock")
+    
+    # Test logic here
+    pass
+```
+
+```python
+# ✅ CORRECTO: Test de middleware (se ejecuta con .venv_middleware313)
+# src/apps/7_service_frontend/tests/test_user_creation_middleware.py
+
+import pytest
+
+def test_middleware_user_creation(monkeypatch):
+    """Test que se ejecuta en .venv_middleware313"""
+    monkeypatch.setenv("STORAGE_MODE", "mock")
+    
+    # Test logic here
+    pass
+```
+
+```python
+# ❌ INCORRECTO: Test ejecutado en entorno equivocado
+# Si test_frontend.py se ejecuta con .venv_middleware313:
+# - Puede faltar dependencias específicas de frontend (reflex)
+# - Puede tener dependencias conflictivas
+# - Resultados no fiables
+```
+
+#### Variables de entorno en tests:
+
+* **Obligatorio:** Los tests deben configurar `STORAGE_MODE=mock` con `monkeypatch.setenv()` 
+  para evitar dependencias de servicios externos (MariaDB, Redis).
+* **Recomendado:** Usar fixtures para configuración común de variables de entorno.
+
+#### Verificación de tests:
+
+```bash
+# Ejecutar todos los tests con entornos correctos
+./full_test.sh
+
+# Verificar que entornos virtuales están correctamente configurados
+./scripts/verify_environments.sh
+```
+
+#### Debugging de tests:
+
+Si un test falla de forma inconsistente:
+1. Verificar que se ejecuta en el entorno virtual correcto
+2. Verificar que todas las dependencias están instaladas (`pip install -r requirements.txt`)
+3. Verificar que `STORAGE_MODE=mock` está configurado
+4. Verificar que no hay imports cruzados entre aplicaciones
 
 ## 5.1 Documentación de base de datos
 * **Obligatorio:** Cada cambio en la estructura de tablas debe documentarse en
@@ -92,14 +172,56 @@ You are an expert Python developer with a focus on writing clean, maintainable, 
 - **Plataformas:** `macbook` usa macOS 14.8.1; `dev/pre/pro` usan Oracle Linux 10.
 
 ### Entornos virtuales dedicados
-- **Obligatorio:** Cada aplicación principal usa su propio entorno virtual en la raíz:
-  - `.venv_frontend313` → `5_web_frontend`, `2_shared_application`
-  - `.venv_middleware313` → `7_service_frontend`, `8_service_backend`, `3_backend`
-  - `.venv_backend313` → Alternativa para `3_backend` en desarrollo
-  - `.venv_broker313` → Alternativa para `8_service_backend` en desarrollo
-  - `.venv_backoffice313` → `6_web_backoffice` (cuando se implemente)
-- **Scripts run.sh:** Cada `src/apps/*/run.sh` activa automáticamente su entorno virtual dedicado.
-- **Tests:** El script `full_test.sh` usa `.venv_frontend313` y `.venv_middleware313` según el módulo.
+
+**OBLIGATORIO:** Cada aplicación usa su propio entorno virtual dedicado. Esta regla es crítica para:
+- Aislar dependencias entre servicios
+- Evitar conflictos de versiones de librerías
+- Garantizar que los tests reflejan el comportamiento real en producción
+- Facilitar debugging y troubleshooting
+
+#### Matriz de asignación entorno virtual → aplicación:
+
+| Entorno Virtual | Puerto | Aplicaciones | Script run.sh | Script entrypoint.sh |
+|-----------------|--------|--------------|---------------|----------------------|
+| `.venv_backend313` | 8003 | `3_backend` | ✅ Usa entorno | ❌ Docker (deps en imagen) |
+| `.venv_frontend313` | 8005 | `5_web_frontend`, `2_shared_application` | ✅ Usa entorno | ❌ Docker (deps en imagen) |
+| `.venv_backoffice313` | 8006 | `6_web_backoffice` | ✅ Usa entorno | ❌ Docker (deps en imagen) |
+| `.venv_middleware313` | 8007 | `7_service_frontend` | ✅ Usa entorno | ❌ Docker (deps en imagen) |
+| `.venv_broker313` | 8008 | `8_service_backend` | ✅ Usa entorno | ❌ Docker (deps en imagen) |
+
+#### Reglas de diseño de entornos:
+
+1. ✅ **Aislamiento total:** Ningún entorno virtual es compartido por más de una aplicación
+2. ✅ **Scripts `run.sh`:** Cada `src/apps/*/run.sh` activa automáticamente su entorno dedicado
+3. ✅ **Scripts `entrypoint.sh`:** Usan Python del contenedor Docker (dependencias en imagen)
+4. ✅ **Tests:** El script `full_test.sh` activa el entorno correcto según el módulo testeado
+5. ✅ **Verificación:** El script `./scripts/verify_environments.sh` valida la configuración
+
+#### Verificación de entornos:
+
+```bash
+# Verificar que cada aplicación usa su entorno dedicado
+./scripts/verify_environments.sh
+
+# Resultado esperado:
+# ✅ 16 verificaciones exitosas
+# ❌ 0 errores
+# ⚠️  1 warning (trainer pendiente)
+```
+
+#### Consecuencias de compartir entornos (❌ PROHIBIDO):
+
+Si dos aplicaciones comparten el mismo entorno virtual:
+- ❌ Conflictos de versiones de dependencias
+- ❌ Tests que pasan localmente pero fallan en producción
+- ❌ Comportamiento impredecible entre entornos (dev/pre/pro)
+- ❌ Debugging complejo y pérdida de tiempo
+
+#### Documentación relacionada:
+
+- Auditoría completa: `docs/VIRTUAL_ENVIRONMENTS_AUDIT.md`
+- Script de verificación: `scripts/verify_environments.sh`
+- Asignaciones en `README.md` (sección "Entornos virtuales dedicados")
 
 ### Redis para sesión compartida
 - **Obligatorio:** Redis 8.x+ instalado y corriendo para compartir state entre frontend y backoffice.
@@ -178,6 +300,54 @@ You are an expert Python developer with a focus on writing clean, maintainable, 
 - **Ejemplos:**
   - Frontend: `docs/examples/frontend_state_with_shared_session.py`
   - Backoffice: `docs/examples/backoffice_state_with_shared_session.py`
+  - **Validación de permisos en UI:** `docs/examples/permission_validation_example.py`
+
+### Validación de permisos (low_level_permissions)
+
+**IMPORTANTE:** Los permisos de bajo nivel están alineados con la sesión/JWT y disponibles
+automáticamente en `SharedSessionState` como campos booleanos.
+
+**Reglas de validación en UI:**
+1. Usar `rx.cond(State.can_<permission>, ...)` para mostrar/ocultar elementos según permisos
+2. Los permisos siguen el patrón `can_<category>_<action>` (ej: `can_folder_rename`)
+3. **Ejemplo menú contextual:**
+   ```python
+   rx.cond(
+       state.can_folder_rename,  # Solo visible si tiene permiso
+       rx.menu.item("Renombrar", on_click=state.rename_folder),
+       rx.fragment(),
+   )
+   ```
+
+**Reglas de validación en backend:**
+1. **Obligatorio:** Validar permisos en backend aunque el frontend los oculte
+2. Usar `router.has_low_level_permission(session, "folder_rename")` en el middleware
+3. Retornar HTTP 403 si el usuario no tiene el permiso
+
+**Permisos de carpetas (folder_*):**
+- `can_folder_create`, `can_folder_rename`, `can_folder_delete`, `can_folder_move`, `can_folder_list`
+
+**Permisos de archivos (file_*):**
+- `can_file_upload`, `can_file_download`, `can_file_delete`, `can_file_rename`, `can_file_move`, `can_file_read`
+
+**Lista completa:** Ver `docs/examples/permission_validation_example.py` (45 permisos totales)
+
+### Configuración de Vite (allowedHosts)
+
+**IMPORTANTE:** Reflex usa Vite como servidor de desarrollo. A partir de Vite 6.0.9+, los hosts 
+están restringidos por seguridad (CVE-2025-30208). El dominio `tfmmyllm.ai` debe estar 
+explícitamente permitido.
+
+- **Script de parche:** `patch_vite_config.py` en cada app Reflex (frontend/backoffice)
+- **Ejecución automática:** Los `run.sh` de cada app ejecutan el parche antes de `reflex run`
+- **Hosts permitidos:** `tfmmyllm.ai`, `.tfmmyllm.ai` (subdominios), `localhost`
+- **Archivo afectado:** `.web/vite.config.js` (auto-generado por Reflex)
+
+**Reglas:**
+1. Si se ejecuta `reflex init` y se regenera `.web/`, el parche se aplica en el siguiente `./run.sh`
+2. Si añades nuevos hosts (otros dominios), actualiza `patch_vite_config.py` en ambas apps
+3. Nunca editar `.web/vite.config.js` manualmente sin usar el script de parche
+4. Documentar nuevos hosts en `README.md` (sección Troubleshooting, Problema 8)
 
 ## 6. Performance & Security
 * **Complexity:** Avoid $O(n^2)$ operations on large datasets. Use `set` for $O(1)$ lookups.

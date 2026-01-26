@@ -231,10 +231,23 @@ class JsonMockStorageAdapter:
         )
 
     def load_roles(self) -> list[RoleDto]:
-        """Carga roles desde JSON."""
+        """Carga roles desde JSON o MariaDB si JSON está vacío."""
 
         records = _load_json_list(self._roles_path)
+        # Si JSON está vacío, intentar cargar desde MariaDB
+        if not records:
+            try:
+                records = _load_roles_from_mariadb()
+            except StorageAdapterError:
+                pass  # Si falla MariaDB, devolver lista vacía
         return [RoleDto.model_validate(record) for record in records]
+
+    def store_roles(self, roles: list[RoleDto]) -> None:
+        """Guarda roles en JSON."""
+
+        _write_json_list(
+            self._roles_path, [role.model_dump() for role in roles]
+        )
 
     def load_basic_permissions(self) -> list[BasicPermissionDto]:
         """Carga permisos básicos desde JSON."""
@@ -242,10 +255,24 @@ class JsonMockStorageAdapter:
         records = _load_json_list(self._basic_permissions_path)
         return [BasicPermissionDto.model_validate(record) for record in records]
 
+    def store_basic_permissions(self, permissions: list[BasicPermissionDto]) -> None:
+        """Guarda permisos básicos en JSON."""
+
+        _write_json_list(
+            self._basic_permissions_path,
+            [permission.model_dump() for permission in permissions],
+        )
+
     def load_low_level_permissions(self) -> list[LowLevelPermissionDto]:
-        """Carga permisos de bajo nivel desde JSON."""
+        """Carga permisos de bajo nivel desde JSON o MariaDB si JSON está vacío."""
 
         records = _load_json_list(self._low_level_permissions_path)
+        # Si JSON está vacío, intentar cargar desde MariaDB
+        if not records:
+            try:
+                records = _load_low_level_permissions_from_mariadb()
+            except StorageAdapterError:
+                pass  # Si falla MariaDB, devolver lista vacía
         return [LowLevelPermissionDto.model_validate(record) for record in records]
 
     def store_low_level_permissions(
@@ -385,6 +412,114 @@ def _load_users_from_mariadb() -> list[dict[str, Any]]:
                 },
             }
         )
+    return records
+
+
+def _load_low_level_permissions_from_mariadb() -> list[dict[str, Any]]:
+    """Carga permisos de bajo nivel desde MariaDB."""
+
+    settings = load_mariadb_settings()
+    cli_path = settings["cli_path"]
+    db_name = settings["core_database"]
+    db_user = settings["reader_user"]
+    db_password = settings["reader_password"]
+    if not cli_path or not db_user:
+        raise StorageAdapterError("Faltan credenciales de lectura para MariaDB")
+
+    query = "SELECT * FROM low_level_permissions ORDER BY id_permissions"
+    cmd = [
+        cli_path,
+        "-u",
+        db_user,
+        f"-p{db_password}",
+        "--database",
+        db_name,
+        "-N",
+        "-B",
+        "-e",
+        query,
+    ]
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        raise StorageAdapterError(
+            f"No se pudo leer low_level_permissions desde MariaDB: {exc}"
+        ) from exc
+    records: list[dict[str, Any]] = []
+    # Campos de la tabla low_level_permissions
+    fields = [
+        "id_permissions", "folder_create", "folder_delete", "folder_rename",
+        "folder_read", "file_create", "file_read", "file_update", "file_delete",
+        "project_create", "project_read", "project_update", "project_delete",
+        "version_create", "version_read", "version_update", "version_delete",
+        "training_create", "training_read", "training_update", "training_delete",
+        "training_start", "training_stop", "parameters_create", "parameters_read",
+        "parameters_update", "parameters_delete", "notifications_create",
+        "notifications_read", "notifications_update", "notifications_delete",
+        "user_create", "user_read", "user_update", "user_delete", "user_enable",
+        "user_disable", "folder_list", "file_list", "project_list", "version_list"
+    ]
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        row = line.split("\t")
+        record: dict[str, Any] = {}
+        for idx, field in enumerate(fields):
+            if idx < len(row):
+                if field == "id_permissions":
+                    record[field] = int(row[idx]) if row[idx] else 0
+                else:
+                    # Convertir 0/1 a boolean
+                    record[field] = bool(int(row[idx])) if row[idx] else False
+        records.append(record)
+    return records
+
+
+def _load_roles_from_mariadb() -> list[dict[str, Any]]:
+    """Carga roles desde MariaDB."""
+
+    settings = load_mariadb_settings()
+    cli_path = settings["cli_path"]
+    db_name = settings["core_database"]
+    db_user = settings["reader_user"]
+    db_password = settings["reader_password"]
+    if not cli_path or not db_user:
+        raise StorageAdapterError("Faltan credenciales de lectura para MariaDB")
+
+    query = (
+        "SELECT identity_type_id, identity_type_name, identity_type_rol, "
+        "identity_type_group_permission FROM roles ORDER BY identity_type_id"
+    )
+    cmd = [
+        cli_path,
+        "-u",
+        db_user,
+        f"-p{db_password}",
+        "--database",
+        db_name,
+        "-N",
+        "-B",
+        "-e",
+        query,
+    ]
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        raise StorageAdapterError(
+            f"No se pudo leer roles desde MariaDB: {exc}"
+        ) from exc
+    records: list[dict[str, Any]] = []
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        row = line.split("\t")
+        perm_id = int(row[3]) if len(row) > 3 and row[3] else 0
+        records.append({
+            "identity_type_id": int(row[0]) if row[0] else 0,
+            "identity_type_name": row[1] or "",
+            "identity_type_rol": row[2] or "",
+            "identity_type_group_permissions": [perm_id] if perm_id else [],
+        })
     return records
 
 

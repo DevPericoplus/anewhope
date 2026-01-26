@@ -112,15 +112,12 @@ class State(SharedSessionState):
         permissions_response = get_user_permissions(access_token, session_token)
         permissions_list = permissions_response.get("permissions", [])
         
-        # Convertir lista de permisos a diccionario para SharedSessionState
-        permissions_dict = {}
-        for perm in permissions_list:
-            perm_name = perm.get("permission_name", "")
-            perm_value = perm.get("permission_value", False)
-            if perm_name:
-                permissions_dict[perm_name] = perm_value
+        # Los permisos de bajo nivel (training_create, folder_rename, etc.)
+        # vienen como diccionario directamente del middleware
+        low_level_permissions = permissions_response.get("low_level_permissions", {})
         
-        # Cargar datos en SharedSessionState (se sincroniza automáticamente con Redis)
+        # Cargar datos en SharedSessionState con low_level_permissions
+        # Estos permisos determinan funcionalidades como acceso al Backoffice
         self.load_user_data(
             user_id=int(response.get("user_id", 0)),
             organization_id=int(response.get("organization_id", 0)),
@@ -130,15 +127,15 @@ class State(SharedSessionState):
             user_mobile=response.get("mobile", ""),
             access_token=access_token,
             session_token=session_token,
-            permissions=permissions_dict,
+            permissions=low_level_permissions,
         )
         
         # Actualizar estado local del frontend
-        self.user_logged_in = True
+        self.is_logged_in = True
         self.login_error = ""
         self.otp_request_message = ""
         self.user_active_menu = "organizacion"
-        self.user_permissions = permissions_list  # Mantener lista para compatibilidad UI
+        self.user_permissions = permissions_list  # basic_permissions para UI
     
     def user_logout(self):
         """Handle user portal logout."""
@@ -149,7 +146,7 @@ class State(SharedSessionState):
         self.clear_session()
         
         # Limpiar estado local del frontend
-        self.user_logged_in = False
+        self.is_logged_in = False
         self.user_username = ""
         self.user_password = ""
         self.user_otp = ""
@@ -492,52 +489,49 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             flujos_diagram(),
             rx.box(height="0"),
         ),
+        # Paneles de métricas: visibles solo en menú "inicio"
         rx.cond(
-            rx.cond(
-                is_logged_in,
-                rx.cond(active_item != "flujos", active_item != "organizacion", False),
-                False,
-            ),
+            active_item == "inicio",
             rx.flex(
-            rx.box(
-                rx.vstack(
-                    rx.text("Perplejidad", color=COLORS["muted_foreground"], font_size="0.9em"),
-                    rx.text("≈30", font_size="2em", font_weight="bold", color=COLORS["foreground"]),
-                    spacing="1",
+                rx.box(
+                    rx.vstack(
+                        rx.text("Perplejidad", color=COLORS["muted_foreground"], font_size="0.9em"),
+                        rx.text("≈30", font_size="2em", font_weight="bold", color=COLORS["foreground"]),
+                        spacing="1",
+                    ),
+                    padding="1.5em",
+                    background_color=COLORS["card"],
+                    border=f"1px solid {COLORS['border']}",
+                    border_radius="0.5em",
+                    flex="1",
                 ),
-                padding="1.5em",
-                background_color=COLORS["card"],
-                border=f"1px solid {COLORS['border']}",
-                border_radius="0.5em",
-                flex="1",
-            ),
-            rx.box(
-                rx.vstack(
-                    rx.text("BLEU Score", color=COLORS["muted_foreground"], font_size="0.9em"),
-                    rx.text("0.5+", font_size="2em", font_weight="bold", color=COLORS["foreground"]),
-                    spacing="1",
+                rx.box(
+                    rx.vstack(
+                        rx.text("BLEU Score", color=COLORS["muted_foreground"], font_size="0.9em"),
+                        rx.text("0.5+", font_size="2em", font_weight="bold", color=COLORS["foreground"]),
+                        spacing="1",
+                    ),
+                    padding="1.5em",
+                    background_color=COLORS["card"],
+                    border=f"1px solid {COLORS['border']}",
+                    border_radius="0.5em",
+                    flex="1",
                 ),
-                padding="1.5em",
-                background_color=COLORS["card"],
-                border=f"1px solid {COLORS['border']}",
-                border_radius="0.5em",
-                flex="1",
-            ),
-            rx.box(
-                rx.vstack(
-                    rx.text("F1 Score", color=COLORS["muted_foreground"], font_size="0.9em"),
-                    rx.text("≈70−80", font_size="2em", font_weight="bold", color=COLORS["foreground"]),
-                    spacing="1",
+                rx.box(
+                    rx.vstack(
+                        rx.text("F1 Score", color=COLORS["muted_foreground"], font_size="0.9em"),
+                        rx.text("≈70−80", font_size="2em", font_weight="bold", color=COLORS["foreground"]),
+                        spacing="1",
+                    ),
+                    padding="1.5em",
+                    background_color=COLORS["card"],
+                    border=f"1px solid {COLORS['border']}",
+                    border_radius="0.5em",
+                    flex="1",
                 ),
-                padding="1.5em",
-                background_color=COLORS["card"],
-                border=f"1px solid {COLORS['border']}",
-                border_radius="0.5em",
-                flex="1",
-            ),
-            direction="row",
-            spacing="4",
-            width="100%",
+                direction="row",
+                spacing="4",
+                width="100%",
             ),
             rx.box(height="0"),
         ),
@@ -853,7 +847,7 @@ def footer() -> rx.Component:
 def user_portal() -> rx.Component:
     """User portal main page."""
     return rx.cond(
-        State.user_logged_in,
+        State.is_logged_in,
         rx.vstack(
             rx.hstack(
                 logo(),
@@ -884,7 +878,7 @@ def user_portal() -> rx.Component:
             rx.hstack(
                 rx.box(
                     rx.vstack(
-                        sidebar_menu(State.user_logged_in),
+                        sidebar_menu(State.is_logged_in),
                         spacing="4",
                         padding="1.5em",
                     ),
@@ -895,7 +889,7 @@ def user_portal() -> rx.Component:
                     height="100%",
                 ),
                 rx.box(
-                    info_panel(State.user_active_menu, State.user_logged_in),
+                    info_panel(State.user_active_menu, State.is_logged_in),
                     width="75%",
                     background_color=COLORS["background"],
                     padding="0",
@@ -932,7 +926,7 @@ def user_portal() -> rx.Component:
                 rx.box(
                     rx.vstack(
                         login_panel(),
-                        sidebar_menu(State.user_logged_in),
+                        sidebar_menu(State.is_logged_in),
                         spacing="4",
                         padding="1.5em",
                     ),
@@ -943,7 +937,7 @@ def user_portal() -> rx.Component:
                     height="100%",
                 ),
                 rx.box(
-                    info_panel(State.user_active_menu, State.user_logged_in),
+                    info_panel(State.user_active_menu, State.is_logged_in),
                     width="75%",
                     background_color=COLORS["background"],
                     padding="0",

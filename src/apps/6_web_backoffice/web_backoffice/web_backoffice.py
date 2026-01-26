@@ -20,12 +20,12 @@ COLORS = {
     "background": "#1a1a1a",
     "card": "#6B6B6B",
     "foreground": "#f2f2f5",
-    "primary": "#22c55e",
+    "primary": "#FF8C00",  # Naranja para backoffice
     "secondary": "#383854",
     "border": "#000000",
     "input": "#383854",
     "muted_foreground": "#E0E0E0",
-    "accent": "#22c55e",
+    "accent": "#FF8C00",  # Naranja para backoffice
 }
 
 # Define the State class for managing application state
@@ -43,7 +43,7 @@ class State(SharedSessionState):
     otp_request_message: str = ""
     
     # Nota: Los siguientes campos ya vienen de SharedSessionState:
-    # - user_logged_in, access_token, session_token, user_id, organization_id
+    # - is_logged_in, access_token, session_token, user_id, organization_id
     # - user_name, user_email, user_mobile, identity_type_id
     # - 45 permisos (can_training_create, can_folder_rename, etc.)
     # - Métodos: load_user_data(), clear_session(), go_to_frontend(), etc.
@@ -54,6 +54,79 @@ class State(SharedSessionState):
         Redirige al frontend si no tiene permiso.
         """
         if not self.can_access_backoffice:
+            return self.go_to_frontend()
+    
+    def load_tokens_from_url(self, access_token: str, session_token: str, user_id: str, org_id: str):
+        """
+        Carga tokens desde parámetros de URL (pasados desde el frontend).
+        """
+        if access_token and session_token:
+            self.access_token = access_token
+            self.session_token = session_token
+            self.user_id = int(user_id) if user_id else 0
+            self.organization_id = int(org_id) if org_id else 0
+            self.is_logged_in = True
+            # Cargar permisos desde el middleware
+            return self.load_permissions_from_session()
+        return None
+    
+    def load_permissions_from_session(self):
+        """
+        Carga permisos del usuario desde el middleware si no están en sesión.
+        
+        Este método se ejecuta al entrar al backoffice para asegurar que:
+        1. Los permisos están cargados en SharedSessionState (sincronizados vía Redis)
+        2. Si no hay permisos en Redis, los carga desde el middleware (fallback)
+        3. Verifica que el usuario tiene acceso al backoffice
+        
+        Returns:
+            Redirección al frontend si no tiene acceso o error
+        """
+        # Si no hay tokens, redirigir al frontend para login
+        if not self.access_token or not self.session_token:
+            self.login_error = "Debe iniciar sesión desde el sitio principal"
+            return self.go_to_frontend()
+        
+        # Si ya tiene permisos cargados (desde Redis), verificar acceso
+        if self.can_training_create:
+            # Los permisos ya están sincronizados desde el frontend vía Redis
+            self.current_app = "backoffice"
+            self.update_activity()
+            return None
+        
+        # Fallback: Si Redis no tiene permisos, cargar desde middleware
+        try:
+            permissions_response = get_user_permissions(
+                self.access_token, self.session_token
+            )
+            
+            if not permissions_response:
+                self.login_error = "No se pudieron obtener los permisos del usuario"
+                return self.go_to_frontend()
+            
+            # Obtener permisos de bajo nivel
+            low_level_permissions = permissions_response.get("low_level_permissions", {})
+            
+            # Actualizar permisos en SharedSessionState (se sincroniza con Redis)
+            self._load_permissions(low_level_permissions)
+            
+            # Actualizar datos de usuario si es necesario
+            self.user_id = int(permissions_response.get("user_id", self.user_id))
+            self.organization_id = int(permissions_response.get("organization_id", self.organization_id))
+            self.identity_type_id = int(permissions_response.get("identity_type_id", self.identity_type_id))
+            self.is_logged_in = True
+            self.current_app = "backoffice"
+            self.update_activity()
+            
+            # Verificar que tiene acceso al backoffice
+            if not self.can_access_backoffice:
+                self.login_error = "No tiene permisos para acceder al backoffice"
+                return self.go_to_frontend()
+            
+            return None
+            
+        except Exception as exc:
+            self.login_error = f"Error al cargar permisos: {str(exc)}"
             return self.go_to_frontend()
     
     def set_user_menu(self, menu: str):
@@ -68,7 +141,35 @@ class State(SharedSessionState):
             return FlujosState.initialize_from_session(organization_id)
 
     def on_page_load(self):
-        """Ejecuta acciones al recargar la página."""
+        """
+        Ejecuta acciones al recargar la página del backoffice.
+        
+        1. Carga tokens desde URL si están presentes (navegación desde frontend)
+        2. Carga permisos desde sesión (Redis) o middleware (fallback)
+        3. Verifica acceso al backoffice
+        4. Inicializa componentes según el menú activo
+        """
+        # Leer tokens de query params (pasados desde el frontend)
+        params = self.router.page.params
+        access_token = params.get("access_token", "")
+        session_token = params.get("session_token", "")
+        user_id = params.get("user_id", "")
+        org_id = params.get("org_id", "")
+        
+        # Si vienen tokens en la URL, cargarlos primero
+        if access_token and session_token:
+            self.access_token = access_token
+            self.session_token = session_token
+            self.user_id = int(user_id) if user_id else 0
+            self.organization_id = int(org_id) if org_id else 0
+            self.is_logged_in = True
+        
+        # Cargar permisos (obligatorio)
+        permission_result = self.load_permissions_from_session()
+        if permission_result is not None:
+            return permission_result
+        
+        # Continuar con la lógica de inicialización de componentes
         if self.user_active_menu == "flujos":
             organization_id = self.organization_id
             if organization_id <= 0 and self.access_token:
@@ -123,7 +224,7 @@ class State(SharedSessionState):
         self.clear_session()
         
         # Limpiar estado local del backoffice
-        self.user_logged_in = False
+        self.is_logged_in = False
         self.user_username = ""
         self.user_password = ""
         self.user_otp = ""
@@ -828,7 +929,7 @@ def footer() -> rx.Component:
 def user_portal() -> rx.Component:
     """User portal main page."""
     return rx.cond(
-        State.user_logged_in,
+        State.is_logged_in,
         rx.vstack(
             rx.hstack(
                 logo(),
@@ -857,7 +958,7 @@ def user_portal() -> rx.Component:
             rx.hstack(
                 rx.box(
                     rx.vstack(
-                        sidebar_menu(State.user_logged_in),
+                        sidebar_menu(State.is_logged_in),
                         spacing="4",
                         padding="1.5em",
                     ),
@@ -868,7 +969,7 @@ def user_portal() -> rx.Component:
                     height="100%",
                 ),
                 rx.box(
-                    info_panel(State.user_active_menu, State.user_logged_in),
+                    info_panel(State.user_active_menu, State.is_logged_in),
                     width="75%",
                     background_color=COLORS["background"],
                     padding="0",
@@ -904,8 +1005,8 @@ def user_portal() -> rx.Component:
             rx.hstack(
                 rx.box(
                     rx.vstack(
-                        login_panel(),
-                        sidebar_menu(State.user_logged_in),
+                        # Sin login_panel - el usuario ya está logado desde el frontend
+                        sidebar_menu(State.is_logged_in),
                         spacing="4",
                         padding="1.5em",
                     ),
@@ -916,7 +1017,7 @@ def user_portal() -> rx.Component:
                     height="100%",
                 ),
                 rx.box(
-                    info_panel(State.user_active_menu, State.user_logged_in),
+                    info_panel(State.user_active_menu, State.is_logged_in),
                     width="75%",
                     background_color=COLORS["background"],
                     padding="0",

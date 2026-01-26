@@ -81,17 +81,32 @@ class CoreBackendClient:
         data = self._request("GET", "/roles")
         return list(data or [])
 
+    def store_roles(self, roles: list[dict[str, Any]]) -> None:
+        """Guarda la lista de roles."""
+
+        self._request("PUT", "/roles", payload=roles)
+
     def fetch_basic_permissions(self) -> list[dict[str, Any]]:
         """Obtiene la lista de permisos básicos."""
 
         data = self._request("GET", "/basic-permissions")
         return list(data or [])
 
+    def store_basic_permissions(self, permissions: list[dict[str, Any]]) -> None:
+        """Guarda la lista de permisos básicos."""
+
+        self._request("PUT", "/basic-permissions", payload=permissions)
+
     def fetch_low_level_permissions(self) -> list[dict[str, Any]]:
         """Obtiene la lista de permisos de bajo nivel."""
 
         data = self._request("GET", "/low-level-permissions")
         return list(data or [])
+
+    def store_low_level_permissions(self, permissions: list[dict[str, Any]]) -> None:
+        """Guarda la lista de permisos de bajo nivel."""
+
+        self._request("PUT", "/low-level-permissions", payload=permissions)
 
     def fetch_manage_roles(self) -> list[dict[str, Any]]:
         """Obtiene la lista de roles por organización."""

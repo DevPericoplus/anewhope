@@ -333,11 +333,19 @@ class SharedSessionState(rx.State):
         """
         Marca que el usuario está navegando al backoffice.
         Actualiza current_app y last_activity.
+        Pasa los tokens como parámetros para sincronizar la sesión.
         """
         self.current_app = "backoffice"
         self.last_activity = datetime.now().isoformat()
-        # La redirección real se maneja en el componente UI
-        return rx.redirect("https://tfmmyllm.ai/backoffice")
+        # Pasar tokens en la URL para que el backoffice pueda cargar la sesión
+        import urllib.parse
+        params = urllib.parse.urlencode({
+            "access_token": self.access_token,
+            "session_token": self.session_token,
+            "user_id": str(self.user_id),
+            "org_id": str(self.organization_id),
+        })
+        return rx.redirect(f"https://tfmmyllm.ai:8443?{params}")
     
     def go_to_frontend(self):
         """
@@ -359,7 +367,7 @@ class SharedSessionState(rx.State):
         # Por ahora solo limpiamos el estado local
         return rx.redirect("https://tfmmyllm.ai")
     
-    @property
+    @rx.var
     def can_access_backoffice(self) -> bool:
         """
         Determina si el usuario puede acceder al backoffice.
@@ -381,7 +389,7 @@ class SharedSessionState(rx.State):
         """
         return self.user_name if self.is_logged_in else ""
     
-    @property
+    @rx.var
     def user_display_email(self) -> str:
         """
         Email del usuario para mostrar en la UI.

@@ -150,6 +150,14 @@ class BackendCoreRouter:
         except StorageAdapterError as exc:
             raise BackendCoreBusinessError("No se pudo cargar roles") from exc
 
+    def store_roles(self, roles: list[RoleDto]) -> None:
+        """Guarda roles."""
+
+        try:
+            self._storage.store_roles(roles)
+        except StorageAdapterError as exc:
+            raise BackendCoreBusinessError("No se pudo guardar roles") from exc
+
     def list_basic_permissions(self) -> list[BasicPermissionDto]:
         """Lista permisos básicos."""
 
@@ -160,6 +168,16 @@ class BackendCoreRouter:
                 "No se pudo cargar permisos básicos"
             ) from exc
 
+    def store_basic_permissions(self, permissions: list[BasicPermissionDto]) -> None:
+        """Guarda permisos básicos."""
+
+        try:
+            self._storage.store_basic_permissions(permissions)
+        except StorageAdapterError as exc:
+            raise BackendCoreBusinessError(
+                "No se pudo guardar permisos básicos"
+            ) from exc
+
     def list_low_level_permissions(self) -> list[LowLevelPermissionDto]:
         """Lista permisos de bajo nivel."""
 
@@ -168,6 +186,16 @@ class BackendCoreRouter:
         except StorageAdapterError as exc:
             raise BackendCoreBusinessError(
                 "No se pudo cargar permisos de bajo nivel"
+            ) from exc
+
+    def store_low_level_permissions(self, permissions: list[LowLevelPermissionDto]) -> None:
+        """Guarda permisos de bajo nivel."""
+
+        try:
+            self._storage.store_low_level_permissions(permissions)
+        except StorageAdapterError as exc:
+            raise BackendCoreBusinessError(
+                "No se pudo guardar permisos de bajo nivel"
             ) from exc
 
     def list_manage_roles(self) -> list[ManageRoleByOrgDto]:

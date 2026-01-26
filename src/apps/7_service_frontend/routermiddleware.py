@@ -1836,9 +1836,28 @@ class RouterMiddleware:
         return [LowLevelPermissionDto.model_validate(record) for record in records]
 
     def _get_permissions_for_role(self, identity_type_id: int) -> list[dict[str, Any]]:
-        """Obtiene permisos básicos para un rol."""
+        """
+        Obtiene permisos básicos para un rol con fallback a MariaDB.
+        
+        Jerarquía de consulta:
+        1. Intenta cargar desde JSON local (roles.json + basic_permissions.json)
+        2. Si JSON está vacío, consulta broker backend → MariaDB
+        3. Si todo falla, retorna lista vacía
+        """
 
+        # Intentar cargar desde JSON local
         roles = self._load_roles(self._get_roles_path())
+        
+        # Si roles.json está vacío, intentar fallback a MariaDB vía broker
+        if not roles:
+            self._logger.warning(
+                "roles.json está vacío (identity_type_id=%s). "
+                "Intentando fallback a MariaDB para permisos básicos...",
+                identity_type_id
+            )
+            return self._get_basic_permissions_from_broker_fallback(identity_type_id)
+        
+        # Buscar el rol específico
         role_entry = next(
             (
                 role
@@ -1847,23 +1866,175 @@ class RouterMiddleware:
             ),
             None,
         )
+        
         if role_entry is None:
-            return []
+            self._logger.warning(
+                "Rol no encontrado en roles.json (identity_type_id=%s). "
+                "Intentando fallback a MariaDB para permisos básicos...",
+                identity_type_id
+            )
+            return self._get_basic_permissions_from_broker_fallback(identity_type_id)
 
         permission_ids = role_entry.identity_type_group_permissions
         permissions = self._load_basic_permissions(self._get_basic_permissions_path())
-        return [
+        
+        # Si basic_permissions.json está vacío, intentar fallback
+        if not permissions:
+            self._logger.warning(
+                "basic_permissions.json está vacío (identity_type_id=%s). "
+                "Intentando fallback a MariaDB para permisos básicos...",
+                identity_type_id
+            )
+            return self._get_basic_permissions_from_broker_fallback(identity_type_id)
+        
+        result = [
             permission.model_dump(by_alias=True)
             for permission in permissions
             if permission.id in permission_ids
         ]
+        
+        if result:
+            self._logger.debug(
+                "Permisos básicos cargados desde JSON local "
+                "(identity_type_id=%s, count=%s, source=JSON)",
+                identity_type_id,
+                len(result)
+            )
+        else:
+            self._logger.warning(
+                "Permisos básicos no encontrados en JSON "
+                "(identity_type_id=%s, permission_ids=%s). "
+                "Intentando fallback a MariaDB...",
+                identity_type_id,
+                permission_ids
+            )
+            return self._get_basic_permissions_from_broker_fallback(identity_type_id)
+        
+        return result
+    
+    def _get_basic_permissions_from_broker_fallback(
+        self, identity_type_id: int
+    ) -> list[dict[str, Any]]:
+        """
+        Fallback: Consulta permisos básicos desde MariaDB vía broker backend.
+        
+        Args:
+            identity_type_id: ID del tipo de identidad (rol)
+        
+        Returns:
+            Lista de permisos básicos o [] si no se encuentran
+        """
+        
+        try:
+            # 1. Obtener roles desde broker → MariaDB
+            self._logger.info(
+                "Fallback: Consultando roles desde MariaDB para permisos básicos "
+                "(identity_type_id=%s)...",
+                identity_type_id
+            )
+            broker_roles = self._broker_client.fetch_roles()
+            
+            if not broker_roles:
+                self._logger.error(
+                    "Fallback: Tabla 'roles' en MariaDB está vacía "
+                    "(identity_type_id=%s)",
+                    identity_type_id
+                )
+                return []
+            
+            # 2. Buscar el rol específico
+            role_record = next(
+                (
+                    role for role in broker_roles
+                    if role.get("identity_type_id") == identity_type_id
+                ),
+                None
+            )
+            
+            if role_record is None:
+                self._logger.error(
+                    "Fallback: Rol no encontrado en MariaDB "
+                    "(identity_type_id=%s)",
+                    identity_type_id
+                )
+                return []
+            
+            permission_ids = role_record.get("identity_type_group_permissions", [])
+            
+            # 3. Obtener permisos básicos desde broker → MariaDB
+            self._logger.info(
+                "Fallback: Consultando basic_permissions desde MariaDB "
+                "(permission_ids=%s)...",
+                permission_ids
+            )
+            broker_permissions = self._broker_client.fetch_basic_permissions()
+            
+            if not broker_permissions:
+                self._logger.error(
+                    "Fallback: Tabla 'basic_permissions' en MariaDB está vacía "
+                    "(identity_type_id=%s)",
+                    identity_type_id
+                )
+                return []
+            
+            # 4. Filtrar permisos
+            result = [
+                perm for perm in broker_permissions
+                if perm.get("id") in permission_ids
+            ]
+            
+            self._logger.info(
+                "✅ Fallback exitoso: Permisos básicos cargados desde MariaDB "
+                "(identity_type_id=%s, count=%s, source=MariaDB)",
+                identity_type_id,
+                len(result)
+            )
+            return result
+            
+        except BrokerBackendCommunicationError as exc:
+            self._logger.error(
+                "Fallback: Error al comunicarse con broker backend "
+                "(identity_type_id=%s): %s",
+                identity_type_id,
+                exc,
+                exc_info=True
+            )
+            return []
+        except Exception as exc:
+            self._logger.error(
+                "Fallback: Error inesperado al consultar MariaDB "
+                "(identity_type_id=%s): %s",
+                identity_type_id,
+                exc,
+                exc_info=True
+            )
+            return []
 
     def _get_low_level_permissions_for_role(
         self, identity_type_id: int
     ) -> dict[str, Any]:
-        """Obtiene permisos de bajo nivel para un rol."""
+        """
+        Obtiene permisos de bajo nivel para un rol con fallback a MariaDB.
+        
+        Jerarquía de consulta:
+        1. Intenta cargar desde JSON local (roles.json + low_level_permisions.json)
+        2. Si JSON está vacío, consulta broker backend → MariaDB
+        3. Si todo falla, retorna diccionario vacío
+        """
 
+        # Intentar cargar desde JSON local
         roles = self._load_roles(self._get_roles_path())
+        
+        # Si roles.json está vacío, intentar fallback a MariaDB vía broker
+        if not roles:
+            self._logger.warning(
+                "roles.json está vacío (identity_type_id=%s). "
+                "Intentando fallback a MariaDB vía broker backend...",
+                identity_type_id
+            )
+            return self._get_low_level_permissions_from_broker_fallback(identity_type_id)
+        
+        # Buscar el rol específico
         role_entry = next(
             (
                 role
@@ -1872,20 +2043,179 @@ class RouterMiddleware:
             ),
             None,
         )
+        
         if role_entry is None:
-            return {}
+            self._logger.warning(
+                "Rol no encontrado en roles.json (identity_type_id=%s). "
+                "Intentando fallback a MariaDB vía broker backend...",
+                identity_type_id
+            )
+            return self._get_low_level_permissions_from_broker_fallback(identity_type_id)
 
         permission_ids = role_entry.identity_type_group_permissions
         if not permission_ids:
-            return {}
+            self._logger.warning(
+                "Rol sin permisos asignados en roles.json (identity_type_id=%s, "
+                "role=%s). Intentando fallback a MariaDB vía broker backend...",
+                identity_type_id,
+                role_entry.identity_type_name
+            )
+            return self._get_low_level_permissions_from_broker_fallback(identity_type_id)
 
+        # Cargar permisos de bajo nivel desde JSON
         permissions = self._load_low_level_permissions(
             self._get_low_level_permissions_path()
         )
+        
+        # Si low_level_permisions.json está vacío, intentar fallback
+        if not permissions:
+            self._logger.warning(
+                "low_level_permisions.json está vacío (identity_type_id=%s). "
+                "Intentando fallback a MariaDB vía broker backend...",
+                identity_type_id
+            )
+            return self._get_low_level_permissions_from_broker_fallback(identity_type_id)
+        
+        # Buscar los permisos específicos
         for permission in permissions:
             if permission.id_permissions == permission_ids[0]:
+                self._logger.debug(
+                    "Permisos cargados desde JSON local (identity_type_id=%s, "
+                    "id_permissions=%s, source=JSON)",
+                    identity_type_id,
+                    permission.id_permissions
+                )
                 return permission.model_dump()
-        return {}
+        
+        # No se encontraron los permisos en JSON, intentar fallback
+        self._logger.warning(
+            "Permisos no encontrados en low_level_permisions.json "
+            "(identity_type_id=%s, permission_ids=%s). "
+            "Intentando fallback a MariaDB vía broker backend...",
+            identity_type_id,
+            permission_ids
+        )
+        return self._get_low_level_permissions_from_broker_fallback(identity_type_id)
+    
+    def _get_low_level_permissions_from_broker_fallback(
+        self, identity_type_id: int
+    ) -> dict[str, Any]:
+        """
+        Fallback: Consulta permisos directamente desde MariaDB vía broker backend.
+        
+        Este método se llama cuando los archivos JSON están vacíos o incompletos.
+        Consulta la tabla 'low_level_permission' en MariaDB a través del broker.
+        
+        Args:
+            identity_type_id: ID del tipo de identidad (rol)
+        
+        Returns:
+            Diccionario con permisos de bajo nivel o {} si no se encuentran
+        """
+        
+        try:
+            # 1. Obtener todos los roles desde broker → MariaDB
+            self._logger.info(
+                "Fallback: Consultando roles desde MariaDB (identity_type_id=%s)...",
+                identity_type_id
+            )
+            broker_roles = self._broker_client.fetch_roles()
+            
+            if not broker_roles:
+                self._logger.error(
+                    "Fallback: Tabla 'roles' en MariaDB está vacía. "
+                    "No se pueden obtener permisos (identity_type_id=%s)",
+                    identity_type_id
+                )
+                return {}
+            
+            # 2. Buscar el rol específico
+            role_record = next(
+                (
+                    role for role in broker_roles
+                    if role.get("identity_type_id") == identity_type_id
+                ),
+                None
+            )
+            
+            if role_record is None:
+                self._logger.error(
+                    "Fallback: Rol no encontrado en MariaDB (identity_type_id=%s). "
+                    "Roles disponibles: %s",
+                    identity_type_id,
+                    [r.get("identity_type_id") for r in broker_roles]
+                )
+                return {}
+            
+            permission_ids = role_record.get("identity_type_group_permissions", [])
+            if not permission_ids:
+                self._logger.error(
+                    "Fallback: Rol sin permisos asignados en MariaDB "
+                    "(identity_type_id=%s, role=%s)",
+                    identity_type_id,
+                    role_record.get("identity_type_name")
+                )
+                return {}
+            
+            # 3. Obtener permisos de bajo nivel desde broker → MariaDB
+            self._logger.info(
+                "Fallback: Consultando low_level_permission desde MariaDB "
+                "(id_permissions=%s)...",
+                permission_ids[0]
+            )
+            broker_permissions = self._broker_client.fetch_low_level_permissions()
+            
+            if not broker_permissions:
+                self._logger.error(
+                    "Fallback: Tabla 'low_level_permission' en MariaDB está vacía. "
+                    "No se pueden obtener permisos (identity_type_id=%s)",
+                    identity_type_id
+                )
+                return {}
+            
+            # 4. Buscar los permisos específicos
+            for permission in broker_permissions:
+                if permission.get("id_permissions") == permission_ids[0]:
+                    self._logger.info(
+                        "✅ Fallback exitoso: Permisos cargados desde MariaDB "
+                        "(identity_type_id=%s, id_permissions=%s, source=MariaDB, "
+                        "training_create=%s, can_access_backoffice=posible)",
+                        identity_type_id,
+                        permission.get("id_permissions"),
+                        permission.get("training_create", False)
+                    )
+                    return permission
+            
+            # No se encontraron los permisos
+            self._logger.error(
+                "Fallback: Permisos no encontrados en MariaDB "
+                "(identity_type_id=%s, permission_ids=%s). "
+                "Permisos disponibles: %s",
+                identity_type_id,
+                permission_ids,
+                [p.get("id_permissions") for p in broker_permissions]
+            )
+            return {}
+            
+        except BrokerBackendCommunicationError as exc:
+            self._logger.error(
+                "Fallback: Error al comunicarse con broker backend "
+                "(identity_type_id=%s): %s. "
+                "No se pueden obtener permisos desde MariaDB.",
+                identity_type_id,
+                exc,
+                exc_info=True
+            )
+            return {}
+        except Exception as exc:
+            self._logger.error(
+                "Fallback: Error inesperado al consultar MariaDB "
+                "(identity_type_id=%s): %s",
+                identity_type_id,
+                exc,
+                exc_info=True
+            )
+            return {}
 
     def _load_manage_roles(self, data_path: Path) -> list[ManageRoleByOrgDto]:
         """Carga la asignación de roles por organización."""

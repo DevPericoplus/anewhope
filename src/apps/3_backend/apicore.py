@@ -463,6 +463,60 @@ def list_manage_roles(
         ) from exc
 
 
+@app.put("/roles")
+def store_roles(
+    payload: list[dict[str, Any]],
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Guarda roles en MariaDB."""
+
+    try:
+        roles = [RoleDto.model_validate(record) for record in payload]
+        router.store_roles(roles)
+        return {"success": True, "count": len(roles)}
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+
+@app.put("/basic-permissions")
+def store_basic_permissions(
+    payload: list[dict[str, Any]],
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Guarda permisos básicos en MariaDB."""
+
+    try:
+        permissions = [BasicPermissionDto.model_validate(record) for record in payload]
+        router.store_basic_permissions(permissions)
+        return {"success": True, "count": len(permissions)}
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+
+@app.put("/low-level-permissions")
+def store_low_level_permissions(
+    payload: list[dict[str, Any]],
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Guarda permisos de bajo nivel en MariaDB."""
+
+    try:
+        permissions = [LowLevelPermissionDto.model_validate(record) for record in payload]
+        router.store_low_level_permissions(permissions)
+        return {"success": True, "count": len(permissions)}
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+
 @app.put("/manage-roles-by-org")
 def store_manage_roles(
     payload: list[dict[str, Any]],

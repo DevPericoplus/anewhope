@@ -377,6 +377,57 @@ def list_manage_roles(
         ) from exc
 
 
+@app.put("/roles")
+def store_roles(
+    payload: list[dict[str, Any]],
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Guarda roles en MariaDB."""
+
+    try:
+        router.store_roles(payload)
+        return {"success": True, "count": len(payload)}
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.put("/basic-permissions")
+def store_basic_permissions(
+    payload: list[dict[str, Any]],
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Guarda permisos básicos en MariaDB."""
+
+    try:
+        router.store_basic_permissions(payload)
+        return {"success": True, "count": len(payload)}
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.put("/low-level-permissions")
+def store_low_level_permissions(
+    payload: list[dict[str, Any]],
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Guarda permisos de bajo nivel en MariaDB."""
+
+    try:
+        router.store_low_level_permissions(payload)
+        return {"success": True, "count": len(payload)}
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
 @app.put("/manage-roles-by-org")
 def store_manage_roles(
     payload: list[dict[str, Any]],

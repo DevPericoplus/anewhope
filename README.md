@@ -357,6 +357,40 @@ class FrontendState(SharedSessionState):
 **Ejemplos de uso:**
 - Frontend: `docs/examples/frontend_state_with_shared_session.py`
 - Backoffice: `docs/examples/backoffice_state_with_shared_session.py`
+- **Validación de permisos en UI:** `docs/examples/permission_validation_example.py`
+
+**Validación de permisos en componentes UI:**
+
+Los permisos de bajo nivel (`low_level_permissions`) están disponibles como campos booleanos
+en el estado compartido. Ejemplo para mostrar/ocultar una opción de "Renombrar carpeta":
+
+```python
+# En un componente Reflex
+def folder_context_menu(state):
+    return rx.menu.content(
+        # La opción solo se muestra si el usuario tiene permiso folder_rename
+        rx.cond(
+            state.can_folder_rename,  # ← Permiso cargado desde sesión/JWT
+            rx.menu.item("Renombrar carpeta", on_click=state.rename_folder),
+            rx.fragment(),  # No renderiza nada si no tiene permiso
+        ),
+        rx.cond(
+            state.can_folder_delete,
+            rx.menu.item("Eliminar carpeta", on_click=state.delete_folder),
+            rx.fragment(),
+        ),
+    )
+```
+
+**Validación en backend (complementaria):**
+
+El middleware valida permisos con `has_low_level_permission(session, "folder_rename")`:
+
+```python
+# En el middleware o backend
+if not router.has_low_level_permission(session, "folder_rename"):
+    raise HTTPException(status_code=403, detail="Sin permiso")
+```
 
 **Aplicaciones creadas:**
 - ✅ `5_web_frontend`: Puerto 8005, VE `.venv_frontend313`, URL `https://tfmmyllm.ai`
@@ -928,6 +962,56 @@ curl -I https://tfmmyllm.ai  # Debería devolver 200 OK
 
 ---
 
+#### Problema 8: "Blocked request. This host is not allowed" en Vite
+
+**Síntoma:**
+Al arrancar el frontend, aparece el error:
+```
+Blocked request. This host ("tfmmyllm.ai") is not allowed.
+To allow this host, add "tfmmyllm.ai" to `server.allowedHosts` in vite.config.js.
+```
+
+**Causa:**
+A partir de Vite 6.0.9, el servidor de desarrollo valida los hosts entrantes por motivos de seguridad (CVE-2025-30208). Los hosts que no estén explícitamente permitidos son bloqueados.
+
+Reflex genera automáticamente el archivo `.web/vite.config.js`, pero no incluye `allowedHosts` por defecto.
+
+**Solución:**
+
+El proyecto incluye un script de parche automático que se ejecuta al arrancar el frontend:
+
+```bash
+# El parche se aplica automáticamente al ejecutar:
+cd src/apps/5_web_frontend
+./run.sh
+```
+
+**Solución manual (si el parche automático no funciona):**
+
+1. Editar el archivo `.web/vite.config.js`
+2. Localizar la sección `server: { ... }`
+3. Añadir la línea `allowedHosts`:
+
+```javascript
+server: {
+  port: process.env.PORT,
+  hmr: true,
+  allowedHosts: ['tfmmyllm.ai', '.tfmmyllm.ai', 'localhost'],  // ← Añadir esta línea
+  watch: {
+    // ...
+  },
+},
+```
+
+**Archivos relacionados:**
+- `src/apps/5_web_frontend/patch_vite_config.py`: Script de parche automático
+- `src/apps/5_web_frontend/.web/vite.config.js`: Configuración de Vite (auto-generada)
+- `src/apps/6_web_backoffice/patch_vite_config.py`: Script equivalente para backoffice
+
+**Nota:** Si ejecutas `reflex init` y se regenera `.web/`, el parche se volverá a aplicar automáticamente la próxima vez que ejecutes `./run.sh`.
+
+---
+
 #### Comandos útiles de diagnóstico
 
 **Script automatizado:**
@@ -1069,12 +1153,44 @@ El proyecto documenta decisiones arquitectónicas importantes en:
 
 El proyecto usa **Python 3.13** como versión base. Para evitar conflictos de dependencias y 
 garantizar aislamiento entre servicios, cada aplicación tiene su propio entorno virtual dedicado 
-en la raíz del proyecto:
+en la raíz del proyecto.
 
-- **Frontend**: `.venv_frontend313` (usado por `5_web_frontend` y `2_shared_application`)
-- **Middleware**: `.venv_middleware313` (usado por `7_service_frontend`, `8_service_backend`, `3_backend`)
-- **Backend Core**: `.venv_backend313` (alternativa para `3_backend` en desarrollo)
-- **Broker Backend**: `.venv_broker313` (alternativa para `8_service_backend` en desarrollo)
+### Matriz de entornos virtuales por aplicación
+
+| Entorno Virtual | Puerto | Aplicaciones | Uso |
+|-----------------|--------|--------------|-----|
+| `.venv_frontend313` | 8005 | `5_web_frontend`, `2_shared_application` | Frontend web principal y capa compartida |
+| `.venv_backoffice313` | 8006 | `6_web_backoffice` | Interfaz administrativa |
+| `.venv_middleware313` | 8007 | `7_service_frontend`, `8_service_backend`, `3_backend` | Servicios middleware y backend |
+| `.venv_backend313` | 8003 | `3_backend` (alternativa) | Backend core en desarrollo aislado |
+| `.venv_broker313` | 8008 | `8_service_backend` (alternativa) | Broker backend en desarrollo aislado |
+
+**Reglas de uso:**
+
+1. ✅ **Cada aplicación usa SOLO su entorno virtual asignado**
+2. ✅ **No se comparten entornos virtuales entre aplicaciones**
+3. ✅ **Los scripts `run.sh` activan automáticamente el entorno correcto**
+4. ✅ **Los tests deben ejecutarse en el entorno virtual correspondiente**
+5. ✅ **Los contenedores Docker usan dependencias instaladas en la imagen**
+
+**Verificación de entornos:**
+
+```bash
+# Verificar configuración de entornos virtuales
+./scripts/verify_environments.sh
+
+# Verificar configuración de tests
+./scripts/verify_tests_environments.sh
+```
+
+Estos scripts validan que cada aplicación tiene su propio entorno virtual y que no hay compartición.
+
+**Documentación completa:**
+
+- **Auditoría de entornos:** `docs/VIRTUAL_ENVIRONMENTS_AUDIT.md` - Análisis detallado de cada aplicación
+- **Guía de tests:** `docs/TESTING_VIRTUAL_ENVIRONMENTS.md` - Reglas y buenas prácticas para tests
+- **Resumen ejecutivo:** `docs/SUMMARY_ENVIRONMENTS_TESTING.md` - Resumen de la implementación
+- **Reglas de agentes:** `AGENTS.md` (sección 5.1) - Reglas para tests y entornos virtuales
 
 ### Creación de entornos virtuales
 
