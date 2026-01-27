@@ -158,8 +158,8 @@ y agrupan los servicios que se ejecutarán juntos en cada servidor:
   `6_web_backoffice`, `7_service_frontend`
 - `infrastructure/servers/backend/docker-compose.yml`: `8_service_backend`, `3_backend`, 
   `fmanagement` (Go API), `mariadb`
-- `infrastructure/servers/trainer/docker-compose.yml`: `4_trainer` (placeholder), 
-  `keras_service` (placeholder)
+- `infrastructure/servers/trainer/docker-compose.yml`: `4_trainer` (Backend IA), 
+  `keras_service` (placeholder para servicio Keras)
 - `infrastructure/servers/macbook/docker-compose.yml`: solo aplicaciones internas 
   (MariaDB y Keras nativos)
 
@@ -639,6 +639,86 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 Los certificados generados con OpenSSL mostrarán advertencias de seguridad en el navegador.
 Para desarrollo local sin advertencias, se recomienda usar `mkcert`.
 
+#### Prerrequisitos para Python 3.12 en servidor trainer
+
+El servicio `4_trainer` (Backend IA) requiere **Python 3.12** debido a la compatibilidad con 
+dependencias de IA como TensorFlow y Keras. Esta es la única excepción a la regla general 
+de Python 3.13 del proyecto.
+
+**Instalación en macOS (macbook):**
+
+```bash
+# Instalar Python 3.12 con Homebrew
+brew install python@3.12
+
+# Verificar instalación
+python3.12 --version
+# Esperado: Python 3.12.x
+
+# Verificar ubicación
+which python3.12
+# Esperado: /usr/local/bin/python3.12
+```
+
+**Instalación en Oracle Linux 10 (servidor trainer):**
+
+```bash
+# Actualizar repositorios
+sudo dnf update -y
+
+# Instalar Python 3.12 desde AppStream
+sudo dnf install python3.12 python3.12-pip python3.12-devel -y
+
+# Verificar instalación
+python3.12 --version
+# Esperado: Python 3.12.x
+
+# Si no está disponible en AppStream, instalar desde fuente:
+sudo dnf groupinstall "Development Tools" -y
+sudo dnf install openssl-devel bzip2-devel libffi-devel zlib-devel -y
+
+# Descargar y compilar Python 3.12
+cd /tmp
+curl -O https://www.python.org/ftp/python/3.12.8/Python-3.12.8.tgz
+tar xzf Python-3.12.8.tgz
+cd Python-3.12.8
+./configure --enable-optimizations --prefix=/usr/local
+make -j$(nproc)
+sudo make altinstall
+
+# Verificar
+/usr/local/bin/python3.12 --version
+```
+
+**Creación del entorno virtual `.venv_trainer312`:**
+
+```bash
+# Desde la raíz del proyecto
+cd /Users/administrator/develop/anewhope  # macOS
+# o
+cd /opt/anewhope  # Linux
+
+# Crear entorno virtual con Python 3.12
+python3.12 -m venv .venv_trainer312
+
+# Activar entorno
+source .venv_trainer312/bin/activate
+
+# Instalar dependencias del trainer
+pip install --upgrade pip
+pip install -r src/apps/4_trainer/requirements.txt
+
+# Verificar versión de Python en el entorno
+python --version
+# Esperado: Python 3.12.x
+```
+
+**Notas importantes:**
+- El script `src/apps/4_trainer/run.sh` activa automáticamente `.venv_trainer312`
+- El `Dockerfile` de `4_trainer` usa la imagen `python:3.12-slim`
+- Este entorno es exclusivo para el Backend IA; otros servicios usan Python 3.13
+- Ver ADR completo en `src/docs/stack_of_technologies.adr`
+
 #### Despliegue de Nginx en macbook
 
 Para desplegar y configurar nginx en el entorno macbook, se proporciona el script `deploy_nginx_macbook.sh`:
@@ -1106,12 +1186,64 @@ no debe depender de esa ruta.
 - `GET /fmo/diffversion`: compara dos versiones.
   Parámetros clave: `iduser`, `basepath`, `orgpath`, `prjpath`,
   `versionpath`, `compare_versionpath`.
+- `POST /fmo/transferversion`: transfiere una versión entre servidores (backend ↔ trainer).
+  Parámetros clave: `iduser`, `orgpath`, `prjpath`, `versionpath`, `target_type`,
+  `identity_type_id`.
 
 Headers requeridos para permisos:
 - `Authorization: Bearer <access_token>`
 - `X-Session-Token: <session_token>`
 
 En modo `db_only` es obligatorio incluir `identity_type_id` (query param).
+
+#### Transferencia de versiones (Backend Core ↔ Trainer)
+
+La transferencia de versiones permite replicar una versión de proyecto desde el servidor
+backend al servidor trainer (o viceversa) para su uso en entrenamiento de modelos de IA.
+
+**Flujo:**
+```
+Backend Core → fmanagement → rsync/SSH → Servidor Trainer
+                              (o copia local en macbook)
+```
+
+**Modos de transferencia:**
+- **Local** (`TRANSFER_MODE=local`): Copia directa entre carpetas (desarrollo)
+- **Remoto** (`TRANSFER_MODE=remote`): rsync over SSH (producción)
+
+**Variables de entorno (añadir a env.yaml):**
+```yaml
+# Rutas de almacenamiento
+backend_core_base_storage: /data/files/external
+backend_ia_base_storage: /data/files/trainer
+
+# Configuración de transferencia
+transfer_mode: local  # "local" o "remote"
+trainer_ssh_host: trainer.internal
+trainer_ssh_user: rsync_user
+trainer_ssh_key_path: /opt/anewhope/keys/rsync_key
+trainer_ssh_port: "22"
+```
+
+**Endpoint de Backend Core:**
+```
+POST /fmo/transferversion
+{
+    "id_user": 1,
+    "id_organization": 1,
+    "id_project": 1,
+    "version_path": "v001",
+    "target_type": "trainer",  // o "core"
+    "identity_type_id": 2
+}
+```
+
+**Permisos requeridos:** `version_create`
+
+**Script de configuración (macbook):**
+```bash
+./scripts/setup_transfer_environment.sh
+```
 
 ## ADRs (Architecture Decision Records)
 
@@ -1163,7 +1295,11 @@ en la raíz del proyecto.
 | `.venv_backoffice313` | 8006 | `6_web_backoffice` | Interfaz administrativa |
 | `.venv_middleware313` | 8007 | `7_service_frontend`, `8_service_backend`, `3_backend` | Servicios middleware y backend |
 | `.venv_backend313` | 8003 | `3_backend` (alternativa) | Backend core en desarrollo aislado |
+| `.venv_trainer312` | 8004 | `4_trainer` | Backend IA - **Python 3.12** (compatibilidad TensorFlow/Keras) |
 | `.venv_broker313` | 8008 | `8_service_backend` (alternativa) | Broker backend en desarrollo aislado |
+
+**Nota:** El `4_trainer` usa Python 3.12 (no 3.13) debido a compatibilidad con TensorFlow y Keras.
+Ver `src/docs/stack_of_technologies.adr` para detalles de la decisión arquitectónica.
 
 **Reglas de uso:**
 
@@ -1484,11 +1620,12 @@ El acceso a persistencia se estandariza con el repositorio `SessionRepository` e
 
 Regla de puertos: cada aplicación usa **8000 + el primer número del nombre de la carpeta**.
 
-- `3_backend` → **8003**
+- `3_backend` → **8003** (Backend Core - datos, usuarios, permisos)
+- `4_trainer` → **8004** (Backend IA - entrenamiento, modelos, métricas)
 - `5_web_frontend` → **8005**
 - `6_web_backoffice` → **8006** (reservado)
 - `7_service_frontend` → **8007**
-- `8_service_backend` → **8008** (reservado)
+- `8_service_backend` → **8008** (Broker - enruta a Core e IA)
 
 La aplicación web (`5_web_frontend`) usa **puerto backend fijo 8005** para el servidor interno de Reflex. Esto se configura en `src/apps/5_web_frontend/rxconfig.py` con `backend_port=8005` y no debe cambiarse para evitar conflictos con el middleware.
 

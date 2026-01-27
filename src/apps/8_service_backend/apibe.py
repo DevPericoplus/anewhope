@@ -18,6 +18,7 @@ from typing import Annotated
 
 try:
     from .interfacetocore import CoreBackendClient
+    from .interfacetotrainer import TrainerBackendClient
     from .routerbroker import BrokerBackendRouter, BrokerBusinessError
 except ImportError:  # pragma: no cover - soporte para ejecuciones fuera de paquete
     import importlib.util
@@ -35,9 +36,11 @@ except ImportError:  # pragma: no cover - soporte para ejecuciones fuera de paqu
         return module
 
     _interface_module = _load_module("interfacetocore", "interfacetocore.py")
+    _trainer_module = _load_module("interfacetotrainer", "interfacetotrainer.py")
     _router_module = _load_module("routerbroker", "routerbroker.py")
 
     CoreBackendClient = _interface_module.CoreBackendClient
+    TrainerBackendClient = _trainer_module.TrainerBackendClient
     BrokerBackendRouter = _router_module.BrokerBackendRouter
     BrokerBusinessError = _router_module.BrokerBusinessError
 
@@ -118,6 +121,101 @@ class ProcessDataResponse(BaseModel):
     message: str
 
 
+# === Modelos para Training (Backend IA) ===
+
+
+class TrainerHealthResponse(BaseModel):
+    """Respuesta del health check del trainer."""
+
+    status: str
+    service: str
+    version: str
+
+
+class VersionCloneRequest(BaseModel):
+    """Payload para clonar versión para entrenamiento."""
+
+    id_user: int
+    id_organization: int
+    id_project: int
+    version_path: str
+    identity_type_id: int | None = None
+
+
+class VersionCloneResponse(BaseModel):
+    """Respuesta de clonado de versión."""
+
+    success: bool
+    cloned_path: str = ""
+    message: str = ""
+
+
+class TrainingStartRequest(BaseModel):
+    """Payload para iniciar entrenamiento."""
+
+    id_user: int
+    id_organization: int
+    id_project: int
+    version_path: str
+    training_params: dict[str, Any] = Field(default_factory=dict)
+    identity_type_id: int | None = None
+
+
+class TrainingStartResponse(BaseModel):
+    """Respuesta de inicio de entrenamiento."""
+
+    success: bool
+    training_id: int | None = None
+    message: str = ""
+
+
+class TrainingStopRequest(BaseModel):
+    """Payload para detener entrenamiento."""
+
+    training_id: int
+    identity_type_id: int | None = None
+
+
+class TrainingStopResponse(BaseModel):
+    """Respuesta de detención de entrenamiento."""
+
+    success: bool
+    message: str = ""
+
+
+class TrainingStatusResponse(BaseModel):
+    """Respuesta con estado del entrenamiento."""
+
+    training_id: int
+    status: str
+    progress: float = 0.0
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    started_at: str | None = None
+    finished_at: str | None = None
+
+
+class ModelListResponse(BaseModel):
+    """Respuesta con lista de modelos."""
+
+    models: list[dict[str, Any]] = Field(default_factory=list)
+    total: int = 0
+
+
+class ModelMetricsResponse(BaseModel):
+    """Respuesta con métricas de un modelo."""
+
+    model_id: int
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    training_history: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class TrainingPermissionsResponse(BaseModel):
+    """Respuesta con permisos de entrenamiento."""
+
+    identity_type_id: int
+    permissions: dict[str, bool] = Field(default_factory=dict)
+
+
 def _configure_logging() -> None:
     """Configura logging del broker backend."""
 
@@ -178,6 +276,22 @@ def get_core_client() -> CoreBackendClient:
     return CoreBackendClient(base_url=_get_core_base_url())
 
 
+def _get_trainer_base_url() -> str:
+    """Obtiene la URL base del backend IA (trainer)."""
+
+    env_settings = _load_env_settings_module("broker_env_settings_trainer")
+    protected_base_url = env_settings.get_protected_value(
+        "trainer_backend_base_url", "http://localhost:8004"
+    )
+    return os.environ.get("TRAINER_BACKEND_BASE_URL", protected_base_url)
+
+
+def get_trainer_client() -> TrainerBackendClient:
+    """Inyecta el cliente hacia backend IA (trainer)."""
+
+    return TrainerBackendClient(base_url=_get_trainer_base_url())
+
+
 def get_client_app(
     client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
 ) -> str:
@@ -186,14 +300,42 @@ def get_client_app(
     return client_app or "unknown"
 
 
+def get_authorization(
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> str | None:
+    """Extrae el header Authorization (JWT) de la petición."""
+
+    return authorization
+
+
+def get_session_token(
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> str | None:
+    """Extrae el header X-Session-Token de la petición."""
+
+    return session_token
+
+
 def get_router_broker(
     core_client: CoreBackendClient = Depends(get_core_client),
+    trainer_client: TrainerBackendClient = Depends(get_trainer_client),
     client_app: str = Depends(get_client_app),
+    authorization: str | None = Depends(get_authorization),
+    session_token: str | None = Depends(get_session_token),
 ) -> BrokerBackendRouter:
-    """Inyecta el orquestador del broker."""
+    """Inyecta el orquestador del broker con contexto de seguridad.
 
-    router = BrokerBackendRouter(core_client=core_client)
+    Propaga los headers de seguridad (Authorization, X-Session-Token) al router
+    para que los clientes del Backend Core y Backend IA los reciban,
+    manteniendo el contexto de sesión en todo el flujo (Security by Design).
+    """
+
+    router = BrokerBackendRouter(
+        core_client=core_client,
+        trainer_client=trainer_client,
+    )
     router.set_client_app(client_app)
+    router.set_security_context(authorization, session_token)
     return router
 
 
@@ -487,6 +629,148 @@ def process_data(
             result=response,
             message="Procesamiento enviado al backend core",
         )
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+# === Endpoints de Entrenamiento (Backend IA) ===
+
+
+@app.get("/training/health", response_model=TrainerHealthResponse)
+def trainer_health_check(
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> TrainerHealthResponse:
+    """Health check del servicio trainer."""
+
+    try:
+        response = router.trainer_health_check()
+        return TrainerHealthResponse(**response)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/training/clone-version", response_model=VersionCloneResponse)
+def clone_version_for_training(
+    payload: VersionCloneRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> VersionCloneResponse:
+    """Clona una versión para entrenamiento."""
+
+    try:
+        response = router.clone_version_for_training(payload.model_dump())
+        return VersionCloneResponse(**response)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/training/start", response_model=TrainingStartResponse)
+def start_training(
+    payload: TrainingStartRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> TrainingStartResponse:
+    """Inicia un proceso de entrenamiento."""
+
+    try:
+        response = router.start_training(payload.model_dump())
+        return TrainingStartResponse(**response)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/training/stop", response_model=TrainingStopResponse)
+def stop_training(
+    payload: TrainingStopRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> TrainingStopResponse:
+    """Detiene un proceso de entrenamiento."""
+
+    try:
+        response = router.stop_training(payload.model_dump())
+        return TrainingStopResponse(**response)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/training/{training_id}/status", response_model=TrainingStatusResponse)
+def get_training_status(
+    training_id: int,
+    identity_type_id: int | None = None,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> TrainingStatusResponse:
+    """Obtiene el estado de un entrenamiento."""
+
+    try:
+        response = router.get_training_status(training_id, identity_type_id)
+        return TrainingStatusResponse(**response)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/training/models", response_model=ModelListResponse)
+def list_models(
+    id_organization: int | None = None,
+    id_project: int | None = None,
+    identity_type_id: int | None = None,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> ModelListResponse:
+    """Lista modelos entrenados."""
+
+    try:
+        response = router.list_models(id_organization, id_project, identity_type_id)
+        return ModelListResponse(**response)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/training/models/{model_id}/metrics", response_model=ModelMetricsResponse)
+def get_model_metrics(
+    model_id: int,
+    identity_type_id: int | None = None,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> ModelMetricsResponse:
+    """Obtiene métricas de un modelo."""
+
+    try:
+        response = router.get_model_metrics(model_id, identity_type_id)
+        return ModelMetricsResponse(**response)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/training/permissions", response_model=TrainingPermissionsResponse)
+def get_training_permissions(
+    identity_type_id: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> TrainingPermissionsResponse:
+    """Obtiene permisos de entrenamiento para un rol."""
+
+    try:
+        response = router.get_training_permissions(identity_type_id)
+        return TrainingPermissionsResponse(**response)
     except BrokerBusinessError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

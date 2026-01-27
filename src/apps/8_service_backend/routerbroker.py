@@ -7,11 +7,14 @@ from typing import Any
 
 try:
     from .interfacetocore import CoreBackendClient, CoreBackendCommunicationError
+    from .interfacetotrainer import TrainerBackendClient, TrainerBackendCommunicationError
 except ImportError:  # pragma: no cover - soporte para ejecuciones fuera de paquete
     import importlib.util
     from pathlib import Path
 
-    _module_path = Path(__file__).resolve().parent / "interfacetocore.py"
+    _base_path = Path(__file__).resolve().parent
+
+    _module_path = _base_path / "interfacetocore.py"
     _spec = importlib.util.spec_from_file_location("interfacetocore", _module_path)
     if _spec is None or _spec.loader is None:
         raise
@@ -21,24 +24,82 @@ except ImportError:  # pragma: no cover - soporte para ejecuciones fuera de paqu
     CoreBackendClient = _module.CoreBackendClient
     CoreBackendCommunicationError = _module.CoreBackendCommunicationError
 
+    _trainer_path = _base_path / "interfacetotrainer.py"
+    _trainer_spec = importlib.util.spec_from_file_location("interfacetotrainer", _trainer_path)
+    if _trainer_spec is None or _trainer_spec.loader is None:
+        raise
+    _trainer_module = importlib.util.module_from_spec(_trainer_spec)
+    _trainer_spec.loader.exec_module(_trainer_module)
+
+    TrainerBackendClient = _trainer_module.TrainerBackendClient
+    TrainerBackendCommunicationError = _trainer_module.TrainerBackendCommunicationError
+
 
 class BrokerBusinessError(Exception):
     """Error de reglas de negocio del broker."""
 
 
 class BrokerBackendRouter:
-    """Orquestador de operaciones del broker backend."""
+    """Orquestador de operaciones del broker backend.
 
-    def __init__(self, core_client: CoreBackendClient) -> None:
+    Este router enruta operaciones hacia:
+    - Backend Core (8003): Datos (usuarios, organizaciones, permisos, fmanagement)
+    - Backend IA (8004): Entrenamiento, modelos, métricas
+
+    Propaga contexto de seguridad (JWT, session token) a todos los clientes
+    para mantener la validación de permisos en cada capa (Security by Design).
+    """
+
+    def __init__(
+        self,
+        core_client: CoreBackendClient,
+        trainer_client: TrainerBackendClient | None = None,
+    ) -> None:
         self._core_client = core_client
+        self._trainer_client = trainer_client
         self._logger = logging.getLogger("broker_backend.router")
         self._client_app: str = "unknown"
+        self._authorization: str | None = None
+        self._session_token: str | None = None
 
     def set_client_app(self, client_app: str) -> None:
         """Configura el identificador de aplicación cliente para trazabilidad."""
 
         self._client_app = client_app or "unknown"
         self._core_client.set_client_app(self._client_app)
+        if self._trainer_client:
+            self._trainer_client.set_client_app(self._client_app)
+
+    def set_security_context(
+        self,
+        authorization: str | None = None,
+        session_token: str | None = None,
+    ) -> None:
+        """Configura el contexto de seguridad para propagar a los backends.
+
+        Este método propaga los headers de seguridad a los clientes del
+        Backend Core y Backend IA para mantener el contexto de sesión
+        en todo el flujo (Security by Design).
+
+        Args:
+            authorization: Token JWT (formato: "Bearer <token>")
+            session_token: Token de sesión del usuario
+        """
+        self._authorization = authorization
+        self._session_token = session_token
+
+        # Propagar a clientes
+        self._core_client.set_security_context(authorization, session_token)
+        if self._trainer_client:
+            self._trainer_client.set_security_context(authorization, session_token)
+
+        # Log para auditoría (sin exponer el token completo)
+        self._logger.debug(
+            "[%s] Contexto de seguridad configurado: jwt=%s session=%s",
+            self._client_app,
+            bool(authorization),
+            bool(session_token),
+        )
 
     def fetch_users(self) -> list[dict[str, Any]]:
         """Obtiene usuarios desde el backend core."""
@@ -203,4 +264,133 @@ class BrokerBackendRouter:
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(
                 "No se pudo procesar datos en core"
+            ) from exc
+
+    # === Operaciones de Entrenamiento (Backend IA) ===
+
+    def _ensure_trainer_client(self) -> TrainerBackendClient:
+        """Verifica que el cliente trainer esté disponible."""
+
+        if self._trainer_client is None:
+            raise BrokerBusinessError(
+                "El cliente del backend IA (trainer) no está configurado"
+            )
+        return self._trainer_client
+
+    def trainer_health_check(self) -> dict[str, Any]:
+        """Verifica el estado del servicio trainer."""
+
+        client = self._ensure_trainer_client()
+        try:
+            return client.health_check()
+        except TrainerBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo verificar el estado del trainer"
+            ) from exc
+
+    def clone_version_for_training(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Clona una versión para entrenamiento."""
+
+        client = self._ensure_trainer_client()
+        self._logger.info(
+            "[%s] Clonando versión para entrenamiento: org=%s project=%s",
+            self._client_app,
+            payload.get("id_organization"),
+            payload.get("id_project"),
+        )
+        try:
+            return client.clone_version(payload)
+        except TrainerBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo clonar versión para entrenamiento"
+            ) from exc
+
+    def start_training(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Inicia un proceso de entrenamiento."""
+
+        client = self._ensure_trainer_client()
+        self._logger.info(
+            "[%s] Iniciando entrenamiento: org=%s project=%s",
+            self._client_app,
+            payload.get("id_organization"),
+            payload.get("id_project"),
+        )
+        try:
+            return client.start_training(payload)
+        except TrainerBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo iniciar el entrenamiento"
+            ) from exc
+
+    def stop_training(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Detiene un proceso de entrenamiento."""
+
+        client = self._ensure_trainer_client()
+        self._logger.info(
+            "[%s] Deteniendo entrenamiento: training_id=%s",
+            self._client_app,
+            payload.get("training_id"),
+        )
+        try:
+            return client.stop_training(payload)
+        except TrainerBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo detener el entrenamiento"
+            ) from exc
+
+    def get_training_status(
+        self,
+        training_id: int,
+        identity_type_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Obtiene el estado de un entrenamiento."""
+
+        client = self._ensure_trainer_client()
+        try:
+            return client.get_training_status(training_id, identity_type_id)
+        except TrainerBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo obtener el estado del entrenamiento"
+            ) from exc
+
+    def list_models(
+        self,
+        id_organization: int | None = None,
+        id_project: int | None = None,
+        identity_type_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Lista modelos entrenados."""
+
+        client = self._ensure_trainer_client()
+        try:
+            return client.list_models(id_organization, id_project, identity_type_id)
+        except TrainerBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo listar los modelos"
+            ) from exc
+
+    def get_model_metrics(
+        self,
+        model_id: int,
+        identity_type_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Obtiene métricas de un modelo."""
+
+        client = self._ensure_trainer_client()
+        try:
+            return client.get_model_metrics(model_id, identity_type_id)
+        except TrainerBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo obtener métricas del modelo"
+            ) from exc
+
+    def get_training_permissions(self, identity_type_id: int) -> dict[str, Any]:
+        """Obtiene permisos de entrenamiento para un rol."""
+
+        client = self._ensure_trainer_client()
+        try:
+            return client.get_training_permissions(identity_type_id)
+        except TrainerBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo obtener permisos de entrenamiento"
             ) from exc

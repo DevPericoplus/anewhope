@@ -1,4 +1,4 @@
-"""Cliente síncrono para comunicación con el broker backend.
+"""Capa de cliente HTTP para comunicación con backend IA (trainer).
 
 Este cliente propaga headers de seguridad (Authorization, X-Session-Token)
 para mantener el contexto de sesión en todo el flujo de servicios.
@@ -12,14 +12,16 @@ from typing import Any
 import httpx
 
 
-class BrokerBackendCommunicationError(Exception):
-    """Error de comunicación con el broker backend."""
+class TrainerBackendCommunicationError(Exception):
+    """Error de comunicación con el backend IA (trainer)."""
 
 
-class BrokerBackendClient:
-    """Cliente HTTP síncrono para operaciones de persistencia.
+class TrainerBackendClient:
+    """Cliente HTTP síncrono para comunicación con backend IA (trainer).
 
-    Propaga headers de seguridad para mantener el contexto de sesión:
+    Este cliente gestiona las peticiones al Backend IA para operaciones
+    de entrenamiento, modelos y métricas. Propaga headers de seguridad
+    para mantener el contexto de sesión:
     - Authorization: Token JWT del usuario
     - X-Session-Token: Token de sesión
     - X-Client-App: Identificador del cliente origen
@@ -29,14 +31,14 @@ class BrokerBackendClient:
         self._base_url = base_url.rstrip("/")
         self._client = client or httpx.Client()
         self._owns_client = client is None
-        self._client_app: str = "middleware"
+        self._client_app: str = "unknown"
         self._authorization: str | None = None
         self._session_token: str | None = None
 
     def set_client_app(self, client_app: str) -> None:
         """Configura el identificador de aplicación cliente para trazabilidad."""
 
-        self._client_app = client_app or "middleware"
+        self._client_app = client_app or "unknown"
 
     def set_security_context(
         self,
@@ -101,18 +103,18 @@ class BrokerBackendClient:
             Respuesta deserializada como JSON
 
         Raises:
-            BrokerBackendCommunicationError: Si hay error de comunicación
+            TrainerBackendCommunicationError: Si hay error de comunicación
         """
         url = f"{self._base_url}{path}"
         headers = self._build_headers(extra_headers)
 
         try:
             response = self._client.request(
-                method, url, json=payload, headers=headers, timeout=10.0
+                method, url, json=payload, headers=headers, timeout=30.0
             )
         except httpx.RequestError as exc:
-            raise BrokerBackendCommunicationError(
-                "No se pudo contactar con el broker backend"
+            raise TrainerBackendCommunicationError(
+                "No se pudo contactar con el backend IA (trainer)"
             ) from exc
 
         if response.status_code >= 400:
@@ -122,91 +124,29 @@ class BrokerBackendClient:
                 detail = error_data.get("detail", "")
             except Exception:
                 pass
-            raise BrokerBackendCommunicationError(
-                f"Error del broker backend: {response.status_code} - {detail}"
+            raise TrainerBackendCommunicationError(
+                f"Error del backend IA: {response.status_code} - {detail}"
             )
 
         if response.content:
             try:
                 return response.json()
             except json.JSONDecodeError as exc:
-                raise BrokerBackendCommunicationError(
-                    "Respuesta del broker backend no es JSON válido"
+                raise TrainerBackendCommunicationError(
+                    "Respuesta del backend IA no es JSON válido"
                 ) from exc
         return None
 
-    def fetch_users(self) -> list[dict[str, Any]]:
-        """Obtiene la lista de usuarios."""
+    # === Health Check ===
 
-        data = self._request("GET", "/users")
-        return list(data or [])
-
-    def store_users(self, users: list[dict[str, Any]]) -> None:
-        """Guarda la lista de usuarios."""
-
-        self._request("PUT", "/users", payload=users)
-
-    def fetch_organizations(self) -> list[dict[str, Any]]:
-        """Obtiene la lista de organizaciones."""
-
-        data = self._request("GET", "/organizations")
-        return list(data or [])
-
-    def store_organizations(self, organizations: list[dict[str, Any]]) -> None:
-        """Guarda la lista de organizaciones."""
-
-        self._request("PUT", "/organizations", payload=organizations)
-
-    def fetch_roles(self) -> list[dict[str, Any]]:
-        """Obtiene la lista de roles."""
-
-        data = self._request("GET", "/roles")
-        return list(data or [])
-
-    def fetch_basic_permissions(self) -> list[dict[str, Any]]:
-        """Obtiene la lista de permisos básicos."""
-
-        data = self._request("GET", "/basic-permissions")
-        return list(data or [])
-
-    def fetch_low_level_permissions(self) -> list[dict[str, Any]]:
-        """Obtiene la lista de permisos de bajo nivel."""
-
-        data = self._request("GET", "/low-level-permissions")
-        return list(data or [])
-
-    def fetch_manage_roles(self) -> list[dict[str, Any]]:
-        """Obtiene la lista de roles por organización."""
-
-        data = self._request("GET", "/manage-roles-by-org")
-        return list(data or [])
-
-    def store_manage_roles(self, entries: list[dict[str, Any]]) -> None:
-        """Guarda la lista de roles por organización."""
-
-        self._request("PUT", "/manage-roles-by-org", payload=entries)
-
-    def get_permissions(self, identity_type_id: int) -> dict[str, Any]:
-        """Obtiene permisos para un rol específico.
-
-        Args:
-            identity_type_id: ID del tipo de identidad (rol)
-
-        Returns:
-            Diccionario con permisos básicos y de bajo nivel
-        """
-        data = self._request("GET", f"/permissions?identity_type_id={identity_type_id}")
-        return dict(data or {})
-
-    # === Operaciones de Training (Backend IA) ===
-
-    def trainer_health_check(self) -> dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """Verifica el estado del servicio trainer."""
 
-        data = self._request("GET", "/training/health")
-        return dict(data or {})
+        return self._request("GET", "/trainer/health")
 
-    def clone_version_for_training(self, payload: dict[str, Any]) -> dict[str, Any]:
+    # === Operaciones de Versión ===
+
+    def clone_version(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Clona una versión para entrenamiento.
 
         Args:
@@ -215,8 +155,26 @@ class BrokerBackendClient:
         Returns:
             Resultado del clonado con path de destino
         """
-        data = self._request("POST", "/training/clone-version", payload=payload)
-        return dict(data or {})
+        return self._request("POST", "/trainer/version/clone", payload=payload)
+
+    def get_version_files(
+        self,
+        version_id: int,
+        identity_type_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Lista archivos de una versión clonada.
+
+        Args:
+            version_id: ID de la versión
+            identity_type_id: ID del rol para validación
+
+        Returns:
+            Lista de archivos
+        """
+        params = f"?identity_type_id={identity_type_id}" if identity_type_id else ""
+        return self._request("GET", f"/trainer/version/{version_id}/files{params}")
+
+    # === Operaciones de Entrenamiento ===
 
     def start_training(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Inicia un proceso de entrenamiento.
@@ -227,8 +185,7 @@ class BrokerBackendClient:
         Returns:
             ID del entrenamiento iniciado
         """
-        data = self._request("POST", "/training/start", payload=payload)
-        return dict(data or {})
+        return self._request("POST", "/trainer/training/start", payload=payload)
 
     def stop_training(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Detiene un proceso de entrenamiento.
@@ -239,8 +196,7 @@ class BrokerBackendClient:
         Returns:
             Confirmación de detención
         """
-        data = self._request("POST", "/training/stop", payload=payload)
-        return dict(data or {})
+        return self._request("POST", "/trainer/training/stop", payload=payload)
 
     def get_training_status(
         self,
@@ -257,8 +213,11 @@ class BrokerBackendClient:
             Estado del entrenamiento con métricas
         """
         params = f"?identity_type_id={identity_type_id}" if identity_type_id else ""
-        data = self._request("GET", f"/training/{training_id}/status{params}")
-        return dict(data or {})
+        return self._request(
+            "GET", f"/trainer/training/{training_id}/status{params}"
+        )
+
+    # === Operaciones de Modelos ===
 
     def list_models(
         self,
@@ -284,8 +243,7 @@ class BrokerBackendClient:
         if identity_type_id is not None:
             params.append(f"identity_type_id={identity_type_id}")
         query = f"?{'&'.join(params)}" if params else ""
-        data = self._request("GET", f"/training/models{query}")
-        return dict(data or {})
+        return self._request("GET", f"/trainer/models{query}")
 
     def get_model_metrics(
         self,
@@ -302,8 +260,9 @@ class BrokerBackendClient:
             Métricas del modelo
         """
         params = f"?identity_type_id={identity_type_id}" if identity_type_id else ""
-        data = self._request("GET", f"/training/models/{model_id}/metrics{params}")
-        return dict(data or {})
+        return self._request("GET", f"/trainer/models/{model_id}/metrics{params}")
+
+    # === Permisos ===
 
     def get_training_permissions(self, identity_type_id: int) -> dict[str, Any]:
         """Obtiene permisos de entrenamiento para un rol.
@@ -314,8 +273,6 @@ class BrokerBackendClient:
         Returns:
             Diccionario con permisos de entrenamiento
         """
-        data = self._request(
-            "GET", f"/training/permissions?identity_type_id={identity_type_id}"
+        return self._request(
+            "GET", f"/trainer/permissions?identity_type_id={identity_type_id}"
         )
-        return dict(data or {})
-

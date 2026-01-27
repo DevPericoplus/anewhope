@@ -1,4 +1,5 @@
-FROM python:3.13-slim
+# NOTA: Usa Python 3.12 por compatibilidad con TensorFlow/Keras
+FROM python:3.12-slim
 
 WORKDIR /app
 

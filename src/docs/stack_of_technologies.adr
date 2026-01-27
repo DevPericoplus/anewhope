@@ -763,3 +763,135 @@ Si Redis presenta limitaciones en el futuro, alternativas a considerar:
 - **Acción:** Evaluar si ofrecen ventajas sobre Redis
 - **Frecuencia:** Cada actualización mayor de Reflex
 - **Responsable:** @frontend-visionary
+
+---
+
+# ADR: Python 3.12 para Backend IA (4_trainer)
+
+Fecha: 2026-01-27
+Estado: Aceptado
+
+## Contexto
+
+El Backend IA (`4_trainer`) es el servicio responsable de las operaciones de entrenamiento
+de modelos de lenguaje, incluyendo fine-tuning, evaluación de métricas y gestión de modelos.
+Este servicio tiene requisitos de dependencias diferentes al resto del sistema.
+
+### Problema de Compatibilidad
+
+Las librerías de IA/ML que se utilizarán en el trainer tienen limitaciones de compatibilidad
+con Python 3.13:
+
+- **TensorFlow**: Soporte oficial hasta Python 3.12 (TF 2.15.x / 2.16.x)
+- **Keras**: Requiere TensorFlow compatible (hasta Python 3.12)
+- **Transformers (Hugging Face)**: Soporte probado hasta Python 3.12
+- **PyTorch**: Versiones estables mejor probadas en Python 3.12
+
+Python 3.13 introduce cambios en el manejo interno de estructuras C que afectan la 
+compatibilidad de extensiones nativas usadas por estas librerías.
+
+### Diferenciación con otros servicios
+
+El resto de servicios del proyecto (Backend Core, Middleware, Broker, Frontend, Backoffice)
+no tienen estas restricciones porque:
+- No usan librerías de IA/ML con extensiones C compiladas
+- Dependen de librerías web estándar (FastAPI, Reflex, httpx) totalmente compatibles con 3.13
+- No ejecutan operaciones de entrenamiento de modelos
+
+## Decisión
+
+El Backend IA (`4_trainer`) utiliza **Python 3.12** con un entorno virtual dedicado
+**`.venv_trainer312`**, mientras el resto del sistema continúa con Python 3.13.
+
+### Configuración Específica
+
+**Entorno virtual:**
+```bash
+# Crear el entorno (una vez)
+python3.12 -m venv .venv_trainer312
+
+# Activar y instalar dependencias
+source .venv_trainer312/bin/activate
+pip install -r src/apps/4_trainer/requirements.txt
+```
+
+**Script run.sh actualizado:**
+```bash
+#!/bin/bash
+# NOTA: Usa Python 3.12 por compatibilidad con dependencias de IA
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+source "$ROOT_DIR/.venv_trainer312/bin/activate"
+export PYTHONPATH="$ROOT_DIR"
+python -m src.apps.4_trainer.main
+```
+
+**Dockerfile (cuando se necesite):**
+```dockerfile
+FROM python:3.12-slim
+# ... resto de configuración
+```
+
+### Matriz de Versiones de Python
+
+| Servicio | Puerto | Python | Entorno Virtual | Justificación |
+|----------|--------|--------|-----------------|---------------|
+| `3_backend` | 8003 | 3.13 | `.venv_backend313` | FastAPI estándar |
+| `4_trainer` | 8004 | **3.12** | `.venv_trainer312` | **TensorFlow/Keras** |
+| `5_web_frontend` | 8005 | 3.13 | `.venv_frontend313` | Reflex |
+| `6_web_backoffice` | 8006 | 3.13 | `.venv_backoffice313` | Reflex |
+| `7_service_frontend` | 8007 | 3.13 | `.venv_middleware313` | FastAPI estándar |
+| `8_service_backend` | 8008 | 3.13 | `.venv_broker313` | FastAPI estándar |
+
+## Consecuencias
+
+### Positivas
+
+- ✅ **Compatibilidad garantizada** con TensorFlow, Keras y librerías de IA
+- ✅ **Aislamiento de dependencias**: El trainer tiene su propio entorno
+- ✅ **Sin impacto en otros servicios**: El resto del sistema usa 3.13
+- ✅ **Mantenibilidad**: Fácil de migrar a 3.13 cuando las librerías lo soporten
+
+### Consideraciones
+
+- ⚠️ **Dos versiones de Python**: Requiere tener 3.12 y 3.13 instalados
+- ⚠️ **Docker diferente**: El Dockerfile del trainer usa imagen `python:3.12-slim`
+- ⚠️ **Tests separados**: Los tests del trainer deben ejecutarse con `.venv_trainer312`
+
+### Mitigaciones
+
+1. **pyenv para gestión de versiones**: Permite tener múltiples versiones de Python
+   ```bash
+   pyenv install 3.12.x
+   pyenv install 3.13.x
+   ```
+
+2. **Documentación clara**: `AGENTS.md` y `README.md` especifican la versión por servicio
+
+3. **Scripts de verificación**: `scripts/verify_environments.sh` valida las versiones
+
+## Verificación
+
+- Verificar que `4_trainer` usa Python 3.12:
+  ```bash
+  source .venv_trainer312/bin/activate
+  python --version  # Debe mostrar Python 3.12.x
+  ```
+
+- Verificar que las dependencias de IA se instalan:
+  ```bash
+  pip install tensorflow keras transformers
+  # Sin errores de compilación
+  ```
+
+## Revisión Futura
+
+- **Trigger**: Cuando TensorFlow/Keras anuncien soporte oficial para Python 3.13
+- **Acción**: Migrar `4_trainer` a Python 3.13 y `.venv_trainer313`
+- **Responsable**: @trainer-maestro
+
+## Referencias
+
+- TensorFlow Python support: https://www.tensorflow.org/install/pip
+- Keras requirements: https://keras.io/getting_started/
+- PyTorch compatibility: https://pytorch.org/get-started/locally/

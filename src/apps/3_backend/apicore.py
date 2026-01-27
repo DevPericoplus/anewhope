@@ -154,6 +154,28 @@ class VersionOperationRequest(BaseModel):
     identity_type_id: int | None = None
 
 
+class VersionTransferRequest(BaseModel):
+    """Parámetros para transferencia de versiones entre servidores."""
+
+    id_user: int
+    id_organization: int
+    id_project: int
+    version_path: str
+    target_type: str = Field(..., description="Destino: 'trainer' o 'core'")
+    identity_type_id: int | None = None
+
+
+class VersionTransferResponse(BaseModel):
+    """Respuesta de transferencia de versiones."""
+
+    status: str
+    message: str
+    source_path: str
+    destination_path: str
+    bytes_transferred: int = 0
+    files_transferred: int = 0
+
+
 class FileOperationResponse(BaseModel):
     """Respuesta genérica para operaciones de ficheros."""
 
@@ -740,6 +762,31 @@ def fmo_diffversion(
     try:
         result = router.diff_versions(payload, headers)
         return FileOperationResponse(result=result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/fmo/transferversion", response_model=VersionTransferResponse)
+def fmo_transferversion(
+    payload: VersionTransferRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> VersionTransferResponse:
+    """Transfiere una versión entre servidores backend y trainer.
+
+    Delega la operación en fmanagement que ejecutará la transferencia
+    usando rsync over SSH (remoto) o copia local (desarrollo).
+    """
+
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        result = router.transfer_version(payload.model_dump(), headers)
+        return VersionTransferResponse(**result)
     except BackendCoreBusinessError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

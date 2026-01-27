@@ -144,6 +144,61 @@ Si un test falla de forma inconsistente:
 * **Obligatorio:** La base `myllm_projects_db` no tiene espejo en JSON. Cualquier
   operación debe consultarse directamente en MariaDB, sin fallback a mocks.
 
+## 5.5 Transferencia de versiones (Backend Core ↔ Trainer)
+
+La transferencia de versiones permite replicar proyectos entre el servidor backend y el 
+servidor trainer para entrenamiento de modelos de IA.
+
+**Arquitectura:**
+```
+Backend Core → fmanagement → rsync/SSH → Servidor Trainer
+                              (o copia local en macbook)
+```
+
+**Modos de transferencia:**
+| Modo | Variable | Uso | Mecanismo |
+|------|----------|-----|-----------|
+| Local | `transfer_mode: local` | Desarrollo (macbook) | Copia recursiva |
+| Remoto | `transfer_mode: remote` | Producción (dev/pre/pro) | rsync over SSH |
+
+**Variables de entorno requeridas (env.yaml):**
+```yaml
+# Rutas de almacenamiento
+backend_core_base_storage: /data/files/external  # Servidor backend
+backend_ia_base_storage: /data/files/trainer     # Servidor trainer
+
+# Configuración de transferencia
+transfer_mode: local  # "local" o "remote"
+
+# SSH (solo modo remote)
+trainer_ssh_host: trainer.internal
+trainer_ssh_user: rsync_user
+trainer_ssh_key_path: /opt/anewhope/keys/rsync_key
+trainer_ssh_port: "22"
+```
+
+**Endpoints:**
+- **Backend Core:** `POST /fmo/transferversion`
+- **fmanagement:** `POST /fmo/transferversion`
+
+**Permisos requeridos:** `version_create`
+
+**Reglas obligatorias:**
+1. ✅ Toda transferencia requiere permiso `version_create` validado en cada capa
+2. ✅ Los headers `Authorization` y `X-Session-Token` deben propagarse hasta fmanagement
+3. ✅ Las rutas de almacenamiento deben configurarse en `env.yaml` por entorno
+4. ✅ En macbook, usar `transfer_mode: local` para emulación
+5. ✅ En producción, configurar claves SSH y usar `transfer_mode: remote`
+
+**Script de configuración (macbook):**
+```bash
+./scripts/setup_transfer_environment.sh
+```
+
+**Tests:**
+- fmanagement: `go test -v -run TestTransferVersion`
+- Backend Core: `pytest src/apps/3_backend/tests/test_version_transfer.py`
+
 ### Scripts de mantenimiento
 - `clear_caches.sh`: limpia caches de Reflex (`.web`, `.states`) y caches de tooling
   (`__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.coverage`, `.hypothesis`).
@@ -184,10 +239,15 @@ Si un test falla de forma inconsistente:
 | Entorno Virtual | Puerto | Aplicaciones | Script run.sh | Script entrypoint.sh |
 |-----------------|--------|--------------|---------------|----------------------|
 | `.venv_backend313` | 8003 | `3_backend` | ✅ Usa entorno | ❌ Docker (deps en imagen) |
+| `.venv_trainer312` | 8004 | `4_trainer` | ✅ Usa entorno | ❌ Docker (deps en imagen) |
 | `.venv_frontend313` | 8005 | `5_web_frontend`, `2_shared_application` | ✅ Usa entorno | ❌ Docker (deps en imagen) |
 | `.venv_backoffice313` | 8006 | `6_web_backoffice` | ✅ Usa entorno | ❌ Docker (deps en imagen) |
 | `.venv_middleware313` | 8007 | `7_service_frontend` | ✅ Usa entorno | ❌ Docker (deps en imagen) |
 | `.venv_broker313` | 8008 | `8_service_backend` | ✅ Usa entorno | ❌ Docker (deps en imagen) |
+
+**NOTA IMPORTANTE sobre Python 3.12 en 4_trainer:**
+El Backend IA (`4_trainer`) usa **Python 3.12** (no 3.13) debido a requisitos de compatibilidad
+con dependencias de IA como TensorFlow y Keras. Ver `src/docs/stack_of_technologies.adr` para más detalles.
 
 #### Reglas de diseño de entornos:
 
@@ -827,11 +887,12 @@ All numbered application folders in `src/apps/` (e.g., `3_backend/`, `4_trainer/
 
 Cada aplicación usa **puerto fijo 8000 + el primer número del nombre de su carpeta**:
 
-- `3_backend` → **8003**
+- `3_backend` → **8003** (Backend Core - datos, usuarios, permisos, fmanagement)
+- `4_trainer` → **8004** (Backend IA - entrenamiento, modelos, métricas)
 - `5_web_frontend` → **8005**
 - `6_web_backoffice` → **8006** (reservado)
 - `7_service_frontend` → **8007**
-- `8_service_backend` → **8008** (reservado)
+- `8_service_backend` → **8008** (Broker - enruta entre Backend Core y Backend IA)
 
 La intención es identificar servicios por puerto en el host, manteniendo una asignación estable.
 
@@ -864,6 +925,9 @@ auditoría, debugging y correlación de logs.
 ```
 Frontend/Backoffice → Middleware → Broker → Backend Core → fmanagement
      [frontend]        [propaga]    [propaga]  [propaga]    [recibe]
+
+Frontend/Backoffice → Middleware → Broker → Backend IA → fmanagement
+     [frontend]        [propaga]    [propaga]  [propaga]   [recibe]
 ```
 
 **Valores estándar por servicio:**
@@ -872,8 +936,9 @@ Frontend/Backoffice → Middleware → Broker → Backend Core → fmanagement
 | `5_web_frontend` | `frontend` | `adapters/api_client.py` |
 | `6_web_backoffice` | `backoffice` | `adapters/api_client.py` |
 | `7_service_frontend` | `middleware` (origen) | `broker_backend_client.py` |
-| `8_service_backend` | propaga origen | `interfacetocore.py` |
+| `8_service_backend` | propaga origen | `interfacetocore.py`, `interfacetotrainer.py` |
 | `3_backend` | propaga origen | `apicore.py` |
+| `4_trainer` | propaga origen | `apitrainer.py` |
 
 **Reglas de implementación:**
 

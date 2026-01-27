@@ -809,6 +809,111 @@ class BackendCoreRouter:
                 "No se pudo comparar versiones en fmanagement"
             ) from exc
 
+    def transfer_version(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """
+        Transfiere una versión entre servidores backend y trainer.
+        
+        Delega la operación en fmanagement que ejecutará la transferencia
+        usando rsync over SSH (remoto) o copia local (desarrollo).
+        
+        SECURITY BY DESIGN: Requiere permiso version_create.
+        
+        Args:
+            payload: Diccionario con los datos de transferencia:
+                - id_user: ID del usuario
+                - id_organization: ID de la organización
+                - id_project: ID del proyecto
+                - version_path: Versión a transferir (ej: v001)
+                - target_type: Destino ('trainer' o 'core')
+                - identity_type_id: ID del tipo de identidad para permisos
+            headers: Headers HTTP para autenticación
+        
+        Returns:
+            Diccionario con el resultado de la transferencia:
+                - status: Estado de la operación
+                - message: Mensaje descriptivo
+                - source_path: Ruta origen
+                - destination_path: Ruta destino
+                - bytes_transferred: Bytes transferidos
+                - files_transferred: Archivos transferidos
+        
+        Raises:
+            BackendCoreBusinessError: Si falla la transferencia
+            BackendCorePermissionError: Si no tiene permiso version_create
+        """
+        # Validar permiso de creación de versión (usado para transferencias)
+        identity_type_id = int(payload.get("identity_type_id", 0))
+        if identity_type_id > 0:
+            self.validate_permission(identity_type_id, "version_create")
+            self._logger.info(
+                "Permiso validado para transferencia de versión: identity_type_id=%s",
+                identity_type_id,
+            )
+        
+        # Validar target_type
+        target_type = str(payload.get("target_type", "")).lower()
+        if target_type not in ("trainer", "core"):
+            raise BackendCoreBusinessError(
+                "target_type debe ser 'trainer' o 'core'"
+            )
+        
+        client = self._get_fmanagement_client()
+        
+        # Construir payload para fmanagement
+        id_organization = int(payload.get("id_organization", 0))
+        id_project = int(payload.get("id_project", 0))
+        version_path = str(payload.get("version_path", "")).strip()
+        
+        paths = build_storage_paths(
+            id_organization=id_organization,
+            id_project=id_project,
+            version_path=version_path,
+            subfolders="",
+        )
+        
+        transfer_params = {
+            "iduser": str(payload.get("id_user", 0)),
+            "orgpath": paths["orgpath"],
+            "prjpath": paths["prjpath"],
+            "versionpath": paths["versionpath"],
+            "target_type": target_type,
+            "identity_type_id": str(identity_type_id) if identity_type_id else "",
+        }
+        
+        self._logger.info(
+            "Iniciando transferencia de versión: org=%s prj=%s version=%s target=%s",
+            paths["orgpath"],
+            paths["prjpath"],
+            paths["versionpath"],
+            target_type,
+        )
+        
+        try:
+            result = client.request_json(
+                "POST",
+                "/fmo/transferversion",
+                headers=headers,
+                form=transfer_params,
+            )
+            
+            self._logger.info(
+                "Transferencia completada: status=%s files=%s bytes=%s",
+                result.get("status"),
+                result.get("files_transferred", 0),
+                result.get("bytes_transferred", 0),
+            )
+            
+            return result
+        except FmanagementClientError as exc:
+            self._logger.error(
+                "Error en transferencia de versión: %s", str(exc)
+            )
+            raise BackendCoreBusinessError(
+                "No se pudo transferir la versión en fmanagement"
+            ) from exc
+
     def _find_low_level_permission(self, permission_id: int) -> dict[str, Any]:
         """Obtiene permisos de bajo nivel asociados a un permiso base."""
 

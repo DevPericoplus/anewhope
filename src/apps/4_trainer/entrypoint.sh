@@ -1,7 +1,8 @@
 #!/bin/bash
-# Entrypoint para ejecutar el trainer (pendiente de implementación)
+# Entrypoint para ejecutar el backend IA (trainer) en contenedor
 
 set -e
 
-echo "Servicio trainer pendiente de implementación"
-sleep infinity
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+export PYTHONPATH="$ROOT_DIR"
+python -m src.apps.4_trainer.main

@@ -228,3 +228,4 @@ infrastructure/certificates/**/*.csr
 .venv_backoffice313/
 .venv_middleware313/
 .venv_broker313/
+.venv_trainer312/

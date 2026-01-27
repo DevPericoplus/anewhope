@@ -81,7 +81,33 @@ echo "=========================================="
 pytest -v --rootdir=src/apps/3_backend src/apps/3_backend/tests
 echo ""
 
+echo "=========================================="
+echo "TESTS: Version Transfer (3_backend)"
+echo "=========================================="
+pytest -v --rootdir=src/apps/3_backend src/apps/3_backend/tests/test_version_transfer.py
+echo ""
+
 deactivate
+
+# ============================================
+# TESTS DE FMANAGEMENT (opcional)
+# ============================================
+FMANAGEMENT_PATH="../fmanagement"
+if [ -d "$FMANAGEMENT_PATH" ] && [ -f "$FMANAGEMENT_PATH/main_test.go" ]; then
+    echo "=========================================="
+    echo "TESTS: fmanagement (Go API)"
+    echo "=========================================="
+    cd "$FMANAGEMENT_PATH"
+    go test -v -timeout 120s
+    cd - > /dev/null
+    echo ""
+else
+    echo "=========================================="
+    echo "INFO: fmanagement no encontrado en $FMANAGEMENT_PATH"
+    echo "      Omitiendo tests de fmanagement"
+    echo "=========================================="
+    echo ""
+fi
 
 echo "=========================================="
 echo "✅ TODOS LOS TESTS COMPLETADOS CON ÉXITO"
@@ -97,4 +123,8 @@ echo "  ✅ Backoffice Redis integration"
 echo "  ✅ Service Frontend (7_service_frontend)"
 echo "  ✅ Service Backend (8_service_backend)"
 echo "  ✅ Backend Core (3_backend)"
+echo "  ✅ Version Transfer (3_backend)"
+if [ -d "$FMANAGEMENT_PATH" ] && [ -f "$FMANAGEMENT_PATH/main_test.go" ]; then
+    echo "  ✅ fmanagement (Go API)"
+fi
 echo ""

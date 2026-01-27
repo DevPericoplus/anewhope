@@ -624,3 +624,274 @@ async def process_data_endpoint(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
+
+
+# === Endpoints de Training (Backend IA) ===
+
+
+class TrainerHealthResponse(BaseModel):
+    """Respuesta del health check del trainer."""
+
+    status: str
+    service: str
+    version: str
+
+
+class VersionCloneRequest(BaseModel):
+    """Payload para clonar versión para entrenamiento."""
+
+    id_user: int
+    id_organization: int
+    id_project: int
+    version_path: str
+
+
+class VersionCloneResponse(BaseModel):
+    """Respuesta de clonado de versión."""
+
+    success: bool
+    cloned_path: str = ""
+    message: str = ""
+
+
+class TrainingStartRequest(BaseModel):
+    """Payload para iniciar entrenamiento."""
+
+    id_user: int
+    id_organization: int
+    id_project: int
+    version_path: str
+    training_params: dict[str, Any] = Field(default_factory=dict)
+
+
+class TrainingStartResponse(BaseModel):
+    """Respuesta de inicio de entrenamiento."""
+
+    success: bool
+    training_id: int | None = None
+    message: str = ""
+
+
+class TrainingStopRequest(BaseModel):
+    """Payload para detener entrenamiento."""
+
+    training_id: int
+
+
+class TrainingStopResponse(BaseModel):
+    """Respuesta de detención de entrenamiento."""
+
+    success: bool
+    message: str = ""
+
+
+class TrainingStatusResponse(BaseModel):
+    """Respuesta con estado del entrenamiento."""
+
+    training_id: int
+    status: str
+    progress: float = 0.0
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    started_at: str | None = None
+    finished_at: str | None = None
+
+
+class ModelListResponse(BaseModel):
+    """Respuesta con lista de modelos."""
+
+    models: list[dict[str, Any]] = Field(default_factory=list)
+    total: int = 0
+
+
+class ModelMetricsResponse(BaseModel):
+    """Respuesta con métricas de un modelo."""
+
+    model_id: int
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    training_history: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class TrainingPermissionsResponse(BaseModel):
+    """Respuesta con permisos de entrenamiento."""
+
+    identity_type_id: int
+    permissions: dict[str, bool] = Field(default_factory=dict)
+
+
+@app.get("/training/health", response_model=TrainerHealthResponse)
+def trainer_health_check_endpoint(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> TrainerHealthResponse:
+    """Health check del servicio trainer."""
+
+    try:
+        response = router.trainer_health_check(session)
+        return TrainerHealthResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/training/clone-version", response_model=VersionCloneResponse)
+def clone_version_for_training_endpoint(
+    payload: VersionCloneRequest,
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> VersionCloneResponse:
+    """Clona una versión para entrenamiento."""
+
+    try:
+        response = router.clone_version_for_training(payload.model_dump(), session)
+        ip_address, user_agent = _get_request_metadata(http_request)
+        router.log_activity_action(
+            action="Clonar versión para entrenamiento",
+            entity_id=payload.id_project,
+            ip=ip_address,
+            user_agent=user_agent,
+        )
+        return VersionCloneResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN
+            if "permisos" in str(exc).lower()
+            else status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/training/start", response_model=TrainingStartResponse)
+def start_training_endpoint(
+    payload: TrainingStartRequest,
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> TrainingStartResponse:
+    """Inicia un proceso de entrenamiento."""
+
+    try:
+        response = router.start_training(payload.model_dump(), session)
+        ip_address, user_agent = _get_request_metadata(http_request)
+        router.log_activity_action(
+            action="Iniciar entrenamiento",
+            entity_id=payload.id_project,
+            ip=ip_address,
+            user_agent=user_agent,
+        )
+        return TrainingStartResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN
+            if "permisos" in str(exc).lower()
+            else status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/training/stop", response_model=TrainingStopResponse)
+def stop_training_endpoint(
+    payload: TrainingStopRequest,
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> TrainingStopResponse:
+    """Detiene un proceso de entrenamiento."""
+
+    try:
+        response = router.stop_training(payload.model_dump(), session)
+        ip_address, user_agent = _get_request_metadata(http_request)
+        router.log_activity_action(
+            action="Detener entrenamiento",
+            entity_id=payload.training_id,
+            ip=ip_address,
+            user_agent=user_agent,
+        )
+        return TrainingStopResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN
+            if "permisos" in str(exc).lower()
+            else status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/training/{training_id}/status", response_model=TrainingStatusResponse)
+def get_training_status_endpoint(
+    training_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> TrainingStatusResponse:
+    """Obtiene el estado de un entrenamiento."""
+
+    try:
+        response = router.get_training_status(training_id, session)
+        return TrainingStatusResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN
+            if "permisos" in str(exc).lower()
+            else status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/training/models", response_model=ModelListResponse)
+def list_models_endpoint(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+    id_organization: int | None = None,
+    id_project: int | None = None,
+) -> ModelListResponse:
+    """Lista modelos entrenados."""
+
+    try:
+        response = router.list_models(session, id_organization, id_project)
+        return ModelListResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN
+            if "permisos" in str(exc).lower()
+            else status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/training/models/{model_id}/metrics", response_model=ModelMetricsResponse)
+def get_model_metrics_endpoint(
+    model_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> ModelMetricsResponse:
+    """Obtiene métricas de un modelo."""
+
+    try:
+        response = router.get_model_metrics(model_id, session)
+        return ModelMetricsResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN
+            if "permisos" in str(exc).lower()
+            else status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/training/permissions", response_model=TrainingPermissionsResponse)
+def get_training_permissions_endpoint(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> TrainingPermissionsResponse:
+    """Obtiene permisos de entrenamiento para el usuario actual."""
+
+    try:
+        response = router.get_training_permissions(session)
+        return TrainingPermissionsResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc

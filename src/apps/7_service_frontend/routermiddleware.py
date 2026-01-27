@@ -241,13 +241,27 @@ def _record_signature(record: dict[str, Any]) -> str:
 
 @dataclass(frozen=True)
 class SessionContext:
-    """Contexto de sesión validado."""
+    """Contexto de sesión validado.
+
+    Incluye los tokens originales para propagación a servicios downstream.
+    Esto permite mantener el contexto de seguridad en todo el flujo
+    (Security by Design).
+    """
 
     user_id: int
     organization_id: int
     identity_type_id: int
     access_payload: dict[str, Any]
     session_payload: dict[str, Any]
+    access_token: str = ""  # Token JWT original para propagación
+    session_token: str = ""  # Token de sesión original para propagación
+
+    @property
+    def authorization_header(self) -> str:
+        """Retorna el header Authorization formateado."""
+        if self.access_token:
+            return f"Bearer {self.access_token}"
+        return ""
 
 
 @dataclass(frozen=True)
@@ -748,6 +762,8 @@ class RouterMiddleware:
             identity_type_id=access_identity_type_id,
             access_payload=access_payload,
             session_payload=session_payload,
+            access_token=access_token,
+            session_token=session_token,
         )
 
     def validate_session(self, access_token: str, session_token: str) -> SessionContext:
@@ -2369,3 +2385,289 @@ class RouterMiddleware:
             session.organization_id,
         )
         return response
+
+    # === Métodos de Training (Backend IA) ===
+
+    def _configure_broker_security(self, session: SessionContext) -> None:
+        """Configura el contexto de seguridad en el broker client.
+
+        Este método propaga los tokens JWT al broker para mantener
+        el contexto de sesión en todo el flujo (Security by Design).
+
+        Args:
+            session: Contexto de sesión validado con tokens
+        """
+        if self._broker_client is None:
+            return
+
+        self._broker_client.set_security_context(
+            authorization=session.authorization_header,
+            session_token=session.session_token,
+        )
+        self._logger.debug(
+            "Contexto de seguridad configurado para broker: user_id=%s",
+            session.user_id,
+        )
+
+    def trainer_health_check(self, session: SessionContext) -> dict[str, Any]:
+        """Verifica el estado del servicio trainer.
+
+        Args:
+            session: Contexto de sesión del usuario
+
+        Returns:
+            Estado del servicio trainer
+
+        Raises:
+            BusinessRuleError: Si no se puede contactar al trainer
+        """
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.trainer_health_check()
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                "No se pudo verificar el estado del trainer"
+            ) from exc
+
+    def clone_version_for_training(
+        self,
+        payload: dict[str, Any],
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Clona una versión para entrenamiento.
+
+        Args:
+            payload: Datos de la versión a clonar
+            session: Contexto de sesión del usuario
+
+        Returns:
+            Resultado del clonado con path de destino
+
+        Raises:
+            BusinessRuleError: Si no tiene permisos o falla el clonado
+        """
+        # Validar permisos de entrenamiento
+        if not self.has_low_level_permission(session, "training_create"):
+            raise BusinessRuleError(
+                "Sin permisos para clonar versiones para entrenamiento"
+            )
+
+        self._configure_broker_security(session)
+
+        # Añadir identity_type_id para validación en backend
+        payload_with_auth = {
+            **payload,
+            "identity_type_id": session.identity_type_id,
+        }
+
+        self._logger.info(
+            "Clonando versión para entrenamiento: user_id=%s org_id=%s project_id=%s",
+            session.user_id,
+            payload.get("id_organization"),
+            payload.get("id_project"),
+        )
+
+        try:
+            return self._broker_client.clone_version_for_training(payload_with_auth)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                "No se pudo clonar la versión para entrenamiento"
+            ) from exc
+
+    def start_training(
+        self,
+        payload: dict[str, Any],
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Inicia un proceso de entrenamiento.
+
+        Args:
+            payload: Configuración del entrenamiento
+            session: Contexto de sesión del usuario
+
+        Returns:
+            ID del entrenamiento iniciado
+
+        Raises:
+            BusinessRuleError: Si no tiene permisos o falla el inicio
+        """
+        # Validar permisos de entrenamiento
+        if not self.has_low_level_permission(session, "training_start"):
+            raise BusinessRuleError("Sin permisos para iniciar entrenamiento")
+
+        self._configure_broker_security(session)
+
+        payload_with_auth = {
+            **payload,
+            "identity_type_id": session.identity_type_id,
+        }
+
+        self._logger.info(
+            "Iniciando entrenamiento: user_id=%s org_id=%s project_id=%s",
+            session.user_id,
+            payload.get("id_organization"),
+            payload.get("id_project"),
+        )
+
+        try:
+            return self._broker_client.start_training(payload_with_auth)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("No se pudo iniciar el entrenamiento") from exc
+
+    def stop_training(
+        self,
+        payload: dict[str, Any],
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Detiene un proceso de entrenamiento.
+
+        Args:
+            payload: Datos del entrenamiento a detener
+            session: Contexto de sesión del usuario
+
+        Returns:
+            Confirmación de detención
+
+        Raises:
+            BusinessRuleError: Si no tiene permisos o falla la detención
+        """
+        # Validar permisos de entrenamiento
+        if not self.has_low_level_permission(session, "training_stop"):
+            raise BusinessRuleError("Sin permisos para detener entrenamiento")
+
+        self._configure_broker_security(session)
+
+        payload_with_auth = {
+            **payload,
+            "identity_type_id": session.identity_type_id,
+        }
+
+        self._logger.info(
+            "Deteniendo entrenamiento: user_id=%s training_id=%s",
+            session.user_id,
+            payload.get("training_id"),
+        )
+
+        try:
+            return self._broker_client.stop_training(payload_with_auth)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("No se pudo detener el entrenamiento") from exc
+
+    def get_training_status(
+        self,
+        training_id: int,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Obtiene el estado de un entrenamiento.
+
+        Args:
+            training_id: ID del entrenamiento
+            session: Contexto de sesión del usuario
+
+        Returns:
+            Estado del entrenamiento con métricas
+
+        Raises:
+            BusinessRuleError: Si no tiene permisos o falla la consulta
+        """
+        # Validar permisos de lectura de entrenamiento
+        if not self.has_low_level_permission(session, "training_read"):
+            raise BusinessRuleError("Sin permisos para ver estado de entrenamiento")
+
+        self._configure_broker_security(session)
+
+        try:
+            return self._broker_client.get_training_status(
+                training_id, session.identity_type_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                "No se pudo obtener el estado del entrenamiento"
+            ) from exc
+
+    def list_models(
+        self,
+        session: SessionContext,
+        id_organization: int | None = None,
+        id_project: int | None = None,
+    ) -> dict[str, Any]:
+        """Lista modelos entrenados.
+
+        Args:
+            session: Contexto de sesión del usuario
+            id_organization: Filtro por organización
+            id_project: Filtro por proyecto
+
+        Returns:
+            Lista de modelos
+
+        Raises:
+            BusinessRuleError: Si no tiene permisos o falla la consulta
+        """
+        # Validar permisos de lectura de entrenamiento
+        if not self.has_low_level_permission(session, "training_read"):
+            raise BusinessRuleError("Sin permisos para listar modelos")
+
+        self._configure_broker_security(session)
+
+        try:
+            return self._broker_client.list_models(
+                id_organization, id_project, session.identity_type_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("No se pudo listar los modelos") from exc
+
+    def get_model_metrics(
+        self,
+        model_id: int,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Obtiene métricas de un modelo.
+
+        Args:
+            model_id: ID del modelo
+            session: Contexto de sesión del usuario
+
+        Returns:
+            Métricas del modelo
+
+        Raises:
+            BusinessRuleError: Si no tiene permisos o falla la consulta
+        """
+        # Validar permisos de lectura de entrenamiento
+        if not self.has_low_level_permission(session, "training_read"):
+            raise BusinessRuleError("Sin permisos para ver métricas del modelo")
+
+        self._configure_broker_security(session)
+
+        try:
+            return self._broker_client.get_model_metrics(
+                model_id, session.identity_type_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                "No se pudo obtener las métricas del modelo"
+            ) from exc
+
+    def get_training_permissions(
+        self,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Obtiene permisos de entrenamiento para el usuario actual.
+
+        Args:
+            session: Contexto de sesión del usuario
+
+        Returns:
+            Diccionario con permisos de entrenamiento
+        """
+        self._configure_broker_security(session)
+
+        try:
+            return self._broker_client.get_training_permissions(
+                session.identity_type_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                "No se pudo obtener los permisos de entrenamiento"
+            ) from exc

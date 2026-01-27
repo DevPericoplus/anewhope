@@ -9,9 +9,22 @@ services:
     environment:
       SERVICE_HOST: "0.0.0.0"
       SERVICE_PORT: "8004"
+      # Variables de almacenamiento para versiones replicadas
+      BACKEND_IA_BASE_STORAGE: "${BACKEND_IA_BASE_STORAGE:-/data/files/trainer}"
+      # Variables de conexión con broker/core
+      BROKER_BACKEND_BASE_URL: "${BROKER_BACKEND_BASE_URL}"
+      STORAGE_MODE: "${STORAGE_MODE:-db_only}"
+    volumes:
+      # Volumen para recibir versiones replicadas desde backend
+      - "${BACKEND_IA_BASE_STORAGE:-/data/files/trainer}:/data/files/trainer"
     ports:
       - "8004:8004"
 
+  # NOTA: Usa Python 3.12 por compatibilidad con TensorFlow/Keras
   keras_service:
-    image: python:3.13-slim
+    image: python:3.12-slim
+    environment:
+      BACKEND_IA_BASE_STORAGE: "${BACKEND_IA_BASE_STORAGE:-/data/files/trainer}"
+    volumes:
+      - "${BACKEND_IA_BASE_STORAGE:-/data/files/trainer}:/data/files/trainer"
     command: ["sleep", "infinity"]

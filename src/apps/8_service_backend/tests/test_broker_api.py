@@ -146,6 +146,18 @@ def test_broker_routes(tmp_path: Path) -> None:
     class FakeCoreClient:
         """Cliente core en memoria para tests."""
 
+        def set_client_app(self, client_app: str) -> None:
+            """Configura el identificador de aplicación cliente (no-op para tests)."""
+            pass
+
+        def set_security_context(
+            self,
+            authorization: str | None = None,
+            session_token: str | None = None,
+        ) -> None:
+            """Configura el contexto de seguridad (no-op para tests)."""
+            pass
+
         def fetch_users(self) -> list[dict[str, Any]]:
             return core_client.get("/users").json()
 

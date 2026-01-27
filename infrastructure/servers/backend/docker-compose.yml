@@ -49,6 +49,17 @@ services:
       PERMISSIONS_SOURCE: "${PERMISSIONS_SOURCE}"
       MIDDLEWARE_BASE_URL: "${MIDDLEWARE_BASE_URL}"
       CORE_BACKEND_BASE_URL: "${CORE_BACKEND_BASE_URL}"
+      # Variables para transferencia de versiones
+      BACKEND_CORE_BASE_STORAGE: "${BACKEND_CORE_BASE_STORAGE:-/data/files/external}"
+      BACKEND_IA_BASE_STORAGE: "${BACKEND_IA_BASE_STORAGE:-/data/files/trainer}"
+      TRANSFER_MODE: "${TRANSFER_MODE:-remote}"
+      TRAINER_SSH_HOST: "${TRAINER_SSH_HOST}"
+      TRAINER_SSH_USER: "${TRAINER_SSH_USER}"
+      TRAINER_SSH_KEY_PATH: "${TRAINER_SSH_KEY_PATH}"
+      TRAINER_SSH_PORT: "${TRAINER_SSH_PORT:-22}"
+    volumes:
+      - "${BACKEND_CORE_BASE_STORAGE:-/data/files/external}:/data/files/external"
+      - "${TRAINER_SSH_KEY_PATH:-/opt/anewhope/keys/rsync_key}:${TRAINER_SSH_KEY_PATH:-/opt/anewhope/keys/rsync_key}:ro"
     ports:
       - "1666:1666"
 
