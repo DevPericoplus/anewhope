@@ -17,6 +17,7 @@ from adapters.api_client import (
 )
 from pages.flujos import FlujosState, flujos_diagram, load_flujos_content
 from pages.organizacion import load_organizacion_content
+from low_panel_pages.show_md import show_md  # noqa: F401 - Importado para registrar la ruta
 from web_backoffice.shared_state import SharedSessionState
 
 # Importar logger de actividad usando importlib (el directorio tiene número)
@@ -961,31 +962,31 @@ def footer() -> rx.Component:
     return rx.vstack(
         rx.hstack(
             rx.vstack(
-                rx.text("Productos", font_weight="bold", color=COLORS["foreground"], font_size="1.4em"),
-                rx.link("Características", color=COLORS["primary"], href="#", font_size="1.3em"),
-                rx.link("Precios", color=COLORS["primary"], href="#", font_size="1.3em"),
-                rx.link("Seguridad", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.text("Servicios", font_weight="bold", color=COLORS["foreground"], font_size="1.4em"),
+                rx.link("Características", color=COLORS["primary"], href="/backoffice/show-md?file=caracteristicas", is_external=True, font_size="1.3em"),
+                rx.link("Precios", color=COLORS["primary"], href="/backoffice/show-md?file=precios", is_external=True, font_size="1.3em"),
+                rx.link("Seguridad", color=COLORS["primary"], href="/backoffice/show-md?file=seguridad", is_external=True, font_size="1.3em"),
                 spacing="2",
             ),
             rx.vstack(
                 rx.text("Empresa", font_weight="bold", color=COLORS["foreground"], font_size="1.4em"),
-                rx.link("Nosotros", color=COLORS["primary"], href="#", font_size="1.3em"),
-                rx.link("Blog", color=COLORS["primary"], href="#", font_size="1.3em"),
-                rx.link("Carreras", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Nosotros", color=COLORS["primary"], href="/backoffice/show-md?file=nosotros", is_external=True, font_size="1.3em"),
+                rx.link("Blog", color=COLORS["primary"], href="/backoffice/show-md?file=blog", is_external=True, font_size="1.3em"),
+                rx.link("Estado", color=COLORS["primary"], href="/backoffice/show-md?file=estado", is_external=True, font_size="1.3em"),
                 spacing="2",
             ),
             rx.vstack(
                 rx.text("Recursos", font_weight="bold", color=COLORS["foreground"], font_size="1.4em"),
-                rx.link("Documentación", color=COLORS["primary"], href="#", font_size="1.3em"),
-                rx.link("Comunidad", color=COLORS["primary"], href="#", font_size="1.3em"),
-                rx.link("Soporte", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Documentación", color=COLORS["primary"], href="/backoffice/show-md?file=documentacion", is_external=True, font_size="1.3em"),
+                rx.link("Comunidad", color=COLORS["primary"], href="/backoffice/show-md?file=comunidad", is_external=True, font_size="1.3em"),
+                rx.link("Soporte", color=COLORS["primary"], href="/backoffice/show-md?file=soporte", is_external=True, font_size="1.3em"),
                 spacing="2",
             ),
             rx.vstack(
                 rx.text("Legal", font_weight="bold", color=COLORS["foreground"], font_size="1.4em"),
-                rx.link("Privacidad", color=COLORS["primary"], href="#", font_size="1.3em"),
-                rx.link("Términos", color=COLORS["primary"], href="#", font_size="1.3em"),
-                rx.link("Cookies", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Privacidad", color=COLORS["primary"], href="/backoffice/show-md?file=privacidad", is_external=True, font_size="1.3em"),
+                rx.link("Términos", color=COLORS["primary"], href="/backoffice/show-md?file=terminos", is_external=True, font_size="1.3em"),
+                rx.link("Contratos", color=COLORS["primary"], href="/backoffice/show-md?file=contratos", is_external=True, font_size="1.3em"),
                 spacing="2",
             ),
             spacing="6",
