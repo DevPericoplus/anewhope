@@ -864,19 +864,45 @@ class RouterMiddleware:
         return [UserDto.model_validate(record) for record in records]
 
     def _store_users(self, data_path: Path, users: list[UserDto]) -> None:
-        """Guarda los usuarios en el archivo JSON con retry automático."""
+        """Guarda los usuarios en el archivo JSON con retry automático.
+        
+        IMPORTANTE: En modo db_only, NO escribe al cache local porque el
+        backend core ya lo hace después de sincronizar con MariaDB.
+        Esto evita que el middleware sobrescriba el OTP correcto.
+        """
 
         payload = [user.model_dump() for user in users]
         
-        if self._should_use_broker_reads() or self._should_replicate():
+        # Log detallado para debugging de OTP
+        admin_users = [u for u in payload if u.get("user_name") == "adminone"]
+        if admin_users:
+            self._logger.info(
+                "_store_users() llamado - adminone OTP=%s, storage_mode=%s",
+                admin_users[0].get("user_otp"),
+                self._storage_mode.value,
+            )
+        
+        use_broker = self._should_use_broker_reads()
+        replicate = self._should_replicate()
+        self._logger.info(
+            "_store_users: use_broker=%s, replicate=%s",
+            use_broker, replicate
+        )
+        
+        if use_broker or replicate:
             max_retries = 3
             last_exception = None
             
             for attempt in range(max_retries):
                 try:
+                    self._logger.info(
+                        "Llamando broker.store_users() intento %d/%d",
+                        attempt + 1, max_retries
+                    )
                     self._broker_client.store_users(payload)
-                    self._logger.debug(
-                        f"Usuarios sincronizados con broker (intento {attempt + 1}/{max_retries})"
+                    self._logger.info(
+                        "Usuarios sincronizados con broker (intento %d/%d)",
+                        attempt + 1, max_retries
                     )
                     break  # Éxito, salir del loop
                 except BrokerBackendCommunicationError as exc:
@@ -885,16 +911,17 @@ class RouterMiddleware:
                         # Exponential backoff: 1s, 2s, 4s
                         sleep_time = 2 ** attempt
                         self._logger.warning(
-                            f"Fallo al sincronizar usuarios con broker "
-                            f"(intento {attempt + 1}/{max_retries}). "
-                            f"Reintentando en {sleep_time}s: {exc}"
+                            "Fallo al sincronizar usuarios con broker "
+                            "(intento %d/%d). Reintentando en %ds: %s",
+                            attempt + 1, max_retries, sleep_time, exc
                         )
                         time.sleep(sleep_time)
                     else:
                         # Último intento falló
                         self._logger.error(
-                            f"Todos los intentos de sincronización con broker fallaron "
-                            f"tras {max_retries} intentos: {exc}"
+                            "Todos los intentos de sincronización con broker fallaron "
+                            "tras %d intentos: %s",
+                            max_retries, exc
                         )
             
             # Si todos los intentos fallaron, lanzar excepción
@@ -903,8 +930,17 @@ class RouterMiddleware:
                     f"No se pudo guardar usuarios en broker tras {max_retries} intentos. "
                     f"OTP NO sincronizado."
                 ) from last_exception
+            
+            # En modo db_only, NO escribir al cache local
+            # El backend core ya sincroniza con MariaDB y escribe al JSON
+            if use_broker:
+                self._logger.info(
+                    "Modo db_only: cache local NO actualizado (delegado a backend core)"
+                )
+                return
         
-        # Guardar en JSON (cache local)
+        # Solo en modo mock o mock_and_db: escribir al cache local
+        self._logger.info("Escribiendo cache local en %s", data_path)
         self._sync_users_cache(data_path, payload)
 
     def _sync_users_cache(

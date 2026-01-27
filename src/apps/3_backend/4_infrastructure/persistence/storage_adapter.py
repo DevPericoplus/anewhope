@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -211,11 +212,37 @@ class JsonMockStorageAdapter:
         return [UserDto.model_validate(record) for record in records]
 
     def store_users(self, users: list[UserDto]) -> None:
-        """Guarda usuarios en JSON."""
+        """Guarda usuarios en JSON y sincroniza con MariaDB.
+        
+        IMPORTANTE: Sincroniza primero con MariaDB (si aplica) y luego
+        escribe el JSON. Esto garantiza que si la BD falla, el JSON local
+        no queda desincronizado.
+        """
+        _logger = logging.getLogger("backend_core.storage")
+        
+        # Log de entrada con OTPs relevantes para debugging
+        admin_users = [u for u in users if u.user_name == "adminone"]
+        if admin_users:
+            _logger.info(
+                "store_users() llamado - adminone OTP=%s",
+                admin_users[0].user_otp
+            )
 
-        _write_json_list(self._users_path, [user.model_dump() for user in users])
-        if _should_sync_users_to_db():
+        # Primero sincronizar con MariaDB (si está configurado)
+        # Esto garantiza que si falla la BD, no actualizamos el JSON
+        should_sync = _should_sync_users_to_db()
+        _logger.info("should_sync_users_to_db() = %s", should_sync)
+        
+        if should_sync:
+            _logger.info("Sincronizando %d usuarios con MariaDB...", len(users))
             _sync_users_to_mariadb(users)
+            _logger.info("Sincronización con MariaDB completada")
+        
+        # Solo si la sincronización con BD fue exitosa (o no aplica),
+        # actualizamos el JSON local
+        _logger.info("Escribiendo JSON a %s", self._users_path)
+        _write_json_list(self._users_path, [user.model_dump() for user in users])
+        _logger.info("JSON actualizado correctamente")
 
     def load_organizations(self) -> list[OrganizationDto]:
         """Carga organizaciones desde JSON."""
@@ -524,7 +551,12 @@ def _load_roles_from_mariadb() -> list[dict[str, Any]]:
 
 
 def _sync_users_to_mariadb(users: list[UserDto]) -> None:
-    """Sincroniza usuarios en MariaDB (tabla users y datos asociados)."""
+    """Sincroniza usuarios en MariaDB (tabla users y datos asociados).
+    
+    CRÍTICO: Esta función debe completarse exitosamente antes de actualizar
+    el JSON local. Si falla, se lanza StorageAdapterError y el OTP quedará
+    sincronizado entre ambas fuentes.
+    """
 
     settings = load_mariadb_settings()
     cli_path = settings["cli_path"]
@@ -532,10 +564,10 @@ def _sync_users_to_mariadb(users: list[UserDto]) -> None:
     db_user = settings["writer_user"]
     db_password = settings["writer_password"]
     if not cli_path or not db_user:
-        raise StorageAdapterError("Faltan credenciales para MariaDB")
+        raise StorageAdapterError("Faltan credenciales de escritura para MariaDB")
 
     def sql_escape(value: str) -> str:
-        return value.replace("\\\\", "\\\\\\\\").replace("'", "''")
+        return value.replace("\\", "\\\\").replace("'", "''")
 
     for user in users:
         payload = user.model_dump()
@@ -553,7 +585,25 @@ def _sync_users_to_mariadb(users: list[UserDto]) -> None:
             "-e",
             combined_sql,
         ]
-        subprocess.run(cmd, check=True)
+        try:
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            if result.stderr:
+                # MariaDB puede enviar warnings a stderr incluso con éxito
+                logging.getLogger("backend_core.storage").warning(
+                    "MariaDB warning para user_id=%s: %s",
+                    payload.get("user_id"),
+                    result.stderr.strip(),
+                )
+        except subprocess.CalledProcessError as exc:
+            error_msg = exc.stderr if exc.stderr else str(exc)
+            logging.getLogger("backend_core.storage").error(
+                "Error sincronizando user_id=%s a MariaDB: %s",
+                payload.get("user_id"),
+                error_msg,
+            )
+            raise StorageAdapterError(
+                f"No se pudo sincronizar usuario {payload.get('user_id')} a MariaDB: {error_msg}"
+            ) from exc
 
 
 def _build_user_upsert_sqls(payload: dict[str, Any], escape: Any) -> list[str]:

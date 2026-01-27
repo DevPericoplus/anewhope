@@ -1,9 +1,0 @@
-Impulse su transformación digital con Myllm: 
-
-Modelos de Lenguaje (LLM) a medida. 
-Desarrollamos agentes de IA personalizados mediante RAG y Fine-Tuning, 
-optimizando sus procesos con seguridad nativa y despliegue flexible (Cloud o Local). 
-
-Ofrecemos un servicio integral que incluye desde la consultoría documental 
-hasta el mantenimiento experto y auditorías de desempeño. 
-IA robusta, privada y alineada con sus objetivos de negocio.

@@ -331,6 +331,17 @@ Si dos aplicaciones comparten el mismo entorno virtual:
 - **Validación:** Debe existir verificación de consistencia entre `users.json` y la
   tabla `users`, con registro en `src/apps/5_web_frontend/logs/frontend_secure.log`.
 
+### Orden de persistencia en Backend Core (CRÍTICO)
+- **Obligatorio:** En `store_users()` de `storage_adapter.py`, la sincronización con
+  MariaDB **debe ejecutarse ANTES** de escribir el JSON local.
+- **Razón:** Si la BD falla, el JSON local no debe quedar actualizado para evitar
+  desincronización del OTP.
+- **Flujo correcto:**
+  1. Sincronizar con MariaDB (si `STORAGE_MODE` es `mock_and_db` o `db_only`)
+  2. Si la sincronización falla → lanzar excepción, NO actualizar JSON
+  3. Solo si la BD se actualizó correctamente → escribir JSON local
+- **Archivo:** `src/apps/3_backend/4_infrastructure/persistence/storage_adapter.py`
+
 ### Agentes automáticos por proyecto
 - **Obligatorio:** Al crear un proyecto se generan 4 agentes automáticos con el
   patrón `agente_rol_organizacion_proyecto` y roles `identity_type_id` 10-13.
@@ -355,9 +366,15 @@ Si dos aplicaciones comparten el mismo entorno virtual:
 - **Métodos obligatorios:**
   - `load_user_data()`: Cargar datos después del login (solo frontend)
   - `clear_session()`: Limpiar datos en logout
-  - `go_to_backoffice()`: Navegar al backoffice (actualiza `current_app`)
-  - `go_to_frontend()`: Regresar al frontend
+  - `go_to_backoffice()`: Navegar al backoffice con tokens en URL
+  - `go_to_frontend()`: Regresar al frontend con tokens en URL
   - `logout()`: Cerrar sesión en ambas apps
+- **Navegación entre apps (CRÍTICO):**
+  - Ambos métodos (`go_to_backoffice`, `go_to_frontend`) pasan tokens en la URL
+  - Los parámetros incluyen: `access_token`, `session_token`, `user_id`, `org_id`
+  - El `on_page_load` de cada app lee estos parámetros y restaura la sesión
+  - Si los tokens son válidos, se cargan los permisos desde el middleware
+  - Esto es necesario porque son apps separadas con diferentes websockets
 - **Métodos de validación de permisos:**
   - `has_permission("folder_rename")`: Validar permiso por nombre
   - `has_any_permission([...])`: Validar si tiene al menos uno
@@ -882,6 +899,65 @@ All numbered application folders in `src/apps/` (e.g., `3_backend/`, `4_trainer/
   - Example: `5_web_frontend/tests/test_user_creation.py`
 
 **Note:** When creating new numbered application folders, ensure both `logs/` and `tests/` directories are created with appropriate initialization files.
+
+## Estilos visuales diferenciados (Frontend vs Backoffice)
+
+**CRÍTICO:** Las aplicaciones `5_web_frontend` y `6_web_backoffice` tienen estilos de renderizado
+markdown **intencionalmente diferenciados** para proporcionar identidad visual única a cada aplicación.
+
+### Regla de diferenciación visual
+
+| Aplicación | Estilo | Tamaños de fuente | Propósito |
+|------------|--------|-------------------|-----------|
+| `5_web_frontend` | **Zoom aumentado** | h1:9, h2:7, h3:5, p/li:1.15em | Usuarios finales - legibilidad |
+| `6_web_backoffice` | **Tamaño estándar** | h1:7, h2:5, h3:4, p/li:1em | Administradores - densidad |
+
+### Archivos de contenido markdown
+
+Las secciones públicas usan archivos `.md` (no `.txt`):
+
+- `presentation.md` - Presentación de la empresa
+- `services.md` - Catálogo de servicios
+- `proyectos.md` - Metodología de proyectos
+- `contacto.md` - Información de contacto
+- `soporte.md` - Servicios de soporte
+
+**Reglas obligatorias:**
+
+1. ✅ **No unificar estilos**: La diferenciación es intencional y no debe igualarse
+2. ✅ **Usar archivos .md**: Los contenidos públicos deben estar en formato markdown
+3. ✅ **Fallback a .txt**: La función `load_menu_content()` carga `.md` primero, luego `.txt`
+4. ✅ **component_map diferenciado**: Cada app mantiene su propio `component_map` en `rx.markdown()`
+5. ✅ **Contenido compartido**: Ambas apps usan el mismo contenido markdown, solo difiere el estilo
+
+### Implementación técnica
+
+```python
+# Frontend (zoom aumentado) - src/apps/5_web_frontend/web_frontend/web_frontend.py
+rx.markdown(
+    content_text,
+    component_map={
+        "h1": lambda text: rx.heading(text, size="9", ...),  # Más grande
+        "h2": lambda text: rx.heading(text, size="7", ...),
+        "p": lambda text: rx.text(text, font_size="1.15em", ...),  # +15%
+    },
+)
+
+# Backoffice (tamaño estándar) - src/apps/6_web_backoffice/web_backoffice/web_backoffice.py
+rx.markdown(
+    content_text,
+    component_map={
+        "h1": lambda text: rx.heading(text, size="7", ...),  # Estándar
+        "h2": lambda text: rx.heading(text, size="5", ...),
+        "p": lambda text: rx.text(text, font_size="1em", ...),  # Normal
+    },
+)
+```
+
+### Archivos de configuración
+
+- Frontend: `src/apps/5_web_frontend/web_frontend/web_frontend.py` (función `info_panel()`)
+- Backoffice: `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py` (función `info_panel()`)
 
 ## Regla de puertos (estándar)
 

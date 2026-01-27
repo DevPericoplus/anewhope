@@ -412,6 +412,34 @@ if not router.has_low_level_permission(session, "folder_rename"):
 - 🔍 **Script verificación:** `scripts/verify_redis_integration.sh`
 - Actualiza `run.sh` para puerto 8006 y entorno `.venv_backoffice313`
 
+### Estilos visuales diferenciados (Frontend vs Backoffice)
+
+Las aplicaciones web tienen **estilos de renderizado markdown diferenciados** para proporcionar
+identidad visual única a cada aplicación:
+
+| Aplicación | Estilo Markdown | Tamaño de fuente | Uso |
+|------------|-----------------|------------------|-----|
+| `5_web_frontend` | **Zoom aumentado** | h1: 9, h2: 7, h3: 5, p/li: 1.15em | Orientado a usuarios finales, lectura cómoda |
+| `6_web_backoffice` | **Tamaño estándar** | h1: 7, h2: 5, h3: 4, p/li: 1em | Orientado a administradores, densidad de información |
+
+**Archivos de contenido markdown (secciones públicas):**
+- `presentation.md` - Presentación de la empresa
+- `services.md` - Catálogo de servicios
+- `proyectos.md` - Metodología de proyectos
+- `contacto.md` - Información de contacto
+- `soporte.md` - Servicios de soporte
+
+**Implementación técnica:**
+- El renderizado usa `rx.markdown()` con `component_map` personalizado
+- Frontend: fuentes aumentadas (~15% más grandes) para mejor legibilidad
+- Backoffice: fuentes estándar para mayor densidad de información
+- Ambos usan el mismo contenido markdown pero con estilos diferenciados
+- La función `load_menu_content()` carga automáticamente `.md` con fallback a `.txt`
+
+**Archivos de configuración:**
+- `src/apps/5_web_frontend/web_frontend/web_frontend.py` (función `info_panel()`)
+- `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py` (función `info_panel()`)
+
 #### Prerrequisitos para Nginx en macbook
 
 **Herramientas necesarias (se verifican automáticamente):**

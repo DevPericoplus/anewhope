@@ -31,12 +31,12 @@ activity_log.log_startup()
 
 COLORS = {
     "background": "#1a1a1a",
-    "card": "#6B6B6B",
+    "card": "#2d2d2d",
     "foreground": "#f2f2f5",
     "primary": "#22c55e",
     "secondary": "#383854",
-    "border": "#000000",
-    "input": "#383854",
+    "border": "#404040",
+    "input": "#3a3a3a",
     "muted_foreground": "#E0E0E0",
     "accent": "#22c55e",
 }
@@ -76,7 +76,34 @@ class State(SharedSessionState):
             return FlujosState.initialize_from_session(organization_id)
 
     def on_page_load(self):
-        """Ejecuta acciones al recargar la página."""
+        """
+        Ejecuta acciones al recargar la página.
+        
+        Si el usuario viene del backoffice con parámetros de sesión en la URL,
+        restaura la sesión automáticamente.
+        """
+        # Leer tokens de query params (pasados desde el backoffice)
+        params = self.router.page.params
+        access_token = params.get("access_token", "")
+        session_token = params.get("session_token", "")
+        user_id = params.get("user_id", "")
+        org_id = params.get("org_id", "")
+        
+        # Debug
+        print(f"[DEBUG] on_page_load: access_token={bool(access_token)}, session_token={bool(session_token)}, user_id={user_id}")
+        print(f"[DEBUG] on_page_load: is_logged_in={self.is_logged_in}, current params count={len(params)}")
+        
+        # Si vienen tokens en la URL, SIEMPRE restaurar sesión
+        # (el usuario puede venir del backoffice con tokens válidos)
+        if access_token and session_token:
+            print(f"[DEBUG] Tokens encontrados en URL, restaurando sesión...")
+            return self.restore_session_from_url(
+                access_token, session_token, user_id, org_id
+            )
+        
+        print(f"[DEBUG] No tokens in URL, is_logged_in={self.is_logged_in}")
+        
+        # Si el usuario ya está logueado y está en flujos, inicializar
         if self.user_active_menu == "flujos":
             organization_id = self.organization_id
             if organization_id <= 0 and self.access_token:
@@ -84,6 +111,79 @@ class State(SharedSessionState):
                 if organization_id > 0:
                     self.organization_id = organization_id
             return FlujosState.initialize_from_session(organization_id)
+    
+    def restore_session_from_url(
+        self, access_token: str, session_token: str, user_id: str, org_id: str
+    ):
+        """
+        Restaura la sesión del usuario desde los parámetros de URL.
+        Se usa cuando el usuario viene del backoffice.
+        
+        Args:
+            access_token: Token JWT de acceso
+            session_token: Token de sesión
+            user_id: ID del usuario
+            org_id: ID de la organización
+        
+        Returns:
+            None si la sesión se restauró correctamente
+        """
+        if not access_token or not session_token:
+            return None
+        
+        # Log para debug
+        activity_log.log_session_activity(
+            int(user_id) if user_id else 0,
+            f"Restaurando sesión desde URL | org_id={org_id}"
+        )
+        
+        try:
+            # Restaurar tokens y datos básicos PRIMERO
+            self.access_token = access_token
+            self.session_token = session_token
+            self.user_id = int(user_id) if user_id else 0
+            self.organization_id = int(org_id) if org_id else 0
+            self.is_logged_in = True  # Marcar como logueado inmediatamente
+            self.current_app = "frontend"
+            self.user_active_menu = "organizacion"  # Menú por defecto
+            
+            # Cargar permisos desde el middleware
+            permissions_response = get_user_permissions(access_token, session_token)
+            
+            if permissions_response:
+                # Actualizar permisos de bajo nivel
+                low_level_permissions = permissions_response.get("low_level_permissions", {})
+                self._load_permissions(low_level_permissions)
+                
+                # Actualizar datos de usuario adicionales
+                self.identity_type_id = int(permissions_response.get("identity_type_id", self.identity_type_id))
+                self.user_name = permissions_response.get("user_name", "")
+                self.user_email = permissions_response.get("user_email", "")
+                
+                # Actualizar timestamp de actividad
+                self.update_activity()
+                
+                activity_log.log_session_activity(
+                    self.user_id,
+                    "Sesión restaurada exitosamente | permisos cargados"
+                )
+            else:
+                # Si no se pudieron cargar permisos, al menos el usuario está logueado
+                activity_log.log_session_activity(
+                    self.user_id,
+                    "Sesión restaurada sin permisos del middleware"
+                )
+                
+        except Exception as exc:
+            # Si falla, el usuario verá el formulario de login
+            self.login_error = f"Error al restaurar sesión: {str(exc)}"
+            self.is_logged_in = False
+            activity_log.log_session_activity(
+                int(user_id) if user_id else 0,
+                f"Error restaurando sesión: {str(exc)}"
+            )
+        
+        return None
 
     def _extract_org_id_from_token(self, token: str) -> int:
         """Extrae organization_id desde el payload del JWT."""
@@ -226,27 +326,45 @@ class State(SharedSessionState):
 
 
 def load_presentation_content() -> str:
-    """Carga el contenido de presentación desde un archivo externo."""
+    """Carga el contenido de presentación desde un archivo markdown externo."""
     try:
-        # Obtiene la ruta de presentation.txt relativa a este archivo
+        # Obtiene la ruta de presentation.md relativa a este archivo
         current_dir = Path(__file__).parent.parent
-        presentation_file = current_dir / "presentation.txt"
+        presentation_file = current_dir / "presentation.md"
         with open(presentation_file, "r", encoding="utf-8") as f:
             return f.read().strip()
     except (FileNotFoundError, IOError):
-        # Contenido por defecto si el archivo no existe
-        return (
-            "Lorem ipsum dolor sit amet, consectetur adipiscing elit. "
-            "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
-        )
+        # Fallback al archivo .txt si no existe el .md
+        try:
+            current_dir = Path(__file__).parent.parent
+            presentation_file = current_dir / "presentation.txt"
+            with open(presentation_file, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        except (FileNotFoundError, IOError):
+            # Contenido por defecto si ninguno existe
+            return (
+                "Lorem ipsum dolor sit amet, consectetur adipiscing elit. "
+                "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+            )
 
 
 def load_menu_content(filename: str, fallback_text: str) -> str:
-    """Carga contenido de un archivo .txt del menú con fallback."""
+    """Carga contenido de un archivo .md o .txt del menú con fallback.
+    
+    Intenta cargar primero la versión .md, luego .txt.
+    """
 
     try:
-        # Obtiene la ruta del archivo relativa a este archivo
         current_dir = Path(__file__).parent.parent
+        
+        # Intentar cargar versión .md primero
+        md_filename = filename.replace(".txt", ".md")
+        md_file = current_dir / md_filename
+        if md_file.exists():
+            with open(md_file, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        
+        # Fallback a .txt
         content_file = current_dir / filename
         with open(content_file, "r", encoding="utf-8") as f:
             return f.read().strip()
@@ -258,19 +376,28 @@ def load_menu_content(filename: str, fallback_text: str) -> str:
 def logo() -> rx.Component:
     """Logo component."""
     return rx.hstack(
-        rx.text("MY", font_weight="bold", font_size="1.5em", color=COLORS["primary"]),
-        rx.text("llm", font_size="1.5em", color=COLORS["foreground"]),
+        rx.text("MY", font_weight="bold", font_size="1.8em", color=COLORS["primary"]),
+        rx.text("llm", font_size="1.8em", color=COLORS["foreground"]),
         spacing="1",
     )
 
 
 def login_panel() -> rx.Component:
     """Login panel for user portal."""
+    # Ancho fijo para las etiquetas para alinear los campos
+    label_width = "100px"
+    
     return rx.vstack(
-            rx.text("Acceso de Usuario", font_size="1.1em", font_weight="bold", color=COLORS["foreground"]),
+            rx.text("Acceso de Usuario", font_size="1.3em", font_weight="bold", color=COLORS["foreground"]),
             rx.vstack(
-                rx.vstack(
-                    rx.text("Usuario", font_size="0.9em", color=COLORS["muted_foreground"]),
+                rx.hstack(
+                    rx.text(
+                        "Usuario",
+                        font_size="1.1em",
+                        color=COLORS["muted_foreground"],
+                        min_width=label_width,
+                        text_align="left",
+                    ),
                     rx.input(
                         placeholder="Ingrese su usuario",
                         on_change=State.set_user_username,
@@ -278,13 +405,22 @@ def login_panel() -> rx.Component:
                         background_color=COLORS["input"],
                         border_color=COLORS["border"],
                         color=COLORS["foreground"],
-                        width="100%",
+                        font_size="1.05em",
+                        flex="1",
                         border_radius="5px",
                     ),
-                    spacing="1",
+                    width="100%",
+                    align_items="center",
+                    spacing="2",
                 ),
-                rx.vstack(
-                    rx.text("Contraseña", font_size="0.9em", color=COLORS["muted_foreground"]),
+                rx.hstack(
+                    rx.text(
+                        "Contraseña",
+                        font_size="1.1em",
+                        color=COLORS["muted_foreground"],
+                        min_width=label_width,
+                        text_align="left",
+                    ),
                     rx.input(
                         placeholder="Ingrese su contraseña",
                         type_="password",
@@ -293,10 +429,13 @@ def login_panel() -> rx.Component:
                         background_color=COLORS["input"],
                         border_color=COLORS["border"],
                         color=COLORS["foreground"],
-                        width="100%",
+                        font_size="1.05em",
+                        flex="1",
                         border_radius="5px",
                     ),
-                    spacing="1",
+                    width="100%",
+                    align_items="center",
+                    spacing="2",
                 ),
                 rx.button(
                     "Solicitar código OTP",
@@ -306,11 +445,18 @@ def login_panel() -> rx.Component:
                     width="100%",
                     text_align="left",
                     padding="0",
+                    font_size="1.1em",
                     justify_content="flex-start",
                     _hover={"text_decoration": "underline"},
                 ),
-                rx.vstack(
-                    rx.text("OTP", font_size="0.9em", color=COLORS["muted_foreground"]),
+                rx.hstack(
+                    rx.text(
+                        "OTP",
+                        font_size="1.1em",
+                        color=COLORS["muted_foreground"],
+                        min_width=label_width,
+                        text_align="left",
+                    ),
                     rx.input(
                         placeholder="Ingrese su OTP",
                         on_change=State.set_user_otp,
@@ -318,12 +464,15 @@ def login_panel() -> rx.Component:
                         background_color=COLORS["input"],
                         border_color=COLORS["border"],
                         color=COLORS["foreground"],
-                        width="100%",
+                        font_size="1.05em",
+                        flex="1",
                         border_radius="5px",
                     ),
-                    spacing="1",
+                    width="100%",
+                    align_items="center",
+                    spacing="2",
                 ),
-                spacing="2",
+                spacing="3",
             ),
             rx.button(
                 "Iniciar Sesión",
@@ -332,17 +481,18 @@ def login_panel() -> rx.Component:
                 color=COLORS["background"],
                 width="100%",
                 font_weight="bold",
+                font_size="1.1em",
             ),
             rx.text(
                 State.login_error,
                 color="red",
-                font_size="0.85em",
+                font_size="1.0em",
                 display=rx.cond(State.login_error != "", "block", "none"),
             ),
             rx.text(
                 State.otp_request_message,
                 color=COLORS["muted_foreground"],
-                font_size="0.85em",
+                font_size="1.0em",
                 display=rx.cond(State.otp_request_message != "", "block", "none"),
             ),
             rx.vstack(
@@ -350,9 +500,9 @@ def login_panel() -> rx.Component:
                     "Crear nuevo usuario",
                     color=COLORS["primary"],
                     href="/user_creation?from=main",
-                    font_size="0.9em",
+                    font_size="1.1em",
                 ),
-                rx.link("Recordar contraseña", color=COLORS["primary"], href="/change_password?from=main", font_size="0.9em"),
+                rx.link("Recordar contraseña", color=COLORS["primary"], href="/change_password?from=main", font_size="1.1em"),
                 spacing="1",
             ),
             spacing="2",
@@ -380,7 +530,7 @@ def sidebar_menu(is_logged_in: bool) -> rx.Component:
     )
     
     return rx.vstack(
-            rx.text("Menú", font_size="1.1em", font_weight="bold", color=COLORS["foreground"], margin_bottom="1em"),
+            rx.text("Menú", font_size="1.3em", font_weight="bold", color=COLORS["foreground"], margin_bottom="1em"),
             rx.vstack(
                 rx.foreach(
                     menu_items,
@@ -404,6 +554,7 @@ def sidebar_menu(is_logged_in: bool) -> rx.Component:
                         border_radius="0.5em",
                         cursor="pointer",
                         text_align="left",
+                        font_size="1.1em",
                         _hover={"opacity": "0.8"},
                     ),
                 ),
@@ -509,14 +660,53 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             ),
             rx.box(height="0"),
         ),
-        rx.text(
-            content_text,
-            color=COLORS["muted_foreground"],
-            font_size="1em",
-            line_height="1.5em",
-            white_space="pre-line",
-            font_family="Inter, system-ui, sans-serif",
-            width="100%",
+        # Contenido: markdown para secciones públicas, texto plano para secciones internas
+        rx.cond(
+            is_logged_in,
+            # Usuario logueado: texto plano para secciones internas
+            rx.text(
+                content_text,
+                color=COLORS["muted_foreground"],
+                font_size="1em",
+                line_height="1.5em",
+                white_space="pre-line",
+                font_family="Inter, system-ui, sans-serif",
+                width="100%",
+            ),
+            # Usuario no logueado: markdown para todas las secciones públicas
+            rx.markdown(
+                content_text,
+                component_map={
+                    "h1": lambda text: rx.heading(text, size="9", color=COLORS["foreground"], margin_bottom="0.5em"),
+                    "h2": lambda text: rx.heading(text, size="7", color=COLORS["primary"], margin_top="1em", margin_bottom="0.5em"),
+                    "h3": lambda text: rx.heading(text, size="5", color=COLORS["foreground"], margin_top="0.8em", margin_bottom="0.4em"),
+                    "p": lambda text: rx.text(text, color=COLORS["muted_foreground"], font_size="1.15em", line_height="1.6", margin_bottom="0.6em"),
+                    "li": lambda text: rx.list_item(rx.text(text, color=COLORS["muted_foreground"], font_size="1.15em", line_height="1.5")),
+                    "strong": lambda text: rx.text(text, font_weight="bold", color=COLORS["foreground"], as_="span"),
+                    "em": lambda text: rx.text(text, font_style="italic", as_="span"),
+                    "blockquote": lambda text: rx.box(
+                        rx.text(text, color=COLORS["primary"], font_style="italic", font_size="1.2em"),
+                        border_left=f"4px solid {COLORS['primary']}",
+                        padding_left="1.2em",
+                        margin_y="1.2em",
+                        background_color=f"{COLORS['primary']}10",
+                        padding="1em",
+                        border_radius="0.3em",
+                    ),
+                    "table": lambda children: rx.box(
+                        children,
+                        width="100%",
+                        overflow_x="auto",
+                        margin_y="1.2em",
+                    ),
+                    "th": lambda text: rx.table.column_header_cell(
+                        rx.text(text, font_weight="bold", color=COLORS["foreground"], font_size="1.1em"),
+                    ),
+                    "td": lambda text: rx.table.cell(
+                        rx.text(text, color=COLORS["muted_foreground"], font_size="1.05em"),
+                    ),
+                },
+            ),
         ),
         rx.cond(
             rx.cond(is_logged_in, active_item == "flujos", False),
@@ -824,32 +1014,32 @@ def footer() -> rx.Component:
     return rx.vstack(
         rx.hstack(
             rx.vstack(
-                rx.text("Productos", font_weight="bold", color=COLORS["foreground"], font_size="0.9em"),
-                rx.link("Características", color=COLORS["primary"], href="#", font_size="0.9em"),
-                rx.link("Precios", color=COLORS["primary"], href="#", font_size="0.9em"),
-                rx.link("Seguridad", color=COLORS["primary"], href="#", font_size="0.9em"),
-                spacing="1",
+                rx.text("Productos", font_weight="bold", color=COLORS["foreground"], font_size="1.4em"),
+                rx.link("Características", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Precios", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Seguridad", color=COLORS["primary"], href="#", font_size="1.3em"),
+                spacing="2",
             ),
             rx.vstack(
-                rx.text("Empresa", font_weight="bold", color=COLORS["foreground"], font_size="0.9em"),
-                rx.link("Nosotros", color=COLORS["primary"], href="#", font_size="0.9em"),
-                rx.link("Blog", color=COLORS["primary"], href="#", font_size="0.9em"),
-                rx.link("Carreras", color=COLORS["primary"], href="#", font_size="0.9em"),
-                spacing="1",
+                rx.text("Empresa", font_weight="bold", color=COLORS["foreground"], font_size="1.4em"),
+                rx.link("Nosotros", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Blog", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Carreras", color=COLORS["primary"], href="#", font_size="1.3em"),
+                spacing="2",
             ),
             rx.vstack(
-                rx.text("Recursos", font_weight="bold", color=COLORS["foreground"], font_size="0.9em"),
-                rx.link("Documentación", color=COLORS["primary"], href="#", font_size="0.9em"),
-                rx.link("Comunidad", color=COLORS["primary"], href="#", font_size="0.9em"),
-                rx.link("Soporte", color=COLORS["primary"], href="#", font_size="0.9em"),
-                spacing="1",
+                rx.text("Recursos", font_weight="bold", color=COLORS["foreground"], font_size="1.4em"),
+                rx.link("Documentación", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Comunidad", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Soporte", color=COLORS["primary"], href="#", font_size="1.3em"),
+                spacing="2",
             ),
             rx.vstack(
-                rx.text("Legal", font_weight="bold", color=COLORS["foreground"], font_size="0.9em"),
-                rx.link("Privacidad", color=COLORS["primary"], href="#", font_size="0.9em"),
-                rx.link("Términos", color=COLORS["primary"], href="#", font_size="0.9em"),
-                rx.link("Cookies", color=COLORS["primary"], href="#", font_size="0.9em"),
-                spacing="1",
+                rx.text("Legal", font_weight="bold", color=COLORS["foreground"], font_size="1.4em"),
+                rx.link("Privacidad", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Términos", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Cookies", color=COLORS["primary"], href="#", font_size="1.3em"),
+                spacing="2",
             ),
             spacing="6",
             width="100%",
@@ -862,7 +1052,7 @@ def footer() -> rx.Component:
             rx.text(
                 "© 2025 Myllm. Todos los derechos reservados.",
                 color=COLORS["muted_foreground"],
-                font_size="0.9em",
+                font_size="1.25em",
                 text_align="center",
             ),
             width="100%",
@@ -894,6 +1084,7 @@ def user_portal() -> rx.Component:
                         on_click=State.go_to_backoffice,
                         background_color="#FF8C00",  # Naranja
                         color="white",
+                        font_size="1.1em",
                         _hover={"background_color": "#FF7000"},
                     ),
                 ),
@@ -902,6 +1093,7 @@ def user_portal() -> rx.Component:
                     on_click=State.user_logout,
                     background_color=COLORS["primary"],
                     color=COLORS["background"],
+                    font_size="1.1em",
                 ),
                 width="100%",
                 padding="1em",
@@ -948,7 +1140,7 @@ def user_portal() -> rx.Component:
                 rx.text(
                     "Pagina principal",
                     color=COLORS["muted_foreground"],
-                    font_size="0.9em",
+                    font_size="1.1em",
                 ),
                 width="100%",
                 padding="1em",

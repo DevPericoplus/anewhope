@@ -36,6 +36,7 @@ config = rx.Config(
     
     # Configuración de servidor
     env=rx.Env.PROD,
+    frontend_port=3100,  # Puerto estático fijo para frontend (evita conflictos con nginx)
     backend_port=8005,
     api_url="https://tfmmyllm.ai",
     backend_host="0.0.0.0",

@@ -31,12 +31,12 @@ activity_log.log_startup()
 
 COLORS = {
     "background": "#1a1a1a",
-    "card": "#6B6B6B",
+    "card": "#2d2d2d",
     "foreground": "#f2f2f5",
     "primary": "#FF8C00",  # Naranja para backoffice
     "secondary": "#383854",
-    "border": "#000000",
-    "input": "#383854",
+    "border": "#404040",
+    "input": "#3a3a3a",
     "muted_foreground": "#E0E0E0",
     "accent": "#FF8C00",  # Naranja para backoffice
 }
@@ -295,27 +295,45 @@ class State(SharedSessionState):
 
 
 def load_presentation_content() -> str:
-    """Carga el contenido de presentación desde un archivo externo."""
+    """Carga el contenido de presentación desde un archivo markdown externo."""
     try:
-        # Obtiene la ruta de presentation.txt relativa a este archivo
+        # Obtiene la ruta de presentation.md relativa a este archivo
         current_dir = Path(__file__).parent.parent
-        presentation_file = current_dir / "presentation.txt"
+        presentation_file = current_dir / "presentation.md"
         with open(presentation_file, "r", encoding="utf-8") as f:
             return f.read().strip()
     except (FileNotFoundError, IOError):
-        # Contenido por defecto si el archivo no existe
-        return (
-            "Lorem ipsum dolor sit amet, consectetur adipiscing elit. "
-            "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
-        )
+        # Fallback al archivo .txt si no existe el .md
+        try:
+            current_dir = Path(__file__).parent.parent
+            presentation_file = current_dir / "presentation.txt"
+            with open(presentation_file, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        except (FileNotFoundError, IOError):
+            # Contenido por defecto si ninguno existe
+            return (
+                "Lorem ipsum dolor sit amet, consectetur adipiscing elit. "
+                "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+            )
 
 
 def load_menu_content(filename: str, fallback_text: str) -> str:
-    """Carga contenido de un archivo .txt del menú con fallback."""
+    """Carga contenido de un archivo .md o .txt del menú con fallback.
+    
+    Intenta cargar primero la versión .md, luego .txt.
+    """
 
     try:
-        # Obtiene la ruta del archivo relativa a este archivo
         current_dir = Path(__file__).parent.parent
+        
+        # Intentar cargar versión .md primero
+        md_filename = filename.replace(".txt", ".md")
+        md_file = current_dir / md_filename
+        if md_file.exists():
+            with open(md_file, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        
+        # Fallback a .txt
         content_file = current_dir / filename
         with open(content_file, "r", encoding="utf-8") as f:
             return f.read().strip()
@@ -327,8 +345,8 @@ def load_menu_content(filename: str, fallback_text: str) -> str:
 def logo() -> rx.Component:
     """Logo component."""
     return rx.hstack(
-        rx.text("MY", font_weight="bold", font_size="1.5em", color=COLORS["primary"]),
-        rx.text("llm", font_size="1.5em", color=COLORS["foreground"]),
+        rx.text("MY", font_weight="bold", font_size="1.8em", color=COLORS["primary"]),
+        rx.text("llm", font_size="1.8em", color=COLORS["foreground"]),
         spacing="1",
     )
 
@@ -336,10 +354,10 @@ def logo() -> rx.Component:
 def login_panel() -> rx.Component:
     """Login panel for user portal."""
     return rx.vstack(
-            rx.text("Acceso de Usuario", font_size="1.1em", font_weight="bold", color=COLORS["foreground"]),
+            rx.text("Acceso de Usuario", font_size="1.3em", font_weight="bold", color=COLORS["foreground"]),
             rx.vstack(
                 rx.vstack(
-                    rx.text("Usuario", font_size="0.9em", color=COLORS["muted_foreground"]),
+                    rx.text("Usuario", font_size="1.1em", color=COLORS["muted_foreground"]),
                     rx.input(
                         placeholder="Ingrese su usuario",
                         on_change=State.set_user_username,
@@ -347,13 +365,14 @@ def login_panel() -> rx.Component:
                         background_color=COLORS["input"],
                         border_color=COLORS["border"],
                         color=COLORS["foreground"],
+                        font_size="1.05em",
                         width="100%",
                         border_radius="5px",
                     ),
                     spacing="1",
                 ),
                 rx.vstack(
-                    rx.text("Contraseña", font_size="0.9em", color=COLORS["muted_foreground"]),
+                    rx.text("Contraseña", font_size="1.1em", color=COLORS["muted_foreground"]),
                     rx.input(
                         placeholder="Ingrese su contraseña",
                         type_="password",
@@ -362,6 +381,7 @@ def login_panel() -> rx.Component:
                         background_color=COLORS["input"],
                         border_color=COLORS["border"],
                         color=COLORS["foreground"],
+                        font_size="1.05em",
                         width="100%",
                         border_radius="5px",
                     ),
@@ -375,11 +395,12 @@ def login_panel() -> rx.Component:
                     width="100%",
                     text_align="left",
                     padding="0",
+                    font_size="1.1em",
                     justify_content="flex-start",
                     _hover={"text_decoration": "underline"},
                 ),
                 rx.vstack(
-                    rx.text("OTP", font_size="0.9em", color=COLORS["muted_foreground"]),
+                    rx.text("OTP", font_size="1.1em", color=COLORS["muted_foreground"]),
                     rx.input(
                         placeholder="Ingrese su OTP",
                         on_change=State.set_user_otp,
@@ -387,6 +408,7 @@ def login_panel() -> rx.Component:
                         background_color=COLORS["input"],
                         border_color=COLORS["border"],
                         color=COLORS["foreground"],
+                        font_size="1.05em",
                         width="100%",
                         border_radius="5px",
                     ),
@@ -401,17 +423,18 @@ def login_panel() -> rx.Component:
                 color=COLORS["background"],
                 width="100%",
                 font_weight="bold",
+                font_size="1.1em",
             ),
             rx.text(
                 State.login_error,
                 color="red",
-                font_size="0.85em",
+                font_size="1.0em",
                 display=rx.cond(State.login_error != "", "block", "none"),
             ),
             rx.text(
                 State.otp_request_message,
                 color=COLORS["muted_foreground"],
-                font_size="0.85em",
+                font_size="1.0em",
                 display=rx.cond(State.otp_request_message != "", "block", "none"),
             ),
             rx.vstack(
@@ -419,9 +442,9 @@ def login_panel() -> rx.Component:
                     "Crear nuevo usuario",
                     color=COLORS["primary"],
                     href="/user_creation?from=main",
-                    font_size="0.9em",
+                    font_size="1.1em",
                 ),
-                rx.link("Recordar contraseña", color=COLORS["primary"], href="/change_password?from=main", font_size="0.9em"),
+                rx.link("Recordar contraseña", color=COLORS["primary"], href="/change_password?from=main", font_size="1.1em"),
                 spacing="1",
             ),
             spacing="2",
@@ -449,7 +472,7 @@ def sidebar_menu(is_logged_in: bool) -> rx.Component:
     )
     
     return rx.vstack(
-            rx.text("Menú", font_size="1.1em", font_weight="bold", color=COLORS["foreground"], margin_bottom="1em"),
+            rx.text("Menú", font_size="1.3em", font_weight="bold", color=COLORS["foreground"], margin_bottom="1em"),
             rx.vstack(
                 rx.foreach(
                     menu_items,
@@ -473,6 +496,7 @@ def sidebar_menu(is_logged_in: bool) -> rx.Component:
                         border_radius="0.5em",
                         cursor="pointer",
                         text_align="left",
+                        font_size="1.1em",
                         _hover={"opacity": "0.8"},
                     ),
                 ),
@@ -578,14 +602,55 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             ),
             rx.box(height="0"),
         ),
-        rx.text(
-            content_text,
-            color=COLORS["muted_foreground"],
-            font_size="1em",
-            line_height="1.5em",
-            white_space="pre-line",
-            font_family="Inter, system-ui, sans-serif",
-            width="100%",
+        # Contenido: markdown para secciones públicas, texto plano para secciones internas
+        rx.cond(
+            is_logged_in,
+            # Usuario logueado: texto plano para secciones internas
+            rx.text(
+                content_text,
+                color=COLORS["muted_foreground"],
+                font_size="1em",
+                line_height="1.5em",
+                white_space="pre-line",
+                font_family="Inter, system-ui, sans-serif",
+                width="100%",
+            ),
+            # Usuario no logueado: markdown para todas las secciones públicas
+            # NOTA: Backoffice usa tamaños estándar (sin zoom) para mayor densidad de información
+            # El frontend usa tamaños aumentados (+15%) para mejor legibilidad de usuarios finales
+            rx.markdown(
+                content_text,
+                component_map={
+                    "h1": lambda text: rx.heading(text, size="7", color=COLORS["foreground"], margin_bottom="0.4em"),
+                    "h2": lambda text: rx.heading(text, size="5", color=COLORS["primary"], margin_top="0.8em", margin_bottom="0.4em"),
+                    "h3": lambda text: rx.heading(text, size="4", color=COLORS["foreground"], margin_top="0.6em", margin_bottom="0.3em"),
+                    "p": lambda text: rx.text(text, color=COLORS["muted_foreground"], font_size="1em", line_height="1.5", margin_bottom="0.5em"),
+                    "li": lambda text: rx.list_item(rx.text(text, color=COLORS["muted_foreground"], font_size="1em", line_height="1.4")),
+                    "strong": lambda text: rx.text(text, font_weight="bold", color=COLORS["foreground"], as_="span"),
+                    "em": lambda text: rx.text(text, font_style="italic", as_="span"),
+                    "blockquote": lambda text: rx.box(
+                        rx.text(text, color=COLORS["primary"], font_style="italic", font_size="1em"),
+                        border_left=f"4px solid {COLORS['primary']}",
+                        padding_left="1em",
+                        margin_y="1em",
+                        background_color=f"{COLORS['primary']}10",
+                        padding="0.8em",
+                        border_radius="0.3em",
+                    ),
+                    "table": lambda children: rx.box(
+                        children,
+                        width="100%",
+                        overflow_x="auto",
+                        margin_y="1em",
+                    ),
+                    "th": lambda text: rx.table.column_header_cell(
+                        rx.text(text, font_weight="bold", color=COLORS["foreground"], font_size="1em"),
+                    ),
+                    "td": lambda text: rx.table.cell(
+                        rx.text(text, color=COLORS["muted_foreground"], font_size="1em"),
+                    ),
+                },
+            ),
         ),
         rx.cond(
             rx.cond(is_logged_in, active_item == "flujos", False),
@@ -896,32 +961,32 @@ def footer() -> rx.Component:
     return rx.vstack(
         rx.hstack(
             rx.vstack(
-                rx.text("Productos", font_weight="bold", color=COLORS["foreground"], font_size="0.9em"),
-                rx.link("Características", color=COLORS["primary"], href="#", font_size="0.9em"),
-                rx.link("Precios", color=COLORS["primary"], href="#", font_size="0.9em"),
-                rx.link("Seguridad", color=COLORS["primary"], href="#", font_size="0.9em"),
-                spacing="1",
+                rx.text("Productos", font_weight="bold", color=COLORS["foreground"], font_size="1.4em"),
+                rx.link("Características", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Precios", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Seguridad", color=COLORS["primary"], href="#", font_size="1.3em"),
+                spacing="2",
             ),
             rx.vstack(
-                rx.text("Empresa", font_weight="bold", color=COLORS["foreground"], font_size="0.9em"),
-                rx.link("Nosotros", color=COLORS["primary"], href="#", font_size="0.9em"),
-                rx.link("Blog", color=COLORS["primary"], href="#", font_size="0.9em"),
-                rx.link("Carreras", color=COLORS["primary"], href="#", font_size="0.9em"),
-                spacing="1",
+                rx.text("Empresa", font_weight="bold", color=COLORS["foreground"], font_size="1.4em"),
+                rx.link("Nosotros", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Blog", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Carreras", color=COLORS["primary"], href="#", font_size="1.3em"),
+                spacing="2",
             ),
             rx.vstack(
-                rx.text("Recursos", font_weight="bold", color=COLORS["foreground"], font_size="0.9em"),
-                rx.link("Documentación", color=COLORS["primary"], href="#", font_size="0.9em"),
-                rx.link("Comunidad", color=COLORS["primary"], href="#", font_size="0.9em"),
-                rx.link("Soporte", color=COLORS["primary"], href="#", font_size="0.9em"),
-                spacing="1",
+                rx.text("Recursos", font_weight="bold", color=COLORS["foreground"], font_size="1.4em"),
+                rx.link("Documentación", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Comunidad", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Soporte", color=COLORS["primary"], href="#", font_size="1.3em"),
+                spacing="2",
             ),
             rx.vstack(
-                rx.text("Legal", font_weight="bold", color=COLORS["foreground"], font_size="0.9em"),
-                rx.link("Privacidad", color=COLORS["primary"], href="#", font_size="0.9em"),
-                rx.link("Términos", color=COLORS["primary"], href="#", font_size="0.9em"),
-                rx.link("Cookies", color=COLORS["primary"], href="#", font_size="0.9em"),
-                spacing="1",
+                rx.text("Legal", font_weight="bold", color=COLORS["foreground"], font_size="1.4em"),
+                rx.link("Privacidad", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Términos", color=COLORS["primary"], href="#", font_size="1.3em"),
+                rx.link("Cookies", color=COLORS["primary"], href="#", font_size="1.3em"),
+                spacing="2",
             ),
             spacing="6",
             width="100%",
@@ -934,7 +999,7 @@ def footer() -> rx.Component:
             rx.text(
                 "© 2025 Myllm. Todos los derechos reservados.",
                 color=COLORS["muted_foreground"],
-                font_size="0.9em",
+                font_size="1.25em",
                 text_align="center",
             ),
             width="100%",
@@ -964,6 +1029,7 @@ def user_portal() -> rx.Component:
                     on_click=State.go_to_frontend,
                     background_color="#22c55e",  # Verde del frontend
                     color="white",
+                    font_size="1.1em",
                     _hover={"background_color": "#1ea34d"},
                 ),
                 rx.button(
@@ -971,6 +1037,7 @@ def user_portal() -> rx.Component:
                     on_click=State.user_logout,
                     background_color="#FF8C00",  # Naranja
                     color="white",
+                    font_size="1.1em",
                     _hover={"background_color": "#FF7000"},
                 ),
                 width="100%",
@@ -1018,7 +1085,7 @@ def user_portal() -> rx.Component:
                 rx.text(
                     "Pagina principal",
                     color=COLORS["muted_foreground"],
-                    font_size="0.9em",
+                    font_size="1.1em",
                 ),
                 width="100%",
                 padding="1em",

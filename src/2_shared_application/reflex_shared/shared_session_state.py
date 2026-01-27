@@ -344,11 +344,27 @@ class SharedSessionState(rx.State):
         """
         Marca que el usuario está regresando al frontend.
         Actualiza current_app y last_activity.
+        Pasa los tokens como parámetros para restaurar la sesión en el frontend.
         """
         self.current_app = "frontend"
         self.last_activity = datetime.now().isoformat()
-        # La redirección real se maneja en el componente UI
-        return rx.redirect("https://tfmmyllm.ai")
+        
+        # Debug: verificar que tenemos tokens
+        print(f"[DEBUG] go_to_frontend: access_token={bool(self.access_token)}, session_token={bool(self.session_token)}, user_id={self.user_id}")
+        
+        # Pasar tokens en la URL para que el frontend pueda restaurar la sesión
+        import urllib.parse
+        params = urllib.parse.urlencode({
+            "access_token": self.access_token,
+            "session_token": self.session_token,
+            "user_id": str(self.user_id),
+            "org_id": str(self.organization_id),
+        })
+        
+        redirect_url = f"https://tfmmyllm.ai?{params}"
+        print(f"[DEBUG] Redirecting to: {redirect_url[:100]}...")
+        
+        return rx.redirect(redirect_url)
     
     def logout(self):
         """
