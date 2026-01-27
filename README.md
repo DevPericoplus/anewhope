@@ -1463,6 +1463,57 @@ Script de diagnóstico completo del sistema para verificar el estado de todos lo
 **Uso recomendado:**
 Ejecutar este script cuando se presenten problemas de conectividad o después de cambios en la configuración para verificar que todo está funcionando correctamente.
 
+### renewall_fernet_key.sh
+
+Script de seguridad para renovar la clave Fernet y re-encriptar todos los valores cifrados
+(contraseñas de usuarios) con la nueva clave:
+
+```bash
+./scripts/renewall_fernet_key.sh [--dry-run] [--backup-only]
+```
+
+**Opciones:**
+- `--dry-run`: Simula la operación sin modificar archivos (recomendado para verificar)
+- `--backup-only`: Solo crea backups sin renovar la clave
+- `--help`, `-h`: Muestra la ayuda
+
+**Proceso de renovación:**
+1. Verifica que existan los archivos requeridos (`basesecuritypass.json`, `users.json`)
+2. Crea backups automáticos en `backups/fernet_rotation/`
+3. Carga la clave Fernet antigua
+4. Genera una nueva clave Fernet
+5. Para cada usuario con contraseña cifrada:
+   - Descifra con la clave antigua
+   - Re-encripta con la clave nueva
+6. Guarda la nueva clave y los usuarios actualizados
+
+**Archivos afectados:**
+- `src/2_shared_application/security/basesecuritypass.json` (clave Fernet)
+- `src/2_shared_application/moks/users.json` (contraseñas de usuarios)
+
+**IMPORTANTE - Antes de ejecutar:**
+1. Detener todos los servicios que usen cifrado (frontend, backoffice, middleware)
+2. Verificar con `--dry-run` que no hay errores
+3. Ejecutar sin flags para aplicar los cambios
+4. Reiniciar todos los servicios
+5. Verificar que el login funciona correctamente
+
+**Ejemplo de uso:**
+```bash
+# 1. Verificar primero (sin cambios)
+./scripts/renewall_fernet_key.sh --dry-run
+
+# 2. Aplicar la renovación
+./scripts/renewall_fernet_key.sh
+
+# 3. Reiniciar servicios y verificar
+```
+
+**Cuándo usar este script:**
+- Después de detectar exposición de la clave Fernet (como en commits accidentales)
+- Como parte de una política de rotación periódica de credenciales
+- Antes de un despliegue en producción con claves nuevas
+
 ## Servicio frontend en contenedor
 
 El servicio `7_service_frontend` puede ejecutarse de forma independiente en Docker
