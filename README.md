@@ -1514,6 +1514,105 @@ Script de seguridad para renovar la clave Fernet y re-encriptar todos los valore
 - Como parte de una política de rotación periódica de credenciales
 - Antes de un despliegue en producción con claves nuevas
 
+### Seguridad de la clave Fernet en despliegue
+
+#### Análisis de riesgo y criticidad
+
+La clave Fernet almacenada en `basesecuritypass.json` fue expuesta en el historial de Git
+durante el desarrollo. Sin embargo, la **criticidad es reducida** por las siguientes razones:
+
+1. **`protected_values.py` nunca fue expuesto**: El archivo `protected_values.py` que contiene
+   la clave privada base para derivar secretos siempre estuvo en `.gitignore` desde el inicio
+   del proyecto.
+
+2. **Aislamiento por entorno**: Cada entorno (macbook, dev, pre, pro) debe usar claves
+   diferentes definidas en su propio `protected_values.py`.
+
+3. **Entorno de desarrollo**: La clave expuesta solo se usaba en el entorno de desarrollo
+   local (macbook) y no tiene acceso a datos sensibles de producción.
+
+4. **Uso limitado**: La clave Fernet se usa principalmente para cifrar contraseñas de
+   usuarios en el mock de desarrollo, no datos críticos de negocio.
+
+#### Eliminación del historial de Git (opcional)
+
+Es posible eliminar la clave del historial usando herramientas especializadas:
+
+| Herramienta | Descripción | Complejidad |
+|-------------|-------------|-------------|
+| `git filter-repo` | Recomendada, moderna y eficiente | Media |
+| `BFG Repo-Cleaner` | Simple para archivos específicos | Baja |
+| `git filter-branch` | Tradicional pero lenta | Alta |
+
+**⚠️ Implicaciones de reescribir el historial:**
+- Cambian todos los hashes de commits posteriores al archivo eliminado
+- Todos los colaboradores deben ejecutar `git fetch && git reset --hard origin/<branch>`
+- Requiere `git push --force` al repositorio remoto
+- Puede romper referencias en PRs, issues y CI/CD
+
+**Recomendación**: Dado que la criticidad es reducida y `protected_values.py` nunca fue
+expuesto, es preferible **rotar la clave Fernet** en lugar de reescribir el historial.
+
+#### Proceso obligatorio en despliegue (dev/pre/pro)
+
+**⚠️ CRÍTICO**: Al desplegar en cualquier entorno que no sea macbook, es **OBLIGATORIO**
+ejecutar el proceso de renovación de la clave Fernet:
+
+```bash
+# 1. Configurar valores únicos en protected_values.py del entorno
+vim infrastructure/environments/<entorno>/protected_values.py
+# Cambiar TODOS los valores sensibles:
+# - jwt_access_secret
+# - jwt_session_secret
+# - writer_password
+# - reader_password
+# - redis_password
+# - (otros secretos específicos del entorno)
+
+# 2. Generar nueva clave Fernet y re-encriptar contraseñas
+./scripts/renewall_fernet_key.sh --dry-run  # Verificar primero
+./scripts/renewall_fernet_key.sh            # Aplicar cambios
+
+# 3. Verificar que el sistema funciona con las nuevas claves
+# Reiniciar todos los servicios y probar login
+```
+
+**Checklist de despliegue seguro:**
+
+- [ ] `protected_values.py` tiene valores únicos para el entorno
+- [ ] `basesecuritypass.json` tiene una clave Fernet nueva (generada con el script)
+- [ ] Contraseñas en `users.json` re-encriptadas con la nueva clave
+- [ ] Login funciona correctamente después del cambio
+- [ ] Backups creados antes de la renovación
+
+#### Valores que deben ser únicos por entorno
+
+El archivo `infrastructure/environments/<entorno>/protected_values.py` debe contener
+valores **DIFERENTES** para cada entorno:
+
+```python
+# Ejemplo de protected_values.py para un entorno
+jwt_access_secret = "VALOR_UNICO_GENERADO_PARA_ESTE_ENTORNO"
+jwt_session_secret = "OTRO_VALOR_UNICO_GENERADO"
+writer_password = "PASSWORD_BD_ESCRITURA_UNICO"
+reader_password = "PASSWORD_BD_LECTURA_UNICO"
+redis_password = "PASSWORD_REDIS_UNICO"
+# ... otros valores sensibles
+```
+
+**Generación de secretos seguros:**
+
+```bash
+# Generar un secreto aleatorio de 32 bytes en base64
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# Generar una clave Fernet válida
+python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+**IMPORTANTE**: Nunca reutilices valores de un entorno a otro. Cada entorno debe ser
+completamente independiente en términos de credenciales y secretos.
+
 ## Servicio frontend en contenedor
 
 El servicio `7_service_frontend` puede ejecutarse de forma independiente en Docker
