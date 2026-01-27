@@ -280,57 +280,468 @@ Si dos aplicaciones comparten el mismo entorno virtual:
 - **Ubicación:** `src/2_shared_application/reflex_shared/shared_session_state.py`
 - **Obligatorio:** Heredar de `SharedSessionState` en `FrontendState` y `BackofficeState`
 - **Campos automáticos:**
-  - 13 campos de usuario (`user_id`, `organization_id`, `user_name`, `user_email`, etc.)
-  - 45 permisos de bajo nivel (`can_data_read`, `can_training_create`, etc.)
+  - 9 campos de usuario (`user_id`, `organization_id`, `identity_type_id`, `user_name`, `user_email`, `user_mobile`, `is_logged_in`, `is_active`, `is_blocked`)
   - 2 tokens JWT (`access_token`, `session_token`)
   - 4 campos de metadata (`session_id`, `login_time`, `last_activity`, `current_app`)
+  - **38 permisos de bajo nivel** alineados con `low_level_permissions.json`:
+    - Carpetas: `can_folder_create`, `can_folder_delete`, `can_folder_rename`, `can_folder_read`, `can_folder_list`
+    - Ficheros: `can_file_create`, `can_file_read`, `can_file_update`, `can_file_delete`, `can_file_list`
+    - Proyectos: `can_project_create`, `can_project_read`, `can_project_update`, `can_project_delete`, `can_project_list`
+    - Versiones: `can_version_create`, `can_version_read`, `can_version_update`, `can_version_delete`, `can_version_list`
+    - Entrenamiento: `can_training_create`, `can_training_read`, `can_training_update`, `can_training_delete`, `can_training_start`, `can_training_stop`
+    - Parámetros: `can_parameters_create`, `can_parameters_read`, `can_parameters_update`, `can_parameters_delete`
+    - Notificaciones: `can_notifications_create`, `can_notifications_read`, `can_notifications_update`, `can_notifications_delete`
+    - Usuarios: `can_user_create`, `can_user_read`, `can_user_update`, `can_user_delete`, `can_user_enable`, `can_user_disable`
 - **Métodos obligatorios:**
   - `load_user_data()`: Cargar datos después del login (solo frontend)
   - `clear_session()`: Limpiar datos en logout
   - `go_to_backoffice()`: Navegar al backoffice (actualiza `current_app`)
   - `go_to_frontend()`: Regresar al frontend
   - `logout()`: Cerrar sesión en ambas apps
-- **Propiedades:**
-  - `can_access_backoffice`: Verifica `training_create == True`
-  - `user_display_name`: Nombre para UI
-  - `user_display_email`: Email para UI
+- **Métodos de validación de permisos:**
+  - `has_permission("folder_rename")`: Validar permiso por nombre
+  - `has_any_permission([...])`: Validar si tiene al menos uno
+  - `has_all_permissions([...])`: Validar si tiene todos
+  - `get_all_permissions()`: Obtener todos como diccionario
+- **Propiedades computadas:**
+  - `can_access_backoffice`: Verifica `is_logged_in and training_create`
+  - `can_manage_folders`, `can_manage_files`, `can_manage_projects`, `can_manage_training`, `can_manage_users`
+  - `user_display_name`, `user_display_email`
 - **Sincronización:** Automática vía Redis (ambas apps usan `redis_db: "0"`)
 - **Login:** Solo se hace en frontend; backoffice solo lee datos
 - **Protección:** Todas las páginas de backoffice deben usar `backoffice_guard()`
 - **Ejemplos:**
   - Frontend: `docs/examples/frontend_state_with_shared_session.py`
   - Backoffice: `docs/examples/backoffice_state_with_shared_session.py`
-  - **Validación de permisos en UI:** `docs/examples/permission_validation_example.py`
+  - **Validación de permisos desde sesión:** `docs/examples/permission_validation_from_session.py`
 
-### Validación de permisos (low_level_permissions)
+### Security by Design: Validación de Permisos como Principio Fundamental
 
-**IMPORTANTE:** Los permisos de bajo nivel están alineados con la sesión/JWT y disponibles
-automáticamente en `SharedSessionState` como campos booleanos.
+**CRÍTICO:** La tabla `low_level_permissions` es el **CORE del concepto Security by Default**.
+Cada operación en cualquier capa del sistema debe validar permisos antes de ejecutarse.
 
-**Reglas de validación en UI:**
-1. Usar `rx.cond(State.can_<permission>, ...)` para mostrar/ocultar elementos según permisos
-2. Los permisos siguen el patrón `can_<category>_<action>` (ej: `can_folder_rename`)
-3. **Ejemplo menú contextual:**
+#### Principios de Security by Design
+
+1. **Validación en TODAS las capas:**
+   - ✅ **Frontend/Backoffice (UI):** Mostrar solo elementos para los que el usuario tiene permisos
+   - ✅ **Middleware (API):** Validar permisos antes de procesar cualquier request
+   - ✅ **Broker:** Verificar permisos antes de enrutar a Backend Core o Trainer
+   - ✅ **Backend Core:** Validar permisos antes de operaciones en DB o fmanagement
+   - ✅ **Trainer/Backend IA:** Validar permisos antes de operaciones de entrenamiento
+
+2. **Defense in Depth:** Aunque el frontend oculte una opción, el backend DEBE rechazarla si no tiene permiso
+
+3. **Principio de mínimo privilegio:** Los usuarios solo ven y pueden ejecutar lo que necesitan
+
+4. **Fail-safe defaults:** Sin permiso explícito = denegación por defecto
+
+#### Flujo de obtención de permisos
+
+```
+Usuario → Login → JWT (contiene identity_type_id)
+                       ↓
+                 Middleware consulta
+                       ↓
+          roles.json → identity_type_group_permissions
+                       ↓
+          low_level_permissions.json → permisos específicos
+                       ↓
+          SharedSessionState (frontend/backoffice)
+                       ↓
+          Validación en cada operación
+```
+
+#### Estructura de permisos (alineada con low_level_permissions.json)
+
+Los nombres de campos en `SharedSessionState` coinciden **EXACTAMENTE** con `low_level_permissions.json`.
+Esto permite validar permisos directamente desde la sesión sin transformaciones.
+
+| Categoría | Permisos disponibles |
+|-----------|---------------------|
+| **Carpetas** | `folder_create`, `folder_delete`, `folder_rename`, `folder_read`, `folder_list` |
+| **Ficheros** | `file_create`, `file_read`, `file_update`, `file_delete`, `file_list` |
+| **Proyectos** | `project_create`, `project_read`, `project_update`, `project_delete`, `project_list` |
+| **Versiones** | `version_create`, `version_read`, `version_update`, `version_delete`, `version_list` |
+| **Entrenamiento** | `training_create`, `training_read`, `training_update`, `training_delete`, `training_start`, `training_stop` |
+| **Parámetros** | `parameters_create`, `parameters_read`, `parameters_update`, `parameters_delete` |
+| **Notificaciones** | `notifications_create`, `notifications_read`, `notifications_update`, `notifications_delete` |
+| **Usuarios** | `user_create`, `user_read`, `user_update`, `user_delete`, `user_enable`, `user_disable` |
+
+#### Validación en Frontend/Backoffice (Reflex UI)
+
+**Regla 1:** Usar `rx.cond()` para mostrar/ocultar elementos según permisos
+
+```python
+# Menú contextual de carpeta - mostrar "Renombrar" solo si tiene permiso
+rx.cond(
+    state.can_folder_rename,
+    rx.menu.item("Renombrar", on_click=state.rename_folder),
+)
+```
+
+**Regla 2:** Usar `state.has_permission("nombre")` para validación dinámica
+
+```python
+# Validación dinámica por nombre
+if state.has_permission("folder_rename"):
+    mostrar_opcion_renombrar()
+```
+
+**Regla 3:** Deshabilitar (no solo ocultar) opciones sin permisos cuando sea apropiado
+
+```python
+# Botón deshabilitado en lugar de oculto
+rx.button(
+    "Eliminar proyecto",
+    disabled=~state.can_project_delete,
+    color_scheme="red" if state.can_project_delete else "gray",
+)
+```
+
+#### Validación en Middleware (API REST)
+
+**Regla 1:** OBLIGATORIO validar en backend aunque el frontend los oculte
+
+```python
+# En routermiddleware.py
+def rename_folder(self, session: SessionContext, folder_id: int, new_name: str):
+    # SIEMPRE validar permiso antes de ejecutar
+    if not self.has_low_level_permission(session, "folder_rename"):
+        raise BusinessRuleError("Sin permisos para renombrar carpetas")
+    # ... ejecutar la operación
+```
+
+**Regla 2:** Retornar HTTP 403 Forbidden si no tiene permiso
+
+```python
+# En apife.py
+@app.post("/folders/{folder_id}/rename")
+async def rename_folder(folder_id: int, request: RenameRequest, session: SessionContext = Depends(get_session)):
+    if not router.has_low_level_permission(session, "folder_rename"):
+        raise HTTPException(status_code=403, detail="Permiso denegado: folder_rename")
+    # ...
+```
+
+**Regla 3:** Loggear intentos de acceso sin permisos (auditoría de seguridad)
+
+```python
+self._logger.warning(
+    "Intento de operación sin permiso user_id=%s org_id=%s permission=%s",
+    session.user_id,
+    session.organization_id,
+    "folder_rename",
+)
+```
+
+#### Métodos de validación disponibles en SharedSessionState
+
+```python
+# Validar un permiso específico
+state.has_permission("folder_rename")  # → bool
+
+# Validar múltiples permisos (cualquiera)
+state.has_any_permission(["folder_create", "folder_rename"])  # → bool
+
+# Validar múltiples permisos (todos)
+state.has_all_permissions(["project_create", "folder_create"])  # → bool
+
+# Obtener todos los permisos como diccionario
+state.get_all_permissions()  # → {"folder_rename": True, "file_create": False, ...}
+
+# Propiedades compuestas
+state.can_manage_folders  # → True si tiene algún permiso de carpetas
+state.can_manage_files    # → True si tiene algún permiso de ficheros
+state.can_manage_training # → True si tiene algún permiso de entrenamiento
+```
+
+#### Checklist de Security by Design para nuevas funcionalidades
+
+Al añadir una nueva funcionalidad:
+
+- [ ] ¿Existe permiso en `low_level_permissions.json` para esta operación?
+- [ ] ¿Está el campo `can_<permiso>` en `SharedSessionState`?
+- [ ] ¿La UI usa `rx.cond(state.can_<permiso>, ...)` o `state.has_permission()`?
+- [ ] ¿El endpoint del middleware valida el permiso con `has_low_level_permission()`?
+- [ ] ¿Se retorna HTTP 403 si no tiene permiso?
+- [ ] ¿Se loggean intentos de acceso sin permisos?
+- [ ] ¿Los tests verifican tanto casos con permiso como sin permiso?
+
+#### Documentación de referencia
+
+- **Ejemplo completo de validación:** `docs/examples/permission_validation_from_session.py`
+- **Tests de permisos:** `src/2_shared_application/tests/test_shared_session_state.py`
+- **SharedSessionState:** `src/2_shared_application/reflex_shared/shared_session_state.py`
+- **PermissionValidationService:** `src/2_shared_application/services/permission_validation_service.py`
+- **low_level_permissions.json:** `src/2_shared_application/moks/low_level_permisions.json`
+- **roles.json:** `src/2_shared_application/moks/roles.json`
+
+### PermissionValidationService: Servicio Centralizado de Permisos
+
+El proyecto incluye un servicio centralizado para validar permisos que puede usarse en todas las capas.
+
+**Ubicación:** `src/2_shared_application/services/permission_validation_service.py`
+
+#### Uso del servicio
+
+```python
+from src.2_shared_application.services.permission_validation_service import (
+    PermissionValidationService,
+    PermissionContext,
+    get_permission_service,
+)
+
+# Obtener instancia singleton
+service = get_permission_service()
+
+# Validar un permiso específico
+if service.can_perform_action(identity_type_id=2, permission_key="folder_rename"):
+    permitir_renombrar_carpeta()
+
+# Validar con contexto completo (para auditoría)
+context = PermissionContext(
+    user_id=1,
+    organization_id=5,
+    identity_type_id=2,
+    project_id=10,
+)
+result = service.validate_permission(context, "folder_rename")
+if not result.allowed:
+    logger.warning(result.reason)
+
+# Métodos de conveniencia
+service.can_manage_folders(identity_type_id)    # folder_create OR folder_rename OR folder_delete
+service.can_manage_files(identity_type_id)      # file_create OR file_update OR file_delete
+service.can_manage_training(identity_type_id)   # training_create OR training_start OR training_stop
+service.can_access_backoffice(identity_type_id) # training_create == True
+```
+
+#### Uso en Backend Core (validación obligatoria)
+
+```python
+# En src/apps/3_backend/routercore.py
+from src.2_shared_application.services.permission_validation_service import PermissionValidationService
+
+class BackendCoreRouter:
+    def __init__(self, storage, fmanagement_client, permission_service=None):
+        self._permission_service = permission_service or PermissionValidationService()
+    
+    def fmo_operation(self, payload, headers):
+        """SECURITY BY DESIGN: Valida permisos antes de ejecutar."""
+        identity_type_id = int(payload.get("identity_type_id", 0))
+        operation = payload.get("operation", "")
+        
+        if identity_type_id > 0 and operation:
+            self.validate_permission(identity_type_id, f"{operation}")
+        
+        # ... ejecutar operación
+```
+
+### Roles y Permisos por Defecto
+
+El sistema define roles con permisos predefinidos. Usa `low_level_permissions.json` como referencia única.
+
+| identity_type_id | Rol | Permisos característicos |
+|------------------|-----|--------------------------|
+| 1 | SuperAdmin | Todos los permisos = `true` |
+| 2 | Administrador Org | CRUD completo en proyectos, versiones, carpetas, archivos |
+| 3 | Editor | Crear/editar proyectos y archivos, sin eliminar |
+| 4 | Lector | Solo lectura (read, list) |
+| 5 | Auditor | Solo lectura de logs y configuración |
+| 10-13 | Agentes automáticos | Permisos según rol del agente (admin/editor/lector/auditor) |
+
+#### Ejemplo: Configurar permisos de notificaciones por rol
+
+**Caso de uso:** Chat compartido entre usuarios de cliente y personal myllm donde:
+- Administradores de org, editores y personal myllm pueden **crear** notificaciones
+- Lectores solo pueden **ver** notificaciones
+- Auditores no ven las notificaciones (ocultas)
+
+**Paso 1:** Verificar los campos en `low_level_permissions.json`:
+
+```json
+{
+  "id_permissions": 2,  // Administrador
+  "notifications_create": true,
+  "notifications_read": true,
+  "notifications_update": true,
+  "notifications_delete": false
+},
+{
+  "id_permissions": 3,  // Editor
+  "notifications_create": true,
+  "notifications_read": true,
+  "notifications_update": false,
+  "notifications_delete": false
+},
+{
+  "id_permissions": 4,  // Lector
+  "notifications_create": false,
+  "notifications_read": true,
+  "notifications_update": false,
+  "notifications_delete": false
+},
+{
+  "id_permissions": 5,  // Auditor
+  "notifications_create": false,
+  "notifications_read": false,  // ← OCULTAS para auditor
+  "notifications_update": false,
+  "notifications_delete": false
+}
+```
+
+**Paso 2:** Validar en UI (Frontend/Backoffice):
+
+```python
+# Chat de notificaciones
+def chat_notifications(state):
+    return rx.box(
+        # Solo mostrar el chat si tiene permiso de lectura
+        rx.cond(
+            state.can_notifications_read,
+            rx.vstack(
+                # Lista de notificaciones
+                rx.foreach(state.notifications, notification_item),
+                
+                # Input de nueva notificación - solo si puede crear
+                rx.cond(
+                    state.can_notifications_create,
+                    rx.hstack(
+                        rx.input(value=state.new_message, on_change=state.set_message),
+                        rx.button("Enviar", on_click=state.send_notification),
+                    ),
+                    rx.fragment(),  # No muestra nada si no puede crear
+                ),
+            ),
+            rx.fragment(),  # Chat completamente oculto si no puede leer
+        ),
+    )
+```
+
+**Paso 3:** Validar en Middleware (API):
+
+```python
+# En routermiddleware.py
+@app.post("/notifications")
+async def create_notification(request: NotificationRequest, session: SessionContext):
+    # SIEMPRE validar permiso en backend
+    if not router.has_low_level_permission(session, "notifications_create"):
+        raise HTTPException(status_code=403, detail="Sin permiso: notifications_create")
+    
+    # ... crear notificación
+
+@app.get("/notifications")
+async def list_notifications(session: SessionContext):
+    # Validar permiso de lectura
+    if not router.has_low_level_permission(session, "notifications_read"):
+        raise HTTPException(status_code=403, detail="Sin permiso: notifications_read")
+    
+    # ... retornar notificaciones
+```
+
+**Paso 4:** Validar en Backend Core:
+
+```python
+# En routercore.py
+def create_notification(self, payload, identity_type_id):
+    self.validate_permission(identity_type_id, "notifications_create")
+    # ... persistir notificación
+```
+
+#### Reglas para definir nuevos permisos
+
+1. **Añadir campo en `low_level_permissions.json`** para cada `id_permissions`
+2. **Añadir campo en `SharedSessionState`** con prefijo `can_`:
    ```python
-   rx.cond(
-       state.can_folder_rename,  # Solo visible si tiene permiso
-       rx.menu.item("Renombrar", on_click=state.rename_folder),
-       rx.fragment(),
-   )
+   can_nuevo_permiso: bool = False
    ```
+3. **Añadir a `ALL_PERMISSION_KEYS`** en `permission_validation_service.py`
+4. **Actualizar `_load_permissions()` y `_reset_permissions()`** en SharedSessionState
+5. **Crear tests** que validen el nuevo permiso
 
-**Reglas de validación en backend:**
-1. **Obligatorio:** Validar permisos en backend aunque el frontend los oculte
-2. Usar `router.has_low_level_permission(session, "folder_rename")` en el middleware
-3. Retornar HTTP 403 si el usuario no tiene el permiso
+### Entidades de Dominio: Project y Version
 
-**Permisos de carpetas (folder_*):**
-- `can_folder_create`, `can_folder_rename`, `can_folder_delete`, `can_folder_move`, `can_folder_list`
+El dominio incluye entidades para proyectos y versiones que soportan el flujo de trabajo completo.
 
-**Permisos de archivos (file_*):**
-- `can_file_upload`, `can_file_download`, `can_file_delete`, `can_file_rename`, `can_file_move`, `can_file_read`
+**Archivos:**
+- `src/1_shared_domain/entities/project.py`
+- `src/1_shared_domain/entities/version.py`
+- `src/2_shared_application/dtos/project_dtos.py`
+- `src/2_shared_application/interfaces/project_repository.py`
+- `src/2_shared_application/interfaces/version_repository.py`
 
-**Lista completa:** Ver `docs/examples/permission_validation_example.py` (45 permisos totales)
+#### Estados de proyecto (ProjectStatus)
+
+| Estado | Descripción | can_create_version |
+|--------|-------------|-------------------|
+| `draft` | En borrador | ✅ Sí |
+| `active` | Activo | ✅ Sí |
+| `paused` | Pausado | ❌ No |
+| `completed` | Completado | ❌ No |
+| `archived` | Archivado | ❌ No |
+
+#### Estados de versión (VersionStatus)
+
+| Estado | Descripción | can_be_modified | can_start_training |
+|--------|-------------|-----------------|-------------------|
+| `draft` | En borrador | ✅ | ❌ |
+| `in_review` | En revisión | ✅ | ❌ |
+| `approved_client` | Aprobado por cliente | ❌ | ❌ |
+| `approved_myllm` | Aprobado por myllm | ❌ | ❌ |
+| `ready_for_training` | Listo para entrenar | ❌ | ✅ (si aprobado por ambos) |
+| `training` | En entrenamiento | ❌ | ❌ |
+| `trained` | Entrenado | ❌ | ❌ |
+| `archived` | Archivado | ❌ | ❌ |
+
+#### Uso de entidades en código
+
+```python
+from src.1_shared_domain.entities.project import Project, ProjectStatus, Projects
+from src.1_shared_domain.entities.version import Version, VersionStatus, Versions
+
+# Crear proyecto
+project = Project.from_dict({
+    "project_id": 1,
+    "organization_id": 5,
+    "project_name": "Mi Proyecto LLM",
+    "created_by_user_id": 10,
+    "status": "active",
+})
+
+# Verificar si se puede crear versión
+if project.can_create_version():
+    # Crear versión
+    version = Version.from_dict({
+        "version_id": 1,
+        "project_id": project.project_id,
+        "version_name": "V001",
+        "status": "draft",
+        "created_by_user_id": 10,
+    })
+
+# Verificar si se puede iniciar entrenamiento
+if version.can_start_training():
+    iniciar_entrenamiento(version)
+```
+
+### Adaptadores de Repositorio
+
+**Archivos:**
+- `src/2_shared_application/adapters/json_user_repository.py`
+- `src/2_shared_application/adapters/json_organization_repository.py`
+
+Estos adaptadores implementan los contratos de repositorio usando JSON como almacenamiento,
+siguiendo el principio de Clean Architecture de separar el dominio de la infraestructura.
+
+```python
+from src.2_shared_application.adapters import JsonUserRepository, JsonOrganizationRepository
+
+# Uso
+user_repo = JsonUserRepository()
+user = user_repo.get_by_email("admin@example.com")
+
+org_repo = JsonOrganizationRepository()
+org = org_repo.get_by_id(1)
+```
 
 ### Configuración de Vite (allowedHosts)
 

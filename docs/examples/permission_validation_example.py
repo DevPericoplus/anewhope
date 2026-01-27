@@ -7,9 +7,13 @@ en SharedSessionState para mostrar/ocultar opciones en un menú contextual.
 Los permisos se cargan automáticamente durante el login y están disponibles
 en el estado compartido vía Redis.
 
+IMPORTANTE: Los nombres de permisos coinciden EXACTAMENTE con low_level_permissions.json
+Ver también: docs/examples/permission_validation_from_session.py para más ejemplos.
+
 Uso:
     - Los permisos están en State.can_<permission_name>
     - Ejemplo: State.can_folder_rename, State.can_file_delete, etc.
+    - Validación dinámica: State.has_permission("folder_rename")
 """
 import reflex as rx
 from typing import List
@@ -23,22 +27,31 @@ class ExampleMenuState(rx.State):
     """
     Estado de ejemplo que hereda permisos de SharedSessionState.
     
-    En la aplicación real, el State del frontend ya hereda estos campos:
-    - can_folder_rename: bool
-    - can_folder_delete: bool
-    - can_folder_create: bool
-    - can_file_rename: bool
-    - can_file_delete: bool
-    - etc. (45 permisos en total)
+    En la aplicación real, el State del frontend ya hereda estos campos
+    (nombres alineados con low_level_permissions.json):
+    
+    Carpetas: can_folder_create, can_folder_delete, can_folder_rename, can_folder_read, can_folder_list
+    Ficheros: can_file_create, can_file_read, can_file_update, can_file_delete, can_file_list
+    Proyectos: can_project_create, can_project_read, can_project_update, can_project_delete, can_project_list
+    Versiones: can_version_create, can_version_read, can_version_update, can_version_delete, can_version_list
+    Entrenamiento: can_training_create, can_training_read, can_training_update, can_training_delete, can_training_start, can_training_stop
+    Parámetros: can_parameters_create, can_parameters_read, can_parameters_update, can_parameters_delete
+    Notificaciones: can_notifications_create, can_notifications_read, can_notifications_update, can_notifications_delete
+    Usuarios: can_user_create, can_user_read, can_user_update, can_user_delete, can_user_enable, can_user_disable
     """
     
     # Estos campos vienen de SharedSessionState (solo para referencia)
-    can_folder_rename: bool = False
-    can_folder_delete: bool = False
+    # Nombres alineados con low_level_permissions.json
     can_folder_create: bool = False
-    can_file_rename: bool = False
+    can_folder_delete: bool = False
+    can_folder_rename: bool = False
+    can_folder_read: bool = False
+    can_folder_list: bool = False
+    can_file_create: bool = False
+    can_file_read: bool = False
+    can_file_update: bool = False
     can_file_delete: bool = False
-    can_file_move: bool = False
+    can_file_list: bool = False
     
     # Estado del menú contextual
     show_context_menu: bool = False

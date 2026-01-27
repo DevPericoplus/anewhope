@@ -420,10 +420,15 @@ class SharedSessionState(rx.State):
     access_token: str = ""
     session_token: str = ""
     
-    # 45 permisos granulares (ej: can_training_create, can_data_read, etc.)
+    # Permisos granulares alineados con low_level_permissions.json
+    # Esto permite validar permisos directamente desde la sesión
+    # Ejemplo: if state.can_folder_rename: mostrar_opcion_renombrar()
     can_training_create: bool = False
-    can_data_read: bool = False
-    # ... (43 permisos más)
+    can_training_start: bool = False
+    can_folder_rename: bool = False
+    can_file_create: bool = False
+    can_project_create: bool = False
+    # ... (más permisos que coinciden con low_level_permissions.json)
     
     # Metadata de sesión
     current_app: str = "frontend"  # "frontend" o "backoffice"

@@ -80,25 +80,41 @@ class TestBackofficeSharedSessionStateIntegration:
             )
 
     def test_state_has_permission_fields(self):
-        """Verifica que State tiene campos de permisos clave."""
+        """Verifica que State tiene campos de permisos clave.
+        
+        Los nombres de permisos coinciden EXACTAMENTE con low_level_permissions.json
+        para permitir validación directa desde la sesión.
+        """
         from web_backoffice.web_backoffice import State
 
-        # Permisos clave que existen en la implementación actual
+        # Permisos clave que coinciden con low_level_permissions.json
         key_permissions = [
+            # Entrenamiento
             "can_training_create",
-            "can_training_execute",
-            "can_training_monitor",
-            "can_training_stop",
+            "can_training_read",
+            "can_training_update",
             "can_training_delete",
-            "can_data_read",
-            "can_data_write",
-            "can_data_delete",
+            "can_training_start",
+            "can_training_stop",
+            # Carpetas
             "can_folder_create",
-            "can_folder_rename",
-            "can_folder_move",
             "can_folder_delete",
-            "can_file_upload",
-            "can_file_download",
+            "can_folder_rename",
+            "can_folder_read",
+            "can_folder_list",
+            # Ficheros
+            "can_file_create",
+            "can_file_read",
+            "can_file_update",
+            "can_file_delete",
+            "can_file_list",
+            # Proyectos
+            "can_project_create",
+            "can_project_read",
+            # Usuarios
+            "can_user_create",
+            "can_user_enable",
+            "can_user_disable",
         ]
 
         for perm_name in key_permissions:

@@ -9,6 +9,14 @@ from .domain_dtos import (
     TenantDto,
     UserDto,
 )
+from .project_dtos import (
+    ProjectCreateDto,
+    ProjectDto,
+    ProjectUpdateDto,
+    VersionCreateDto,
+    VersionDto,
+    VersionUpdateDto,
+)
 from .security_dtos import (
     BasicPermissionDto,
     LowLevelPermissionDto,
@@ -26,10 +34,16 @@ __all__ = [
     "ModelVersionDto",
     "OrganizationDto",
     "PermissionsDto",
+    "ProjectCreateDto",
+    "ProjectDto",
+    "ProjectUpdateDto",
     "RoleDto",
     "SessionDto",
     "SessionTokenBindingDto",
     "TenantDto",
     "UserDto",
     "UserSessionContextDto",
+    "VersionCreateDto",
+    "VersionDto",
+    "VersionUpdateDto",
 ]

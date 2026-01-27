@@ -1,4 +1,14 @@
-"""Capa de orquestación del backend core."""
+"""Capa de orquestación del backend core con validación de permisos.
+
+Este módulo implementa la capa de orquestación del backend core,
+integrando validación de permisos de bajo nivel (Security by Design)
+en todas las operaciones.
+
+Principios:
+- Toda operación valida permisos antes de ejecutarse
+- Los permisos se obtienen del PermissionValidationService centralizado
+- Si no hay permiso, se lanza BackendCorePermissionError
+"""
 
 from __future__ import annotations
 
@@ -23,11 +33,31 @@ def _load_dto_module(module_name: str, filename: str) -> Any:
     if spec is None or spec.loader is None:
         raise RuntimeError("No se pudo cargar el módulo de DTOs")
     module = importlib.util.module_from_spec(spec)
-    import sys
-
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _load_permission_service() -> Any:
+    """Carga el servicio de validación de permisos."""
+
+    module_path = (
+        Path(__file__).resolve().parents[3]
+        / "src/2_shared_application/services/permission_validation_service.py"
+    )
+    module_name = "permission_validation_service_core"
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("No se pudo cargar el servicio de permisos")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_permission_module = _load_permission_service()
+PermissionValidationService = _permission_module.PermissionValidationService
+PermissionContext = _permission_module.PermissionContext
 
 
 _domain_dtos = _load_dto_module("shared_domain_dtos_core_router", "domain_dtos.py")
@@ -94,17 +124,263 @@ class BackendCoreBusinessError(Exception):
     """Error de negocio del backend core."""
 
 
+class BackendCorePermissionError(Exception):
+    """Error de permisos del backend core (Security by Design)."""
+    
+    def __init__(self, permission_key: str, identity_type_id: int, message: str = ""):
+        self.permission_key = permission_key
+        self.identity_type_id = identity_type_id
+        super().__init__(
+            message or f"Permiso '{permission_key}' denegado para rol {identity_type_id}"
+        )
+
+
 class BackendCoreRouter:
-    """Orquestador de operaciones del backend core."""
+    """Orquestador de operaciones del backend core con validación de permisos.
+    
+    Implementa Security by Design validando permisos de bajo nivel
+    antes de ejecutar cualquier operación sobre recursos.
+    
+    Attributes:
+        _storage: Adaptador de almacenamiento
+        _fmanagement_client: Cliente de fmanagement para operaciones de archivos
+        _permission_service: Servicio centralizado de validación de permisos
+    """
 
     def __init__(
         self,
         storage: JsonMockStorageAdapter,
         fmanagement_client: FmanagementClient | None = None,
+        permission_service: PermissionValidationService | None = None,
     ) -> None:
         self._storage = storage
         self._fmanagement_client = fmanagement_client
+        self._permission_service = permission_service or PermissionValidationService()
         self._logger = logging.getLogger("backend_core.router")
+    
+    # === Métodos de validación de permisos (Security by Design) ===
+    
+    def validate_permission(
+        self,
+        identity_type_id: int,
+        permission_key: str,
+        raise_on_deny: bool = True,
+    ) -> bool:
+        """
+        Valida si el rol tiene un permiso específico.
+        
+        Args:
+            identity_type_id: ID del tipo de identidad (rol)
+            permission_key: Clave del permiso (ej: "folder_rename")
+            raise_on_deny: Si es True, lanza excepción si no tiene permiso
+        
+        Returns:
+            True si tiene el permiso
+        
+        Raises:
+            BackendCorePermissionError: Si no tiene permiso y raise_on_deny=True
+        """
+        allowed = self._permission_service.can_perform_action(
+            identity_type_id, permission_key
+        )
+        
+        if not allowed and raise_on_deny:
+            self._logger.warning(
+                "Permiso denegado: identity_type_id=%s permission=%s",
+                identity_type_id,
+                permission_key,
+            )
+            raise BackendCorePermissionError(permission_key, identity_type_id)
+        
+        return allowed
+    
+    def validate_folder_operation(
+        self,
+        identity_type_id: int,
+        operation: str,
+    ) -> bool:
+        """
+        Valida permiso para operaciones de carpeta.
+        
+        Args:
+            identity_type_id: ID del rol
+            operation: Tipo de operación (create, delete, rename, read, list)
+        
+        Returns:
+            True si tiene permiso
+        
+        Raises:
+            BackendCorePermissionError: Si no tiene permiso
+        """
+        permission_map = {
+            "create": "folder_create",
+            "delete": "folder_delete",
+            "rename": "folder_rename",
+            "read": "folder_read",
+            "list": "folder_list",
+        }
+        permission_key = permission_map.get(operation.lower())
+        if not permission_key:
+            raise BackendCoreBusinessError(f"Operación de carpeta desconocida: {operation}")
+        
+        return self.validate_permission(identity_type_id, permission_key)
+    
+    def validate_file_operation(
+        self,
+        identity_type_id: int,
+        operation: str,
+    ) -> bool:
+        """
+        Valida permiso para operaciones de archivo.
+        
+        Args:
+            identity_type_id: ID del rol
+            operation: Tipo de operación (create, read, update, delete, list)
+        
+        Returns:
+            True si tiene permiso
+        
+        Raises:
+            BackendCorePermissionError: Si no tiene permiso
+        """
+        permission_map = {
+            "create": "file_create",
+            "read": "file_read",
+            "update": "file_update",
+            "delete": "file_delete",
+            "list": "file_list",
+        }
+        permission_key = permission_map.get(operation.lower())
+        if not permission_key:
+            raise BackendCoreBusinessError(f"Operación de archivo desconocida: {operation}")
+        
+        return self.validate_permission(identity_type_id, permission_key)
+    
+    def validate_project_operation(
+        self,
+        identity_type_id: int,
+        operation: str,
+    ) -> bool:
+        """
+        Valida permiso para operaciones de proyecto.
+        
+        Args:
+            identity_type_id: ID del rol
+            operation: Tipo de operación (create, read, update, delete, list)
+        
+        Returns:
+            True si tiene permiso
+        
+        Raises:
+            BackendCorePermissionError: Si no tiene permiso
+        """
+        permission_map = {
+            "create": "project_create",
+            "read": "project_read",
+            "update": "project_update",
+            "delete": "project_delete",
+            "list": "project_list",
+        }
+        permission_key = permission_map.get(operation.lower())
+        if not permission_key:
+            raise BackendCoreBusinessError(f"Operación de proyecto desconocida: {operation}")
+        
+        return self.validate_permission(identity_type_id, permission_key)
+    
+    def validate_version_operation(
+        self,
+        identity_type_id: int,
+        operation: str,
+    ) -> bool:
+        """
+        Valida permiso para operaciones de versión.
+        
+        Args:
+            identity_type_id: ID del rol
+            operation: Tipo de operación (create, read, update, delete, list)
+        
+        Returns:
+            True si tiene permiso
+        
+        Raises:
+            BackendCorePermissionError: Si no tiene permiso
+        """
+        permission_map = {
+            "create": "version_create",
+            "read": "version_read",
+            "update": "version_update",
+            "delete": "version_delete",
+            "list": "version_list",
+        }
+        permission_key = permission_map.get(operation.lower())
+        if not permission_key:
+            raise BackendCoreBusinessError(f"Operación de versión desconocida: {operation}")
+        
+        return self.validate_permission(identity_type_id, permission_key)
+    
+    def validate_training_operation(
+        self,
+        identity_type_id: int,
+        operation: str,
+    ) -> bool:
+        """
+        Valida permiso para operaciones de entrenamiento.
+        
+        Args:
+            identity_type_id: ID del rol
+            operation: Tipo de operación (create, read, update, delete, start, stop)
+        
+        Returns:
+            True si tiene permiso
+        
+        Raises:
+            BackendCorePermissionError: Si no tiene permiso
+        """
+        permission_map = {
+            "create": "training_create",
+            "read": "training_read",
+            "update": "training_update",
+            "delete": "training_delete",
+            "start": "training_start",
+            "stop": "training_stop",
+        }
+        permission_key = permission_map.get(operation.lower())
+        if not permission_key:
+            raise BackendCoreBusinessError(f"Operación de entrenamiento desconocida: {operation}")
+        
+        return self.validate_permission(identity_type_id, permission_key)
+    
+    def validate_user_operation(
+        self,
+        identity_type_id: int,
+        operation: str,
+    ) -> bool:
+        """
+        Valida permiso para operaciones de usuario.
+        
+        Args:
+            identity_type_id: ID del rol
+            operation: Tipo de operación (create, read, update, delete, enable, disable)
+        
+        Returns:
+            True si tiene permiso
+        
+        Raises:
+            BackendCorePermissionError: Si no tiene permiso
+        """
+        permission_map = {
+            "create": "user_create",
+            "read": "user_read",
+            "update": "user_update",
+            "delete": "user_delete",
+            "enable": "user_enable",
+            "disable": "user_disable",
+        }
+        permission_key = permission_map.get(operation.lower())
+        if not permission_key:
+            raise BackendCoreBusinessError(f"Operación de usuario desconocida: {operation}")
+        
+        return self.validate_permission(identity_type_id, permission_key)
 
     def list_users(self) -> list[UserDto]:
         """Lista usuarios."""
@@ -337,8 +613,19 @@ class BackendCoreRouter:
         payload: dict[str, Any],
         headers: dict[str, str],
     ) -> dict[str, Any]:
-        """Ejecuta operaciones de fichero/carpeta en fmanagement."""
-
+        """
+        Ejecuta operaciones de fichero/carpeta en fmanagement.
+        
+        SECURITY BY DESIGN: Valida permisos antes de ejecutar.
+        """
+        # Obtener identity_type_id del payload
+        identity_type_id = int(payload.get("identity_type_id", 0))
+        operation = str(payload.get("operation", "")).lower()
+        
+        # Validar permisos según tipo de operación
+        if identity_type_id > 0 and operation:
+            self._validate_fmo_permission(identity_type_id, operation, payload)
+        
         client = self._get_fmanagement_client()
         settings = load_fmanagement_settings()
         params = self._build_fmo_params(payload, settings.base_path)
@@ -353,6 +640,50 @@ class BackendCoreRouter:
             raise BackendCoreBusinessError(
                 "No se pudo ejecutar operación en fmanagement"
             ) from exc
+    
+    def _validate_fmo_permission(
+        self,
+        identity_type_id: int,
+        operation: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """
+        Valida permisos para operaciones de fmanagement.
+        
+        Mapea operaciones de fmanagement a permisos de bajo nivel.
+        """
+        # Mapeo de operaciones a permisos
+        operation_permission_map = {
+            # Operaciones de carpeta
+            "createfolder": "folder_create",
+            "deletefolder": "folder_delete",
+            "renamefolder": "folder_rename",
+            "readfolder": "folder_read",
+            "listfolder": "folder_list",
+            # Operaciones de archivo
+            "createfile": "file_create",
+            "readfile": "file_read",
+            "updatefile": "file_update",
+            "deletefile": "file_delete",
+            "listfile": "file_list",
+            "uploadfile": "file_create",
+            "downloadfile": "file_read",
+            # Operaciones combinadas
+            "list": "folder_list",
+            "read": "file_read",
+            "write": "file_update",
+            "delete": "file_delete",
+        }
+        
+        permission_key = operation_permission_map.get(operation)
+        if permission_key:
+            self.validate_permission(identity_type_id, permission_key)
+            self._logger.info(
+                "Permiso validado: identity_type_id=%s operation=%s permission=%s",
+                identity_type_id,
+                operation,
+                permission_key,
+            )
 
     def fmo_upload(
         self,
@@ -360,8 +691,20 @@ class BackendCoreRouter:
         headers: dict[str, str],
         file_payload: dict[str, Any],
     ) -> dict[str, Any]:
-        """Sube un fichero a través de fmanagement."""
-
+        """
+        Sube un fichero a través de fmanagement.
+        
+        SECURITY BY DESIGN: Requiere permiso file_create.
+        """
+        # Validar permiso de creación de archivo
+        identity_type_id = int(payload.get("identity_type_id", 0))
+        if identity_type_id > 0:
+            self.validate_permission(identity_type_id, "file_create")
+            self._logger.info(
+                "Permiso validado para upload: identity_type_id=%s",
+                identity_type_id,
+            )
+        
         client = self._get_fmanagement_client()
         settings = load_fmanagement_settings()
         form = self._build_fmo_params(payload, settings.base_path)
@@ -381,8 +724,16 @@ class BackendCoreRouter:
     def list_directory(
         self, payload: dict[str, Any], headers: dict[str, str]
     ) -> dict[str, Any]:
-        """Lista estructura de carpetas vía fmanagement."""
-
+        """
+        Lista estructura de carpetas vía fmanagement.
+        
+        SECURITY BY DESIGN: Requiere permiso folder_list.
+        """
+        # Validar permiso de listado de carpetas
+        identity_type_id = int(payload.get("identity_type_id", 0))
+        if identity_type_id > 0:
+            self.validate_permission(identity_type_id, "folder_list")
+        
         client = self._get_fmanagement_client()
         settings = load_fmanagement_settings()
         params = self._build_fmo_params(payload, settings.base_path)
@@ -401,8 +752,20 @@ class BackendCoreRouter:
     def create_new_version(
         self, payload: dict[str, Any], headers: dict[str, str]
     ) -> dict[str, Any]:
-        """Crea una nueva versión delegando en fmanagement."""
-
+        """
+        Crea una nueva versión delegando en fmanagement.
+        
+        SECURITY BY DESIGN: Requiere permiso version_create.
+        """
+        # Validar permiso de creación de versión
+        identity_type_id = int(payload.get("identity_type_id", 0))
+        if identity_type_id > 0:
+            self.validate_permission(identity_type_id, "version_create")
+            self._logger.info(
+                "Permiso validado para nueva versión: identity_type_id=%s",
+                identity_type_id,
+            )
+        
         client = self._get_fmanagement_client()
         settings = load_fmanagement_settings()
         form = self._build_fmo_params(payload, settings.base_path)
@@ -421,8 +784,16 @@ class BackendCoreRouter:
     def diff_versions(
         self, payload: dict[str, Any], headers: dict[str, str]
     ) -> dict[str, Any]:
-        """Compara versiones delegando en fmanagement."""
-
+        """
+        Compara versiones delegando en fmanagement.
+        
+        SECURITY BY DESIGN: Requiere permiso version_read.
+        """
+        # Validar permiso de lectura de versión
+        identity_type_id = int(payload.get("identity_type_id", 0))
+        if identity_type_id > 0:
+            self.validate_permission(identity_type_id, "version_read")
+        
         client = self._get_fmanagement_client()
         settings = load_fmanagement_settings()
         params = self._build_fmo_params(payload, settings.base_path)

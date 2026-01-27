@@ -114,7 +114,11 @@ class TestSharedSessionStateContentVerification:
             )
 
     def test_file_contains_key_permission_fields(self):
-        """Verifica que el archivo contiene campos de permisos clave."""
+        """Verifica que el archivo contiene campos de permisos clave.
+        
+        Los nombres de permisos deben coincidir EXACTAMENTE con low_level_permissions.json
+        para permitir validación directa desde la sesión.
+        """
         module_path = (
             project_root
             / "src"
@@ -124,12 +128,16 @@ class TestSharedSessionStateContentVerification:
         )
         content = module_path.read_text()
         
-        # Muestra de permisos clave (que realmente existen)
+        # Permisos clave que coinciden con low_level_permissions.json
         key_permissions = [
             "can_training_create:",
-            "can_data_read:",
+            "can_training_start:",
             "can_folder_create:",
-            "can_file_upload:",
+            "can_folder_rename:",
+            "can_file_create:",
+            "can_file_read:",
+            "can_project_create:",
+            "can_user_enable:",
         ]
         
         for perm in key_permissions:
@@ -309,6 +317,173 @@ class TestSharedSessionStateInitFile:
         )
         assert "from .shared_session_state import SharedSessionState" in content, (
             "__init__.py debe importar SharedSessionState"
+        )
+
+
+class TestPermissionValidation:
+    """
+    Tests de validación de permisos desde la sesión.
+    
+    Estos tests verifican que la estructura de permisos está alineada
+    con low_level_permissions.json y puede usarse para validar permisos
+    en la UI, como mostrar opciones de menú contextual.
+    """
+
+    def test_has_permission_method_exists(self):
+        """Verifica que existe el método has_permission para validación dinámica."""
+        module_path = (
+            project_root
+            / "src"
+            / "2_shared_application"
+            / "reflex_shared"
+            / "shared_session_state.py"
+        )
+        content = module_path.read_text()
+        
+        assert "def has_permission" in content, (
+            "SharedSessionState debe tener el método has_permission()"
+        )
+        assert "permission_key: str" in content, (
+            "has_permission debe recibir permission_key como string"
+        )
+
+    def test_folder_rename_permission_exists(self):
+        """
+        Verifica que existe el permiso folder_rename para validación.
+        
+        Caso de uso: Mostrar opción 'Renombrar carpeta' en menú contextual
+        solo si el usuario tiene el permiso folder_rename=True.
+        """
+        module_path = (
+            project_root
+            / "src"
+            / "2_shared_application"
+            / "reflex_shared"
+            / "shared_session_state.py"
+        )
+        content = module_path.read_text()
+        
+        # Verificar que existe el campo de permiso
+        assert "can_folder_rename:" in content, (
+            "SharedSessionState debe tener el campo can_folder_rename"
+        )
+        # Verificar que se carga desde el diccionario de permisos
+        assert '"folder_rename"' in content or "'folder_rename'" in content, (
+            "folder_rename debe cargarse desde el diccionario de permisos"
+        )
+
+    def test_permission_names_match_low_level_permissions_json(self):
+        """
+        Verifica que los nombres de permisos en SharedSessionState
+        coinciden con los nombres en low_level_permissions.json.
+        
+        Esto es crítico para que la validación desde la sesión funcione
+        correctamente con los datos del backend.
+        """
+        module_path = (
+            project_root
+            / "src"
+            / "2_shared_application"
+            / "reflex_shared"
+            / "shared_session_state.py"
+        )
+        content = module_path.read_text()
+        
+        # Permisos que DEBEN coincidir con low_level_permissions.json
+        required_mappings = [
+            # Carpetas
+            ('"folder_create"', "can_folder_create"),
+            ('"folder_delete"', "can_folder_delete"),
+            ('"folder_rename"', "can_folder_rename"),
+            ('"folder_read"', "can_folder_read"),
+            ('"folder_list"', "can_folder_list"),
+            # Ficheros
+            ('"file_create"', "can_file_create"),
+            ('"file_read"', "can_file_read"),
+            ('"file_update"', "can_file_update"),
+            ('"file_delete"', "can_file_delete"),
+            # Entrenamiento
+            ('"training_create"', "can_training_create"),
+            ('"training_start"', "can_training_start"),
+            ('"training_stop"', "can_training_stop"),
+            # Usuarios
+            ('"user_enable"', "can_user_enable"),
+            ('"user_disable"', "can_user_disable"),
+        ]
+        
+        for json_key, state_field in required_mappings:
+            assert json_key in content, (
+                f"_load_permissions debe mapear {json_key}"
+            )
+            assert f"{state_field}:" in content, (
+                f"SharedSessionState debe tener el campo {state_field}"
+            )
+
+    def test_get_all_permissions_method_exists(self):
+        """Verifica que existe el método para obtener todos los permisos."""
+        module_path = (
+            project_root
+            / "src"
+            / "2_shared_application"
+            / "reflex_shared"
+            / "shared_session_state.py"
+        )
+        content = module_path.read_text()
+        
+        assert "def get_all_permissions" in content, (
+            "SharedSessionState debe tener el método get_all_permissions()"
+        )
+        assert "-> dict" in content, (
+            "get_all_permissions debe retornar un diccionario"
+        )
+
+    def test_has_any_permission_method_exists(self):
+        """Verifica que existe el método has_any_permission para validación múltiple."""
+        module_path = (
+            project_root
+            / "src"
+            / "2_shared_application"
+            / "reflex_shared"
+            / "shared_session_state.py"
+        )
+        content = module_path.read_text()
+        
+        assert "def has_any_permission" in content, (
+            "SharedSessionState debe tener el método has_any_permission()"
+        )
+
+    def test_has_all_permissions_method_exists(self):
+        """Verifica que existe el método has_all_permissions para validación estricta."""
+        module_path = (
+            project_root
+            / "src"
+            / "2_shared_application"
+            / "reflex_shared"
+            / "shared_session_state.py"
+        )
+        content = module_path.read_text()
+        
+        assert "def has_all_permissions" in content, (
+            "SharedSessionState debe tener el método has_all_permissions()"
+        )
+
+    def test_permission_example_in_docstrings(self):
+        """Verifica que hay ejemplos de uso de permisos en la documentación."""
+        module_path = (
+            project_root
+            / "src"
+            / "2_shared_application"
+            / "reflex_shared"
+            / "shared_session_state.py"
+        )
+        content = module_path.read_text()
+        
+        # Verificar que hay ejemplos de uso documentados
+        assert "Ejemplo" in content or "ejemplo" in content, (
+            "El código debe incluir ejemplos de uso de permisos"
+        )
+        assert "folder_rename" in content, (
+            "Debe haber referencias a folder_rename como ejemplo"
         )
 
 

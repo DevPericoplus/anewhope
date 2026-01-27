@@ -42,67 +42,65 @@ class SharedSessionState(rx.State):
     session_token: str = ""
     
     # ==================== PERMISOS DE BAJO NIVEL ====================
-    # Gestión de datos
-    can_data_read: bool = False
-    can_data_write: bool = False
-    can_data_delete: bool = False
+    # Los nombres coinciden EXACTAMENTE con low_level_permissions.json
+    # Esto permite validar permisos directamente desde la sesión o JWT
+    # Ejemplo: if session.can_folder_rename: mostrar_opcion_renombrar()
     
     # Gestión de carpetas
     can_folder_create: bool = False
-    can_folder_rename: bool = False
     can_folder_delete: bool = False
-    can_folder_move: bool = False
+    can_folder_rename: bool = False
+    can_folder_read: bool = False
     can_folder_list: bool = False
     
     # Gestión de ficheros
-    can_file_upload: bool = False
-    can_file_download: bool = False
-    can_file_delete: bool = False
-    can_file_rename: bool = False
-    can_file_move: bool = False
+    can_file_create: bool = False
     can_file_read: bool = False
+    can_file_update: bool = False
+    can_file_delete: bool = False
+    can_file_list: bool = False
+    
+    # Gestión de proyectos
+    can_project_create: bool = False
+    can_project_read: bool = False
+    can_project_update: bool = False
+    can_project_delete: bool = False
+    can_project_list: bool = False
+    
+    # Gestión de versiones
+    can_version_create: bool = False
+    can_version_read: bool = False
+    can_version_update: bool = False
+    can_version_delete: bool = False
+    can_version_list: bool = False
     
     # Gestión de entrenamiento
     can_training_create: bool = False
-    can_training_execute: bool = False
-    can_training_monitor: bool = False
-    can_training_stop: bool = False
+    can_training_read: bool = False
+    can_training_update: bool = False
     can_training_delete: bool = False
+    can_training_start: bool = False
+    can_training_stop: bool = False
     
-    # Gestión de modelos
-    can_model_create: bool = False
-    can_model_read: bool = False
-    can_model_update: bool = False
-    can_model_delete: bool = False
-    can_model_publish: bool = False
-    can_model_download: bool = False
+    # Gestión de parámetros
+    can_parameters_create: bool = False
+    can_parameters_read: bool = False
+    can_parameters_update: bool = False
+    can_parameters_delete: bool = False
     
-    # Gestión de datasets
-    can_dataset_create: bool = False
-    can_dataset_read: bool = False
-    can_dataset_update: bool = False
-    can_dataset_delete: bool = False
-    can_dataset_validate: bool = False
+    # Gestión de notificaciones
+    can_notifications_create: bool = False
+    can_notifications_read: bool = False
+    can_notifications_update: bool = False
+    can_notifications_delete: bool = False
     
     # Gestión de usuarios
     can_user_create: bool = False
     can_user_read: bool = False
     can_user_update: bool = False
     can_user_delete: bool = False
-    can_user_activate: bool = False
-    can_user_deactivate: bool = False
-    
-    # Gestión de roles
-    can_role_assign: bool = False
-    can_role_revoke: bool = False
-    can_role_create: bool = False
-    can_role_delete: bool = False
-    
-    # Gestión de organización
-    can_org_create: bool = False
-    can_org_read: bool = False
-    can_org_update: bool = False
-    can_org_delete: bool = False
+    can_user_enable: bool = False
+    can_user_disable: bool = False
     
     # ==================== METADATA DE SESIÓN ====================
     session_id: str = ""
@@ -169,70 +167,71 @@ class SharedSessionState(rx.State):
         """
         Carga los permisos de bajo nivel desde el diccionario.
         
+        Los nombres de los campos coinciden EXACTAMENTE con low_level_permissions.json.
+        Esto permite validar permisos directamente desde la sesión.
+        
+        Ejemplo de uso en la UI:
+            if state.can_folder_rename:
+                mostrar_opcion_renombrar_carpeta()
+        
         Args:
             permissions: Diccionario con estructura de low_level_permissions
         """
-        # Gestión de datos
-        self.can_data_read = permissions.get("data_read", False)
-        self.can_data_write = permissions.get("data_write", False)
-        self.can_data_delete = permissions.get("data_delete", False)
-        
         # Gestión de carpetas
         self.can_folder_create = permissions.get("folder_create", False)
-        self.can_folder_rename = permissions.get("folder_rename", False)
         self.can_folder_delete = permissions.get("folder_delete", False)
-        self.can_folder_move = permissions.get("folder_move", False)
+        self.can_folder_rename = permissions.get("folder_rename", False)
+        self.can_folder_read = permissions.get("folder_read", False)
         self.can_folder_list = permissions.get("folder_list", False)
         
         # Gestión de ficheros
-        self.can_file_upload = permissions.get("file_upload", False)
-        self.can_file_download = permissions.get("file_download", False)
-        self.can_file_delete = permissions.get("file_delete", False)
-        self.can_file_rename = permissions.get("file_rename", False)
-        self.can_file_move = permissions.get("file_move", False)
+        self.can_file_create = permissions.get("file_create", False)
         self.can_file_read = permissions.get("file_read", False)
+        self.can_file_update = permissions.get("file_update", False)
+        self.can_file_delete = permissions.get("file_delete", False)
+        self.can_file_list = permissions.get("file_list", False)
+        
+        # Gestión de proyectos
+        self.can_project_create = permissions.get("project_create", False)
+        self.can_project_read = permissions.get("project_read", False)
+        self.can_project_update = permissions.get("project_update", False)
+        self.can_project_delete = permissions.get("project_delete", False)
+        self.can_project_list = permissions.get("project_list", False)
+        
+        # Gestión de versiones
+        self.can_version_create = permissions.get("version_create", False)
+        self.can_version_read = permissions.get("version_read", False)
+        self.can_version_update = permissions.get("version_update", False)
+        self.can_version_delete = permissions.get("version_delete", False)
+        self.can_version_list = permissions.get("version_list", False)
         
         # Gestión de entrenamiento
         self.can_training_create = permissions.get("training_create", False)
-        self.can_training_execute = permissions.get("training_execute", False)
-        self.can_training_monitor = permissions.get("training_monitor", False)
-        self.can_training_stop = permissions.get("training_stop", False)
+        self.can_training_read = permissions.get("training_read", False)
+        self.can_training_update = permissions.get("training_update", False)
         self.can_training_delete = permissions.get("training_delete", False)
+        self.can_training_start = permissions.get("training_start", False)
+        self.can_training_stop = permissions.get("training_stop", False)
         
-        # Gestión de modelos
-        self.can_model_create = permissions.get("model_create", False)
-        self.can_model_read = permissions.get("model_read", False)
-        self.can_model_update = permissions.get("model_update", False)
-        self.can_model_delete = permissions.get("model_delete", False)
-        self.can_model_publish = permissions.get("model_publish", False)
-        self.can_model_download = permissions.get("model_download", False)
+        # Gestión de parámetros
+        self.can_parameters_create = permissions.get("parameters_create", False)
+        self.can_parameters_read = permissions.get("parameters_read", False)
+        self.can_parameters_update = permissions.get("parameters_update", False)
+        self.can_parameters_delete = permissions.get("parameters_delete", False)
         
-        # Gestión de datasets
-        self.can_dataset_create = permissions.get("dataset_create", False)
-        self.can_dataset_read = permissions.get("dataset_read", False)
-        self.can_dataset_update = permissions.get("dataset_update", False)
-        self.can_dataset_delete = permissions.get("dataset_delete", False)
-        self.can_dataset_validate = permissions.get("dataset_validate", False)
+        # Gestión de notificaciones
+        self.can_notifications_create = permissions.get("notifications_create", False)
+        self.can_notifications_read = permissions.get("notifications_read", False)
+        self.can_notifications_update = permissions.get("notifications_update", False)
+        self.can_notifications_delete = permissions.get("notifications_delete", False)
         
         # Gestión de usuarios
         self.can_user_create = permissions.get("user_create", False)
         self.can_user_read = permissions.get("user_read", False)
         self.can_user_update = permissions.get("user_update", False)
         self.can_user_delete = permissions.get("user_delete", False)
-        self.can_user_activate = permissions.get("user_activate", False)
-        self.can_user_deactivate = permissions.get("user_deactivate", False)
-        
-        # Gestión de roles
-        self.can_role_assign = permissions.get("role_assign", False)
-        self.can_role_revoke = permissions.get("role_revoke", False)
-        self.can_role_create = permissions.get("role_create", False)
-        self.can_role_delete = permissions.get("role_delete", False)
-        
-        # Gestión de organización
-        self.can_org_create = permissions.get("org_create", False)
-        self.can_org_read = permissions.get("org_read", False)
-        self.can_org_update = permissions.get("org_update", False)
-        self.can_org_delete = permissions.get("org_delete", False)
+        self.can_user_enable = permissions.get("user_enable", False)
+        self.can_user_disable = permissions.get("user_disable", False)
     
     def clear_session(self):
         """
@@ -267,67 +266,61 @@ class SharedSessionState(rx.State):
     
     def _reset_permissions(self):
         """Resetea todos los permisos a False."""
-        # Gestión de datos
-        self.can_data_read = False
-        self.can_data_write = False
-        self.can_data_delete = False
-        
         # Gestión de carpetas
         self.can_folder_create = False
-        self.can_folder_rename = False
         self.can_folder_delete = False
-        self.can_folder_move = False
+        self.can_folder_rename = False
+        self.can_folder_read = False
         self.can_folder_list = False
         
         # Gestión de ficheros
-        self.can_file_upload = False
-        self.can_file_download = False
-        self.can_file_delete = False
-        self.can_file_rename = False
-        self.can_file_move = False
+        self.can_file_create = False
         self.can_file_read = False
+        self.can_file_update = False
+        self.can_file_delete = False
+        self.can_file_list = False
+        
+        # Gestión de proyectos
+        self.can_project_create = False
+        self.can_project_read = False
+        self.can_project_update = False
+        self.can_project_delete = False
+        self.can_project_list = False
+        
+        # Gestión de versiones
+        self.can_version_create = False
+        self.can_version_read = False
+        self.can_version_update = False
+        self.can_version_delete = False
+        self.can_version_list = False
         
         # Gestión de entrenamiento
         self.can_training_create = False
-        self.can_training_execute = False
-        self.can_training_monitor = False
-        self.can_training_stop = False
+        self.can_training_read = False
+        self.can_training_update = False
         self.can_training_delete = False
+        self.can_training_start = False
+        self.can_training_stop = False
         
-        # Gestión de modelos
-        self.can_model_create = False
-        self.can_model_read = False
-        self.can_model_update = False
-        self.can_model_delete = False
-        self.can_model_publish = False
-        self.can_model_download = False
+        # Gestión de parámetros
+        self.can_parameters_create = False
+        self.can_parameters_read = False
+        self.can_parameters_update = False
+        self.can_parameters_delete = False
         
-        # Gestión de datasets
-        self.can_dataset_create = False
-        self.can_dataset_read = False
-        self.can_dataset_update = False
-        self.can_dataset_delete = False
-        self.can_dataset_validate = False
+        # Gestión de notificaciones
+        self.can_notifications_create = False
+        self.can_notifications_read = False
+        self.can_notifications_update = False
+        self.can_notifications_delete = False
         
         # Gestión de usuarios
         self.can_user_create = False
         self.can_user_read = False
         self.can_user_update = False
         self.can_user_delete = False
-        self.can_user_activate = False
-        self.can_user_deactivate = False
-        
-        # Gestión de roles
-        self.can_role_assign = False
-        self.can_role_revoke = False
-        self.can_role_create = False
-        self.can_role_delete = False
-        
-        # Gestión de organización
-        self.can_org_create = False
-        self.can_org_read = False
-        self.can_org_update = False
-        self.can_org_delete = False
+        self.can_user_enable = False
+        self.can_user_disable = False
     
     def go_to_backoffice(self):
         """
@@ -405,3 +398,243 @@ class SharedSessionState(rx.State):
         Debe ser llamado en cada interacción significativa del usuario.
         """
         self.last_activity = datetime.now().isoformat()
+    
+    # ==================== MÉTODOS DE VALIDACIÓN DE PERMISOS ====================
+    
+    def has_permission(self, permission_key: str) -> bool:
+        """
+        Valida si el usuario tiene un permiso específico por nombre.
+        
+        Este método permite validar permisos dinámicamente usando el nombre
+        exacto del permiso como se define en low_level_permissions.json.
+        
+        Ejemplo de uso:
+            if state.has_permission("folder_rename"):
+                mostrar_opcion_renombrar()
+            
+            # En un menú contextual:
+            opciones = []
+            if state.has_permission("file_delete"):
+                opciones.append("Eliminar")
+            if state.has_permission("file_update"):
+                opciones.append("Editar")
+        
+        Args:
+            permission_key: Nombre del permiso (ej: "folder_rename", "file_create")
+        
+        Returns:
+            True si el usuario tiene el permiso, False en caso contrario
+        """
+        if not self.is_logged_in:
+            return False
+        
+        # Mapeo de claves de permiso a atributos del estado
+        permission_map = {
+            # Carpetas
+            "folder_create": self.can_folder_create,
+            "folder_delete": self.can_folder_delete,
+            "folder_rename": self.can_folder_rename,
+            "folder_read": self.can_folder_read,
+            "folder_list": self.can_folder_list,
+            # Ficheros
+            "file_create": self.can_file_create,
+            "file_read": self.can_file_read,
+            "file_update": self.can_file_update,
+            "file_delete": self.can_file_delete,
+            "file_list": self.can_file_list,
+            # Proyectos
+            "project_create": self.can_project_create,
+            "project_read": self.can_project_read,
+            "project_update": self.can_project_update,
+            "project_delete": self.can_project_delete,
+            "project_list": self.can_project_list,
+            # Versiones
+            "version_create": self.can_version_create,
+            "version_read": self.can_version_read,
+            "version_update": self.can_version_update,
+            "version_delete": self.can_version_delete,
+            "version_list": self.can_version_list,
+            # Entrenamiento
+            "training_create": self.can_training_create,
+            "training_read": self.can_training_read,
+            "training_update": self.can_training_update,
+            "training_delete": self.can_training_delete,
+            "training_start": self.can_training_start,
+            "training_stop": self.can_training_stop,
+            # Parámetros
+            "parameters_create": self.can_parameters_create,
+            "parameters_read": self.can_parameters_read,
+            "parameters_update": self.can_parameters_update,
+            "parameters_delete": self.can_parameters_delete,
+            # Notificaciones
+            "notifications_create": self.can_notifications_create,
+            "notifications_read": self.can_notifications_read,
+            "notifications_update": self.can_notifications_update,
+            "notifications_delete": self.can_notifications_delete,
+            # Usuarios
+            "user_create": self.can_user_create,
+            "user_read": self.can_user_read,
+            "user_update": self.can_user_update,
+            "user_delete": self.can_user_delete,
+            "user_enable": self.can_user_enable,
+            "user_disable": self.can_user_disable,
+        }
+        
+        return permission_map.get(permission_key, False)
+    
+    def get_all_permissions(self) -> dict:
+        """
+        Obtiene todos los permisos del usuario como diccionario.
+        
+        Útil para debugging, logging y para pasar permisos a componentes UI.
+        El formato del diccionario coincide con low_level_permissions.json.
+        
+        Ejemplo de uso:
+            permisos = state.get_all_permissions()
+            logger.info(f"Permisos de {state.user_name}: {permisos}")
+            
+            # Verificar múltiples permisos:
+            permisos_necesarios = ["folder_create", "file_create"]
+            tiene_todos = all(permisos.get(p) for p in permisos_necesarios)
+        
+        Returns:
+            Diccionario con todos los permisos {nombre_permiso: bool}
+        """
+        return {
+            # Carpetas
+            "folder_create": self.can_folder_create,
+            "folder_delete": self.can_folder_delete,
+            "folder_rename": self.can_folder_rename,
+            "folder_read": self.can_folder_read,
+            "folder_list": self.can_folder_list,
+            # Ficheros
+            "file_create": self.can_file_create,
+            "file_read": self.can_file_read,
+            "file_update": self.can_file_update,
+            "file_delete": self.can_file_delete,
+            "file_list": self.can_file_list,
+            # Proyectos
+            "project_create": self.can_project_create,
+            "project_read": self.can_project_read,
+            "project_update": self.can_project_update,
+            "project_delete": self.can_project_delete,
+            "project_list": self.can_project_list,
+            # Versiones
+            "version_create": self.can_version_create,
+            "version_read": self.can_version_read,
+            "version_update": self.can_version_update,
+            "version_delete": self.can_version_delete,
+            "version_list": self.can_version_list,
+            # Entrenamiento
+            "training_create": self.can_training_create,
+            "training_read": self.can_training_read,
+            "training_update": self.can_training_update,
+            "training_delete": self.can_training_delete,
+            "training_start": self.can_training_start,
+            "training_stop": self.can_training_stop,
+            # Parámetros
+            "parameters_create": self.can_parameters_create,
+            "parameters_read": self.can_parameters_read,
+            "parameters_update": self.can_parameters_update,
+            "parameters_delete": self.can_parameters_delete,
+            # Notificaciones
+            "notifications_create": self.can_notifications_create,
+            "notifications_read": self.can_notifications_read,
+            "notifications_update": self.can_notifications_update,
+            "notifications_delete": self.can_notifications_delete,
+            # Usuarios
+            "user_create": self.can_user_create,
+            "user_read": self.can_user_read,
+            "user_update": self.can_user_update,
+            "user_delete": self.can_user_delete,
+            "user_enable": self.can_user_enable,
+            "user_disable": self.can_user_disable,
+        }
+    
+    def has_any_permission(self, permission_keys: list) -> bool:
+        """
+        Verifica si el usuario tiene AL MENOS UNO de los permisos especificados.
+        
+        Útil para mostrar secciones de UI si el usuario tiene cualquier
+        permiso relacionado.
+        
+        Ejemplo:
+            # Mostrar sección de gestión si tiene algún permiso de usuario
+            if state.has_any_permission(["user_create", "user_read", "user_update"]):
+                mostrar_seccion_usuarios()
+        
+        Args:
+            permission_keys: Lista de nombres de permisos a verificar
+        
+        Returns:
+            True si tiene al menos uno de los permisos
+        """
+        return any(self.has_permission(key) for key in permission_keys)
+    
+    def has_all_permissions(self, permission_keys: list) -> bool:
+        """
+        Verifica si el usuario tiene TODOS los permisos especificados.
+        
+        Útil para operaciones que requieren múltiples permisos.
+        
+        Ejemplo:
+            # Para crear y configurar un proyecto completo
+            if state.has_all_permissions(["project_create", "folder_create", "file_create"]):
+                habilitar_creacion_proyecto_completo()
+        
+        Args:
+            permission_keys: Lista de nombres de permisos requeridos
+        
+        Returns:
+            True si tiene todos los permisos especificados
+        """
+        return all(self.has_permission(key) for key in permission_keys)
+    
+    # ==================== PROPIEDADES DE PERMISOS COMPUESTOS ====================
+    
+    @rx.var
+    def can_manage_folders(self) -> bool:
+        """Indica si puede gestionar carpetas (crear, renombrar, eliminar)."""
+        return self.is_logged_in and (
+            self.can_folder_create or 
+            self.can_folder_rename or 
+            self.can_folder_delete
+        )
+    
+    @rx.var
+    def can_manage_files(self) -> bool:
+        """Indica si puede gestionar ficheros (crear, editar, eliminar)."""
+        return self.is_logged_in and (
+            self.can_file_create or 
+            self.can_file_update or 
+            self.can_file_delete
+        )
+    
+    @rx.var
+    def can_manage_projects(self) -> bool:
+        """Indica si puede gestionar proyectos."""
+        return self.is_logged_in and (
+            self.can_project_create or 
+            self.can_project_update or 
+            self.can_project_delete
+        )
+    
+    @rx.var
+    def can_manage_training(self) -> bool:
+        """Indica si puede gestionar entrenamientos."""
+        return self.is_logged_in and (
+            self.can_training_create or 
+            self.can_training_start or 
+            self.can_training_stop
+        )
+    
+    @rx.var
+    def can_manage_users(self) -> bool:
+        """Indica si puede gestionar usuarios."""
+        return self.is_logged_in and (
+            self.can_user_create or 
+            self.can_user_update or 
+            self.can_user_delete or
+            self.can_user_enable or
+            self.can_user_disable
+        )

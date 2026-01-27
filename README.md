@@ -1680,7 +1680,155 @@ user = User(
 )
 ```
 
-## Roles y permisos (mock)
+## Sistema de Permisos (Security by Design)
+
+El proyecto implementa un sistema de permisos centralizado basado en el principio **Security by Design**.
+La tabla `low_level_permissions` es el **CORE del concepto Security by Default**.
+
+### Arquitectura de permisos
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        Flujo de Validación de Permisos                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  Usuario → Login → JWT (identity_type_id)                               │
+│                          ↓                                              │
+│               roles.json → identity_type_group_permissions              │
+│                          ↓                                              │
+│            low_level_permissions.json → permisos específicos            │
+│                          ↓                                              │
+│  ┌───────────────────────────────────────────────────────────────┐     │
+│  │                   Validación en TODAS las capas                │     │
+│  ├───────────────────────────────────────────────────────────────┤     │
+│  │ Frontend/Backoffice │ SharedSessionState.can_*                 │     │
+│  │ Middleware          │ router.has_low_level_permission()        │     │
+│  │ Backend Core        │ PermissionValidationService              │     │
+│  │ fmanagement         │ Valida via Backend Core                  │     │
+│  └───────────────────────────────────────────────────────────────┘     │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Componentes del sistema
+
+| Componente | Ubicación | Función |
+|------------|-----------|---------|
+| **low_level_permissions.json** | `src/2_shared_application/moks/` | Fuente de permisos por rol |
+| **SharedSessionState** | `src/2_shared_application/reflex_shared/` | Estado de sesión con 40 permisos |
+| **PermissionValidationService** | `src/2_shared_application/services/` | Servicio centralizado de validación |
+| **Project/Version entities** | `src/1_shared_domain/entities/` | Entidades de dominio con estados |
+| **Adaptadores JSON** | `src/2_shared_application/adapters/` | Implementaciones de repositorios |
+
+### Permisos disponibles (40 campos)
+
+| Categoría | Permisos |
+|-----------|----------|
+| **Carpetas** | `folder_create`, `folder_delete`, `folder_rename`, `folder_read`, `folder_list` |
+| **Ficheros** | `file_create`, `file_read`, `file_update`, `file_delete`, `file_list` |
+| **Proyectos** | `project_create`, `project_read`, `project_update`, `project_delete`, `project_list` |
+| **Versiones** | `version_create`, `version_read`, `version_update`, `version_delete`, `version_list` |
+| **Entrenamiento** | `training_create`, `training_read`, `training_update`, `training_delete`, `training_start`, `training_stop` |
+| **Parámetros** | `parameters_create`, `parameters_read`, `parameters_update`, `parameters_delete` |
+| **Notificaciones** | `notifications_create`, `notifications_read`, `notifications_update`, `notifications_delete` |
+| **Usuarios** | `user_create`, `user_read`, `user_update`, `user_delete`, `user_enable`, `user_disable` |
+
+### PermissionValidationService (servicio centralizado)
+
+Ubicación: `src/2_shared_application/services/permission_validation_service.py`
+
+```python
+from src.2_shared_application.services.permission_validation_service import (
+    PermissionValidationService,
+    PermissionContext,
+    get_permission_service,
+)
+
+# Obtener instancia singleton
+service = get_permission_service()
+
+# Validar un permiso
+service.can_perform_action(identity_type_id=2, permission_key="folder_rename")  # → bool
+
+# Validar con contexto (para auditoría)
+context = PermissionContext(user_id=1, organization_id=5, identity_type_id=2)
+result = service.validate_permission(context, "folder_rename")
+if not result.allowed:
+    logger.warning(result.reason)
+
+# Métodos de conveniencia
+service.can_manage_folders(identity_type_id)    # ¿Puede gestionar carpetas?
+service.can_manage_files(identity_type_id)      # ¿Puede gestionar archivos?
+service.can_manage_training(identity_type_id)   # ¿Puede gestionar entrenamiento?
+service.can_access_backoffice(identity_type_id) # ¿Puede acceder al backoffice?
+```
+
+### Ejemplo: Validación de notificaciones por rol
+
+```python
+# En UI (Frontend/Backoffice)
+def chat_notifications(state):
+    return rx.box(
+        rx.cond(
+            state.can_notifications_read,  # Solo mostrar si puede leer
+            rx.vstack(
+                rx.foreach(state.notifications, notification_item),
+                rx.cond(
+                    state.can_notifications_create,  # Crear solo si tiene permiso
+                    rx.input(on_submit=state.send_notification),
+                ),
+            ),
+        ),
+    )
+
+# En Middleware (validación obligatoria)
+if not router.has_low_level_permission(session, "notifications_create"):
+    raise HTTPException(status_code=403, detail="Sin permiso")
+
+# En Backend Core
+self.validate_permission(identity_type_id, "notifications_create")
+```
+
+### Roles por defecto
+
+| identity_type_id | Rol | Descripción |
+|------------------|-----|-------------|
+| 1 | SuperAdmin | Todos los permisos |
+| 2 | Administrador Org | CRUD completo en su organización |
+| 3 | Editor | Crear/editar sin eliminar |
+| 4 | Lector | Solo lectura |
+| 5 | Auditor | Solo lectura de logs/config |
+| 10-13 | Agentes proyecto | Permisos según tipo de agente |
+
+### Entidades de dominio: Project y Version
+
+El sistema incluye entidades de dominio para proyectos y versiones con estados de ciclo de vida.
+
+**Archivos:**
+- `src/1_shared_domain/entities/project.py` - Entidad Project
+- `src/1_shared_domain/entities/version.py` - Entidad Version
+- `src/2_shared_application/dtos/project_dtos.py` - DTOs
+- `src/2_shared_application/interfaces/project_repository.py` - Contrato
+- `src/2_shared_application/interfaces/version_repository.py` - Contrato
+
+**Estados de versión:**
+```
+draft → in_review → approved_client → approved_myllm → ready_for_training → training → trained
+```
+
+**Uso:**
+```python
+from src.1_shared_domain.entities.project import Project, ProjectStatus
+from src.1_shared_domain.entities.version import Version, VersionStatus
+
+project = Project.from_dict({"project_id": 1, "status": "active", ...})
+if project.can_create_version():
+    version = Version.from_dict({"version_id": 1, "status": "draft", ...})
+    if version.can_start_training():
+        iniciar_entrenamiento()
+```
+
+### Archivos de permisos (mock)
 
 - `src/2_shared_application/moks/roles.json`: define roles. El atributo
   `identity_type_group_permissions` contiene un único permiso básico (relación 1 a 1).
@@ -1802,17 +1950,46 @@ trabaje con rutas del storage (`/data/files/external`).
 Los contratos en `src/2_shared_application/interfaces/` desacoplan el acceso a
 las entidades de dominio de la infraestructura (JSON hoy, MariaDB mañana).
 
+**Repositorios de seguridad:**
 - `basic_permissions_repository.py`: `BasicPermissionsRepository`
 - `low_level_permissions_repository.py`: `LowLevelPermissionsRepository`
 - `manage_roles_by_org_repository.py`: `ManageRolesByOrgRepository`
 - `roles_repository.py`: `RolesRepository`
+
+**Repositorios de entidades principales:**
 - `user_repository.py`: `UserRepository`
 - `organization_repository.py`: `OrganizationRepository`
+- `project_repository.py`: `ProjectRepository` ← **NUEVO**
+- `version_repository.py`: `VersionRepository` ← **NUEVO**
+- `session_repository.py`: `SessionRepository`
+
+**Repositorios auxiliares:**
 - `identity_global_repository.py`: `IdentityGlobalRepository`
 - `permissions_repository.py`: `PermissionsRepository`
 - `tenant_repository.py`: `TenantRepository`
 - `dataset_repository.py`: `DatasetRepository`
 - `model_version_repository.py`: `ModelVersionRepository`
+
+### Adaptadores JSON (implementaciones)
+
+Los adaptadores implementan los contratos de repositorio usando JSON como almacenamiento:
+
+- `src/2_shared_application/adapters/json_user_repository.py`: `JsonUserRepository`
+- `src/2_shared_application/adapters/json_organization_repository.py`: `JsonOrganizationRepository`
+
+**Uso:**
+```python
+from src.2_shared_application.adapters import JsonUserRepository, JsonOrganizationRepository
+
+user_repo = JsonUserRepository()
+user = user_repo.get_by_email("admin@example.com")
+if user_repo.exists_by_email("nuevo@email.com"):
+    print("Email ya existe")
+
+org_repo = JsonOrganizationRepository()
+org = org_repo.get_by_id(1)
+org_repo.save({"organization_name": "Nueva Org"})
+```
 
 ### Ejemplos de implementación en adaptadores
 
