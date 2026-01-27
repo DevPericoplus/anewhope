@@ -575,6 +575,22 @@
       "expires_at": "2026-01-26T18:49:51Z",
       "ip_address": "127.0.0.1",
       "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "377231f7-ff98-4b15-9509-6860c63c3ad8",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "f0ff8dbc-31bd-4ca5-82a1-e57fcba694f0",
+        "session_token_jti": "cbe06450-097d-44b2-a522-d5356617dbcd"
+      },
+      "status": "active",
+      "created_at": "2026-01-27T02:51:38.670767Z",
+      "last_activity": "2026-01-27T02:51:38.670767Z",
+      "expires_at": "2026-01-27T03:36:38Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "pytest"
     }
   ],
   "auth_logs": [
@@ -1051,6 +1067,15 @@
       "ip_address": "127.0.0.1",
       "session_id": "aefe83b9-5a44-4dc6-86e7-26eaaee126fb",
       "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-01-27T02:51:38.673050Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "377231f7-ff98-4b15-9509-6860c63c3ad8",
+      "user_agent": "pytest"
     }
   ]
 }

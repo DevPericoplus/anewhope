@@ -184,8 +184,9 @@ class TestSharedSessionStateContentVerification:
         assert "def go_to_backoffice" in content, (
             "El archivo debe definir go_to_backoffice()"
         )
-        assert "https://tfmmyllm.ai/backoffice" in content, (
-            "go_to_backoffice debe redirigir al backoffice"
+        # El backoffice está en puerto dedicado 8443
+        assert "https://tfmmyllm.ai:8443" in content, (
+            "go_to_backoffice debe redirigir al backoffice (puerto 8443)"
         )
 
     def test_file_contains_go_to_frontend_method(self):
