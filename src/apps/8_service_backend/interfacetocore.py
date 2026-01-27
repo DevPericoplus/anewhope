@@ -19,6 +19,12 @@ class CoreBackendClient:
         self._base_url = base_url.rstrip("/")
         self._client = client or httpx.Client()
         self._owns_client = client is None
+        self._client_app: str = "broker"
+
+    def set_client_app(self, client_app: str) -> None:
+        """Configura el identificador de aplicación cliente para trazabilidad."""
+
+        self._client_app = client_app or "broker"
 
     def close(self) -> None:
         """Cierra el cliente HTTP si es propio."""
@@ -27,13 +33,22 @@ class CoreBackendClient:
             self._client.close()
 
     def _request(
-        self, method: str, path: str, payload: dict[str, Any] | list[Any] | None = None
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | list[Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> Any:
         """Ejecuta una petición HTTP y valida la respuesta."""
 
         url = f"{self._base_url}{path}"
+        headers = {"X-Client-App": self._client_app}
+        if extra_headers:
+            headers.update(extra_headers)
         try:
-            response = self._client.request(method, url, json=payload, timeout=10.0)
+            response = self._client.request(
+                method, url, json=payload, headers=headers, timeout=10.0
+            )
         except httpx.RequestError as exc:
             raise CoreBackendCommunicationError(
                 "No se pudo contactar con el backend core"

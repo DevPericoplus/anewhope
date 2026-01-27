@@ -211,6 +211,14 @@ def _get_request_metadata(request: Request) -> tuple[str, str]:
     return ip_address, user_agent
 
 
+def get_client_app(
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> str:
+    """Extrae el header X-Client-App de la petición."""
+
+    return client_app or "unknown"
+
+
 def get_session_context(
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
     access_token: Annotated[str | None, Header(alias="Authorization")] = None,
@@ -286,9 +294,11 @@ def get_broker_client() -> BrokerBackendClient:
 def get_router_middleware(
     interface: Annotated[InterfaceToBackend, Depends(get_interface_client)],
     broker_client: Annotated[BrokerBackendClient, Depends(get_broker_client)],
+    client_app: Annotated[str, Depends(get_client_app)],
 ) -> RouterMiddleware:
     """Inyecta el orquestador de middleware."""
 
+    broker_client.set_client_app(client_app)
     return RouterMiddleware(
         interface=interface,
         jwt_settings=get_jwt_settings(),

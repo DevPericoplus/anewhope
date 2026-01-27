@@ -1932,6 +1932,56 @@ def can_rename_folder(session: SessionContext) -> bool:
 - `8_service_backend` expone `GET /low-level-permissions` y delega al core.
 - `3_backend` expone `GET /low-level-permissions` y devuelve los permisos desde el almacenamiento.
 
+### Trazabilidad X-Client-App
+
+El sistema implementa trazabilidad de peticiones entre servicios mediante el header `X-Client-App`.
+Este header permite identificar el origen de cada petición a través de toda la cadena de servicios.
+
+**Flujo de propagación:**
+
+```
+Frontend/Backoffice → Middleware → Broker → Backend Core → fmanagement
+     [frontend]        [middleware]  [broker]   [core]     [fmanagement]
+```
+
+**Valores soportados:**
+| Origen | Header X-Client-App |
+|--------|---------------------|
+| `5_web_frontend` | `frontend` |
+| `6_web_backoffice` | `backoffice` |
+| `7_service_frontend` | `middleware` |
+| `8_service_backend` | `broker` |
+
+**Implementación por servicio:**
+
+1. **Frontend/Backoffice** (`adapters/api_client.py`):
+   ```python
+   request_headers = {
+       "Content-Type": "application/json",
+       "X-Client-App": "frontend",  # o "backoffice"
+   }
+   ```
+
+2. **Middleware** (`apife.py`, `broker_backend_client.py`):
+   - Extrae el header con `get_client_app()` como dependencia
+   - Inyecta el valor al `BrokerBackendClient` via `get_router_middleware()`
+   - Lo propaga al broker en peticiones salientes
+
+3. **Broker** (`apibe.py`, `interfacetocore.py`):
+   - Extrae el header de peticiones entrantes
+   - Registra en logs: `[frontend] Consulta permisos role_id=2`
+   - Lo propaga al backend core
+
+4. **Backend Core** (`apicore.py`, `fmanagement_client.py`):
+   - Extrae el header de peticiones entrantes
+   - Lo propaga a fmanagement
+
+**Formato de logs:**
+```
+2026-01-27 10:30:45 | INFO | [frontend] | user_id=1 | action=login
+2026-01-27 10:30:46 | INFO | [backoffice] | user_id=2 | action=create_training
+```
+
 ## Estructura de almacenamiento (helpers)
 
 En `src/2_shared_application/storage_access_structure.py` se definen helpers

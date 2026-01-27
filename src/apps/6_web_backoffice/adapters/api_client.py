@@ -175,7 +175,10 @@ def _request_middleware(
 
     url = f"{_get_middleware_base_url()}{path}"
     body = None
-    request_headers = {"Content-Type": "application/json"}
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
     if headers:
         request_headers.update(headers)
     if payload is not None:

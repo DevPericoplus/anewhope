@@ -32,6 +32,13 @@ class BrokerBackendRouter:
     def __init__(self, core_client: CoreBackendClient) -> None:
         self._core_client = core_client
         self._logger = logging.getLogger("broker_backend.router")
+        self._client_app: str = "unknown"
+
+    def set_client_app(self, client_app: str) -> None:
+        """Configura el identificador de aplicación cliente para trazabilidad."""
+
+        self._client_app = client_app or "unknown"
+        self._core_client.set_client_app(self._client_app)
 
     def fetch_users(self) -> list[dict[str, Any]]:
         """Obtiene usuarios desde el backend core."""
@@ -179,7 +186,8 @@ class BrokerBackendRouter:
         try:
             response = self._core_client.get_permissions(identity_type_id)
             self._logger.info(
-                "Consulta permisos role_id=%s low_level=%s",
+                "[%s] Consulta permisos role_id=%s low_level=%s",
+                self._client_app,
                 identity_type_id,
                 bool(response.get("low_level_permissions")),
             )

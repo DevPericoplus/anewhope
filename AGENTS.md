@@ -853,6 +853,74 @@ Incluye roles de usuario, servidores frontend/backend/trainer, el flujo entre `5
   - Dominio común → `src/1_shared_domain/`.
   - Aplicación común → `src/2_shared_application/`.
 
+### Trazabilidad X-Client-App (regla obligatoria)
+
+**Propósito:** Identificar el origen de cada petición a través de toda la cadena de servicios para
+auditoría, debugging y correlación de logs.
+
+**Header:** `X-Client-App`
+
+**Flujo de propagación:**
+```
+Frontend/Backoffice → Middleware → Broker → Backend Core → fmanagement
+     [frontend]        [propaga]    [propaga]  [propaga]    [recibe]
+```
+
+**Valores estándar por servicio:**
+| Servicio | Valor X-Client-App | Archivo de implementación |
+|----------|-------------------|---------------------------|
+| `5_web_frontend` | `frontend` | `adapters/api_client.py` |
+| `6_web_backoffice` | `backoffice` | `adapters/api_client.py` |
+| `7_service_frontend` | `middleware` (origen) | `broker_backend_client.py` |
+| `8_service_backend` | propaga origen | `interfacetocore.py` |
+| `3_backend` | propaga origen | `apicore.py` |
+
+**Reglas de implementación:**
+
+1. **Clientes HTTP** (Frontend/Backoffice):
+   ```python
+   request_headers = {
+       "Content-Type": "application/json",
+       "X-Client-App": "frontend",  # o "backoffice"
+   }
+   ```
+
+2. **APIs FastAPI** (extracción del header):
+   ```python
+   def get_client_app(
+       client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+   ) -> str:
+       return client_app or "unknown"
+   ```
+
+3. **Middleware** (inyección y propagación en `apife.py`):
+   ```python
+   def get_router_middleware(
+       interface: Annotated[InterfaceToBackend, Depends(get_interface_client)],
+       broker_client: Annotated[BrokerBackendClient, Depends(get_broker_client)],
+       client_app: Annotated[str, Depends(get_client_app)],
+   ) -> RouterMiddleware:
+       broker_client.set_client_app(client_app)  # Configura el header para propagación
+       return RouterMiddleware(interface=interface, jwt_settings=get_jwt_settings(), broker_client=broker_client)
+   ```
+
+4. **Clientes intermedios** (propagación):
+   ```python
+   headers = {"X-Client-App": client_app}
+   response = self._client.request(method, url, headers=headers, ...)
+   ```
+
+5. **Logging** (incluir origen en logs):
+   ```python
+   self._logger.info("[%s] Consulta permisos role_id=%s", self._client_app, identity_type_id)
+   ```
+
+**Formato de logs esperado:**
+```
+2026-01-27 10:30:45 | INFO | [frontend] | user_id=1 | action=login
+2026-01-27 10:30:46 | INFO | [backoffice] | user_id=2 | action=create_training
+```
+
 ## ADRs
 
 - `src/docs/stack_of_technologies.adr`: decisión de bajar a Python 3.13 por compatibilidad de dependencias.

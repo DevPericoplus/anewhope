@@ -163,6 +163,7 @@ class FileOperationResponse(BaseModel):
 def _build_permission_headers(
     authorization: str | None,
     session_token: str | None,
+    client_app: str | None = None,
 ) -> dict[str, str]:
     """Construye headers para validar permisos en fmanagement."""
 
@@ -171,7 +172,17 @@ def _build_permission_headers(
         headers["Authorization"] = authorization
     if session_token:
         headers["X-Session-Token"] = session_token
+    if client_app:
+        headers["X-Client-App"] = client_app
     return headers
+
+
+def get_client_app(
+    client_app: str | None = Header(default=None, alias="X-Client-App"),
+) -> str:
+    """Extrae el header X-Client-App de la petición."""
+
+    return client_app or "unknown"
 
 
 def _configure_logging() -> None:
@@ -569,6 +580,7 @@ def fmo_operation(
     identity_type_id: int | None = None,
     authorization: str | None = Header(default=None, alias="Authorization"),
     session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
     router: BackendCoreRouter = Depends(get_router_core),
 ) -> FileOperationResponse:
     """Delegación de operaciones de ficheros/carpetas a fmanagement."""
@@ -587,7 +599,7 @@ def fmo_operation(
         compare_version_path=compare_version_path,
         identity_type_id=identity_type_id,
     ).model_dump()
-    headers = _build_permission_headers(authorization, session_token)
+    headers = _build_permission_headers(authorization, session_token, client_app)
     try:
         result = router.fmo_operation(payload, headers)
         return FileOperationResponse(result=result)
@@ -612,6 +624,7 @@ async def fmo_upload(
     identity_type_id: int | None = Form(None),
     authorization: str | None = Header(default=None, alias="Authorization"),
     session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
     router: BackendCoreRouter = Depends(get_router_core),
 ) -> FileOperationResponse:
     """Delegación de carga de fichero a fmanagement."""
@@ -627,7 +640,7 @@ async def fmo_upload(
         ext_file=ext_file,
         identity_type_id=identity_type_id,
     ).model_dump()
-    headers = _build_permission_headers(authorization, session_token)
+    headers = _build_permission_headers(authorization, session_token, client_app)
     file_payload = {
         "filename": file.filename,
         "content": await file.read(),
@@ -653,6 +666,7 @@ def fmo_list(
     identity_type_id: int | None = None,
     authorization: str | None = Header(default=None, alias="Authorization"),
     session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
     router: BackendCoreRouter = Depends(get_router_core),
 ) -> FileOperationResponse:
     """Lista estructura de carpetas vía fmanagement."""
@@ -666,7 +680,7 @@ def fmo_list(
         subfolders=subfolders,
         identity_type_id=identity_type_id,
     ).model_dump()
-    headers = _build_permission_headers(authorization, session_token)
+    headers = _build_permission_headers(authorization, session_token, client_app)
     try:
         result = router.list_directory(payload, headers)
         return FileOperationResponse(result=result)
@@ -682,11 +696,12 @@ def fmo_newversion(
     payload: VersionOperationRequest,
     authorization: str | None = Header(default=None, alias="Authorization"),
     session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
     router: BackendCoreRouter = Depends(get_router_core),
 ) -> FileOperationResponse:
     """Crea una nueva versión delegando en fmanagement."""
 
-    headers = _build_permission_headers(authorization, session_token)
+    headers = _build_permission_headers(authorization, session_token, client_app)
     try:
         result = router.create_new_version(payload.model_dump(), headers)
         return FileOperationResponse(result=result)
@@ -707,6 +722,7 @@ def fmo_diffversion(
     identity_type_id: int | None = None,
     authorization: str | None = Header(default=None, alias="Authorization"),
     session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
     router: BackendCoreRouter = Depends(get_router_core),
 ) -> FileOperationResponse:
     """Compara versiones delegando en fmanagement."""
@@ -720,7 +736,7 @@ def fmo_diffversion(
         operation="diffversion",
         identity_type_id=identity_type_id,
     ).model_dump()
-    headers = _build_permission_headers(authorization, session_token)
+    headers = _build_permission_headers(authorization, session_token, client_app)
     try:
         result = router.diff_versions(payload, headers)
         return FileOperationResponse(result=result)

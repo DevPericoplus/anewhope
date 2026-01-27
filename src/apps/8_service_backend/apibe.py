@@ -12,8 +12,9 @@ from collections.abc import Iterator
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any, AsyncIterator
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, Field
+from typing import Annotated
 
 try:
     from .interfacetocore import CoreBackendClient
@@ -177,12 +178,23 @@ def get_core_client() -> CoreBackendClient:
     return CoreBackendClient(base_url=_get_core_base_url())
 
 
+def get_client_app(
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> str:
+    """Extrae el header X-Client-App de la petición."""
+
+    return client_app or "unknown"
+
+
 def get_router_broker(
     core_client: CoreBackendClient = Depends(get_core_client),
+    client_app: str = Depends(get_client_app),
 ) -> BrokerBackendRouter:
     """Inyecta el orquestador del broker."""
 
-    return BrokerBackendRouter(core_client=core_client)
+    router = BrokerBackendRouter(core_client=core_client)
+    router.set_client_app(client_app)
+    return router
 
 
 @asynccontextmanager
