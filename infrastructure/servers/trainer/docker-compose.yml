@@ -1,30 +1,93 @@
-version: "3.9"
-
 services:
+  # ====================
+  # Trainer API - Backend IA
+  # ====================
   trainer_api:
     build:
       context: ../../..
       dockerfile: src/apps/4_trainer/Dockerfile
+      args:
+        ENVIRONMENT: ${ENVIRONMENT:-dev}
+    container_name: trainer-api
     entrypoint: ["/app/entrypoint.sh"]
     environment:
+      ENVIRONMENT: ${ENVIRONMENT:-dev}
       SERVICE_HOST: "0.0.0.0"
       SERVICE_PORT: "8004"
-      # Variables de almacenamiento para versiones replicadas
-      BACKEND_IA_BASE_STORAGE: "${BACKEND_IA_BASE_STORAGE:-/data/files/trainer}"
-      # Variables de conexión con broker/core
-      BROKER_BACKEND_BASE_URL: "${BROKER_BACKEND_BASE_URL}"
-      STORAGE_MODE: "${STORAGE_MODE:-db_only}"
+      # Modo de almacenamiento
+      STORAGE_MODE: ${STORAGE_MODE:-db_only}
+      # Almacenamiento de versiones replicadas
+      BACKEND_IA_BASE_STORAGE: ${BACKEND_IA_BASE_STORAGE:-/data/files/trainer}
+      # Fmanagement (para operaciones de ficheros)
+      FMANAGEMENT_BASE_URL: ${FMANAGEMENT_BASE_URL:-http://backend.anewhope.aws:1666}
+      # Ollama (IA local) - comunicación directa según ADR
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://localhost:11434}
     volumes:
       # Volumen para recibir versiones replicadas desde backend
-      - "${BACKEND_IA_BASE_STORAGE:-/data/files/trainer}:/data/files/trainer"
+      - trainer-data:/data/files/trainer
     ports:
       - "8004:8004"
+    networks:
+      - trainer-network
+    restart: always
 
-  # NOTA: Usa Python 3.12 por compatibilidad con TensorFlow/Keras
+  # ====================
+  # Ollama - Servidor de modelos LLM locales (Planificado)
+  # ====================
+  # NOTA: Descomentar cuando se despliegue Ollama
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: ollama
+  #   environment:
+  #     OLLAMA_HOST: "0.0.0.0"
+  #   volumes:
+  #     - ollama-models:/root/.ollama
+  #   ports:
+  #     - "11434:11434"
+  #   networks:
+  #     - trainer-network
+  #   restart: always
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
+
+  # ====================
+  # Keras Service - Base de datos vectorial (Placeholder)
+  # ====================
+  # NOTA: Este servicio es un placeholder. Reemplazar con configuración
+  # real cuando se defina la implementación de BD vectorial (Chroma, etc.)
   keras_service:
     image: python:3.12-slim
+    container_name: keras-service
     environment:
-      BACKEND_IA_BASE_STORAGE: "${BACKEND_IA_BASE_STORAGE:-/data/files/trainer}"
+      ENVIRONMENT: ${ENVIRONMENT:-dev}
+      BACKEND_IA_BASE_STORAGE: ${BACKEND_IA_BASE_STORAGE:-/data/files/trainer}
     volumes:
-      - "${BACKEND_IA_BASE_STORAGE:-/data/files/trainer}:/data/files/trainer"
+      - trainer-data:/data/files/trainer
     command: ["sleep", "infinity"]
+    networks:
+      - trainer-network
+
+# ====================
+# Volúmenes persistentes
+# ====================
+volumes:
+  trainer-data:
+    name: trainer-${ENVIRONMENT:-dev}-data
+    driver: local
+  # Descomentar cuando se despliegue Ollama
+  # ollama-models:
+  #   name: ollama-${ENVIRONMENT:-dev}-models
+  #   driver: local
+
+# ====================
+# Red interna
+# ====================
+networks:
+  trainer-network:
+    name: trainer-${ENVIRONMENT:-dev}-network
+    driver: bridge

@@ -1,74 +1,150 @@
-version: "3.9"
-
 services:
+  # ====================
+  # MariaDB - Base de datos principal
+  # ====================
+  mariadb:
+    image: mariadb:10.6
+    container_name: mariadb-${ENVIRONMENT:-dev}
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MARIADB_DATABASE: ${MARIADB_CORE_DATABASE:-myllm_core_db}
+      MARIADB_USER: ${MARIADB_WRITER_USER}
+      MARIADB_PASSWORD: ${MARIADB_WRITER_PASSWORD}
+    volumes:
+      - mariadb-data:/var/lib/mysql
+      - mariadb-logs:/var/log/mysql
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - backend-network
+    restart: always
+
+  # ====================
+  # Service Backend - Broker
+  # ====================
   service_backend:
     build:
       context: ../../..
       dockerfile: src/apps/8_service_backend/Dockerfile
+      args:
+        ENVIRONMENT: ${ENVIRONMENT:-dev}
+    container_name: service-backend
     entrypoint: ["/app/entrypoint.sh"]
     environment:
+      ENVIRONMENT: ${ENVIRONMENT:-dev}
       SERVICE_HOST: "0.0.0.0"
       SERVICE_PORT: "8008"
-      CORE_BACKEND_BASE_URL: "${CORE_BACKEND_BASE_URL}"
+      # URLs de servicios internos
+      CORE_BACKEND_BASE_URL: ${CORE_BACKEND_BASE_URL:-http://backend_core:8003}
+      TRAINER_BACKEND_BASE_URL: ${TRAINER_BACKEND_BASE_URL}
+      # Modo de almacenamiento
+      STORAGE_MODE: ${STORAGE_MODE:-db_only}
     ports:
       - "8008:8008"
+    depends_on:
+      backend_core:
+        condition: service_started
+    networks:
+      - backend-network
+    restart: always
 
+  # ====================
+  # Backend Core - API de datos
+  # ====================
   backend_core:
     build:
       context: ../../..
       dockerfile: src/apps/3_backend/Dockerfile
+      args:
+        ENVIRONMENT: ${ENVIRONMENT:-dev}
+    container_name: backend-core
     entrypoint: ["/app/entrypoint.sh"]
     environment:
+      ENVIRONMENT: ${ENVIRONMENT:-dev}
       SERVICE_HOST: "0.0.0.0"
       SERVICE_PORT: "8003"
-      STORAGE_MODE: "${STORAGE_MODE}"
-      BROKER_BACKEND_BASE_URL: "${BROKER_BACKEND_BASE_URL}"
-      MARIADB_HOST: "${MARIADB_HOST}"
-      MARIADB_PORT: "${MARIADB_PORT}"
-      MARIADB_CORE_DATABASE: "${MARIADB_CORE_DATABASE}"
-      MARIADB_PROJECTS_DATABASE: "${MARIADB_PROJECTS_DATABASE}"
-      MARIADB_ADMIN_USER: "${MARIADB_ADMIN_USER}"
-      MARIADB_ADMIN_PASSWORD: "${MARIADB_ADMIN_PASSWORD}"
-      MARIADB_WRITER_USER: "${MARIADB_WRITER_USER}"
-      MARIADB_WRITER_PASSWORD: "${MARIADB_WRITER_PASSWORD}"
-      MARIADB_READER_USER: "${MARIADB_READER_USER}"
-      MARIADB_READER_PASSWORD: "${MARIADB_READER_PASSWORD}"
-      MARIADB_ROOT_USER: "${MARIADB_ROOT_USER}"
-      MARIADB_ROOT_PASSWORD: "${MARIADB_ROOT_PASSWORD}"
-      MARIADB_ADMIN_DSN: "${MARIADB_ADMIN_DSN}"
-      MARIADB_WRITER_DSN: "${MARIADB_WRITER_DSN}"
-      MARIADB_READER_DSN: "${MARIADB_READER_DSN}"
-      MARIADB_ROOT_DSN: "${MARIADB_ROOT_DSN}"
-      MARIADB_CLI_PATH: "${MARIADB_CLI_PATH}"
+      # Modo de almacenamiento
+      STORAGE_MODE: ${STORAGE_MODE:-db_only}
+      # Fmanagement
+      FMANAGEMENT_BASE_URL: ${FMANAGEMENT_BASE_URL:-http://fmanagement:1666}
+      FMANAGEMENT_BASE_PATH: ${FMANAGEMENT_BASE_PATH:-/data/files/external}
+      # MariaDB
+      MARIADB_HOST: mariadb
+      MARIADB_PORT: "3306"
+      MARIADB_CORE_DATABASE: ${MARIADB_CORE_DATABASE:-myllm_core_db}
+      MARIADB_PROJECTS_DATABASE: ${MARIADB_PROJECTS_DATABASE:-myllm_projects_db}
+      MARIADB_ADMIN_USER: ${MARIADB_ADMIN_USER}
+      MARIADB_ADMIN_PASSWORD: ${MARIADB_ADMIN_PASSWORD}
+      MARIADB_WRITER_USER: ${MARIADB_WRITER_USER}
+      MARIADB_WRITER_PASSWORD: ${MARIADB_WRITER_PASSWORD}
+      MARIADB_READER_USER: ${MARIADB_READER_USER}
+      MARIADB_READER_PASSWORD: ${MARIADB_READER_PASSWORD}
+      MARIADB_ROOT_USER: ${MARIADB_ROOT_USER:-root}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MARIADB_ADMIN_DSN: ${MARIADB_ADMIN_DSN}
+      MARIADB_WRITER_DSN: ${MARIADB_WRITER_DSN}
+      MARIADB_READER_DSN: ${MARIADB_READER_DSN}
+      MARIADB_ROOT_DSN: ${MARIADB_ROOT_DSN}
+      MARIADB_CLI_PATH: /usr/bin/mariadb
     ports:
       - "8003:8003"
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    networks:
+      - backend-network
+    restart: always
 
+  # ====================
+  # Fmanagement - Gestión de ficheros (Go API)
+  # ====================
   fmanagement:
     image: fmanagement:latest
+    container_name: fmanagement
     environment:
-      PERMISSIONS_SOURCE: "${PERMISSIONS_SOURCE}"
-      MIDDLEWARE_BASE_URL: "${MIDDLEWARE_BASE_URL}"
-      CORE_BACKEND_BASE_URL: "${CORE_BACKEND_BASE_URL}"
-      # Variables para transferencia de versiones
-      BACKEND_CORE_BASE_STORAGE: "${BACKEND_CORE_BASE_STORAGE:-/data/files/external}"
-      BACKEND_IA_BASE_STORAGE: "${BACKEND_IA_BASE_STORAGE:-/data/files/trainer}"
-      TRANSFER_MODE: "${TRANSFER_MODE:-remote}"
-      TRAINER_SSH_HOST: "${TRAINER_SSH_HOST}"
-      TRAINER_SSH_USER: "${TRAINER_SSH_USER}"
-      TRAINER_SSH_KEY_PATH: "${TRAINER_SSH_KEY_PATH}"
-      TRAINER_SSH_PORT: "${TRAINER_SSH_PORT:-22}"
+      ENVIRONMENT: ${ENVIRONMENT:-dev}
+      # Rutas de almacenamiento
+      BACKEND_CORE_BASE_STORAGE: ${BACKEND_CORE_BASE_STORAGE:-/data/files/external}
+      BACKEND_IA_BASE_STORAGE: ${BACKEND_IA_BASE_STORAGE:-/data/files/trainer}
+      # Transferencia de versiones
+      TRANSFER_MODE: ${TRANSFER_MODE:-remote}
+      TRAINER_SSH_HOST: ${TRAINER_SSH_HOST}
+      TRAINER_SSH_USER: ${TRAINER_SSH_USER}
+      TRAINER_SSH_KEY_PATH: ${TRAINER_SSH_KEY_PATH:-/opt/anewhope/keys/rsync_key}
+      TRAINER_SSH_PORT: ${TRAINER_SSH_PORT:-22}
+      # URLs de servicios internos (para validación de permisos)
+      MIDDLEWARE_BASE_URL: ${MIDDLEWARE_BASE_URL}
+      CORE_BACKEND_BASE_URL: ${CORE_BACKEND_BASE_URL:-http://backend_core:8003}
     volumes:
-      - "${BACKEND_CORE_BASE_STORAGE:-/data/files/external}:/data/files/external"
-      - "${TRAINER_SSH_KEY_PATH:-/opt/anewhope/keys/rsync_key}:${TRAINER_SSH_KEY_PATH:-/opt/anewhope/keys/rsync_key}:ro"
+      - ${BACKEND_CORE_BASE_STORAGE:-/data/files/external}:/data/files/external
+      - ${TRAINER_SSH_KEY_PATH:-/opt/anewhope/keys/rsync_key}:${TRAINER_SSH_KEY_PATH:-/opt/anewhope/keys/rsync_key}:ro
     ports:
       - "1666:1666"
+    networks:
+      - backend-network
+    restart: always
 
-  mariadb:
-    image: mariadb:10.6
-    environment:
-      MARIADB_ROOT_PASSWORD: "${MARIADB_ROOT_PASSWORD}"
-      MARIADB_DATABASE: "${MARIADB_CORE_DATABASE}"
-      MARIADB_USER: "${MARIADB_WRITER_USER}"
-      MARIADB_PASSWORD: "${MARIADB_WRITER_PASSWORD}"
-    ports:
-      - "3306:3306"
+# ====================
+# Volúmenes persistentes
+# ====================
+volumes:
+  mariadb-data:
+    name: mariadb-${ENVIRONMENT:-dev}-data
+    driver: local
+  mariadb-logs:
+    name: mariadb-${ENVIRONMENT:-dev}-logs
+    driver: local
+
+# ====================
+# Red interna
+# ====================
+networks:
+  backend-network:
+    name: backend-${ENVIRONMENT:-dev}-network
+    driver: bridge

@@ -494,16 +494,63 @@ Si dos aplicaciones comparten el mismo entorno virtual:
 - **Documentación:** `docs/REDIS_IMPLEMENTATION.md` y `docs/SWITCHING_DESIGN.md`
 
 ### Dockerfiles y despliegues
-- **Dockerfiles por app:** cada `src/apps/*` debe tener `Dockerfile` y `docker_execution.sh`.
-  - `docker_execution.sh` carga `.env` + `env.yaml` del entorno y ejecuta la imagen.
-  - Expone el puerto fijo asignado según regla: `8000 + <primer_dígito_carpeta>`.
-- **Compose por servidor:** usar `infrastructure/servers/*/docker-compose.yml`.
-  - `frontend/`: nginx, 5_web_frontend, 6_web_backoffice, 7_service_frontend
-  - `backend/`: 8_service_backend, 3_backend, fmanagement, mariadb
-  - `trainer/`: 4_trainer (placeholder), keras_service (placeholder)
-  - `macbook/`: solo aplicaciones internas (sin servicios externos dockerizados)
-- **Macbook:** MariaDB y Keras no se dockerizan; se usan instalaciones nativas.
-- **Linux:** servicios externos (nginx, mariadb, fmanagement) se despliegan en Docker.
+
+**Reglas de Dockerfiles:**
+- **ARG ENVIRONMENT:** Cada Dockerfile debe aceptar `ARG ENVIRONMENT=dev` para configuración por entorno.
+- **Limpieza en producción:** Si `ENVIRONMENT=pro`, eliminar `/app/src/2_shared_application/moks`.
+- **Puerto fijo:** Exponer puerto según regla `8000 + primer_dígito_carpeta`.
+
+**Estructura de Dockerfile estándar:**
+
+```dockerfile
+FROM python:3.13-slim
+WORKDIR /app
+
+ARG ENVIRONMENT=dev
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    ENVIRONMENT=${ENVIRONMENT}
+
+COPY src/apps/<app>/requirements.txt /app/requirements.txt
+COPY src/apps/<app>/entrypoint.sh /app/entrypoint.sh
+
+RUN pip install --no-cache-dir -r /app/requirements.txt
+COPY . /app
+
+# SEGURIDAD: En producción, eliminar moks
+RUN if [ "$ENVIRONMENT" = "pro" ]; then \
+        rm -rf /app/src/2_shared_application/moks; \
+    fi
+
+EXPOSE <puerto>
+RUN chmod +x /app/entrypoint.sh
+ENTRYPOINT ["/app/entrypoint.sh"]
+```
+
+**Compose por servidor:** usar `infrastructure/servers/*/docker-compose.yml`.
+
+| Servidor | Servicios | Archivo `.env.example` |
+|----------|-----------|------------------------|
+| frontend | Redis, Nginx, web_frontend, web_backoffice, service_frontend | Sí |
+| backend | MariaDB, backend_core, service_backend, fmanagement | Sí |
+| trainer | trainer_api, ollama (planificado), keras_service (placeholder) | Sí |
+| macbook | Todos (para desarrollo local en contenedores) | Sí |
+
+**Variables de entorno críticas en docker-compose:**
+
+```yaml
+environment:
+  ENVIRONMENT: ${ENVIRONMENT:-dev}          # Entorno activo
+  STORAGE_MODE: ${STORAGE_MODE:-db_only}    # Modo de almacenamiento
+  REDIS_HOST: redis                          # Nombre del servicio Redis
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-}        # Desde protected_values.py
+  MIDDLEWARE_BASE_URL: http://service_frontend:8007  # Dentro del compose
+```
+
+**Macbook:** MariaDB, Redis y Fmanagement se ejecutan nativamente; el docker-compose usa
+`host.docker.internal` para acceder a servicios del host.
+
+**Linux (dev/pre/pro):** Todos los servicios se despliegan en Docker con redes dedicadas.
 
 ### Sincronización OTP (frontend)
 - **Obligatorio:** Al actualizar OTP, el cambio debe persistirse en JSON y MariaDB

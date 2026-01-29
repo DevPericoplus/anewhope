@@ -1,1 +1,0 @@
-En esta seccion el usuario que creo la organizacion es reconocido como administrador de la organizacion y el administrador puede gestionar nuevos usuarios que colaboraran en los proyectos de la organizacion.

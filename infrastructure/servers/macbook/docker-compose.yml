@@ -1,63 +1,195 @@
-version: "3.9"
+# ====================
+# Docker Compose para desarrollo local (macbook)
+# ====================
+# NOTA: En macbook, MariaDB y Redis se ejecutan nativamente (no dockerizados)
+# Este compose es para pruebas de contenedores en desarrollo.
+#
+# Uso: ENVIRONMENT=macbook docker-compose up -d
 
 services:
+  # ====================
+  # Redis - State Manager (opcional para desarrollo)
+  # ====================
+  redis:
+    image: redis:8.0-alpine
+    container_name: redis-macbook
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - macbook-network
+    restart: unless-stopped
+
+  # ====================
+  # Backend Core - API de datos
+  # ====================
   backend_core:
     build:
       context: ../../..
       dockerfile: src/apps/3_backend/Dockerfile
+      args:
+        ENVIRONMENT: macbook
+    container_name: backend-core-macbook
     entrypoint: ["/app/entrypoint.sh"]
     environment:
+      ENVIRONMENT: macbook
       SERVICE_HOST: "0.0.0.0"
       SERVICE_PORT: "8003"
-      STORAGE_MODE: "${STORAGE_MODE}"
-      BROKER_BACKEND_BASE_URL: "${BROKER_BACKEND_BASE_URL}"
+      # Modo de almacenamiento
+      STORAGE_MODE: ${STORAGE_MODE:-db_only}
+      # Fmanagement (nativo en macbook)
+      FMANAGEMENT_BASE_URL: ${FMANAGEMENT_BASE_URL:-http://host.docker.internal:1666}
+      # MariaDB (nativo en macbook)
+      MARIADB_HOST: host.docker.internal
+      MARIADB_PORT: "3306"
+      MARIADB_CORE_DATABASE: ${MARIADB_CORE_DATABASE:-myllm_core_db}
+      MARIADB_PROJECTS_DATABASE: ${MARIADB_PROJECTS_DATABASE:-myllm_projects_db}
     ports:
       - "8003:8003"
+    networks:
+      - macbook-network
+    restart: unless-stopped
 
+  # ====================
+  # Service Backend - Broker
+  # ====================
   service_backend:
     build:
       context: ../../..
       dockerfile: src/apps/8_service_backend/Dockerfile
+      args:
+        ENVIRONMENT: macbook
+    container_name: service-backend-macbook
     entrypoint: ["/app/entrypoint.sh"]
     environment:
+      ENVIRONMENT: macbook
       SERVICE_HOST: "0.0.0.0"
       SERVICE_PORT: "8008"
-      CORE_BACKEND_BASE_URL: "${CORE_BACKEND_BASE_URL}"
+      CORE_BACKEND_BASE_URL: ${CORE_BACKEND_BASE_URL:-http://backend_core:8003}
+      TRAINER_BACKEND_BASE_URL: ${TRAINER_BACKEND_BASE_URL:-http://host.docker.internal:8004}
+      STORAGE_MODE: ${STORAGE_MODE:-db_only}
     ports:
       - "8008:8008"
+    depends_on:
+      - backend_core
+    networks:
+      - macbook-network
+    restart: unless-stopped
 
+  # ====================
+  # Service Frontend - Middleware
+  # ====================
   service_frontend:
     build:
       context: ../../..
       dockerfile: src/apps/7_service_frontend/Dockerfile
+      args:
+        ENVIRONMENT: macbook
+    container_name: service-frontend-macbook
     entrypoint: ["/app/entrypoint.sh"]
     environment:
+      ENVIRONMENT: macbook
       SERVICE_HOST: "0.0.0.0"
       SERVICE_PORT: "8007"
-      ACTIVE_SYNC_DB_JSONS: "${ACTIVE_SYNC_DB_JSONS}"
-      SYNC_DATABASE_INTERVAL_SECONDS: "${SYNC_DATABASE_INTERVAL_SECONDS}"
-      BROKER_BACKEND_BASE_URL: "${BROKER_BACKEND_BASE_URL}"
+      BROKER_BACKEND_BASE_URL: ${BROKER_BACKEND_BASE_URL:-http://service_backend:8008}
+      STORAGE_MODE: ${STORAGE_MODE:-db_only}
+      # Sincronización (activa en desarrollo)
+      ACTIVE_SYNC_DB_JSONS: ${ACTIVE_SYNC_DB_JSONS:-1}
+      SYNC_DATABASE_INTERVAL_SECONDS: ${SYNC_DATABASE_INTERVAL_SECONDS:-60}
     ports:
       - "8007:8007"
+    depends_on:
+      - service_backend
+    networks:
+      - macbook-network
+    restart: unless-stopped
 
+  # ====================
+  # Frontend - Aplicación pública
+  # ====================
   web_frontend:
     build:
       context: ../../..
       dockerfile: src/apps/5_web_frontend/Dockerfile
+      args:
+        ENVIRONMENT: macbook
+    container_name: web-frontend-macbook
     entrypoint: ["/app/entrypoint.sh"]
     environment:
+      ENVIRONMENT: macbook
       SERVICE_HOST: "0.0.0.0"
       SERVICE_PORT: "8005"
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # Middleware
+      MIDDLEWARE_BASE_URL: ${MIDDLEWARE_BASE_URL:-http://service_frontend:8007}
+      STORAGE_MODE: ${STORAGE_MODE:-db_only}
     ports:
       - "8005:8005"
+    depends_on:
+      redis:
+        condition: service_healthy
+      service_frontend:
+        condition: service_started
+    networks:
+      - macbook-network
+    restart: unless-stopped
 
+  # ====================
+  # Backoffice - Aplicación administrativa
+  # ====================
   web_backoffice:
     build:
       context: ../../..
       dockerfile: src/apps/6_web_backoffice/Dockerfile
+      args:
+        ENVIRONMENT: macbook
+    container_name: web-backoffice-macbook
     entrypoint: ["/app/entrypoint.sh"]
     environment:
+      ENVIRONMENT: macbook
       SERVICE_HOST: "0.0.0.0"
       SERVICE_PORT: "8006"
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # Middleware
+      MIDDLEWARE_BASE_URL: ${MIDDLEWARE_BASE_URL:-http://service_frontend:8007}
+      STORAGE_MODE: ${STORAGE_MODE:-db_only}
     ports:
       - "8006:8006"
+    depends_on:
+      redis:
+        condition: service_healthy
+      service_frontend:
+        condition: service_started
+    networks:
+      - macbook-network
+    restart: unless-stopped
+
+# ====================
+# Volúmenes persistentes
+# ====================
+volumes:
+  redis-data:
+    name: redis-macbook-data
+    driver: local
+
+# ====================
+# Red interna
+# ====================
+networks:
+  macbook-network:
+    name: macbook-network
+    driver: bridge
