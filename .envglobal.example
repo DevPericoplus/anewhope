@@ -1,0 +1,18 @@
+# Configuración global del entorno activo
+# Este archivo define qué entorno de configuración usar para todas las aplicaciones.
+#
+# INSTRUCCIONES:
+# 1. Copia este archivo a .envglobal (sin .example)
+# 2. Modifica current_environment según tu entorno de trabajo
+#
+# Valores posibles:
+#   - macbook  : Entorno de desarrollo local en macOS
+#   - dev      : Entorno de desarrollo en servidor Linux
+#   - pre      : Entorno de preproducción (AWS)
+#   - pro      : Entorno de producción
+#
+# Las aplicaciones usarán este valor para localizar:
+#   - Variables públicas:    infrastructure/environments/<entorno>/env.yaml
+#   - Variables protegidas:  infrastructure/environments/<entorno>/protected_values.py
+
+current_environment: macbook

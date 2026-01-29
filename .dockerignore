@@ -1,0 +1,70 @@
+# .dockerignore - Archivos excluidos de las imágenes Docker
+# 
+# NOTA: Para producción (entorno pro), se deben excluir adicionalmente
+# los archivos de moks. Use el script de build específico para producción
+# o ejecute: rm -rf src/2_shared_application/moks en el Dockerfile.
+
+# Git
+.git
+.gitignore
+
+# Entornos virtuales
+.venv*/
+venv/
+env/
+
+# Cache de Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Archivos de desarrollo
+*.log
+*.tmp
+*.swp
+.DS_Store
+
+# Configuración local
+.env
+.envglobal
+.envrc
+
+# Documentación (no necesaria en contenedor)
+docs/
+*.md
+!README.md
+!README_DEPLOYMENT.md
+
+# Tests (no necesarios en contenedor de producción)
+tests/
+**/tests/
+test_*.py
+conftest.py
+
+# Archivos de IDE
+.cursor/
+.vscode/
+.idea/
+
+# Cache de Reflex
+.web/
+.states/
+assets/external/
+
+# Archivos de certificados locales (usar secretos)
+infrastructure/certificates/
+
+# Scripts de desarrollo
+scripts/
+*.sh
+!entrypoint.sh
+!run.sh
+
+# Contexto y esquemas
+context/
+
+# Para PRODUCCIÓN: descomentar la siguiente línea o eliminar manualmente
+# src/2_shared_application/moks/

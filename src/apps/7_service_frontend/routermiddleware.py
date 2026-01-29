@@ -415,11 +415,26 @@ class RouterMiddleware:
         )
 
     def _get_storage_mode(self) -> StorageMode:
-        """Obtiene el modo de almacenamiento configurado."""
-
+        """Obtiene el modo de almacenamiento configurado.
+        
+        CRÍTICO: En producción (entorno 'pro') solo se permite db_only.
+        Si se detecta otro modo, se fuerza a db_only con un warning.
+        """
         protected = _load_protected_storage_settings()
         raw_mode = os.environ.get("STORAGE_MODE", protected.get("storage_mode", "mock"))
-        return _parse_storage_mode(raw_mode)
+        mode = _parse_storage_mode(raw_mode)
+        
+        # Validación de seguridad para producción
+        environment = os.environ.get("ENVIRONMENT", "").lower()
+        if environment == "pro" and mode != StorageMode.DB_ONLY:
+            self._logger.warning(
+                "SEGURIDAD: En producción solo se permite storage_mode=db_only. "
+                "Forzando cambio de '%s' a 'db_only'",
+                mode.value
+            )
+            return StorageMode.DB_ONLY
+        
+        return mode
 
     def _get_broker_base_url(self) -> str:
         """Obtiene la URL base del broker backend."""
@@ -481,7 +496,19 @@ class RouterMiddleware:
         return self._storage_mode == StorageMode.MOCK_AND_DB
 
     async def run_periodic_sync(self) -> None:
-        """Ejecuta la sincronización periódica en segundo plano."""
+        """Ejecuta la sincronización periódica en segundo plano.
+        
+        CRÍTICO: En producción (entorno 'pro') la sincronización está deshabilitada
+        por seguridad para evitar exponer datos en archivos JSON.
+        """
+        # Verificación de seguridad para producción
+        environment = os.environ.get("ENVIRONMENT", "").lower()
+        if environment == "pro":
+            self._sync_logger.info(
+                "SEGURIDAD: Sincronización deshabilitada en producción. "
+                "Los datos solo se gestionan en MariaDB."
+            )
+            return
 
         if self._storage_mode == StorageMode.MOCK_ONLY:
             self._sync_logger.info(

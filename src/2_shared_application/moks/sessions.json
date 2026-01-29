@@ -703,6 +703,38 @@
       "expires_at": "2026-01-27T19:53:19Z",
       "ip_address": "127.0.0.1",
       "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "7045d32c-dcf9-43cb-8e96-93d914b20982",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "4bf89143-4a99-4bba-9c55-e8a16d5a848f",
+        "session_token_jti": "8ccecef3-908e-4542-947a-b13e2128900b"
+      },
+      "status": "inactive",
+      "created_at": "2026-01-29T13:36:12.356827Z",
+      "last_activity": "2026-01-29T13:36:53.688598Z",
+      "expires_at": "2026-01-29T14:21:12Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "8555e9a4-7aff-424c-8783-45ed3f3c7400",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "2a0c4689-5cc9-4ab4-bb33-c577f6cebf41",
+        "session_token_jti": "73200ea3-de0d-4e2a-86b4-0e8154d922bf"
+      },
+      "status": "active",
+      "created_at": "2026-01-29T13:52:49.757328Z",
+      "last_activity": "2026-01-29T13:53:27.286342Z",
+      "expires_at": "2026-01-29T14:37:49Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
     }
   ],
   "auth_logs": [
@@ -1335,6 +1367,63 @@
       "status": "success",
       "ip_address": "127.0.0.1",
       "session_id": "edc23677-0fea-4d7c-970a-bdf993f78fda",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-01-29T13:34:52.192311Z",
+      "user_name": "Adminone",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "USER_NOT_FOUND",
+      "details": "Usuario no existe",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-01-29T13:35:41.053392Z",
+      "user_name": "Adminone",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "USER_NOT_FOUND",
+      "details": "Usuario no existe",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-01-29T13:35:47.797250Z",
+      "user_name": "Adminone",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "USER_NOT_FOUND",
+      "details": "Usuario no existe",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-01-29T13:36:12.359493Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "7045d32c-dcf9-43cb-8e96-93d914b20982",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-01-29T13:36:53.688620Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "7045d32c-dcf9-43cb-8e96-93d914b20982",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-01-29T13:52:49.760476Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "8555e9a4-7aff-424c-8783-45ed3f3c7400",
       "user_agent": "Python-urllib/3.13"
     }
   ]

@@ -183,14 +183,36 @@ class UserCreateResponse(BaseModel):
 
 
 def _configure_logging() -> None:
-    """Configura el logging base si no existe configuración previa."""
+    """Configura el logging del middleware con salida a console.log."""
+
+    logs_dir = Path(__file__).resolve().parent / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    # Archivo console.log unificado para soporte
+    console_log_path = logs_dir / "console.log"
 
     root_logger = logging.getLogger()
-    if not root_logger.handlers:
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        )
+    if root_logger.handlers:
+        return
+
+    # Formato legible para técnicos de soporte
+    formatter = logging.Formatter(
+        "%(asctime)s | %(levelname)-8s | middleware      | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # Handler para console.log (unificado)
+    console_file_handler = logging.FileHandler(console_log_path, encoding="utf-8")
+    console_file_handler.setFormatter(formatter)
+
+    # Handler de consola
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+
+    logging.basicConfig(
+        level=logging.INFO,
+        handlers=[console_file_handler, console_handler],
+    )
 
 
 def _extract_bearer_token(raw_token: str | None) -> str:

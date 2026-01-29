@@ -6,6 +6,11 @@ Este módulo proporciona un logger configurado para registrar:
 - Interacciones con el middleware
 - Errores y warnings
 - Mensajes de consola
+
+Todos los logs se escriben a:
+- console.log: archivo unificado para trazabilidad de soporte
+- activity.log: archivo específico de actividad
+- stdout: salida de consola en tiempo real
 """
 
 from __future__ import annotations
@@ -13,8 +18,27 @@ from __future__ import annotations
 import logging
 import sys
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Optional
+
+# Constantes de rotación de logs
+MAX_LOG_SIZE = 10 * 1024 * 1024  # 10 MB
+BACKUP_COUNT = 5
+
+
+class AppContextFilter(logging.Filter):
+    """Filtro que añade el nombre de la aplicación al contexto del log."""
+
+    def __init__(self, app_name: str):
+        super().__init__()
+        self.app_name = app_name
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Añade app_name al registro si no existe."""
+        if not hasattr(record, "app_name"):
+            record.app_name = self.app_name
+        return True
 
 
 class ActivityLogger:
@@ -22,7 +46,8 @@ class ActivityLogger:
     Logger de actividad para aplicaciones web Reflex.
     
     Escribe logs en:
-    - Archivo: logs/activity.log
+    - Archivo: logs/console.log (unificado para soporte)
+    - Archivo: logs/activity.log (actividad específica)
     - Consola: stdout (opcional)
     """
     
@@ -57,28 +82,53 @@ class ActivityLogger:
             return logger
         
         logger.setLevel(log_level)
+        logger.propagate = False
         
         # Crear directorio de logs si no existe
         self.logs_dir.mkdir(parents=True, exist_ok=True)
-        log_file = self.logs_dir / "activity.log"
         
-        # Formato del log
+        # Filtro de contexto
+        context_filter = AppContextFilter(self.app_name)
+        logger.addFilter(context_filter)
+        
+        # Formato del log (legible para técnicos de soporte)
         formatter = logging.Formatter(
-            "%(asctime)s | %(levelname)-8s | %(app_name)s | %(message)s",
+            "%(asctime)s | %(levelname)-8s | %(app_name)-15s | %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
         
-        # Handler de archivo
-        file_handler = logging.FileHandler(log_file, encoding="utf-8")
-        file_handler.setFormatter(formatter)
-        file_handler.setLevel(log_level)
-        logger.addHandler(file_handler)
+        # Handler de archivo console.log (unificado para soporte)
+        console_log_file = self.logs_dir / "console.log"
+        console_file_handler = RotatingFileHandler(
+            console_log_file,
+            maxBytes=MAX_LOG_SIZE,
+            backupCount=BACKUP_COUNT,
+            encoding="utf-8",
+        )
+        console_file_handler.setFormatter(formatter)
+        console_file_handler.setLevel(log_level)
+        console_file_handler.addFilter(context_filter)
+        logger.addHandler(console_file_handler)
+        
+        # Handler de archivo activity.log (específico de actividad)
+        activity_log_file = self.logs_dir / "activity.log"
+        activity_file_handler = RotatingFileHandler(
+            activity_log_file,
+            maxBytes=MAX_LOG_SIZE,
+            backupCount=BACKUP_COUNT,
+            encoding="utf-8",
+        )
+        activity_file_handler.setFormatter(formatter)
+        activity_file_handler.setLevel(log_level)
+        activity_file_handler.addFilter(context_filter)
+        logger.addHandler(activity_file_handler)
         
         # Handler de consola (opcional)
         if log_to_console:
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setFormatter(formatter)
             console_handler.setLevel(log_level)
+            console_handler.addFilter(context_filter)
             logger.addHandler(console_handler)
         
         return logger

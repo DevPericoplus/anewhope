@@ -41,28 +41,33 @@ Proyecto para gestionar infraestructura, aplicaciones y flujos de personalizaci�
 
 ### Estructura de configuración
 
-El proyecto soporta configuración personalizada por entorno usando tres niveles de archivos:
+El proyecto soporta configuración personalizada por entorno usando cuatro niveles de archivos:
 
-1. **`.env`** (raíz del proyecto): Selecciona el entorno activo
+1. **`.envglobal`** (raíz del proyecto): Define el entorno activo globalmente
    ```
-   environment: macbook
+   # Configuración global del entorno
+   current_environment: macbook
    ```
-   o en formato shell:
+   Este archivo es la fuente principal para determinar qué entorno usar. Copia `.envglobal.example` 
+   a `.envglobal` y modifica el valor según tu entorno de trabajo.
+
+2. **`.env`** (raíz del proyecto): Variables de entorno adicionales (opcional)
+   Puede sobrescribir el entorno definido en `.envglobal`:
    ```
    ENVIRONMENT=macbook
    ```
 
-2. **`infrastructure/environments/<entorno>/env.yaml`**: Variables públicas y comunes
+3. **`infrastructure/environments/<entorno>/env.yaml`**: Variables públicas y comunes
    - `storage_mode`: modo de almacenamiento (`mock`, `mock_and_db`, `db_only`)
    - `active_sync_db_jsons`: habilita/deshabilita sincronización DB/JSON (`"0"` o `"1"`)
    - `broker_backend_base_url`: URL del broker backend
    - `core_backend_base_url`: URL del backend core
    - `middleware_base_url`: URL del middleware
    - `fmanagement_base_url`: URL de la API de gestión de ficheros
-   - `permissions_source`: fuente de permisos (`mock` o `db`)
    - `sync_database_interval_seconds`: intervalo de sincronización en segundos
+   - `active_sync_db_jsons`: habilita/deshabilita sincronización DB→JSON (`"1"` o `"0"`)
 
-3. **`infrastructure/environments/<entorno>/protected_values.py`**: Variables sensibles
+4. **`infrastructure/environments/<entorno>/protected_values.py`**: Variables sensibles
    - Credenciales de MariaDB
    - Secrets JWT
    - Claves de encriptación
@@ -70,17 +75,26 @@ El proyecto soporta configuración personalizada por entorno usando tres niveles
 
 ### Entornos disponibles
 
-- **`macbook`**: Desarrollo local en macOS 14.8.1
-- **`dev`**: Máquinas virtuales VirtualBox con Oracle Linux 10
-- **`pre`**: Instancias AWS con Oracle Linux 10 (preproducción)
-- **`pro`**: Instancias AWS con Oracle Linux 10 (producción)
+| Entorno | Descripción | Plataforma |
+|---------|-------------|------------|
+| `macbook` | Desarrollo local | macOS 14.8.1 |
+| `dev` | Desarrollo en servidor | Oracle Linux 10 (VirtualBox) |
+| `pre` | Preproducción | Oracle Linux 10 (AWS) |
+| `pro` | Producción | Oracle Linux 10 (AWS) |
 
-### Orden de carga
+### Orden de carga y prioridad
 
 Las aplicaciones cargan la configuración en este orden:
-1. `.env` → determina el entorno activo
-2. `env.yaml` del entorno → variables públicas
-3. `protected_values.py` del entorno → variables sensibles
+
+1. **`.envglobal`** → Define el entorno base (`current_environment`)
+2. **`.env`** → Puede sobrescribir con `ENVIRONMENT=<entorno>`
+3. **`env.yaml`** del entorno → Variables públicas
+4. **`protected_values.py`** del entorno → Variables sensibles
+
+**Prioridad para determinar el entorno:**
+1. Variable de entorno `ENVIRONMENT` (definida en `.env` o shell)
+2. `current_environment` en `.envglobal`
+3. Valor por defecto: `macbook`
 
 ### Uso en código
 
@@ -91,7 +105,9 @@ from src.2_shared_application.config.env_settings import (
     get_environment_name,
     get_env_value,
     get_protected_value,
-    load_protected_settings
+    get_environment_paths,
+    load_protected_settings,
+    print_environment_info,
 )
 
 # Obtener el entorno activo
@@ -102,6 +118,25 @@ storage_mode = get_env_value("storage_mode", "mock")
 
 # Leer variable sensible
 db_password = get_protected_value("writer_password")
+
+# Obtener todas las rutas de configuración
+paths = get_environment_paths()
+# paths = {
+#     "root": Path("/Users/.../anewhope"),
+#     "env_yaml": Path(".../infrastructure/environments/macbook/env.yaml"),
+#     "protected_values": Path(".../infrastructure/environments/macbook/protected_values.py"),
+#     "envglobal": Path(".../anewhope/.envglobal"),
+#     "environment": "macbook"
+# }
+
+# Diagnóstico de configuración (útil para debugging)
+print_environment_info()
+# Output:
+# Entorno activo: macbook
+#   Root: /Users/.../anewhope
+#   env.yaml: .../env.yaml (existe: True)
+#   protected_values: .../protected_values.py (existe: True)
+#   .envglobal: .../anewhope/.envglobal (existe: True)
 
 # O cargar todos los valores protegidos
 settings = load_protected_settings()
@@ -1646,16 +1681,56 @@ Variables relevantes (ver `src/apps/7_service_frontend/.env.example`):
 Dependencias del servicio (pip):
 - `src/apps/7_service_frontend/requirements.txt`
 
-### Modos de almacenamiento (middleware)
+### Modos de almacenamiento (storage_mode)
 
-El middleware puede operar con tres modos configurables mediante `STORAGE_MODE`:
+El sistema puede operar con tres modos configurables mediante `storage_mode` en `env.yaml`:
 
-- `mock`: usa únicamente los ficheros JSON mockeados.
-- `mock_and_db`: usa mocks y replica las escrituras hacia el broker backend.
-- `db_only`: usa exclusivamente el broker backend para lectura/escritura.
+| Modo | Descripción | Uso recomendado |
+|------|-------------|-----------------|
+| `mock` | Solo archivos JSON | Pruebas sin base de datos |
+| `mock_and_db` | JSON + sincronización con MariaDB | Desarrollo híbrido |
+| `db_only` | Solo MariaDB (lectura/escritura) | **Desarrollo normal y producción** |
+
+**Flujo de datos con `db_only`:**
+```
+Frontend/Backoffice → Middleware → Broker → Backend Core → MariaDB
+```
 
 Cuando el modo es `mock_and_db` o `db_only`, el middleware delega persistencia en el
 broker backend (`8_service_backend`) mediante `BROKER_BACKEND_BASE_URL`.
+
+### Sincronización DB → JSON (active_sync_db_jsons)
+
+La variable `active_sync_db_jsons` controla la sincronización periódica de MariaDB a JSON:
+
+| Valor | Descripción | Entornos permitidos |
+|-------|-------------|---------------------|
+| `"1"` | Habilitada - copia datos de MariaDB a JSON cada N segundos | macbook, dev, pre |
+| `"0"` | Deshabilitada | **pro (obligatorio)** |
+
+**CRÍTICO para producción:**
+- En producción (`ENVIRONMENT=pro`), la sincronización está **deshabilitada por seguridad**
+- No se deben exponer datos en archivos JSON en producción
+- El código valida automáticamente y bloquea la sincronización en producción
+
+### Seguridad en producción (entorno pro)
+
+El entorno de producción tiene restricciones especiales:
+
+1. **storage_mode obligatorio:** Solo se permite `db_only`
+2. **Sincronización deshabilitada:** `active_sync_db_jsons` debe ser `"0"`
+3. **Sin archivos moks:** Los Dockerfiles eliminan automáticamente la carpeta `moks`
+4. **Validación en código:** El middleware fuerza `db_only` si detecta otro modo en producción
+
+**Build de Docker para producción:**
+```bash
+docker build --build-arg ENVIRONMENT=pro -t mi-app:pro .
+```
+
+Esto automáticamente:
+- Establece `ENVIRONMENT=pro` en el contenedor
+- Elimina la carpeta `src/2_shared_application/moks`
+- El middleware valida y fuerza `db_only`
 
 ### Base de datos de proyectos (sin mocks)
 
@@ -2616,6 +2691,92 @@ Cada API registra su actividad en logs locales:
 
 - `src/apps/8_service_backend/logs/broker_backend_activity.log`
 - `src/apps/3_backend/logs/backend_core_activity.log`
+
+## Sistema de logging unificado (console.log)
+
+Todas las aplicaciones escriben simultáneamente a un archivo `console.log` unificado en su 
+directorio `logs/`. Este archivo está diseñado para facilitar la trazabilidad y el diagnóstico 
+de incidencias por parte de técnicos de soporte.
+
+### Archivos console.log por aplicación
+
+| Aplicación | Ruta del archivo |
+|------------|------------------|
+| Backend Core | `src/apps/3_backend/logs/console.log` |
+| Trainer (Backend IA) | `src/apps/4_trainer/logs/console.log` |
+| Frontend | `src/apps/5_web_frontend/logs/console.log` |
+| Backoffice | `src/apps/6_web_backoffice/logs/console.log` |
+| Middleware | `src/apps/7_service_frontend/logs/console.log` |
+| Broker | `src/apps/8_service_backend/logs/console.log` |
+
+### Formato de logs
+
+Todos los logs usan un formato unificado legible para soporte técnico:
+
+```
+YYYY-MM-DD HH:MM:SS | LEVEL    | APP_NAME        | MENSAJE
+```
+
+Ejemplo:
+```
+2026-01-28 10:30:45 | INFO     | backend_core    | APPLICATION STARTUP | listening on 0.0.0.0:8003
+2026-01-28 10:30:46 | INFO     | middleware      | AUTH LOGIN | SUCCESS | user=adminone | user_id=1
+2026-01-28 10:30:47 | WARNING  | broker          | PERMISSION folder_delete | DENIED | user_id=4
+```
+
+### Rotación de logs
+
+Los archivos `console.log` implementan rotación automática:
+- **Tamaño máximo:** 10 MB por archivo
+- **Backups:** 5 archivos (`console.log.1`, `console.log.2`, etc.)
+- **Codificación:** UTF-8
+
+### Módulo compartido de logging
+
+El sistema usa el módulo `src/2_shared_application/console_logger.py` que proporciona:
+
+```python
+from src.2_shared_application.console_logger import create_console_logger
+
+# En el punto de entrada de cada aplicación
+logger = create_console_logger("mi_app", logs_dir)
+
+# Métodos disponibles
+logger.startup(host="0.0.0.0", port=8003)   # Inicio de aplicación
+logger.shutdown()                             # Cierre de aplicación
+logger.request("GET", "/api/users")           # Petición HTTP
+logger.response("GET", "/api/users", 200)     # Respuesta HTTP
+logger.operation("create_user", success=True) # Operación de negocio
+logger.auth("LOGIN", username="admin")        # Evento de autenticación
+logger.permission("CHECK", "folder_rename")   # Verificación de permisos
+logger.data("CREATE", "user", entity_id=1)    # Operación CRUD
+logger.connection("MariaDB", "OK")            # Estado de conexión
+logger.config("API_URL", "http://...")        # Configuración cargada
+```
+
+### Uso para diagnóstico de incidencias
+
+**Seguimiento de flujo entre componentes:**
+
+```bash
+# Ver actividad reciente en todos los servicios
+tail -f src/apps/*/logs/console.log
+
+# Buscar errores en todo el sistema
+grep "ERROR" src/apps/*/logs/console.log
+
+# Seguir una petición específica por user_id
+grep "user_id=1" src/apps/*/logs/console.log | sort
+
+# Ver solo el middleware y broker
+tail -f src/apps/{7_service_frontend,8_service_backend}/logs/console.log
+```
+
+**Correlación de eventos:**
+
+1. Identificar el timestamp del error
+2. Buscar en todos los `console.log` con ese timestamp
+3. Seguir el flujo: Frontend → Middleware → Broker → Backend Core
 
 ### Estructura JWT (middleware)
 

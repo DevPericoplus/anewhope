@@ -41,7 +41,6 @@ class FmanagementSettings:
 
     base_url: str
     base_path: str
-    permissions_source: str
 
 
 def load_fmanagement_settings() -> FmanagementSettings:
@@ -49,11 +48,9 @@ def load_fmanagement_settings() -> FmanagementSettings:
 
     base_url = os.environ.get("FMANAGEMENT_BASE_URL", "http://localhost:1666")
     base_path = os.environ.get("FMANAGEMENT_BASE_PATH", "/data/files/external")
-    permissions_source = os.environ.get("FMANAGEMENT_PERMISSIONS_SOURCE", "mock")
     return FmanagementSettings(
         base_url=base_url.rstrip("/"),
         base_path=base_path,
-        permissions_source=permissions_source,
     )
 
 

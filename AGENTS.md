@@ -203,28 +203,104 @@ trainer_ssh_port: "22"
 - `clear_caches.sh`: limpia caches de Reflex (`.web`, `.states`) y caches de tooling
   (`__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.coverage`, `.hypothesis`).
 
-### Modos de almacenamiento (middleware)
-- `STORAGE_MODE`: `mock` (solo JSON), `mock_and_db` (JSON + replica en broker),
-  `db_only` (solo broker backend).
-- `BROKER_BACKEND_BASE_URL`: URL del broker backend para persistencia.
+### Modos de almacenamiento (storage_mode)
 
-### Sincronización DB/JSON (middleware)
-- **Obligatorio:** El proceso periódico de sincronización DB/JSON debe mantenerse
-  operativo y documentado en `README.md`, incluyendo el log
-  `src/apps/7_service_frontend/logs/sync_database_and_jsons.log` y el intervalo
-  `SYNC_DATABASE_INTERVAL_SECONDS`.
-- **Control:** El switch `active_sync_db_jsons` (o `ACTIVE_SYNC_DB_JSONS` en entorno)
-  habilita/deshabilita la sincronización. Recomendado `0` en producción.
-- **Producción:** `STORAGE_MODE` en `.env` debe estar en `db_only`.
+**Variable:** `storage_mode` en `env.yaml`
+
+| Modo | Descripción | Uso |
+|------|-------------|-----|
+| `mock` | Solo archivos JSON | Pruebas sin base de datos |
+| `mock_and_db` | JSON + sincronización con MariaDB | Desarrollo híbrido |
+| `db_only` | **Solo MariaDB** | Desarrollo normal y **producción** |
+
+**Reglas obligatorias:**
+1. ✅ **En desarrollo (macbook):** Usar preferiblemente `db_only` para reflejar producción
+2. ✅ **En producción (pro):** OBLIGATORIO `db_only` - el código lo fuerza automáticamente
+3. ✅ **Todas las operaciones CRUD** deben ir contra MariaDB cuando `storage_mode=db_only`
+4. ❌ **Prohibido:** Usar `mock` o `mock_and_db` en producción
+
+### Sincronización DB → JSON (active_sync_db_jsons)
+
+**Variable:** `active_sync_db_jsons` en `env.yaml`
+
+- `"1"` = Habilitada (copia datos de MariaDB a JSON periódicamente)
+- `"0"` = Deshabilitada (**OBLIGATORIO en producción**)
+
+**Reglas obligatorias:**
+1. ✅ **En desarrollo:** Puede estar habilitada para tener backup en JSON
+2. ✅ **En producción (pro):** OBLIGATORIO `"0"` - el código bloquea sincronización
+3. ❌ **Prohibido:** Habilitar sincronización en producción (expone datos en JSON)
+
+### Seguridad en producción (entorno pro)
+
+**CRÍTICO:** El entorno de producción tiene restricciones de seguridad automáticas:
+
+1. **storage_mode forzado:** Si se detecta otro modo, se fuerza a `db_only`
+2. **Sincronización bloqueada:** No se ejecuta aunque esté configurada
+3. **Sin archivos moks:** Los Dockerfiles eliminan la carpeta automáticamente
+
+**Build de Docker para producción:**
+```bash
+docker build --build-arg ENVIRONMENT=pro -t mi-app:pro .
+```
+
+**Verificaciones automáticas en código (routermiddleware.py):**
+- `_get_storage_mode()`: Fuerza `db_only` si `ENVIRONMENT=pro`
+- `run_periodic_sync()`: Bloquea ejecución si `ENVIRONMENT=pro`
+
+### Archivos moks (datos de prueba)
+
+**Ubicación:** `src/2_shared_application/moks/`
+
+**Reglas obligatorias:**
+1. ✅ **Solo para desarrollo/pruebas** sin base de datos disponible
+2. ✅ **En producción:** La carpeta se elimina automáticamente en el build de Docker
+3. ❌ **Prohibido:** Incluir archivos moks en imágenes de producción
+4. ❌ **Prohibido:** Usar archivos moks como fuente de datos en producción
 
 ### Configuración por entorno
-- **Orden de carga:** primero `.env`, luego `env.yaml`, finalmente `protected_values.py` del entorno activo.
-- **Selección de entorno:** `.env` debe definir `environment: <entorno>` o `ENVIRONMENT=<entorno>`.
-- **Variables públicas:** `infrastructure/environments/<entorno>/env.yaml`.
-- **Ubicación sensibles:** `infrastructure/environments/<entorno>/protected_values.py`.
-- **Uso obligatorio:** cargar valores con `src/2_shared_application/config/env_settings.py`.
-- **Prohibido:** importar `protected_values` directamente en código de aplicación.
-- **Plataformas:** `macbook` usa macOS 14.8.1; `dev/pre/pro` usan Oracle Linux 10.
+
+**Archivo de entorno global:** `.envglobal` en la raíz del proyecto define el entorno activo.
+
+```
+# .envglobal
+current_environment: macbook
+```
+
+**Valores válidos:** `macbook`, `dev`, `pre`, `pro`
+
+**Orden de carga:**
+1. `.envglobal` (define el entorno base)
+2. `.env` (puede sobrescribir con `ENVIRONMENT=<entorno>`)
+3. `env.yaml` del entorno activo
+4. `protected_values.py` del entorno activo
+
+**Rutas de configuración por entorno:**
+- Variables públicas: `infrastructure/environments/<entorno>/env.yaml`
+- Variables protegidas: `infrastructure/environments/<entorno>/protected_values.py`
+
+**Uso obligatorio:**
+```python
+from src.2_shared_application.config.env_settings import (
+    get_environment_name,
+    get_env_value,
+    get_protected_value,
+    get_environment_paths,
+)
+
+# Obtener entorno activo
+env = get_environment_name()  # "macbook", "dev", "pre" o "pro"
+
+# Obtener valor de env.yaml
+api_url = get_env_value("api_base_url", "http://localhost:8007")
+
+# Obtener valor de protected_values.py
+db_password = get_protected_value("mariadb_password")
+```
+
+**Prohibido:** importar `protected_values.py` directamente en código de aplicación.
+
+**Plataformas:** `macbook` usa macOS 14.8.1; `dev/pre/pro` usan Oracle Linux 10.
 
 ### Entornos virtuales dedicados
 
@@ -1103,6 +1179,46 @@ Las entidades compartidas de sesión viven en `src/1_shared_domain/entities/sess
 
 - `8_service_backend` registra actividad en `src/apps/8_service_backend/logs/broker_backend_activity.log`.
 - `3_backend` registra actividad en `src/apps/3_backend/logs/backend_core_activity.log`.
+
+### Sistema de logging unificado (console.log)
+
+**OBLIGATORIO:** Todas las aplicaciones deben escribir logs a un archivo `console.log` en su 
+directorio `logs/` para facilitar la trazabilidad y diagnóstico de incidencias.
+
+**Archivos console.log:**
+- `src/apps/3_backend/logs/console.log` (Backend Core)
+- `src/apps/4_trainer/logs/console.log` (Trainer/Backend IA)
+- `src/apps/5_web_frontend/logs/console.log` (Frontend)
+- `src/apps/6_web_backoffice/logs/console.log` (Backoffice)
+- `src/apps/7_service_frontend/logs/console.log` (Middleware)
+- `src/apps/8_service_backend/logs/console.log` (Broker)
+
+**Formato estándar:**
+```
+YYYY-MM-DD HH:MM:SS | LEVEL    | APP_NAME        | MENSAJE
+```
+
+**Módulo compartido:** `src/2_shared_application/console_logger.py`
+
+**Uso obligatorio:**
+```python
+from src.2_shared_application.console_logger import create_console_logger
+
+# En main.py de cada aplicación
+logger = create_console_logger("app_name", logs_dir)
+logger.startup(host=host, port=port)
+```
+
+**Características:**
+- Rotación automática: 10MB máx, 5 backups
+- Formato legible para técnicos de soporte
+- Escritura simultánea a consola y archivo
+
+**Reglas para nuevas funcionalidades:**
+1. Todo startup de aplicación debe loguear `APPLICATION STARTUP`
+2. Toda operación de negocio relevante debe loguearse
+3. Todo error debe incluir contexto suficiente para diagnóstico
+4. Los logs deben ser útiles para técnicos de soporte, no solo desarrolladores
 
 ## Interfaces compartidas (aplicación)
 

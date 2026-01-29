@@ -217,19 +217,45 @@ class TrainingPermissionsResponse(BaseModel):
 
 
 def _configure_logging() -> None:
-    """Configura logging del broker backend."""
+    """Configura logging del broker backend con salida a console.log."""
 
-    log_path = os.environ.get(
+    logs_dir = Path(__file__).resolve().parent / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    # Archivo de actividad específico
+    activity_log_path = os.environ.get(
         "BROKER_ACTIVITY_LOG_PATH",
-        "src/apps/8_service_backend/logs/broker_backend_activity.log",
+        str(logs_dir / "broker_backend_activity.log"),
     )
+
+    # Archivo console.log unificado para soporte
+    console_log_path = logs_dir / "console.log"
+
     root_logger = logging.getLogger()
     if root_logger.handlers:
         return
+
+    # Formato legible para técnicos de soporte
+    formatter = logging.Formatter(
+        "%(asctime)s | %(levelname)-8s | broker          | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # Handler para activity log
+    activity_handler = logging.FileHandler(activity_log_path, encoding="utf-8")
+    activity_handler.setFormatter(formatter)
+
+    # Handler para console.log (unificado)
+    console_file_handler = logging.FileHandler(console_log_path, encoding="utf-8")
+    console_file_handler.setFormatter(formatter)
+
+    # Handler de consola
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        handlers=[logging.FileHandler(log_path), logging.StreamHandler()],
+        handlers=[activity_handler, console_file_handler, console_handler],
     )
 
 

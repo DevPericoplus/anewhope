@@ -208,19 +208,45 @@ def get_client_app(
 
 
 def _configure_logging() -> None:
-    """Configura logging del backend core."""
+    """Configura logging del backend core con salida a console.log."""
 
-    log_path = os.environ.get(
+    logs_dir = Path(__file__).resolve().parent / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    # Archivo de actividad específico
+    activity_log_path = os.environ.get(
         "CORE_ACTIVITY_LOG_PATH",
-        "src/apps/3_backend/logs/backend_core_activity.log",
+        str(logs_dir / "backend_core_activity.log"),
     )
+
+    # Archivo console.log unificado para soporte
+    console_log_path = logs_dir / "console.log"
+
     root_logger = logging.getLogger()
     if root_logger.handlers:
         return
+
+    # Formato legible para técnicos de soporte
+    formatter = logging.Formatter(
+        "%(asctime)s | %(levelname)-8s | backend_core    | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # Handler para activity log
+    activity_handler = logging.FileHandler(activity_log_path, encoding="utf-8")
+    activity_handler.setFormatter(formatter)
+
+    # Handler para console.log (unificado)
+    console_file_handler = logging.FileHandler(console_log_path, encoding="utf-8")
+    console_file_handler.setFormatter(formatter)
+
+    # Handler de consola
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        handlers=[logging.FileHandler(log_path), logging.StreamHandler()],
+        handlers=[activity_handler, console_file_handler, console_handler],
     )
 
 
