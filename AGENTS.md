@@ -279,6 +279,40 @@ current_environment: macbook
 - Variables públicas: `infrastructure/environments/<entorno>/env.yaml`
 - Variables protegidas: `infrastructure/environments/<entorno>/protected_values.py`
 
+### Variables de aplicaciones en servidores
+
+Cada `env.yaml` define variables de host y puerto para cada aplicación. Esto permite configurar
+la comunicación entre servicios según el entorno de despliegue.
+
+**Regla obligatoria de puertos:** `8000 + primer dígito del nombre de la carpeta`
+
+| Aplicación | Puerto | Variables |
+|------------|--------|-----------|
+| Backend Core | 8003 | `backend_core_host`, `backend_core_port` |
+| Trainer | 8004 | `trainer_host`, `trainer_port` |
+| Frontend | 8005 | `frontend_host`, `frontend_port` |
+| Backoffice | 8006 | `backoffice_host`, `backoffice_port` |
+| Middleware | 8007 | `middleware_host`, `middleware_port` |
+| Broker | 8008 | `broker_host`, `broker_port` |
+| Fmanagement | 1666 | `fmanagement_host`, `fmanagement_port` |
+
+**Dominios por entorno:**
+
+| Entorno | Dominio interno | Dominio público | Formato FQDN interno |
+|---------|-----------------|-----------------|----------------------|
+| macbook | localhost | localhost | `localhost` |
+| dev | house.loc | house.loc | `<servidor>.house.loc` |
+| pre | anewhope.aws | getmyllm.com | `<servidor>.anewhope.aws` |
+| pro | anewhope.aws | getmyllm.com | `<servidor>.anewhope.aws` |
+
+**Nota pre/pro:** El dominio público `getmyllm.com` solo lo usa nginx para exponer el frontend.
+Los servicios internos se comunican usando el dominio interno `anewhope.aws`.
+
+**Distribución en servidores:**
+- **frontend.***: Frontend, Backoffice, Middleware, Redis
+- **backend.***: Backend Core, Broker, Fmanagement, MariaDB
+- **trainer.***: Trainer (Backend IA)
+
 **Uso obligatorio:**
 ```python
 from src.2_shared_application.config.env_settings import (

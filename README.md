@@ -59,13 +59,11 @@ El proyecto soporta configuración personalizada por entorno usando cuatro nivel
 
 3. **`infrastructure/environments/<entorno>/env.yaml`**: Variables públicas y comunes
    - `storage_mode`: modo de almacenamiento (`mock`, `mock_and_db`, `db_only`)
-   - `active_sync_db_jsons`: habilita/deshabilita sincronización DB/JSON (`"0"` o `"1"`)
-   - `broker_backend_base_url`: URL del broker backend
-   - `core_backend_base_url`: URL del backend core
-   - `middleware_base_url`: URL del middleware
-   - `fmanagement_base_url`: URL de la API de gestión de ficheros
-   - `sync_database_interval_seconds`: intervalo de sincronización en segundos
    - `active_sync_db_jsons`: habilita/deshabilita sincronización DB→JSON (`"1"` o `"0"`)
+   - `sync_database_interval_seconds`: intervalo de sincronización en segundos
+   - Variables de aplicaciones (host y puerto por cada aplicación)
+   - URLs de servicios internos (broker, core, middleware, fmanagement, trainer)
+   - Configuración de Redis para sesión compartida
 
 4. **`infrastructure/environments/<entorno>/protected_values.py`**: Variables sensibles
    - Credenciales de MariaDB
@@ -75,12 +73,48 @@ El proyecto soporta configuración personalizada por entorno usando cuatro nivel
 
 ### Entornos disponibles
 
-| Entorno | Descripción | Plataforma |
-|---------|-------------|------------|
-| `macbook` | Desarrollo local | macOS 14.8.1 |
-| `dev` | Desarrollo en servidor | Oracle Linux 10 (VirtualBox) |
-| `pre` | Preproducción | Oracle Linux 10 (AWS) |
-| `pro` | Producción | Oracle Linux 10 (AWS) |
+| Entorno | Descripción | Plataforma | Dominio interno | Dominio público |
+|---------|-------------|------------|-----------------|-----------------|
+| `macbook` | Desarrollo local | macOS 14.8.1 | localhost | localhost |
+| `dev` | Desarrollo en servidor | Oracle Linux 10 (VirtualBox) | house.loc | house.loc |
+| `pre` | Preproducción | Oracle Linux 10 (AWS) | anewhope.aws | getmyllm.com |
+| `pro` | Producción | Oracle Linux 10 (AWS) | anewhope.aws | getmyllm.com |
+
+**Nota sobre dominios en pre/pro:**
+- **Dominio público (`getmyllm.com`):** Utilizado solo por nginx para exponer el frontend al exterior.
+- **Dominio interno (`anewhope.aws`):** Utilizado para la comunicación entre servicios dentro de AWS.
+
+### Variables de aplicaciones en servidores
+
+Cada archivo `env.yaml` define las variables de host y puerto para cada aplicación. Esto permite
+que las aplicaciones conozcan la ubicación de los otros servicios en cada entorno.
+
+**Regla de puertos:** `8000 + primer dígito del nombre de la carpeta de la aplicación`
+
+| Aplicación | Carpeta | Puerto | Variable host | Variable puerto |
+|------------|---------|--------|---------------|-----------------|
+| Backend Core | `3_backend` | 8003 | `backend_core_host` | `backend_core_port` |
+| Trainer (Backend IA) | `4_trainer` | 8004 | `trainer_host` | `trainer_port` |
+| Web Frontend | `5_web_frontend` | 8005 | `frontend_host` | `frontend_port` |
+| Web Backoffice | `6_web_backoffice` | 8006 | `backoffice_host` | `backoffice_port` |
+| Middleware | `7_service_frontend` | 8007 | `middleware_host` | `middleware_port` |
+| Broker | `8_service_backend` | 8008 | `broker_host` | `broker_port` |
+| Fmanagement | API Go | 1666 | `fmanagement_host` | `fmanagement_port` |
+
+**Distribución de aplicaciones en servidores por entorno (dominio interno):**
+
+| Entorno | Servidor Frontend | Servidor Backend | Servidor Trainer |
+|---------|-------------------|------------------|------------------|
+| macbook | localhost | localhost | localhost |
+| dev | frontend.house.loc | backend.house.loc | trainer.house.loc |
+| pre | frontend.anewhope.aws | backend.anewhope.aws | trainer.anewhope.aws |
+| pro | frontend.anewhope.aws | backend.anewhope.aws | trainer.anewhope.aws |
+
+**Aplicaciones por servidor:**
+
+- **Servidor Frontend:** `5_web_frontend`, `6_web_backoffice`, `7_service_frontend`, Redis
+- **Servidor Backend:** `3_backend`, `8_service_backend`, Fmanagement, MariaDB
+- **Servidor Trainer:** `4_trainer`, servicios de IA
 
 ### Orden de carga y prioridad
 
@@ -2723,6 +2757,20 @@ Ejemplo:
 2026-01-28 10:30:46 | INFO     | middleware      | AUTH LOGIN | SUCCESS | user=adminone | user_id=1
 2026-01-28 10:30:47 | WARNING  | broker          | PERMISSION folder_delete | DENIED | user_id=4
 ```
+
+### Captura de logs de uvicorn
+
+Las aplicaciones FastAPI (3_backend, 4_trainer, 7_service_frontend, 8_service_backend) capturan
+automáticamente los logs de uvicorn en `console.log`. Esto incluye:
+
+- **Logs de acceso HTTP:** Peticiones entrantes con IP, método, ruta y código de respuesta
+- **Logs de errores:** Excepciones y errores del servidor
+- **Logs de inicio/parada:** Mensajes de arranque y cierre del servidor
+
+Los loggers configurados son:
+- `uvicorn`: Logger principal de uvicorn
+- `uvicorn.access`: Logger de peticiones HTTP (método, ruta, status)
+- `uvicorn.error`: Logger de errores y excepciones
 
 ### Rotación de logs
 
