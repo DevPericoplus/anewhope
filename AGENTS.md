@@ -311,7 +311,39 @@ Los servicios internos se comunican usando el dominio interno `anewhope.aws`.
 **Distribución en servidores:**
 - **frontend.***: Frontend, Backoffice, Middleware, Redis
 - **backend.***: Backend Core, Broker, Fmanagement, MariaDB
-- **trainer.***: Trainer (Backend IA)
+- **trainer.***: Trainer (Backend IA), Ollama, BD Vectorial
+
+### Servidor Trainer - Servicios planificados
+
+El servidor trainer albergará servicios de IA con la siguiente arquitectura:
+
+| Servicio | Puerto | Función |
+|----------|--------|---------|
+| `4_trainer` | 8004 | API FastAPI que recibe peticiones del Broker |
+| Ollama | 11434 | Servidor de modelos LLM locales (llama3, mistral, etc.) |
+| BD Vectorial | Por definir | Almacenamiento de embeddings para RAG |
+
+**Flujo de comunicación:**
+```
+Broker → 4_trainer → Ollama (inferencia LLM)
+              ↓
+         BD Vectorial (búsqueda semántica)
+```
+
+**Regla de diseño:** `4_trainer` se comunica **directamente** con Ollama (sin intermediarios como N8N)
+para minimizar latencia y complejidad en el MVP.
+
+### Variables protegidas (protected_values.py)
+
+Cada entorno define hosts de servicios en su `protected_values.py`:
+
+| Entorno | Host MariaDB/Broker/Core | CLI MariaDB |
+|---------|--------------------------|-------------|
+| macbook | `localhost` | `/usr/local/opt/mariadb@10.6/bin/mysql` |
+| dev | `backend.house.loc` | `/usr/bin/mariadb` |
+| pre/pro | `backend.anewhope.aws` | `/usr/bin/mariadb` |
+
+**Obligatorio en producción:** Cambiar todas las contraseñas y claves JWT antes del despliegue.
 
 **Uso obligatorio:**
 ```python

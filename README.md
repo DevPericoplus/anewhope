@@ -114,7 +114,37 @@ que las aplicaciones conozcan la ubicación de los otros servicios en cada entor
 
 - **Servidor Frontend:** `5_web_frontend`, `6_web_backoffice`, `7_service_frontend`, Redis
 - **Servidor Backend:** `3_backend`, `8_service_backend`, Fmanagement, MariaDB
-- **Servidor Trainer:** `4_trainer`, servicios de IA
+- **Servidor Trainer:** `4_trainer`, Ollama (IA local), base de datos vectorial (Keras - pendiente)
+
+### Servicios planificados en el servidor Trainer
+
+El servidor trainer albergará los siguientes servicios:
+
+| Servicio | Puerto | Descripción | Estado |
+|----------|--------|-------------|--------|
+| `4_trainer` | 8004 | Backend IA - gestiona entrenamientos y uso de modelos | Implementado |
+| Ollama | 11434 | Servidor de modelos LLM locales | Planificado |
+| Base de datos vectorial | Por definir | Almacenamiento de embeddings (Keras/Chroma) | Pendiente diseño |
+
+**Flujo de comunicación:**
+```
+Broker (8008) → 4_trainer (8004) → Ollama (11434)
+                     ↓
+              BD Vectorial
+```
+
+### Variables protegidas por entorno (protected_values.py)
+
+Cada entorno tiene su archivo `protected_values.py` con credenciales y URLs internas:
+
+| Variable | macbook | dev | pre/pro |
+|----------|---------|-----|---------|
+| `mariadb_host` | localhost | backend.house.loc | backend.anewhope.aws |
+| `broker_backend_base_url` | http://localhost:8008 | http://backend.house.loc:8008 | http://backend.anewhope.aws:8008 |
+| `core_backend_base_url` | http://localhost:8003 | http://backend.house.loc:8003 | http://backend.anewhope.aws:8003 |
+| `mariadb_cli_path` | /usr/local/opt/mariadb@10.6/bin/mysql | /usr/bin/mariadb | /usr/bin/mariadb |
+
+**Importante:** En producción (`pro`), todas las contraseñas y claves JWT deben cambiarse antes del despliegue.
 
 ### Orden de carga y prioridad
 

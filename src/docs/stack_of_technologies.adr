@@ -895,3 +895,278 @@ FROM python:3.12-slim
 - TensorFlow Python support: https://www.tensorflow.org/install/pip
 - Keras requirements: https://keras.io/getting_started/
 - PyTorch compatibility: https://pytorch.org/get-started/locally/
+
+---
+
+# ADR: Comunicación Directa 4_trainer → Ollama (sin N8N intermedio)
+
+Fecha: 2026-01-29
+Estado: Aceptado
+
+## Contexto
+
+El Backend IA (`4_trainer`) necesita comunicarse con un servidor de modelos LLM locales para:
+- Inferencia de modelos (generación de texto, embeddings)
+- Fine-tuning de modelos personalizados
+- Evaluación de respuestas
+- Procesamiento de prompts con contexto RAG
+
+### Arquitectura del Servidor Trainer
+
+El servidor trainer albergará los siguientes servicios:
+
+| Servicio | Puerto | Función |
+|----------|--------|---------|
+| `4_trainer` | 8004 | API FastAPI que recibe peticiones del Broker |
+| Ollama | 11434 | Servidor de modelos LLM locales (llama3, mistral, etc.) |
+| BD Vectorial | Por definir | Almacenamiento de embeddings para RAG |
+
+### Pregunta de Diseño
+
+¿Cómo debe comunicarse `4_trainer` con Ollama para inferencia LLM?
+
+**Opción A:** Comunicación directa (`4_trainer` → Ollama)
+**Opción B:** Intermediario N8N (`4_trainer` → N8N → Ollama)
+
+## Análisis de Alternativas
+
+### Opción A: Comunicación Directa (4_trainer → Ollama)
+
+**Flujo:**
+```
+Broker (8008) → 4_trainer (8004) → Ollama (11434)
+                     ↓
+              BD Vectorial
+```
+
+**Ventajas:**
+- ✅ **Menor latencia:** Un solo salto de red entre servicios
+- ✅ **Menos puntos de fallo:** Menos componentes = más estabilidad
+- ✅ **Simplicidad arquitectónica:** Fácil de explicar, depurar y mantener
+- ✅ **Control total:** Python tiene excelentes librerías para Ollama (`ollama-python`, `langchain`)
+- ✅ **Ideal para MVP:** Menos infraestructura que documentar y presentar en el TFM
+- ✅ **Performance optimizado:** Sin overhead de serialización/deserialización adicional
+- ✅ **Debugging directo:** Errores de LLM son trazables directamente
+
+**Desventajas:**
+- ⚠️ Cada nuevo flujo de IA requiere código Python
+- ⚠️ Menos flexibilidad para orquestaciones visuales complejas
+- ⚠️ Cambios en la API de Ollama requieren modificar código
+
+### Opción B: Con N8N como Intermediario (4_trainer → N8N → Ollama)
+
+**Flujo:**
+```
+Broker (8008) → 4_trainer (8004) → N8N (5678) → Ollama (11434)
+                                      ↓
+                               BD Vectorial
+```
+
+**Ventajas:**
+- ✅ Flujos visuales fáciles de modificar sin código
+- ✅ Facilita agregar pasos intermedios (logging, transformaciones, webhooks)
+- ✅ Permite cambiar de modelo/proveedor sin tocar código
+- ✅ Útil para workflows complejos con múltiples modelos en cascada
+- ✅ Integración visual con servicios externos (Slack, email, APIs)
+
+**Desventajas:**
+- ❌ **Mayor latencia:** Dos saltos de red en lugar de uno
+- ❌ **Más complejidad:** Otro servicio que mantener, monitorizar y documentar
+- ❌ **Overhead innecesario** si las llamadas son simples (prompt → respuesta)
+- ❌ N8N tiene su propia curva de aprendizaje
+- ❌ Más difícil de depurar cuando hay problemas
+- ❌ Dependencia adicional en la arquitectura
+- ❌ Licenciamiento de N8N en producción (fair-code)
+
+## Decisión
+
+Se adopta la **Opción A: Comunicación Directa** (`4_trainer` → Ollama) para el MVP.
+
+### Justificación Principal: Contexto TFM
+
+Este proyecto es un **Trabajo de Fin de Máster (TFM)** con las siguientes características:
+
+1. **Alcance MVP:** El objetivo es demostrar la viabilidad del sistema, no construir una
+   plataforma de producción completa con todas las features posibles.
+
+2. **Simplicidad arquitectónica:** Para la presentación del TFM, una arquitectura clara y
+   directa es preferible a una sobre-engineered con componentes que añaden complejidad
+   sin beneficio claro.
+
+3. **Tiempo limitado:** El período de desarrollo es finito. Añadir N8N requeriría:
+   - Instalación y configuración del servidor N8N
+   - Creación de workflows visuales
+   - Documentación adicional
+   - Testing de integración extra
+   - Gestión de otra dependencia
+
+4. **Demostración de competencias:** El TFM debe demostrar competencias en Python, FastAPI,
+   arquitectura de microservicios, etc. Usar N8N podría ocultar parte de esta implementación
+   en una herramienta visual.
+
+5. **Performance crítico:** Para una demo efectiva, la latencia mínima es importante.
+   Cada milisegundo cuenta en la UX de un sistema de LLM.
+
+### Implementación Recomendada
+
+```python
+# src/apps/4_trainer/services/ollama_client.py
+from typing import AsyncGenerator
+import httpx
+
+class OllamaClient:
+    """Cliente directo para comunicación con Ollama."""
+    
+    def __init__(self, base_url: str = "http://localhost:11434"):
+        self._base_url = base_url
+        self._client = httpx.AsyncClient(timeout=300.0)
+    
+    async def generate(
+        self, 
+        model: str, 
+        prompt: str, 
+        stream: bool = False
+    ) -> dict | AsyncGenerator[str, None]:
+        """Genera texto usando un modelo de Ollama."""
+        
+        response = await self._client.post(
+            f"{self._base_url}/api/generate",
+            json={"model": model, "prompt": prompt, "stream": stream}
+        )
+        response.raise_for_status()
+        return response.json()
+    
+    async def embeddings(self, model: str, text: str) -> list[float]:
+        """Obtiene embeddings de un texto."""
+        
+        response = await self._client.post(
+            f"{self._base_url}/api/embeddings",
+            json={"model": model, "prompt": text}
+        )
+        response.raise_for_status()
+        return response.json()["embedding"]
+```
+
+### Librerías Disponibles
+
+Para la implementación directa, Python ofrece excelentes opciones:
+
+| Librería | Uso | Ventajas |
+|----------|-----|----------|
+| `ollama-python` | Cliente oficial de Ollama | API simple, mantenido por Ollama |
+| `langchain` | Framework de orquestación LLM | Chains, RAG, memoria, tools |
+| `httpx` | Cliente HTTP async | Control total, sin abstracciones |
+| `llama-index` | Framework de RAG | Indexación y búsqueda semántica |
+
+## Consecuencias
+
+### Positivas
+
+- ✅ **Arquitectura simple:** Broker → Trainer → Ollama (3 componentes)
+- ✅ **Latencia optimizada:** ~50-100ms menos por request
+- ✅ **Debugging directo:** Errores trazables sin capas intermedias
+- ✅ **Documentación clara:** Fácil de explicar en la memoria del TFM
+- ✅ **Testing simple:** Tests de integración directos con Ollama
+- ✅ **Menos dependencias:** No requiere gestionar servidor N8N
+
+### Consideraciones
+
+- ⚠️ Flujos complejos requieren código Python (no visual)
+- ⚠️ Cambios en API de Ollama requieren modificar código
+
+### Mitigaciones
+
+1. **Abstracción en cliente:** El `OllamaClient` encapsula la API, facilitando cambios
+2. **Langchain como opción:** Si se necesitan chains complejas, langchain lo soporta
+3. **Configuración por entorno:** URLs de Ollama configurables en `env.yaml`
+
+## Evolutivo Futuro: Incorporación de N8N
+
+Para versiones futuras post-TFM, N8N podría incorporarse si se requiere:
+
+### Escenarios donde N8N aportaría valor
+
+1. **Workflows multi-modelo:** Encadenar respuestas de múltiples LLMs (llama3 → mistral → gpt)
+2. **Integraciones externas:** Conectar con Slack, email, CRM, etc.
+3. **Aprobación humana:** Flujos donde un humano debe aprobar antes de continuar
+4. **Transformaciones complejas:** Pre/post procesamiento visual de datos
+5. **A/B testing de prompts:** Comparar respuestas de diferentes prompts/modelos
+6. **Logging y auditoría visual:** Trazabilidad gráfica de cada paso
+
+### Plan de Migración (Post-TFM)
+
+```
+Fase 1: Identificar flujos que se beneficiarían de orquestación visual
+Fase 2: Instalar N8N en servidor trainer (Docker)
+Fase 3: Crear wrapper endpoint en 4_trainer que llame a N8N
+Fase 4: Migrar flujos complejos a workflows N8N
+Fase 5: Mantener comunicación directa para inferencia simple
+```
+
+### Arquitectura Híbrida Futura
+
+```
+                    ┌──────────────────────┐
+                    │     4_trainer        │
+                    │     (FastAPI)        │
+                    └──────────┬───────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              │                │                │
+              ▼                ▼                ▼
+    ┌─────────────────┐ ┌──────────┐ ┌─────────────────┐
+    │ Ollama (directo)│ │   N8N    │ │ BD Vectorial    │
+    │ (inferencia     │ │(workflows│ │ (embeddings)    │
+    │  simple)        │ │ complejos│ │                 │
+    └─────────────────┘ └──────────┘ └─────────────────┘
+```
+
+## Conclusiones
+
+### Decisión Final
+
+**Para el MVP/TFM:** Comunicación directa `4_trainer` → Ollama
+
+### Razones Clave
+
+1. **Simplicidad > Complejidad:** Un MVP debe ser simple y demostrable
+2. **Latencia importa:** Cada salto de red añade latencia perceptible
+3. **Menos puntos de fallo:** Menos servicios = más estabilidad en demos
+4. **Python es suficiente:** Las librerías disponibles cubren todos los casos de uso del MVP
+5. **Tiempo es limitado:** El TFM tiene fecha de entrega fija
+6. **N8N es un evolutivo:** Si el proyecto continúa post-TFM, N8N puede añadirse sin romper nada
+
+### Regla de Diseño Establecida
+
+> `4_trainer` se comunica **directamente** con Ollama para minimizar latencia y complejidad.
+> N8N es un evolutivo interesante para versiones futuras que requieran orquestación visual.
+
+## Verificación
+
+- [ ] Ollama instalado y corriendo en servidor trainer
+- [ ] `OllamaClient` implementado y testeado
+- [ ] Endpoint de inferencia en `4_trainer` funcional
+- [ ] Latencia medida y documentada (target: < 200ms para prompts simples)
+- [ ] Documentación de modelos disponibles en Ollama
+
+## Referencias
+
+- **Ollama API:** https://github.com/ollama/ollama/blob/main/docs/api.md
+- **ollama-python:** https://github.com/ollama/ollama-python
+- **Langchain Ollama:** https://python.langchain.com/docs/integrations/llms/ollama
+- **N8N (referencia futura):** https://n8n.io/
+
+## Fecha de Decisión
+
+- **2026-01-29**: Análisis de alternativas y decisión documentada
+
+## Participantes
+
+- @trainer-maestro (responsable de Backend IA)
+- Tutor TFM (consulta de diseño)
+
+## Próxima Revisión
+
+- **Trigger:** Post-presentación del TFM, si el proyecto continúa
+- **Acción:** Evaluar si N8N aporta valor para los nuevos requisitos
+- **Responsable:** @trainer-maestro
