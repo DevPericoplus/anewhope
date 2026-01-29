@@ -28,9 +28,26 @@ def _load_storage_structure_module():
     return module
 
 
+def _load_env_settings_module():
+    """Carga el módulo de configuración compartida."""
+    module_path = (
+        Path(__file__).resolve().parents[5]
+        / "src/2_shared_application/config/env_settings.py"
+    )
+    spec = importlib.util.spec_from_file_location("env_settings_backend_storage", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError("No se pudo cargar env_settings")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["env_settings_backend_storage"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 _storage_structure = _load_storage_structure_module()
 get_folder_by_id_organization = _storage_structure.get_folder_by_id_organization
 get_folder_by_id_project = _storage_structure.get_folder_by_id_project
+
+_env_settings = _load_env_settings_module()
 
 
 class StorageAdapterError(Exception):
@@ -46,10 +63,16 @@ class FmanagementSettings:
 
 
 def load_fmanagement_settings() -> FmanagementSettings:
-    """Carga configuración de fmanagement desde entorno."""
+    """Carga configuración de fmanagement desde entorno.
+    
+    Prioridad:
+    1. Variable de entorno FMANAGEMENT_BASE_URL / FMANAGEMENT_BASE_PATH
+    2. Valor de env.yaml (fmanagement_base_url / fmanagement_base_path)
+    3. Fallback a valores por defecto
+    """
 
-    base_url = os.environ.get("FMANAGEMENT_BASE_URL", "http://localhost:1666")
-    base_path = os.environ.get("FMANAGEMENT_BASE_PATH", "/data/files/external")
+    base_url = _env_settings.get_env_value("FMANAGEMENT_BASE_URL", "http://localhost:1666")
+    base_path = _env_settings.get_env_value("FMANAGEMENT_BASE_PATH", "/data/files/external")
     return FmanagementSettings(
         base_url=base_url.rstrip("/"),
         base_path=base_path,

@@ -260,13 +260,24 @@ def _configure_logging() -> None:
 
 
 def _get_core_base_url() -> str:
-    """Obtiene la URL base del backend core."""
+    """Obtiene la URL base del backend core.
+    
+    Prioridad:
+    1. Variable de entorno CORE_BACKEND_BASE_URL
+    2. Valor de env.yaml (core_backend_base_url)
+    3. Valor de protected_values.py
+    4. Fallback a localhost:8003
+    """
 
     env_settings = _load_env_settings_module("broker_env_settings")
-    protected_base_url = env_settings.get_protected_value(
+    # get_env_value carga env.yaml y lee de os.environ
+    env_value = env_settings.get_env_value("CORE_BACKEND_BASE_URL", "")
+    if env_value:
+        return env_value
+    # Fallback a protected_values.py
+    return env_settings.get_protected_value(
         "core_backend_base_url", "http://localhost:8003"
     )
-    return os.environ.get("CORE_BACKEND_BASE_URL", protected_base_url)
 
 
 def _load_env_settings_module(module_name: str) -> Any:
@@ -303,13 +314,24 @@ def get_core_client() -> CoreBackendClient:
 
 
 def _get_trainer_base_url() -> str:
-    """Obtiene la URL base del backend IA (trainer)."""
+    """Obtiene la URL base del backend IA (trainer).
+    
+    Prioridad:
+    1. Variable de entorno TRAINER_BACKEND_BASE_URL
+    2. Valor de env.yaml (trainer_backend_base_url)
+    3. Valor de protected_values.py
+    4. Fallback a localhost:8004
+    """
 
     env_settings = _load_env_settings_module("broker_env_settings_trainer")
-    protected_base_url = env_settings.get_protected_value(
+    # get_env_value carga env.yaml y lee de os.environ
+    env_value = env_settings.get_env_value("TRAINER_BACKEND_BASE_URL", "")
+    if env_value:
+        return env_value
+    # Fallback a protected_values.py
+    return env_settings.get_protected_value(
         "trainer_backend_base_url", "http://localhost:8004"
     )
-    return os.environ.get("TRAINER_BACKEND_BASE_URL", protected_base_url)
 
 
 def get_trainer_client() -> TrainerBackendClient:

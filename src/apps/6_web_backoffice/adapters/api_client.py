@@ -3,12 +3,32 @@ import importlib.util
 import json
 import logging
 import os
+import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _load_env_settings_module():
+    """Carga el módulo de configuración compartida."""
+
+    module_path = (
+        Path(__file__).resolve().parents[4]
+        / "src/2_shared_application/config/env_settings.py"
+    )
+    spec = importlib.util.spec_from_file_location("env_settings_backoffice", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("No se pudo cargar el módulo de configuración")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["env_settings_backoffice"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_env_settings = _load_env_settings_module()
 
 # Ruta al módulo de dominio de usuarios y organizaciones
 _domain_entities_path = (
@@ -163,9 +183,15 @@ def save_organization_to_json(organization_data: dict[str, Any]) -> int | None:
 
 
 def _get_middleware_base_url() -> str:
-    """Obtiene la URL base del middleware desde el entorno."""
+    """Obtiene la URL base del middleware desde el entorno.
+    
+    Prioridad:
+    1. Variable de entorno MIDDLEWARE_BASE_URL
+    2. Valor de env.yaml (middleware_base_url)
+    3. Fallback a localhost:8007
+    """
 
-    return os.environ.get("MIDDLEWARE_BASE_URL", "http://localhost:8007").rstrip("/")
+    return _env_settings.get_env_value("MIDDLEWARE_BASE_URL", "http://localhost:8007").rstrip("/")
 
 
 def _request_middleware(

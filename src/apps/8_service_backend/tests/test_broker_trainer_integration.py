@@ -8,9 +8,25 @@ Este módulo contiene tests para verificar:
 
 from __future__ import annotations
 
+import importlib.util
+import sys
+from pathlib import Path
+
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
+
+
+def _load_broker_module():
+    """Carga el módulo apibe dinámicamente (evita error por nombre numérico)."""
+    module_path = Path(__file__).resolve().parent.parent / "apibe.py"
+    spec = importlib.util.spec_from_file_location("apibe_test", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError("No se pudo cargar apibe")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["apibe_test"] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 @pytest.fixture
@@ -90,16 +106,17 @@ def mock_core_client():
 @pytest.fixture
 def client(mock_env, mock_core_client, mock_trainer_client):
     """Crea cliente de pruebas para la API del broker con mocks."""
-    with patch(
-        "src.apps.8_service_backend.apibe.get_core_client",
-        return_value=mock_core_client,
-    ):
-        with patch(
-            "src.apps.8_service_backend.apibe.get_trainer_client",
-            return_value=mock_trainer_client,
-        ):
-            from src.apps.8_service_backend.apibe import app
-            yield TestClient(app)
+    # Cargamos el módulo dinámicamente para evitar error por nombre numérico
+    apibe_module = _load_broker_module()
+    
+    # Usamos dependency_overrides de FastAPI para inyectar los mocks
+    apibe_module.app.dependency_overrides[apibe_module.get_core_client] = lambda: mock_core_client
+    apibe_module.app.dependency_overrides[apibe_module.get_trainer_client] = lambda: mock_trainer_client
+    
+    yield TestClient(apibe_module.app)
+    
+    # Limpiamos los overrides
+    apibe_module.app.dependency_overrides.clear()
 
 
 class TestBrokerTrainerHealth:

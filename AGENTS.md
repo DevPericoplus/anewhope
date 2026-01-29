@@ -308,6 +308,44 @@ la comunicación entre servicios según el entorno de despliegue.
 **Nota pre/pro:** El dominio público `getmyllm.com` solo lo usa nginx para exponer el frontend.
 Los servicios internos se comunican usando el dominio interno `anewhope.aws`.
 
+### Patrón de carga de URLs de servicio en código
+
+**CRÍTICO:** Las aplicaciones deben usar `get_env_value()` de `env_settings.py` para obtener URLs de servicios.
+Esto asegura que las variables de `env.yaml` se cargan correctamente antes de leer de `os.environ`.
+
+**Patrón correcto:**
+
+```python
+# ✅ CORRECTO: Usa get_env_value() que carga env.yaml primero
+from src.2_shared_application.config import env_settings
+
+def _get_middleware_base_url() -> str:
+    return env_settings.get_env_value("MIDDLEWARE_BASE_URL", "http://localhost:8007")
+```
+
+**Patrón incorrecto:**
+
+```python
+# ❌ INCORRECTO: No carga env.yaml, solo lee os.environ directamente
+import os
+
+def _get_middleware_base_url() -> str:
+    return os.environ.get("MIDDLEWARE_BASE_URL", "http://localhost:8007")
+```
+
+**Orden de prioridad de valores:**
+1. Variable de entorno explícita (ej: `export MIDDLEWARE_BASE_URL=...`)
+2. Valor de `env.yaml` del entorno activo
+3. Valor de `protected_values.py` (solo como fallback adicional)
+4. Valor por defecto hardcodeado
+
+**Archivos que implementan este patrón:**
+- `src/apps/5_web_frontend/adapters/api_client.py` → `_get_middleware_base_url()`
+- `src/apps/6_web_backoffice/adapters/api_client.py` → `_get_middleware_base_url()`
+- `src/apps/7_service_frontend/apife.py` → `_get_broker_base_url()`
+- `src/apps/8_service_backend/apibe.py` → `_get_core_base_url()`, `_get_trainer_base_url()`
+- `src/apps/3_backend/4_infrastructure/persistence/storage_adapter.py` → `load_fmanagement_settings()`
+
 **Distribución en servidores:**
 - **frontend.***: Frontend, Backoffice, Middleware, Redis
 - **backend.***: Backend Core, Broker, Fmanagement, MariaDB

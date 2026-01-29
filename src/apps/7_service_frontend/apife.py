@@ -282,13 +282,24 @@ def get_interface_client(
 
 
 def _get_broker_base_url() -> str:
-    """Obtiene la URL base del broker backend."""
+    """Obtiene la URL base del broker backend.
+    
+    Prioridad:
+    1. Variable de entorno BROKER_BACKEND_BASE_URL
+    2. Valor de env.yaml (broker_backend_base_url)
+    3. Valor de protected_values.py
+    4. Fallback a localhost:8008
+    """
 
     env_settings = _load_env_settings_module("middleware_env_settings")
-    protected_base_url = env_settings.get_protected_value(
+    # get_env_value carga env.yaml y lee de os.environ
+    env_value = env_settings.get_env_value("BROKER_BACKEND_BASE_URL", "")
+    if env_value:
+        return env_value
+    # Fallback a protected_values.py
+    return env_settings.get_protected_value(
         "broker_backend_base_url", "http://localhost:8008"
     )
-    return os.environ.get("BROKER_BACKEND_BASE_URL", protected_base_url)
 
 
 def _load_env_settings_module(module_name: str) -> Any:

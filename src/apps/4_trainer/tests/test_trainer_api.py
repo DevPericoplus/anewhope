@@ -8,9 +8,25 @@ Este módulo contiene tests para verificar:
 
 from __future__ import annotations
 
+import importlib.util
+import sys
+from pathlib import Path
+
 import pytest
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
+
+
+def _load_trainer_app():
+    """Carga el módulo apitrainer dinámicamente (evita error por nombre numérico)."""
+    module_path = Path(__file__).resolve().parent.parent / "apitrainer.py"
+    spec = importlib.util.spec_from_file_location("apitrainer_test", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError("No se pudo cargar apitrainer")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["apitrainer_test"] = module
+    spec.loader.exec_module(module)
+    return module.app
 
 
 @pytest.fixture
@@ -23,7 +39,7 @@ def mock_env(monkeypatch):
 @pytest.fixture
 def client(mock_env):
     """Crea cliente de pruebas para la API del trainer."""
-    from src.apps.4_trainer.apitrainer import app
+    app = _load_trainer_app()
     return TestClient(app)
 
 

@@ -116,6 +116,39 @@ que las aplicaciones conozcan la ubicación de los otros servicios en cada entor
 - **Servidor Backend:** `3_backend`, `8_service_backend`, Fmanagement, MariaDB
 - **Servidor Trainer:** `4_trainer`, Ollama (IA local), base de datos vectorial (Keras - pendiente)
 
+### Cómo obtener URLs de servicios en código
+
+Las aplicaciones deben usar `get_env_value()` del módulo `env_settings.py` para obtener las URLs
+de otros servicios. Esto garantiza que las variables de `env.yaml` se carguen correctamente
+según el entorno activo.
+
+**Ejemplo correcto:**
+
+```python
+# Cargar el módulo de configuración (carga dinámica por nombre numérico)
+from src.2_shared_application.config import env_settings
+
+def _get_middleware_base_url() -> str:
+    """Obtiene la URL del middleware con prioridad correcta."""
+    return env_settings.get_env_value("MIDDLEWARE_BASE_URL", "http://localhost:8007")
+```
+
+**Orden de prioridad al resolver valores:**
+
+1. Variable de entorno explícita (definida con `export VARIABLE=valor`)
+2. Valor en `env.yaml` del entorno activo (definido por `.envglobal`)
+3. Valor por defecto proporcionado al llamar `get_env_value()`
+
+**Variables de URL típicas:**
+
+| Variable | Uso | Valor en macbook |
+|----------|-----|------------------|
+| `MIDDLEWARE_BASE_URL` | Frontend/Backoffice → Middleware | `http://localhost:8007` |
+| `BROKER_BACKEND_BASE_URL` | Middleware → Broker | `http://localhost:8008` |
+| `CORE_BACKEND_BASE_URL` | Broker → Backend Core | `http://localhost:8003` |
+| `TRAINER_BACKEND_BASE_URL` | Broker → Trainer | `http://localhost:8004` |
+| `FMANAGEMENT_BASE_URL` | Backend Core → Fmanagement | `http://localhost:1666` |
+
 ### Servicios planificados en el servidor Trainer
 
 El servidor trainer albergará los siguientes servicios:
