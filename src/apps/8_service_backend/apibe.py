@@ -98,6 +98,67 @@ class UserCreateResponse(BaseModel):
     identity_type_id: int
 
 
+class UserStatusUpdateRequest(BaseModel):
+    """Request para actualizar estado activo de un usuario."""
+
+    user_id: int
+    active: bool
+    requester_org_id: int
+
+
+class UserStatusUpdateResponse(BaseModel):
+    """Respuesta de actualización de estado de usuario."""
+
+    user_id: int
+    active: bool
+    message: str
+
+
+class UserExistsRequest(BaseModel):
+    """Request para verificar existencia de usuario."""
+
+    user_name: str
+
+
+class UserExistsResponse(BaseModel):
+    """Respuesta de verificación de existencia de usuario."""
+
+    exists: bool
+    user_name: str
+
+
+class UserByEmailRequest(BaseModel):
+    """Request para obtener usuario por email."""
+
+    email: str
+
+
+class UserByEmailResponse(BaseModel):
+    """Respuesta con datos del usuario por email."""
+
+    found: bool
+    user_id: int | None = None
+    user_name: str | None = None
+    user_email: str | None = None
+    user_mobile: str | None = None
+    organization_id: int | None = None
+
+
+class UpdatePasswordRequest(BaseModel):
+    """Request para actualizar contraseña y OTP."""
+
+    email: str
+    new_password: str
+    new_otp: str
+
+
+class UpdatePasswordResponse(BaseModel):
+    """Respuesta de actualización de contraseña."""
+
+    success: bool
+    message: str
+
+
 class PermissionsResponse(BaseModel):
     """Respuesta con permisos del usuario."""
 
@@ -446,6 +507,92 @@ def create_user(
     try:
         response = router.create_user(payload.model_dump())
         return UserCreateResponse(**response)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/users/{user_id}/status", response_model=UserStatusUpdateResponse)
+def update_user_status(
+    user_id: int,
+    payload: UserStatusUpdateRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> UserStatusUpdateResponse:
+    """Actualiza el estado activo/inactivo de un usuario.
+    
+    Este endpoint recibe peticiones del middleware y las reenvía al backend core
+    para actualizar el estado en MariaDB.
+    """
+    try:
+        response = router.update_user_status(
+            user_id=user_id,
+            active=payload.active,
+            requester_org_id=payload.requester_org_id,
+        )
+        return UserStatusUpdateResponse(**response)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/users/check-exists", response_model=UserExistsResponse)
+def check_user_exists(
+    payload: UserExistsRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> UserExistsResponse:
+    """Verifica si existe un usuario por nombre de usuario.
+    
+    Flujo: Middleware → Broker (aquí) → Backend Core → JSON/MariaDB
+    """
+    try:
+        result = router.check_user_exists(payload.user_name)
+        return UserExistsResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/users/by-email", response_model=UserByEmailResponse)
+def get_user_by_email(
+    payload: UserByEmailRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> UserByEmailResponse:
+    """Obtiene datos de un usuario por email.
+    
+    Flujo: Middleware → Broker (aquí) → Backend Core → JSON/MariaDB
+    """
+    try:
+        result = router.get_user_by_email(payload.email)
+        return UserByEmailResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/users/update-password", response_model=UpdatePasswordResponse)
+def update_user_password(
+    payload: UpdatePasswordRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> UpdatePasswordResponse:
+    """Actualiza contraseña y OTP de un usuario.
+    
+    Flujo: Middleware → Broker (aquí) → Backend Core → JSON/MariaDB
+    """
+    try:
+        result = router.update_user_password(
+            email=payload.email,
+            new_password=payload.new_password,
+            new_otp=payload.new_otp,
+        )
+        return UpdatePasswordResponse(**result)
     except BrokerBusinessError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

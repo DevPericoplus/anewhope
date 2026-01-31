@@ -624,6 +624,114 @@ environment:
 **CRÍTICO:** La tabla `low_level_permissions` es el **CORE del concepto Security by Default**.
 Cada operación en cualquier capa del sistema debe validar permisos antes de ejecutarse.
 
+#### Modelo de Datos de Permisos (OBLIGATORIO entender)
+
+El sistema de permisos usa una relación **1 a 1** entre el rol del usuario y sus permisos:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│              MODELO DE DATOS: SESIÓN → PERMISOS                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│   SESIÓN (JWT)             TABLA users              TABLA low_level_permissions
+│   ┌──────────┐             ┌──────────────────┐     ┌────────────────────┐
+│   │ user_id  │─────────────│ user_id          │     │ id_permissions     │
+│   └──────────┘             │ identity_type_id │─────│ folder_create=1/0  │
+│                            └──────────────────┘     │ folder_delete=1/0  │
+│                                   │                 │ user_create=1/0    │
+│                                   │                 │ training_start=1/0 │
+│                                   ▼                 │ ... (40 campos)    │
+│                          identity_type_id           └────────────────────┘
+│                                 =                             │
+│                          id_permissions ◄─────────────────────┘
+│                            (JOIN 1:1)
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Regla de relación:**
+- `users.identity_type_id` = `low_level_permissions.id_permissions`
+- Cada campo de `low_level_permissions` es un permiso booleano (`1=true`, `0=false`)
+
+#### Consulta SQL de Permisos (CRÍTICO)
+
+**Para obtener TODOS los permisos de un usuario desde su `user_id` de sesión:**
+
+```sql
+-- Consulta completa de permisos
+SELECT llp.*
+FROM users u
+INNER JOIN low_level_permissions llp 
+    ON u.identity_type_id = llp.id_permissions
+WHERE u.user_id = :user_id_from_session;
+```
+
+**Para verificar UN permiso específico:**
+
+```sql
+-- ¿El usuario puede crear usuarios?
+SELECT llp.user_create
+FROM users u
+INNER JOIN low_level_permissions llp ON u.identity_type_id = llp.id_permissions
+WHERE u.user_id = :user_id;
+-- Resultado: 1 (tiene permiso) o 0 (no tiene permiso)
+```
+
+**Ejemplo con datos reales:**
+
+```sql
+-- Usuario con user_id=42, identity_type_id=2 (Admin)
+SELECT u.user_id, u.identity_type_id, llp.folder_create, llp.user_create, llp.training_start
+FROM users u
+INNER JOIN low_level_permissions llp ON u.identity_type_id = llp.id_permissions
+WHERE u.user_id = 42;
+
+-- Resultado:
+-- user_id | identity_type_id | folder_create | user_create | training_start
+-- 42      | 2                | 1             | 1           | 1
+```
+
+#### Interpretación de valores de permisos
+
+| Valor en BD | Valor Python | Significado |
+|-------------|--------------|-------------|
+| `1` | `True` | Usuario **TIENE** el permiso |
+| `0` | `False` | Usuario **NO TIENE** el permiso |
+
+#### Uso en código (todas las capas)
+
+**En Frontend/Backoffice (Reflex UI):**
+```python
+# Los permisos están en SharedSessionState como campos booleanos
+rx.cond(
+    state.can_user_create,  # Viene de low_level_permissions.user_create
+    rx.button("Crear usuario"),
+    rx.fragment(),
+)
+```
+
+**En Middleware (FastAPI):**
+```python
+# Obtener permisos del usuario via broker → core → BD
+permissions = router._get_low_level_permissions_for_role(identity_type_id)
+if not permissions.get("user_create"):
+    raise HTTPException(status_code=403, detail="Sin permiso user_create")
+```
+
+**En Backend Core (validación final):**
+```python
+# Consulta directa a MariaDB
+def validate_permission(self, user_id: int, permission_key: str) -> bool:
+    query = """
+        SELECT llp.{permission}
+        FROM users u
+        INNER JOIN low_level_permissions llp ON u.identity_type_id = llp.id_permissions
+        WHERE u.user_id = %s
+    """.format(permission=permission_key)
+    result = self._execute_query(query, (user_id,))
+    return bool(result[0][0]) if result else False
+```
+
 #### Principios de Security by Design
 
 1. **Validación en TODAS las capas:**
@@ -638,6 +746,74 @@ Cada operación en cualquier capa del sistema debe validar permisos antes de eje
 3. **Principio de mínimo privilegio:** Los usuarios solo ven y pueden ejecutar lo que necesitan
 
 4. **Fail-safe defaults:** Sin permiso explícito = denegación por defecto
+
+#### Control de acceso por identity_type_id (CRÍTICO)
+
+**REGLA OBLIGATORIA:** Además de los permisos de bajo nivel, el sistema usa `identity_type_id` 
+para determinar qué operaciones de gestión puede realizar cada usuario.
+
+##### Matriz de permisos por identity_type_id
+
+| identity_type_id | Rol | Gestionar usuarios | Gestionar proyectos |
+|------------------|-----|-------------------|-------------------|
+| 1 | SuperAdmin | ✅ Sí | ✅ Sí |
+| 2 | Admin de Organización | ✅ Sí | ✅ Sí |
+| 3 | Editor | ❌ No | ✅ Editar |
+| 4 | Lector | ❌ No | ❌ No |
+| 5 | Auditor | ❌ No | ❌ No |
+| 10 | Agente Admin | ✅ Sí | ✅ Sí |
+| 11 | Agente Editor | ❌ No | ✅ Editar |
+| 12 | Agente Lector | ❌ No | ❌ No |
+| 13 | Agente Auditor | ❌ No | ❌ No |
+
+##### Implementación en UI (Reflex)
+
+**OBLIGATORIO:** Usar propiedades computadas `@rx.var` en el State:
+
+```python
+@rx.var
+def can_manage_org_users(self) -> bool:
+    """Solo SuperAdmin, Admin Org, y Agente Admin pueden gestionar usuarios."""
+    if self.identity_type_id <= 0:
+        return False
+    return self.identity_type_id in (1, 2, 10)
+
+# En el componente
+rx.cond(
+    State.can_manage_org_users,
+    rx.button("Eliminar usuario", on_click=State.delete_user(user_id)),
+    rx.fragment(),  # No mostrar nada
+)
+```
+
+##### Implementación en API (Middleware)
+
+**OBLIGATORIO:** Validar ANTES de ejecutar cualquier operación restringida:
+
+```python
+@app.patch("/users/{user_id}/status")
+async def update_user_status_endpoint(
+    user_id: int,
+    session: SessionContext = Depends(get_session_context),
+):
+    # ⚠️ VALIDACIÓN OBLIGATORIA
+    allowed_identity_types = (1, 2, 10)  # SuperAdmin, Admin Org, Agente Admin
+    if session.identity_type_id not in allowed_identity_types:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Sin permisos (identity_type_id={session.identity_type_id})",
+        )
+    # ... ejecutar operación
+```
+
+##### Checklist para nuevas operaciones restringidas
+
+- [ ] ¿Definido qué `identity_type_id` pueden realizar la operación?
+- [ ] ¿Añadida propiedad computada `can_<operacion>` en State (frontend/backoffice)?
+- [ ] ¿Usada `rx.cond()` en UI para mostrar/ocultar elementos?
+- [ ] ¿Añadida validación en endpoint del middleware ANTES de ejecutar?
+- [ ] ¿Retorna HTTP 403 si no tiene permisos?
+- [ ] ¿Documentado en README.md (sección "Control de acceso por identity_type_id")?
 
 #### Flujo de obtención de permisos
 
@@ -840,6 +1016,53 @@ class BackendCoreRouter:
         # ... ejecutar operación
 ```
 
+### Reglas de Creación de Usuarios de Organización
+
+**REGLA CRÍTICA**: Los usuarios creados desde el panel "Gestión de Usuarios" de la página Organización
+**SIEMPRE** deben tener `identity_type_id = 5` (auditor).
+
+#### Reglas obligatorias
+
+1. **Un administrador por organización**: Solo puede existir UN usuario con `identity_type_id = 2`
+   (Administrador de Organización) por cada `organization_id`. Este rol se asigna automáticamente
+   al primer usuario que crea la organización.
+
+2. **Usuarios adicionales son auditores**: Todos los usuarios creados posteriormente desde el panel
+   de organización reciben `identity_type_id = 5` (auditor) por defecto.
+
+3. **Roles por proyecto**: Los usuarios pueden tener roles adicionales (editor, lector) asignados
+   en tablas relacionadas con proyectos específicos (`manage_roles_by_project`), pero su rol base
+   en la organización permanece como auditor.
+
+4. **Principio de mínimo privilegio**: Los usuarios nuevos comienzan con permisos restringidos
+   (auditor) y se les asignan permisos adicionales según necesidad en proyectos específicos.
+
+#### Implementación en código
+
+```python
+# En api_client.py - SIEMPRE enviar identity_type_id = 5
+payload = {
+    "organization_id": organization_id,
+    "identity_type_id": 5,  # OBLIGATORIO: Usuario auditor
+    ...
+}
+
+# En routermiddleware.py - SIEMPRE respetar identity_type_id = 5
+def _get_manage_roles_identity_type_id(self, organization_id, requested_identity_type_id):
+    # Si se solicita explícitamente 5 (auditor), SIEMPRE se respeta
+    if requested_identity_type_id == 5:
+        return 5
+    # Solo el primer usuario puede ser admin (2)
+    ...
+```
+
+#### Validación en tests
+
+Los tests de creación de usuarios deben verificar que:
+- `identity_type_id` del usuario creado es `5`
+- No se puede crear un segundo administrador en la misma organización
+- El usuario tiene permisos de auditor (solo lectura)
+
 ### Roles y Permisos por Defecto
 
 El sistema define roles con permisos predefinidos. Usa `low_level_permissions.json` como referencia única.
@@ -847,10 +1070,10 @@ El sistema define roles con permisos predefinidos. Usa `low_level_permissions.js
 | identity_type_id | Rol | Permisos característicos |
 |------------------|-----|--------------------------|
 | 1 | SuperAdmin | Todos los permisos = `true` |
-| 2 | Administrador Org | CRUD completo en proyectos, versiones, carpetas, archivos |
+| 2 | Administrador Org | CRUD completo en proyectos, versiones, carpetas, archivos. **ÚNICO por organización** |
 | 3 | Editor | Crear/editar proyectos y archivos, sin eliminar |
 | 4 | Lector | Solo lectura (read, list) |
-| 5 | Auditor | Solo lectura de logs y configuración |
+| 5 | Auditor | **ROL BASE para usuarios creados desde panel**. Solo lectura de logs y configuración |
 | 10-13 | Agentes automáticos | Permisos según rol del agente (admin/editor/lector/auditor) |
 
 #### Ejemplo: Configurar permisos de notificaciones por rol
@@ -1216,6 +1439,107 @@ Incluye roles de usuario, servidores frontend/backend/trainer, el flujo entre `5
 - **Capas compartidas**:
   - Dominio común → `src/1_shared_domain/`.
   - Aplicación común → `src/2_shared_application/`.
+
+### Flujo obligatorio de peticiones (CRÍTICO)
+
+**REGLA FUNDAMENTAL:** El middleware NUNCA debe acceder directamente a MariaDB. Todas las 
+operaciones de datos deben pasar por el broker y el backend core.
+
+#### Flujo correcto para operaciones de datos
+
+```
+Frontend/Backoffice → Middleware → Broker → Backend Core → MariaDB
+     (8005/8006)        (8007)     (8008)      (8003)       (3306)
+```
+
+#### Flujo correcto para operaciones de IA
+
+```
+Frontend/Backoffice → Middleware → Broker → Trainer
+     (8005/8006)        (8007)     (8008)    (8004)
+```
+
+#### Reglas de implementación
+
+1. **Frontend/Backoffice (`api_client.py`):**
+   - Solo pueden llamar al middleware (puerto 8007)
+   - Usar funciones dedicadas para cada operación
+   - Propagar tokens de autenticación en headers
+
+2. **Middleware (`routermiddleware.py`):**
+   - Usar `_broker_client` para enviar operaciones al broker
+   - PROHIBIDO importar SQLAlchemy o acceder directamente a MariaDB
+   - Solo modo `mock` (JSON) puede saltarse el broker
+
+3. **Broker (`routerbroker.py`):**
+   - Decidir si enviar al backend core o al trainer
+   - Usar `_core_client` para operaciones de datos
+   - Usar `_trainer_client` para operaciones de IA
+
+4. **Backend Core (`routercore.py`):**
+   - Única capa autorizada para acceder a MariaDB
+   - Usar SQLAlchemy para operaciones de base de datos
+   - Mantener sincronización con JSON si `storage_mode` lo requiere
+
+#### Checklist para nuevas operaciones
+
+Al implementar una nueva operación (ej: actualizar usuario, crear proyecto):
+
+- [ ] **api_client.py** (frontend/backoffice): Nueva función que llama al middleware
+- [ ] **apife.py** (middleware): Nuevo endpoint que recibe la petición
+- [ ] **routermiddleware.py**: Nuevo método que llama al broker client
+- [ ] **broker_backend_client.py**: Nuevo método que hace la petición HTTP al broker
+- [ ] **apibe.py** (broker): Nuevo endpoint que recibe del middleware
+- [ ] **routerbroker.py**: Nuevo método que llama al core client (o trainer client)
+- [ ] **interfacetocore.py**: Nuevo método que hace la petición HTTP al backend core
+- [ ] **apicore.py** (backend core): Nuevo endpoint que recibe del broker
+- [ ] **routercore.py**: Nuevo método que ejecuta la operación en MariaDB
+
+#### Ejemplo de implementación: Actualizar estado de usuario
+
+```python
+# 1. Frontend: adapters/api_client.py
+def update_user_status(user_id, active, access_token, session_token):
+    return _request_middleware("PATCH", f"/users/{user_id}/status", ...)
+
+# 2. Middleware: apife.py
+@app.patch("/users/{user_id}/status")
+async def update_user_status_endpoint(user_id, request, router, session):
+    return router.update_user_active_status(user_id, request.active, session.organization_id)
+
+# 3. Middleware: routermiddleware.py
+def update_user_active_status(self, user_id, active, requester_org_id):
+    return self._broker_client.update_user_status(user_id, active, requester_org_id)
+
+# 4. Broker Client: broker_backend_client.py
+def update_user_status(self, user_id, active, requester_org_id):
+    return self._request("PATCH", f"/users/{user_id}/status", payload={...})
+
+# 5. Broker: apibe.py
+@app.patch("/users/{user_id}/status")
+def update_user_status(user_id, payload, router):
+    return router.update_user_status(user_id, payload.active, payload.requester_org_id)
+
+# 6. Broker: routerbroker.py
+def update_user_status(self, user_id, active, requester_org_id):
+    return self._core_client.update_user_status(user_id, active, requester_org_id)
+
+# 7. Core Interface: interfacetocore.py
+def update_user_status(self, user_id, active, requester_org_id):
+    return self._request("PATCH", f"/users/{user_id}/status", payload={...})
+
+# 8. Backend Core: apicore.py
+@app.patch("/users/{user_id}/status")
+def update_user_status(user_id, payload, router):
+    return router.update_user_status(user_id, payload.active, payload.requester_org_id)
+
+# 9. Backend Core: routercore.py
+def update_user_status(self, user_id, active, requester_org_id):
+    # Aquí SÍ se usa SQLAlchemy para actualizar MariaDB
+    engine = create_engine(dsn)
+    with engine.connect() as conn:
+        conn.execute(text("UPDATE users SET active = :active WHERE user_id = :user_id"), {...})
+```
 
 ### Trazabilidad X-Client-App (regla obligatoria)
 

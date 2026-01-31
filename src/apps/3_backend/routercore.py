@@ -95,6 +95,7 @@ JsonMockStorageAdapter = _storage_module.JsonMockStorageAdapter
 StorageAdapterError = _storage_module.StorageAdapterError
 build_storage_paths = _storage_module.build_storage_paths
 load_fmanagement_settings = _storage_module.load_fmanagement_settings
+load_mariadb_settings = _storage_module.load_mariadb_settings
 
 
 def _load_fmanagement_module(module_name: str) -> Any:
@@ -571,6 +572,205 @@ class BackendCoreRouter:
             "organization_id": organization_id,
             "identity_type_id": identity_type_id,
         }
+
+    def update_user_status(
+        self, user_id: int, active: bool, requester_org_id: int
+    ) -> dict[str, Any]:
+        """Actualiza el estado activo/inactivo de un usuario en MariaDB.
+        
+        Este es el destino final del flujo:
+        Frontend → Middleware → Broker → Backend Core (aquí) → MariaDB
+        
+        Args:
+            user_id: ID del usuario a modificar
+            active: True para habilitar, False para deshabilitar
+            requester_org_id: ID de la organización del solicitante (para validación)
+        
+        Returns:
+            Diccionario con user_id, active y message
+        
+        Raises:
+            BackendCoreBusinessError: Si el usuario no existe o no pertenece a la org
+        """
+        # Cargar usuarios
+        users = self.list_users()
+        
+        # Buscar el usuario
+        target_user = None
+        for user in users:
+            if user.user_id == user_id:
+                target_user = user
+                break
+        
+        if target_user is None:
+            raise BackendCoreBusinessError(f"Usuario con ID {user_id} no encontrado")
+        
+        # Validar que pertenece a la misma organización
+        if target_user.organization_id != requester_org_id:
+            raise BackendCoreBusinessError(
+                "No tiene permisos para modificar usuarios de otra organización"
+            )
+        
+        # Actualizar en JSON
+        for user in users:
+            if user.user_id == user_id:
+                user.active = active
+                break
+        
+        self.store_users(users)
+        
+        # Actualizar en MariaDB
+        self._update_user_active_in_db(user_id, active)
+        
+        action = "habilitado" if active else "deshabilitado"
+        self._logger.info(
+            "Usuario %s (id=%s) %s por org_id=%s",
+            target_user.user_name,
+            user_id,
+            action,
+            requester_org_id,
+        )
+        
+        return {
+            "user_id": user_id,
+            "active": active,
+            "message": f"Usuario {action} correctamente",
+        }
+
+    def _update_user_active_in_db(self, user_id: int, active: bool) -> None:
+        """Actualiza el campo active en la base de datos MariaDB."""
+        try:
+            from sqlalchemy import create_engine, text
+            
+            # Obtener DSN desde la configuración de MariaDB
+            mariadb_config = load_mariadb_settings()
+            dsn = mariadb_config.get("writer_dsn", "")
+            
+            if not dsn:
+                self._logger.warning("No hay DSN configurado para actualizar en BD")
+                return
+            
+            engine = create_engine(dsn)
+            with engine.connect() as conn:
+                conn.execute(
+                    text("UPDATE users SET active = :active WHERE user_id = :user_id"),
+                    {"active": 1 if active else 0, "user_id": user_id},
+                )
+                conn.commit()
+            
+            self._logger.info(
+                "Usuario id=%s actualizado en MariaDB: active=%s", user_id, active
+            )
+        except Exception as e:
+            self._logger.error("Error actualizando usuario en BD: %s", e)
+            raise BackendCoreBusinessError(f"Error en base de datos: {e}") from e
+
+    def check_user_exists(self, user_name: str) -> bool:
+        """Verifica si existe un usuario por nombre de usuario.
+        
+        Args:
+            user_name: Nombre de usuario a verificar
+        
+        Returns:
+            True si el usuario existe, False en caso contrario
+        """
+        users = self.list_users()
+        for user in users:
+            if user.user_name.lower() == user_name.lower():
+                self._logger.info("Usuario '%s' encontrado", user_name)
+                return True
+        self._logger.info("Usuario '%s' no encontrado", user_name)
+        return False
+
+    def get_user_by_email(self, email: str) -> dict[str, Any] | None:
+        """Obtiene datos de un usuario por email.
+        
+        Args:
+            email: Email del usuario
+        
+        Returns:
+            Diccionario con datos del usuario o None si no existe
+        """
+        users = self.list_users()
+        email_lower = email.lower().strip()
+        for user in users:
+            if user.user_email.lower() == email_lower:
+                self._logger.info("Usuario con email '%s' encontrado: id=%s", email, user.user_id)
+                return {
+                    "user_id": user.user_id,
+                    "user_name": user.user_name,
+                    "user_email": user.user_email,
+                    "user_mobile": user.user_mobile,
+                    "organization_id": user.organization_id,
+                }
+        self._logger.info("Usuario con email '%s' no encontrado", email)
+        return None
+
+    def update_user_password(self, email: str, new_password: str, new_otp: str) -> bool:
+        """Actualiza contraseña y OTP de un usuario.
+        
+        Args:
+            email: Email del usuario
+            new_password: Nueva contraseña (ya cifrada)
+            new_otp: Nuevo código OTP
+        
+        Returns:
+            True si se actualizó correctamente, False en caso contrario
+        """
+        users = self.list_users()
+        email_lower = email.lower().strip()
+        
+        user_found = False
+        user_id = None
+        for user in users:
+            if user.user_email.lower() == email_lower:
+                user.user_password = new_password
+                user.user_otp = new_otp
+                user_found = True
+                user_id = user.user_id
+                break
+        
+        if not user_found:
+            self._logger.warning("Usuario con email '%s' no encontrado para actualizar", email)
+            return False
+        
+        # Guardar en JSON
+        self.store_users(users)
+        
+        # Actualizar en MariaDB
+        self._update_user_password_in_db(email, new_password, new_otp)
+        
+        self._logger.info("Contraseña actualizada para usuario email='%s' id=%s", email, user_id)
+        return True
+
+    def _update_user_password_in_db(self, email: str, new_password: str, new_otp: str) -> None:
+        """Actualiza contraseña y OTP en MariaDB."""
+        try:
+            from sqlalchemy import create_engine, text
+            
+            mariadb_config = load_mariadb_settings()
+            dsn = mariadb_config.get("writer_dsn", "")
+            
+            if not dsn:
+                self._logger.warning("No hay DSN configurado para actualizar contraseña en BD")
+                return
+            
+            engine = create_engine(dsn)
+            with engine.connect() as conn:
+                conn.execute(
+                    text("""
+                        UPDATE users 
+                        SET user_password = :password, user_otp = :otp 
+                        WHERE user_email = :email
+                    """),
+                    {"password": new_password, "otp": new_otp, "email": email},
+                )
+                conn.commit()
+            
+            self._logger.info("Contraseña actualizada en MariaDB para email='%s'", email)
+        except Exception as e:
+            self._logger.error("Error actualizando contraseña en BD: %s", e)
+            # No lanzar excepción, el JSON ya fue actualizado
 
     def get_permissions(self, identity_type_id: int) -> dict[str, Any]:
         """Obtiene permisos asociados a un rol."""

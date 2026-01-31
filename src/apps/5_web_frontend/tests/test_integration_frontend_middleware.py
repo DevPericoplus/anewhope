@@ -120,10 +120,13 @@ def test_frontend_creates_org_and_user(middleware_client: TestClient, monkeypatc
         zip_code="28001",
         address="Calle Uno",
     )
+    # Nota: id_type=None para que el middleware asigne automáticamente
+    # identity_type_id=2 (admin) al primer usuario de la organización.
+    # Si se especifica id_type=5, el middleware lo respeta (auditor).
     user_extended = DummyUserExtended(
         id=1,
         id_org=org_id,
-        id_type=5,
+        id_type=None,  # Primer usuario → será admin (2) automáticamente
         user_name="demo",
         user_password="secret",
         user_email="demo@example.com",
@@ -140,6 +143,7 @@ def test_frontend_creates_org_and_user(middleware_client: TestClient, monkeypatc
     roles_path = Path(os.environ["MANAGE_ROLES_BY_ORG_PATH"])
     roles = json.loads(roles_path.read_text(encoding="utf-8"))
     assert roles[0]["id_organization"] == org_id
+    # El primer usuario de una organización nueva es admin (2)
     assert roles[0]["identity_type_id"] == 2
 
 

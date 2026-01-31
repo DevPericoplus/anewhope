@@ -1928,15 +1928,22 @@ class RouterMiddleware:
 
     def _get_permissions_for_role(self, identity_type_id: int) -> list[dict[str, Any]]:
         """
-        Obtiene permisos básicos para un rol con fallback a MariaDB.
+        Obtiene permisos básicos para un rol.
         
-        Jerarquía de consulta:
-        1. Intenta cargar desde JSON local (roles.json + basic_permissions.json)
-        2. Si JSON está vacío, consulta broker backend → MariaDB
-        3. Si todo falla, retorna lista vacía
+        Fuente de datos según storage_mode:
+        - db_only: Consulta directamente MariaDB vía broker backend
+        - mock: Lee desde JSON local
+        - mock_and_db: Lee desde JSON local (sincronizado con MariaDB)
         """
+        # En modo db_only, ir directo a MariaDB vía broker
+        if self._should_use_broker_reads():
+            self._logger.debug(
+                "Modo db_only: Consultando permisos básicos desde MariaDB (identity_type_id=%s)",
+                identity_type_id
+            )
+            return self._get_basic_permissions_from_broker_fallback(identity_type_id)
 
-        # Intentar cargar desde JSON local
+        # Modos mock o mock_and_db: cargar desde JSON local
         roles = self._load_roles(self._get_roles_path())
         
         # Si roles.json está vacío, intentar fallback a MariaDB vía broker
@@ -2105,15 +2112,22 @@ class RouterMiddleware:
         self, identity_type_id: int
     ) -> dict[str, Any]:
         """
-        Obtiene permisos de bajo nivel para un rol con fallback a MariaDB.
+        Obtiene permisos de bajo nivel para un rol.
         
-        Jerarquía de consulta:
-        1. Intenta cargar desde JSON local (roles.json + low_level_permisions.json)
-        2. Si JSON está vacío, consulta broker backend → MariaDB
-        3. Si todo falla, retorna diccionario vacío
+        Fuente de datos según storage_mode:
+        - db_only: Consulta directamente MariaDB vía broker backend
+        - mock: Lee desde JSON local
+        - mock_and_db: Lee desde JSON local (sincronizado con MariaDB)
         """
+        # En modo db_only, ir directo a MariaDB vía broker
+        if self._should_use_broker_reads():
+            self._logger.debug(
+                "Modo db_only: Consultando permisos desde MariaDB (identity_type_id=%s)",
+                identity_type_id
+            )
+            return self._get_low_level_permissions_from_broker_fallback(identity_type_id)
 
-        # Intentar cargar desde JSON local
+        # Modos mock o mock_and_db: cargar desde JSON local
         roles = self._load_roles(self._get_roles_path())
         
         # Si roles.json está vacío, intentar fallback a MariaDB vía broker
@@ -2351,18 +2365,39 @@ class RouterMiddleware:
     def _get_manage_roles_identity_type_id(
         self, organization_id: int, requested_identity_type_id: int | None
     ) -> int:
-        """Determina el rol a asignar para un usuario."""
-
+        """Determina el rol a asignar para un usuario.
+        
+        Reglas de asignación de roles:
+        1. Si se solicita identity_type_id = 5 (auditor/usuario base), SIEMPRE se respeta.
+           Este es el rol por defecto para usuarios creados desde el panel de organización.
+        2. Si es el primer usuario de la organización y no se especifica rol, se asigna 2 (admin).
+        3. Para otros casos, se usa el rol solicitado o 5 (auditor) por defecto.
+        
+        IMPORTANTE: Solo puede haber UN administrador (identity_type_id=2) por organización.
+        Los usuarios adicionales creados desde el panel son auditores (identity_type_id=5)
+        y pueden tener otros roles asignados en tablas relacionadas con proyectos.
+        """
+        # Si se solicita explícitamente identity_type_id = 5 (auditor/usuario base),
+        # SIEMPRE se respeta. Este es el rol para usuarios creados desde el panel.
+        if requested_identity_type_id == 5:
+            return 5
+        
         manage_roles_path = self._get_manage_roles_path()
         entries = self._load_manage_roles(manage_roles_path)
         is_first_user = not any(
             entry.id_organization == organization_id for entry in entries
         )
-        if is_first_user:
+        
+        # Solo el primer usuario de la organización puede ser administrador
+        if is_first_user and requested_identity_type_id is None:
             return 2
+        
+        # Si se solicita otro rol específico, usarlo
         if requested_identity_type_id is not None:
             return requested_identity_type_id
-        return 2
+        
+        # Por defecto, usuarios adicionales son auditores (permisos restringidos)
+        return 5
 
     def _create_manage_role_entry(
         self, user_id: int, organization_id: int, identity_type_id: int
@@ -2385,18 +2420,311 @@ class RouterMiddleware:
         )
         self._store_manage_roles(manage_roles_path, entries)
 
-    def create_user(self, user_data: dict[str, Any]) -> UserCreationResult:
-        """Crea un usuario y registra su rol por organización."""
+    def update_user_active_status(
+        self, user_id: int, active: bool, requester_org_id: int
+    ) -> dict[str, Any]:
+        """
+        Actualiza el estado activo/inactivo de un usuario.
+        
+        FLUJO CORRECTO (según arquitectura):
+        Frontend/Backoffice → Middleware (aquí) → Broker → Backend Core → MariaDB
+        
+        Args:
+            user_id: ID del usuario a modificar
+            active: True para habilitar, False para deshabilitar
+            requester_org_id: ID de la organización del usuario que solicita el cambio
+        
+        Returns:
+            Diccionario con user_id, active y message
+        
+        Raises:
+            BusinessRuleError: Si hay error en el flujo o el usuario no existe
+        """
+        storage_mode = self._get_storage_mode()
+        
+        if storage_mode == "mock":
+            # Solo JSON, sin pasar por broker/backend core
+            return self._update_user_status_mock_only(user_id, active, requester_org_id)
+        
+        # Modo db_only o mock_and_db: enviar al broker → backend core → MariaDB
+        try:
+            self._logger.info(
+                "Enviando actualización de estado al broker: user_id=%s active=%s org_id=%s",
+                user_id,
+                active,
+                requester_org_id,
+            )
+            
+            # Usar el método del broker client que sigue el flujo correcto
+            result = self._broker_client.update_user_status(
+                user_id=user_id,
+                active=active,
+                requester_org_id=requester_org_id,
+            )
+            
+            # Actualizar también el JSON local para mantener consistencia
+            if storage_mode == "mock_and_db":
+                self._update_user_status_in_json(user_id, active)
+            
+            return result
+            
+        except BrokerBackendCommunicationError as e:
+            self._logger.error("Error en flujo broker para actualizar usuario: %s", e)
+            raise BusinessRuleError(f"Error actualizando usuario: {e}") from e
 
+    def _update_user_status_mock_only(
+        self, user_id: int, active: bool, requester_org_id: int
+    ) -> dict[str, Any]:
+        """Actualiza estado solo en JSON (modo mock)."""
         users_path = self._get_users_file_path()
-        users = self._load_users(users_path)
-        existing_ids = [user.user_id for user in users]
-        next_id = max(existing_ids, default=0) + 1
+        all_users = self._load_users(users_path)
+        
+        target_user = None
+        for user in all_users:
+            if user.user_id == user_id:
+                target_user = user
+                break
+        
+        if target_user is None:
+            raise BusinessRuleError(f"Usuario con ID {user_id} no encontrado")
+        
+        if target_user.organization_id != requester_org_id:
+            raise BusinessRuleError(
+                "No tiene permisos para modificar usuarios de otra organización"
+            )
+        
+        for user in all_users:
+            if user.user_id == user_id:
+                user.active = active
+                break
+        
+        self._store_users(users_path, all_users)
+        
+        action = "habilitado" if active else "deshabilitado"
+        self._logger.info(
+            "Usuario %s (id=%s) %s por org_id=%s (modo mock)",
+            target_user.user_name,
+            user_id,
+            action,
+            requester_org_id,
+        )
+        
+        return {
+            "user_id": user_id,
+            "active": active,
+            "message": f"Usuario {action} correctamente",
+        }
+
+    def _update_user_status_in_json(self, user_id: int, active: bool) -> None:
+        """Actualiza el estado del usuario en el JSON local."""
+        try:
+            users_path = self._get_users_file_path()
+            all_users = self._load_users(users_path)
+            
+            for user in all_users:
+                if user.user_id == user_id:
+                    user.active = active
+                    break
+            
+            self._store_users(users_path, all_users)
+            self._logger.info("Usuario id=%s actualizado en JSON: active=%s", user_id, active)
+        except Exception as e:
+            self._logger.warning("Error actualizando JSON local: %s", e)
+
+    def check_user_exists(self, user_name: str) -> dict[str, Any]:
+        """Verifica si existe un usuario por nombre de usuario.
+        
+        Flujo: Frontend → Middleware (aquí) → Broker → Backend Core → JSON/MariaDB
+        
+        Args:
+            user_name: Nombre de usuario a verificar
+        
+        Returns:
+            Diccionario con exists y user_name
+        """
+        storage_mode = self._get_storage_mode()
+        
+        if storage_mode == "mock":
+            # Solo JSON local
+            users = self._load_users(self._get_users_file_path())
+            exists = any(u.user_name.lower() == user_name.lower() for u in users)
+            return {"exists": exists, "user_name": user_name}
+        
+        # Usar broker → backend core
+        try:
+            return self._broker_client.check_user_exists(user_name)
+        except BrokerBackendCommunicationError as e:
+            self._logger.error("Error verificando usuario: %s", e)
+            raise BusinessRuleError(f"Error verificando usuario: {e}") from e
+
+    def get_user_by_email(self, email: str) -> dict[str, Any]:
+        """Obtiene datos de un usuario por email.
+        
+        Flujo: Frontend → Middleware (aquí) → Broker → Backend Core → JSON/MariaDB
+        
+        Args:
+            email: Email del usuario
+        
+        Returns:
+            Diccionario con datos del usuario o found=False
+        """
+        storage_mode = self._get_storage_mode()
+        
+        if storage_mode == "mock":
+            # Solo JSON local
+            users = self._load_users(self._get_users_file_path())
+            email_lower = email.lower().strip()
+            for user in users:
+                if user.user_email.lower() == email_lower:
+                    return {
+                        "found": True,
+                        "user_id": user.user_id,
+                        "user_name": user.user_name,
+                        "user_email": user.user_email,
+                        "user_mobile": user.user_mobile,
+                        "organization_id": user.organization_id,
+                    }
+            return {"found": False}
+        
+        # Usar broker → backend core
+        try:
+            return self._broker_client.get_user_by_email(email)
+        except BrokerBackendCommunicationError as e:
+            self._logger.error("Error obteniendo usuario por email: %s", e)
+            raise BusinessRuleError(f"Error obteniendo usuario: {e}") from e
+
+    def update_user_password(
+        self, email: str, new_password: str, new_otp: str
+    ) -> dict[str, Any]:
+        """Actualiza contraseña y OTP de un usuario.
+        
+        Flujo: Frontend → Middleware (aquí) → Broker → Backend Core → JSON/MariaDB
+        
+        Args:
+            email: Email del usuario
+            new_password: Nueva contraseña (ya cifrada)
+            new_otp: Nuevo código OTP
+        
+        Returns:
+            Diccionario con success y message
+        """
+        storage_mode = self._get_storage_mode()
+        
+        if storage_mode == "mock":
+            # Solo JSON local
+            users_path = self._get_users_file_path()
+            users = self._load_users(users_path)
+            email_lower = email.lower().strip()
+            
+            user_found = False
+            for user in users:
+                if user.user_email.lower() == email_lower:
+                    user.user_password = new_password
+                    user.user_otp = new_otp
+                    user_found = True
+                    break
+            
+            if not user_found:
+                return {"success": False, "message": "Usuario no encontrado"}
+            
+            self._store_users(users_path, users)
+            return {"success": True, "message": "Contraseña actualizada correctamente"}
+        
+        # Usar broker → backend core
+        try:
+            return self._broker_client.update_user_password(email, new_password, new_otp)
+        except BrokerBackendCommunicationError as e:
+            self._logger.error("Error actualizando contraseña: %s", e)
+            raise BusinessRuleError(f"Error actualizando contraseña: {e}") from e
+
+    def get_organization_users(
+        self, organization_id: int, identity_type_id: int | None = 5
+    ) -> list[dict[str, Any]]:
+        """
+        Obtiene los usuarios de una organización filtrados por identity_type_id.
+        
+        Args:
+            organization_id: ID de la organización
+            identity_type_id: Filtrar por tipo de identidad (default: 5 = auditores)
+        
+        Returns:
+            Lista de diccionarios con user_id, user_name y active
+        """
+        users_path = self._get_users_file_path()
+        all_users = self._load_users(users_path)
+        
+        # Filtrar por organización y opcionalmente por identity_type_id
+        filtered_users = [
+            {
+                "user_id": user.user_id,
+                "user_name": user.user_name,
+                "active": user.active,
+            }
+            for user in all_users
+            if user.organization_id == organization_id
+            and (identity_type_id is None or user.identity_type_id == identity_type_id)
+        ]
+        
+        self._logger.info(
+            "Listado usuarios org_id=%s identity_type_id=%s total=%s",
+            organization_id,
+            identity_type_id,
+            len(filtered_users),
+        )
+        
+        return filtered_users
+
+    def create_user(self, user_data: dict[str, Any]) -> UserCreationResult:
+        """Crea un usuario y registra su rol por organización.
+        
+        Según STORAGE_MODE:
+        - mock: Solo guarda en JSON local
+        - mock_and_db: Guarda en JSON y envía al broker->core->DB
+        - db_only: Solo envía al broker->core->DB
+        """
         organization_id = int(user_data.get("organization_id", 1))
         requested_identity_type_id = user_data.get("identity_type_id")
         identity_type_id = self._get_manage_roles_identity_type_id(
             organization_id, requested_identity_type_id
         )
+        
+        # Preparar datos con identity_type_id resuelto
+        user_data_resolved = {
+            **user_data,
+            "organization_id": organization_id,
+            "identity_type_id": identity_type_id,
+        }
+        
+        # Determinar flujo según STORAGE_MODE
+        if self._storage_mode == StorageMode.DB_ONLY:
+            # Solo usar broker -> core -> DB
+            return self._create_user_via_broker(user_data_resolved)
+        elif self._storage_mode == StorageMode.MOCK_AND_DB:
+            # Guardar en JSON local Y enviar al broker
+            result = self._create_user_local(user_data_resolved)
+            try:
+                self._broker_client.create_user(user_data_resolved)
+                self._logger.info(
+                    "Usuario replicado en DB vía broker user_id=%s",
+                    result.user_id,
+                )
+            except Exception as exc:
+                self._logger.warning(
+                    "Error al replicar usuario en DB: %s", exc
+                )
+            return result
+        else:
+            # MOCK_ONLY: Solo JSON local
+            return self._create_user_local(user_data_resolved)
+    
+    def _create_user_local(self, user_data: dict[str, Any]) -> UserCreationResult:
+        """Crea un usuario en el almacenamiento JSON local."""
+        users_path = self._get_users_file_path()
+        users = self._load_users(users_path)
+        existing_ids = [user.user_id for user in users]
+        next_id = max(existing_ids, default=0) + 1
+        organization_id = int(user_data.get("organization_id", 1))
+        identity_type_id = int(user_data.get("identity_type_id", 5))
 
         user_record = UserDto(
             user_id=next_id,
@@ -2416,7 +2744,7 @@ class RouterMiddleware:
         self._store_users(users_path, users)
         self._create_manage_role_entry(next_id, organization_id, identity_type_id)
         self._logger.info(
-            "Usuario creado user_id=%s org_id=%s role_id=%s",
+            "Usuario creado (local) user_id=%s org_id=%s role_id=%s",
             next_id,
             organization_id,
             identity_type_id,
@@ -2426,6 +2754,29 @@ class RouterMiddleware:
             organization_id=organization_id,
             identity_type_id=identity_type_id,
         )
+    
+    def _create_user_via_broker(self, user_data: dict[str, Any]) -> UserCreationResult:
+        """Crea un usuario enviando al broker -> backend core -> DB."""
+        try:
+            response = self._broker_client.create_user(user_data)
+            user_id = response.get("user_id", 0)
+            organization_id = response.get("organization_id", user_data.get("organization_id", 1))
+            identity_type_id = response.get("identity_type_id", user_data.get("identity_type_id", 5))
+            
+            self._logger.info(
+                "Usuario creado (vía broker) user_id=%s org_id=%s role_id=%s",
+                user_id,
+                organization_id,
+                identity_type_id,
+            )
+            return UserCreationResult(
+                user_id=user_id,
+                organization_id=organization_id,
+                identity_type_id=identity_type_id,
+            )
+        except Exception as exc:
+            self._logger.error("Error al crear usuario vía broker: %s", exc)
+            raise BusinessRuleError(f"Error al crear usuario: {exc}") from exc
 
     async def process_data(
         self, payload: dict[str, Any], session: SessionContext

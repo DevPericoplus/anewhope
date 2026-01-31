@@ -70,6 +70,12 @@ pytest -v --rootdir=src/apps/7_service_frontend src/apps/7_service_frontend/test
 echo ""
 
 echo "=========================================="
+echo "TESTS: Admin Create User Integration"
+echo "=========================================="
+pytest -v --rootdir=src/apps/7_service_frontend src/apps/7_service_frontend/tests/test_admin_create_user_integration.py
+echo ""
+
+echo "=========================================="
 echo "TESTS: src/apps/8_service_backend/tests"
 echo "=========================================="
 pytest -v --rootdir=src/apps/8_service_backend src/apps/8_service_backend/tests
@@ -121,6 +127,7 @@ echo "  ✅ Frontend Redis integration"
 echo "  ✅ Backoffice (6_web_backoffice)"
 echo "  ✅ Backoffice Redis integration"
 echo "  ✅ Service Frontend (7_service_frontend)"
+echo "  ✅ Admin Create User Integration (7_service_frontend)"
 echo "  ✅ Service Backend (8_service_backend)"
 echo "  ✅ Backend Core (3_backend)"
 echo "  ✅ Version Transfer (3_backend)"

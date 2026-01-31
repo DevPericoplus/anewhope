@@ -82,9 +82,7 @@ volumes:
   # Descomentar cuando se despliegue Ollama
   # ollama-models:
   #   name: ollama-${ENVIRONMENT:-dev}-models
-  #   driver: local
-
-# ====================
+  #   driver: local# ====================
 # Red interna
 # ====================
 networks:

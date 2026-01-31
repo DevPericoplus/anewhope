@@ -104,6 +104,66 @@ class UserCreateResponse(BaseModel):
     identity_type_id: int
 
 
+class UserStatusUpdateRequest(BaseModel):
+    """Request para actualizar estado activo de un usuario."""
+
+    active: bool
+    requester_org_id: int
+
+
+class UserStatusUpdateResponse(BaseModel):
+    """Respuesta de actualización de estado de usuario."""
+
+    user_id: int
+    active: bool
+    message: str
+
+
+class UserExistsRequest(BaseModel):
+    """Request para verificar existencia de usuario."""
+
+    user_name: str
+
+
+class UserExistsResponse(BaseModel):
+    """Respuesta de verificación de existencia de usuario."""
+
+    exists: bool
+    user_name: str
+
+
+class UserByEmailRequest(BaseModel):
+    """Request para obtener usuario por email."""
+
+    email: str
+
+
+class UserByEmailResponse(BaseModel):
+    """Respuesta con datos del usuario por email."""
+
+    found: bool
+    user_id: int | None = None
+    user_name: str | None = None
+    user_email: str | None = None
+    user_mobile: str | None = None
+    organization_id: int | None = None
+
+
+class UpdatePasswordRequest(BaseModel):
+    """Request para actualizar contraseña y OTP."""
+
+    email: str
+    new_password: str
+    new_otp: str
+
+
+class UpdatePasswordResponse(BaseModel):
+    """Respuesta de actualización de contraseña."""
+
+    success: bool
+    message: str
+
+
 class PermissionsResponse(BaseModel):
     """Respuesta con permisos del usuario."""
 
@@ -372,6 +432,104 @@ def create_user(
     try:
         response = router.create_user(payload.model_dump())
         return UserCreateResponse(**response)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/users/{user_id}/status", response_model=UserStatusUpdateResponse)
+def update_user_status(
+    user_id: int,
+    payload: UserStatusUpdateRequest,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> UserStatusUpdateResponse:
+    """Actualiza el estado activo/inactivo de un usuario en MariaDB.
+    
+    Este es el destino final del flujo:
+    Frontend → Middleware → Broker → Backend Core (aquí) → MariaDB
+    """
+    try:
+        response = router.update_user_status(
+            user_id=user_id,
+            active=payload.active,
+            requester_org_id=payload.requester_org_id,
+        )
+        return UserStatusUpdateResponse(**response)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/users/check-exists", response_model=UserExistsResponse)
+def check_user_exists(
+    payload: UserExistsRequest,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> UserExistsResponse:
+    """Verifica si existe un usuario por nombre de usuario.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core (aquí) → JSON/MariaDB
+    """
+    try:
+        exists = router.check_user_exists(payload.user_name)
+        return UserExistsResponse(exists=exists, user_name=payload.user_name)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/users/by-email", response_model=UserByEmailResponse)
+def get_user_by_email(
+    payload: UserByEmailRequest,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> UserByEmailResponse:
+    """Obtiene datos de un usuario por email.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core (aquí) → JSON/MariaDB
+    """
+    try:
+        user_data = router.get_user_by_email(payload.email)
+        if user_data is None:
+            return UserByEmailResponse(found=False)
+        return UserByEmailResponse(
+            found=True,
+            user_id=user_data.get("user_id"),
+            user_name=user_data.get("user_name"),
+            user_email=user_data.get("user_email"),
+            user_mobile=user_data.get("user_mobile"),
+            organization_id=user_data.get("organization_id"),
+        )
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/users/update-password", response_model=UpdatePasswordResponse)
+def update_user_password(
+    payload: UpdatePasswordRequest,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> UpdatePasswordResponse:
+    """Actualiza contraseña y OTP de un usuario.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core (aquí) → JSON/MariaDB
+    """
+    try:
+        success = router.update_user_password(
+            email=payload.email,
+            new_password=payload.new_password,
+            new_otp=payload.new_otp,
+        )
+        return UpdatePasswordResponse(
+            success=success,
+            message="Contraseña actualizada correctamente" if success else "Error al actualizar",
+        )
     except BackendCoreBusinessError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

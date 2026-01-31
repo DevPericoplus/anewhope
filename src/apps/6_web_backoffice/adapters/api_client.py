@@ -294,3 +294,232 @@ def log_security_action(
     response = _request_middleware("POST", "/security/log", payload=payload)
     return bool(response.get("success"))
 
+
+def get_organization_users(
+    organization_id: int,
+    access_token: str | None = None,
+    session_token: str | None = None,
+    identity_type_id: int = 5,
+) -> list[dict[str, Any]]:
+    """
+    Obtiene los usuarios de una organización filtrados por identity_type_id.
+    
+    Args:
+        organization_id: ID de la organización
+        access_token: Token de acceso JWT
+        session_token: Token de sesión
+        identity_type_id: Filtrar por tipo de identidad (default: 5 = auditores)
+    
+    Returns:
+        Lista de usuarios con user_id, user_name y active
+    """
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+    
+    path = f"/organizations/{organization_id}/users?identity_type_id={identity_type_id}"
+    response = _request_middleware("GET", path, headers=headers)
+    
+    users = response.get("users", [])
+    logger.info(f"Obtenidos {len(users)} usuarios de organización {organization_id}")
+    return users
+
+
+def update_user_status(
+    user_id: int,
+    active: bool,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """
+    Actualiza el estado activo/inactivo de un usuario.
+    
+    Args:
+        user_id: ID del usuario a modificar
+        active: True para habilitar, False para deshabilitar
+        access_token: Token de acceso JWT
+        session_token: Token de sesión
+    
+    Returns:
+        Diccionario con user_id, active y message
+    
+    Raises:
+        Exception: Si hay error en la petición
+    """
+    url = f"{_get_middleware_base_url()}/users/{user_id}/status"
+    body = json.dumps({"active": active}).encode("utf-8")
+    
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+    
+    logger.info(f"Enviando PATCH a {url} con body: {{'active': {active}}}")
+    
+    request = urllib.request.Request(url, data=body, headers=request_headers, method="PATCH")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            action = "habilitado" if active else "deshabilitado"
+            logger.info(f"Usuario {user_id} {action}: {result}")
+            return result
+    except urllib.error.HTTPError as exc:
+        error_msg = f"Error HTTP {exc.code}"
+        try:
+            error_payload = exc.read().decode("utf-8")
+            error_msg = f"{error_msg}: {error_payload}"
+        except Exception:
+            pass
+        logger.error(f"Error actualizando usuario: {error_msg}")
+        raise Exception(error_msg) from exc
+    except urllib.error.URLError as exc:
+        logger.error(f"No se pudo contactar con el middleware: {exc}")
+        raise Exception(f"Error de conexión: {exc}") from exc
+
+
+def create_organization_user(
+    organization_id: int,
+    user_name: str,
+    user_email: str,
+    user_mobile: str,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """
+    Crea un nuevo usuario dentro de una organización.
+    
+    El usuario se crea con:
+    - identity_type_id = 5 (usuario estándar de organización)
+    - password generada automáticamente (cifrada)
+    - OTP generado aleatoriamente
+    - active = True, blocked = False
+    - contact_info y billing_info con valores por defecto
+    
+    Args:
+        organization_id: ID de la organización a la que pertenece el usuario
+        user_name: Nombre de usuario
+        user_email: Correo electrónico
+        user_mobile: Teléfono móvil
+        access_token: Token de acceso JWT (opcional, para autenticación)
+        session_token: Token de sesión (opcional, para autenticación)
+    
+    Returns:
+        Diccionario con:
+        - success (bool): True si se creó exitosamente
+        - user_id (int): ID del usuario creado (si success=True)
+        - error (str): Mensaje de error (si success=False)
+    """
+    import secrets
+    
+    # Generar OTP aleatorio de 4 dígitos
+    new_otp = f"{secrets.randbelow(10000):04d}"
+    
+    # Generar contraseña temporal aleatoria
+    temp_password = secrets.token_urlsafe(16)
+    
+    # Cifrar la contraseña usando el módulo de seguridad
+    encrypted_password = _encrypt_password(temp_password)
+    if not encrypted_password:
+        return {"success": False, "error": "Error al generar contraseña segura"}
+    
+    # Preparar payload para el middleware
+    payload = {
+        "organization_id": organization_id,
+        "identity_type_id": 5,  # Usuario estándar de organización
+        "user_name": user_name,
+        "user_password": encrypted_password,
+        "user_email": user_email,
+        "user_mobile": user_mobile,
+        "user_otp": new_otp,
+        "active": True,
+        "blocked": False,
+        "contact_info": {
+            "first_name": user_name,
+            "sur_name": "Usuario de la organizacion",
+            "country": "",
+            "state": "",
+            "zip_code": "",
+            "address": "",
+        },
+        "billing_info": {
+            "first_name": user_name,
+            "sur_name": "Usuario de la organizacion",
+            "country": "",
+            "state": "",
+            "zip_code": "",
+            "address": "",
+        },
+    }
+    
+    # Construir headers con autenticación
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+    
+    # Llamar al endpoint de creación de usuarios
+    response = _request_middleware("POST", "/users", payload=payload, headers=headers)
+    
+    if response.get("user_id"):
+        logger.info(f"Usuario creado exitosamente: user_id={response['user_id']}")
+        return {
+            "success": True,
+            "user_id": response["user_id"],
+            "organization_id": response.get("organization_id", organization_id),
+        }
+    
+    error_msg = response.get("detail", "Error desconocido al crear usuario")
+    logger.error(f"Error al crear usuario: {error_msg}")
+    return {"success": False, "error": error_msg}
+
+
+def _encrypt_password(plain_password: str) -> str | None:
+    """
+    Cifra una contraseña usando Fernet.
+    
+    Args:
+        plain_password: Contraseña en texto plano
+    
+    Returns:
+        Contraseña cifrada como string, o None si hay error
+    """
+    try:
+        # Cargar el módulo de seguridad
+        security_module_path = (
+            Path(__file__).resolve().parents[3]
+            / "2_shared_application/security/custom_cipher_lib.py"
+        )
+        
+        spec = importlib.util.spec_from_file_location("custom_cipher_lib", security_module_path)
+        if spec is None or spec.loader is None:
+            logger.error("No se pudo cargar el módulo de cifrado")
+            return None
+        
+        cipher_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cipher_module)
+        
+        # Cargar la clave Fernet desde protected_values.py (valores sensibles)
+        fernet_key = _env_settings.get_protected_value("fernet_key", "")
+        if not fernet_key:
+            # Fallback a variable de entorno
+            fernet_key = _env_settings.get_env_value("FERNET_KEY", "")
+        if not fernet_key:
+            logger.error("No se encontró fernet_key en protected_values.py ni en variables de entorno")
+            return None
+        
+        # Crear instancia Fernet y cifrar
+        from cryptography.fernet import Fernet
+        fernet_instance = Fernet(fernet_key.encode())
+        encrypted_bytes = fernet_instance.encrypt(plain_password.encode())
+        return encrypted_bytes.decode("utf-8")
+    except Exception as e:
+        logger.error(f"Error al cifrar contraseña: {e}")
+        return None
+

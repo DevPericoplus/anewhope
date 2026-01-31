@@ -241,6 +241,104 @@ class BrokerBackendRouter:
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError("No se pudo crear usuario en core") from exc
 
+    def update_user_status(
+        self, user_id: int, active: bool, requester_org_id: int
+    ) -> dict[str, Any]:
+        """Actualiza el estado activo/inactivo de un usuario en backend core.
+        
+        Args:
+            user_id: ID del usuario a modificar
+            active: True para habilitar, False para deshabilitar
+            requester_org_id: ID de la organización del solicitante (para validación)
+        
+        Returns:
+            Diccionario con user_id, active y message
+        """
+        try:
+            self._logger.info(
+                "[%s] Actualizando estado usuario user_id=%s active=%s org_id=%s",
+                self._client_app,
+                user_id,
+                active,
+                requester_org_id,
+            )
+            return self._core_client.update_user_status(
+                user_id=user_id,
+                active=active,
+                requester_org_id=requester_org_id,
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudo actualizar estado del usuario {user_id}"
+            ) from exc
+
+    def check_user_exists(self, user_name: str) -> dict[str, Any]:
+        """Verifica si existe un usuario por nombre de usuario.
+        
+        Args:
+            user_name: Nombre de usuario a verificar
+        
+        Returns:
+            Diccionario con exists y user_name
+        """
+        try:
+            self._logger.info(
+                "[%s] Verificando existencia de usuario '%s'",
+                self._client_app,
+                user_name,
+            )
+            return self._core_client.check_user_exists(user_name)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudo verificar existencia del usuario {user_name}"
+            ) from exc
+
+    def get_user_by_email(self, email: str) -> dict[str, Any]:
+        """Obtiene datos de un usuario por email.
+        
+        Args:
+            email: Email del usuario
+        
+        Returns:
+            Diccionario con datos del usuario o found=False
+        """
+        try:
+            self._logger.info(
+                "[%s] Buscando usuario por email '%s'",
+                self._client_app,
+                email,
+            )
+            return self._core_client.get_user_by_email(email)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudo obtener usuario con email {email}"
+            ) from exc
+
+    def update_user_password(
+        self, email: str, new_password: str, new_otp: str
+    ) -> dict[str, Any]:
+        """Actualiza contraseña y OTP de un usuario.
+        
+        Args:
+            email: Email del usuario
+            new_password: Nueva contraseña (ya cifrada)
+            new_otp: Nuevo código OTP
+        
+        Returns:
+            Diccionario con success y message
+        """
+        try:
+            self._logger.info(
+                "[%s] Actualizando contraseña para email '%s'",
+                self._client_app,
+                email,
+            )
+            return self._core_client.update_user_password(email, new_password, new_otp)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudo actualizar contraseña para {email}"
+            ) from exc
+
     def get_permissions(self, identity_type_id: int) -> dict[str, Any]:
         """Obtiene permisos desde backend core."""
 

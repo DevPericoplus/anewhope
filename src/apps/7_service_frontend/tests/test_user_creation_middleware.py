@@ -69,7 +69,12 @@ def _get_router() -> Any:
 
 
 def test_create_user_creates_manage_role_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Crea un usuario y registra rol por organización con valores por defecto."""
+    """Crea un usuario y registra rol por organización con valores por defecto.
+    
+    Regla: El primer usuario de una organización nueva se convierte en admin (identity_type_id=2)
+    automáticamente si no se especifica identity_type_id o se especifica None.
+    Si se especifica identity_type_id=5 explícitamente, se respeta (auditor).
+    """
 
     users_path = tmp_path / "users.json"
     roles_path = tmp_path / "manage_roles_by_org.json"
@@ -81,10 +86,12 @@ def test_create_user_creates_manage_role_entry(tmp_path: Path, monkeypatch: pyte
     monkeypatch.setenv("MANAGE_ROLES_BY_ORG_PATH", str(roles_path))
 
     router = _get_router()
+    # No especificar identity_type_id para que el middleware asigne admin (2)
+    # al primer usuario de la organización
     result = router.create_user(
         {
             "organization_id": 10,
-            "identity_type_id": 5,
+            # identity_type_id omitido → será admin (2)
             "user_name": "demo",
             "user_password": "password",
             "user_email": "demo@example.com",
@@ -95,6 +102,7 @@ def test_create_user_creates_manage_role_entry(tmp_path: Path, monkeypatch: pyte
 
     assert result.user_id == 1
     assert result.organization_id == 10
+    # Primer usuario sin rol especificado → admin (2)
     assert result.identity_type_id == 2
 
     users = _load_json(users_path)

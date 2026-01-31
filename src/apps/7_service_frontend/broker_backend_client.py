@@ -146,6 +146,100 @@ class BrokerBackendClient:
 
         self._request("PUT", "/users", payload=users)
 
+    def create_user(self, user_data: dict[str, Any]) -> dict[str, Any]:
+        """Crea un usuario individual en el backend core vía broker.
+        
+        Args:
+            user_data: Diccionario con los datos del usuario:
+                - organization_id: ID de la organización
+                - identity_type_id: ID del tipo de identidad (rol)
+                - user_name: Nombre de usuario
+                - user_password: Contraseña cifrada
+                - user_email: Correo electrónico
+                - user_mobile: Teléfono móvil
+                - user_otp: OTP de 4 dígitos
+                - active: Estado activo (bool)
+                - blocked: Estado bloqueado (bool)
+                - contact_info: Información de contacto (dict)
+                - billing_info: Información de facturación (dict)
+        
+        Returns:
+            Diccionario con user_id, organization_id, identity_type_id
+        
+        Raises:
+            BrokerBackendCommunicationError: Si hay error de comunicación
+        """
+        data = self._request("POST", "/users", payload=user_data)
+        return dict(data or {})
+
+    def update_user_status(
+        self, user_id: int, active: bool, requester_org_id: int
+    ) -> dict[str, Any]:
+        """Actualiza el estado activo/inactivo de un usuario.
+        
+        Flujo: Middleware → Broker → Backend Core → MariaDB
+        
+        Args:
+            user_id: ID del usuario a modificar
+            active: True para habilitar, False para deshabilitar
+            requester_org_id: ID de la organización del solicitante
+        
+        Returns:
+            Diccionario con user_id, active y message
+        """
+        data = self._request(
+            "PATCH",
+            f"/users/{user_id}/status",
+            payload={
+                "user_id": user_id,
+                "active": active,
+                "requester_org_id": requester_org_id,
+            },
+        )
+        return dict(data or {})
+
+    def check_user_exists(self, user_name: str) -> dict[str, Any]:
+        """Verifica si existe un usuario por nombre de usuario.
+        
+        Flujo: Middleware → Broker (aquí) → Backend Core → JSON/MariaDB
+        """
+        data = self._request(
+            "POST",
+            "/users/check-exists",
+            payload={"user_name": user_name},
+        )
+        return dict(data or {})
+
+    def get_user_by_email(self, email: str) -> dict[str, Any]:
+        """Obtiene datos de un usuario por email.
+        
+        Flujo: Middleware → Broker (aquí) → Backend Core → JSON/MariaDB
+        """
+        data = self._request(
+            "POST",
+            "/users/by-email",
+            payload={"email": email},
+        )
+        return dict(data or {})
+
+    def update_user_password(
+        self, email: str, new_password: str, new_otp: str
+    ) -> dict[str, Any]:
+        """Actualiza contraseña y OTP de un usuario.
+        
+        Flujo: Middleware → Broker (aquí) → Backend Core → JSON/MariaDB
+        """
+        data = self._request(
+            "POST",
+            "/users/update-password",
+            payload={
+                "email": email,
+                "new_password": new_password,
+                "new_otp": new_otp,
+            },
+        )
+        return dict(data or {})
+
     def fetch_organizations(self) -> list[dict[str, Any]]:
         """Obtiene la lista de organizaciones."""
 

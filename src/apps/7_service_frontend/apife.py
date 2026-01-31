@@ -75,6 +75,7 @@ class LoginResponse(BaseModel):
 
     user_id: int
     organization_id: int
+    identity_type_id: int
     access_token: str
     session_token: str
     access_expires_at: int
@@ -180,6 +181,80 @@ class UserCreateResponse(BaseModel):
     user_id: int
     organization_id: int
     identity_type_id: int
+
+
+class OrganizationUserItem(BaseModel):
+    """Usuario de una organización para listado."""
+
+    user_id: int
+    user_name: str
+    active: bool
+
+
+class OrganizationUsersResponse(BaseModel):
+    """Respuesta de listado de usuarios de organización."""
+
+    users: list[OrganizationUserItem]
+    total: int
+
+
+class UserStatusUpdateRequest(BaseModel):
+    """Request para actualizar estado activo de un usuario."""
+
+    active: bool
+
+
+class UserStatusUpdateResponse(BaseModel):
+    """Respuesta de actualización de estado de usuario."""
+
+    user_id: int
+    active: bool
+    message: str
+
+
+class UserExistsRequest(BaseModel):
+    """Request para verificar existencia de usuario."""
+
+    user_name: str
+
+
+class UserExistsResponse(BaseModel):
+    """Respuesta de verificación de existencia de usuario."""
+
+    exists: bool
+    user_name: str
+
+
+class UserByEmailRequest(BaseModel):
+    """Request para obtener usuario por email."""
+
+    email: str
+
+
+class UserByEmailResponse(BaseModel):
+    """Respuesta con datos del usuario por email."""
+
+    found: bool
+    user_id: int | None = None
+    user_name: str | None = None
+    user_email: str | None = None
+    user_mobile: str | None = None
+    organization_id: int | None = None
+
+
+class UpdatePasswordRequest(BaseModel):
+    """Request para actualizar contraseña y OTP."""
+
+    email: str
+    new_password: str
+    new_otp: str
+
+
+class UpdatePasswordResponse(BaseModel):
+    """Respuesta de actualización de contraseña."""
+
+    success: bool
+    message: str
 
 
 def _configure_logging() -> None:
@@ -424,6 +499,7 @@ async def login_endpoint(
         return LoginResponse(
             user_id=tokens.user_id,
             organization_id=tokens.organization_id,
+            identity_type_id=tokens.identity_type_id,
             access_token=tokens.access_token,
             session_token=tokens.session_token,
             access_expires_at=tokens.access_expires_at,
@@ -619,6 +695,203 @@ async def user_create_endpoint(
             organization_id=result.organization_id,
             identity_type_id=result.identity_type_id,
         )
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/organizations/{organization_id}/users", response_model=OrganizationUsersResponse)
+async def get_organization_users_endpoint(
+    organization_id: int,
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+    identity_type_id: int | None = 5,
+) -> OrganizationUsersResponse:
+    """
+    Obtiene los usuarios de una organización filtrados por identity_type_id.
+    
+    Args:
+        organization_id: ID de la organización
+        identity_type_id: Filtrar por tipo de identidad (default: 5 = auditores)
+    
+    Returns:
+        Lista de usuarios con user_id, user_name y active
+    """
+    try:
+        # Validar que el usuario pertenece a la organización solicitada
+        if session.organization_id != organization_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tiene permisos para ver usuarios de esta organización",
+            )
+        
+        users = router.get_organization_users(organization_id, identity_type_id)
+        ip_address, user_agent = _get_request_metadata(http_request)
+        router.log_activity_action(
+            action="Listar usuarios organización",
+            entity_id=organization_id,
+            ip=ip_address,
+            user_agent=user_agent,
+        )
+        return OrganizationUsersResponse(
+            users=[
+                OrganizationUserItem(
+                    user_id=u["user_id"],
+                    user_name=u["user_name"],
+                    active=u["active"],
+                )
+                for u in users
+            ],
+            total=len(users),
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/users/{user_id}/status", response_model=UserStatusUpdateResponse)
+async def update_user_status_endpoint(
+    user_id: int,
+    request: UserStatusUpdateRequest,
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> UserStatusUpdateResponse:
+    """
+    Actualiza el estado activo/inactivo de un usuario.
+    
+    SEGURIDAD: Solo pueden modificar usuarios:
+    - SuperAdmin (identity_type_id = 1)
+    - Administrador de Organización (identity_type_id = 2)
+    - Agente Admin del proyecto (identity_type_id = 10)
+    
+    Los editores (3), lectores (4), auditores (5) y otros agentes NO pueden.
+    """
+    # VALIDACIÓN DE SEGURIDAD: Verificar permisos por identity_type_id
+    allowed_identity_types = (1, 2, 10)  # SuperAdmin, Admin Org, Agente Admin
+    if session.identity_type_id not in allowed_identity_types:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Sin permisos para gestionar usuarios (identity_type_id={session.identity_type_id})",
+        )
+    
+    try:
+        # Validar que el usuario a modificar pertenece a la misma organización
+        result = router.update_user_active_status(
+            user_id=user_id,
+            active=request.active,
+            requester_org_id=session.organization_id,
+        )
+        
+        ip_address, user_agent = _get_request_metadata(http_request)
+        action = "Habilitar usuario" if request.active else "Deshabilitar usuario"
+        router.log_activity_action(
+            action=action,
+            entity_id=user_id,
+            ip=ip_address,
+            user_agent=user_agent,
+        )
+        
+        return UserStatusUpdateResponse(
+            user_id=result["user_id"],
+            active=result["active"],
+            message=result["message"],
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/users/check-exists", response_model=UserExistsResponse)
+async def check_user_exists_endpoint(
+    request: UserExistsRequest,
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+) -> UserExistsResponse:
+    """Verifica si existe un usuario por nombre de usuario.
+    
+    Flujo: Frontend (aquí) → Middleware → Broker → Backend Core → JSON/MariaDB
+    """
+    try:
+        result = router.check_user_exists(request.user_name)
+        ip_address, user_agent = _get_request_metadata(http_request)
+        router.log_activity_action(
+            action="Verificar usuario existe",
+            entity_id=0,
+            ip=ip_address,
+            user_agent=user_agent,
+        )
+        return UserExistsResponse(**result)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/users/by-email", response_model=UserByEmailResponse)
+async def get_user_by_email_endpoint(
+    request: UserByEmailRequest,
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+) -> UserByEmailResponse:
+    """Obtiene datos de un usuario por email.
+    
+    Flujo: Frontend (aquí) → Middleware → Broker → Backend Core → JSON/MariaDB
+    """
+    try:
+        result = router.get_user_by_email(request.email)
+        ip_address, user_agent = _get_request_metadata(http_request)
+        router.log_activity_action(
+            action="Buscar usuario por email",
+            entity_id=0,
+            ip=ip_address,
+            user_agent=user_agent,
+        )
+        return UserByEmailResponse(**result)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/users/update-password", response_model=UpdatePasswordResponse)
+async def update_user_password_endpoint(
+    request: UpdatePasswordRequest,
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+) -> UpdatePasswordResponse:
+    """Actualiza contraseña y OTP de un usuario.
+    
+    Flujo: Frontend (aquí) → Middleware → Broker → Backend Core → JSON/MariaDB
+    """
+    try:
+        result = router.update_user_password(
+            email=request.email,
+            new_password=request.new_password,
+            new_otp=request.new_otp,
+        )
+        ip_address, user_agent = _get_request_metadata(http_request)
+        router.log_activity_action(
+            action="Actualizar contraseña",
+            entity_id=0,
+            ip=ip_address,
+            user_agent=user_agent,
+        )
+        return UpdatePasswordResponse(**result)
     except BusinessRuleError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

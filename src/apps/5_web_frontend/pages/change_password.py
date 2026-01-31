@@ -7,32 +7,27 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Agregar el path para importar módulos del dominio
-domain_entities_path = Path(__file__).parent.parent.parent.parent / "1_shared_domain" / "entities"
-domain_entities_parent = domain_entities_path.parent
-
-# Agregar tanto el directorio de entities como su padre al path
-if str(domain_entities_path) not in sys.path:
-    sys.path.insert(0, str(domain_entities_path))
-if str(domain_entities_parent) not in sys.path:
-    sys.path.insert(0, str(domain_entities_parent))
-
-# Intentar importar las funciones de usuario
+# Importar funciones del api_client que siguen el flujo correcto:
+# Frontend → Middleware → Broker → Backend Core → JSON/MariaDB
 get_user_by_email = None
 update_user_password_and_otp = None
 
 try:
     import importlib.util
-    user_module_path = domain_entities_path / "user.py"
-    if user_module_path.exists():
-        spec = importlib.util.spec_from_file_location("user", user_module_path)
+    adapter_path = Path(__file__).parent.parent / "adapters" / "api_client.py"
+    if adapter_path.exists():
+        spec = importlib.util.spec_from_file_location("api_client_user", adapter_path)
         if spec and spec.loader:
-            user_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(user_module)
-            get_user_by_email = user_module.get_user_by_email
-            update_user_password_and_otp = user_module.update_user_password_and_otp
+            api_client_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(api_client_module)
+            get_user_by_email = getattr(api_client_module, "get_user_by_email", None)
+            update_user_password_and_otp = getattr(api_client_module, "update_user_password_and_otp", None)
+            if get_user_by_email and update_user_password_and_otp:
+                logger.info("Funciones de usuario cargadas desde api_client (flujo correcto)")
+            else:
+                logger.warning("Funciones de usuario no disponibles en api_client")
 except Exception as e:
-    logger.error(f"Error al cargar módulo de usuarios: {e}")
+    logger.error(f"Error al cargar funciones de usuario desde api_client: {e}")
 
 # Cargar módulo de seguridad común
 _common_security_module = None

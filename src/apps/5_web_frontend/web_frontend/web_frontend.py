@@ -9,11 +9,14 @@ from typing import Optional
 import reflex as rx
 
 from adapters.api_client import (
+    create_organization_user,
+    get_organization_users,
     get_user_permissions,
     login_user,
     logout_user,
     refresh_tokens,
     request_login_otp,
+    update_user_status,
 )
 from pages.flujos import FlujosState, flujos_diagram, load_flujos_content
 from pages.organizacion import load_organizacion_content
@@ -56,15 +59,61 @@ class State(SharedSessionState):
     login_error: str = ""
     otp_request_message: str = ""
     
+    # Estado para gestión de usuarios y proyectos de la organización
+    # Estructura: {"user_id": int, "user_name": str, "active": bool}
+    org_users: list[dict] = []
+    org_projects: list[dict] = [
+        {"id": 1, "name": "Asistente Comercial", "description": "Modelo de lenguaje para atención al cliente", "locked": False},
+    ]
+    
+    # Estado para el modal de creación de usuario
+    show_create_user_modal: bool = False
+    new_user_name: str = ""
+    new_user_email: str = ""
+    new_user_mobile: str = ""
+    create_user_error: str = ""
+    create_user_success: str = ""
+    is_creating_user: bool = False
+    
     # Nota: Los siguientes campos ya vienen de SharedSessionState:
     # - user_logged_in, access_token, session_token, user_id, organization_id
     # - user_name, user_email, user_mobile, identity_type_id
     # - 45 permisos (can_training_create, can_folder_rename, etc.)
     # - Métodos: load_user_data(), clear_session(), go_to_backoffice(), etc.
     
+    # ========== Propiedades computadas de permisos ==========
+    
+    @rx.var
+    def can_manage_org_users(self) -> bool:
+        """Indica si el usuario actual puede gestionar usuarios de la organización.
+        
+        Regla de seguridad: Solo pueden gestionar usuarios:
+        - SuperAdmin (identity_type_id = 1)
+        - Administrador de Organización (identity_type_id = 2)
+        - Agentes automáticos con rol admin (identity_type_id = 10)
+        
+        Los editores (3), lectores (4), auditores (5) y agentes no-admin (11-13)
+        NO pueden gestionar usuarios.
+        """
+        if self.identity_type_id <= 0:
+            return False
+        return self.identity_type_id in (1, 2, 10)
+    
     def set_user_menu(self, menu: str):
         """Set active menu item for user portal."""
         self.user_active_menu = menu
+        
+        # Asegurar que identity_type_id y organization_id están disponibles desde el token
+        if self.access_token:
+            if self.identity_type_id <= 0:
+                extracted_identity = self._extract_identity_type_id_from_token(self.access_token)
+                if extracted_identity > 0:
+                    self.identity_type_id = extracted_identity
+            if self.organization_id <= 0:
+                extracted_org = self._extract_org_id_from_token(self.access_token)
+                if extracted_org > 0:
+                    self.organization_id = extracted_org
+        
         # Log de navegación
         if self.is_logged_in and self.user_id > 0:
             activity_log.log_navigation(self.user_id, menu)
@@ -75,6 +124,240 @@ class State(SharedSessionState):
                 if organization_id > 0:
                     self.organization_id = organization_id
             return FlujosState.initialize_from_session(organization_id)
+        if menu == "organizacion":
+            self.load_org_users()
+            self.load_org_projects()
+
+    # ========== Gestión de Usuarios de la Organización ==========
+    
+    def load_org_users(self):
+        """Carga los usuarios de la organización actual desde la base de datos.
+        
+        Filtra por:
+        - organization_id del usuario logueado
+        - identity_type_id = 5 (auditores/usuarios base)
+        """
+        try:
+            # Asegurar que identity_type_id está cargado desde el token si no está en el estado
+            if self.identity_type_id <= 0 and self.access_token:
+                extracted_identity = self._extract_identity_type_id_from_token(self.access_token)
+                if extracted_identity > 0:
+                    self.identity_type_id = extracted_identity
+            
+            # Obtener organization_id de la sesión
+            org_id = self.organization_id
+            
+            if org_id <= 0 and self.access_token:
+                org_id = self._extract_org_id_from_token(self.access_token)
+            
+            if org_id <= 0:
+                # Si no hay organización, mostrar lista vacía
+                self.org_users = []
+                return
+            
+            # Llamar al middleware para obtener usuarios reales
+            users = get_organization_users(
+                organization_id=org_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+                identity_type_id=5,  # Solo auditores (usuarios de organización)
+            )
+            
+            # Transformar al formato esperado por la UI
+            # Estructura: {"user_id": int, "user_name": str, "active": bool}
+            self.org_users = [
+                {
+                    "user_id": user.get("user_id", 0),
+                    "user_name": user.get("user_name", ""),
+                    "active": user.get("active", True),
+                }
+                for user in users
+            ]
+            print(f"[DEBUG] load_org_users: Final org_users = {self.org_users}")
+        except Exception as e:
+            print(f"[ERROR] load_org_users: {type(e).__name__}: {e}")
+            self.org_users = []
+    
+    def create_user(self):
+        """Abre el modal para crear un nuevo usuario."""
+        self.show_create_user_modal = True
+        self.new_user_name = ""
+        self.new_user_email = ""
+        self.new_user_mobile = ""
+        self.create_user_error = ""
+        self.create_user_success = ""
+        self.is_creating_user = False
+    
+    def close_create_user_modal(self):
+        """Cierra el modal de creación de usuario sin guardar."""
+        self.show_create_user_modal = False
+        self.new_user_name = ""
+        self.new_user_email = ""
+        self.new_user_mobile = ""
+        self.create_user_error = ""
+        self.create_user_success = ""
+        self.is_creating_user = False
+    
+    def save_new_user(self):
+        """Guarda el nuevo usuario llamando al middleware."""
+        # Validaciones básicas
+        if not self.new_user_name.strip():
+            self.create_user_error = "El nombre de usuario es obligatorio"
+            return
+        if not self.new_user_email.strip():
+            self.create_user_error = "El correo electrónico es obligatorio"
+            return
+        if not self.new_user_mobile.strip():
+            self.create_user_error = "El teléfono es obligatorio"
+            return
+        
+        self.create_user_error = ""
+        self.is_creating_user = True
+        
+        # Obtener organization_id de la sesión
+        org_id = self.organization_id
+        if org_id <= 0 and self.access_token:
+            org_id = self._extract_org_id_from_token(self.access_token)
+        
+        if org_id <= 0:
+            self.create_user_error = "No se pudo determinar la organización"
+            self.is_creating_user = False
+            return
+        
+        # Llamar al API para crear el usuario
+        result = create_organization_user(
+            organization_id=org_id,
+            user_name=self.new_user_name.strip(),
+            user_email=self.new_user_email.strip(),
+            user_mobile=self.new_user_mobile.strip(),
+            access_token=self.access_token,
+            session_token=self.session_token,
+        )
+        
+        self.is_creating_user = False
+        
+        if result.get("success"):
+            self.create_user_success = f"Usuario '{self.new_user_name}' creado exitosamente"
+            # Recargar lista de usuarios
+            self.load_org_users()
+            # Cerrar modal después de un momento
+            self.new_user_name = ""
+            self.new_user_email = ""
+            self.new_user_mobile = ""
+        else:
+            self.create_user_error = result.get("error", "Error al crear el usuario")
+    
+    def set_new_user_name(self, value: str):
+        """Actualiza el nombre del nuevo usuario."""
+        self.new_user_name = value
+    
+    def set_new_user_email(self, value: str):
+        """Actualiza el email del nuevo usuario."""
+        self.new_user_email = value
+    
+    def set_new_user_mobile(self, value: str):
+        """Actualiza el teléfono del nuevo usuario."""
+        self.new_user_mobile = value
+    
+    def enable_user(self, user_id: int):
+        """Habilita un usuario de la organización."""
+        try:
+            print(f"[DEBUG] Habilitar usuario: {user_id}")
+            result = update_user_status(
+                user_id=user_id,
+                active=True,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            print(f"[DEBUG] Resultado: {result}")
+            
+            # Actualizar estado local
+            for user in self.org_users:
+                if user["user_id"] == user_id:
+                    user["active"] = True
+            self.org_users = self.org_users.copy()
+        except Exception as e:
+            print(f"[ERROR] Error habilitando usuario: {e}")
+    
+    def disable_user(self, user_id: int):
+        """Deshabilita un usuario de la organización."""
+        try:
+            print(f"[DEBUG] Deshabilitar usuario: {user_id}")
+            result = update_user_status(
+                user_id=user_id,
+                active=False,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            print(f"[DEBUG] Resultado: {result}")
+            
+            # Actualizar estado local
+            for user in self.org_users:
+                if user["user_id"] == user_id:
+                    user["active"] = False
+            self.org_users = self.org_users.copy()
+        except Exception as e:
+            print(f"[ERROR] Error deshabilitando usuario: {e}")
+    
+    def assign_user_to_projects(self, user_id: int):
+        """Asigna un usuario a proyectos."""
+        # TODO: Implementar modal de asignación
+        print(f"[DEBUG] Asignar usuario a proyectos: {user_id}")
+    
+    def remove_user_from_projects(self, user_id: int):
+        """Quita un usuario de proyectos."""
+        # TODO: Implementar modal de desasignación
+        print(f"[DEBUG] Quitar usuario de proyectos: {user_id}")
+    
+    def delete_user(self, user_id: int):
+        """Elimina un usuario de la organización."""
+        # TODO: Implementar confirmación y llamada al middleware
+        print(f"[DEBUG] Eliminar usuario: {user_id}")
+        self.org_users = [u for u in self.org_users if u["id"] != user_id]
+
+    # ========== Gestión de Proyectos de la Organización ==========
+    
+    def load_org_projects(self):
+        """Carga los proyectos de la organización actual."""
+        # TODO: Implementar llamada al middleware para obtener proyectos
+        # Por ahora, datos de ejemplo para la UI
+        self.org_projects = [
+            {"id": 1, "name": "Asistente Comercial", "description": "Modelo de lenguaje para atención al cliente", "locked": False},
+        ]
+    
+    def create_project(self):
+        """Abre el formulario para crear un nuevo proyecto."""
+        # TODO: Implementar navegación a formulario de creación
+        print("[DEBUG] Crear proyecto solicitado")
+    
+    def lock_project(self, project_id: int):
+        """Bloquea un proyecto."""
+        # TODO: Implementar llamada al middleware
+        print(f"[DEBUG] Bloquear proyecto: {project_id}")
+        for project in self.org_projects:
+            if project["id"] == project_id:
+                project["locked"] = True
+        self.org_projects = self.org_projects.copy()
+    
+    def unlock_project(self, project_id: int):
+        """Desbloquea un proyecto."""
+        # TODO: Implementar llamada al middleware
+        print(f"[DEBUG] Desbloquear proyecto: {project_id}")
+        for project in self.org_projects:
+            if project["id"] == project_id:
+                project["locked"] = False
+        self.org_projects = self.org_projects.copy()
+    
+    def delete_project(self, project_id: int):
+        """Elimina un proyecto."""
+        # TODO: Implementar confirmación y llamada al middleware
+        print(f"[DEBUG] Eliminar proyecto: {project_id}")
+        self.org_projects = [p for p in self.org_projects if p["id"] != project_id]
+    
+    def request_project_support(self, project_id: int):
+        """Solicita soporte para un proyecto."""
+        # TODO: Implementar formulario de soporte
+        print(f"[DEBUG] Solicitar soporte para proyecto: {project_id}")
 
     def on_page_load(self):
         """
@@ -199,6 +482,20 @@ class State(SharedSessionState):
             return int(data.get("organization_id", 0))
         except Exception:
             return 0
+
+    def _extract_identity_type_id_from_token(self, token: str) -> int:
+        """Extrae identity_type_id desde el payload del JWT."""
+
+        try:
+            parts = token.split(".")
+            if len(parts) < 2:
+                return 0
+            payload = parts[1]
+            padded = payload + "=" * (-len(payload) % 4)
+            data = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+            return int(data.get("identity_type_id", 0))
+        except Exception:
+            return 0
     
     def set_user_username(self, username: str):
         """Set user username."""
@@ -238,13 +535,14 @@ class State(SharedSessionState):
         low_level_permissions = permissions_response.get("low_level_permissions", {})
         
         user_id = int(response.get("user_id", 0))
+        identity_type_id = int(response.get("identity_type_id", 0))
         
         # Cargar datos en SharedSessionState con low_level_permissions
         # Estos permisos determinan funcionalidades como acceso al Backoffice
         self.load_user_data(
             user_id=user_id,
             organization_id=int(response.get("organization_id", 0)),
-            identity_type_id=int(response.get("identity_type_id", 0)),
+            identity_type_id=identity_type_id,
             user_name=self.user_username,
             user_email=response.get("email", ""),
             user_mobile=response.get("mobile", ""),
@@ -568,6 +866,392 @@ def sidebar_menu(is_logged_in: bool) -> rx.Component:
         )
 
 
+def user_action_button(icon: str, tooltip: str, on_click, color: str = COLORS["muted_foreground"]) -> rx.Component:
+    """Botón de acción con icono y tooltip."""
+    return rx.tooltip(
+        rx.icon_button(
+            rx.icon(icon, size=22),
+            variant="ghost",
+            size="2",
+            color_scheme="gray",
+            cursor="pointer",
+            on_click=on_click,
+            _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
+        ),
+        content=tooltip,
+    )
+
+
+def user_row(user: dict) -> rx.Component:
+    """Fila de usuario con acciones.
+    
+    Muestra solo el user_name pero usa user_id internamente para las acciones.
+    Estructura esperada: {"user_id": int, "user_name": str, "active": bool}
+    
+    Nota: En Reflex, para pasar argumentos dinámicos desde rx.foreach,
+    se usa el formato State.method(var) sin lambda.
+    
+    SEGURIDAD: Los botones de acción solo se muestran si el usuario actual
+    tiene permisos de gestión (identity_type_id in 1, 2, 10).
+    Ver: State.can_manage_org_users
+    """
+    return rx.hstack(
+        # Información del usuario a la izquierda (solo muestra user_name)
+        rx.hstack(
+            rx.text(user["user_name"], font_weight="bold", font_size="1.1em", color=COLORS["foreground"]),
+            rx.cond(
+                user["active"],
+                rx.badge("Activo", color_scheme="green", variant="soft", size="3"),
+                rx.badge("Inactivo", color_scheme="red", variant="soft", size="3"),
+            ),
+            spacing="3",
+            align="center",
+        ),
+        # Acciones a la derecha (usan user_id internamente)
+        # SEGURIDAD: Solo se muestran si el usuario tiene permisos de gestión
+        # (identity_type_id in 1, 2, 10 - SuperAdmin, Admin Org, Agente Admin)
+        rx.cond(
+            State.can_manage_org_users,
+            rx.hstack(
+                rx.tooltip(
+                    rx.icon_button(
+                        rx.icon("user-check", size=22),
+                        variant="ghost",
+                        size="2",
+                        color_scheme="gray",
+                        cursor="pointer",
+                        on_click=State.enable_user(user["user_id"]),
+                        _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
+                    ),
+                    content="Habilitar usuario",
+                ),
+                rx.tooltip(
+                    rx.icon_button(
+                        rx.icon("user-x", size=22),
+                        variant="ghost",
+                        size="2",
+                        color_scheme="gray",
+                        cursor="pointer",
+                        on_click=State.disable_user(user["user_id"]),
+                        _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
+                    ),
+                    content="Deshabilitar usuario",
+                ),
+                rx.tooltip(
+                    rx.icon_button(
+                        rx.icon("folder-plus", size=22),
+                        variant="ghost",
+                        size="2",
+                        color_scheme="gray",
+                        cursor="pointer",
+                        on_click=State.assign_user_to_projects(user["user_id"]),
+                        _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
+                    ),
+                    content="Asignar usuario a proyectos",
+                ),
+                rx.tooltip(
+                    rx.icon_button(
+                        rx.icon("folder-minus", size=22),
+                        variant="ghost",
+                        size="2",
+                        color_scheme="gray",
+                        cursor="pointer",
+                        on_click=State.remove_user_from_projects(user["user_id"]),
+                        _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
+                    ),
+                    content="Quitar usuario de proyectos",
+                ),
+                rx.tooltip(
+                    rx.icon_button(
+                        rx.icon("trash-2", size=22),
+                        variant="ghost",
+                        size="2",
+                        color_scheme="gray",
+                        cursor="pointer",
+                        on_click=State.delete_user(user["user_id"]),
+                        _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
+                    ),
+                    content="Borrar usuario",
+                ),
+                spacing="1",
+            ),
+            rx.fragment(),  # No mostrar botones si no tiene permisos
+        ),
+        justify="between",
+        align="center",
+        width="100%",
+        padding="0.75em",
+        background_color=COLORS["card"],
+        border=f"1px solid {COLORS['border']}",
+        border_radius="0.5em",
+    )
+
+
+def create_user_modal() -> rx.Component:
+    """Modal para crear un nuevo usuario de la organización."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title(
+                rx.hstack(
+                    rx.icon("user-plus", size=24, color=COLORS["primary"]),
+                    rx.text("Crear Nuevo Usuario", font_weight="bold", font_size="1.3em"),
+                    spacing="3",
+                    align="center",
+                ),
+            ),
+            rx.dialog.description(
+                rx.text(
+                    "Complete los datos del nuevo usuario de la organización.",
+                    color=COLORS["muted_foreground"],
+                    font_size="0.95em",
+                ),
+            ),
+            rx.vstack(
+                # Campo: Nombre de usuario
+                rx.vstack(
+                    rx.text("Nombre de usuario", font_weight="bold", color=COLORS["foreground"]),
+                    rx.input(
+                        placeholder="Ingrese el nombre de usuario",
+                        value=State.new_user_name,
+                        on_change=State.set_new_user_name,
+                        width="100%",
+                        background_color=COLORS["input"],
+                        color=COLORS["foreground"],
+                        border=f"1px solid {COLORS['border']}",
+                    ),
+                    width="100%",
+                    spacing="1",
+                    align_items="flex-start",
+                ),
+                # Campo: Correo electrónico
+                rx.vstack(
+                    rx.text("Correo electrónico", font_weight="bold", color=COLORS["foreground"]),
+                    rx.input(
+                        placeholder="correo@ejemplo.com",
+                        value=State.new_user_email,
+                        on_change=State.set_new_user_email,
+                        type="email",
+                        width="100%",
+                        background_color=COLORS["input"],
+                        color=COLORS["foreground"],
+                        border=f"1px solid {COLORS['border']}",
+                    ),
+                    width="100%",
+                    spacing="1",
+                    align_items="flex-start",
+                ),
+                # Campo: Teléfono
+                rx.vstack(
+                    rx.text("Teléfono móvil", font_weight="bold", color=COLORS["foreground"]),
+                    rx.input(
+                        placeholder="+34 600 000 000",
+                        value=State.new_user_mobile,
+                        on_change=State.set_new_user_mobile,
+                        type="tel",
+                        width="100%",
+                        background_color=COLORS["input"],
+                        color=COLORS["foreground"],
+                        border=f"1px solid {COLORS['border']}",
+                    ),
+                    width="100%",
+                    spacing="1",
+                    align_items="flex-start",
+                ),
+                # Mensaje de error
+                rx.cond(
+                    State.create_user_error != "",
+                    rx.text(
+                        State.create_user_error,
+                        color="red",
+                        font_size="0.9em",
+                    ),
+                ),
+                # Mensaje de éxito
+                rx.cond(
+                    State.create_user_success != "",
+                    rx.text(
+                        State.create_user_success,
+                        color=COLORS["primary"],
+                        font_size="0.9em",
+                        font_weight="bold",
+                    ),
+                ),
+                width="100%",
+                spacing="3",
+                padding_y="1em",
+            ),
+            # Botones de acción
+            rx.hstack(
+                rx.button(
+                    rx.icon("x", size=18, color=COLORS["foreground"]),
+                    rx.text("Salir", color=COLORS["foreground"]),
+                    on_click=State.close_create_user_modal,
+                    variant="outline",
+                    size="3",
+                    color_scheme="gray",
+                ),
+                rx.button(
+                    rx.cond(
+                        State.is_creating_user,
+                        rx.spinner(size="2"),
+                        rx.icon("save", size=18, color="black"),
+                    ),
+                    rx.text("Guardar", font_weight="bold", color="black"),
+                    on_click=State.save_new_user,
+                    background_color=COLORS["primary"],
+                    size="3",
+                    disabled=State.is_creating_user,
+                    _hover={"background_color": "#1ea550", "cursor": "pointer"},
+                ),
+                spacing="3",
+                justify="end",
+                width="100%",
+            ),
+            background_color=COLORS["card"],
+            border=f"1px solid {COLORS['border']}",
+            padding="1.5em",
+            max_width="450px",
+        ),
+        open=State.show_create_user_modal,
+    )
+
+
+def users_management_panel() -> rx.Component:
+    """Panel de gestión de usuarios de la organización."""
+    return rx.vstack(
+        # Modal de creación de usuario
+        create_user_modal(),
+        rx.hstack(
+            rx.icon("users", size=28, color=COLORS["primary"]),
+            rx.heading("Gestión de Usuarios", size="6", color=COLORS["foreground"]),
+            spacing="3",
+            align="center",
+        ),
+        # SEGURIDAD: Solo mostrar si el usuario tiene permiso user_create
+        rx.cond(
+            State.can_user_create,
+            rx.button(
+                rx.icon("user-plus", size=20, color="black"),
+                rx.text("Crear usuario", font_weight="bold", color="black"),
+                on_click=State.create_user,
+                background_color=COLORS["primary"],
+                size="3",
+                _hover={"background_color": "#1ea550", "cursor": "pointer"},
+            ),
+            rx.fragment(),
+        ),
+        rx.vstack(
+            rx.foreach(
+                State.org_users,
+                user_row,
+            ),
+            width="100%",
+            spacing="2",
+        ),
+        width="100%",
+        padding="1.5em",
+        background_color=COLORS["card"],
+        border=f"1px solid {COLORS['border']}",
+        border_radius="0.5em",
+        spacing="3",
+        align_items="flex-start",
+    )
+
+
+def project_row(project: dict) -> rx.Component:
+    """Fila de proyecto con acciones."""
+    return rx.hstack(
+        # Información del proyecto a la izquierda
+        rx.hstack(
+            rx.text(project["name"], font_weight="bold", font_size="1.1em", color=COLORS["foreground"]),
+            rx.cond(
+                project["locked"],
+                rx.badge("Bloqueado", color_scheme="red", variant="soft", size="3"),
+                rx.badge("Activo", color_scheme="green", variant="soft", size="3"),
+            ),
+            spacing="3",
+            align="center",
+        ),
+        # Acciones a la derecha
+        rx.hstack(
+            user_action_button(
+                "lock",
+                "Bloquear proyecto",
+                lambda: State.lock_project(project["id"]),
+            ),
+            user_action_button(
+                "unlock",
+                "Desbloquear proyecto",
+                lambda: State.unlock_project(project["id"]),
+            ),
+            user_action_button(
+                "trash-2",
+                "Borrar proyecto",
+                lambda: State.delete_project(project["id"]),
+            ),
+            user_action_button(
+                "headset",
+                "Solicitud de soporte",
+                lambda: State.request_project_support(project["id"]),
+            ),
+            spacing="1",
+        ),
+        justify="between",
+        align="center",
+        width="100%",
+        padding="0.75em",
+        background_color=COLORS["card"],
+        border=f"1px solid {COLORS['border']}",
+        border_radius="0.5em",
+    )
+
+
+def projects_management_panel() -> rx.Component:
+    """Panel de gestión de proyectos de la organización."""
+    return rx.vstack(
+        rx.hstack(
+            rx.icon("folder-kanban", size=28, color=COLORS["primary"]),
+            rx.heading("Gestión de Proyectos", size="6", color=COLORS["foreground"]),
+            spacing="3",
+            align="center",
+        ),
+        rx.button(
+            rx.icon("folder-plus", size=20, color="black"),
+            rx.text("Crear proyecto", font_weight="bold", color="black"),
+            on_click=State.create_project,
+            color_scheme="green",
+            variant="solid",
+            size="3",
+        ),
+        rx.vstack(
+            rx.foreach(
+                State.org_projects,
+                project_row,
+            ),
+            width="100%",
+            spacing="2",
+        ),
+        width="100%",
+        padding="1.5em",
+        background_color=COLORS["card"],
+        border=f"1px solid {COLORS['border']}",
+        border_radius="0.5em",
+        spacing="3",
+        align_items="flex-start",
+    )
+
+
+def organization_management_panels() -> rx.Component:
+    """Paneles de gestión de usuarios y proyectos para la sección Organización."""
+    return rx.vstack(
+        users_management_panel(),
+        projects_management_panel(),
+        width="100%",
+        spacing="4",
+        margin_top="1.5em",
+    )
+
+
 def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
     """Info panel displaying content based on active menu item."""
     presentation_text = load_presentation_content()
@@ -661,57 +1345,49 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             ),
             rx.box(height="0"),
         ),
-        # Contenido: markdown para secciones públicas, texto plano para secciones internas
-        rx.cond(
-            is_logged_in,
-            # Usuario logueado: texto plano para secciones internas
-            rx.text(
-                content_text,
-                color=COLORS["muted_foreground"],
-                font_size="1em",
-                line_height="1.5em",
-                white_space="pre-line",
-                font_family="Inter, system-ui, sans-serif",
-                width="100%",
-            ),
-            # Usuario no logueado: markdown para todas las secciones públicas
-            rx.markdown(
-                content_text,
-                component_map={
-                    "h1": lambda text: rx.heading(text, size="9", color=COLORS["foreground"], margin_bottom="0.5em"),
-                    "h2": lambda text: rx.heading(text, size="7", color=COLORS["primary"], margin_top="1em", margin_bottom="0.5em"),
-                    "h3": lambda text: rx.heading(text, size="5", color=COLORS["foreground"], margin_top="0.8em", margin_bottom="0.4em"),
-                    "p": lambda text: rx.text(text, color=COLORS["muted_foreground"], font_size="1.15em", line_height="1.6", margin_bottom="0.6em"),
-                    "li": lambda text: rx.list_item(rx.text(text, color=COLORS["muted_foreground"], font_size="1.15em", line_height="1.5")),
-                    "strong": lambda text: rx.text(text, font_weight="bold", color=COLORS["foreground"], as_="span"),
-                    "em": lambda text: rx.text(text, font_style="italic", as_="span"),
-                    "blockquote": lambda text: rx.box(
-                        rx.text(text, color=COLORS["primary"], font_style="italic", font_size="1.2em"),
-                        border_left=f"4px solid {COLORS['primary']}",
-                        padding_left="1.2em",
-                        margin_y="1.2em",
-                        background_color=f"{COLORS['primary']}10",
-                        padding="1em",
-                        border_radius="0.3em",
-                    ),
-                    "table": lambda children: rx.box(
-                        children,
-                        width="100%",
-                        overflow_x="auto",
-                        margin_y="1.2em",
-                    ),
-                    "th": lambda text: rx.table.column_header_cell(
-                        rx.text(text, font_weight="bold", color=COLORS["foreground"], font_size="1.1em"),
-                    ),
-                    "td": lambda text: rx.table.cell(
-                        rx.text(text, color=COLORS["muted_foreground"], font_size="1.05em"),
-                    ),
-                },
-            ),
+        # Contenido: markdown para todas las secciones (públicas e internas)
+        rx.markdown(
+            content_text,
+            component_map={
+                "h1": lambda text: rx.heading(text, size="6", color=COLORS["foreground"], margin_bottom="0.5em"),
+                "h2": lambda text: rx.heading(text, size="5", color=COLORS["primary"], margin_top="1em", margin_bottom="0.5em"),
+                "h3": lambda text: rx.heading(text, size="5", color=COLORS["foreground"], margin_top="0.8em", margin_bottom="0.4em"),
+                "p": lambda text: rx.text(text, color=COLORS["muted_foreground"], font_size="1.15em", line_height="1.6", margin_bottom="0.6em"),
+                "li": lambda text: rx.list_item(rx.text(text, color=COLORS["muted_foreground"], font_size="1.15em", line_height="1.5")),
+                "strong": lambda text: rx.text(text, font_weight="bold", color=COLORS["foreground"], as_="span"),
+                "em": lambda text: rx.text(text, font_style="italic", as_="span"),
+                "blockquote": lambda text: rx.box(
+                    rx.text(text, color=COLORS["primary"], font_style="italic", font_size="1.2em"),
+                    border_left=f"4px solid {COLORS['primary']}",
+                    padding_left="1.2em",
+                    margin_y="1.2em",
+                    background_color=f"{COLORS['primary']}10",
+                    padding="1em",
+                    border_radius="0.3em",
+                ),
+                "table": lambda children: rx.box(
+                    children,
+                    width="100%",
+                    overflow_x="auto",
+                    margin_y="1.2em",
+                ),
+                "th": lambda text: rx.table.column_header_cell(
+                    rx.text(text, font_weight="bold", color=COLORS["foreground"], font_size="1.1em"),
+                ),
+                "td": lambda text: rx.table.cell(
+                    rx.text(text, color=COLORS["muted_foreground"], font_size="1.05em"),
+                ),
+            },
         ),
         rx.cond(
             rx.cond(is_logged_in, active_item == "flujos", False),
             flujos_diagram(),
+            rx.box(height="0"),
+        ),
+        # Paneles de gestión de usuarios y proyectos: visibles solo en menú "organizacion"
+        rx.cond(
+            rx.cond(is_logged_in, active_item == "organizacion", False),
+            organization_management_panels(),
             rx.box(height="0"),
         ),
         # Paneles de métricas: visibles solo en menú "inicio"

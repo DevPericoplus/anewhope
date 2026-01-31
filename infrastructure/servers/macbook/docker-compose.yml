@@ -184,9 +184,7 @@ services:
 volumes:
   redis-data:
     name: redis-macbook-data
-    driver: local
-
-# ====================
+    driver: local# ====================
 # Red interna
 # ====================
 networks:

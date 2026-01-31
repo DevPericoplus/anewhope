@@ -1311,6 +1311,151 @@ además de las dependencias con Nginx y MariaDB.
 - La capa de dominio común vive en `src/1_shared_domain/`.
 - La capa de aplicación compartida vive en `src/2_shared_application/`.
 
+### Flujo obligatorio de peticiones (CRÍTICO)
+
+**REGLA FUNDAMENTAL:** Todas las peticiones de los frontales web (frontend y backoffice) 
+DEBEN seguir el flujo completo a través de la arquitectura de servicios.
+
+#### Flujo para operaciones de datos (MariaDB)
+
+```
+┌─────────────────┐    ┌────────────────┐    ┌────────────────┐    ┌─────────────────┐    ┌──────────┐
+│  5_web_frontend │───▶│ 7_middleware   │───▶│ 8_broker       │───▶│ 3_backend_core  │───▶│ MariaDB  │
+│  6_web_backoffice│   │ (apife.py)     │    │ (routerbroker) │    │ (routercore.py) │    │          │
+└─────────────────┘    └────────────────┘    └────────────────┘    └─────────────────┘    └──────────┘
+        │                      │                      │                      │                   │
+        │ HTTP (REST)          │ HTTP (REST)          │ HTTP (REST)          │ SQLAlchemy        │
+        │ Puerto 8007          │ Puerto 8008          │ Puerto 8003          │ Puerto 3306       │
+        └──────────────────────┴──────────────────────┴──────────────────────┴───────────────────┘
+```
+
+#### Flujo para operaciones de IA (Entrenamiento)
+
+```
+┌─────────────────┐    ┌────────────────┐    ┌────────────────┐    ┌─────────────────┐
+│  5_web_frontend │───▶│ 7_middleware   │───▶│ 8_broker       │───▶│ 4_trainer       │
+│  6_web_backoffice│   │ (apife.py)     │    │ (routerbroker) │    │ (API REST + IA) │
+└─────────────────┘    └────────────────┘    └────────────────┘    └─────────────────┘
+        │                      │                      │                      │
+        │ HTTP (REST)          │ HTTP (REST)          │ HTTP (REST)          │
+        │ Puerto 8007          │ Puerto 8008          │ Puerto 8004          │
+        └──────────────────────┴──────────────────────┴──────────────────────┘
+```
+
+#### Reglas del flujo
+
+1. **Frontend/Backoffice → Middleware:** SIEMPRE. Nunca acceder directamente al broker o backend.
+2. **Middleware → Broker:** SIEMPRE para operaciones de datos o IA. El middleware NO debe acceder directamente a MariaDB.
+3. **Broker → Backend Core:** Para operaciones de datos (usuarios, organizaciones, permisos, etc.).
+4. **Broker → Trainer:** Para operaciones de IA (entrenamiento, modelos, métricas).
+5. **Backend Core → MariaDB:** Solo el backend core accede a la base de datos.
+
+#### Ejemplo: Habilitar/Deshabilitar usuario
+
+```
+1. Frontend: Clic en botón "Deshabilitar"
+   └─▶ State.disable_user(user_id)
+   
+2. Frontend → Middleware:
+   └─▶ PATCH /users/{user_id}/status {"active": false}
+   
+3. Middleware → Broker:
+   └─▶ broker_client.update_user_status(user_id, active, requester_org_id)
+   └─▶ PATCH http://localhost:8008/users/{user_id}/status
+   
+4. Broker → Backend Core:
+   └─▶ core_client.update_user_status(user_id, active, requester_org_id)
+   └─▶ PATCH http://localhost:8003/users/{user_id}/status
+   
+5. Backend Core → MariaDB:
+   └─▶ UPDATE users SET active = 0 WHERE user_id = ?
+   
+6. Respuesta regresa por el mismo camino:
+   └─▶ Backend Core → Broker → Middleware → Frontend
+```
+
+#### Archivos involucrados en el flujo
+
+| Capa | Archivo | Función |
+|------|---------|---------|
+| Frontend | `adapters/api_client.py` | `update_user_status()` |
+| Middleware API | `apife.py` | `@app.patch("/users/{user_id}/status")` |
+| Middleware Router | `routermiddleware.py` | `update_user_active_status()` |
+| Middleware → Broker | `broker_backend_client.py` | `update_user_status()` |
+| Broker API | `apibe.py` | `@app.patch("/users/{user_id}/status")` |
+| Broker Router | `routerbroker.py` | `update_user_status()` |
+| Broker → Core | `interfacetocore.py` | `update_user_status()` |
+| Backend Core API | `apicore.py` | `@app.patch("/users/{user_id}/status")` |
+| Backend Core Router | `routercore.py` | `update_user_status()` |
+
+### Control de acceso por identity_type_id (SEGURIDAD)
+
+El sistema utiliza `identity_type_id` para controlar qué operaciones puede realizar cada usuario.
+Esta restricción se aplica en **dos niveles** para garantizar **Defense in Depth**:
+
+1. **UI (Frontend/Backoffice)**: Ocultar elementos para los que el usuario no tiene permisos
+2. **API (Middleware)**: Rechazar peticiones no autorizadas con HTTP 403
+
+#### Matriz de permisos por identity_type_id
+
+| identity_type_id | Rol | Gestionar usuarios | Gestionar proyectos | Acceso backoffice |
+|------------------|-----|-------------------|--------------------|--------------------|
+| 1 | SuperAdmin | ✅ Sí | ✅ Sí | ✅ Sí |
+| 2 | Admin de Organización | ✅ Sí | ✅ Sí | ✅ Sí |
+| 3 | Editor | ❌ No | ✅ Editar | ✅ Sí |
+| 4 | Lector | ❌ No | ❌ Solo lectura | ❌ No |
+| 5 | Auditor | ❌ No | ❌ Solo lectura | ❌ No |
+| 10 | Agente Admin | ✅ Sí | ✅ Sí | ✅ Sí |
+| 11 | Agente Editor | ❌ No | ✅ Editar | ✅ Sí |
+| 12 | Agente Lector | ❌ No | ❌ Solo lectura | ❌ No |
+| 13 | Agente Auditor | ❌ No | ❌ Solo lectura | ❌ No |
+
+#### Implementación en UI (Reflex)
+
+```python
+# Propiedad computada en el State
+@rx.var
+def can_manage_org_users(self) -> bool:
+    """Solo SuperAdmin, Admin Org, y Agente Admin pueden gestionar usuarios."""
+    return self.identity_type_id in (1, 2, 10)
+
+# En el componente, usar rx.cond para mostrar/ocultar
+rx.cond(
+    State.can_manage_org_users,
+    rx.button("Eliminar usuario", on_click=State.delete_user(user_id)),
+    rx.fragment(),  # No mostrar nada si no tiene permisos
+)
+```
+
+#### Implementación en API (Middleware)
+
+```python
+@app.patch("/users/{user_id}/status")
+async def update_user_status_endpoint(
+    user_id: int,
+    session: SessionContext = Depends(get_session_context),
+):
+    # VALIDACIÓN OBLIGATORIA: Verificar permisos antes de ejecutar
+    allowed_identity_types = (1, 2, 10)  # SuperAdmin, Admin Org, Agente Admin
+    if session.identity_type_id not in allowed_identity_types:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Sin permisos (identity_type_id={session.identity_type_id})",
+        )
+    # ... ejecutar operación
+```
+
+#### Reglas para nuevas funcionalidades
+
+Al implementar nuevas funcionalidades que requieran control de acceso:
+
+1. ✅ Definir qué `identity_type_id` pueden realizar la operación
+2. ✅ Añadir propiedad computada `can_<operacion>` en el State
+3. ✅ Usar `rx.cond()` en la UI para mostrar/ocultar elementos
+4. ✅ Añadir validación en el endpoint del middleware ANTES de ejecutar
+5. ✅ Retornar HTTP 403 si el usuario no tiene permisos
+6. ✅ Documentar en esta sección y en AGENTS.md
+
 ### Gestión de ficheros (fmanagement)
 
 Las operaciones sobre carpetas y ficheros se delegan desde `3_backend` a la API externa
@@ -2172,6 +2317,136 @@ user = User(
 El proyecto implementa un sistema de permisos centralizado basado en el principio **Security by Design**.
 La tabla `low_level_permissions` es el **CORE del concepto Security by Default**.
 
+### Modelo de Datos de Permisos
+
+El sistema de permisos se basa en una relación directa **1 a 1** entre el rol del usuario y sus permisos:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    MODELO DE DATOS DE PERMISOS                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   SESIÓN                    TABLA users              TABLA low_level_permissions
+│   ┌──────────┐              ┌──────────────────┐     ┌────────────────────────┐
+│   │ user_id  │──────────────│ user_id          │     │ id_permissions         │
+│   └──────────┘              │ identity_type_id │─────│ folder_create (bool)   │
+│                             └──────────────────┘     │ folder_delete (bool)   │
+│                                    │                 │ folder_rename (bool)   │
+│                                    │                 │ folder_read (bool)     │
+│                                    │                 │ file_create (bool)     │
+│                                    ▼                 │ file_read (bool)       │
+│                           identity_type_id           │ ...                    │
+│                                  =                   │ user_create (bool)     │
+│                           id_permissions             │ user_enable (bool)     │
+│                             (RELACIÓN 1:1)           └────────────────────────┘
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Consulta SQL de Permisos
+
+Para obtener **TODOS los permisos** de un usuario logado:
+
+```sql
+-- Desde el user_id de la sesión, obtener todos los permisos
+SELECT llp.*
+FROM users u
+INNER JOIN low_level_permissions llp 
+    ON u.identity_type_id = llp.id_permissions
+WHERE u.user_id = :user_id_from_session;
+```
+
+**Ejemplo práctico:**
+
+```sql
+-- Usuario con user_id = 42, identity_type_id = 2 (Administrador)
+SELECT llp.folder_create, llp.folder_delete, llp.user_create, llp.training_start
+FROM users u
+INNER JOIN low_level_permissions llp ON u.identity_type_id = llp.id_permissions
+WHERE u.user_id = 42;
+
+-- Resultado:
+-- folder_create | folder_delete | user_create | training_start
+-- 1             | 1             | 1           | 1
+```
+
+**Para verificar un permiso específico:**
+
+```sql
+-- ¿El usuario 42 puede crear usuarios?
+SELECT llp.user_create
+FROM users u
+INNER JOIN low_level_permissions llp ON u.identity_type_id = llp.id_permissions
+WHERE u.user_id = 42;
+-- Resultado: 1 (true) → tiene permiso
+```
+
+### Vista SQL Recomendada
+
+Para simplificar las consultas, se puede crear una vista:
+
+```sql
+CREATE OR REPLACE VIEW view_user_permissions AS
+SELECT 
+    u.user_id,
+    u.user_name,
+    u.organization_id,
+    u.identity_type_id,
+    llp.*
+FROM users u
+INNER JOIN low_level_permissions llp 
+    ON u.identity_type_id = llp.id_permissions;
+
+-- Uso:
+SELECT folder_create, user_create FROM view_user_permissions WHERE user_id = 42;
+```
+
+### Flujo de Consulta de Permisos en el Código
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                    FLUJO: SESIÓN → PERMISOS                                 │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  1. Usuario logado → sesión contiene user_id                                │
+│                           │                                                 │
+│  2. Consulta tabla users  │ SELECT identity_type_id FROM users              │
+│     con user_id           │ WHERE user_id = :session_user_id               │
+│                           ▼                                                 │
+│  3. Obtiene identity_type_id (ej: 2 = Admin, 5 = Auditor)                   │
+│                           │                                                 │
+│  4. JOIN con low_level_permissions                                          │
+│     WHERE id_permissions = identity_type_id                                 │
+│                           ▼                                                 │
+│  5. Obtiene 40 permisos booleanos:                                          │
+│     - folder_create = true/false                                            │
+│     - file_delete = true/false                                              │
+│     - user_create = true/false                                              │
+│     - training_start = true/false                                           │
+│     - ... (40 campos en total)                                              │
+│                                                                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Uso de Permisos en el Sistema
+
+Los permisos obtenidos se utilizan en **TODAS las capas** del sistema:
+
+| Capa | Uso | Ejemplo |
+|------|-----|---------|
+| **Frontend/Backoffice** | Mostrar/ocultar elementos UI | `rx.cond(state.can_user_create, boton_crear_usuario)` |
+| **Middleware** | Validar antes de procesar requests | `if not has_permission("user_create"): raise HTTP 403` |
+| **Broker** | Validar antes de enrutar | `if not can_perform("training_start"): reject request` |
+| **Backend Core** | Validar antes de ejecutar lógica | `validate_permission(identity_type_id, "file_delete")` |
+| **Backend IA** | Validar antes de operaciones IA | `if not has_permission("training_start"): deny` |
+
+### Interpretación de Valores
+
+| Valor en BD | Valor Python | Significado |
+|-------------|--------------|-------------|
+| `1` | `True` | Usuario **TIENE** el permiso |
+| `0` | `False` | Usuario **NO TIENE** el permiso |
+
 ### Arquitectura de permisos
 
 ```
@@ -2905,6 +3180,186 @@ Payload mínimo común en ambos:
   "exp": 1700000900
 }
 ```
+
+## Gestión de Usuarios de Organización
+
+### Alta de usuarios dentro de una organización
+
+El sistema permite que usuarios autorizados (administradores de organización) creen nuevos usuarios dentro de su propia organización. Esta funcionalidad está disponible desde la página **"Organización"** tanto en el frontend (`5_web_frontend`) como en el backoffice (`6_web_backoffice`).
+
+#### Flujo de creación de usuario
+
+```
+Usuario (Frontend/Backoffice)
+    ↓ Click en "Crear usuario"
+    ↓ Completar formulario: user_name, user_email, user_mobile
+    ↓ Click en "Guardar"
+    ↓
+API Client (create_organization_user)
+    ↓ Genera OTP aleatorio (4 dígitos)
+    ↓ Genera password temporal cifrada (Fernet)
+    ↓ Prepara payload completo
+    ↓
+POST /users → Middleware (7_service_frontend)
+    ↓ Según STORAGE_MODE:
+    │   - mock: Solo JSON local
+    │   - mock_and_db: JSON + Broker
+    │   - db_only: Solo Broker
+    ↓
+POST /users → Broker (8_service_backend)
+    ↓
+POST /users → Backend Core (3_backend)
+    ↓ Persiste en: users, user_contact_info, user_billing_info
+    ↓
+Respuesta: { user_id, organization_id, identity_type_id }
+```
+
+#### Datos generados automáticamente
+
+| Campo | Origen |
+|-------|--------|
+| `user_id` | Autoincremental (asignado por el sistema) |
+| `organization_id` | Extraído del JWT/sesión del usuario que crea |
+| `identity_type_id` | **Siempre `5` (auditor)** - ver regla de roles abajo |
+| `user_password` | Generada aleatoriamente y cifrada con Fernet |
+| `user_otp` | OTP aleatorio de 4 dígitos |
+| `active` | `true` |
+| `blocked` | `false` |
+| `created_at` | Timestamp actual |
+| `contact_info.first_name` | Nombre ingresado en el formulario |
+| `contact_info.sur_name` | "Usuario de la organizacion" |
+| `billing_info.first_name` | Nombre ingresado en el formulario |
+| `billing_info.sur_name` | "Usuario de la organizacion" |
+
+#### Regla de roles para usuarios de organización
+
+**IMPORTANTE**: Los usuarios creados desde el panel "Gestión de Usuarios" de la página Organización **SIEMPRE** reciben `identity_type_id = 5` (auditor).
+
+| identity_type_id | Rol | Descripción |
+|------------------|-----|-------------|
+| 1 | SuperAdmin | Administrador global del sistema (solo myllm) |
+| 2 | Administrador de Organización | **Único por organización** - Se asigna automáticamente al primer usuario |
+| 3 | Editor | Puede crear/editar contenido |
+| 4 | Lector | Solo lectura |
+| 5 | **Auditor** | **Rol por defecto para usuarios creados desde el panel** |
+
+**Razones de esta regla:**
+
+1. **Seguridad por defecto**: Los usuarios nuevos tienen permisos restringidos hasta que se les asignen roles específicos en proyectos.
+2. **Un administrador por organización**: Solo puede haber UN usuario con `identity_type_id = 2` por organización (el que la creó).
+3. **Roles por proyecto**: Los usuarios pueden tener roles adicionales (editor, lector) asignados en tablas relacionadas con proyectos específicos.
+4. **Principio de mínimo privilegio**: Comenzar con permisos mínimos y escalar según necesidad.
+
+#### Primer acceso del nuevo usuario
+
+El usuario creado debe seguir estos pasos para configurar su contraseña:
+
+1. Ir a la página de login
+2. Click en **"Recordar contraseña"**
+3. Ingresar su `user_name`
+4. Recibir OTP en el teléfono configurado (`user_mobile`)
+5. Configurar su nueva contraseña
+
+#### Archivos involucrados
+
+| Capa | Archivo | Función |
+|------|---------|---------|
+| Frontend | `adapters/api_client.py` | `create_organization_user()` |
+| Frontend | `web_frontend/web_frontend.py` | `State.save_new_user()`, modal UI |
+| Backoffice | `adapters/api_client.py` | `create_organization_user()` |
+| Backoffice | `web_backoffice/web_backoffice.py` | `State.save_new_user()`, modal UI |
+| Middleware | `routermiddleware.py` | `RouterMiddleware.create_user()` |
+| Broker | `routerbroker.py` | `BrokerBackendRouter.create_user()` |
+| Backend Core | `routercore.py` | `BackendCoreRouter.create_user()` |
+
+#### Configuración de STORAGE_MODE
+
+El comportamiento de persistencia depende de la variable de entorno `STORAGE_MODE`:
+
+```yaml
+# infrastructure/environments/<env>/env.yaml
+storage_mode: "db_only"  # Producción: solo base de datos
+storage_mode: "mock_and_db"  # Desarrollo: JSON + base de datos
+storage_mode: "mock"  # Testing: solo JSON
+```
+
+#### Permisos requeridos
+
+Para crear usuarios, el usuario que realiza la operación debe tener el permiso `user_create` en su `identity_type_id`. Este permiso se valida en:
+
+- **Frontend/Backoffice**: `rx.cond(State.can_user_create, ...)` para mostrar/ocultar botón
+- **Middleware**: Validación antes de procesar la petición
+- **Backend Core**: Validación adicional antes de persistir
+
+### Tests de creación de usuarios
+
+El sistema incluye tests de integración para validar el flujo de creación de usuarios.
+
+#### Ubicación del test
+
+```
+src/apps/7_service_frontend/tests/test_admin_create_user_integration.py
+```
+
+#### Ejecutar el test individualmente
+
+```bash
+# Activar entorno virtual del middleware
+source .venv_middleware313/bin/activate
+
+# Ejecutar test específico
+pytest -v src/apps/7_service_frontend/tests/test_admin_create_user_integration.py
+
+# Ejecutar con salida detallada
+pytest -v -s src/apps/7_service_frontend/tests/test_admin_create_user_integration.py
+```
+
+#### Casos de test incluidos
+
+| Test | Descripción |
+|------|-------------|
+| `test_admin_can_create_user_successfully` | Valida creación completa: persistencia, contraseña cifrada con Fernet, OTP aleatorio |
+| `test_admin_creates_multiple_users_with_incremental_ids` | Valida que los user_id se asignan incrementalmente |
+| `test_created_user_has_correct_default_values` | Valida valores por defecto (active=True, blocked=False) y contraseña cifrada |
+| `test_user_creation_registers_in_manage_roles` | Valida que se registra la entrada en manage_roles_by_org |
+| `test_user_email_is_stored_lowercase` | Valida normalización del email a minúsculas |
+| `test_user_name_is_trimmed` | Valida eliminación de espacios en el nombre |
+
+**Nota sobre seguridad**: Todos los tests utilizan contraseñas cifradas con Fernet (como en producción). Se genera una clave Fernet temporal para cada ejecución de test, lo que garantiza que los tests validan el comportamiento real del sistema.
+
+#### Validaciones realizadas
+
+El test `test_admin_can_create_user_successfully` valida:
+
+1. **user_id autoincremental**: El nuevo usuario recibe ID = 2 (siguiente al admin)
+2. **Persistencia en users.json**:
+   - user_name, user_email, user_mobile correctos
+   - organization_id heredado
+   - active = True, blocked = False
+3. **Contraseña cifrada con Fernet**:
+   - La contraseña NO se guarda en texto plano
+   - Se genera una contraseña temporal aleatoria con `secrets.token_urlsafe(16)`
+   - Se cifra usando Fernet antes de persistir
+   - El test verifica que la contraseña comienza con `gAAAAA` (header Fernet base64)
+   - El test verifica que se puede descifrar correctamente
+4. **OTP generado aleatoriamente**:
+   - OTP de 4 dígitos generado con `secrets.randbelow(10000)`
+5. **contact_info y billing_info**:
+   - first_name = nombre del usuario
+   - sur_name = "Usuario de la organizacion"
+6. **Registro en manage_roles_by_org.json**:
+   - id_user = ID del usuario creado
+   - id_organization = ID de la organización
+   - active = True
+   - create_date con formato DD/MM/YY-HH:MM
+
+#### Ejecutar todos los tests
+
+```bash
+./full_test.sh
+```
+
+El script `full_test.sh` incluye automáticamente el test de creación de usuarios como parte de la suite completa.
 
 ## Roles y automatización (referencia)
 

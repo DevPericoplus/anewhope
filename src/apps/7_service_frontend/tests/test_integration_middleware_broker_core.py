@@ -152,6 +152,24 @@ def test_middleware_broker_core_flow(tmp_path: Path, monkeypatch: Any) -> None:
     class FakeCoreClient:
         """Cliente core en memoria para tests."""
 
+        def __init__(self) -> None:
+            self._client_app: str = "test"
+            self._authorization: str | None = None
+            self._session_token: str | None = None
+
+        def set_client_app(self, client_app: str) -> None:
+            """Configura el identificador de cliente para trazabilidad."""
+            self._client_app = client_app
+
+        def set_security_context(
+            self,
+            authorization: str | None = None,
+            session_token: str | None = None,
+        ) -> None:
+            """Configura el contexto de seguridad."""
+            self._authorization = authorization
+            self._session_token = session_token
+
         def fetch_users(self) -> list[dict[str, Any]]:
             return core_client.get("/users").json()
 
@@ -205,6 +223,24 @@ def test_middleware_broker_core_flow(tmp_path: Path, monkeypatch: Any) -> None:
 
     class FakeBrokerClient:
         """Cliente broker en memoria para tests."""
+
+        def __init__(self) -> None:
+            self._client_app: str = "test"
+            self._authorization: str | None = None
+            self._session_token: str | None = None
+
+        def set_client_app(self, client_app: str) -> None:
+            """Configura el identificador de cliente para trazabilidad."""
+            self._client_app = client_app
+
+        def set_security_context(
+            self,
+            authorization: str | None = None,
+            session_token: str | None = None,
+        ) -> None:
+            """Configura el contexto de seguridad."""
+            self._authorization = authorization
+            self._session_token = session_token
 
         def fetch_users(self) -> list[dict[str, Any]]:
             return broker_app_client.get("/users").json()
