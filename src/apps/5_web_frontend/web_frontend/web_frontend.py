@@ -122,8 +122,7 @@ class State(SharedSessionState):
     
     # Estado para el panel de asignaciones de proyectos (solo lectura)
     project_assignments: list[dict] = []  # Lista de {proyecto, usuario, rol}
-    
-    # Estado para el modal de solicitud de soporte
+       # Estado para el modal de solicitud de soporte
     show_support_modal: bool = False
     support_project_id: int = 0
     support_project_name: str = ""

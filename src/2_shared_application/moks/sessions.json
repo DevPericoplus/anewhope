@@ -1387,7 +1387,7 @@
       },
       "status": "active",
       "created_at": "2026-02-01T18:16:45.332400Z",
-      "last_activity": "2026-02-01T18:25:28.065347Z",
+      "last_activity": "2026-02-01T18:30:01.762149Z",
       "expires_at": "2026-02-01T19:01:45Z",
       "ip_address": "127.0.0.1",
       "user_agent": "Python-urllib/3.13"
