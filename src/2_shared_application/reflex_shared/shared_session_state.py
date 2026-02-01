@@ -40,6 +40,8 @@ class SharedSessionState(rx.State):
     # ==================== TOKENS JWT ====================
     access_token: str = ""
     session_token: str = ""
+    access_token_expires_at: int = 0   # Unix timestamp de expiración
+    session_token_expires_at: int = 0  # Unix timestamp de expiración
     
     # ==================== PERMISOS DE BAJO NIVEL ====================
     # Los nombres coinciden EXACTAMENTE con low_level_permissions.json
@@ -121,6 +123,8 @@ class SharedSessionState(rx.State):
         access_token: str,
         session_token: str,
         permissions: dict,
+        access_expires_at: int = 0,
+        session_expires_at: int = 0,
     ):
         """
         Carga los datos del usuario y sus permisos en el estado compartido.
@@ -138,6 +142,8 @@ class SharedSessionState(rx.State):
             access_token: Token JWT de acceso
             session_token: Token JWT de sesión
             permissions: Diccionario con todos los permisos de bajo nivel
+            access_expires_at: Unix timestamp de expiración del access_token
+            session_expires_at: Unix timestamp de expiración del session_token
         """
         # Información del usuario
         self.user_id = user_id
@@ -150,9 +156,11 @@ class SharedSessionState(rx.State):
         self.is_active = True
         self.is_blocked = False
         
-        # Tokens
+        # Tokens y timestamps de expiración
         self.access_token = access_token
         self.session_token = session_token
+        self.access_token_expires_at = access_expires_at
+        self.session_token_expires_at = session_expires_at
         
         # Cargar permisos
         self._load_permissions(permissions)
@@ -251,9 +259,11 @@ class SharedSessionState(rx.State):
         self.is_active = False
         self.is_blocked = False
         
-        # Tokens
+        # Tokens y timestamps
         self.access_token = ""
         self.session_token = ""
+        self.access_token_expires_at = 0
+        self.session_token_expires_at = 0
         
         # Resetear permisos
         self._reset_permissions()
@@ -263,6 +273,31 @@ class SharedSessionState(rx.State):
         self.login_time = ""
         self.last_activity = ""
         self.current_app = "frontend"
+    
+    def update_tokens(
+        self,
+        access_token: str,
+        session_token: str,
+        access_expires_at: int,
+        session_expires_at: int,
+    ):
+        """
+        Actualiza los tokens tras una renovación automática.
+        
+        Este método se llama cuando el access_token está próximo a expirar
+        y se renueva usando el session_token.
+        
+        Args:
+            access_token: Nuevo token JWT de acceso
+            session_token: Nuevo token JWT de sesión
+            access_expires_at: Unix timestamp de expiración del nuevo access_token
+            session_expires_at: Unix timestamp de expiración del nuevo session_token
+        """
+        self.access_token = access_token
+        self.session_token = session_token
+        self.access_token_expires_at = access_expires_at
+        self.session_token_expires_at = session_expires_at
+        self.last_activity = datetime.now().isoformat()
     
     def _reset_permissions(self):
         """Resetea todos los permisos a False."""

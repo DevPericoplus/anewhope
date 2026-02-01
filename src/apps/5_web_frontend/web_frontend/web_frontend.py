@@ -13,6 +13,7 @@ from adapters.api_client import (
     create_organization_project,
     create_organization_user,
     delete_organization_project,
+    ensure_valid_tokens,
     get_organization_projects,
     get_organization_users,
     get_proyecto_tecnologia,
@@ -1408,6 +1409,10 @@ class State(SharedSessionState):
         identity_type_id = int(response.get("identity_type_id", 0))
         organization_id = int(response.get("organization_id", 0))
         
+        # Extraer timestamps de expiración de tokens
+        access_expires_at = int(response.get("access_expires_at", 0))
+        session_expires_at = int(response.get("session_expires_at", 0))
+        
         # Cargar datos en SharedSessionState con low_level_permissions
         # Estos permisos determinan funcionalidades como acceso al Backoffice
         self.load_user_data(
@@ -1420,6 +1425,8 @@ class State(SharedSessionState):
             access_token=access_token,
             session_token=session_token,
             permissions=low_level_permissions,
+            access_expires_at=access_expires_at,
+            session_expires_at=session_expires_at,
         )
         
         # Asegurar que organization_id esté disponible para load_org_users
@@ -1484,8 +1491,48 @@ class State(SharedSessionState):
         if not access_token or not session_token:
             self.login_error = "No se pudieron renovar los tokens"
             return
-        self.access_token = access_token
-        self.session_token = session_token
+        
+        # Actualizar tokens y timestamps usando método de SharedSessionState
+        self.update_tokens(
+            access_token=access_token,
+            session_token=session_token,
+            access_expires_at=int(response.get("access_expires_at", 0)),
+            session_expires_at=int(response.get("session_expires_at", 0)),
+        )
+    
+    def ensure_tokens_valid(self) -> bool:
+        """Verifica y renueva tokens automáticamente si es necesario.
+        
+        Esta función debe llamarse antes de cada operación que requiera autenticación.
+        Retorna True si los tokens son válidos (o se renovaron exitosamente).
+        Retorna False si la sesión expiró y el usuario debe re-autenticarse.
+        """
+        if not self.access_token or not self.session_token:
+            return False
+        
+        result = ensure_valid_tokens(
+            access_token=self.access_token,
+            session_token=self.session_token,
+            access_expires_at=self.access_token_expires_at,
+            session_expires_at=self.session_token_expires_at,
+        )
+        
+        if result.get("error"):
+            # Si hay error, la sesión expiró - limpiar y forzar re-login
+            self.login_error = result["error"]
+            self.clear_session()
+            return False
+        
+        if result.get("renewed"):
+            # Tokens renovados - actualizar en el state
+            self.update_tokens(
+                access_token=result["access_token"],
+                session_token=result["session_token"],
+                access_expires_at=result["access_expires_at"],
+                session_expires_at=result["session_expires_at"],
+            )
+        
+        return True
 
     def request_login_otp(self):
         """Solicita el código OTP para el login.

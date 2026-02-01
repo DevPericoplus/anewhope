@@ -13,6 +13,7 @@ from adapters.api_client import (
     actualizar_tecnologia,
     asignar_tecnologia,
     create_organization_user,
+    ensure_valid_tokens,
     get_organization_projects,
     get_organization_tickets,
     get_organization_users,
@@ -1057,8 +1058,48 @@ class State(SharedSessionState):
         if not access_token or not session_token:
             self.login_error = "No se pudieron renovar los tokens"
             return
-        self.access_token = access_token
-        self.session_token = session_token
+        
+        # Actualizar tokens y timestamps usando método de SharedSessionState
+        self.update_tokens(
+            access_token=access_token,
+            session_token=session_token,
+            access_expires_at=int(response.get("access_expires_at", 0)),
+            session_expires_at=int(response.get("session_expires_at", 0)),
+        )
+
+    def ensure_tokens_valid(self) -> bool:
+        """Verifica y renueva tokens automáticamente si es necesario.
+        
+        Esta función debe llamarse antes de cada operación que requiera autenticación.
+        Retorna True si los tokens son válidos (o se renovaron exitosamente).
+        Retorna False si la sesión expiró y el usuario debe re-autenticarse.
+        """
+        if not self.access_token or not self.session_token:
+            return False
+        
+        result = ensure_valid_tokens(
+            access_token=self.access_token,
+            session_token=self.session_token,
+            access_expires_at=self.access_token_expires_at,
+            session_expires_at=self.session_token_expires_at,
+        )
+        
+        if result.get("error"):
+            # Si hay error, la sesión expiró - limpiar y forzar re-login
+            self.login_error = result["error"]
+            self.clear_session()
+            return False
+        
+        if result.get("renewed"):
+            # Tokens renovados - actualizar en el state
+            self.update_tokens(
+                access_token=result["access_token"],
+                session_token=result["session_token"],
+                access_expires_at=result["access_expires_at"],
+                session_expires_at=result["session_expires_at"],
+            )
+        
+        return True
 
     def request_login_otp(self):
         """Solicita el código OTP para el login."""

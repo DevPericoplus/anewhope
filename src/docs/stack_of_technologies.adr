@@ -1170,3 +1170,526 @@ Fase 5: Mantener comunicación directa para inferencia simple
 - **Trigger:** Post-presentación del TFM, si el proyecto continúa
 - **Acción:** Evaluar si N8N aporta valor para los nuevos requisitos
 - **Responsable:** @trainer-maestro
+
+---
+
+# ADR: Renovación Automática de Tokens JWT
+
+Fecha: 2026-02-01
+Estado: Aceptado
+
+## Contexto
+
+El sistema utiliza dos tokens JWT para la autenticación:
+
+| Token | Duración | Propósito |
+|-------|----------|-----------|
+| `access_token` | 900s (15 min) | Autorización de llamadas API |
+| `session_token` | 2700s (45 min) | Renovación de tokens |
+
+### Problema Detectado
+
+Los usuarios experimentaban errores `401 - El token ha expirado` durante el uso normal de la aplicación.
+Esto ocurría porque:
+
+1. El `access_token` expiraba después de 15 minutos de inactividad
+2. No existía mecanismo automático de renovación
+3. Las llamadas API fallaban silenciosamente sin renovar tokens
+
+### Estrategias Consideradas
+
+**Opción A: Verificar/renovar antes de cada llamada API (más robusto)**
+- Antes de cada request, verificar si el `access_token` está próximo a expirar
+- Si quedan menos de 2 minutos, renovar usando el `session_token`
+- Ventaja: Garantiza que nunca se hace una llamada con token expirado
+
+**Opción B: Temporizador periódico cada 10 min (más simple)**
+- Un timer que renueva tokens cada 10 minutos automáticamente
+- Ventaja: Implementación simple
+- Desventaja: Puede renovar innecesariamente o fallar si el usuario navega entre páginas
+
+**Opción C: Ambas estrategias combinadas**
+- Combinar A y B para máxima robustez
+- Desventaja: Mayor complejidad
+
+## Decisión
+
+Se adopta la **Opción A: Verificar/renovar antes de cada llamada API**.
+
+### Justificación
+
+1. **Robustez:** Garantiza que el token siempre es válido antes de usarlo
+2. **Eficiencia:** Solo renueva cuando es necesario
+3. **Sin overhead:** No hay timers ni procesos en background
+4. **Compatible con Reflex:** Se integra naturalmente con el modelo de estado
+
+## Implementación
+
+### Arquitectura de Tokens
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    FLUJO DE TOKENS JWT                               │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│   LOGIN                                                              │
+│     │                                                                │
+│     ▼                                                                │
+│   ┌─────────────────┐                                               │
+│   │ access_token    │ ← Expira en 15 min (900s)                     │
+│   │ session_token   │ ← Expira en 45 min (2700s)                    │
+│   │ access_expires  │                                                │
+│   │ session_expires │                                                │
+│   └────────┬────────┘                                               │
+│            │                                                         │
+│            ▼                                                         │
+│   ┌─────────────────────────────────────────┐                       │
+│   │      ANTES DE CADA LLAMADA API          │                       │
+│   │                                          │                       │
+│   │   ensure_tokens_valid()                  │                       │
+│   │     │                                    │                       │
+│   │     ├── ¿access_token expira en <2min?  │                       │
+│   │     │     │                              │                       │
+│   │     │     ├── NO → Continuar con tokens │                       │
+│   │     │     │                              │                       │
+│   │     │     └── SÍ → ¿session_token válido?│                      │
+│   │     │           │                        │                       │
+│   │     │           ├── SÍ → POST /refresh-token                    │
+│   │     │           │        (obtiene nuevos tokens)                │
+│   │     │           │                        │                       │
+│   │     │           └── NO → Sesión expirada │                      │
+│   │     │                    (forzar re-login)                      │
+│   └─────┴────────────────────────────────────┘                      │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Componentes Implementados
+
+**1. Función de verificación en api_client.py:**
+
+```python
+# Umbral: renovar si quedan menos de 2 minutos
+RENEWAL_THRESHOLD_SECONDS = 120
+
+def _should_renew_token(expires_at: int) -> bool:
+    """Verifica si el token está próximo a expirar."""
+    if expires_at <= 0:
+        return False
+    return time.time() > (expires_at - RENEWAL_THRESHOLD_SECONDS)
+
+def ensure_valid_tokens(
+    access_token: str,
+    session_token: str,
+    access_expires_at: int,
+    session_expires_at: int,
+) -> dict[str, Any]:
+    """Garantiza tokens válidos, renovando si es necesario."""
+    
+    # Si access_token no está próximo a expirar, no hacer nada
+    if not _should_renew_token(access_expires_at):
+        return {"renewed": False, ...}
+    
+    # Si session_token también expiró, no podemos renovar
+    if _should_renew_token(session_expires_at):
+        return {"error": "La sesión ha expirado", ...}
+    
+    # Renovar usando session_token
+    response = refresh_tokens(session_token)
+    return {"renewed": True, "access_token": response["access_token"], ...}
+```
+
+**2. Método en SharedSessionState:**
+
+```python
+def ensure_tokens_valid(self) -> bool:
+    """Verifica y renueva tokens automáticamente si es necesario."""
+    
+    result = ensure_valid_tokens(
+        access_token=self.access_token,
+        session_token=self.session_token,
+        access_expires_at=self.access_token_expires_at,
+        session_expires_at=self.session_token_expires_at,
+    )
+    
+    if result.get("error"):
+        self.clear_session()
+        return False
+    
+    if result.get("renewed"):
+        self.update_tokens(
+            access_token=result["access_token"],
+            session_token=result["session_token"],
+            access_expires_at=result["access_expires_at"],
+            session_expires_at=result["session_expires_at"],
+        )
+    
+    return True
+```
+
+**3. Uso recomendado en operaciones:**
+
+```python
+def some_api_operation(self):
+    """Operación que requiere autenticación."""
+    
+    # Verificar/renovar tokens antes de la llamada
+    if not self.ensure_tokens_valid():
+        self.login_error = "Sesión expirada, inicie sesión nuevamente"
+        return rx.redirect("/")
+    
+    # Ahora los tokens son válidos, hacer la llamada
+    response = api_call(self.access_token, self.session_token)
+```
+
+### Archivos Modificados
+
+| Archivo | Cambio |
+|---------|--------|
+| `src/apps/5_web_frontend/adapters/api_client.py` | `ensure_valid_tokens()`, `_should_renew_token()` |
+| `src/apps/5_web_frontend/web_frontend/web_frontend.py` | `ensure_tokens_valid()`, uso de timestamps |
+| `src/apps/6_web_backoffice/adapters/api_client.py` | `ensure_valid_tokens()`, `_should_renew_token()` |
+| `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py` | `ensure_tokens_valid()` |
+
+### Configuración de Tiempos
+
+En `protected_values.py` de cada entorno:
+
+```python
+# Tokens JWT
+jwt_access_expiration_seconds = 900   # 15 minutos
+jwt_session_expiration_seconds = 2700  # 45 minutos
+```
+
+Umbral de renovación (hardcoded por seguridad):
+
+```python
+RENEWAL_THRESHOLD_SECONDS = 120  # 2 minutos
+```
+
+## Consecuencias
+
+### Positivas
+
+- ✅ **Transparente para el usuario:** Los tokens se renuevan sin intervención
+- ✅ **Robustez:** Nunca se hace una llamada con token expirado
+- ✅ **Eficiencia:** Solo renueva cuando es realmente necesario
+- ✅ **Seguridad:** El `access_token` corto limita ventana de ataque
+- ✅ **UX mejorada:** Sin errores 401 inesperados
+
+### Consideraciones
+
+- ⚠️ Requiere que las operaciones llamen a `ensure_tokens_valid()` explícitamente
+- ⚠️ Si el `session_token` expira (45 min sin actividad), el usuario debe re-autenticarse
+
+### Mitigaciones
+
+1. **Documentación clara:** El uso de `ensure_tokens_valid()` está documentado
+2. **Tiempo generoso:** 45 minutos de inactividad es suficiente para la mayoría de casos
+
+## Verificación
+
+- ✅ Login guarda timestamps de expiración
+- ✅ `ensure_tokens_valid()` implementado en frontend
+- ✅ `ensure_tokens_valid()` implementado en backoffice
+- ✅ Renovación automática funciona antes de llamadas API
+- ✅ Sesión expirada redirige a login correctamente
+
+## Referencias
+
+- SharedSessionState: `src/2_shared_application/reflex_shared/shared_session_state.py`
+- Frontend api_client: `src/apps/5_web_frontend/adapters/api_client.py`
+- Backoffice api_client: `src/apps/6_web_backoffice/adapters/api_client.py`
+
+## Fecha de Decisión
+
+- **2026-02-01**: Análisis del problema y decisión de implementar renovación proactiva
+
+## Participantes
+
+- @frontend-visionary (responsable de aplicaciones Reflex)
+- @application-architect (diseño del flujo de tokens)
+
+---
+
+# ADR: Renovación Automática de Tokens JWT
+
+Fecha: 2026-02-01
+Estado: Aceptado
+
+## Contexto
+
+El sistema utiliza dos tokens JWT con duraciones diferentes para gestionar la autenticación:
+
+| Token | Duración | Propósito |
+|-------|----------|-----------|
+| `access_token` | 900s (15 min) | Autorización de llamadas API |
+| `session_token` | 2700s (45 min) | Renovación de tokens |
+
+### Problema Detectado
+
+Los usuarios experimentan errores `401 - El token ha expirado` cuando realizan operaciones
+después de 15 minutos de inactividad, a pesar de que el `session_token` (45 min) sigue vigente.
+
+**Causa:** El método `refresh_session_tokens()` existe en frontend y backoffice pero
+**no se invoca automáticamente**. Las llamadas API fallan cuando el `access_token` expira.
+
+### Requisito de Negocio
+
+Los usuarios deben poder trabajar de forma continua sin interrupciones por expiración de tokens,
+siempre que el `session_token` sea válido. Solo deben re-autenticarse cuando ambos tokens expiren.
+
+## Alternativas Consideradas
+
+### Opción A: Verificar/Renovar antes de cada llamada API (Seleccionada)
+
+**Descripción:** Antes de cada llamada al middleware, verificar si el `access_token` está
+próximo a expirar (<2 minutos) y renovar proactivamente usando el `session_token`.
+
+**Ventajas:**
+- ✅ **Más robusto:** Garantiza tokens válidos en cada llamada
+- ✅ **Sin sorpresas:** El usuario nunca ve errores 401 por expiración
+- ✅ **Aprovecha ambos tokens:** Usa el diseño dual de tokens correctamente
+- ✅ **Transparente:** El usuario no percibe la renovación
+
+**Desventajas:**
+- ⚠️ Pequeño overhead en cada llamada (verificación de timestamp)
+- ⚠️ Requiere modificar el cliente API
+
+### Opción B: Temporizador periódico (cada 10 minutos)
+
+**Descripción:** Un temporizador en el frontend/backoffice renueva tokens cada 10 minutos.
+
+**Ventajas:**
+- ✅ Implementación simple (setInterval)
+- ✅ Menos código en cliente API
+
+**Desventajas:**
+- ❌ **Menos preciso:** Puede renovar innecesariamente o demasiado tarde
+- ❌ **Consumo de recursos:** Renovaciones aunque el usuario esté inactivo
+- ❌ **Race conditions:** Posible renovación durante una llamada API
+
+### Opción C: Ambas estrategias combinadas
+
+**Descripción:** Temporizador + verificación antes de llamadas.
+
+**Ventajas:**
+- ✅ Máxima robustez
+
+**Desventajas:**
+- ❌ Complejidad innecesaria para el caso de uso actual
+- ❌ Renovaciones duplicadas posibles
+
+## Decisión
+
+Se adopta la **Opción A: Verificar/Renovar antes de cada llamada API**.
+
+### Justificación
+
+1. **Aprovecha el diseño dual de tokens:** El sistema ya tiene dos tokens con duraciones
+   diferentes precisamente para permitir renovaciones sin re-autenticación.
+
+2. **UX sin interrupciones:** El usuario puede trabajar hasta 45 minutos sin problemas,
+   renovando automáticamente el `access_token` cada ~15 minutos usando el `session_token`.
+
+3. **Mínimo overhead:** La verificación de timestamp es O(1) y no añade latencia perceptible.
+
+4. **Fácil de implementar:** Solo requiere un wrapper en el cliente API.
+
+### Implementación
+
+**1. Almacenar timestamps de expiración en el State:**
+
+```python
+# SharedSessionState
+access_token_expires_at: int = 0   # Unix timestamp
+session_token_expires_at: int = 0  # Unix timestamp
+```
+
+**2. Función helper para verificar expiración próxima:**
+
+```python
+# adapters/api_client.py
+import time
+
+RENEWAL_THRESHOLD_SECONDS = 120  # 2 minutos antes de expirar
+
+def _should_renew_token(expires_at: int) -> bool:
+    """Verifica si el token está próximo a expirar."""
+    if expires_at <= 0:
+        return False
+    return time.time() > (expires_at - RENEWAL_THRESHOLD_SECONDS)
+```
+
+**3. Wrapper de llamadas API con renovación automática:**
+
+```python
+def _ensure_valid_tokens(state) -> tuple[str, str]:
+    """Garantiza tokens válidos, renovando si es necesario.
+    
+    Returns:
+        Tupla (access_token, session_token) válidos
+    """
+    if _should_renew_token(state.access_token_expires_at):
+        if state.session_token and not _should_renew_token(state.session_token_expires_at):
+            # Renovar usando session_token
+            response = refresh_tokens(state.session_token)
+            if response.get("access_token"):
+                state.access_token = response["access_token"]
+                state.session_token = response["session_token"]
+                state.access_token_expires_at = response["access_expires_at"]
+                state.session_token_expires_at = response["session_expires_at"]
+        else:
+            # Ambos tokens expirados - requiere re-login
+            raise TokenExpiredError("La sesión ha expirado, por favor inicie sesión nuevamente")
+    
+    return state.access_token, state.session_token
+```
+
+**4. Uso en llamadas API:**
+
+```python
+def get_tecnologias(state) -> dict[str, Any]:
+    """Obtiene tecnologías con renovación automática de tokens."""
+    access_token, session_token = _ensure_valid_tokens(state)
+    
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "X-Session-Token": session_token,
+    }
+    return _request_middleware("GET", "/tecnologias", headers=headers)
+```
+
+### Flujo de Renovación
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         FLUJO DE RENOVACIÓN AUTOMÁTICA                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Usuario hace clic → Llamada API                                            │
+│         │                                                                    │
+│         ▼                                                                    │
+│  ┌──────────────────────────────┐                                           │
+│  │ ¿access_token expira en <2min? │                                         │
+│  └──────────────┬───────────────┘                                           │
+│                 │                                                            │
+│     ┌───────────┴───────────┐                                               │
+│     │ NO                    │ SÍ                                            │
+│     ▼                       ▼                                               │
+│  Usar tokens            ┌──────────────────────────┐                        │
+│  actuales               │ ¿session_token válido?    │                        │
+│     │                   └───────────┬──────────────┘                        │
+│     │                               │                                        │
+│     │               ┌───────────────┴───────────────┐                       │
+│     │               │ SÍ                            │ NO                    │
+│     │               ▼                               ▼                       │
+│     │          Llamar POST                    Redirigir                    │
+│     │          /refresh-token                 a Login                       │
+│     │               │                               │                       │
+│     │               ▼                               │                       │
+│     │          Actualizar tokens                    │                       │
+│     │          en State                             │                       │
+│     │               │                               │                       │
+│     └───────────────┴───────────────────────────────┘                       │
+│                     │                                                        │
+│                     ▼                                                        │
+│              Ejecutar llamada API                                           │
+│              con tokens válidos                                             │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Configuración de Tiempos
+
+| Parámetro | Valor | Ubicación |
+|-----------|-------|-----------|
+| `jwt_access_expiration_seconds` | 900 (15 min) | `protected_values.py` |
+| `jwt_session_expiration_seconds` | 2700 (45 min) | `protected_values.py` |
+| `RENEWAL_THRESHOLD_SECONDS` | 120 (2 min) | `api_client.py` |
+
+**Escenario típico:**
+- Usuario inicia sesión: `access_token` válido 15 min, `session_token` válido 45 min
+- A los 13 min, hace una acción → Se detecta que `access_token` expira pronto
+- Se renueva automáticamente usando `session_token`
+- Nuevos tokens: `access_token` +15 min, `session_token` +45 min
+- Proceso se repite mientras `session_token` original sea válido (hasta 45 min de inactividad)
+
+## Consecuencias
+
+### Positivas
+
+- ✅ **UX fluida:** Sin interrupciones por expiración de tokens
+- ✅ **Seguridad mantenida:** Tokens de corta duración, renovación controlada
+- ✅ **Aprovecha arquitectura:** Usa el diseño dual de tokens correctamente
+- ✅ **Transparente:** El usuario no percibe las renovaciones
+- ✅ **Robusto:** Cada llamada garantiza tokens válidos
+
+### Consideraciones
+
+- ⚠️ **Estado adicional:** Requiere almacenar `expires_at` en el State
+- ⚠️ **Modificación de cliente API:** Todas las funciones deben usar el wrapper
+- ⚠️ **Sincronización de relojes:** Asume que cliente y servidor tienen hora sincronizada
+
+### Mitigaciones
+
+1. **NTP en todos los servidores:** Garantiza sincronización de relojes
+2. **Margen de 2 minutos:** Buffer suficiente para evitar race conditions
+3. **Fallback a login:** Si ambos tokens expiran, redirige a login limpiamente
+
+## Impacto en Código
+
+### Archivos a Modificar
+
+| Archivo | Cambio |
+|---------|--------|
+| `SharedSessionState` | Añadir `access_token_expires_at`, `session_token_expires_at` |
+| `frontend/api_client.py` | Añadir `_ensure_valid_tokens()`, modificar funciones API |
+| `backoffice/api_client.py` | Igual que frontend |
+| `frontend/web_frontend.py` | Actualizar `expires_at` tras login y refresh |
+| `backoffice/web_backoffice.py` | Igual que frontend |
+
+### Sin Cambios Necesarios
+
+- ✅ Middleware (ya tiene `/refresh-token`)
+- ✅ Broker
+- ✅ Backend Core
+- ✅ DTOs y entidades
+- ✅ Componentes UI existentes
+
+## Verificación
+
+### Tests Automatizados
+
+- [ ] Test: Renovación automática cuando `access_token` expira en <2 min
+- [ ] Test: No renovación si `access_token` tiene >2 min restantes
+- [ ] Test: Error si ambos tokens expirados
+- [ ] Test: Timestamps se actualizan tras renovación
+
+### Verificación Manual
+
+1. [ ] Login → Verificar `expires_at` en State
+2. [ ] Esperar 13 min → Hacer acción → Verificar renovación automática en logs
+3. [ ] Verificar que nuevos tokens tienen timestamps actualizados
+4. [ ] Esperar >45 min sin actividad → Verificar redirección a login
+
+## Referencias
+
+- **Endpoint de renovación:** `POST /refresh-token` en `apife.py`
+- **Método de renovación:** `refresh_tokens()` en `routermiddleware.py`
+- **Configuración de tiempos:** `protected_values.py` (por entorno)
+
+## Fecha de Decisión
+
+- **2026-02-01**: Análisis del problema y decisión documentada
+
+## Participantes
+
+- @frontend-visionary (responsable de aplicaciones Reflex)
+- @security-sentinel (validación de seguridad)
+
+## Próxima Revisión
+
+- **Trigger:** Si se detectan problemas de sincronización de relojes o race conditions
+- **Acción:** Evaluar si añadir temporizador como backup
+- **Responsable:** @frontend-visionary

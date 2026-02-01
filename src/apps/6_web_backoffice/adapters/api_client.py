@@ -251,6 +251,91 @@ def refresh_tokens(session_token: str) -> dict[str, Any]:
     )
 
 
+# Umbral de renovación: 2 minutos antes de expirar
+RENEWAL_THRESHOLD_SECONDS = 120
+
+
+def _should_renew_token(expires_at: int) -> bool:
+    """Verifica si el token está próximo a expirar.
+    
+    Args:
+        expires_at: Unix timestamp de expiración del token
+        
+    Returns:
+        True si el token expira en menos de RENEWAL_THRESHOLD_SECONDS
+    """
+    import time
+    if expires_at <= 0:
+        return False
+    return time.time() > (expires_at - RENEWAL_THRESHOLD_SECONDS)
+
+
+def ensure_valid_tokens(
+    access_token: str,
+    session_token: str,
+    access_expires_at: int,
+    session_expires_at: int,
+) -> dict[str, Any]:
+    """Garantiza tokens válidos, renovando si es necesario.
+    
+    Esta función debe llamarse antes de cada request al middleware.
+    Si el access_token está próximo a expirar y el session_token es válido,
+    renueva ambos tokens automáticamente.
+    
+    Args:
+        access_token: Token de acceso actual
+        session_token: Token de sesión actual
+        access_expires_at: Unix timestamp de expiración del access_token
+        session_expires_at: Unix timestamp de expiración del session_token
+        
+    Returns:
+        Dict con:
+        - renewed: bool indicando si se renovaron los tokens
+        - access_token: Token de acceso (renovado o el mismo)
+        - session_token: Token de sesión (renovado o el mismo)
+        - access_expires_at: Timestamp de expiración (renovado o el mismo)
+        - session_expires_at: Timestamp de expiración (renovado o el mismo)
+        - error: Mensaje de error si falló la renovación
+    """
+    result = {
+        "renewed": False,
+        "access_token": access_token,
+        "session_token": session_token,
+        "access_expires_at": access_expires_at,
+        "session_expires_at": session_expires_at,
+        "error": "",
+    }
+    
+    # Si el access_token no está próximo a expirar, no hacer nada
+    if not _should_renew_token(access_expires_at):
+        return result
+    
+    # Si el session_token también expiró, no podemos renovar
+    if _should_renew_token(session_expires_at):
+        result["error"] = "La sesión ha expirado, por favor inicie sesión nuevamente"
+        return result
+    
+    # Intentar renovar usando el session_token
+    try:
+        response = refresh_tokens(session_token)
+        
+        if response.get("access_token") and response.get("session_token"):
+            result["renewed"] = True
+            result["access_token"] = response["access_token"]
+            result["session_token"] = response["session_token"]
+            result["access_expires_at"] = response.get("access_expires_at", 0)
+            result["session_expires_at"] = response.get("session_expires_at", 0)
+            logger.info("Tokens renovados automáticamente")
+        else:
+            result["error"] = "No se pudieron renovar los tokens"
+            logger.warning("Renovación de tokens fallida: respuesta incompleta")
+    except Exception as e:
+        result["error"] = f"Error al renovar tokens: {e}"
+        logger.error(f"Error al renovar tokens: {e}")
+    
+    return result
+
+
 def logout_user(access_token: str, session_token: str) -> dict[str, Any]:
     """Solicita cierre de sesión al middleware."""
 
