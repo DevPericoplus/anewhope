@@ -685,41 +685,43 @@ def create_organization_project(
 
 def update_project_status(
     project_id: int,
-    locked: bool | None = None,
     active: bool | None = None,
     id_flujo: int | None = None,
+    existe: bool | None = None,
     access_token: str = "",
     session_token: str = "",
 ) -> dict[str, Any]:
     """
-    Actualiza el estado de un proyecto (bloqueo, activo, flujo).
+    Actualiza el estado de un proyecto (activo, flujo, existencia).
+    
+    IMPORTANTE:
+    - 'active' controla el bloqueo: True=activo, False=bloqueado
+    - 'existe' controla el borrado lógico: True=existe, False=borrado
     
     Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
     
-    El trigger en BD registra cambios automáticamente en tabla cambios:
-    - Cambio de id_flujo → "Cambio de flujo"
-    - Cambio de bloqueado → "Bloquear proyecto" / "Desbloquear proyecto"
+    El trigger en BD registra cambios automáticamente en tabla cambios.
     
     Args:
         project_id: ID del proyecto
-        locked: Nuevo estado de bloqueo (opcional)
-        active: Nuevo estado de activo (opcional)
+        active: Estado activo (True=desbloqueado, False=bloqueado)
         id_flujo: Nuevo paso del flujo (opcional)
+        existe: Existencia lógica (True=existe, False=borrado lógico)
         access_token: Token JWT de acceso
         session_token: Token de sesión
     
     Returns:
-        {"success": True} o {"success": False, "error": str}
+        {"success": True, "updated": True, "project_id": int} o {"success": False, "error": str}
     """
     headers = _build_auth_headers(access_token, session_token)
     
     payload: dict[str, Any] = {}
-    if locked is not None:
-        payload["bloqueado"] = locked
     if active is not None:
         payload["active"] = active
     if id_flujo is not None:
         payload["id_flujo"] = id_flujo
+    if existe is not None:
+        payload["existe"] = existe
     
     response = _request_middleware(
         "PATCH",
@@ -1043,3 +1045,63 @@ def _build_auth_headers(access_token: str = "", session_token: str = "") -> dict
     if session_token:
         headers["X-Session-Token"] = session_token
     return headers
+
+
+# ============================================================================
+# TICKETS DE SOPORTE
+# ============================================================================
+
+
+def create_support_ticket(
+    titulo: str,
+    consulta: str,
+    id_proyecto: int | None = None,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Crea un nuevo ticket de soporte.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    El ticket se crea con:
+    - estado: "abierto" (automático)
+    - prioridad: "media" (automático)
+    - cliente_id: usuario de la sesión (automático)
+    
+    Args:
+        titulo: Motivo del ticket (obligatorio)
+        consulta: Texto de la consulta (obligatorio)
+        id_proyecto: ID del proyecto relacionado (opcional)
+        access_token: Token JWT de acceso
+        session_token: Token de sesión
+    
+    Returns:
+        {"success": True, "ticket_id": int, "mensaje": str} o {"success": False, "error": str}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    payload: dict[str, Any] = {
+        "titulo": titulo.strip(),
+        "consulta": consulta.strip(),
+    }
+    if id_proyecto:
+        payload["id_proyecto"] = id_proyecto
+    
+    response = _request_middleware(
+        "POST",
+        "/tickets",
+        payload=payload,
+        headers=headers,
+    )
+    
+    if isinstance(response, dict):
+        if response.get("success") or response.get("ticket_id"):
+            return {
+                "success": True,
+                "ticket_id": response.get("ticket_id", 0),
+                "mensaje": response.get("mensaje", "Ticket creado"),
+            }
+        return {"success": False, "error": response.get("error", "Error desconocido")}
+    
+    return {"success": False, "error": "Respuesta inválida del servidor"}

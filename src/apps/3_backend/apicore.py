@@ -1039,12 +1039,21 @@ class ProjectCreateResponse(BaseModel):
 
 
 class ProjectUpdateRequest(BaseModel):
-    """Payload para actualizar un proyecto."""
+    """Payload para actualizar un proyecto.
+    
+    Campos:
+        nombre: Nombre del proyecto
+        descripcion: Descripción del proyecto
+        active: Estado activo/bloqueado (True=activo, False=bloqueado)
+        id_flujo: ID del paso del flujo
+        existe: Existencia lógica (True=existe, False=borrado lógico)
+    """
 
     nombre: str | None = None
     descripcion: str | None = None
     active: bool | None = None
     id_flujo: int | None = None
+    existe: bool | None = None
 
 
 class ProjectUpdateResponse(BaseModel):
@@ -1078,8 +1087,87 @@ class ProjectSupportResponse(BaseModel):
     cambio_id: int | None = None
 
 
+# ============================================================================
+# MODELOS PARA TICKETS DE SOPORTE
+# ============================================================================
+
+
+class TicketCreateRequest(BaseModel):
+    """Payload para crear un ticket de soporte."""
+
+    titulo: str  # "Motivo" en UI
+    consulta: str  # Texto de la consulta
+    id_organizacion: int  # Para registrar en cambios
+    cliente_id: int  # ID del usuario que crea el ticket
+    id_proyecto: int | None = None  # Proyecto relacionado (opcional)
+
+
+class TicketUpdateRequest(BaseModel):
+    """Payload para actualizar un ticket (solo Backoffice)."""
+
+    estado: str | None = None  # abierto/en_espera/resuelto/cerrado
+    prioridad: str | None = None  # baja/media/alta/urgente
+    user_id: int | None = None  # Usuario que realiza el cambio
+
+
+class TicketRespuestaRequest(BaseModel):
+    """Payload para añadir respuesta a un ticket."""
+
+    respuesta: str  # Texto de la respuesta
+    user_id: int  # Usuario que escribe la respuesta
+    user_id: int  # ID del usuario que responde
+
+
+class TicketDto(BaseModel):
+    """DTO de ticket para respuestas."""
+
+    id: int
+    titulo: str
+    cliente_id: int
+    estado: str
+    prioridad: str
+    fecha_creacion: str
+    fecha_actualizacion: str | None = None
+    # Datos de la primera interacción
+    consulta: str | None = None
+    respuesta: str | None = None
+    autor_consulta_id: int | None = None
+    autor_respuesta_id: int | None = None
+    fecha_consulta: str | None = None
+    fecha_respuesta: str | None = None
+    id_proyecto: int | None = None
+
+
+class TicketCreateResponse(BaseModel):
+    """Respuesta de creación de ticket."""
+
+    success: bool
+    ticket_id: int
+    mensaje: str | None = None
+
+
+class TicketUpdateResponse(BaseModel):
+    """Respuesta de actualización de ticket."""
+
+    success: bool
+    updated: bool
+    ticket_id: int
+
+
+class TicketListResponse(BaseModel):
+    """Respuesta con lista de tickets."""
+
+    tickets: list[TicketDto]
+    total: int
+
+
 class ProjectDto(BaseModel):
-    """DTO de proyecto para respuestas."""
+    """DTO de proyecto para respuestas.
+    
+    Campos:
+        active: Estado activo/bloqueado (True=activo, False=bloqueado)
+        existe: Existencia lógica (True=existe, False=borrado lógico)
+    """
 
     id: int
     nombre: str
@@ -1089,6 +1177,8 @@ class ProjectDto(BaseModel):
     id_flujo: int = 1
     flujo_nombre: str | None = None
     flujo_emoji: str | None = None
+    existe: bool = True
+    existe: bool = True
 
 
 class ProjectListResponse(BaseModel):
@@ -1110,14 +1200,20 @@ def get_organization_projects(
     session_token: str | None = Header(default=None, alias="X-Session-Token"),
     client_app: str = Depends(get_client_app),
     router: BackendCoreRouter = Depends(get_router_core),
+    include_deleted: bool = False,
 ) -> ProjectListResponse:
     """Obtiene los proyectos de una organización.
 
     Flujo: Broker → Backend Core → MariaDB (myllm_projects_db)
+    
+    Args:
+        include_deleted: Si True, incluye proyectos con existe=false
     """
     headers = _build_permission_headers(authorization, session_token, client_app)
     try:
-        projects = router.get_organization_projects(organization_id, headers)
+        projects = router.get_organization_projects(
+            organization_id, headers, include_deleted=include_deleted
+        )
         return ProjectListResponse(
             projects=[ProjectDto(**p) for p in projects],
             total=len(projects),
@@ -1564,3 +1660,130 @@ def remove_user_from_project(
         raise HTTPException(
             status_code=500, detail=f"Error interno: {exc}"
         ) from exc
+
+
+# ============================================================================
+# ENDPOINTS DE TICKETS DE SOPORTE
+# ============================================================================
+
+
+@app.post("/tickets", response_model=TicketCreateResponse, tags=["tickets"])
+def create_ticket(
+    request: TicketCreateRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> TicketCreateResponse:
+    """Crea un nuevo ticket de soporte.
+
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Crea registro en:
+    - tickets (cabecera)
+    - ticket_interacciones (consulta inicial)
+    - cambios (registro de actividad)
+    """
+    logger = logging.getLogger(__name__)
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        result = router.create_ticket(request.model_dump(), headers)
+        return TicketCreateResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error creando ticket")
+        raise HTTPException(status_code=500, detail=f"Error interno: {exc}") from exc
+
+
+@app.get(
+    "/tickets/organization/{organization_id}",
+    response_model=TicketListResponse,
+    tags=["tickets"],
+)
+def get_organization_tickets(
+    organization_id: int,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> TicketListResponse:
+    """Obtiene los tickets de una organización.
+
+    Flujo: Frontend/Backoffice → Middleware → Broker → Backend Core → MariaDB
+    """
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        tickets = router.get_organization_tickets(organization_id, headers)
+        return TicketListResponse(
+            tickets=[TicketDto(**t) for t in tickets],
+            total=len(tickets),
+        )
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/tickets/{ticket_id}", response_model=TicketDto, tags=["tickets"])
+def get_ticket_detail(
+    ticket_id: int,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> TicketDto:
+    """Obtiene el detalle de un ticket específico."""
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        ticket = router.get_ticket_detail(ticket_id, headers)
+        return TicketDto(**ticket)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/tickets/{ticket_id}", response_model=TicketUpdateResponse, tags=["tickets"])
+def update_ticket(
+    ticket_id: int,
+    request: TicketUpdateRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> TicketUpdateResponse:
+    """Actualiza estado/prioridad de un ticket (solo Backoffice).
+
+    Solo actualiza los campos enviados (estado y/o prioridad).
+    Registra el cambio en la tabla cambios.
+    """
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        update_data = {k: v for k, v in request.model_dump().items() if v is not None}
+        result = router.update_ticket(ticket_id, update_data, headers)
+        return TicketUpdateResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/tickets/{ticket_id}/respuesta",
+    response_model=TicketUpdateResponse,
+    tags=["tickets"],
+)
+def add_ticket_response(
+    ticket_id: int,
+    request: TicketRespuestaRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> TicketUpdateResponse:
+    """Añade respuesta a un ticket (solo Backoffice).
+
+    Actualiza la primera interacción del ticket con la respuesta.
+    Registra el cambio en la tabla cambios.
+    """
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        result = router.add_ticket_response(ticket_id, request.model_dump(), headers)
+        return TicketUpdateResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

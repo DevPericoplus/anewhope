@@ -9,15 +9,19 @@ from typing import Optional
 import reflex as rx
 
 from adapters.api_client import (
+    add_ticket_response,
     create_organization_user,
     get_organization_projects,
+    get_organization_tickets,
     get_organization_users,
     get_user_permissions,
     login_user,
     logout_user,
     refresh_tokens,
     request_login_otp,
+    update_project_existence,
     update_project_status,
+    update_ticket_status,
     update_user_status,
 )
 from pages.flujos import FlujosState, flujos_diagram, load_flujos_content
@@ -77,6 +81,21 @@ class State(SharedSessionState):
     create_user_error: str = ""
     create_user_success: str = ""
     is_creating_user: bool = False
+    
+    # Estado para gestión de tickets de soporte
+    org_tickets: list[dict] = []  # Lista de tickets de la organización
+    
+    # Estado del modal de gestión de ticket
+    show_ticket_modal: bool = False
+    selected_ticket_id: int = 0
+    selected_ticket_titulo: str = ""
+    selected_ticket_consulta: str = ""
+    selected_ticket_estado: str = "abierto"
+    selected_ticket_prioridad: str = "media"
+    selected_ticket_respuesta: str = ""
+    ticket_modal_error: str = ""
+    ticket_modal_success: str = ""
+    is_updating_ticket: bool = False
     
     # Nota: Los siguientes campos ya vienen de SharedSessionState:
     # - is_logged_in, access_token, session_token, user_id, organization_id
@@ -212,6 +231,8 @@ class State(SharedSessionState):
         if menu == "organizacion":
             self.load_org_users()
             self.load_org_projects()
+            self.load_org_tickets()
+            self.load_org_tickets()
 
     # ========== Gestión de Usuarios de la Organización ==========
     
@@ -428,8 +449,8 @@ class State(SharedSessionState):
     def load_org_projects(self):
         """Carga los proyectos de la organización actual desde la base de datos.
         
-        Obtiene todos los proyectos (activos e inactivos) para que el backoffice
-        pueda gestionar el estado de bloqueo.
+        En el backoffice se cargan TODOS los proyectos (incluyendo borrados lógicos)
+        para permitir su recuperación.
         """
         try:
             org_id = self.organization_id
@@ -440,20 +461,24 @@ class State(SharedSessionState):
                 self.org_projects = []
                 return
             
+            # En backoffice incluimos todos los proyectos (include_deleted=True)
             projects = get_organization_projects(
                 organization_id=org_id,
                 access_token=self.access_token,
                 session_token=self.session_token,
+                include_deleted=True,  # Incluir borrados lógicos
             )
             
             # Transformar al formato esperado por la UI
-            # Nota: active=True significa desbloqueado, active=False significa bloqueado
+            # active=True: desbloqueado, active=False: bloqueado
+            # existe=True: existe, existe=False: borrado lógico
             self.org_projects = [
                 {
                     "id": p.get("id", 0),
                     "name": p.get("name", p.get("nombre", "Sin nombre")),
                     "description": p.get("descripcion", ""),
                     "active": p.get("active", True),
+                    "existe": p.get("existe", True),
                 }
                 for p in projects
             ]
@@ -519,19 +544,209 @@ class State(SharedSessionState):
             print(f"[ERROR] unlock_project: {type(e).__name__}: {e}")
     
     def delete_project(self, project_id: int):
-        """Borrado LÓGICO de un proyecto (active=false).
+        """Borrado LÓGICO de un proyecto (existe=false).
         
-        IMPORTANTE: Este NO es un borrado físico. Tiene el mismo efecto
-        que bloquear el proyecto (active=0). El proyecto puede ser
-        reactivado posteriormente con "Desbloquear proyecto".
+        IMPORTANTE: Este es un BORRADO LÓGICO usando el campo 'existe'.
+        El proyecto permanece en la BD pero con existe=false.
+        Puede recuperarse con "Recuperar proyecto".
         """
-        print(f"[DEBUG] Borrado lógico de proyecto: {project_id}")
-        self.lock_project(project_id)  # Reutilizar lógica de bloqueo
+        print(f"[DEBUG] Borrando proyecto (lógico): {project_id}")
+        try:
+            result = update_project_existence(
+                project_id=project_id,
+                existe=False,  # Borrado lógico
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            if result.get("success"):
+                # Actualizar estado local
+                for project in self.org_projects:
+                    if project["id"] == project_id:
+                        project["existe"] = False
+                self.org_projects = self.org_projects.copy()
+                print(f"[DEBUG] Proyecto {project_id} borrado lógicamente")
+            else:
+                print(f"[ERROR] No se pudo borrar proyecto: {result}")
+        except Exception as e:
+            print(f"[ERROR] delete_project: {type(e).__name__}: {e}")
+    
+    def restore_project(self, project_id: int):
+        """Recupera un proyecto borrado lógicamente (existe=true).
+        
+        IMPORTANTE: Recupera un proyecto que fue borrado lógicamente.
+        Pone existe=true en la BD.
+        """
+        print(f"[DEBUG] Recuperando proyecto: {project_id}")
+        try:
+            result = update_project_existence(
+                project_id=project_id,
+                existe=True,  # Recuperar
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            if result.get("success"):
+                # Actualizar estado local
+                for project in self.org_projects:
+                    if project["id"] == project_id:
+                        project["existe"] = True
+                self.org_projects = self.org_projects.copy()
+                print(f"[DEBUG] Proyecto {project_id} recuperado")
+            else:
+                print(f"[ERROR] No se pudo recuperar proyecto: {result}")
+        except Exception as e:
+            print(f"[ERROR] restore_project: {type(e).__name__}: {e}")
     
     def request_project_support(self, project_id: int):
         """Solicita soporte para un proyecto."""
         # TODO: Implementar formulario de soporte
         print(f"[DEBUG] Solicitar soporte para proyecto: {project_id}")
+
+    # ========== Gestión de Tickets de Soporte ==========
+    
+    def load_org_tickets(self):
+        """Carga los tickets de la organización desde la base de datos.
+        
+        Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+        """
+        try:
+            org_id = self.organization_id
+            if org_id <= 0 and self.access_token:
+                org_id = self._extract_org_id_from_token(self.access_token)
+            
+            if org_id <= 0:
+                self.org_tickets = []
+                return
+            
+            tickets = get_organization_tickets(
+                organization_id=org_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            
+            self.org_tickets = tickets
+            print(f"[DEBUG] load_org_tickets: {len(self.org_tickets)} tickets cargados")
+        except Exception as e:
+            print(f"[ERROR] load_org_tickets: {type(e).__name__}: {e}")
+            self.org_tickets = []
+    
+    def open_ticket_modal(self, ticket_id: int):
+        """Abre el modal para gestionar un ticket."""
+        # Buscar el ticket
+        ticket = None
+        for t in self.org_tickets:
+            if t.get("id") == ticket_id:
+                ticket = t
+                break
+        
+        if not ticket:
+            print(f"[ERROR] Ticket {ticket_id} no encontrado")
+            return
+        
+        # Cargar datos en el estado
+        self.selected_ticket_id = ticket_id
+        self.selected_ticket_titulo = ticket.get("titulo", "")
+        self.selected_ticket_consulta = ticket.get("consulta", "")
+        self.selected_ticket_estado = ticket.get("estado", "abierto")
+        self.selected_ticket_prioridad = ticket.get("prioridad", "media")
+        self.selected_ticket_respuesta = ticket.get("respuesta", "") or ""
+        self.ticket_modal_error = ""
+        self.ticket_modal_success = ""
+        self.is_updating_ticket = False
+        self.show_ticket_modal = True
+        print(f"[DEBUG] Abriendo modal de ticket: {ticket_id}")
+    
+    def close_ticket_modal(self):
+        """Cierra el modal de ticket."""
+        self.show_ticket_modal = False
+        self.selected_ticket_id = 0
+        self.selected_ticket_titulo = ""
+        self.selected_ticket_consulta = ""
+        self.selected_ticket_estado = "abierto"
+        self.selected_ticket_prioridad = "media"
+        self.selected_ticket_respuesta = ""
+        self.ticket_modal_error = ""
+        self.ticket_modal_success = ""
+        self.is_updating_ticket = False
+    
+    def set_ticket_estado(self, value: str):
+        """Establece el estado del ticket."""
+        self.selected_ticket_estado = value
+    
+    def set_ticket_prioridad(self, value: str):
+        """Establece la prioridad del ticket."""
+        self.selected_ticket_prioridad = value
+    
+    def set_ticket_respuesta(self, value: str):
+        """Establece la respuesta del ticket."""
+        self.selected_ticket_respuesta = value
+    
+    def save_ticket_changes(self):
+        """Guarda los cambios del ticket (estado/prioridad).
+        
+        Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+        """
+        self.ticket_modal_error = ""
+        self.is_updating_ticket = True
+        
+        try:
+            result = update_ticket_status(
+                ticket_id=self.selected_ticket_id,
+                estado=self.selected_ticket_estado,
+                prioridad=self.selected_ticket_prioridad,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            
+            if result.get("success"):
+                self.ticket_modal_success = "Ticket actualizado correctamente"
+                # Actualizar en la lista local
+                for t in self.org_tickets:
+                    if t.get("id") == self.selected_ticket_id:
+                        t["estado"] = self.selected_ticket_estado
+                        t["prioridad"] = self.selected_ticket_prioridad
+                self.org_tickets = self.org_tickets.copy()
+            else:
+                self.ticket_modal_error = "Error al actualizar el ticket"
+        except Exception as e:
+            self.ticket_modal_error = f"Error: {e}"
+            print(f"[ERROR] save_ticket_changes: {e}")
+        finally:
+            self.is_updating_ticket = False
+    
+    def save_ticket_response(self):
+        """Guarda la respuesta del ticket.
+        
+        Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+        """
+        if not self.selected_ticket_respuesta.strip():
+            self.ticket_modal_error = "La respuesta no puede estar vacía"
+            return
+        
+        self.ticket_modal_error = ""
+        self.is_updating_ticket = True
+        
+        try:
+            result = add_ticket_response(
+                ticket_id=self.selected_ticket_id,
+                respuesta=self.selected_ticket_respuesta,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            
+            if result.get("success"):
+                self.ticket_modal_success = "Respuesta enviada correctamente"
+                # Actualizar en la lista local
+                for t in self.org_tickets:
+                    if t.get("id") == self.selected_ticket_id:
+                        t["respuesta"] = self.selected_ticket_respuesta
+                self.org_tickets = self.org_tickets.copy()
+            else:
+                self.ticket_modal_error = "Error al enviar la respuesta"
+        except Exception as e:
+            self.ticket_modal_error = f"Error: {e}"
+            print(f"[ERROR] save_ticket_response: {e}")
+        finally:
+            self.is_updating_ticket = False
 
     def on_page_load(self):
         """
@@ -572,9 +787,10 @@ class State(SharedSessionState):
         
         # Continuar con la lógica de inicialización de componentes según menú activo
         if self.user_active_menu == "organizacion":
-            # Cargar usuarios y proyectos de la organización
+            # Cargar usuarios, proyectos y tickets de la organización
             self.load_org_users()
             self.load_org_projects()
+            self.load_org_tickets()
         elif self.user_active_menu == "flujos":
             organization_id = self.organization_id
             if organization_id <= 0 and self.access_token:
@@ -1199,25 +1415,43 @@ def users_management_panel() -> rx.Component:
 def project_row(project: dict) -> rx.Component:
     """Fila de proyecto con acciones.
     
-    Muestra el nombre del proyecto y su estado (Activo/Bloqueado).
-    El campo 'active' determina el estado:
-    - active=True: Proyecto activo (desbloqueado)
-    - active=False: Proyecto bloqueado
+    Estados del proyecto:
+    - existe=False: Borrado (rojo) - máxima prioridad visual
+    - active=False: Bloqueado (naranja)
+    - active=True y existe=True: Activo (verde)
     """
     return rx.hstack(
         # Información del proyecto a la izquierda
         rx.hstack(
             rx.text(project["name"], font_weight="bold", font_size="1.1em", color=COLORS["foreground"]),
+            # Badge de estado: Borrado > Bloqueado > Activo
             rx.cond(
-                project["active"],  # active=True → Activo, active=False → Bloqueado
-                rx.badge("Activo", color_scheme="green", variant="soft", size="3"),
-                rx.badge("Bloqueado", color_scheme="red", variant="soft", size="3"),
+                ~project["existe"],  # Si existe=False → Borrado
+                rx.badge("Borrado", color_scheme="red", variant="soft", size="3"),
+                rx.cond(
+                    project["active"],  # Si active=True → Activo
+                    rx.badge("Activo", color_scheme="green", variant="soft", size="3"),
+                    rx.badge("Bloqueado", color_scheme="orange", variant="soft", size="3"),
+                ),
             ),
             spacing="3",
             align="center",
         ),
         # Acciones a la derecha
         rx.hstack(
+            # Recuperar proyecto (verde) - solo para proyectos borrados
+            rx.tooltip(
+                rx.icon_button(
+                    rx.icon("archive-restore", size=22),
+                    variant="ghost",
+                    size="2",
+                    color_scheme="green",
+                    cursor="pointer",
+                    on_click=State.restore_project(project["id"]),
+                    _hover={"color": "#22c55e", "background_color": COLORS["border"]},
+                ),
+                content="Recuperar proyecto",
+            ),
             # Desbloquear proyecto (verde) - activa el proyecto
             rx.tooltip(
                 rx.icon_button(
@@ -1231,29 +1465,29 @@ def project_row(project: dict) -> rx.Component:
                 ),
                 content="Desbloquear proyecto",
             ),
-            # Bloquear proyecto (rojo) - desactiva el proyecto
+            # Bloquear proyecto (naranja) - desactiva el proyecto
             rx.tooltip(
                 rx.icon_button(
                     rx.icon("lock", size=22),
                     variant="ghost",
                     size="2",
-                    color_scheme="red",
+                    color_scheme="orange",
                     cursor="pointer",
                     on_click=State.lock_project(project["id"]),
-                    _hover={"color": "#ef4444", "background_color": COLORS["border"]},
+                    _hover={"color": "#f97316", "background_color": COLORS["border"]},
                 ),
                 content="Bloquear proyecto",
             ),
-            # Borrar proyecto (mismo efecto que bloquear)
+            # Borrar proyecto (rojo) - borrado lógico
             rx.tooltip(
                 rx.icon_button(
                     rx.icon("trash-2", size=22),
                     variant="ghost",
                     size="2",
-                    color_scheme="gray",
+                    color_scheme="red",
                     cursor="pointer",
                     on_click=State.delete_project(project["id"]),
-                    _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
+                    _hover={"color": "#ef4444", "background_color": COLORS["border"]},
                 ),
                 content="Borrar proyecto",
             ),
@@ -1322,11 +1556,251 @@ def projects_management_panel() -> rx.Component:
     )
 
 
+def ticket_row(ticket: dict) -> rx.Component:
+    """Fila de ticket con acciones."""
+    # Colores por estado
+    estado_colors = {
+        "abierto": "green",
+        "en_espera": "yellow",
+        "resuelto": "blue",
+        "cerrado": "gray",
+    }
+    # Colores por prioridad
+    prioridad_colors = {
+        "baja": "gray",
+        "media": "yellow",
+        "alta": "orange",
+        "urgente": "red",
+    }
+    
+    return rx.hstack(
+        # Información del ticket a la izquierda
+        rx.vstack(
+            rx.hstack(
+                rx.text(f"#{ticket['id']}", font_weight="bold", color=COLORS["muted_foreground"]),
+                rx.text(ticket["titulo"], font_weight="bold", font_size="1.05em", color=COLORS["foreground"]),
+                spacing="2",
+            ),
+            rx.hstack(
+                rx.badge(
+                    ticket["estado"],
+                    color_scheme=estado_colors.get(ticket.get("estado", "abierto"), "gray"),
+                    variant="soft",
+                    size="2",
+                ),
+                rx.badge(
+                    ticket["prioridad"],
+                    color_scheme=prioridad_colors.get(ticket.get("prioridad", "media"), "yellow"),
+                    variant="soft",
+                    size="2",
+                ),
+                rx.cond(
+                    ticket.get("respuesta", "") != "",
+                    rx.badge("Con respuesta", color_scheme="blue", variant="outline", size="2"),
+                    rx.badge("Sin respuesta", color_scheme="gray", variant="outline", size="2"),
+                ),
+                spacing="2",
+            ),
+            spacing="1",
+            align_items="flex-start",
+        ),
+        # Botón gestionar a la derecha
+        rx.tooltip(
+            rx.icon_button(
+                rx.icon("pencil", size=20),
+                variant="ghost",
+                size="2",
+                color_scheme="blue",
+                cursor="pointer",
+                on_click=State.open_ticket_modal(ticket["id"]),
+                _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
+            ),
+            content="Gestionar ticket",
+        ),
+        justify="between",
+        align="center",
+        width="100%",
+        padding="0.75em",
+        background_color=COLORS["card"],
+        border=f"1px solid {COLORS['border']}",
+        border_radius="0.5em",
+    )
+
+
+def ticket_management_modal() -> rx.Component:
+    """Modal para gestionar un ticket de soporte."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title(
+                rx.hstack(
+                    rx.icon("headset", size=24, color=COLORS["primary"]),
+                    rx.text("Gestión de Ticket", font_weight="bold", font_size="1.3em"),
+                    spacing="3",
+                    align="center",
+                ),
+            ),
+            # Información del ticket
+            rx.vstack(
+                # Título
+                rx.hstack(
+                    rx.text("Motivo:", font_weight="bold", color=COLORS["muted_foreground"]),
+                    rx.text(State.selected_ticket_titulo, color=COLORS["foreground"]),
+                    spacing="2",
+                ),
+                # Consulta (solo lectura)
+                rx.vstack(
+                    rx.text("Consulta del cliente:", font_weight="bold", color=COLORS["muted_foreground"]),
+                    rx.box(
+                        rx.text(State.selected_ticket_consulta, color=COLORS["foreground"]),
+                        padding="0.75em",
+                        background_color=COLORS["input"],
+                        border=f"1px solid {COLORS['border']}",
+                        border_radius="0.25em",
+                        width="100%",
+                        max_height="100px",
+                        overflow_y="auto",
+                    ),
+                    width="100%",
+                    spacing="1",
+                    align_items="flex-start",
+                ),
+                # Selectores de estado y prioridad
+                rx.hstack(
+                    rx.vstack(
+                        rx.text("Estado", font_weight="bold", color=COLORS["foreground"]),
+                        rx.select(
+                            ["abierto", "en_espera", "resuelto", "cerrado"],
+                            value=State.selected_ticket_estado,
+                            on_change=State.set_ticket_estado,
+                            width="150px",
+                        ),
+                        spacing="1",
+                        align_items="flex-start",
+                    ),
+                    rx.vstack(
+                        rx.text("Prioridad", font_weight="bold", color=COLORS["foreground"]),
+                        rx.select(
+                            ["baja", "media", "alta", "urgente"],
+                            value=State.selected_ticket_prioridad,
+                            on_change=State.set_ticket_prioridad,
+                            width="150px",
+                        ),
+                        spacing="1",
+                        align_items="flex-start",
+                    ),
+                    spacing="4",
+                ),
+                # Campo de respuesta
+                rx.vstack(
+                    rx.text("Respuesta", font_weight="bold", color=COLORS["foreground"]),
+                    rx.text_area(
+                        value=State.selected_ticket_respuesta,
+                        on_change=State.set_ticket_respuesta,
+                        placeholder="Escribe tu respuesta al cliente...",
+                        width="100%",
+                        min_height="100px",
+                        background_color=COLORS["input"],
+                        color=COLORS["foreground"],
+                        border=f"1px solid {COLORS['border']}",
+                    ),
+                    width="100%",
+                    spacing="1",
+                    align_items="flex-start",
+                ),
+                # Mensajes de error/éxito
+                rx.cond(
+                    State.ticket_modal_error != "",
+                    rx.text(State.ticket_modal_error, color="red", font_size="0.9em"),
+                ),
+                rx.cond(
+                    State.ticket_modal_success != "",
+                    rx.text(State.ticket_modal_success, color="green", font_size="0.9em"),
+                ),
+                # Botones
+                rx.hstack(
+                    rx.button(
+                        "Cancelar",
+                        on_click=State.close_ticket_modal,
+                        color_scheme="gray",
+                        variant="outline",
+                    ),
+                    rx.button(
+                        "Guardar Estado",
+                        on_click=State.save_ticket_changes,
+                        color_scheme="blue",
+                        disabled=State.is_updating_ticket,
+                    ),
+                    rx.button(
+                        "Enviar Respuesta",
+                        on_click=State.save_ticket_response,
+                        color_scheme="green",
+                        disabled=State.is_updating_ticket,
+                    ),
+                    spacing="2",
+                    justify="end",
+                    width="100%",
+                ),
+                width="100%",
+                spacing="3",
+                padding="1em",
+            ),
+            max_width="500px",
+            background_color=COLORS["card"],
+        ),
+        open=State.show_ticket_modal,
+    )
+
+
+def tickets_management_panel() -> rx.Component:
+    """Panel de gestión de tickets de soporte."""
+    return rx.vstack(
+        rx.hstack(
+            rx.icon("headset", size=28, color=COLORS["primary"]),
+            rx.heading("Gestión de Tickets", size="6", color=COLORS["foreground"]),
+            spacing="3",
+            align="center",
+        ),
+        rx.text(
+            "Tickets de soporte de la organización",
+            color=COLORS["muted_foreground"],
+            font_size="0.9em",
+        ),
+        # Modal de gestión de ticket
+        ticket_management_modal(),
+        # Lista de tickets
+        rx.cond(
+            State.org_tickets.length() > 0,
+            rx.vstack(
+                rx.foreach(
+                    State.org_tickets,
+                    ticket_row,
+                ),
+                width="100%",
+                spacing="2",
+            ),
+            rx.text(
+                "No hay tickets de soporte",
+                color=COLORS["muted_foreground"],
+                font_style="italic",
+                padding="1em",
+            ),
+        ),
+        width="100%",
+        padding="1.5em",
+        background_color=COLORS["card"],
+        border=f"1px solid {COLORS['border']}",
+        border_radius="0.5em",
+        spacing="3",
+        align_items="flex-start",
+    )
+
+
 def organization_management_panels() -> rx.Component:
-    """Paneles de gestión de usuarios y proyectos para la sección Organización."""
+    """Paneles de gestión de usuarios, proyectos y tickets para la sección Organización."""
     return rx.vstack(
         users_management_panel(),
         projects_management_panel(),
+        tickets_management_panel(),
         width="100%",
         spacing="4",
         margin_top="1.5em",

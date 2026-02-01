@@ -417,16 +417,22 @@ class BrokerBackendClient:
     # Gestión de Proyectos
     # ========================================================================
 
-    def get_organization_projects(self, organization_id: int) -> dict[str, Any]:
+    def get_organization_projects(
+        self, organization_id: int, include_deleted: bool = False
+    ) -> dict[str, Any]:
         """Obtiene los proyectos de una organización.
 
         Args:
             organization_id: ID de la organización
+            include_deleted: Si True, incluye proyectos con existe=false
 
         Returns:
             {"projects": [...], "total": int}
         """
-        data = self._request("GET", f"/projects/organization/{organization_id}")
+        path = f"/projects/organization/{organization_id}"
+        if include_deleted:
+            path += "?include_deleted=true"
+        data = self._request("GET", path)
         return dict(data or {"projects": [], "total": 0})
 
     def create_project(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -545,4 +551,79 @@ class BrokerBackendClient:
             {"success": True, "message": str, ...}
         """
         data = self._request("POST", "/project-roles/remove", payload=payload)
+        return dict(data or {})
+
+    # ========================================================================
+    # GESTIÓN DE TICKETS DE SOPORTE
+    # ========================================================================
+
+    def create_ticket(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Crea un nuevo ticket de soporte.
+
+        Args:
+            payload: {"titulo": str, "consulta": str, "id_organizacion": int, ...}
+
+        Returns:
+            {"success": True, "ticket_id": int, "mensaje": str}
+        """
+        data = self._request("POST", "/tickets", payload=payload)
+        return dict(data or {})
+
+    def get_organization_tickets(self, organization_id: int) -> dict[str, Any]:
+        """Obtiene los tickets de una organización.
+
+        Args:
+            organization_id: ID de la organización
+
+        Returns:
+            {"tickets": [...], "total": int}
+        """
+        data = self._request("GET", f"/tickets/organization/{organization_id}")
+        return dict(data or {"tickets": [], "total": 0})
+
+    def get_ticket_detail(self, ticket_id: int) -> dict[str, Any]:
+        """Obtiene el detalle de un ticket específico.
+
+        Args:
+            ticket_id: ID del ticket
+
+        Returns:
+            TicketDto como diccionario
+        """
+        data = self._request("GET", f"/tickets/{ticket_id}")
+        return dict(data or {})
+
+    def update_ticket(
+        self, ticket_id: int, update_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Actualiza estado/prioridad de un ticket.
+
+        Args:
+            ticket_id: ID del ticket
+            update_data: {"estado": str?, "prioridad": str?}
+
+        Returns:
+            {"success": True, "updated": bool, "ticket_id": int}
+        """
+        data = self._request("PATCH", f"/tickets/{ticket_id}", payload=update_data)
+        return dict(data or {})
+
+    def add_ticket_response(
+        self, ticket_id: int, respuesta: str, user_id: int = 0
+    ) -> dict[str, Any]:
+        """Añade respuesta a un ticket.
+
+        Args:
+            ticket_id: ID del ticket
+            respuesta: Texto de la respuesta
+            user_id: ID del usuario que responde
+
+        Returns:
+            {"success": True, "updated": bool, "ticket_id": int}
+        """
+        data = self._request(
+            "POST",
+            f"/tickets/{ticket_id}/respuesta",
+            payload={"respuesta": respuesta, "user_id": user_id},
+        )
         return dict(data or {})

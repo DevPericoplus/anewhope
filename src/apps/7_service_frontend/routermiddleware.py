@@ -3088,6 +3088,7 @@ class RouterMiddleware:
         self,
         organization_id: int,
         session: SessionContext,
+        include_deleted: bool = False,
     ) -> dict[str, Any]:
         """Obtiene los proyectos de una organización.
 
@@ -3096,6 +3097,7 @@ class RouterMiddleware:
         Args:
             organization_id: ID de la organización
             session: Contexto de sesión del usuario
+            include_deleted: Si True, incluye proyectos con existe=false
 
         Returns:
             {"projects": [...], "total": int}
@@ -3103,13 +3105,16 @@ class RouterMiddleware:
         self._configure_broker_security(session)
 
         self._logger.info(
-            "[middleware] Consultando proyectos org_id=%s user_id=%s",
+            "[middleware] Consultando proyectos org_id=%s user_id=%s include_deleted=%s",
             organization_id,
             session.user_id,
+            include_deleted,
         )
 
         try:
-            return self._broker_client.get_organization_projects(organization_id)
+            return self._broker_client.get_organization_projects(
+                organization_id, include_deleted=include_deleted
+            )
         except BrokerBackendCommunicationError as exc:
             raise BusinessRuleError(
                 f"No se pudieron obtener los proyectos: {exc}"
@@ -3378,3 +3383,131 @@ class RouterMiddleware:
             raise BusinessRuleError(
                 f"No se pudo quitar usuario del proyecto: {exc}"
             ) from exc
+
+    # ========================================================================
+    # GESTIÓN DE TICKETS DE SOPORTE
+    # ========================================================================
+
+    def create_ticket(
+        self, payload: dict[str, Any], session: SessionContext
+    ) -> dict[str, Any]:
+        """Crea un nuevo ticket de soporte.
+
+        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+
+        Args:
+            payload: {titulo, consulta, id_proyecto?}
+            session: Contexto de sesión del usuario
+
+        Returns:
+            {"success": True, "ticket_id": int, "mensaje": str}
+        """
+        self._configure_broker_security(session)
+
+        # Validar que la sesión tenga user_id válido
+        if session.user_id <= 0:
+            raise BusinessRuleError(f"Sesión sin user_id válido: {session.user_id}")
+
+        # Añadir datos de la sesión al payload
+        payload["id_organizacion"] = session.organization_id
+        payload["cliente_id"] = session.user_id
+
+        self._logger.info(
+            "[middleware] Creando ticket: titulo=%s cliente_id=%s org_id=%s payload=%s",
+            payload.get("titulo"),
+            session.user_id,
+            session.organization_id,
+            payload,
+        )
+
+        try:
+            return self._broker_client.create_ticket(payload)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(f"No se pudo crear el ticket: {exc}") from exc
+
+    def get_organization_tickets(
+        self, organization_id: int, session: SessionContext
+    ) -> dict[str, Any]:
+        """Obtiene los tickets de una organización.
+
+        Args:
+            organization_id: ID de la organización
+            session: Contexto de sesión del usuario
+
+        Returns:
+            {"tickets": [...], "total": int}
+        """
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Consultando tickets org_id=%s user_id=%s",
+            organization_id,
+            session.user_id,
+        )
+
+        try:
+            return self._broker_client.get_organization_tickets(organization_id)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudieron obtener los tickets: {exc}"
+            ) from exc
+
+    def get_ticket_detail(
+        self, ticket_id: int, session: SessionContext
+    ) -> dict[str, Any]:
+        """Obtiene el detalle de un ticket específico."""
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Consultando ticket_id=%s user_id=%s",
+            ticket_id,
+            session.user_id,
+        )
+
+        try:
+            return self._broker_client.get_ticket_detail(ticket_id)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(f"No se pudo obtener el ticket: {exc}") from exc
+
+    def update_ticket(
+        self, ticket_id: int, update_data: dict[str, Any], session: SessionContext
+    ) -> dict[str, Any]:
+        """Actualiza estado/prioridad de un ticket."""
+        self._configure_broker_security(session)
+
+        # Añadir user_id para registro de cambios
+        update_data["user_id"] = session.user_id
+
+        self._logger.info(
+            "[middleware] Actualizando ticket_id=%s data=%s user_id=%s",
+            ticket_id,
+            update_data,
+            session.user_id,
+        )
+
+        try:
+            return self._broker_client.update_ticket(ticket_id, update_data)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo actualizar el ticket: {exc}"
+            ) from exc
+
+    def add_ticket_response(
+        self, ticket_id: int, respuesta: str, session: SessionContext
+    ) -> dict[str, Any]:
+        """Añade respuesta a un ticket."""
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Añadiendo respuesta a ticket_id=%s user_id=%s",
+            ticket_id,
+            session.user_id,
+        )
+
+        try:
+            # Enviar user_id para registrar autor de la respuesta
+            return self._broker_client.add_ticket_response(
+                ticket_id, respuesta, user_id=session.user_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(f"No se pudo añadir la respuesta: {exc}") from exc

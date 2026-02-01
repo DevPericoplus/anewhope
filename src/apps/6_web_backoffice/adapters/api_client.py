@@ -334,6 +334,7 @@ def get_organization_projects(
     organization_id: int,
     access_token: str | None = None,
     session_token: str | None = None,
+    include_deleted: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Obtiene los proyectos de una organización.
@@ -344,10 +345,11 @@ def get_organization_projects(
         organization_id: ID de la organización
         access_token: Token JWT de acceso
         session_token: Token de sesión
+        include_deleted: Si True, incluye proyectos con existe=false (borrados lógicos)
     
     Returns:
         Lista de proyectos con estructura:
-        [{"id": int, "name": str, "descripcion": str, "active": bool, "id_flujo": int}]
+        [{"id": int, "name": str, "descripcion": str, "active": bool, "existe": bool, "id_flujo": int}]
     """
     headers = {}
     if access_token:
@@ -355,7 +357,11 @@ def get_organization_projects(
     if session_token:
         headers["X-Session-Token"] = session_token
     
+    # Añadir query param para incluir borrados
     path = f"/projects/organization/{organization_id}"
+    if include_deleted:
+        path += "?include_deleted=true"
+    
     response = _request_middleware("GET", path, headers=headers)
     
     if isinstance(response, list):
@@ -478,6 +484,67 @@ def update_project_status(
         except Exception:
             pass
         logger.error(f"Error actualizando proyecto: {error_msg}")
+        raise Exception(error_msg) from exc
+    except urllib.error.URLError as exc:
+        logger.error(f"No se pudo contactar con el middleware: {exc}")
+        raise Exception(f"Error de conexión: {exc}") from exc
+
+
+def update_project_existence(
+    project_id: int,
+    existe: bool,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """
+    Actualiza la existencia lógica de un proyecto.
+    
+    IMPORTANTE: Este es un borrado/recuperación LÓGICO, no físico.
+    - existe=True: Proyecto existe (recuperado)
+    - existe=False: Proyecto borrado lógicamente
+    
+    Args:
+        project_id: ID del proyecto a modificar
+        existe: True para recuperar, False para borrar lógicamente
+        access_token: Token de acceso JWT
+        session_token: Token de sesión
+    
+    Returns:
+        Diccionario con project_id, success y updated
+    
+    Raises:
+        Exception: Si hay error en la petición
+    """
+    url = f"{_get_middleware_base_url()}/projects/{project_id}"
+    body = json.dumps({"existe": existe}).encode("utf-8")
+    
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+    
+    action = "recuperando" if existe else "borrando lógicamente"
+    logger.info(f"Enviando PATCH a {url} - {action} proyecto")
+    
+    request = urllib.request.Request(url, data=body, headers=request_headers, method="PATCH")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            action_done = "recuperado" if existe else "borrado lógicamente"
+            logger.info(f"Proyecto {project_id} {action_done}: {result}")
+            return result
+    except urllib.error.HTTPError as exc:
+        error_msg = f"Error HTTP {exc.code}"
+        try:
+            error_payload = exc.read().decode("utf-8")
+            error_msg = f"{error_msg}: {error_payload}"
+        except Exception:
+            pass
+        logger.error(f"Error actualizando existencia proyecto: {error_msg}")
         raise Exception(error_msg) from exc
     except urllib.error.URLError as exc:
         logger.error(f"No se pudo contactar con el middleware: {exc}")
@@ -623,4 +690,157 @@ def _encrypt_password(plain_password: str) -> str | None:
     except Exception as e:
         logger.error(f"Error al cifrar contraseña: {e}")
         return None
+
+
+# ============================================================================
+# TICKETS DE SOPORTE
+# ============================================================================
+
+
+def get_organization_tickets(
+    organization_id: int,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Obtiene los tickets de una organización.
+    
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+    
+    Args:
+        organization_id: ID de la organización
+        access_token: Token JWT de acceso
+        session_token: Token de sesión
+    
+    Returns:
+        Lista de tickets
+    """
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+    
+    response = _request_middleware(
+        "GET", f"/tickets/organization/{organization_id}", headers=headers
+    )
+    
+    if isinstance(response, dict) and "tickets" in response:
+        return response.get("tickets", [])
+    if isinstance(response, list):
+        return response
+    return []
+
+
+def update_ticket_status(
+    ticket_id: int,
+    estado: str | None = None,
+    prioridad: str | None = None,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """
+    Actualiza el estado/prioridad de un ticket.
+    
+    Args:
+        ticket_id: ID del ticket
+        estado: Nuevo estado (abierto/en_espera/resuelto/cerrado)
+        prioridad: Nueva prioridad (baja/media/alta/urgente)
+        access_token: Token JWT de acceso
+        session_token: Token de sesión
+    
+    Returns:
+        {"success": True, "updated": bool, "ticket_id": int}
+    """
+    url = f"{_get_middleware_base_url()}/tickets/{ticket_id}"
+    
+    payload: dict[str, Any] = {}
+    if estado:
+        payload["estado"] = estado
+    if prioridad:
+        payload["prioridad"] = prioridad
+    
+    body = json.dumps(payload).encode("utf-8")
+    
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+    
+    logger.info(f"Enviando PATCH a {url}")
+    
+    request = urllib.request.Request(url, data=body, headers=request_headers, method="PATCH")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            logger.info(f"Ticket {ticket_id} actualizado: {result}")
+            return result
+    except urllib.error.HTTPError as exc:
+        error_msg = f"Error HTTP {exc.code}"
+        try:
+            error_payload = exc.read().decode("utf-8")
+            error_msg = f"{error_msg}: {error_payload}"
+        except Exception:
+            pass
+        logger.error(f"Error actualizando ticket: {error_msg}")
+        raise Exception(error_msg) from exc
+    except urllib.error.URLError as exc:
+        logger.error(f"No se pudo contactar con el middleware: {exc}")
+        raise Exception(f"Error de conexión: {exc}") from exc
+
+
+def add_ticket_response(
+    ticket_id: int,
+    respuesta: str,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """
+    Añade respuesta a un ticket.
+    
+    Args:
+        ticket_id: ID del ticket
+        respuesta: Texto de la respuesta
+        access_token: Token JWT de acceso
+        session_token: Token de sesión
+    
+    Returns:
+        {"success": True, "updated": bool, "ticket_id": int}
+    """
+    url = f"{_get_middleware_base_url()}/tickets/{ticket_id}/respuesta"
+    body = json.dumps({"respuesta": respuesta}).encode("utf-8")
+    
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+    
+    logger.info(f"Enviando POST a {url}")
+    
+    request = urllib.request.Request(url, data=body, headers=request_headers, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            logger.info(f"Respuesta añadida a ticket {ticket_id}: {result}")
+            return result
+    except urllib.error.HTTPError as exc:
+        error_msg = f"Error HTTP {exc.code}"
+        try:
+            error_payload = exc.read().decode("utf-8")
+            error_msg = f"{error_msg}: {error_payload}"
+        except Exception:
+            pass
+        logger.error(f"Error añadiendo respuesta: {error_msg}")
+        raise Exception(error_msg) from exc
+    except urllib.error.URLError as exc:
+        logger.error(f"No se pudo contactar con el middleware: {exc}")
+        raise Exception(f"Error de conexión: {exc}") from exc
 

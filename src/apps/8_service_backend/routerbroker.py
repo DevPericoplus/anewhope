@@ -498,20 +498,27 @@ class BrokerBackendRouter:
     # ========================================================================
 
     def get_organization_projects(
-        self, organization_id: int, headers: dict[str, str]
+        self,
+        organization_id: int,
+        headers: dict[str, str],
+        include_deleted: bool = False,
     ) -> dict[str, Any]:
         """Obtiene los proyectos de una organización.
 
         Enruta a Backend Core → MariaDB (myllm_projects_db)
+        
+        Args:
+            include_deleted: Si True, incluye proyectos con existe=false
         """
         self._logger.info(
-            "[%s] Consultando proyectos org_id=%s",
+            "[%s] Consultando proyectos org_id=%s include_deleted=%s",
             self._client_app,
             organization_id,
+            include_deleted,
         )
         try:
             return self._core_client.get_organization_projects(
-                organization_id, headers
+                organization_id, headers, include_deleted=include_deleted
             )
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(
@@ -683,4 +690,93 @@ class BrokerBackendRouter:
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(
                 f"No se pudo quitar usuario del proyecto: {exc}"
+            ) from exc
+
+    # ========================================================================
+    # GESTIÓN DE TICKETS DE SOPORTE
+    # ========================================================================
+
+    def create_ticket(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Crea un nuevo ticket de soporte.
+
+        Enruta a Backend Core → MariaDB (INSERT tickets + ticket_interacciones)
+        """
+        self._logger.info(
+            "[%s] Creando ticket: %s",
+            self._client_app,
+            payload.get("titulo"),
+        )
+        try:
+            return self._core_client.create_ticket(payload, headers)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"No se pudo crear el ticket: {exc}") from exc
+
+    def get_organization_tickets(
+        self, organization_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Obtiene los tickets de una organización."""
+        self._logger.info(
+            "[%s] Consultando tickets org_id=%s",
+            self._client_app,
+            organization_id,
+        )
+        try:
+            return self._core_client.get_organization_tickets(organization_id, headers)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudieron obtener tickets: {exc}"
+            ) from exc
+
+    def get_ticket_detail(
+        self, ticket_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Obtiene el detalle de un ticket específico."""
+        self._logger.info(
+            "[%s] Consultando ticket_id=%s",
+            self._client_app,
+            ticket_id,
+        )
+        try:
+            return self._core_client.get_ticket_detail(ticket_id, headers)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudo obtener el ticket: {exc}"
+            ) from exc
+
+    def update_ticket(
+        self, ticket_id: int, update_data: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Actualiza estado/prioridad de un ticket."""
+        self._logger.info(
+            "[%s] Actualizando ticket_id=%s data=%s",
+            self._client_app,
+            ticket_id,
+            update_data,
+        )
+        try:
+            return self._core_client.update_ticket(ticket_id, update_data, headers)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudo actualizar el ticket: {exc}"
+            ) from exc
+
+    def add_ticket_response(
+        self, ticket_id: int, respuesta: str, user_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Añade respuesta a un ticket."""
+        self._logger.info(
+            "[%s] Añadiendo respuesta a ticket_id=%s user_id=%s",
+            self._client_app,
+            ticket_id,
+            user_id,
+        )
+        try:
+            return self._core_client.add_ticket_response(
+                ticket_id, respuesta, user_id, headers
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudo añadir respuesta: {exc}"
             ) from exc

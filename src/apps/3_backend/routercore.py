@@ -1222,20 +1222,27 @@ class BackendCoreRouter:
     # ========================================================================
 
     def get_organization_projects(
-        self, organization_id: int, headers: dict[str, str]
+        self,
+        organization_id: int,
+        headers: dict[str, str],
+        include_deleted: bool = False,
     ) -> list[dict[str, Any]]:
         """Obtiene los proyectos de una organización desde MariaDB.
 
         Consulta la base de datos myllm_projects_db directamente.
+        
+        Args:
+            include_deleted: Si True, incluye proyectos con existe=false
         """
         self._logger.info(
-            "[%s] Consultando proyectos org_id=%s",
+            "[%s] Consultando proyectos org_id=%s include_deleted=%s",
             headers.get("X-Client-App", "unknown"),
             organization_id,
+            include_deleted,
         )
 
         try:
-            return self._get_projects_from_db(organization_id)
+            return self._get_projects_from_db(organization_id, include_deleted)
         except Exception as exc:
             self._logger.error("Error obteniendo proyectos: %s", exc)
             raise BackendCoreBusinessError(
@@ -1398,13 +1405,23 @@ class BackendCoreRouter:
         engine = create_engine(dsn)
         return engine.connect()
 
-    def _get_projects_from_db(self, organization_id: int) -> list[dict[str, Any]]:
-        """Consulta proyectos de una organización desde MariaDB."""
+    def _get_projects_from_db(
+        self, organization_id: int, include_deleted: bool = False
+    ) -> list[dict[str, Any]]:
+        """Consulta proyectos de una organización desde MariaDB.
+        
+        Args:
+            organization_id: ID de la organización
+            include_deleted: Si True, incluye proyectos con existe=false
+        """
         from sqlalchemy import text
+
+        # Filtro de existencia: por defecto solo proyectos existentes
+        existe_filter = "" if include_deleted else "AND COALESCE(p.existe, 1) = 1"
 
         with self._get_projects_db_connection() as conn:
             result = conn.execute(
-                text("""
+                text(f"""
                     SELECT 
                         p.id,
                         p.nombre,
@@ -1413,10 +1430,11 @@ class BackendCoreRouter:
                         COALESCE(p.active, 1) as active,
                         COALESCE(p.id_flujo, 1) as id_flujo,
                         f.nombre as flujo_nombre,
-                        f.emoji as flujo_emoji
+                        f.emoji as flujo_emoji,
+                        COALESCE(p.existe, 1) as existe
                     FROM proyectos p
                     LEFT JOIN flujos f ON p.id_flujo = f.id_flujo
-                    WHERE p.id_organizacion = :org_id
+                    WHERE p.id_organizacion = :org_id {existe_filter}
                     ORDER BY p.nombre
                 """),
                 {"org_id": organization_id},
@@ -1432,6 +1450,7 @@ class BackendCoreRouter:
                     "id_flujo": row[5],
                     "flujo_nombre": row[6],
                     "flujo_emoji": row[7],
+                    "existe": bool(row[8]),
                 }
                 for row in rows
             ]
@@ -1508,6 +1527,9 @@ class BackendCoreRouter:
         if "id_flujo" in update_data:
             set_clauses.append("id_flujo = :id_flujo")
             params["id_flujo"] = update_data["id_flujo"]
+        if "existe" in update_data:
+            set_clauses.append("existe = :existe")
+            params["existe"] = 1 if update_data["existe"] else 0
 
         if not set_clauses:
             return False
@@ -1936,3 +1958,449 @@ class BackendCoreRouter:
                 "id_usuario": id_usuario,
                 "id_proyecto": id_proyecto,
             }
+
+    # ========================================================================
+    # GESTIÓN DE TICKETS DE SOPORTE
+    # ========================================================================
+
+    def create_ticket(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Crea un nuevo ticket de soporte.
+
+        Crea registro en tickets + ticket_interacciones + cambios.
+
+        Args:
+            payload: {titulo, consulta, id_organizacion, id_proyecto?}
+            headers: Headers de seguridad
+
+        Returns:
+            {success: True, ticket_id: int, mensaje: str}
+        """
+        titulo = payload.get("titulo", "").strip()
+        consulta = payload.get("consulta", "").strip()
+        id_organizacion = int(payload.get("id_organizacion", 0))
+        id_proyecto = payload.get("id_proyecto")
+        cliente_id = int(payload.get("cliente_id", 0))
+
+        if not titulo:
+            raise BackendCoreBusinessError("El motivo del ticket es obligatorio")
+        if not consulta:
+            raise BackendCoreBusinessError("La consulta es obligatoria")
+        if id_organizacion <= 0:
+            raise BackendCoreBusinessError("ID de organización inválido")
+        if cliente_id <= 0:
+            raise BackendCoreBusinessError("No se pudo identificar al usuario")
+
+        self._logger.info(
+            "[%s] Creando ticket: titulo=%s org_id=%s cliente_id=%s",
+            headers.get("X-Client-App", "unknown"),
+            titulo,
+            id_organizacion,
+            cliente_id,
+        )
+
+        try:
+            ticket_id = self._create_ticket_in_db(
+                titulo, consulta, cliente_id, id_organizacion, id_proyecto
+            )
+            return {
+                "success": True,
+                "ticket_id": ticket_id,
+                "mensaje": "Ticket creado correctamente",
+            }
+        except Exception as exc:
+            self._logger.error("Error creando ticket: %s", exc)
+            raise BackendCoreBusinessError(f"Error creando ticket: {exc}") from exc
+
+    def _create_ticket_in_db(
+        self,
+        titulo: str,
+        consulta: str,
+        cliente_id: int,
+        id_organizacion: int,
+        id_proyecto: int | None,
+    ) -> int:
+        """Inserta ticket y primera interacción en MariaDB."""
+        from sqlalchemy import text
+
+        with self._get_projects_db_writer_connection() as conn:
+            # Insertar ticket con organización y proyecto
+            result = conn.execute(
+                text("""
+                    INSERT INTO tickets (titulo, cliente_id, id_organizacion, id_proyecto, estado, prioridad)
+                    VALUES (:titulo, :cliente_id, :id_organizacion, :id_proyecto, 'abierto', 'media')
+                """),
+                {
+                    "titulo": titulo,
+                    "cliente_id": cliente_id,
+                    "id_organizacion": id_organizacion,
+                    "id_proyecto": id_proyecto,
+                },
+            )
+            ticket_id = result.lastrowid
+
+            # Insertar primera interacción
+            conn.execute(
+                text("""
+                    INSERT INTO ticket_interacciones 
+                    (ticket_id, autor_consulta_id, consulta)
+                    VALUES (:ticket_id, :autor_id, :consulta)
+                """),
+                {
+                    "ticket_id": ticket_id,
+                    "autor_id": cliente_id,
+                    "consulta": consulta,
+                },
+            )
+
+            # Registrar cambio solo si hay proyecto asociado
+            if id_proyecto:
+                conn.execute(
+                    text("""
+                        CALL sp_registrar_cambio_proyecto(
+                            :p_id_proyecto,
+                            :p_id_organizacion,
+                            :p_tipo_cambio,
+                            :p_descripcion,
+                            :p_id_usuario
+                        )
+                    """),
+                    {
+                        "p_id_proyecto": id_proyecto,
+                        "p_id_organizacion": id_organizacion,
+                        "p_tipo_cambio": "Solicitud soporte proyecto",
+                        "p_descripcion": f"Ticket #{ticket_id}: {titulo[:50]}",
+                        "p_id_usuario": cliente_id,
+                    },
+                )
+
+            conn.commit()
+            return ticket_id
+
+    def get_organization_tickets(
+        self, organization_id: int, headers: dict[str, str]
+    ) -> list[dict[str, Any]]:
+        """Obtiene los tickets de una organización."""
+        self._logger.info(
+            "[%s] Consultando tickets org_id=%s",
+            headers.get("X-Client-App", "unknown"),
+            organization_id,
+        )
+
+        try:
+            return self._get_tickets_from_db(organization_id)
+        except Exception as exc:
+            self._logger.error("Error obteniendo tickets: %s", exc)
+            raise BackendCoreBusinessError(f"Error consultando tickets: {exc}") from exc
+
+    def _get_tickets_from_db(self, organization_id: int) -> list[dict[str, Any]]:
+        """Consulta tickets con sus interacciones desde MariaDB."""
+        from sqlalchemy import text
+
+        with self._get_projects_db_connection() as conn:
+            # Obtener tickets con primera interacción filtrados por organización
+            result = conn.execute(
+                text("""
+                    SELECT 
+                        t.id,
+                        t.titulo,
+                        t.cliente_id,
+                        t.estado,
+                        t.prioridad,
+                        t.fecha_creacion,
+                        t.fecha_actualizacion,
+                        ti.consulta,
+                        ti.respuesta,
+                        ti.autor_consulta_id,
+                        ti.autor_respuesta_id,
+                        ti.fecha_consulta,
+                        ti.fecha_respuesta,
+                        t.id_proyecto,
+                        t.id_organizacion
+                    FROM tickets t
+                    LEFT JOIN ticket_interacciones ti ON t.id = ti.ticket_id
+                    WHERE t.id_organizacion = :org_id
+                    ORDER BY t.fecha_creacion DESC
+                """),
+                {"org_id": organization_id},
+            )
+            rows = result.fetchall()
+
+            return [
+                {
+                    "id": row[0],
+                    "titulo": row[1],
+                    "cliente_id": row[2],
+                    "estado": row[3],
+                    "prioridad": row[4],
+                    "fecha_creacion": str(row[5]) if row[5] else None,
+                    "fecha_actualizacion": str(row[6]) if row[6] else None,
+                    "consulta": row[7],
+                    "respuesta": row[8],
+                    "autor_consulta_id": row[9],
+                    "autor_respuesta_id": row[10],
+                    "fecha_consulta": str(row[11]) if row[11] else None,
+                    "fecha_respuesta": str(row[12]) if row[12] else None,
+                    "id_proyecto": row[13],
+                    "id_organizacion": row[14],
+                }
+                for row in rows
+            ]
+
+    def get_ticket_detail(
+        self, ticket_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Obtiene el detalle de un ticket específico."""
+        self._logger.info(
+            "[%s] Consultando ticket_id=%s",
+            headers.get("X-Client-App", "unknown"),
+            ticket_id,
+        )
+
+        try:
+            return self._get_ticket_detail_from_db(ticket_id)
+        except Exception as exc:
+            self._logger.error("Error obteniendo ticket: %s", exc)
+            raise BackendCoreBusinessError(f"Error consultando ticket: {exc}") from exc
+
+    def _get_ticket_detail_from_db(self, ticket_id: int) -> dict[str, Any]:
+        """Consulta detalle de un ticket desde MariaDB."""
+        from sqlalchemy import text
+
+        with self._get_projects_db_connection() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT 
+                        t.id,
+                        t.titulo,
+                        t.cliente_id,
+                        t.estado,
+                        t.prioridad,
+                        t.fecha_creacion,
+                        t.fecha_actualizacion,
+                        ti.consulta,
+                        ti.respuesta,
+                        ti.autor_consulta_id,
+                        ti.autor_respuesta_id,
+                        ti.fecha_consulta,
+                        ti.fecha_respuesta
+                    FROM tickets t
+                    LEFT JOIN ticket_interacciones ti ON t.id = ti.ticket_id
+                    WHERE t.id = :ticket_id
+                """),
+                {"ticket_id": ticket_id},
+            )
+            row = result.fetchone()
+
+            if not row:
+                raise BackendCoreBusinessError(f"Ticket {ticket_id} no encontrado")
+
+            return {
+                "id": row[0],
+                "titulo": row[1],
+                "cliente_id": row[2],
+                "estado": row[3],
+                "prioridad": row[4],
+                "fecha_creacion": str(row[5]) if row[5] else None,
+                "fecha_actualizacion": str(row[6]) if row[6] else None,
+                "consulta": row[7],
+                "respuesta": row[8],
+                "autor_consulta_id": row[9],
+                "autor_respuesta_id": row[10],
+                "fecha_consulta": str(row[11]) if row[11] else None,
+                "fecha_respuesta": str(row[12]) if row[12] else None,
+            }
+
+    def update_ticket(
+        self, ticket_id: int, update_data: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Actualiza estado/prioridad de un ticket."""
+        if not update_data:
+            raise BackendCoreBusinessError("No hay datos para actualizar")
+
+        self._logger.info(
+            "[%s] Actualizando ticket_id=%s data=%s",
+            headers.get("X-Client-App", "unknown"),
+            ticket_id,
+            update_data,
+        )
+
+        try:
+            updated = self._update_ticket_in_db(ticket_id, update_data, headers)
+            return {"success": True, "updated": updated, "ticket_id": ticket_id}
+        except Exception as exc:
+            self._logger.error("Error actualizando ticket: %s", exc)
+            raise BackendCoreBusinessError(f"Error actualizando ticket: {exc}") from exc
+
+    def _update_ticket_in_db(
+        self, ticket_id: int, update_data: dict[str, Any], headers: dict[str, str]
+    ) -> bool:
+        """Actualiza un ticket en MariaDB."""
+        from sqlalchemy import text
+
+        set_clauses = []
+        params = {"ticket_id": ticket_id}
+
+        if "estado" in update_data:
+            set_clauses.append("estado = :estado")
+            params["estado"] = update_data["estado"]
+        if "prioridad" in update_data:
+            set_clauses.append("prioridad = :prioridad")
+            params["prioridad"] = update_data["prioridad"]
+
+        if not set_clauses:
+            return False
+
+        with self._get_projects_db_writer_connection() as conn:
+            # Obtener organización y proyecto del ticket para el registro de cambios
+            ticket_result = conn.execute(
+                text("""
+                    SELECT t.id_organizacion, t.id_proyecto
+                    FROM tickets t
+                    WHERE t.id = :ticket_id
+                """),
+                {"ticket_id": ticket_id},
+            )
+            ticket_row = ticket_result.fetchone()
+            id_organizacion = ticket_row[0] if ticket_row else 0
+            id_proyecto = ticket_row[1] if ticket_row and ticket_row[1] else None
+
+            sql = f"UPDATE tickets SET {', '.join(set_clauses)} WHERE id = :ticket_id"
+            result = conn.execute(text(sql), params)
+
+            # Registrar cambio solo si hay proyecto asociado
+            user_id = int(update_data.get("user_id", 0))
+            if id_proyecto:
+                descripcion_parts = []
+                if "estado" in update_data:
+                    descripcion_parts.append(f"estado → {update_data['estado']}")
+                if "prioridad" in update_data:
+                    descripcion_parts.append(f"prioridad → {update_data['prioridad']}")
+
+                conn.execute(
+                    text("""
+                        CALL sp_registrar_cambio_proyecto(
+                            :p_id_proyecto,
+                            :p_id_organizacion,
+                            :p_tipo_cambio,
+                            :p_descripcion,
+                            :p_id_usuario
+                        )
+                    """),
+                    {
+                        "p_id_proyecto": id_proyecto,
+                        "p_id_organizacion": id_organizacion,
+                        "p_tipo_cambio": "Actualización soporte proyecto",
+                        "p_descripcion": f"Ticket #{ticket_id}: {', '.join(descripcion_parts)}",
+                        "p_id_usuario": user_id,
+                    },
+                )
+
+            conn.commit()
+            return result.rowcount > 0
+
+    def add_ticket_response(
+        self, ticket_id: int, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Añade respuesta a un ticket."""
+        respuesta = payload.get("respuesta", "").strip()
+        user_id = int(payload.get("user_id", 0))
+
+        if not respuesta:
+            raise BackendCoreBusinessError("La respuesta no puede estar vacía")
+        if user_id <= 0:
+            raise BackendCoreBusinessError("No se pudo identificar al usuario")
+
+        self._logger.info(
+            "[%s] Añadiendo respuesta a ticket_id=%s user_id=%s",
+            headers.get("X-Client-App", "unknown"),
+            ticket_id,
+            user_id,
+        )
+
+        try:
+            updated = self._add_response_in_db(ticket_id, respuesta, user_id)
+            return {"success": True, "updated": updated, "ticket_id": ticket_id}
+        except Exception as exc:
+            self._logger.error("Error añadiendo respuesta: %s", exc)
+            raise BackendCoreBusinessError(f"Error añadiendo respuesta: {exc}") from exc
+
+    def _add_response_in_db(
+        self, ticket_id: int, respuesta: str, user_id: int
+    ) -> bool:
+        """Actualiza la respuesta en ticket_interacciones."""
+        from sqlalchemy import text
+
+        autor_respuesta_id = user_id
+
+        with self._get_projects_db_writer_connection() as conn:
+            # Obtener organización y proyecto del ticket
+            ticket_result = conn.execute(
+                text("""
+                    SELECT t.id_organizacion, t.id_proyecto
+                    FROM tickets t
+                    WHERE t.id = :ticket_id
+                """),
+                {"ticket_id": ticket_id},
+            )
+            ticket_row = ticket_result.fetchone()
+            id_organizacion = ticket_row[0] if ticket_row else 0
+            id_proyecto = ticket_row[1] if ticket_row and ticket_row[1] else None
+
+            # Actualizar la primera interacción del ticket
+            result = conn.execute(
+                text("""
+                    UPDATE ticket_interacciones 
+                    SET respuesta = :respuesta,
+                        autor_respuesta_id = :autor_id,
+                        fecha_respuesta = NOW()
+                    WHERE ticket_id = :ticket_id
+                    LIMIT 1
+                """),
+                {
+                    "respuesta": respuesta,
+                    "autor_id": autor_respuesta_id,
+                    "ticket_id": ticket_id,
+                },
+            )
+
+            # Registrar cambio solo si hay proyecto asociado
+            if id_proyecto:
+                conn.execute(
+                    text("""
+                        CALL sp_registrar_cambio_proyecto(
+                            :p_id_proyecto,
+                            :p_id_organizacion,
+                            :p_tipo_cambio,
+                            :p_descripcion,
+                            :p_id_usuario
+                        )
+                    """),
+                    {
+                        "p_id_proyecto": id_proyecto,
+                        "p_id_organizacion": id_organizacion,
+                        "p_tipo_cambio": "Respuesta soporte proyecto",
+                        "p_descripcion": f"Respuesta a ticket #{ticket_id}",
+                        "p_id_usuario": autor_respuesta_id,
+                    },
+                )
+
+            conn.commit()
+            return result.rowcount > 0
+
+    def _extract_user_id_from_headers(self, headers: dict[str, str]) -> int:
+        """Extrae user_id del token JWT en los headers."""
+        import jwt
+
+        auth_header = headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return 0
+
+        token = auth_header[7:]
+        try:
+            # Decodificar sin verificar para extraer el user_id
+            payload = jwt.decode(token, options={"verify_signature": False})
+            return int(payload.get("user_id", 0))
+        except Exception:
+            return 0

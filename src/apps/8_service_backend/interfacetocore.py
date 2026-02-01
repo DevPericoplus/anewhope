@@ -285,22 +285,26 @@ class CoreBackendClient:
     # ========================================================================
 
     def get_organization_projects(
-        self, organization_id: int, headers: dict[str, str]
+        self,
+        organization_id: int,
+        headers: dict[str, str],
+        include_deleted: bool = False,
     ) -> dict[str, Any]:
         """Obtiene los proyectos de una organización.
 
         Args:
             organization_id: ID de la organización
             headers: Headers de seguridad a propagar
+            include_deleted: Si True, incluye proyectos con existe=false
 
         Returns:
             {"projects": [...], "total": int}
         """
         self._apply_headers(headers)
-        return self._request(
-            "GET",
-            f"/projects/organization/{organization_id}",
-        )
+        path = f"/projects/organization/{organization_id}"
+        if include_deleted:
+            path += "?include_deleted=true"
+        return self._request("GET", path)
 
     def create_project(
         self, payload: dict[str, Any], headers: dict[str, str]
@@ -445,6 +449,49 @@ class CoreBackendClient:
         """
         self._apply_headers(headers)
         return self._request("POST", "/project-roles/remove", payload=payload)
+
+    # ========================================================================
+    # GESTIÓN DE TICKETS DE SOPORTE
+    # ========================================================================
+
+    def create_ticket(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Crea un nuevo ticket de soporte."""
+        self._apply_headers(headers)
+        return self._request("POST", "/tickets", payload=payload)
+
+    def get_organization_tickets(
+        self, organization_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Obtiene los tickets de una organización."""
+        self._apply_headers(headers)
+        return self._request("GET", f"/tickets/organization/{organization_id}")
+
+    def get_ticket_detail(
+        self, ticket_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Obtiene el detalle de un ticket específico."""
+        self._apply_headers(headers)
+        return self._request("GET", f"/tickets/{ticket_id}")
+
+    def update_ticket(
+        self, ticket_id: int, update_data: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Actualiza estado/prioridad de un ticket."""
+        self._apply_headers(headers)
+        return self._request("PATCH", f"/tickets/{ticket_id}", payload=update_data)
+
+    def add_ticket_response(
+        self, ticket_id: int, respuesta: str, user_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Añade respuesta a un ticket."""
+        self._apply_headers(headers)
+        return self._request(
+            "POST",
+            f"/tickets/{ticket_id}/respuesta",
+            payload={"respuesta": respuesta, "user_id": user_id},
+        )
 
     def _apply_headers(self, headers: dict[str, str]) -> None:
         """Aplica headers de seguridad al contexto del cliente.

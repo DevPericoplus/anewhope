@@ -1014,12 +1014,18 @@ class ProjectCreateResponse(BaseModel):
 
 
 class ProjectUpdateRequest(BaseModel):
-    """Payload para actualizar un proyecto."""
+    """Payload para actualizar un proyecto.
+    
+    Campos:
+        active: Estado activo/bloqueado (True=activo, False=bloqueado)
+        existe: Existencia lógica (True=existe, False=borrado lógico)
+    """
 
     nombre: str | None = None
     descripcion: str | None = None
     active: bool | None = None
     id_flujo: int | None = None
+    existe: bool | None = None
 
 
 class ProjectUpdateResponse(BaseModel):
@@ -1053,8 +1059,85 @@ class ProjectSupportResponse(BaseModel):
     cambio_id: int | None = None
 
 
+# ============================================================================
+# MODELOS PARA TICKETS DE SOPORTE
+# ============================================================================
+
+
+class TicketCreateRequest(BaseModel):
+    """Payload para crear un ticket de soporte."""
+
+    titulo: str
+    consulta: str
+    id_organizacion: int
+    cliente_id: int
+    id_proyecto: int | None = None
+
+
+class TicketUpdateRequest(BaseModel):
+    """Payload para actualizar un ticket."""
+
+    estado: str | None = None
+    prioridad: str | None = None
+    user_id: int | None = None
+
+
+class TicketRespuestaRequest(BaseModel):
+    """Payload para añadir respuesta."""
+
+    respuesta: str
+    user_id: int
+
+
+class TicketDto(BaseModel):
+    """DTO de ticket."""
+
+    id: int
+    titulo: str
+    cliente_id: int
+    estado: str
+    prioridad: str
+    fecha_creacion: str
+    fecha_actualizacion: str | None = None
+    consulta: str | None = None
+    respuesta: str | None = None
+    autor_consulta_id: int | None = None
+    autor_respuesta_id: int | None = None
+    fecha_consulta: str | None = None
+    fecha_respuesta: str | None = None
+    id_proyecto: int | None = None
+
+
+class TicketCreateResponse(BaseModel):
+    """Respuesta de creación de ticket."""
+
+    success: bool
+    ticket_id: int
+    mensaje: str | None = None
+
+
+class TicketUpdateResponse(BaseModel):
+    """Respuesta de actualización de ticket."""
+
+    success: bool
+    updated: bool
+    ticket_id: int
+
+
+class TicketListResponse(BaseModel):
+    """Respuesta con lista de tickets."""
+
+    tickets: list[TicketDto]
+    total: int
+
+
 class ProjectDto(BaseModel):
-    """DTO de proyecto."""
+    """DTO de proyecto.
+    
+    Campos:
+        active: Estado activo/bloqueado (True=activo, False=bloqueado)
+        existe: Existencia lógica (True=existe, False=borrado lógico)
+    """
 
     id: int
     nombre: str
@@ -1064,6 +1147,8 @@ class ProjectDto(BaseModel):
     id_flujo: int = 1
     flujo_nombre: str | None = None
     flujo_emoji: str | None = None
+    existe: bool = True
+    existe: bool = True
 
 
 class ProjectListResponse(BaseModel):
@@ -1085,10 +1170,14 @@ def get_organization_projects(
     session_token: str | None = Header(default=None, alias="X-Session-Token"),
     client_app: str = Depends(get_client_app),
     router: BrokerBackendRouter = Depends(get_router_broker),
+    include_deleted: bool = False,
 ) -> ProjectListResponse:
     """Obtiene los proyectos de una organización.
 
     Flujo: Middleware → Broker → Backend Core → MariaDB
+    
+    Args:
+        include_deleted: Si True, incluye proyectos con existe=false
     """
     headers = {
         "Authorization": authorization or "",
@@ -1096,7 +1185,9 @@ def get_organization_projects(
         "X-Client-App": client_app,
     }
     try:
-        result = router.get_organization_projects(organization_id, headers)
+        result = router.get_organization_projects(
+            organization_id, headers, include_deleted=include_deleted
+        )
         return ProjectListResponse(**result)
     except BrokerBusinessError as exc:
         raise HTTPException(
@@ -1473,3 +1564,129 @@ def remove_user_from_project(
         raise HTTPException(
             status_code=500, detail=f"Error interno: {exc}"
         ) from exc
+
+
+# ============================================================================
+# ENDPOINTS DE TICKETS DE SOPORTE
+# ============================================================================
+
+
+@app.post("/tickets", response_model=TicketCreateResponse, tags=["tickets"])
+def create_ticket(
+    request: TicketCreateRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> TicketCreateResponse:
+    """Crea un nuevo ticket de soporte.
+
+    Enruta a Backend Core → MariaDB (INSERT tickets + ticket_interacciones)
+    """
+    headers = {
+        "Authorization": authorization or "",
+        "X-Session-Token": session_token or "",
+        "X-Client-App": client_app,
+    }
+    try:
+        result = router.create_ticket(request.model_dump(), headers)
+        return TicketCreateResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get(
+    "/tickets/organization/{organization_id}",
+    response_model=TicketListResponse,
+    tags=["tickets"],
+)
+def get_organization_tickets(
+    organization_id: int,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> TicketListResponse:
+    """Obtiene los tickets de una organización."""
+    headers = {
+        "Authorization": authorization or "",
+        "X-Session-Token": session_token or "",
+        "X-Client-App": client_app,
+    }
+    try:
+        result = router.get_organization_tickets(organization_id, headers)
+        return TicketListResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/tickets/{ticket_id}", response_model=TicketDto, tags=["tickets"])
+def get_ticket_detail(
+    ticket_id: int,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> TicketDto:
+    """Obtiene el detalle de un ticket específico."""
+    headers = {
+        "Authorization": authorization or "",
+        "X-Session-Token": session_token or "",
+        "X-Client-App": client_app,
+    }
+    try:
+        result = router.get_ticket_detail(ticket_id, headers)
+        return TicketDto(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/tickets/{ticket_id}", response_model=TicketUpdateResponse, tags=["tickets"])
+def update_ticket(
+    ticket_id: int,
+    request: TicketUpdateRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> TicketUpdateResponse:
+    """Actualiza estado/prioridad de un ticket."""
+    headers = {
+        "Authorization": authorization or "",
+        "X-Session-Token": session_token or "",
+        "X-Client-App": client_app,
+    }
+    try:
+        update_data = {k: v for k, v in request.model_dump().items() if v is not None}
+        result = router.update_ticket(ticket_id, update_data, headers)
+        return TicketUpdateResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/tickets/{ticket_id}/respuesta",
+    response_model=TicketUpdateResponse,
+    tags=["tickets"],
+)
+def add_ticket_response(
+    ticket_id: int,
+    request: TicketRespuestaRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> TicketUpdateResponse:
+    """Añade respuesta a un ticket."""
+    headers = {
+        "Authorization": authorization or "",
+        "X-Session-Token": session_token or "",
+        "X-Client-App": client_app,
+    }
+    try:
+        result = router.add_ticket_response(
+            ticket_id, request.respuesta, request.user_id, headers
+        )
+        return TicketUpdateResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

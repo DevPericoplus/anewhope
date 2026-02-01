@@ -123,6 +123,16 @@ class State(SharedSessionState):
     # Estado para el panel de asignaciones de proyectos (solo lectura)
     project_assignments: list[dict] = []  # Lista de {proyecto, usuario, rol}
     
+    # Estado para el modal de solicitud de soporte
+    show_support_modal: bool = False
+    support_project_id: int = 0
+    support_project_name: str = ""
+    support_titulo: str = ""  # Motivo del ticket
+    support_consulta: str = ""  # Texto de la consulta
+    support_error: str = ""
+    support_success: str = ""
+    is_creating_support: bool = False
+    
     # Nota: Los siguientes campos ya vienen de SharedSessionState:
     # - user_logged_in, access_token, session_token, user_id, organization_id
     # - user_name, user_email, user_mobile, identity_type_id
@@ -536,9 +546,16 @@ class State(SharedSessionState):
                 )
                 
                 roles = response.get("roles", [])
+                
+                # Obtener IDs de proyectos existentes (existe=true)
+                existing_project_ids = {
+                    p.get("id") for p in self.org_projects if p.get("existe", True)
+                }
+                
                 for role in roles:
-                    # Solo mostrar asignaciones activas
-                    if role.get("active", False):
+                    # Solo mostrar asignaciones activas de proyectos existentes
+                    project_id = role.get("id_proyecto", 0)
+                    if role.get("active", False) and project_id in existing_project_ids:
                         assignments.append({
                             "proyecto_nombre": role.get("proyecto_nombre", "Sin proyecto"),
                             "usuario_nombre": user_name,
@@ -794,14 +811,16 @@ class State(SharedSessionState):
             )
             
             # Transformar al formato esperado por la UI
+            # Nota: active=True significa desbloqueado, active=False significa bloqueado
+            # Nota: existe=True significa que existe, existe=False significa borrado lógico
             self.org_projects = [
                 {
                     "id": project.get("id", 0),
-                    "name": project.get("nombre", ""),
+                    "name": project.get("nombre", project.get("name", "")),
                     "description": project.get("descripcion", ""),
-                    "locked": project.get("bloqueado", False),
                     "id_flujo": project.get("id_flujo", 1),
                     "active": project.get("active", True),
+                    "existe": project.get("existe", True),
                 }
                 for project in projects
             ]
@@ -894,91 +913,176 @@ class State(SharedSessionState):
             self.create_project_error = result.get("error", "Error al crear el proyecto")
     
     def lock_project(self, project_id: int):
-        """Bloquea un proyecto.
+        """Bloquea un proyecto (active=false).
+        
+        IMPORTANTE: Este es un bloqueo LÓGICO, no un borrado físico.
+        El proyecto permanece en la base de datos pero con active=false.
         
         Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
-        El cambio genera registro en tabla cambios (tipo "Bloquear proyecto")
         """
+        print(f"[DEBUG] Bloqueando proyecto: {project_id}")
         try:
-            print(f"[DEBUG] Bloquear proyecto: {project_id}")
             result = update_project_status(
                 project_id=project_id,
-                locked=True,
+                active=False,  # Bloquear = active=false
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
             print(f"[DEBUG] Resultado: {result}")
             
-            # Actualizar estado local
-            for project in self.org_projects:
-                if project["id"] == project_id:
-                    project["locked"] = True
-            self.org_projects = self.org_projects.copy()
+            # Solo actualizar estado local si la operación fue exitosa
+            if result.get("success"):
+                for project in self.org_projects:
+                    if project["id"] == project_id:
+                        project["active"] = False
+                self.org_projects = self.org_projects.copy()
+                print(f"[DEBUG] Proyecto {project_id} bloqueado correctamente")
+            else:
+                print(f"[ERROR] No se pudo bloquear proyecto: {result}")
         except Exception as e:
             print(f"[ERROR] Error bloqueando proyecto: {e}")
     
     def unlock_project(self, project_id: int):
-        """Desbloquea un proyecto.
+        """Desbloquea un proyecto (active=true).
+        
+        IMPORTANTE: Reactiva un proyecto bloqueado.
         
         Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
-        El cambio genera registro en tabla cambios (tipo "Desbloquear proyecto")
         """
+        print(f"[DEBUG] Desbloqueando proyecto: {project_id}")
         try:
-            print(f"[DEBUG] Desbloquear proyecto: {project_id}")
             result = update_project_status(
                 project_id=project_id,
-                locked=False,
+                active=True,  # Desbloquear = active=true
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
             print(f"[DEBUG] Resultado: {result}")
             
-            # Actualizar estado local
-            for project in self.org_projects:
-                if project["id"] == project_id:
-                    project["locked"] = False
-            self.org_projects = self.org_projects.copy()
+            # Solo actualizar estado local si la operación fue exitosa
+            if result.get("success"):
+                for project in self.org_projects:
+                    if project["id"] == project_id:
+                        project["active"] = True
+                self.org_projects = self.org_projects.copy()
+                print(f"[DEBUG] Proyecto {project_id} desbloqueado correctamente")
+            else:
+                print(f"[ERROR] No se pudo desbloquear proyecto: {result}")
         except Exception as e:
             print(f"[ERROR] Error desbloqueando proyecto: {e}")
     
     def delete_project(self, project_id: int):
-        """Elimina un proyecto.
+        """Borra lógicamente un proyecto (existe=false).
+        
+        IMPORTANTE: Este es un BORRADO LÓGICO, no físico.
+        El proyecto permanece en la BD pero con existe=false.
         
         Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
-        El trigger BEFORE DELETE genera registro en tabla cambios (tipo "Borrado de proyecto")
+        
+        Al borrar un proyecto:
+        1. Se quita del panel "Gestión de Proyectos"
+        2. Se recargan las asignaciones para que no aparezca en "Asignaciones de Proyectos"
         """
-        # TODO: Implementar confirmación antes de eliminar
+        print(f"[DEBUG] Borrando proyecto (lógico): {project_id}")
         try:
-            print(f"[DEBUG] Eliminar proyecto: {project_id}")
-            result = delete_organization_project(
+            result = update_project_status(
                 project_id=project_id,
+                existe=False,  # Borrado lógico
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
             print(f"[DEBUG] Resultado: {result}")
             
+            # Solo quitar de la lista local si la operación fue exitosa
             if result.get("success"):
                 self.org_projects = [p for p in self.org_projects if p["id"] != project_id]
+                # Recargar asignaciones para que no muestre el proyecto borrado
+                self.load_project_assignments()
+                print(f"[DEBUG] Proyecto {project_id} borrado lógicamente")
+            else:
+                print(f"[ERROR] No se pudo borrar proyecto: {result}")
         except Exception as e:
-            print(f"[ERROR] Error eliminando proyecto: {e}")
+            print(f"[ERROR] Error borrando proyecto: {e}")
     
     def request_project_support(self, project_id: int):
-        """Solicita soporte para un proyecto.
+        """Abre el modal para solicitar soporte para un proyecto."""
+        # Buscar nombre del proyecto
+        project_name = ""
+        for project in self.org_projects:
+            if project.get("id") == project_id:
+                project_name = project.get("name", "")
+                break
         
-        Genera registro en tabla cambios (tipo "Solicitud soporte proyecto")
+        # Configurar el modal
+        self.support_project_id = project_id
+        self.support_project_name = project_name
+        self.support_titulo = ""
+        self.support_consulta = ""
+        self.support_error = ""
+        self.support_success = ""
+        self.is_creating_support = False
+        self.show_support_modal = True
+        print(f"[DEBUG] Abriendo modal de soporte para proyecto: {project_id} ({project_name})")
+    
+    def close_support_modal(self):
+        """Cierra el modal de soporte."""
+        self.show_support_modal = False
+        self.support_project_id = 0
+        self.support_project_name = ""
+        self.support_titulo = ""
+        self.support_consulta = ""
+        self.support_error = ""
+        self.support_success = ""
+        self.is_creating_support = False
+    
+    def set_support_titulo(self, value: str):
+        """Establece el motivo del ticket."""
+        self.support_titulo = value
+    
+    def set_support_consulta(self, value: str):
+        """Establece el texto de la consulta."""
+        self.support_consulta = value
+    
+    def save_support_ticket(self):
+        """Envía el ticket de soporte.
+        
+        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
         """
-        # TODO: Implementar modal de formulario de soporte
+        from adapters.api_client import create_support_ticket
+        
+        # Validaciones
+        if not self.support_titulo.strip():
+            self.support_error = "El motivo es obligatorio"
+            return
+        if not self.support_consulta.strip():
+            self.support_error = "La consulta es obligatoria"
+            return
+        
+        self.support_error = ""
+        self.is_creating_support = True
+        
         try:
-            print(f"[DEBUG] Solicitar soporte para proyecto: {project_id}")
-            result = request_project_support_api(
-                project_id=project_id,
-                description="Solicitud de soporte técnico",
+            result = create_support_ticket(
+                titulo=self.support_titulo,
+                consulta=self.support_consulta,
+                id_proyecto=self.support_project_id if self.support_project_id > 0 else None,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
-            print(f"[DEBUG] Resultado: {result}")
+            print(f"[DEBUG] Resultado crear ticket: {result}")
+            
+            if result.get("success"):
+                self.support_success = f"Ticket #{result.get('ticket_id', '')} creado correctamente"
+                # Cerrar modal después de un momento
+                self.support_titulo = ""
+                self.support_consulta = ""
+            else:
+                self.support_error = result.get("error", "Error al crear el ticket")
         except Exception as e:
-            print(f"[ERROR] Error solicitando soporte: {e}")
+            self.support_error = f"Error: {e}"
+            print(f"[ERROR] Error creando ticket: {e}")
+        finally:
+            self.is_creating_support = False
 
     def on_page_load(self):
         """
@@ -1833,15 +1937,20 @@ def users_management_panel() -> rx.Component:
 
 
 def project_row(project: dict) -> rx.Component:
-    """Fila de proyecto con acciones."""
+    """Fila de proyecto con acciones.
+    
+    El campo 'active' determina el estado:
+    - active=True: Proyecto activo (desbloqueado)
+    - active=False: Proyecto bloqueado
+    """
     return rx.hstack(
         # Información del proyecto a la izquierda
         rx.hstack(
             rx.text(project["name"], font_weight="bold", font_size="1.1em", color=COLORS["foreground"]),
             rx.cond(
-                project["locked"],
-                rx.badge("Bloqueado", color_scheme="red", variant="soft", size="3"),
+                project["active"],  # active=True → Activo, active=False → Bloqueado
                 rx.badge("Activo", color_scheme="green", variant="soft", size="3"),
+                rx.badge("Bloqueado", color_scheme="red", variant="soft", size="3"),
             ),
             spacing="3",
             align="center",
@@ -2015,6 +2124,151 @@ def create_project_modal() -> rx.Component:
             max_width="500px",
         ),
         open=State.show_create_project_modal,
+    )
+
+
+def support_ticket_modal() -> rx.Component:
+    """Modal para crear un ticket de soporte.
+    
+    Campos del formulario:
+    - titulo: Motivo del ticket (obligatorio)
+    - consulta: Texto de la consulta (obligatorio)
+    
+    Campos informativos (automáticos):
+    - estado: "abierto"
+    - prioridad: "media"
+    """
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title(
+                rx.hstack(
+                    rx.icon("headset", size=24, color=COLORS["primary"]),
+                    rx.text("Solicitud de Soporte", font_weight="bold", font_size="1.3em"),
+                    spacing="3",
+                    align="center",
+                ),
+            ),
+            rx.dialog.description(
+                rx.text(
+                    f"Crear ticket de soporte",
+                    color=COLORS["muted_foreground"],
+                    font_size="0.9em",
+                ),
+            ),
+            # Formulario
+            rx.vstack(
+                # Proyecto asociado (informativo)
+                rx.cond(
+                    State.support_project_name != "",
+                    rx.hstack(
+                        rx.text("Proyecto:", font_weight="bold", color=COLORS["foreground"]),
+                        rx.badge(State.support_project_name, color_scheme="blue", variant="soft"),
+                        spacing="2",
+                        align="center",
+                    ),
+                ),
+                # Campo motivo
+                rx.vstack(
+                    rx.text("Motivo *", font_weight="bold", color=COLORS["foreground"]),
+                    rx.input(
+                        value=State.support_titulo,
+                        on_change=State.set_support_titulo,
+                        placeholder="Describe brevemente el motivo de la consulta",
+                        width="100%",
+                        background_color=COLORS["input"],
+                        color=COLORS["foreground"],
+                        border=f"1px solid {COLORS['border']}",
+                    ),
+                    width="100%",
+                    spacing="1",
+                    align_items="flex-start",
+                ),
+                # Campo consulta
+                rx.vstack(
+                    rx.text("Consulta *", font_weight="bold", color=COLORS["foreground"]),
+                    rx.text_area(
+                        value=State.support_consulta,
+                        on_change=State.set_support_consulta,
+                        placeholder="Describe detalladamente tu consulta o problema...",
+                        width="100%",
+                        min_height="120px",
+                        background_color=COLORS["input"],
+                        color=COLORS["foreground"],
+                        border=f"1px solid {COLORS['border']}",
+                    ),
+                    width="100%",
+                    spacing="1",
+                    align_items="flex-start",
+                ),
+                # Info: Estado y prioridad automáticos
+                rx.hstack(
+                    rx.badge("Estado: Abierto", color_scheme="green", variant="soft"),
+                    rx.badge("Prioridad: Media", color_scheme="yellow", variant="soft"),
+                    spacing="2",
+                    align="center",
+                ),
+                rx.text(
+                    "El equipo de soporte revisará tu consulta lo antes posible.",
+                    color=COLORS["muted_foreground"],
+                    font_size="0.85em",
+                    font_style="italic",
+                ),
+                # Mensaje de error
+                rx.cond(
+                    State.support_error != "",
+                    rx.text(
+                        State.support_error,
+                        color="red",
+                        font_size="0.9em",
+                    ),
+                ),
+                # Mensaje de éxito
+                rx.cond(
+                    State.support_success != "",
+                    rx.text(
+                        State.support_success,
+                        color=COLORS["primary"],
+                        font_size="0.9em",
+                        font_weight="bold",
+                    ),
+                ),
+                width="100%",
+                spacing="3",
+                padding_y="1em",
+            ),
+            # Botones de acción
+            rx.hstack(
+                rx.button(
+                    rx.icon("x", size=18, color=COLORS["foreground"]),
+                    rx.text("Cancelar", color=COLORS["foreground"]),
+                    on_click=State.close_support_modal,
+                    variant="outline",
+                    size="3",
+                    color_scheme="gray",
+                ),
+                rx.button(
+                    rx.cond(
+                        State.is_creating_support,
+                        rx.spinner(size="2"),
+                        rx.icon("send", size=18, color="black"),
+                    ),
+                    rx.text("Enviar", font_weight="bold", color="black"),
+                    on_click=State.save_support_ticket,
+                    disabled=State.is_creating_support,
+                    color_scheme="green",
+                    variant="solid",
+                    size="3",
+                ),
+                spacing="3",
+                justify="end",
+                width="100%",
+            ),
+            background_color=COLORS["card"],
+            border=f"1px solid {COLORS['border']}",
+            padding="1.5em",
+            max_width="550px",
+        ),
+        open=State.show_support_modal,
     )
 
 
@@ -2287,6 +2541,8 @@ def projects_management_panel() -> rx.Component:
     return rx.vstack(
         # Modal de creación de proyecto
         create_project_modal(),
+        # Modal de solicitud de soporte
+        support_ticket_modal(),
         rx.hstack(
             rx.icon("folder-kanban", size=28, color=COLORS["primary"]),
             rx.heading("Gestión de Proyectos", size="6", color=COLORS["foreground"]),

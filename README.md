@@ -3885,6 +3885,105 @@ El test `test_admin_can_create_user_successfully` valida:
 
 El script `full_test.sh` incluye automáticamente el test de creación de usuarios como parte de la suite completa.
 
+## Sistema de Tickets de Soporte
+
+### Arquitectura de datos
+
+El sistema de tickets utiliza dos tablas en `myllm_projects_db`:
+
+**Tabla `tickets` (cabecera):**
+- `id`: ID autoincremental
+- `titulo`: Motivo del ticket (máx 200 chars)
+- `cliente_id`: ID del usuario que crea el ticket
+- `estado`: abierto | en_espera | resuelto | cerrado (default: abierto)
+- `prioridad`: baja | media | alta | urgente (default: media)
+- `fecha_creacion`: Timestamp automático
+- `fecha_actualizacion`: Timestamp de última modificación
+
+**Tabla `ticket_interacciones` (detalle):**
+- `id`: ID autoincremental
+- `ticket_id`: FK a tickets
+- `autor_consulta_id`: ID del usuario que hace la consulta (Frontend)
+- `autor_respuesta_id`: ID del usuario que responde (Backoffice)
+- `consulta`: Texto de la consulta (MEDIUMTEXT)
+- `respuesta`: Texto de la respuesta (MEDIUMTEXT)
+- `fecha_consulta`: Timestamp de la consulta
+- `fecha_respuesta`: Timestamp de la respuesta
+
+### Flujo de operaciones
+
+**Desde Frontend:**
+1. Usuario hace clic en "Solicitud de soporte" en un proyecto
+2. Se abre modal con: Motivo (obligatorio), Consulta (obligatorio)
+3. Estado y Prioridad son informativos (abierto, media)
+4. Al guardar: crea ticket + primera interacción
+
+**Desde Backoffice:**
+1. Panel "Gestión de Tickets" muestra tickets de la organización
+2. Puede cambiar estado (selector) y prioridad (selector)
+3. Puede añadir respuesta a la consulta
+4. Los cambios actualizan `fecha_actualizacion` y `fecha_respuesta`
+
+### Endpoints de la API
+
+| Método | Endpoint | Descripción | Origen |
+|--------|----------|-------------|--------|
+| POST | `/tickets` | Crear ticket con consulta inicial | Frontend |
+| GET | `/tickets/organization/{org_id}` | Listar tickets de la organización | Ambos |
+| GET | `/tickets/{ticket_id}` | Detalle de un ticket | Ambos |
+| PATCH | `/tickets/{ticket_id}` | Actualizar estado/prioridad | Backoffice |
+| POST | `/tickets/{ticket_id}/respuesta` | Añadir respuesta | Backoffice |
+
+### Registro de cambios
+
+Cada operación genera un registro en la tabla `cambios`:
+
+| Operación | tipo_cambio | descripcion |
+|-----------|-------------|-------------|
+| Crear ticket | "Solicitud soporte proyecto" | "Ticket #{id}: {titulo}" |
+| Añadir respuesta | "Respuesta soporte proyecto" | "Respuesta a ticket #{id}" |
+| Cambiar estado | "Actualización soporte proyecto" | "Ticket #{id}: estado → {nuevo}" |
+| Cambiar prioridad | "Actualización soporte proyecto" | "Ticket #{id}: prioridad → {nueva}" |
+
+### SQL de creación de tablas
+
+```sql
+USE myllm_projects_db;
+
+CREATE TABLE IF NOT EXISTS tickets (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    titulo VARCHAR(200) NOT NULL,
+    cliente_id INT NOT NULL,
+    estado ENUM('abierto', 'en_espera', 'resuelto', 'cerrado') DEFAULT 'abierto',
+    prioridad ENUM('baja', 'media', 'alta', 'urgente') DEFAULT 'media',
+    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX (cliente_id),
+    INDEX (estado)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS ticket_interacciones (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ticket_id INT NOT NULL,
+    autor_consulta_id INT NOT NULL,
+    autor_respuesta_id INT DEFAULT NULL,
+    consulta MEDIUMTEXT NOT NULL,
+    respuesta MEDIUMTEXT DEFAULT NULL,
+    fecha_consulta TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_respuesta TIMESTAMP NULL DEFAULT NULL,
+    CONSTRAINT fk_ticket_rel FOREIGN KEY (ticket_id) 
+        REFERENCES tickets(id) ON DELETE CASCADE,
+    INDEX (ticket_id)
+) ENGINE=InnoDB;
+
+-- Permisos
+GRANT SELECT, INSERT, UPDATE, DELETE ON myllm_projects_db.tickets TO 'myllm_writer'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON myllm_projects_db.ticket_interacciones TO 'myllm_writer'@'localhost';
+GRANT SELECT ON myllm_projects_db.tickets TO 'myllm_reader'@'localhost';
+GRANT SELECT ON myllm_projects_db.ticket_interacciones TO 'myllm_reader'@'localhost';
+FLUSH PRIVILEGES;
+```
+
 ## Roles y automatización (referencia)
 
 Los roles Ansible importados se encuentran en el repositorio `anh_ansible`. Incluyen BIND, NTPD, NTPDATE, MariaDB, Nginx, Postfix, entre otros, y sirven como apoyo para el despliegue de la plataforma.

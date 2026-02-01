@@ -1247,12 +1247,18 @@ class ProjectCreateResponse(BaseModel):
 
 
 class ProjectUpdateRequest(BaseModel):
-    """Payload para actualizar un proyecto."""
+    """Payload para actualizar un proyecto.
+    
+    Campos:
+        active: Estado activo/bloqueado (True=activo, False=bloqueado)
+        existe: Existencia lógica (True=existe, False=borrado lógico)
+    """
 
     nombre: str | None = None
     descripcion: str | None = None
     active: bool | None = None
     id_flujo: int | None = None
+    existe: bool | None = None
 
 
 class ProjectUpdateResponse(BaseModel):
@@ -1286,8 +1292,81 @@ class ProjectSupportResponse(BaseModel):
     cambio_id: int | None = None
 
 
+# ============================================================================
+# MODELOS PARA TICKETS DE SOPORTE
+# ============================================================================
+
+
+class TicketCreateRequest(BaseModel):
+    """Payload para crear un ticket de soporte."""
+
+    titulo: str
+    consulta: str
+    id_proyecto: int | None = None
+
+
+class TicketUpdateRequest(BaseModel):
+    """Payload para actualizar un ticket."""
+
+    estado: str | None = None
+    prioridad: str | None = None
+
+
+class TicketRespuestaRequest(BaseModel):
+    """Payload para añadir respuesta."""
+
+    respuesta: str
+
+
+class TicketDto(BaseModel):
+    """DTO de ticket."""
+
+    id: int
+    titulo: str
+    cliente_id: int
+    estado: str
+    prioridad: str
+    fecha_creacion: str
+    fecha_actualizacion: str | None = None
+    consulta: str | None = None
+    respuesta: str | None = None
+    autor_consulta_id: int | None = None
+    autor_respuesta_id: int | None = None
+    fecha_consulta: str | None = None
+    fecha_respuesta: str | None = None
+    id_proyecto: int | None = None
+
+
+class TicketCreateResponse(BaseModel):
+    """Respuesta de creación de ticket."""
+
+    success: bool
+    ticket_id: int
+    mensaje: str | None = None
+
+
+class TicketUpdateResponse(BaseModel):
+    """Respuesta de actualización de ticket."""
+
+    success: bool
+    updated: bool
+    ticket_id: int
+
+
+class TicketListResponse(BaseModel):
+    """Respuesta con lista de tickets."""
+
+    tickets: list[TicketDto]
+    total: int
+
+
 class ProjectDto(BaseModel):
-    """DTO de proyecto."""
+    """DTO de proyecto.
+    
+    Campos:
+        active: Estado activo/bloqueado (True=activo, False=bloqueado)
+        existe: Existencia lógica (True=existe, False=borrado lógico)
+    """
 
     id: int
     nombre: str
@@ -1297,6 +1376,8 @@ class ProjectDto(BaseModel):
     id_flujo: int = 1
     flujo_nombre: str | None = None
     flujo_emoji: str | None = None
+    existe: bool = True
+    existe: bool = True
 
 
 class ProjectListResponse(BaseModel):
@@ -1316,13 +1397,20 @@ def get_organization_projects_endpoint(
     organization_id: int,
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
     session: Annotated[SessionContext, Depends(get_session_context)],
+    include_deleted: bool = False,
 ) -> ProjectListResponse:
     """Obtiene los proyectos de una organización.
 
     Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Args:
+        organization_id: ID de la organización
+        include_deleted: Si True, incluye proyectos con existe=false
     """
     try:
-        response = router.get_organization_projects(organization_id, session)
+        response = router.get_organization_projects(
+            organization_id, session, include_deleted=include_deleted
+        )
         return ProjectListResponse(**response)
     except BusinessRuleError as exc:
         raise HTTPException(
@@ -1716,6 +1804,136 @@ def remove_user_from_project_endpoint(
     try:
         response = router.remove_user_from_project(request.model_dump(), session)
         return RemoveUserFromProjectResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# ENDPOINTS DE TICKETS DE SOPORTE
+# ============================================================================
+
+
+@app.post("/tickets", response_model=TicketCreateResponse, tags=["tickets"])
+def create_ticket_endpoint(
+    request: TicketCreateRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> TicketCreateResponse:
+    """Crea un nuevo ticket de soporte.
+
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    """
+    _logger = logging.getLogger(__name__)
+    _logger.info(
+        "[middleware] Creando ticket: titulo=%s user_id=%s",
+        request.titulo,
+        session.user_id,
+    )
+
+    try:
+        response = router.create_ticket(request.model_dump(), session)
+        return TicketCreateResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get(
+    "/tickets/organization/{organization_id}",
+    response_model=TicketListResponse,
+    tags=["tickets"],
+)
+def get_organization_tickets_endpoint(
+    organization_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> TicketListResponse:
+    """Obtiene los tickets de una organización."""
+    _logger = logging.getLogger(__name__)
+    _logger.info(
+        "[middleware] Consultando tickets org_id=%s",
+        organization_id,
+    )
+
+    try:
+        response = router.get_organization_tickets(organization_id, session)
+        return TicketListResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/tickets/{ticket_id}", response_model=TicketDto, tags=["tickets"])
+def get_ticket_detail_endpoint(
+    ticket_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> TicketDto:
+    """Obtiene el detalle de un ticket específico."""
+    _logger = logging.getLogger(__name__)
+    _logger.info("[middleware] Consultando ticket_id=%s", ticket_id)
+
+    try:
+        response = router.get_ticket_detail(ticket_id, session)
+        return TicketDto(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/tickets/{ticket_id}", response_model=TicketUpdateResponse, tags=["tickets"])
+def update_ticket_endpoint(
+    ticket_id: int,
+    request: TicketUpdateRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> TicketUpdateResponse:
+    """Actualiza estado/prioridad de un ticket (solo Backoffice)."""
+    _logger = logging.getLogger(__name__)
+    _logger.info(
+        "[middleware] Actualizando ticket_id=%s data=%s",
+        ticket_id,
+        request.model_dump(),
+    )
+
+    try:
+        update_data = {k: v for k, v in request.model_dump().items() if v is not None}
+        response = router.update_ticket(ticket_id, update_data, session)
+        return TicketUpdateResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post(
+    "/tickets/{ticket_id}/respuesta",
+    response_model=TicketUpdateResponse,
+    tags=["tickets"],
+)
+def add_ticket_response_endpoint(
+    ticket_id: int,
+    request: TicketRespuestaRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> TicketUpdateResponse:
+    """Añade respuesta a un ticket (solo Backoffice)."""
+    _logger = logging.getLogger(__name__)
+    _logger.info("[middleware] Añadiendo respuesta a ticket_id=%s", ticket_id)
+
+    try:
+        response = router.add_ticket_response(ticket_id, request.respuesta, session)
+        return TicketUpdateResponse(**response)
     except BusinessRuleError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
