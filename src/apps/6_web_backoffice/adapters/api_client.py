@@ -330,6 +330,43 @@ def get_organization_users(
     return users
 
 
+def get_organization_projects(
+    organization_id: int,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Obtiene los proyectos de una organización.
+    
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+    
+    Args:
+        organization_id: ID de la organización
+        access_token: Token JWT de acceso
+        session_token: Token de sesión
+    
+    Returns:
+        Lista de proyectos con estructura:
+        [{"id": int, "name": str, "descripcion": str, "active": bool, "id_flujo": int}]
+    """
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+    
+    path = f"/projects/organization/{organization_id}"
+    response = _request_middleware("GET", path, headers=headers)
+    
+    if isinstance(response, list):
+        projects = response
+    else:
+        projects = response.get("projects", [])
+    
+    logger.info(f"Obtenidos {len(projects)} proyectos de organización {organization_id}")
+    return projects
+
+
 def update_user_status(
     user_id: int,
     active: bool,
@@ -380,6 +417,67 @@ def update_user_status(
         except Exception:
             pass
         logger.error(f"Error actualizando usuario: {error_msg}")
+        raise Exception(error_msg) from exc
+    except urllib.error.URLError as exc:
+        logger.error(f"No se pudo contactar con el middleware: {exc}")
+        raise Exception(f"Error de conexión: {exc}") from exc
+
+
+def update_project_status(
+    project_id: int,
+    active: bool,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """
+    Actualiza el estado activo/bloqueado de un proyecto.
+    
+    IMPORTANTE: Este es un bloqueo LÓGICO, no un borrado físico.
+    - active=True: Proyecto desbloqueado (activo)
+    - active=False: Proyecto bloqueado (inactivo)
+    
+    Args:
+        project_id: ID del proyecto a modificar
+        active: True para desbloquear, False para bloquear
+        access_token: Token de acceso JWT
+        session_token: Token de sesión
+    
+    Returns:
+        Diccionario con project_id, success y updated
+    
+    Raises:
+        Exception: Si hay error en la petición
+    """
+    url = f"{_get_middleware_base_url()}/projects/{project_id}"
+    body = json.dumps({"active": active}).encode("utf-8")
+    
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+    
+    action = "desbloqueando" if active else "bloqueando"
+    logger.info(f"Enviando PATCH a {url} - {action} proyecto")
+    
+    request = urllib.request.Request(url, data=body, headers=request_headers, method="PATCH")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            action_done = "desbloqueado" if active else "bloqueado"
+            logger.info(f"Proyecto {project_id} {action_done}: {result}")
+            return result
+    except urllib.error.HTTPError as exc:
+        error_msg = f"Error HTTP {exc.code}"
+        try:
+            error_payload = exc.read().decode("utf-8")
+            error_msg = f"{error_msg}: {error_payload}"
+        except Exception:
+            pass
+        logger.error(f"Error actualizando proyecto: {error_msg}")
         raise Exception(error_msg) from exc
     except urllib.error.URLError as exc:
         logger.error(f"No se pudo contactar con el middleware: {exc}")

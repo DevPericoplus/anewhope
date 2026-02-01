@@ -10,12 +10,14 @@ import reflex as rx
 
 from adapters.api_client import (
     create_organization_user,
+    get_organization_projects,
     get_organization_users,
     get_user_permissions,
     login_user,
     logout_user,
     refresh_tokens,
     request_login_otp,
+    update_project_status,
     update_user_status,
 )
 from pages.flujos import FlujosState, flujos_diagram, load_flujos_content
@@ -424,12 +426,41 @@ class State(SharedSessionState):
     # ========== Gestión de Proyectos de la Organización ==========
     
     def load_org_projects(self):
-        """Carga los proyectos de la organización actual."""
-        # TODO: Implementar llamada al middleware para obtener proyectos
-        # Por ahora, datos de ejemplo para la UI
-        self.org_projects = [
-            {"id": 1, "name": "Asistente Comercial", "description": "Modelo de lenguaje para atención al cliente", "locked": False},
-        ]
+        """Carga los proyectos de la organización actual desde la base de datos.
+        
+        Obtiene todos los proyectos (activos e inactivos) para que el backoffice
+        pueda gestionar el estado de bloqueo.
+        """
+        try:
+            org_id = self.organization_id
+            if org_id <= 0 and self.access_token:
+                org_id = self._extract_org_id_from_token(self.access_token)
+            
+            if org_id <= 0:
+                self.org_projects = []
+                return
+            
+            projects = get_organization_projects(
+                organization_id=org_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            
+            # Transformar al formato esperado por la UI
+            # Nota: active=True significa desbloqueado, active=False significa bloqueado
+            self.org_projects = [
+                {
+                    "id": p.get("id", 0),
+                    "name": p.get("name", p.get("nombre", "Sin nombre")),
+                    "description": p.get("descripcion", ""),
+                    "active": p.get("active", True),
+                }
+                for p in projects
+            ]
+            print(f"[DEBUG] load_org_projects: {len(self.org_projects)} proyectos cargados")
+        except Exception as e:
+            print(f"[ERROR] load_org_projects: {type(e).__name__}: {e}")
+            self.org_projects = []
     
     def create_project(self):
         """Abre el formulario para crear un nuevo proyecto."""
@@ -437,28 +468,65 @@ class State(SharedSessionState):
         print("[DEBUG] Crear proyecto solicitado")
     
     def lock_project(self, project_id: int):
-        """Bloquea un proyecto."""
-        # TODO: Implementar llamada al middleware
-        print(f"[DEBUG] Bloquear proyecto: {project_id}")
-        for project in self.org_projects:
-            if project["id"] == project_id:
-                project["locked"] = True
-        self.org_projects = self.org_projects.copy()
+        """Bloquea un proyecto (active=false).
+        
+        IMPORTANTE: Este es un bloqueo LÓGICO, no un borrado físico.
+        El proyecto permanece en la base de datos pero con active=false.
+        """
+        print(f"[DEBUG] Bloqueando proyecto: {project_id}")
+        try:
+            result = update_project_status(
+                project_id=project_id,
+                active=False,  # Bloquear = active=false
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            if result.get("success"):
+                # Actualizar estado local
+                for project in self.org_projects:
+                    if project["id"] == project_id:
+                        project["active"] = False
+                self.org_projects = self.org_projects.copy()
+                print(f"[DEBUG] Proyecto {project_id} bloqueado correctamente")
+            else:
+                print(f"[ERROR] No se pudo bloquear proyecto: {result}")
+        except Exception as e:
+            print(f"[ERROR] lock_project: {type(e).__name__}: {e}")
     
     def unlock_project(self, project_id: int):
-        """Desbloquea un proyecto."""
-        # TODO: Implementar llamada al middleware
-        print(f"[DEBUG] Desbloquear proyecto: {project_id}")
-        for project in self.org_projects:
-            if project["id"] == project_id:
-                project["locked"] = False
-        self.org_projects = self.org_projects.copy()
+        """Desbloquea un proyecto (active=true).
+        
+        IMPORTANTE: Reactiva un proyecto bloqueado.
+        """
+        print(f"[DEBUG] Desbloqueando proyecto: {project_id}")
+        try:
+            result = update_project_status(
+                project_id=project_id,
+                active=True,  # Desbloquear = active=true
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            if result.get("success"):
+                # Actualizar estado local
+                for project in self.org_projects:
+                    if project["id"] == project_id:
+                        project["active"] = True
+                self.org_projects = self.org_projects.copy()
+                print(f"[DEBUG] Proyecto {project_id} desbloqueado correctamente")
+            else:
+                print(f"[ERROR] No se pudo desbloquear proyecto: {result}")
+        except Exception as e:
+            print(f"[ERROR] unlock_project: {type(e).__name__}: {e}")
     
     def delete_project(self, project_id: int):
-        """Elimina un proyecto."""
-        # TODO: Implementar confirmación y llamada al middleware
-        print(f"[DEBUG] Eliminar proyecto: {project_id}")
-        self.org_projects = [p for p in self.org_projects if p["id"] != project_id]
+        """Borrado LÓGICO de un proyecto (active=false).
+        
+        IMPORTANTE: Este NO es un borrado físico. Tiene el mismo efecto
+        que bloquear el proyecto (active=0). El proyecto puede ser
+        reactivado posteriormente con "Desbloquear proyecto".
+        """
+        print(f"[DEBUG] Borrado lógico de proyecto: {project_id}")
+        self.lock_project(project_id)  # Reutilizar lógica de bloqueo
     
     def request_project_support(self, project_id: int):
         """Solicita soporte para un proyecto."""
@@ -1129,40 +1197,78 @@ def users_management_panel() -> rx.Component:
 
 
 def project_row(project: dict) -> rx.Component:
-    """Fila de proyecto con acciones."""
+    """Fila de proyecto con acciones.
+    
+    Muestra el nombre del proyecto y su estado (Activo/Bloqueado).
+    El campo 'active' determina el estado:
+    - active=True: Proyecto activo (desbloqueado)
+    - active=False: Proyecto bloqueado
+    """
     return rx.hstack(
         # Información del proyecto a la izquierda
         rx.hstack(
             rx.text(project["name"], font_weight="bold", font_size="1.1em", color=COLORS["foreground"]),
             rx.cond(
-                project["locked"],
-                rx.badge("Bloqueado", color_scheme="red", variant="soft", size="3"),
+                project["active"],  # active=True → Activo, active=False → Bloqueado
                 rx.badge("Activo", color_scheme="green", variant="soft", size="3"),
+                rx.badge("Bloqueado", color_scheme="red", variant="soft", size="3"),
             ),
             spacing="3",
             align="center",
         ),
         # Acciones a la derecha
         rx.hstack(
-            user_action_button(
-                "lock",
-                "Bloquear proyecto",
-                lambda: State.lock_project(project["id"]),
+            # Desbloquear proyecto (verde) - activa el proyecto
+            rx.tooltip(
+                rx.icon_button(
+                    rx.icon("lock-open", size=22),
+                    variant="ghost",
+                    size="2",
+                    color_scheme="green",
+                    cursor="pointer",
+                    on_click=State.unlock_project(project["id"]),
+                    _hover={"color": "#22c55e", "background_color": COLORS["border"]},
+                ),
+                content="Desbloquear proyecto",
             ),
-            user_action_button(
-                "unlock",
-                "Desbloquear proyecto",
-                lambda: State.unlock_project(project["id"]),
+            # Bloquear proyecto (rojo) - desactiva el proyecto
+            rx.tooltip(
+                rx.icon_button(
+                    rx.icon("lock", size=22),
+                    variant="ghost",
+                    size="2",
+                    color_scheme="red",
+                    cursor="pointer",
+                    on_click=State.lock_project(project["id"]),
+                    _hover={"color": "#ef4444", "background_color": COLORS["border"]},
+                ),
+                content="Bloquear proyecto",
             ),
-            user_action_button(
-                "trash-2",
-                "Borrar proyecto",
-                lambda: State.delete_project(project["id"]),
+            # Borrar proyecto (mismo efecto que bloquear)
+            rx.tooltip(
+                rx.icon_button(
+                    rx.icon("trash-2", size=22),
+                    variant="ghost",
+                    size="2",
+                    color_scheme="gray",
+                    cursor="pointer",
+                    on_click=State.delete_project(project["id"]),
+                    _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
+                ),
+                content="Borrar proyecto",
             ),
-            user_action_button(
-                "headset",
-                "Solicitud de soporte",
-                lambda: State.request_project_support(project["id"]),
+            # Solicitud de soporte
+            rx.tooltip(
+                rx.icon_button(
+                    rx.icon("headset", size=22),
+                    variant="ghost",
+                    size="2",
+                    color_scheme="gray",
+                    cursor="pointer",
+                    on_click=State.request_project_support(project["id"]),
+                    _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
+                ),
+                content="Solicitud de soporte",
             ),
             spacing="1",
         ),
