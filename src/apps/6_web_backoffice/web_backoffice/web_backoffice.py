@@ -237,11 +237,14 @@ class State(SharedSessionState):
             return
         
         # Llamar al middleware para obtener usuarios reales
+        # BACKOFFICE: active_only=False para ver TODOS los usuarios (activos e inactivos)
+        # Esto permite reactivar usuarios que fueron borrados lógicamente
         users = get_organization_users(
             organization_id=org_id,
             access_token=self.access_token,
             session_token=self.session_token,
             identity_type_id=5,  # Solo auditores (usuarios de organización)
+            active_only=False,   # Backoffice muestra todos para poder reactivarlos
         )
         
         # Transformar al formato esperado por la UI
@@ -315,12 +318,14 @@ class State(SharedSessionState):
         
         if result.get("success"):
             self.create_user_success = f"Usuario '{self.new_user_name}' creado exitosamente"
-            # Recargar lista de usuarios
-            self.load_org_users()
             # Limpiar campos
             self.new_user_name = ""
             self.new_user_email = ""
             self.new_user_mobile = ""
+            # Cerrar modal
+            self.show_create_user_modal = False
+            # Recargar lista de usuarios (después de cerrar modal para que se vea)
+            self.load_org_users()
         else:
             self.create_user_error = result.get("error", "Error al crear el usuario")
     
@@ -387,10 +392,34 @@ class State(SharedSessionState):
         print(f"[DEBUG] Quitar usuario de proyectos: {user_id}")
     
     def delete_user(self, user_id: int):
-        """Elimina un usuario de la organización."""
-        # TODO: Implementar confirmación y llamada al middleware
-        print(f"[DEBUG] Eliminar usuario: {user_id}")
-        self.org_users = [u for u in self.org_users if u["id"] != user_id]
+        """Borrado LÓGICO de un usuario (active=false).
+        
+        IMPORTANTE: Este NO es un borrado físico. Solo marca el usuario
+        como inactivo (active=0) en la base de datos. El usuario puede
+        ser reactivado posteriormente usando el botón "Habilitar usuario".
+        
+        Args:
+            user_id: ID del usuario a desactivar
+        """
+        print(f"[DEBUG] Borrado lógico de usuario: {user_id}")
+        try:
+            result = update_user_status(
+                user_id=user_id,
+                active=False,  # Borrado lógico: active = 0
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            if result.get("success"):
+                # Actualizar estado local (el usuario sigue visible pero con badge "Inactivo")
+                for user in self.org_users:
+                    if user["user_id"] == user_id:
+                        user["active"] = False
+                self.org_users = self.org_users.copy()
+                print(f"[DEBUG] Usuario {user_id} desactivado correctamente")
+            else:
+                print(f"[ERROR] No se pudo desactivar usuario: {result}")
+        except Exception as e:
+            print(f"[ERROR] delete_user: {type(e).__name__}: {e}")
 
     # ========== Gestión de Proyectos de la Organización ==========
     
@@ -473,8 +502,12 @@ class State(SharedSessionState):
         
         activity_log.log_session_activity(self.user_id, "permissions loaded successfully")
         
-        # Continuar con la lógica de inicialización de componentes
-        if self.user_active_menu == "flujos":
+        # Continuar con la lógica de inicialización de componentes según menú activo
+        if self.user_active_menu == "organizacion":
+            # Cargar usuarios y proyectos de la organización
+            self.load_org_users()
+            self.load_org_projects()
+        elif self.user_active_menu == "flujos":
             organization_id = self.organization_id
             if organization_id <= 0 and self.access_token:
                 organization_id = self._extract_org_id_from_token(self.access_token)
@@ -852,25 +885,25 @@ def user_row(user: dict) -> rx.Component:
             rx.hstack(
                 rx.tooltip(
                     rx.icon_button(
-                        rx.icon("user-check", size=22),
+                        rx.icon("user-round-check", size=22),
                         variant="ghost",
                         size="2",
-                        color_scheme="gray",
+                        color_scheme="green",
                         cursor="pointer",
                         on_click=State.enable_user(user["user_id"]),
-                        _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
+                        _hover={"color": "#22c55e", "background_color": COLORS["border"]},
                     ),
                     content="Habilitar usuario",
                 ),
                 rx.tooltip(
                     rx.icon_button(
-                        rx.icon("user-x", size=22),
+                        rx.icon("user-round-x", size=22),
                         variant="ghost",
                         size="2",
-                        color_scheme="gray",
+                        color_scheme="red",
                         cursor="pointer",
                         on_click=State.disable_user(user["user_id"]),
-                        _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
+                        _hover={"color": "#ef4444", "background_color": COLORS["border"]},
                     ),
                     content="Deshabilitar usuario",
                 ),
@@ -1152,13 +1185,18 @@ def projects_management_panel() -> rx.Component:
             spacing="3",
             align="center",
         ),
-        rx.button(
-            rx.icon("folder-plus", size=20, color="black"),
-            rx.text("Crear proyecto", font_weight="bold", color="black"),
-            on_click=State.create_project,
-            color_scheme="orange",
-            variant="solid",
-            size="3",
+        # SEGURIDAD: Solo mostrar si el usuario tiene permiso project_create
+        rx.cond(
+            State.can_project_create,
+            rx.button(
+                rx.icon("folder-plus", size=20, color="black"),
+                rx.text("Crear proyecto", font_weight="bold", color="black"),
+                on_click=State.create_project,
+                color_scheme="orange",
+                variant="solid",
+                size="3",
+            ),
+            rx.fragment(),
         ),
         rx.vstack(
             rx.foreach(

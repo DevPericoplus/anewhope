@@ -9,11 +9,24 @@ import sys
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
-try:
-    import requests
-except ImportError:
-    requests = None
-    logging.warning("El módulo 'requests' no está instalado. La funcionalidad de SMS no estará disponible.")
+# requests se importa de forma lazy en las funciones que lo necesitan
+# para evitar problemas de caché durante el desarrollo
+requests = None  # Se cargará dinámicamente cuando sea necesario
+
+
+def _get_requests_module():
+    """Importa requests de forma lazy para evitar problemas de caché."""
+    global requests
+    if requests is None:
+        try:
+            import requests as req_module
+            requests = req_module
+        except ImportError:
+            logging.warning(
+                "El módulo 'requests' no está instalado. "
+                "La funcionalidad de SMS no estará disponible."
+            )
+    return requests
 
 logger = logging.getLogger(__name__)
 
@@ -369,8 +382,9 @@ def send_message_by_sms(otp: str, phone_number: str) -> bool:
         - La función valida que el OTP tenga 4 dígitos antes de enviar.
         - Requiere que el módulo 'requests' esté instalado.
     """
-    # Verificar que requests esté disponible
-    if requests is None:
+    # Verificar que requests esté disponible (lazy import)
+    req = _get_requests_module()
+    if req is None:
         logger.error("El módulo 'requests' no está instalado. Instálalo con: pip install requests")
         send_sms_details_to_log(otp, phone_number or "N/A", success=False, error_message="requests module not installed")
         return False
@@ -420,7 +434,7 @@ def send_message_by_sms(otp: str, phone_number: str) -> bool:
         
         # Enviar la solicitud POST
         logger.info(f"Enviando SMS con OTP {otp} al número {phone_number} desde remitente '{sms_sender_id}'")
-        response = requests.post(
+        response = req.post(
             endpoint,
             headers=headers,
             data=json.dumps(payload),
@@ -486,12 +500,10 @@ def send_message_by_sms(otp: str, phone_number: str) -> bool:
         logger.error(f"Error de validación de credenciales: {e}")
         send_sms_details_to_log(otp, phone_number, success=False, error_message=f"ValueError: {str(e)}")
         return False
-    except requests.RequestException as e:
-        logger.error(f"Error de comunicación con la API de Infobip: {e}")
-        send_sms_details_to_log(otp, phone_number, success=False, error_message=f"RequestException: {str(e)}")
-        return False
     except Exception as e:
-        logger.error(f"Error inesperado al enviar SMS: {e}", exc_info=True)
-        send_sms_details_to_log(otp, phone_number, success=False, error_message=f"Exception: {str(e)}")
+        # Captura tanto RequestException como cualquier otro error
+        error_type = type(e).__name__
+        logger.error(f"Error al enviar SMS ({error_type}): {e}", exc_info=True)
+        send_sms_details_to_log(otp, phone_number, success=False, error_message=f"{error_type}: {str(e)}")
         return False
 

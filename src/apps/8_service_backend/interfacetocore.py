@@ -280,3 +280,181 @@ class CoreBackendClient:
 
         return self._request("POST", "/process-data", payload=payload)
 
+    # ========================================================================
+    # Gestión de Proyectos
+    # ========================================================================
+
+    def get_organization_projects(
+        self, organization_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Obtiene los proyectos de una organización.
+
+        Args:
+            organization_id: ID de la organización
+            headers: Headers de seguridad a propagar
+
+        Returns:
+            {"projects": [...], "total": int}
+        """
+        self._apply_headers(headers)
+        return self._request(
+            "GET",
+            f"/projects/organization/{organization_id}",
+        )
+
+    def create_project(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Crea un nuevo proyecto.
+
+        Args:
+            payload: {"nombre": str, "descripcion": str, "id_organizacion": int, ...}
+            headers: Headers de seguridad a propagar
+
+        Returns:
+            {"project_id": int, "nombre": str, ...}
+        """
+        self._apply_headers(headers)
+        return self._request("POST", "/projects", payload=payload)
+
+    def update_project(
+        self, project_id: int, update_data: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Actualiza un proyecto existente.
+
+        Args:
+            project_id: ID del proyecto
+            update_data: Campos a actualizar
+            headers: Headers de seguridad a propagar
+
+        Returns:
+            {"success": True, "updated": True, "project_id": int}
+        """
+        self._apply_headers(headers)
+        return self._request(
+            "PATCH",
+            f"/projects/{project_id}",
+            payload=update_data,
+        )
+
+    def delete_project(
+        self, project_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Elimina un proyecto.
+
+        Args:
+            project_id: ID del proyecto
+            headers: Headers de seguridad a propagar
+
+        Returns:
+            {"success": True, "deleted": True, "project_id": int}
+        """
+        self._apply_headers(headers)
+        return self._request("DELETE", f"/projects/{project_id}")
+
+    def request_project_support(
+        self,
+        project_id: int,
+        tipo_cambio: str,
+        descripcion: str,
+        headers: dict[str, str],
+    ) -> dict[str, Any]:
+        """Registra una solicitud de soporte para un proyecto.
+
+        Args:
+            project_id: ID del proyecto
+            tipo_cambio: Tipo de cambio a registrar
+            descripcion: Descripción de la solicitud
+            headers: Headers de seguridad a propagar
+
+        Returns:
+            {"success": True, "cambio_id": int | None}
+        """
+        self._apply_headers(headers)
+        return self._request(
+            "POST",
+            f"/projects/{project_id}/support",
+            payload={
+                "project_id": project_id,
+                "tipo_cambio": tipo_cambio,
+                "descripcion": descripcion,
+            },
+        )
+
+    # ========================================================================
+    # GESTIÓN DE ROLES DE USUARIO EN PROYECTOS
+    # ========================================================================
+
+    def get_project_roles_base(self, headers: dict[str, str]) -> dict[str, Any]:
+        """Obtiene el catálogo maestro de roles base para proyectos.
+
+        Args:
+            headers: Headers de seguridad a propagar
+
+        Returns:
+            {"roles": [...], "total": int}
+        """
+        self._apply_headers(headers)
+        return self._request("GET", "/project-roles-base")
+
+    def get_user_project_roles(
+        self, user_id: int, organization_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Obtiene los roles de un usuario en proyectos.
+
+        Args:
+            user_id: ID del usuario
+            organization_id: ID de la organización
+            headers: Headers de seguridad a propagar
+
+        Returns:
+            {"user_id": int, "organization_id": int, "roles": [...], "total": int}
+        """
+        self._apply_headers(headers)
+        return self._request(
+            "GET",
+            f"/users/{user_id}/project-roles?organization_id={organization_id}",
+        )
+
+    def assign_user_to_project(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Asigna un usuario a un proyecto.
+
+        Args:
+            payload: {"id_usuario": int, "id_proyecto": int, "id_organizacion": int, "id_rol": int}
+            headers: Headers de seguridad a propagar
+
+        Returns:
+            {"success": bool, "message": str, ...}
+        """
+        self._apply_headers(headers)
+        return self._request("POST", "/project-roles/assign", payload=payload)
+
+    def remove_user_from_project(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Quita un usuario de un proyecto.
+
+        Args:
+            payload: {"id_usuario": int, "id_proyecto": int, "id_organizacion": int}
+            headers: Headers de seguridad a propagar
+
+        Returns:
+            {"success": bool, "message": str, ...}
+        """
+        self._apply_headers(headers)
+        return self._request("POST", "/project-roles/remove", payload=payload)
+
+    def _apply_headers(self, headers: dict[str, str]) -> None:
+        """Aplica headers de seguridad al contexto del cliente.
+
+        Args:
+            headers: Headers a aplicar (Authorization, X-Session-Token, X-Client-App)
+        """
+        if headers.get("Authorization"):
+            self._authorization = headers["Authorization"]
+        if headers.get("X-Session-Token"):
+            self._session_token = headers["X-Session-Token"]
+        if headers.get("X-Client-App"):
+            self._client_app = headers["X-Client-App"]

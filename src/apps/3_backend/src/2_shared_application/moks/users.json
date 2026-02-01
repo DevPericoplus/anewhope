@@ -7,7 +7,7 @@
     "user_password": "gAAAAABpb4h-XLaIMoNXOCTwy_OMRgxyQ_EQc3mZhe95orpSp4j0Y5XBFY07MbfDYm4VsRo9cqbd-orOZ_YiiApJ158VK04tLQ==",
     "user_email": "adminone@myllm.ai",
     "user_mobile": "+34639775978",
-    "user_otp": "1843",
+    "user_otp": "0902",
     "active": true,
     "blocked": false,
     "contact_info": {
@@ -616,7 +616,35 @@
     }
   },
   {
-    "user_id": 41,
+    "user_id": 42,
+    "organization_id": 1,
+    "identity_type_id": 5,
+    "user_name": "nano",
+    "user_password": "gAAAAABpfQSUXvJi3x_u8m0XSxof-2oZlPVtkf60BKEiERy0vC59gsnyEkgXJdxfJdepPAl5PBo_mEQtq75G9uOWTf_tm5hEsMOG9drhr3cUewl4-Zaq0io=",
+    "user_email": "nano@muchaenergia.ya",
+    "user_mobile": "+345896257",
+    "user_otp": "7012",
+    "active": true,
+    "blocked": false,
+    "contact_info": {
+      "first_name": "nano",
+      "sur_name": "Usuario de la organizacion",
+      "country": "",
+      "state": "",
+      "zip_code": "",
+      "address": ""
+    },
+    "billing_info": {
+      "first_name": "nano",
+      "sur_name": "Usuario de la organizacion",
+      "country": "",
+      "state": "",
+      "zip_code": "",
+      "address": ""
+    }
+  },
+  {
+    "user_id": 52,
     "organization_id": 1,
     "identity_type_id": 2,
     "user_name": "demo",
@@ -644,18 +672,18 @@
     }
   },
   {
-    "user_id": 42,
+    "user_id": 53,
     "organization_id": 1,
     "identity_type_id": 5,
-    "user_name": "nano",
-    "user_password": "gAAAAABpfQSUXvJi3x_u8m0XSxof-2oZlPVtkf60BKEiERy0vC59gsnyEkgXJdxfJdepPAl5PBo_mEQtq75G9uOWTf_tm5hEsMOG9drhr3cUewl4-Zaq0io=",
-    "user_email": "nano@muchaenergia.ya",
-    "user_mobile": "+345896257",
-    "user_otp": "7012",
+    "user_name": "ayudante",
+    "user_password": "gAAAAABpfdwqUJMNark7f2L90l5T3rLk9FEXg_C9v_m41OQdcQQ8-A4NE3wBn_Em-B-Mmz1P57632u92MALcwKPTleGodbc7_IF8SSI9d1i9dW88fTHadKs=",
+    "user_email": "ayudante@test.loc",
+    "user_mobile": "+3457896253",
+    "user_otp": "9836",
     "active": true,
     "blocked": false,
     "contact_info": {
-      "first_name": "nano",
+      "first_name": "ayudante",
       "sur_name": "Usuario de la organizacion",
       "country": "",
       "state": "",
@@ -663,7 +691,91 @@
       "address": ""
     },
     "billing_info": {
-      "first_name": "nano",
+      "first_name": "ayudante",
+      "sur_name": "Usuario de la organizacion",
+      "country": "",
+      "state": "",
+      "zip_code": "",
+      "address": ""
+    }
+  },
+  {
+    "user_id": 54,
+    "organization_id": 1,
+    "identity_type_id": 5,
+    "user_name": "editortest",
+    "user_password": "gAAAAABpfeAzwzIrxcTiIUJd2oRl1dsSTeygaf4QDlknHf5siLcLqr_qK7naY8crseMDHRhyDMYl68l59IA6S5XJYPUTWpcNF8uOMXrK8v2g-qEwiVCg39w=",
+    "user_email": "text@macbook.loc",
+    "user_mobile": "+345782651",
+    "user_otp": "0103",
+    "active": true,
+    "blocked": false,
+    "contact_info": {
+      "first_name": "editortest",
+      "sur_name": "Usuario de la organizacion",
+      "country": "",
+      "state": "",
+      "zip_code": "",
+      "address": ""
+    },
+    "billing_info": {
+      "first_name": "editortest",
+      "sur_name": "Usuario de la organizacion",
+      "country": "",
+      "state": "",
+      "zip_code": "",
+      "address": ""
+    }
+  },
+  {
+    "user_id": 55,
+    "organization_id": 1,
+    "identity_type_id": 5,
+    "user_name": "lectortest",
+    "user_password": "gAAAAABpfeBiXQsNXyrdcyt-Ex4hUHT3MjEmHLnVvu1ON9WYg6c5FdHK3KKOhNZeRT-XJsJsuevCTLpxi72ZsuZhT5WTBlus3xcDg64_49sqeJKeDc7rqKQ=",
+    "user_email": "lector@house.loc",
+    "user_mobile": "+345874235",
+    "user_otp": "3796",
+    "active": true,
+    "blocked": false,
+    "contact_info": {
+      "first_name": "lectortest",
+      "sur_name": "Usuario de la organizacion",
+      "country": "",
+      "state": "",
+      "zip_code": "",
+      "address": ""
+    },
+    "billing_info": {
+      "first_name": "lectortest",
+      "sur_name": "Usuario de la organizacion",
+      "country": "",
+      "state": "",
+      "zip_code": "",
+      "address": ""
+    }
+  },
+  {
+    "user_id": 56,
+    "organization_id": 1,
+    "identity_type_id": 5,
+    "user_name": "auditortest",
+    "user_password": "gAAAAABpfeCSZz5eUTlfFUZNd5UJ9k6LLIPyrkRaPPDUO0gpKGNjc5v9jdQmkvcY6np3Ff2VnPEy2u9eywkpnpf4BWQ2IlFW83S9X6zGXoDJpdSIuePDch4=",
+    "user_email": "auditor@house.loc",
+    "user_mobile": "+341235689",
+    "user_otp": "9094",
+    "active": true,
+    "blocked": false,
+    "contact_info": {
+      "first_name": "auditortest",
+      "sur_name": "Usuario de la organizacion",
+      "country": "",
+      "state": "",
+      "zip_code": "",
+      "address": ""
+    },
+    "billing_info": {
+      "first_name": "auditortest",
       "sur_name": "Usuario de la organizacion",
       "country": "",
       "state": "",

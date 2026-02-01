@@ -292,8 +292,15 @@ def login_user(user_name: str, password: str, otp: str) -> dict[str, Any]:
 
 
 def request_login_otp(user_name: str, password: str) -> dict[str, Any]:
-    """Solicita el envío del OTP al middleware."""
-
+    """Solicita los datos de OTP al middleware para enviar SMS.
+    
+    El middleware devuelve el OTP y teléfono del usuario.
+    El frontend es responsable de enviar el SMS directamente a Infobip.
+    
+    Returns:
+        {"success": bool, "otp": str, "phone_number": str} si éxito
+        {"success": false, "detail": str} si error
+    """
     payload = {"user_name": user_name, "password": password}
     return _request_middleware("POST", "/login/request-otp", payload=payload)
 
@@ -355,6 +362,7 @@ def get_organization_users(
     access_token: str | None = None,
     session_token: str | None = None,
     identity_type_id: int = 5,
+    active_only: bool = True,
 ) -> list[dict[str, Any]]:
     """
     Obtiene los usuarios de una organización filtrados por identity_type_id.
@@ -364,6 +372,8 @@ def get_organization_users(
         access_token: Token de acceso JWT
         session_token: Token de sesión
         identity_type_id: Filtrar por tipo de identidad (default: 5 = auditores)
+        active_only: Si True, solo retorna usuarios activos (default: True)
+                     El backoffice usa False para ver también usuarios inactivos
     
     Returns:
         Lista de usuarios con user_id, user_name y active
@@ -374,11 +384,11 @@ def get_organization_users(
     if session_token:
         headers["X-Session-Token"] = session_token
     
-    path = f"/organizations/{organization_id}/users?identity_type_id={identity_type_id}"
+    path = f"/organizations/{organization_id}/users?identity_type_id={identity_type_id}&active_only={str(active_only).lower()}"
     response = _request_middleware("GET", path, headers=headers)
     
     users = response.get("users", [])
-    logger.info(f"Obtenidos {len(users)} usuarios de organización {organization_id}")
+    logger.info(f"Obtenidos {len(users)} usuarios de organización {organization_id} (active_only={active_only})")
     return users
 
 
@@ -578,3 +588,458 @@ def _encrypt_password(plain_password: str) -> str | None:
         logger.error(f"Error al cifrar contraseña: {e}")
         return None
 
+
+# ============================================================================
+# Funciones de gestión de proyectos
+# ============================================================================
+
+
+def get_organization_projects(
+    organization_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> list[dict[str, Any]]:
+    """
+    Obtiene los proyectos de una organización.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Args:
+        organization_id: ID de la organización
+        access_token: Token JWT de acceso
+        session_token: Token de sesión
+    
+    Returns:
+        Lista de proyectos con estructura:
+        [{"id": int, "nombre": str, "descripcion": str, "bloqueado": bool, "id_flujo": int, "active": bool}]
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    response = _request_middleware(
+        "GET",
+        f"/projects/organization/{organization_id}",
+        headers=headers,
+    )
+    
+    if isinstance(response, list):
+        return response
+    
+    return response.get("projects", [])
+
+
+def create_organization_project(
+    organization_id: int,
+    project_name: str,
+    project_description: str = "",
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Crea un nuevo proyecto en la organización.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    El trigger en BD crea automáticamente:
+    - Registro en tabla estado (versión 1, campos según id_flujo=1)
+    - Registro en tabla cambios (tipo "Alta proyecto")
+    
+    Args:
+        organization_id: ID de la organización
+        project_name: Nombre del proyecto
+        project_description: Descripción del proyecto (opcional)
+        access_token: Token JWT de acceso
+        session_token: Token de sesión
+    
+    Returns:
+        {"success": True, "project_id": int} o {"success": False, "error": str}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    payload = {
+        "nombre": project_name,
+        "descripcion": project_description,
+        "id_organizacion": organization_id,
+        "active": True,
+        "id_flujo": 1,  # Propuesta Cliente (primer paso del flujo)
+    }
+    
+    response = _request_middleware(
+        "POST",
+        "/projects",
+        payload=payload,
+        headers=headers,
+    )
+    
+    if response.get("project_id") or response.get("id"):
+        project_id = response.get("project_id") or response.get("id")
+        logger.info(f"Proyecto creado exitosamente: project_id={project_id}")
+        return {
+            "success": True,
+            "project_id": project_id,
+        }
+    
+    error_msg = response.get("detail", "Error desconocido al crear proyecto")
+    logger.error(f"Error al crear proyecto: {error_msg}")
+    return {"success": False, "error": error_msg}
+
+
+def update_project_status(
+    project_id: int,
+    locked: bool | None = None,
+    active: bool | None = None,
+    id_flujo: int | None = None,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Actualiza el estado de un proyecto (bloqueo, activo, flujo).
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    El trigger en BD registra cambios automáticamente en tabla cambios:
+    - Cambio de id_flujo → "Cambio de flujo"
+    - Cambio de bloqueado → "Bloquear proyecto" / "Desbloquear proyecto"
+    
+    Args:
+        project_id: ID del proyecto
+        locked: Nuevo estado de bloqueo (opcional)
+        active: Nuevo estado de activo (opcional)
+        id_flujo: Nuevo paso del flujo (opcional)
+        access_token: Token JWT de acceso
+        session_token: Token de sesión
+    
+    Returns:
+        {"success": True} o {"success": False, "error": str}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    payload: dict[str, Any] = {}
+    if locked is not None:
+        payload["bloqueado"] = locked
+    if active is not None:
+        payload["active"] = active
+    if id_flujo is not None:
+        payload["id_flujo"] = id_flujo
+    
+    response = _request_middleware(
+        "PATCH",
+        f"/projects/{project_id}",
+        payload=payload,
+        headers=headers,
+    )
+    
+    if response.get("success") or response.get("updated"):
+        logger.info(f"Proyecto actualizado: project_id={project_id}")
+        return {"success": True}
+    
+    error_msg = response.get("detail", "Error al actualizar proyecto")
+    logger.error(f"Error al actualizar proyecto: {error_msg}")
+    return {"success": False, "error": error_msg}
+
+
+def delete_organization_project(
+    project_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Elimina un proyecto.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    El trigger BEFORE DELETE en BD registra cambio en tabla cambios:
+    - tipo "Borrado de proyecto"
+    
+    Args:
+        project_id: ID del proyecto a eliminar
+        access_token: Token JWT de acceso
+        session_token: Token de sesión
+    
+    Returns:
+        {"success": True} o {"success": False, "error": str}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    response = _request_middleware(
+        "DELETE",
+        f"/projects/{project_id}",
+        headers=headers,
+    )
+    
+    if response.get("success") or response.get("deleted"):
+        logger.info(f"Proyecto eliminado: project_id={project_id}")
+        return {"success": True}
+    
+    error_msg = response.get("detail", "Error al eliminar proyecto")
+    logger.error(f"Error al eliminar proyecto: {error_msg}")
+    return {"success": False, "error": error_msg}
+
+
+def request_project_support_api(
+    project_id: int,
+    description: str = "",
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Solicita soporte para un proyecto.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Registra cambio en tabla cambios:
+    - tipo "Solicitud soporte proyecto"
+    
+    Args:
+        project_id: ID del proyecto
+        description: Descripción de la solicitud
+        access_token: Token JWT de acceso
+        session_token: Token de sesión
+    
+    Returns:
+        {"success": True} o {"success": False, "error": str}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    payload = {
+        "project_id": project_id,
+        "tipo_cambio": "Solicitud soporte proyecto",
+        "descripcion": description or "Solicitud de soporte técnico",
+    }
+    
+    response = _request_middleware(
+        "POST",
+        f"/projects/{project_id}/support",
+        payload=payload,
+        headers=headers,
+    )
+    
+    if response.get("success"):
+        logger.info(f"Solicitud de soporte registrada: project_id={project_id}")
+        return {"success": True}
+    
+    error_msg = response.get("detail", "Error al solicitar soporte")
+    logger.error(f"Error al solicitar soporte: {error_msg}")
+    return {"success": False, "error": error_msg}
+
+
+# ============================================================================
+# GESTIÓN DE ROLES DE USUARIO EN PROYECTOS
+# ============================================================================
+
+
+def get_project_roles_base(
+    access_token: str = "",
+    session_token: str = "",
+) -> list[dict[str, Any]]:
+    """
+    Obtiene el catálogo maestro de roles base para proyectos.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Esta información es reutilizable para selectores de roles
+    y validaciones de seguridad.
+    
+    Args:
+        access_token: Token JWT de acceso
+        session_token: Token de sesión
+    
+    Returns:
+        Lista de roles: [{"id": int, "nombre_rol": str, "descripcion": str}, ...]
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    response = _request_middleware(
+        "GET",
+        "/project-roles-base",
+        headers=headers,
+    )
+    
+    if response is None:
+        return []
+    
+    return response.get("roles", [])
+
+
+def get_project_roles_base(
+    access_token: str = "",
+    session_token: str = "",
+) -> list[dict[str, Any]]:
+    """
+    Obtiene el catálogo maestro de roles base para proyectos.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Esta información es reutilizable para selectores de roles
+    y validaciones de seguridad.
+    
+    Args:
+        access_token: Token JWT de acceso
+        session_token: Token de sesión
+    
+    Returns:
+        Lista de roles: [{"id": int, "nombre_rol": str, "descripcion": str}, ...]
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    response = _request_middleware(
+        "GET",
+        "/project-roles-base",
+        headers=headers,
+    )
+    
+    return response.get("roles", [])
+
+
+def get_user_project_roles(
+    user_id: int,
+    organization_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Obtiene los roles de un usuario en proyectos de una organización.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Args:
+        user_id: ID del usuario
+        organization_id: ID de la organización
+        access_token: Token JWT de acceso
+        session_token: Token de sesión
+    
+    Returns:
+        {"user_id": int, "organization_id": int, "roles": [...], "total": int}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    response = _request_middleware(
+        "GET",
+        f"/users/{user_id}/project-roles?organization_id={organization_id}",
+        headers=headers,
+    )
+    
+    return response
+
+
+def assign_user_to_project(
+    id_usuario: int,
+    id_proyecto: int,
+    id_organizacion: int,
+    id_rol: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Asigna un usuario a un proyecto con un rol específico.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Roles válidos:
+        - 3: Editor
+        - 4: Lector
+        - 5: Auditor
+    
+    Args:
+        id_usuario: ID del usuario a asignar
+        id_proyecto: ID del proyecto
+        id_organizacion: ID de la organización
+        id_rol: ID del rol (3=Editor, 4=Lector, 5=Auditor)
+        access_token: Token JWT de acceso
+        session_token: Token de sesión
+    
+    Returns:
+        {"success": bool, "message": str, "created": bool, ...}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    payload = {
+        "id_usuario": id_usuario,
+        "id_proyecto": id_proyecto,
+        "id_organizacion": id_organizacion,
+        "id_rol": id_rol,
+    }
+    
+    response = _request_middleware(
+        "POST",
+        "/project-roles/assign",
+        payload=payload,
+        headers=headers,
+    )
+    
+    if response.get("success"):
+        logger.info(
+            f"Usuario asignado a proyecto: user={id_usuario}, "
+            f"project={id_proyecto}, rol={id_rol}"
+        )
+        return response
+    
+    error_msg = response.get("detail", "Error al asignar usuario")
+    logger.error(f"Error al asignar usuario: {error_msg}")
+    return {"success": False, "error": error_msg}
+
+
+def remove_user_from_project(
+    id_usuario: int,
+    id_proyecto: int,
+    id_organizacion: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Quita un usuario de un proyecto (desactiva la asignación).
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Args:
+        id_usuario: ID del usuario a quitar
+        id_proyecto: ID del proyecto
+        id_organizacion: ID de la organización
+        access_token: Token JWT de acceso
+        session_token: Token de sesión
+    
+    Returns:
+        {"success": bool, "message": str, ...}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    payload = {
+        "id_usuario": id_usuario,
+        "id_proyecto": id_proyecto,
+        "id_organizacion": id_organizacion,
+    }
+    
+    response = _request_middleware(
+        "POST",
+        "/project-roles/remove",
+        payload=payload,
+        headers=headers,
+    )
+    
+    if response.get("success"):
+        logger.info(
+            f"Usuario quitado de proyecto: user={id_usuario}, project={id_proyecto}"
+        )
+        return response
+    
+    error_msg = response.get("detail", "Error al quitar usuario")
+    logger.error(f"Error al quitar usuario: {error_msg}")
+    return {"success": False, "error": error_msg}
+
+
+def _build_auth_headers(access_token: str = "", session_token: str = "") -> dict[str, str]:
+    """
+    Construye headers de autenticación para las peticiones.
+    
+    Args:
+        access_token: Token JWT de acceso
+        session_token: Token de sesión
+    
+    Returns:
+        Diccionario con headers de autenticación
+    """
+    headers: dict[str, str] = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+    return headers

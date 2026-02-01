@@ -1216,3 +1216,723 @@ class BackendCoreRouter:
         return "".join(
             char for char in normalized if unicodedata.category(char) != "Mn"
         )
+
+    # ========================================================================
+    # Gestión de Proyectos (myllm_projects_db)
+    # ========================================================================
+
+    def get_organization_projects(
+        self, organization_id: int, headers: dict[str, str]
+    ) -> list[dict[str, Any]]:
+        """Obtiene los proyectos de una organización desde MariaDB.
+
+        Consulta la base de datos myllm_projects_db directamente.
+        """
+        self._logger.info(
+            "[%s] Consultando proyectos org_id=%s",
+            headers.get("X-Client-App", "unknown"),
+            organization_id,
+        )
+
+        try:
+            return self._get_projects_from_db(organization_id)
+        except Exception as exc:
+            self._logger.error("Error obteniendo proyectos: %s", exc)
+            raise BackendCoreBusinessError(
+                f"Error consultando proyectos: {exc}"
+            ) from exc
+
+    def create_project(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Crea un nuevo proyecto en MariaDB.
+
+        El trigger tr_proyecto_after_insert crea automáticamente:
+        - Registro en tabla estado (versión 1)
+        - Registro en tabla cambios (tipo "Alta proyecto")
+        """
+        nombre = payload.get("nombre", "").strip()
+        descripcion = payload.get("descripcion", "").strip()
+        id_organizacion = int(payload.get("id_organizacion", 0))
+        active = payload.get("active", True)
+        id_flujo = int(payload.get("id_flujo", 1))
+
+        if not nombre:
+            raise BackendCoreBusinessError("El nombre del proyecto es obligatorio")
+        if id_organizacion <= 0:
+            raise BackendCoreBusinessError("ID de organización inválido")
+
+        self._logger.info(
+            "[%s] Creando proyecto: nombre=%s org_id=%s",
+            headers.get("X-Client-App", "unknown"),
+            nombre,
+            id_organizacion,
+        )
+
+        try:
+            project_id = self._insert_project_in_db(
+                nombre, descripcion, id_organizacion, active, id_flujo
+            )
+            return {
+                "project_id": project_id,
+                "nombre": nombre,
+                "id_organizacion": id_organizacion,
+                "id_flujo": id_flujo,
+            }
+        except Exception as exc:
+            self._logger.error("Error creando proyecto: %s", exc)
+            raise BackendCoreBusinessError(
+                f"Error creando proyecto: {exc}"
+            ) from exc
+
+    def update_project(
+        self, project_id: int, update_data: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Actualiza un proyecto existente en MariaDB.
+
+        El trigger tr_proyecto_flujo_update registra cambios automáticamente.
+        """
+        if not update_data:
+            raise BackendCoreBusinessError("No hay datos para actualizar")
+
+        self._logger.info(
+            "[%s] Actualizando proyecto: project_id=%s data=%s",
+            headers.get("X-Client-App", "unknown"),
+            project_id,
+            update_data,
+        )
+
+        try:
+            updated = self._update_project_in_db(project_id, update_data)
+            return {"updated": updated, "project_id": project_id}
+        except Exception as exc:
+            self._logger.error("Error actualizando proyecto: %s", exc)
+            raise BackendCoreBusinessError(
+                f"Error actualizando proyecto: {exc}"
+            ) from exc
+
+    def delete_project(
+        self, project_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Elimina un proyecto de MariaDB.
+
+        El trigger tr_proyecto_before_delete registra el borrado.
+        """
+        self._logger.info(
+            "[%s] Eliminando proyecto: project_id=%s",
+            headers.get("X-Client-App", "unknown"),
+            project_id,
+        )
+
+        try:
+            deleted = self._delete_project_in_db(project_id)
+            return {"deleted": deleted, "project_id": project_id}
+        except Exception as exc:
+            self._logger.error("Error eliminando proyecto: %s", exc)
+            raise BackendCoreBusinessError(
+                f"Error eliminando proyecto: {exc}"
+            ) from exc
+
+    def request_project_support(
+        self,
+        project_id: int,
+        tipo_cambio: str,
+        descripcion: str,
+        headers: dict[str, str],
+    ) -> dict[str, Any]:
+        """Registra una solicitud de soporte para un proyecto.
+
+        Usa el procedimiento sp_registrar_cambio_proyecto.
+        """
+        self._logger.info(
+            "[%s] Solicitud de soporte: project_id=%s tipo=%s",
+            headers.get("X-Client-App", "unknown"),
+            project_id,
+            tipo_cambio,
+        )
+
+        try:
+            cambio_id = self._register_project_change(
+                project_id, tipo_cambio, descripcion
+            )
+            return {"success": True, "cambio_id": cambio_id}
+        except Exception as exc:
+            self._logger.error("Error registrando soporte: %s", exc)
+            raise BackendCoreBusinessError(
+                f"Error registrando solicitud de soporte: {exc}"
+            ) from exc
+
+    # ========================================================================
+    # Métodos privados de acceso a BD (myllm_projects_db)
+    # ========================================================================
+
+    def _get_projects_db_connection(self):
+        """Obtiene conexión de LECTURA a la base de datos de proyectos."""
+        from urllib.parse import quote_plus
+        from sqlalchemy import create_engine
+
+        settings = load_mariadb_settings()
+        host = settings.get("host", "localhost")
+        port = settings.get("port", "3306")
+        user = settings.get("reader_user", "")
+        password = quote_plus(settings.get("reader_password", ""))
+        database = settings.get("projects_database", "myllm_projects_db")
+
+        dsn = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
+        engine = create_engine(dsn)
+        return engine.connect()
+
+    def _get_projects_db_writer_connection(self):
+        """Obtiene conexión de ESCRITURA a la base de datos de proyectos."""
+        from urllib.parse import quote_plus
+        from sqlalchemy import create_engine
+
+        settings = load_mariadb_settings()
+        host = settings.get("host", "localhost")
+        port = settings.get("port", "3306")
+        user = settings.get("writer_user", "")
+        password = quote_plus(settings.get("writer_password", ""))
+        database = settings.get("projects_database", "myllm_projects_db")
+
+        dsn = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
+        engine = create_engine(dsn)
+        return engine.connect()
+
+    def _get_projects_from_db(self, organization_id: int) -> list[dict[str, Any]]:
+        """Consulta proyectos de una organización desde MariaDB."""
+        from sqlalchemy import text
+
+        with self._get_projects_db_connection() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT 
+                        p.id,
+                        p.nombre,
+                        COALESCE(p.descripcion, '') as descripcion,
+                        p.id_organizacion,
+                        COALESCE(p.active, 1) as active,
+                        COALESCE(p.id_flujo, 1) as id_flujo,
+                        f.nombre as flujo_nombre,
+                        f.emoji as flujo_emoji
+                    FROM proyectos p
+                    LEFT JOIN flujos f ON p.id_flujo = f.id_flujo
+                    WHERE p.id_organizacion = :org_id
+                    ORDER BY p.nombre
+                """),
+                {"org_id": organization_id},
+            )
+            rows = result.fetchall()
+            return [
+                {
+                    "id": row[0],
+                    "nombre": row[1],
+                    "descripcion": row[2],
+                    "id_organizacion": row[3],
+                    "active": bool(row[4]),
+                    "id_flujo": row[5],
+                    "flujo_nombre": row[6],
+                    "flujo_emoji": row[7],
+                }
+                for row in rows
+            ]
+
+    def _insert_project_in_db(
+        self,
+        nombre: str,
+        descripcion: str,
+        id_organizacion: int,
+        active: bool,
+        id_flujo: int,
+    ) -> int:
+        """Inserta un proyecto en MariaDB y retorna el ID."""
+        from urllib.parse import quote_plus
+        from sqlalchemy import create_engine, text
+
+        settings = load_mariadb_settings()
+        host = settings.get("host", "localhost")
+        port = settings.get("port", "3306")
+        user = settings.get("writer_user", "")
+        password = quote_plus(settings.get("writer_password", ""))
+        database = settings.get("projects_database", "myllm_projects_db")
+
+        dsn = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
+        engine = create_engine(dsn)
+
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("""
+                    INSERT INTO proyectos (nombre, descripcion, id_organizacion, active, id_flujo)
+                    VALUES (:nombre, :descripcion, :id_organizacion, :active, :id_flujo)
+                """),
+                {
+                    "nombre": nombre,
+                    "descripcion": descripcion,
+                    "id_organizacion": id_organizacion,
+                    "active": 1 if active else 0,
+                    "id_flujo": id_flujo,
+                },
+            )
+            conn.commit()
+            return result.lastrowid
+
+    def _update_project_in_db(
+        self, project_id: int, update_data: dict[str, Any]
+    ) -> bool:
+        """Actualiza un proyecto en MariaDB."""
+        from urllib.parse import quote_plus
+        from sqlalchemy import create_engine, text
+
+        settings = load_mariadb_settings()
+        host = settings.get("host", "localhost")
+        port = settings.get("port", "3306")
+        user = settings.get("writer_user", "")
+        password = quote_plus(settings.get("writer_password", ""))
+        database = settings.get("projects_database", "myllm_projects_db")
+
+        dsn = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
+        engine = create_engine(dsn)
+
+        # Construir SET clause dinámicamente
+        set_clauses = []
+        params = {"project_id": project_id}
+
+        if "nombre" in update_data:
+            set_clauses.append("nombre = :nombre")
+            params["nombre"] = update_data["nombre"]
+        if "descripcion" in update_data:
+            set_clauses.append("descripcion = :descripcion")
+            params["descripcion"] = update_data["descripcion"]
+        if "active" in update_data:
+            set_clauses.append("active = :active")
+            params["active"] = 1 if update_data["active"] else 0
+        if "id_flujo" in update_data:
+            set_clauses.append("id_flujo = :id_flujo")
+            params["id_flujo"] = update_data["id_flujo"]
+
+        if not set_clauses:
+            return False
+
+        sql = f"UPDATE proyectos SET {', '.join(set_clauses)} WHERE id = :project_id"
+
+        with engine.connect() as conn:
+            result = conn.execute(text(sql), params)
+            conn.commit()
+            return result.rowcount > 0
+
+    def _delete_project_in_db(self, project_id: int) -> bool:
+        """Elimina un proyecto de MariaDB."""
+        from urllib.parse import quote_plus
+        from sqlalchemy import create_engine, text
+
+        settings = load_mariadb_settings()
+        host = settings.get("host", "localhost")
+        port = settings.get("port", "3306")
+        user = settings.get("writer_user", "")
+        password = quote_plus(settings.get("writer_password", ""))
+        database = settings.get("projects_database", "myllm_projects_db")
+
+        dsn = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
+        engine = create_engine(dsn)
+
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("DELETE FROM proyectos WHERE id = :project_id"),
+                {"project_id": project_id},
+            )
+            conn.commit()
+            return result.rowcount > 0
+
+    def _register_project_change(
+        self, project_id: int, tipo_cambio: str, descripcion: str
+    ) -> int | None:
+        """Registra un cambio de proyecto usando el procedimiento almacenado."""
+        from urllib.parse import quote_plus
+        from sqlalchemy import create_engine, text
+
+        settings = load_mariadb_settings()
+        host = settings.get("host", "localhost")
+        port = settings.get("port", "3306")
+        user = settings.get("writer_user", "")
+        password = quote_plus(settings.get("writer_password", ""))
+        database = settings.get("projects_database", "myllm_projects_db")
+
+        dsn = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
+        engine = create_engine(dsn)
+
+        with engine.connect() as conn:
+            # Obtener id_organizacion del proyecto
+            result = conn.execute(
+                text("SELECT id_organizacion FROM proyectos WHERE id = :pid"),
+                {"pid": project_id},
+            )
+            row = result.fetchone()
+            if not row:
+                raise BackendCoreBusinessError(f"Proyecto {project_id} no encontrado")
+
+            id_organizacion = row[0]
+
+            # Llamar al procedimiento almacenado
+            conn.execute(
+                text("""
+                    CALL sp_registrar_cambio_proyecto(
+                        :p_id_proyecto,
+                        :p_id_organizacion,
+                        :p_tipo_cambio,
+                        :p_descripcion,
+                        :p_id_usuario
+                    )
+                """),
+                {
+                    "p_id_proyecto": project_id,
+                    "p_id_organizacion": id_organizacion,
+                    "p_tipo_cambio": tipo_cambio,
+                    "p_descripcion": descripcion,
+                    "p_id_usuario": 0,  # Usuario del sistema
+                },
+            )
+            conn.commit()
+            return None  # El SP no retorna el ID directamente
+
+    # ========================================================================
+    # GESTIÓN DE ROLES DE USUARIO EN PROYECTOS
+    # ========================================================================
+
+    def get_project_roles_base(self) -> list[dict[str, Any]]:
+        """Obtiene el catálogo maestro de roles base para proyectos.
+
+        Consulta la tabla proyectos_roles_base que contiene los roles
+        disponibles para asignar a usuarios en proyectos.
+
+        Returns:
+            Lista de diccionarios con id, nombre_rol y descripcion
+        """
+        from sqlalchemy import text
+
+        self._logger.info("[backend-core] Consultando catálogo de roles base")
+
+        with self._get_projects_db_connection() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT 
+                        id,
+                        nombre_rol,
+                        COALESCE(descripcion, '') as descripcion
+                    FROM proyectos_roles_base
+                    ORDER BY 
+                        CASE id 
+                            WHEN 0 THEN 1
+                            WHEN 3 THEN 2
+                            WHEN 4 THEN 3
+                            WHEN 5 THEN 4
+                        END
+                """)
+            )
+
+            roles = [
+                {
+                    "id": row[0],
+                    "nombre_rol": row[1],
+                    "descripcion": row[2],
+                }
+                for row in result.fetchall()
+            ]
+
+            self._logger.info(
+                "[backend-core] Roles base obtenidos: %d", len(roles)
+            )
+            return roles
+
+    def get_user_project_roles(
+        self, user_id: int, organization_id: int
+    ) -> list[dict[str, Any]]:
+        """Obtiene los roles de un usuario en proyectos de una organización.
+
+        Consulta proyectos_roles JOIN proyectos para obtener nombres.
+
+        Args:
+            user_id: ID del usuario
+            organization_id: ID de la organización
+
+        Returns:
+            Lista de diccionarios con los roles del usuario
+        """
+        from sqlalchemy import text
+
+        self._logger.info(
+            "[backend-core] Consultando roles de usuario %s en org %s",
+            user_id,
+            organization_id,
+        )
+
+        with self._get_projects_db_connection() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT 
+                        pr.id,
+                        pr.id_usuario,
+                        pr.id_proyecto,
+                        pr.id_organizacion,
+                        pr.id_rol,
+                        CASE pr.id_rol
+                            WHEN 3 THEN 'Editor'
+                            WHEN 4 THEN 'Lector'
+                            WHEN 5 THEN 'Auditor'
+                            ELSE 'Sin Asignar'
+                        END as rol_nombre,
+                        p.nombre as proyecto_nombre,
+                        COALESCE(pr.active, 1) as active
+                    FROM proyectos_roles pr
+                    INNER JOIN proyectos p ON pr.id_proyecto = p.id
+                    WHERE pr.id_usuario = :user_id
+                      AND pr.id_organizacion = :org_id
+                    ORDER BY p.nombre
+                """),
+                {"user_id": user_id, "org_id": organization_id},
+            )
+            rows = result.fetchall()
+            return [
+                {
+                    "id": row[0],
+                    "id_usuario": row[1],
+                    "id_proyecto": row[2],
+                    "id_organizacion": row[3],
+                    "id_rol": row[4],
+                    "rol_nombre": row[5],
+                    "proyecto_nombre": row[6],
+                    "active": bool(row[7]),
+                }
+                for row in rows
+            ]
+
+    def assign_user_to_project(
+        self,
+        id_usuario: int,
+        id_proyecto: int,
+        id_organizacion: int,
+        id_rol: int,
+    ) -> dict[str, Any]:
+        """Asigna un usuario a un proyecto con un rol específico.
+
+        Si existe registro: actualiza id_rol y active=1
+        Si no existe: crea nuevo registro
+
+        Registra cambio en tabla cambios.
+
+        Args:
+            id_usuario: ID del usuario a asignar
+            id_proyecto: ID del proyecto
+            id_organizacion: ID de la organización
+            id_rol: ID del rol (3=Editor, 4=Lector, 5=Auditor)
+
+        Returns:
+            Diccionario con resultado de la operación
+        """
+        from sqlalchemy import text
+
+        # Validar rol
+        if id_rol not in (3, 4, 5):
+            raise BackendCoreBusinessError(
+                f"Rol inválido: {id_rol}. Valores válidos: 3=Editor, 4=Lector, 5=Auditor"
+            )
+
+        self._logger.info(
+            "[backend-core] Asignando usuario %s a proyecto %s con rol %s",
+            id_usuario,
+            id_proyecto,
+            id_rol,
+        )
+
+        with self._get_projects_db_writer_connection() as conn:
+            # Verificar si ya existe registro
+            existing = conn.execute(
+                text("""
+                    SELECT id, id_rol, active 
+                    FROM proyectos_roles 
+                    WHERE id_usuario = :user_id 
+                      AND id_proyecto = :project_id 
+                      AND id_organizacion = :org_id
+                """),
+                {
+                    "user_id": id_usuario,
+                    "project_id": id_proyecto,
+                    "org_id": id_organizacion,
+                },
+            ).fetchone()
+
+            created = False
+            if existing:
+                # Actualizar registro existente
+                conn.execute(
+                    text("""
+                        UPDATE proyectos_roles 
+                        SET id_rol = :id_rol, 
+                            active = 1
+                        WHERE id_usuario = :user_id 
+                          AND id_proyecto = :project_id 
+                          AND id_organizacion = :org_id
+                    """),
+                    {
+                        "id_rol": id_rol,
+                        "user_id": id_usuario,
+                        "project_id": id_proyecto,
+                        "org_id": id_organizacion,
+                    },
+                )
+                self._logger.info(
+                    "[backend-core] Actualizado rol existente para usuario %s",
+                    id_usuario,
+                )
+            else:
+                # Crear nuevo registro
+                conn.execute(
+                    text("""
+                        INSERT INTO proyectos_roles 
+                            (id_usuario, id_proyecto, id_organizacion, id_rol, active)
+                        VALUES 
+                            (:user_id, :project_id, :org_id, :id_rol, 1)
+                    """),
+                    {
+                        "user_id": id_usuario,
+                        "project_id": id_proyecto,
+                        "org_id": id_organizacion,
+                        "id_rol": id_rol,
+                    },
+                )
+                created = True
+                self._logger.info(
+                    "[backend-core] Creado nuevo rol para usuario %s",
+                    id_usuario,
+                )
+
+            # Registrar cambio en tabla cambios
+            rol_nombre = {3: "Editor", 4: "Lector", 5: "Auditor"}.get(id_rol, "Desconocido")
+            conn.execute(
+                text("""
+                    CALL sp_registrar_cambio_proyecto(
+                        :p_id_proyecto,
+                        :p_id_organizacion,
+                        :p_tipo_cambio,
+                        :p_descripcion,
+                        :p_id_usuario
+                    )
+                """),
+                {
+                    "p_id_proyecto": id_proyecto,
+                    "p_id_organizacion": id_organizacion,
+                    "p_tipo_cambio": "Asignación usuario",
+                    "p_descripcion": f"Usuario {id_usuario} asignado como {rol_nombre}",
+                    "p_id_usuario": id_usuario,
+                },
+            )
+
+            conn.commit()
+
+            return {
+                "success": True,
+                "message": "Usuario asignado correctamente",
+                "id_usuario": id_usuario,
+                "id_proyecto": id_proyecto,
+                "id_rol": id_rol,
+                "created": created,
+            }
+
+    def remove_user_from_project(
+        self,
+        id_usuario: int,
+        id_proyecto: int,
+        id_organizacion: int,
+    ) -> dict[str, Any]:
+        """Quita un usuario de un proyecto (desactiva la asignación).
+
+        Busca el registro y pone active=0.
+        Registra cambio en tabla cambios.
+
+        Args:
+            id_usuario: ID del usuario a quitar
+            id_proyecto: ID del proyecto
+            id_organizacion: ID de la organización
+
+        Returns:
+            Diccionario con resultado de la operación
+        """
+        from sqlalchemy import text
+
+        self._logger.info(
+            "[backend-core] Quitando usuario %s de proyecto %s",
+            id_usuario,
+            id_proyecto,
+        )
+
+        with self._get_projects_db_writer_connection() as conn:
+            # Verificar si existe el registro
+            existing = conn.execute(
+                text("""
+                    SELECT id, id_rol 
+                    FROM proyectos_roles 
+                    WHERE id_usuario = :user_id 
+                      AND id_proyecto = :project_id 
+                      AND id_organizacion = :org_id
+                """),
+                {
+                    "user_id": id_usuario,
+                    "project_id": id_proyecto,
+                    "org_id": id_organizacion,
+                },
+            ).fetchone()
+
+            if not existing:
+                raise BackendCoreBusinessError(
+                    f"No existe asignación del usuario {id_usuario} "
+                    f"al proyecto {id_proyecto}"
+                )
+
+            # Desactivar registro
+            conn.execute(
+                text("""
+                    UPDATE proyectos_roles 
+                    SET active = 0
+                    WHERE id_usuario = :user_id 
+                      AND id_proyecto = :project_id 
+                      AND id_organizacion = :org_id
+                """),
+                {
+                    "user_id": id_usuario,
+                    "project_id": id_proyecto,
+                    "org_id": id_organizacion,
+                },
+            )
+
+            # Registrar cambio en tabla cambios
+            conn.execute(
+                text("""
+                    CALL sp_registrar_cambio_proyecto(
+                        :p_id_proyecto,
+                        :p_id_organizacion,
+                        :p_tipo_cambio,
+                        :p_descripcion,
+                        :p_id_usuario
+                    )
+                """),
+                {
+                    "p_id_proyecto": id_proyecto,
+                    "p_id_organizacion": id_organizacion,
+                    "p_tipo_cambio": "Quitar usuario",
+                    "p_descripcion": f"Usuario {id_usuario} quitado del proyecto",
+                    "p_id_usuario": id_usuario,
+                },
+            )
+
+            conn.commit()
+
+            self._logger.info(
+                "[backend-core] Usuario %s quitado de proyecto %s",
+                id_usuario,
+                id_proyecto,
+            )
+
+            return {
+                "success": True,
+                "message": "Usuario quitado del proyecto",
+                "id_usuario": id_usuario,
+                "id_proyecto": id_proyecto,
+            }

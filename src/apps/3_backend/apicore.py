@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator
+from typing import Annotated, Any, AsyncIterator
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
@@ -185,6 +185,19 @@ class ProcessDataResponse(BaseModel):
 
     result: dict[str, Any]
     message: str
+
+
+class EnvironmentResponse(BaseModel):
+    """Respuesta con el entorno activo del sistema.
+    
+    Este endpoint es consultado por fmanagement para determinar
+    rutas base y configuraciones específicas del entorno.
+    
+    Valores posibles: macbook, dev, pre, pro
+    """
+
+    environment: str
+    source: str = "ENVIRONMENT"
 
 
 class FileOperationRequest(BaseModel):
@@ -995,4 +1008,559 @@ def process_data(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
+        ) from exc
+
+
+# === Endpoints de Configuración del Sistema ===
+
+
+# ============================================================================
+# Modelos Pydantic para Proyectos
+# ============================================================================
+
+
+class ProjectCreateRequest(BaseModel):
+    """Payload para crear un proyecto."""
+
+    nombre: str = Field(..., min_length=1, max_length=200)
+    descripcion: str | None = Field(default="", max_length=1000)
+    id_organizacion: int
+    active: bool = True
+    id_flujo: int = 1  # Propuesta Cliente (primer paso)
+
+
+class ProjectCreateResponse(BaseModel):
+    """Respuesta de creación de proyecto."""
+
+    project_id: int
+    nombre: str
+    id_organizacion: int
+    id_flujo: int
+
+
+class ProjectUpdateRequest(BaseModel):
+    """Payload para actualizar un proyecto."""
+
+    nombre: str | None = None
+    descripcion: str | None = None
+    active: bool | None = None
+    id_flujo: int | None = None
+
+
+class ProjectUpdateResponse(BaseModel):
+    """Respuesta de actualización de proyecto."""
+
+    success: bool
+    updated: bool
+    project_id: int
+
+
+class ProjectDeleteResponse(BaseModel):
+    """Respuesta de eliminación de proyecto."""
+
+    success: bool
+    deleted: bool
+    project_id: int
+
+
+class ProjectSupportRequest(BaseModel):
+    """Payload para solicitud de soporte de proyecto."""
+
+    project_id: int
+    tipo_cambio: str = "Solicitud soporte proyecto"
+    descripcion: str | None = "Solicitud de soporte técnico"
+
+
+class ProjectSupportResponse(BaseModel):
+    """Respuesta de solicitud de soporte."""
+
+    success: bool
+    cambio_id: int | None = None
+
+
+class ProjectDto(BaseModel):
+    """DTO de proyecto para respuestas."""
+
+    id: int
+    nombre: str
+    descripcion: str | None = ""
+    id_organizacion: int
+    active: bool = True
+    id_flujo: int = 1
+    flujo_nombre: str | None = None
+    flujo_emoji: str | None = None
+
+
+class ProjectListResponse(BaseModel):
+    """Respuesta de lista de proyectos."""
+
+    projects: list[ProjectDto]
+    total: int
+
+
+# ============================================================================
+# Endpoints de Proyectos
+# ============================================================================
+
+
+@app.get("/projects/organization/{organization_id}", response_model=ProjectListResponse)
+def get_organization_projects(
+    organization_id: int,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> ProjectListResponse:
+    """Obtiene los proyectos de una organización.
+
+    Flujo: Broker → Backend Core → MariaDB (myllm_projects_db)
+    """
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        projects = router.get_organization_projects(organization_id, headers)
+        return ProjectListResponse(
+            projects=[ProjectDto(**p) for p in projects],
+            total=len(projects),
+        )
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/projects", response_model=ProjectCreateResponse)
+def create_project(
+    request: ProjectCreateRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> ProjectCreateResponse:
+    """Crea un nuevo proyecto.
+
+    Flujo: Broker → Backend Core → MariaDB (INSERT proyectos)
+    
+    El trigger tr_proyecto_after_insert crea automáticamente:
+    - Registro en tabla estado (versión 1)
+    - Registro en tabla cambios (tipo "Alta proyecto")
+    """
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        result = router.create_project(request.model_dump(), headers)
+        return ProjectCreateResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/projects/{project_id}", response_model=ProjectUpdateResponse)
+def update_project(
+    project_id: int,
+    request: ProjectUpdateRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> ProjectUpdateResponse:
+    """Actualiza un proyecto existente.
+
+    Flujo: Broker → Backend Core → MariaDB (UPDATE proyectos)
+    
+    El trigger tr_proyecto_flujo_update registra automáticamente cambios en:
+    - Tabla estado (si cambia id_flujo)
+    - Tabla cambios (tipo según el campo modificado)
+    """
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        # Filtrar campos None del request
+        update_data = {k: v for k, v in request.model_dump().items() if v is not None}
+        result = router.update_project(project_id, update_data, headers)
+        return ProjectUpdateResponse(
+            success=True,
+            updated=result.get("updated", True),
+            project_id=project_id,
+        )
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.delete("/projects/{project_id}", response_model=ProjectDeleteResponse)
+def delete_project(
+    project_id: int,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> ProjectDeleteResponse:
+    """Elimina un proyecto.
+
+    Flujo: Broker → Backend Core → MariaDB (DELETE proyectos)
+    
+    El trigger tr_proyecto_before_delete registra automáticamente:
+    - Registro en tabla cambios (tipo "Borrado de proyecto")
+    """
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        result = router.delete_project(project_id, headers)
+        return ProjectDeleteResponse(
+            success=True,
+            deleted=result.get("deleted", True),
+            project_id=project_id,
+        )
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/projects/{project_id}/support", response_model=ProjectSupportResponse)
+def request_project_support(
+    project_id: int,
+    request: ProjectSupportRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> ProjectSupportResponse:
+    """Registra una solicitud de soporte para un proyecto.
+
+    Flujo: Broker → Backend Core → MariaDB (CALL sp_registrar_cambio_proyecto)
+    
+    Registra en tabla cambios:
+    - tipo_cambio: "Solicitud soporte proyecto"
+    - descripcion: descripción de la solicitud
+    """
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        result = router.request_project_support(
+            project_id,
+            request.tipo_cambio,
+            request.descripcion or "",
+            headers,
+        )
+        return ProjectSupportResponse(
+            success=True,
+            cambio_id=result.get("cambio_id"),
+        )
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+# === Endpoints de Configuración del Sistema ===
+
+
+@app.get("/config/environment", response_model=EnvironmentResponse)
+def get_active_environment() -> EnvironmentResponse:
+    """Obtiene el entorno activo del sistema.
+    
+    Lee la variable ENVIRONMENT del archivo .env del proyecto.
+    Este endpoint es usado por fmanagement para determinar rutas base
+    y configuraciones específicas del entorno en tiempo de inicialización.
+    
+    Flujo típico:
+        fmanagement (Go) → Backend Core (este endpoint) → Lee .env
+    
+    Valores de entorno:
+        - macbook: Desarrollo local en macOS
+        - dev: Servidor de desarrollo
+        - pre: Servidor de preproducción  
+        - pro: Servidor de producción
+    
+    Returns:
+        EnvironmentResponse con el entorno activo
+    """
+    environment = os.environ.get("ENVIRONMENT", "unknown")
+    
+    logging.getLogger(__name__).info(
+        "[config] Consulta de entorno activo: %s",
+        environment,
+    )
+    
+    return EnvironmentResponse(
+        environment=environment,
+        source="ENVIRONMENT",
+    )
+
+
+# ============================================================================
+# MODELOS PARA GESTIÓN DE ROLES DE USUARIO EN PROYECTOS
+# ============================================================================
+
+
+class ProjectRoleDto(BaseModel):
+    """DTO de rol de usuario en proyecto."""
+
+    id: int | None = None
+    id_usuario: int
+    id_proyecto: int
+    id_organizacion: int
+    id_rol: int  # 3=Editor, 4=Lector, 5=Auditor
+    rol_nombre: str | None = None
+    proyecto_nombre: str | None = None
+    active: bool = True
+
+
+class UserProjectRolesResponse(BaseModel):
+    """Respuesta con roles de un usuario en proyectos."""
+
+    user_id: int
+    organization_id: int
+    roles: list[ProjectRoleDto]
+    total: int
+
+
+class ProjectRoleBaseDto(BaseModel):
+    """DTO de rol base para proyectos (catálogo maestro).
+    
+    Esta información es reutilizable por todas las aplicaciones
+    para selectores de roles y validaciones de seguridad.
+    """
+
+    id: int  # 0=Sin asignar, 3=Editor, 4=Lector, 5=Auditor
+    nombre_rol: str
+    descripcion: str | None = None
+
+
+class ProjectRolesBaseResponse(BaseModel):
+    """Respuesta con catálogo de roles base para proyectos."""
+
+    roles: list[ProjectRoleBaseDto]
+    total: int
+
+
+class AssignUserToProjectRequest(BaseModel):
+    """Payload para asignar usuario a proyecto."""
+
+    id_usuario: int
+    id_proyecto: int
+    id_organizacion: int
+    id_rol: int  # 3=Editor, 4=Lector, 5=Auditor
+
+
+class AssignUserToProjectResponse(BaseModel):
+    """Respuesta de asignación de usuario a proyecto."""
+
+    success: bool
+    message: str
+    id_usuario: int
+    id_proyecto: int
+    id_rol: int
+    created: bool  # True si se creó, False si se actualizó
+
+
+class RemoveUserFromProjectRequest(BaseModel):
+    """Payload para quitar usuario de proyecto."""
+
+    id_usuario: int
+    id_proyecto: int
+    id_organizacion: int
+
+
+class RemoveUserFromProjectResponse(BaseModel):
+    """Respuesta de quitar usuario de proyecto."""
+
+    success: bool
+    message: str
+    id_usuario: int
+    id_proyecto: int
+
+
+# ============================================================================
+# ENDPOINTS DE GESTIÓN DE ROLES DE USUARIO EN PROYECTOS
+# ============================================================================
+
+
+@app.get(
+    "/project-roles-base",
+    response_model=ProjectRolesBaseResponse,
+    tags=["project-roles"],
+)
+def get_project_roles_base(
+    router: BackendCoreRouter = Depends(get_router_core),
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> ProjectRolesBaseResponse:
+    """Obtiene el catálogo maestro de roles base para proyectos.
+
+    Esta información es reutilizable por todas las aplicaciones
+    para poblar selectores de roles y validaciones de seguridad.
+
+    Roles disponibles:
+        - 0: Sin asignar (usuario no puede ver el proyecto)
+        - 3: Editor (puede modificar contenido)
+        - 4: Lector (solo lectura)
+        - 5: Auditor (acceso limitado para auditoría)
+
+    Returns:
+        Lista de roles base disponibles
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("[%s] Consultando catálogo de roles base", client_app or "unknown")
+
+    try:
+        roles = router.get_project_roles_base()
+        return ProjectRolesBaseResponse(
+            roles=[ProjectRoleBaseDto(**r) for r in roles],
+            total=len(roles),
+        )
+    except BackendCoreBusinessError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except Exception as e:
+        logger.exception("Error consultando roles base: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error interno: {e}",
+        ) from e
+
+
+@app.get(
+    "/users/{user_id}/project-roles",
+    response_model=UserProjectRolesResponse,
+    tags=["project-roles"],
+)
+def get_user_project_roles(
+    user_id: int,
+    organization_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> UserProjectRolesResponse:
+    """Obtiene los roles de un usuario en proyectos de una organización.
+
+    Consulta la tabla proyectos_roles para obtener las asignaciones activas
+    del usuario en los proyectos de su organización.
+
+    Args:
+        user_id: ID del usuario
+        organization_id: ID de la organización
+
+    Returns:
+        Lista de roles del usuario en proyectos
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[%s] Consultando roles de usuario %s en org %s",
+        client_app or "unknown",
+        user_id,
+        organization_id,
+    )
+
+    try:
+        roles = router.get_user_project_roles(user_id, organization_id)
+        return UserProjectRolesResponse(
+            user_id=user_id,
+            organization_id=organization_id,
+            roles=[ProjectRoleDto(**r) for r in roles],
+            total=len(roles),
+        )
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error obteniendo roles de usuario")
+        raise HTTPException(
+            status_code=500, detail=f"Error interno: {exc}"
+        ) from exc
+
+
+@app.post(
+    "/project-roles/assign",
+    response_model=AssignUserToProjectResponse,
+    tags=["project-roles"],
+)
+def assign_user_to_project(
+    request: AssignUserToProjectRequest,
+    router: BackendCoreRouter = Depends(get_router_core),
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> AssignUserToProjectResponse:
+    """Asigna un usuario a un proyecto con un rol específico.
+
+    Si el usuario ya tiene asignación en el proyecto:
+        - Actualiza el rol y pone active=1
+    Si no existe asignación:
+        - Crea un nuevo registro
+
+    Registra el cambio en la tabla cambios con tipo "Asignación usuario".
+
+    Args:
+        request: Datos de asignación (usuario, proyecto, organización, rol)
+
+    Returns:
+        Resultado de la operación
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[%s] Asignando usuario %s a proyecto %s con rol %s",
+        client_app or "unknown",
+        request.id_usuario,
+        request.id_proyecto,
+        request.id_rol,
+    )
+
+    try:
+        result = router.assign_user_to_project(
+            id_usuario=request.id_usuario,
+            id_proyecto=request.id_proyecto,
+            id_organizacion=request.id_organizacion,
+            id_rol=request.id_rol,
+        )
+        return AssignUserToProjectResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error asignando usuario a proyecto")
+        raise HTTPException(
+            status_code=500, detail=f"Error interno: {exc}"
+        ) from exc
+
+
+@app.post(
+    "/project-roles/remove",
+    response_model=RemoveUserFromProjectResponse,
+    tags=["project-roles"],
+)
+def remove_user_from_project(
+    request: RemoveUserFromProjectRequest,
+    router: BackendCoreRouter = Depends(get_router_core),
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> RemoveUserFromProjectResponse:
+    """Quita un usuario de un proyecto (desactiva la asignación).
+
+    Busca el registro en proyectos_roles y pone active=0.
+    Registra el cambio en la tabla cambios con tipo "Quitar usuario".
+
+    Args:
+        request: Datos de la operación (usuario, proyecto, organización)
+
+    Returns:
+        Resultado de la operación
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[%s] Quitando usuario %s de proyecto %s",
+        client_app or "unknown",
+        request.id_usuario,
+        request.id_proyecto,
+    )
+
+    try:
+        result = router.remove_user_from_project(
+            id_usuario=request.id_usuario,
+            id_proyecto=request.id_proyecto,
+            id_organizacion=request.id_organizacion,
+        )
+        return RemoveUserFromProjectResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error quitando usuario de proyecto")
+        raise HTTPException(
+            status_code=500, detail=f"Error interno: {exc}"
         ) from exc

@@ -7,5 +7,41 @@
     "modification_date": "",
     "id_modifier_user": 1,
     "active": true
+  },
+  {
+    "id_user": 53,
+    "id_organization": 1,
+    "identity_type_id": 5,
+    "create_date": "31/01/26-11:40",
+    "modification_date": "",
+    "id_modifier_user": 1,
+    "active": true
+  },
+  {
+    "id_user": 54,
+    "id_organization": 1,
+    "identity_type_id": 5,
+    "create_date": "31/01/26-11:57",
+    "modification_date": "",
+    "id_modifier_user": 1,
+    "active": true
+  },
+  {
+    "id_user": 55,
+    "id_organization": 1,
+    "identity_type_id": 5,
+    "create_date": "31/01/26-11:58",
+    "modification_date": "",
+    "id_modifier_user": 1,
+    "active": true
+  },
+  {
+    "id_user": 56,
+    "id_organization": 1,
+    "identity_type_id": 5,
+    "create_date": "31/01/26-11:59",
+    "modification_date": "",
+    "id_modifier_user": 1,
+    "active": true
   }
 ]

@@ -300,6 +300,7 @@ def get_organization_users(
     access_token: str | None = None,
     session_token: str | None = None,
     identity_type_id: int = 5,
+    active_only: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Obtiene los usuarios de una organización filtrados por identity_type_id.
@@ -309,6 +310,8 @@ def get_organization_users(
         access_token: Token de acceso JWT
         session_token: Token de sesión
         identity_type_id: Filtrar por tipo de identidad (default: 5 = auditores)
+        active_only: Si True, solo retorna usuarios activos (default: False en backoffice)
+                     El backoffice muestra TODOS los usuarios para poder reactivarlos
     
     Returns:
         Lista de usuarios con user_id, user_name y active
@@ -319,11 +322,11 @@ def get_organization_users(
     if session_token:
         headers["X-Session-Token"] = session_token
     
-    path = f"/organizations/{organization_id}/users?identity_type_id={identity_type_id}"
+    path = f"/organizations/{organization_id}/users?identity_type_id={identity_type_id}&active_only={str(active_only).lower()}"
     response = _request_middleware("GET", path, headers=headers)
     
     users = response.get("users", [])
-    logger.info(f"Obtenidos {len(users)} usuarios de organización {organization_id}")
+    logger.info(f"Obtenidos {len(users)} usuarios de organización {organization_id} (active_only={active_only})")
     return users
 
 

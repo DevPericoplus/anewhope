@@ -83,9 +83,15 @@ class LoginResponse(BaseModel):
 
 
 class LoginOtpResponse(BaseModel):
-    """Respuesta de solicitud de OTP."""
+    """Respuesta de solicitud de OTP.
+    
+    Devuelve los datos necesarios para que el frontend envíe el SMS.
+    El frontend es responsable de enviar el SMS a la API externa (Infobip).
+    """
 
     success: bool
+    otp: str | None = None  # Código OTP de 4 dígitos
+    phone_number: str | None = None  # Teléfono en formato internacional (+34...)
 
 
 class RefreshTokenResponse(BaseModel):
@@ -449,11 +455,17 @@ async def request_login_otp_endpoint(
     http_request: Request,
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
 ) -> LoginOtpResponse:
-    """Endpoint para solicitar el envío del OTP."""
+    """Endpoint para obtener datos de OTP del usuario.
+    
+    El frontend recibe el OTP y teléfono, y es responsable de enviar el SMS
+    directamente a la API externa (Infobip).
+    
+    Flujo: Frontend → Middleware → (valida credenciales) → devuelve OTP + teléfono
+    """
 
     try:
         ip_address, user_agent = _get_request_metadata(http_request)
-        success = router.request_login_otp(
+        result = router.request_login_otp(
             user_name=request.user_name,
             password=request.password,
             ip_address=ip_address,
@@ -465,7 +477,11 @@ async def request_login_otp_endpoint(
             ip=ip_address,
             user_agent=user_agent,
         )
-        return LoginOtpResponse(success=success)
+        return LoginOtpResponse(
+            success=result.get("success", False),
+            otp=result.get("otp"),
+            phone_number=result.get("phone_number"),
+        )
     except BusinessRuleError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -709,6 +725,7 @@ async def get_organization_users_endpoint(
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
     session: Annotated[SessionContext, Depends(get_session_context)],
     identity_type_id: int | None = 5,
+    active_only: bool = True,
 ) -> OrganizationUsersResponse:
     """
     Obtiene los usuarios de una organización filtrados por identity_type_id.
@@ -716,6 +733,8 @@ async def get_organization_users_endpoint(
     Args:
         organization_id: ID de la organización
         identity_type_id: Filtrar por tipo de identidad (default: 5 = auditores)
+        active_only: Si True, solo retorna usuarios activos (default: True)
+                     El backoffice usa False para ver también usuarios inactivos
     
     Returns:
         Lista de usuarios con user_id, user_name y active
@@ -728,7 +747,7 @@ async def get_organization_users_endpoint(
                 detail="No tiene permisos para ver usuarios de esta organización",
             )
         
-        users = router.get_organization_users(organization_id, identity_type_id)
+        users = router.get_organization_users(organization_id, identity_type_id, active_only)
         ip_address, user_agent = _get_request_metadata(http_request)
         router.log_activity_action(
             action="Listar usuarios organización",
@@ -1199,5 +1218,506 @@ def get_training_permissions_endpoint(
     except BusinessRuleError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# Modelos Pydantic para Proyectos
+# ============================================================================
+
+
+class ProjectCreateRequest(BaseModel):
+    """Payload para crear un proyecto."""
+
+    nombre: str = Field(..., min_length=1, max_length=200)
+    descripcion: str | None = Field(default="", max_length=1000)
+    id_organizacion: int
+    active: bool = True
+    id_flujo: int = 1
+
+
+class ProjectCreateResponse(BaseModel):
+    """Respuesta de creación de proyecto."""
+
+    project_id: int
+    nombre: str
+    id_organizacion: int
+    id_flujo: int
+
+
+class ProjectUpdateRequest(BaseModel):
+    """Payload para actualizar un proyecto."""
+
+    nombre: str | None = None
+    descripcion: str | None = None
+    active: bool | None = None
+    id_flujo: int | None = None
+
+
+class ProjectUpdateResponse(BaseModel):
+    """Respuesta de actualización de proyecto."""
+
+    success: bool
+    updated: bool
+    project_id: int
+
+
+class ProjectDeleteResponse(BaseModel):
+    """Respuesta de eliminación de proyecto."""
+
+    success: bool
+    deleted: bool
+    project_id: int
+
+
+class ProjectSupportRequest(BaseModel):
+    """Payload para solicitud de soporte de proyecto."""
+
+    project_id: int
+    tipo_cambio: str = "Solicitud soporte proyecto"
+    descripcion: str | None = "Solicitud de soporte técnico"
+
+
+class ProjectSupportResponse(BaseModel):
+    """Respuesta de solicitud de soporte."""
+
+    success: bool
+    cambio_id: int | None = None
+
+
+class ProjectDto(BaseModel):
+    """DTO de proyecto."""
+
+    id: int
+    nombre: str
+    descripcion: str | None = ""
+    id_organizacion: int
+    active: bool = True
+    id_flujo: int = 1
+    flujo_nombre: str | None = None
+    flujo_emoji: str | None = None
+
+
+class ProjectListResponse(BaseModel):
+    """Respuesta de lista de proyectos."""
+
+    projects: list[ProjectDto]
+    total: int
+
+
+# ============================================================================
+# Endpoints de Proyectos
+# ============================================================================
+
+
+@app.get("/projects/organization/{organization_id}", response_model=ProjectListResponse)
+def get_organization_projects_endpoint(
+    organization_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> ProjectListResponse:
+    """Obtiene los proyectos de una organización.
+
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    """
+    try:
+        response = router.get_organization_projects(organization_id, session)
+        return ProjectListResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN
+            if "permisos" in str(exc).lower()
+            else status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/projects", response_model=ProjectCreateResponse)
+def create_project_endpoint(
+    request: ProjectCreateRequest,
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> ProjectCreateResponse:
+    """Crea un nuevo proyecto.
+
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Valida permiso: project_create
+    """
+    # SECURITY BY DESIGN: Validar permiso antes de ejecutar
+    if not router.has_low_level_permission(session, "project_create"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sin permisos para crear proyectos",
+        )
+
+    try:
+        response = router.create_project(request.model_dump(), session)
+        ip_address, user_agent = _get_request_metadata(http_request)
+        router.log_activity_action(
+            action="Crear proyecto",
+            entity_id=response.get("project_id", 0),
+            ip=ip_address,
+            user_agent=user_agent,
+        )
+        return ProjectCreateResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/projects/{project_id}", response_model=ProjectUpdateResponse)
+def update_project_endpoint(
+    project_id: int,
+    request: ProjectUpdateRequest,
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> ProjectUpdateResponse:
+    """Actualiza un proyecto existente.
+
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Valida permiso: project_update
+    """
+    # SECURITY BY DESIGN: Validar permiso antes de ejecutar
+    if not router.has_low_level_permission(session, "project_update"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sin permisos para actualizar proyectos",
+        )
+
+    try:
+        update_data = {k: v for k, v in request.model_dump().items() if v is not None}
+        response = router.update_project(project_id, update_data, session)
+        ip_address, user_agent = _get_request_metadata(http_request)
+        router.log_activity_action(
+            action="Actualizar proyecto",
+            entity_id=project_id,
+            ip=ip_address,
+            user_agent=user_agent,
+        )
+        return ProjectUpdateResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.delete("/projects/{project_id}", response_model=ProjectDeleteResponse)
+def delete_project_endpoint(
+    project_id: int,
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> ProjectDeleteResponse:
+    """Elimina un proyecto.
+
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Valida permiso: project_delete
+    """
+    # SECURITY BY DESIGN: Validar permiso antes de ejecutar
+    if not router.has_low_level_permission(session, "project_delete"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sin permisos para eliminar proyectos",
+        )
+
+    try:
+        response = router.delete_project(project_id, session)
+        ip_address, user_agent = _get_request_metadata(http_request)
+        router.log_activity_action(
+            action="Eliminar proyecto",
+            entity_id=project_id,
+            ip=ip_address,
+            user_agent=user_agent,
+        )
+        return ProjectDeleteResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/projects/{project_id}/support", response_model=ProjectSupportResponse)
+def request_project_support_endpoint(
+    project_id: int,
+    request: ProjectSupportRequest,
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> ProjectSupportResponse:
+    """Registra una solicitud de soporte para un proyecto.
+
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    """
+    try:
+        response = router.request_project_support(
+            project_id,
+            request.tipo_cambio,
+            request.descripcion or "",
+            session,
+        )
+        ip_address, user_agent = _get_request_metadata(http_request)
+        router.log_activity_action(
+            action="Solicitud soporte proyecto",
+            entity_id=project_id,
+            ip=ip_address,
+            user_agent=user_agent,
+        )
+        return ProjectSupportResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# MODELOS PARA GESTIÓN DE ROLES DE USUARIO EN PROYECTOS
+# ============================================================================
+
+
+class ProjectRoleDto(BaseModel):
+    """DTO de rol de usuario en proyecto."""
+
+    id: int | None = None
+    id_usuario: int
+    id_proyecto: int
+    id_organizacion: int
+    id_rol: int
+    rol_nombre: str | None = None
+    proyecto_nombre: str | None = None
+    active: bool = True
+
+
+class UserProjectRolesResponse(BaseModel):
+    """Respuesta con roles de un usuario en proyectos."""
+
+    user_id: int
+    organization_id: int
+    roles: list[ProjectRoleDto]
+    total: int
+
+
+class ProjectRoleBaseDto(BaseModel):
+    """DTO de rol base para proyectos (catálogo maestro).
+    
+    Información reutilizable para selectores de roles y validaciones de seguridad.
+    """
+
+    id: int  # 0=Sin asignar, 3=Editor, 4=Lector, 5=Auditor
+    nombre_rol: str
+    descripcion: str | None = None
+
+
+class ProjectRolesBaseResponse(BaseModel):
+    """Respuesta con catálogo de roles base para proyectos."""
+
+    roles: list[ProjectRoleBaseDto]
+    total: int
+
+
+class AssignUserToProjectRequest(BaseModel):
+    """Payload para asignar usuario a proyecto."""
+
+    id_usuario: int
+    id_proyecto: int
+    id_organizacion: int
+    id_rol: int
+
+
+class AssignUserToProjectResponse(BaseModel):
+    """Respuesta de asignación de usuario a proyecto."""
+
+    success: bool
+    message: str
+    id_usuario: int
+    id_proyecto: int
+    id_rol: int
+    created: bool
+
+
+class RemoveUserFromProjectRequest(BaseModel):
+    """Payload para quitar usuario de proyecto."""
+
+    id_usuario: int
+    id_proyecto: int
+    id_organizacion: int
+
+
+class RemoveUserFromProjectResponse(BaseModel):
+    """Respuesta de quitar usuario de proyecto."""
+
+    success: bool
+    message: str
+    id_usuario: int
+    id_proyecto: int
+
+
+# ============================================================================
+# ENDPOINTS DE GESTIÓN DE ROLES DE USUARIO EN PROYECTOS
+# ============================================================================
+
+
+@app.get(
+    "/project-roles-base",
+    response_model=ProjectRolesBaseResponse,
+    tags=["project-roles"],
+)
+def get_project_roles_base_endpoint(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: SessionContext = Depends(get_session_context),
+) -> ProjectRolesBaseResponse:
+    """Obtiene el catálogo maestro de roles base para proyectos.
+
+    SECURITY: Requiere sesión activa.
+    
+    Información reutilizable para selectores de roles y validaciones de seguridad.
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Roles disponibles:
+        - 0: Sin asignar
+        - 3: Editor
+        - 4: Lector
+        - 5: Auditor
+    """
+    _logger = logging.getLogger(__name__)
+    _logger.info("[middleware] Consultando catálogo de roles base")
+
+    try:
+        response = router.get_project_roles_base(session)
+        return ProjectRolesBaseResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get(
+    "/users/{user_id}/project-roles",
+    response_model=UserProjectRolesResponse,
+    tags=["project-roles"],
+)
+def get_user_project_roles_endpoint(
+    user_id: int,
+    organization_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: SessionContext = Depends(get_session_context),
+) -> UserProjectRolesResponse:
+    """Obtiene los roles de un usuario en proyectos de una organización.
+
+    SECURITY: Requiere sesión activa.
+    """
+    _logger = logging.getLogger(__name__)
+    _logger.info(
+        "[middleware] Consultando roles de usuario %s en org %s",
+        user_id,
+        organization_id,
+    )
+
+    try:
+        response = router.get_user_project_roles(user_id, organization_id, session)
+        return UserProjectRolesResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post(
+    "/project-roles/assign",
+    response_model=AssignUserToProjectResponse,
+    tags=["project-roles"],
+)
+def assign_user_to_project_endpoint(
+    request: AssignUserToProjectRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: SessionContext = Depends(get_session_context),
+) -> AssignUserToProjectResponse:
+    """Asigna un usuario a un proyecto con un rol específico.
+
+    SECURITY: Requiere permiso user_update (asignar usuarios).
+    Solo identity_type_id < 3 (SuperAdmin, Admin) o 10 (Agent Admin) pueden asignar.
+    """
+    _logger = logging.getLogger(__name__)
+
+    # Validación de permisos - Security by Design
+    if not router.has_low_level_permission(session, "user_update"):
+        _logger.warning(
+            "[middleware] Intento de asignar usuario sin permiso user_id=%s",
+            session.user_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sin permiso para asignar usuarios a proyectos",
+        )
+
+    _logger.info(
+        "[middleware] Asignando usuario %s a proyecto %s con rol %s",
+        request.id_usuario,
+        request.id_proyecto,
+        request.id_rol,
+    )
+
+    try:
+        response = router.assign_user_to_project(request.model_dump(), session)
+        return AssignUserToProjectResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post(
+    "/project-roles/remove",
+    response_model=RemoveUserFromProjectResponse,
+    tags=["project-roles"],
+)
+def remove_user_from_project_endpoint(
+    request: RemoveUserFromProjectRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: SessionContext = Depends(get_session_context),
+) -> RemoveUserFromProjectResponse:
+    """Quita un usuario de un proyecto (desactiva la asignación).
+
+    SECURITY: Requiere permiso user_update (gestionar usuarios).
+    Solo identity_type_id < 3 (SuperAdmin, Admin) o 10 (Agent Admin) pueden quitar.
+    """
+    _logger = logging.getLogger(__name__)
+
+    # Validación de permisos - Security by Design
+    if not router.has_low_level_permission(session, "user_update"):
+        _logger.warning(
+            "[middleware] Intento de quitar usuario sin permiso user_id=%s",
+            session.user_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sin permiso para quitar usuarios de proyectos",
+        )
+
+    _logger.info(
+        "[middleware] Quitando usuario %s de proyecto %s",
+        request.id_usuario,
+        request.id_proyecto,
+    )
+
+    try:
+        response = router.remove_user_from_project(request.model_dump(), session)
+        return RemoveUserFromProjectResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc

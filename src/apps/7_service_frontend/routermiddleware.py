@@ -1324,37 +1324,27 @@ class RouterMiddleware:
             self._store_sessions_data(sessions_path, sessions_data)
             raise BusinessRuleError("No hay teléfono asociado al usuario")
 
-        common_security = self._load_common_security()
-        send_sms = getattr(common_security, "send_message_by_sms", None)
-        if send_sms is None:
-            self._append_auth_log(
-                sessions_data,
-                user_name=user_name,
-                event="otp_request",
-                status="failed",
-                error_code="SMS_MODULE_MISSING",
-                details="Función de envío de SMS no disponible",
-                ip_address=ip_address,
-                user_agent=user_agent,
-            )
-            self._store_sessions_data(sessions_path, sessions_data)
-            raise BusinessRuleError("No se pudo enviar el OTP")
-
-        sms_sent = bool(send_sms(user_otp, str(user_record.user_mobile).strip()))
+        # Devolver datos al frontend para que envíe el SMS directamente
+        # El frontend es responsable de enviar el SMS a la API externa (Infobip)
+        phone_number = str(user_record.user_mobile).strip()
+        
         self._append_auth_log(
             sessions_data,
             user_name=user_name,
             event="otp_request",
-            status="success" if sms_sent else "failed",
-            error_code=None if sms_sent else "SMS_FAILED",
-            details="OTP enviado por SMS" if sms_sent else "Fallo al enviar SMS",
+            status="success",
+            error_code=None,
+            details="Datos OTP entregados al frontend para envío de SMS",
             ip_address=ip_address,
             user_agent=user_agent,
         )
         self._store_sessions_data(sessions_path, sessions_data)
-        if not sms_sent:
-            raise BusinessRuleError("No se pudo enviar el OTP")
-        return True
+        
+        return {
+            "success": True,
+            "otp": user_otp,
+            "phone_number": phone_number,
+        }
 
     def authenticate_user(
         self,
@@ -2638,7 +2628,7 @@ class RouterMiddleware:
             raise BusinessRuleError(f"Error actualizando contraseña: {e}") from e
 
     def get_organization_users(
-        self, organization_id: int, identity_type_id: int | None = 5
+        self, organization_id: int, identity_type_id: int | None = 5, active_only: bool = True
     ) -> list[dict[str, Any]]:
         """
         Obtiene los usuarios de una organización filtrados por identity_type_id.
@@ -2646,6 +2636,8 @@ class RouterMiddleware:
         Args:
             organization_id: ID de la organización
             identity_type_id: Filtrar por tipo de identidad (default: 5 = auditores)
+            active_only: Si True, solo retorna usuarios activos (default: True)
+                         El backoffice usa False para ver también usuarios inactivos
         
         Returns:
             Lista de diccionarios con user_id, user_name y active
@@ -2653,7 +2645,7 @@ class RouterMiddleware:
         users_path = self._get_users_file_path()
         all_users = self._load_users(users_path)
         
-        # Filtrar por organización y opcionalmente por identity_type_id
+        # Filtrar por organización, identity_type_id y opcionalmente por active
         filtered_users = [
             {
                 "user_id": user.user_id,
@@ -2663,12 +2655,14 @@ class RouterMiddleware:
             for user in all_users
             if user.organization_id == organization_id
             and (identity_type_id is None or user.identity_type_id == identity_type_id)
+            and (not active_only or user.active)  # Filtrar inactivos si active_only=True
         ]
         
         self._logger.info(
-            "Listado usuarios org_id=%s identity_type_id=%s total=%s",
+            "Listado usuarios org_id=%s identity_type_id=%s active_only=%s total=%s",
             organization_id,
             identity_type_id,
+            active_only,
             len(filtered_users),
         )
         
@@ -3084,4 +3078,303 @@ class RouterMiddleware:
         except BrokerBackendCommunicationError as exc:
             raise BusinessRuleError(
                 "No se pudo obtener los permisos de entrenamiento"
+            ) from exc
+
+    # ========================================================================
+    # Gestión de Proyectos
+    # ========================================================================
+
+    def get_organization_projects(
+        self,
+        organization_id: int,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Obtiene los proyectos de una organización.
+
+        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+
+        Args:
+            organization_id: ID de la organización
+            session: Contexto de sesión del usuario
+
+        Returns:
+            {"projects": [...], "total": int}
+        """
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Consultando proyectos org_id=%s user_id=%s",
+            organization_id,
+            session.user_id,
+        )
+
+        try:
+            return self._broker_client.get_organization_projects(organization_id)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudieron obtener los proyectos: {exc}"
+            ) from exc
+
+    def create_project(
+        self,
+        payload: dict[str, Any],
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Crea un nuevo proyecto.
+
+        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+
+        El trigger en MariaDB crea automáticamente:
+        - Registro en tabla estado (versión 1)
+        - Registro en tabla cambios (tipo "Alta proyecto")
+
+        Args:
+            payload: {"nombre": str, "descripcion": str, "id_organizacion": int, ...}
+            session: Contexto de sesión del usuario
+
+        Returns:
+            {"project_id": int, "nombre": str, ...}
+        """
+        self._configure_broker_security(session)
+
+        nombre = payload.get("nombre", "").strip()
+        if not nombre:
+            raise BusinessRuleError("El nombre del proyecto es obligatorio")
+
+        self._logger.info(
+            "[middleware] Creando proyecto: nombre=%s org_id=%s user_id=%s",
+            nombre,
+            payload.get("id_organizacion"),
+            session.user_id,
+        )
+
+        try:
+            return self._broker_client.create_project(payload)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo crear el proyecto: {exc}"
+            ) from exc
+
+    def update_project(
+        self,
+        project_id: int,
+        update_data: dict[str, Any],
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Actualiza un proyecto existente.
+
+        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+
+        El trigger en MariaDB registra cambios automáticamente.
+
+        Args:
+            project_id: ID del proyecto
+            update_data: Campos a actualizar
+            session: Contexto de sesión del usuario
+
+        Returns:
+            {"success": True, "updated": True, "project_id": int}
+        """
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Actualizando proyecto: project_id=%s data=%s user_id=%s",
+            project_id,
+            update_data,
+            session.user_id,
+        )
+
+        try:
+            return self._broker_client.update_project(project_id, update_data)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo actualizar el proyecto: {exc}"
+            ) from exc
+
+    def delete_project(
+        self,
+        project_id: int,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Elimina un proyecto.
+
+        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+
+        El trigger en MariaDB registra el borrado.
+
+        Args:
+            project_id: ID del proyecto
+            session: Contexto de sesión del usuario
+
+        Returns:
+            {"success": True, "deleted": True, "project_id": int}
+        """
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Eliminando proyecto: project_id=%s user_id=%s",
+            project_id,
+            session.user_id,
+        )
+
+        try:
+            return self._broker_client.delete_project(project_id)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo eliminar el proyecto: {exc}"
+            ) from exc
+
+    def request_project_support(
+        self,
+        project_id: int,
+        tipo_cambio: str,
+        descripcion: str,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Registra una solicitud de soporte para un proyecto.
+
+        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+
+        Args:
+            project_id: ID del proyecto
+            tipo_cambio: Tipo de cambio a registrar
+            descripcion: Descripción de la solicitud
+            session: Contexto de sesión del usuario
+
+        Returns:
+            {"success": True, "cambio_id": int | None}
+        """
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Solicitud de soporte: project_id=%s tipo=%s user_id=%s",
+            project_id,
+            tipo_cambio,
+            session.user_id,
+        )
+
+        try:
+            return self._broker_client.request_project_support(
+                project_id, tipo_cambio, descripcion
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo registrar la solicitud de soporte: {exc}"
+            ) from exc
+
+    # ========================================================================
+    # GESTIÓN DE ROLES DE USUARIO EN PROYECTOS
+    # ========================================================================
+
+    def get_project_roles_base(self, session: SessionContext) -> dict[str, Any]:
+        """Obtiene el catálogo maestro de roles base para proyectos.
+
+        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+
+        Esta información es reutilizable por todas las aplicaciones
+        para selectores de roles y validaciones de seguridad.
+
+        Args:
+            session: Contexto de sesión del usuario
+
+        Returns:
+            {"roles": [{"id": int, "nombre_rol": str, "descripcion": str}, ...], "total": int}
+        """
+        self._configure_broker_security(session)
+
+        self._logger.info("[middleware] Consultando catálogo de roles base")
+
+        try:
+            return self._broker_client.get_project_roles_base()
+        except Exception as e:
+            self._logger.error("[middleware] Error obteniendo roles base: %s", e)
+            raise BusinessRuleError(f"Error obteniendo roles base: {e}") from e
+
+    def get_user_project_roles(
+        self, user_id: int, organization_id: int, session: SessionContext
+    ) -> dict[str, Any]:
+        """Obtiene los roles de un usuario en proyectos.
+
+        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+
+        Args:
+            user_id: ID del usuario
+            organization_id: ID de la organización
+            session: Contexto de sesión del usuario
+
+        Returns:
+            {"user_id": int, "organization_id": int, "roles": [...], "total": int}
+        """
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Consultando roles de usuario %s en org %s",
+            user_id,
+            organization_id,
+        )
+
+        try:
+            return self._broker_client.get_user_project_roles(user_id, organization_id)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudieron obtener roles del usuario: {exc}"
+            ) from exc
+
+    def assign_user_to_project(
+        self, payload: dict[str, Any], session: SessionContext
+    ) -> dict[str, Any]:
+        """Asigna un usuario a un proyecto.
+
+        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+
+        Args:
+            payload: {"id_usuario": int, "id_proyecto": int, "id_organizacion": int, "id_rol": int}
+            session: Contexto de sesión del usuario
+
+        Returns:
+            {"success": True, "message": str, ...}
+        """
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Asignando usuario %s a proyecto %s con rol %s",
+            payload.get("id_usuario"),
+            payload.get("id_proyecto"),
+            payload.get("id_rol"),
+        )
+
+        try:
+            return self._broker_client.assign_user_to_project(payload)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo asignar usuario al proyecto: {exc}"
+            ) from exc
+
+    def remove_user_from_project(
+        self, payload: dict[str, Any], session: SessionContext
+    ) -> dict[str, Any]:
+        """Quita un usuario de un proyecto.
+
+        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+
+        Args:
+            payload: {"id_usuario": int, "id_proyecto": int, "id_organizacion": int}
+            session: Contexto de sesión del usuario
+
+        Returns:
+            {"success": True, "message": str, ...}
+        """
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Quitando usuario %s de proyecto %s",
+            payload.get("id_usuario"),
+            payload.get("id_proyecto"),
+        )
+
+        try:
+            return self._broker_client.remove_user_from_project(payload)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo quitar usuario del proyecto: {exc}"
             ) from exc

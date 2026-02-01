@@ -413,3 +413,136 @@ class BrokerBackendClient:
         )
         return dict(data or {})
 
+    # ========================================================================
+    # Gestión de Proyectos
+    # ========================================================================
+
+    def get_organization_projects(self, organization_id: int) -> dict[str, Any]:
+        """Obtiene los proyectos de una organización.
+
+        Args:
+            organization_id: ID de la organización
+
+        Returns:
+            {"projects": [...], "total": int}
+        """
+        data = self._request("GET", f"/projects/organization/{organization_id}")
+        return dict(data or {"projects": [], "total": 0})
+
+    def create_project(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Crea un nuevo proyecto.
+
+        Args:
+            payload: {"nombre": str, "descripcion": str, "id_organizacion": int, ...}
+
+        Returns:
+            {"project_id": int, "nombre": str, ...}
+        """
+        data = self._request("POST", "/projects", payload=payload)
+        return dict(data or {})
+
+    def update_project(
+        self, project_id: int, update_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Actualiza un proyecto existente.
+
+        Args:
+            project_id: ID del proyecto
+            update_data: Campos a actualizar
+
+        Returns:
+            {"success": True, "updated": True, "project_id": int}
+        """
+        data = self._request("PATCH", f"/projects/{project_id}", payload=update_data)
+        return dict(data or {})
+
+    def delete_project(self, project_id: int) -> dict[str, Any]:
+        """Elimina un proyecto.
+
+        Args:
+            project_id: ID del proyecto
+
+        Returns:
+            {"success": True, "deleted": True, "project_id": int}
+        """
+        data = self._request("DELETE", f"/projects/{project_id}")
+        return dict(data or {})
+
+    def request_project_support(
+        self, project_id: int, tipo_cambio: str, descripcion: str
+    ) -> dict[str, Any]:
+        """Registra una solicitud de soporte para un proyecto.
+
+        Args:
+            project_id: ID del proyecto
+            tipo_cambio: Tipo de cambio a registrar
+            descripcion: Descripción de la solicitud
+
+        Returns:
+            {"success": True, "cambio_id": int | None}
+        """
+        data = self._request(
+            "POST",
+            f"/projects/{project_id}/support",
+            payload={
+                "project_id": project_id,
+                "tipo_cambio": tipo_cambio,
+                "descripcion": descripcion,
+            },
+        )
+        return dict(data or {})
+
+    # ========================================================================
+    # GESTIÓN DE ROLES DE USUARIO EN PROYECTOS
+    # ========================================================================
+
+    def get_project_roles_base(self) -> dict[str, Any]:
+        """Obtiene el catálogo maestro de roles base para proyectos.
+
+        Returns:
+            {"roles": [{"id": int, "nombre_rol": str, "descripcion": str}, ...], "total": int}
+        """
+        data = self._request("GET", "/project-roles-base")
+        return dict(data or {})
+
+    def get_user_project_roles(
+        self, user_id: int, organization_id: int
+    ) -> dict[str, Any]:
+        """Obtiene los roles de un usuario en proyectos.
+
+        Args:
+            user_id: ID del usuario
+            organization_id: ID de la organización
+
+        Returns:
+            {"user_id": int, "organization_id": int, "roles": [...], "total": int}
+        """
+        data = self._request(
+            "GET",
+            f"/users/{user_id}/project-roles?organization_id={organization_id}",
+        )
+        return dict(data or {})
+
+    def assign_user_to_project(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Asigna un usuario a un proyecto.
+
+        Args:
+            payload: {"id_usuario": int, "id_proyecto": int, "id_organizacion": int, "id_rol": int}
+
+        Returns:
+            {"success": True, "message": str, ...}
+        """
+        data = self._request("POST", "/project-roles/assign", payload=payload)
+        return dict(data or {})
+
+    def remove_user_from_project(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Quita un usuario de un proyecto.
+
+        Args:
+            payload: {"id_usuario": int, "id_proyecto": int, "id_organizacion": int}
+
+        Returns:
+            {"success": True, "message": str, ...}
+        """
+        data = self._request("POST", "/project-roles/remove", payload=payload)
+        return dict(data or {})

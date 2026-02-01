@@ -492,3 +492,195 @@ class BrokerBackendRouter:
             raise BrokerBusinessError(
                 "No se pudo obtener permisos de entrenamiento"
             ) from exc
+
+    # ========================================================================
+    # Gestión de Proyectos (enrutados a Backend Core)
+    # ========================================================================
+
+    def get_organization_projects(
+        self, organization_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Obtiene los proyectos de una organización.
+
+        Enruta a Backend Core → MariaDB (myllm_projects_db)
+        """
+        self._logger.info(
+            "[%s] Consultando proyectos org_id=%s",
+            self._client_app,
+            organization_id,
+        )
+        try:
+            return self._core_client.get_organization_projects(
+                organization_id, headers
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudieron obtener proyectos: {exc}"
+            ) from exc
+
+    def create_project(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Crea un nuevo proyecto.
+
+        Enruta a Backend Core → MariaDB (INSERT proyectos)
+        El trigger crea automáticamente estado y cambios.
+        """
+        self._logger.info(
+            "[%s] Creando proyecto: nombre=%s org_id=%s",
+            self._client_app,
+            payload.get("nombre"),
+            payload.get("id_organizacion"),
+        )
+        try:
+            return self._core_client.create_project(payload, headers)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudo crear el proyecto: {exc}"
+            ) from exc
+
+    def update_project(
+        self, project_id: int, update_data: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Actualiza un proyecto existente.
+
+        Enruta a Backend Core → MariaDB (UPDATE proyectos)
+        El trigger registra cambios automáticamente.
+        """
+        self._logger.info(
+            "[%s] Actualizando proyecto: project_id=%s data=%s",
+            self._client_app,
+            project_id,
+            update_data,
+        )
+        try:
+            return self._core_client.update_project(project_id, update_data, headers)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudo actualizar el proyecto: {exc}"
+            ) from exc
+
+    def delete_project(
+        self, project_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Elimina un proyecto.
+
+        Enruta a Backend Core → MariaDB (DELETE proyectos)
+        El trigger registra el borrado automáticamente.
+        """
+        self._logger.info(
+            "[%s] Eliminando proyecto: project_id=%s",
+            self._client_app,
+            project_id,
+        )
+        try:
+            return self._core_client.delete_project(project_id, headers)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudo eliminar el proyecto: {exc}"
+            ) from exc
+
+    def request_project_support(
+        self,
+        project_id: int,
+        tipo_cambio: str,
+        descripcion: str,
+        headers: dict[str, str],
+    ) -> dict[str, Any]:
+        """Registra una solicitud de soporte para un proyecto.
+
+        Enruta a Backend Core → MariaDB (CALL sp_registrar_cambio_proyecto)
+        """
+        self._logger.info(
+            "[%s] Solicitud de soporte: project_id=%s tipo=%s",
+            self._client_app,
+            project_id,
+            tipo_cambio,
+        )
+        try:
+            return self._core_client.request_project_support(
+                project_id, tipo_cambio, descripcion, headers
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudo registrar solicitud de soporte: {exc}"
+            ) from exc
+
+    # ========================================================================
+    # GESTIÓN DE ROLES DE USUARIO EN PROYECTOS
+    # ========================================================================
+
+    def get_project_roles_base(self, headers: dict[str, str]) -> dict[str, Any]:
+        """Obtiene el catálogo maestro de roles base para proyectos.
+
+        Enruta a Backend Core → MariaDB (proyectos_roles_base)
+        """
+        self._logger.info("[%s] Consultando catálogo de roles base", self._client_app)
+        try:
+            return self._core_client.get_project_roles_base(headers)
+        except Exception as e:
+            self._logger.error("[%s] Error obteniendo roles base: %s", self._client_app, e)
+            raise BrokerBackendBusinessError(f"Error obteniendo roles base: {e}") from e
+
+    def get_user_project_roles(
+        self, user_id: int, organization_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Obtiene los roles de un usuario en proyectos.
+
+        Enruta a Backend Core → MariaDB (proyectos_roles)
+        """
+        self._logger.info(
+            "[%s] Consultando roles de usuario %s en org %s",
+            self._client_app,
+            user_id,
+            organization_id,
+        )
+        try:
+            return self._core_client.get_user_project_roles(
+                user_id, organization_id, headers
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudieron obtener roles del usuario: {exc}"
+            ) from exc
+
+    def assign_user_to_project(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Asigna un usuario a un proyecto.
+
+        Enruta a Backend Core → MariaDB (INSERT/UPDATE proyectos_roles)
+        """
+        self._logger.info(
+            "[%s] Asignando usuario %s a proyecto %s con rol %s",
+            self._client_app,
+            payload.get("id_usuario"),
+            payload.get("id_proyecto"),
+            payload.get("id_rol"),
+        )
+        try:
+            return self._core_client.assign_user_to_project(payload, headers)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudo asignar usuario al proyecto: {exc}"
+            ) from exc
+
+    def remove_user_from_project(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Quita un usuario de un proyecto.
+
+        Enruta a Backend Core → MariaDB (UPDATE proyectos_roles active=0)
+        """
+        self._logger.info(
+            "[%s] Quitando usuario %s de proyecto %s",
+            self._client_app,
+            payload.get("id_usuario"),
+            payload.get("id_proyecto"),
+        )
+        try:
+            return self._core_client.remove_user_from_project(payload, headers)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudo quitar usuario del proyecto: {exc}"
+            ) from exc
