@@ -780,3 +780,53 @@ class BrokerBackendRouter:
             raise BrokerBusinessError(
                 f"No se pudo añadir respuesta: {exc}"
             ) from exc
+
+    # ========================================================================
+    # GESTIÓN DE TECNOLOGÍAS
+    # ========================================================================
+
+    def get_tecnologias(self) -> dict[str, Any]:
+        """Obtiene todas las tecnologías disponibles."""
+        self._logger.info("[%s] Consultando tecnologías", self._client_app)
+        try:
+            return self._core_client.get_tecnologias()
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"No se pudieron obtener tecnologías: {exc}") from exc
+
+    def get_proyecto_tecnologia(self, project_id: int) -> dict[str, Any]:
+        """Obtiene la tecnología asignada a un proyecto."""
+        self._logger.info(
+            "[%s] Consultando tecnología de proyecto %s", self._client_app, project_id
+        )
+        try:
+            return self._core_client.get_proyecto_tecnologia(project_id)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudo obtener tecnología: {exc}"
+            ) from exc
+
+    def asignar_tecnologia(
+        self, project_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Asigna una tecnología a un proyecto."""
+        self._logger.info(
+            "[%s] Asignando tecnología a proyecto %s", self._client_app, project_id
+        )
+        try:
+            return self._core_client.asignar_tecnologia(project_id, payload)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"No se pudo asignar tecnología: {exc}") from exc
+
+    def actualizar_tecnologia(
+        self, project_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Actualiza la tecnología de un proyecto."""
+        self._logger.info(
+            "[%s] Actualizando tecnología de proyecto %s", self._client_app, project_id
+        )
+        try:
+            return self._core_client.actualizar_tecnologia(project_id, payload)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudo actualizar tecnología: {exc}"
+            ) from exc

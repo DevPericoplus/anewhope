@@ -844,3 +844,161 @@ def add_ticket_response(
         logger.error(f"No se pudo contactar con el middleware: {exc}")
         raise Exception(f"Error de conexión: {exc}") from exc
 
+
+# ============================================================================
+# GESTIÓN DE TECNOLOGÍAS
+# ============================================================================
+
+
+def get_tecnologias(
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Obtiene la lista de tecnologías disponibles.
+    
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+    
+    Returns:
+        {"tecnologias": [...], "total": int}
+    """
+    url = f"{_get_middleware_base_url()}/tecnologias"
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+    
+    request = urllib.request.Request(url, headers=request_headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        logger.error(f"Error obteniendo tecnologías: {exc}")
+        return {"tecnologias": [], "total": 0}
+
+
+def get_proyecto_tecnologia(
+    project_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Obtiene la tecnología asignada a un proyecto.
+    
+    Returns:
+        {"success": True, "asignacion": {...} o None}
+    """
+    url = f"{_get_middleware_base_url()}/proyectos/{project_id}/tecnologia"
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+    
+    request = urllib.request.Request(url, headers=request_headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        logger.error(f"Error obteniendo tecnología de proyecto: {exc}")
+        return {"success": False, "asignacion": None}
+
+
+def asignar_tecnologia(
+    project_id: int,
+    id_tecnologia: int,
+    coste_base: str = "17% sobre base",
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Asigna una tecnología a un proyecto (primera asignación).
+    
+    Returns:
+        {"success": True, "asignacion": {...}}
+    """
+    url = f"{_get_middleware_base_url()}/proyectos/{project_id}/tecnologia"
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+    
+    payload = json.dumps({
+        "id_tecnologia": id_tecnologia,
+        "coste_base": coste_base,
+    }).encode("utf-8")
+    
+    request = urllib.request.Request(url, data=payload, headers=request_headers, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        error_msg = f"Error HTTP {exc.code}"
+        try:
+            error_payload = exc.read().decode("utf-8")
+            error_msg = f"{error_msg}: {error_payload}"
+        except Exception:
+            pass
+        logger.error(f"Error asignando tecnología: {error_msg}")
+        return {"success": False, "error": error_msg}
+    except Exception as exc:
+        logger.error(f"Error asignando tecnología: {exc}")
+        return {"success": False, "error": str(exc)}
+
+
+def actualizar_tecnologia(
+    project_id: int,
+    id_tecnologia: int,
+    coste_base: str = "17% sobre base",
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Actualiza la tecnología de un proyecto (solo Backoffice).
+    
+    Returns:
+        {"success": True, "asignacion": {...}}
+    """
+    url = f"{_get_middleware_base_url()}/proyectos/{project_id}/tecnologia"
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+    
+    payload = json.dumps({
+        "id_tecnologia": id_tecnologia,
+        "coste_base": coste_base,
+    }).encode("utf-8")
+    
+    request = urllib.request.Request(url, data=payload, headers=request_headers, method="PATCH")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        error_msg = f"Error HTTP {exc.code}"
+        try:
+            error_payload = exc.read().decode("utf-8")
+            error_msg = f"{error_msg}: {error_payload}"
+        except Exception:
+            pass
+        logger.error(f"Error actualizando tecnología: {error_msg}")
+        return {"success": False, "error": error_msg}
+    except Exception as exc:
+        logger.error(f"Error actualizando tecnología: {exc}")
+        return {"success": False, "error": str(exc)}
+

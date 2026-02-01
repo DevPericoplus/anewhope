@@ -1105,3 +1105,119 @@ def create_support_ticket(
         return {"success": False, "error": response.get("error", "Error desconocido")}
     
     return {"success": False, "error": "Respuesta inválida del servidor"}
+
+
+# ============================================================================
+# GESTIÓN DE TECNOLOGÍAS
+# ============================================================================
+
+
+def get_tecnologias(
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Obtiene la lista de tecnologías disponibles.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Returns:
+        {"tecnologias": [...], "total": int}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    response = _request_middleware(
+        "GET",
+        "/tecnologias",
+        headers=headers,
+    )
+    
+    return dict(response) if isinstance(response, dict) else {"tecnologias": [], "total": 0}
+
+
+def get_proyecto_tecnologia(
+    project_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Obtiene la tecnología asignada a un proyecto.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Returns:
+        {"success": True, "asignacion": {...} o None}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    response = _request_middleware(
+        "GET",
+        f"/proyectos/{project_id}/tecnologia",
+        headers=headers,
+    )
+    
+    return dict(response) if isinstance(response, dict) else {"success": False, "asignacion": None}
+
+
+def asignar_tecnologia(
+    project_id: int,
+    id_tecnologia: int,
+    coste_base: str = "17% sobre base",
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Asigna una tecnología a un proyecto (primera asignación).
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Returns:
+        {"success": True, "asignacion": {...}}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    payload = {
+        "id_tecnologia": id_tecnologia,
+        "coste_base": coste_base,
+    }
+    
+    response = _request_middleware(
+        "POST",
+        f"/proyectos/{project_id}/tecnologia",
+        payload=payload,
+        headers=headers,
+    )
+    
+    return dict(response) if isinstance(response, dict) else {"success": False}
+
+
+def actualizar_tecnologia(
+    project_id: int,
+    id_tecnologia: int,
+    coste_base: str = "17% sobre base",
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Actualiza la tecnología de un proyecto (solo Backoffice).
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Returns:
+        {"success": True, "asignacion": {...}}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    payload = {
+        "id_tecnologia": id_tecnologia,
+        "coste_base": coste_base,
+    }
+    
+    response = _request_middleware(
+        "PATCH",
+        f"/proyectos/{project_id}/tecnologia",
+        payload=payload,
+        headers=headers,
+    )
+    
+    return dict(response) if isinstance(response, dict) else {"success": False}

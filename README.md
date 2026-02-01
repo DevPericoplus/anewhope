@@ -2734,6 +2734,165 @@ delete_organization_project(
 )
 ```
 
+## Gestión de Tecnologías
+
+El sistema permite asignar tecnologías de IA a los proyectos de la organización. Cada proyecto puede
+tener una única tecnología asignada que define el enfoque de procesamiento del modelo LLM.
+
+### Tabla de Tecnologías
+
+Base de datos: `myllm_projects_db`, tabla: `tecnologia`
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `id` | INT | Identificador único de la tecnología |
+| `name` | VARCHAR | Nombre de la tecnología (RAG, Fine-tuning, etc.) |
+| `descripcion` | TEXT | Descripción detallada de la tecnología |
+| `active` | TINYINT | 1=Activa, 0=Inactiva (visible pero no seleccionable) |
+
+### Tecnologías disponibles
+
+| ID | Nombre | Descripción | Activa |
+|----|--------|-------------|--------|
+| 1 | RAG | Generación Aumentada por Recuperación - combina LLM con datos externos | Sí |
+| 2 | Knowledge Graphs | Conecta datos mediante nodos y relaciones (metadatos complejos) | No |
+| 3 | Long Context Windows | Inyecta estructura documental directamente en el prompt | No |
+| 4 | Agentic RAG | Agentes que deciden cómo buscar según metadatos | No |
+| 5 | Semantic Caching | Cache semántico para consultas frecuentes | No |
+| 6 | DSPy | Optimización automática de uso de documentos | No |
+| 7 | Fine-tuning | Especialización del modelo en dominio específico | No |
+| 8 | Creación de Agentes | Agentes de IA autónomos para alcanzar objetivos | No |
+
+### Tabla de Asignación Proyecto-Tecnología
+
+Base de datos: `myllm_projects_db`, tabla: `proyectos_tecnologia`
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `id` | INT | Identificador único de la asignación |
+| `id_proyecto` | INT | ID del proyecto (UNIQUE - un proyecto solo tiene una tecnología) |
+| `id_tecnologia` | INT | ID de la tecnología asignada |
+| `coste_base` | VARCHAR | Coste base del proyecto (default: "17% sobre base") |
+
+### Reglas de Negocio
+
+| Regla | Descripción |
+|-------|-------------|
+| **Una tecnología por proyecto** | Cada proyecto solo puede tener una tecnología asignada (constraint UNIQUE en `id_proyecto`) |
+| **Frontend: asignar una vez** | El frontend solo permite asignar tecnología si el proyecto no tiene ninguna asignada |
+| **Backoffice: modificar siempre** | El backoffice puede cambiar la tecnología asignada en cualquier momento |
+| **Tecnologías inactivas** | Las tecnologías con `active=0` se muestran en la lista pero aparecen deshabilitadas |
+| **Coste base por defecto** | Si no se especifica, el coste base es "17% sobre base" |
+
+### Flujo de Asignación
+
+```
+┌─────────────────┐      ┌──────────────┐      ┌────────┐      ┌──────────────┐      ┌──────────┐
+│    Frontend     │ ──►  │  Middleware  │ ──►  │ Broker │ ──►  │ Backend Core │ ──►  │ MariaDB  │
+│ POST (primera)  │      │     /api     │      │  8008  │      │     8003     │      │          │
+│ (sin tech prev) │      └──────────────┘      └────────┘      └──────────────┘      └──────────┘
+└─────────────────┘                                                                        │
+                                                                                           ▼
+┌─────────────────┐      ┌──────────────┐      ┌────────┐      ┌──────────────┐      ┌──────────┐
+│   Backoffice    │ ──►  │  Middleware  │ ──►  │ Broker │ ──►  │ Backend Core │ ──►  │ MariaDB  │
+│ PATCH (siempre) │      │     /api     │      │  8008  │      │     8003     │      │          │
+│ (puede cambiar) │      └──────────────┘      └────────┘      └──────────────┘      └──────────┘
+```
+
+### Endpoints de API
+
+| Método | Endpoint | Descripción | Cliente |
+|--------|----------|-------------|---------|
+| GET | `/tecnologias` | Lista todas las tecnologías (activas e inactivas) | Frontend/Backoffice |
+| GET | `/proyectos/{id}/tecnologia` | Obtiene la tecnología asignada a un proyecto | Frontend/Backoffice |
+| POST | `/proyectos/{id}/tecnologia` | Asigna tecnología a proyecto (primera vez) | Frontend |
+| PATCH | `/proyectos/{id}/tecnologia` | Actualiza tecnología de proyecto | Backoffice |
+
+### Request de Asignación/Actualización
+
+```json
+{
+  "id_tecnologia": 1,
+  "coste_base": "17% sobre base"
+}
+```
+
+### Response de Tecnología Asignada
+
+```json
+{
+  "success": true,
+  "asignacion": {
+    "id": 1,
+    "id_proyecto": 5,
+    "id_tecnologia": 1,
+    "coste_base": "17% sobre base",
+    "tecnologia_name": "RAG"
+  }
+}
+```
+
+### Uso en Frontend (Reflex)
+
+```python
+# Cargar tecnologías
+from adapters.api_client import get_tecnologias, get_proyecto_tecnologia, asignar_tecnologia
+
+# Obtener lista de tecnologías
+result = get_tecnologias(access_token=token, session_token=session)
+tecnologias = result.get("tecnologias", [])
+
+# Verificar si proyecto tiene tecnología
+result = get_proyecto_tecnologia(project_id=5, access_token=token, session_token=session)
+if result.get("asignacion"):
+    # Proyecto ya tiene tecnología - mostrar info y deshabilitar cambio
+    pass
+else:
+    # Proyecto sin tecnología - permitir asignar
+    pass
+
+# Asignar tecnología (solo si no tiene)
+result = asignar_tecnologia(
+    project_id=5,
+    id_tecnologia=1,
+    access_token=token,
+    session_token=session,
+)
+```
+
+### Uso en Backoffice (Reflex)
+
+```python
+from adapters.api_client import actualizar_tecnologia
+
+# Cambiar tecnología (siempre permitido en backoffice)
+result = actualizar_tecnologia(
+    project_id=5,
+    id_tecnologia=2,  # Nueva tecnología
+    coste_base="20% sobre base",
+    access_token=token,
+    session_token=session,
+)
+```
+
+### Tests
+
+Los tests de tecnologías se encuentran en:
+
+| Archivo | Entorno Virtual | Descripción |
+|---------|-----------------|-------------|
+| `src/apps/3_backend/tests/test_tecnologias_api.py` | `.venv_middleware313` | Tests de DTOs, validación y lógica de negocio |
+| `src/apps/7_service_frontend/tests/test_tecnologias_middleware.py` | `.venv_middleware313` | Tests de estructuras y reglas de negocio |
+
+Ejecutar tests:
+```bash
+./full_test.sh
+# O individualmente:
+source .venv_middleware313/bin/activate
+pytest -v src/apps/3_backend/tests/test_tecnologias_api.py
+pytest -v src/apps/7_service_frontend/tests/test_tecnologias_middleware.py
+```
+
 ## Jerarquía de Trabajo y Roles de Proyecto
 
 El sistema implementa una jerarquía de trabajo que determina la visibilidad y acceso de los usuarios.

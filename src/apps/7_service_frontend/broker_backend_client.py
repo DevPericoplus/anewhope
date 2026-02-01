@@ -627,3 +627,99 @@ class BrokerBackendClient:
             payload={"respuesta": respuesta, "user_id": user_id},
         )
         return dict(data or {})
+
+    # ========================================================================
+    # GESTIÓN DE TECNOLOGÍAS
+    # ========================================================================
+
+    def get_tecnologias(self) -> dict[str, Any]:
+        """Obtiene todas las tecnologías disponibles."""
+        data = self._request("GET", "/tecnologias")
+        return dict(data or {})
+
+    def get_proyecto_tecnologia(self, project_id: int) -> dict[str, Any]:
+        """Obtiene la tecnología asignada a un proyecto."""
+        data = self._request("GET", f"/proyectos/{project_id}/tecnologia")
+        return dict(data or {})
+
+    def asignar_tecnologia(
+        self, project_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Asigna una tecnología a un proyecto."""
+        data = self._request(
+            "POST", f"/proyectos/{project_id}/tecnologia", payload=payload
+        )
+        return dict(data or {})
+
+    def actualizar_tecnologia(
+        self, project_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Actualiza la tecnología de un proyecto."""
+        data = self._request(
+            "PATCH", f"/proyectos/{project_id}/tecnologia", payload=payload
+        )
+        return dict(data or {})
+
+    # ========================================================================
+    # GESTIÓN DE TECNOLOGÍAS
+    # ========================================================================
+
+    def get_tecnologias(self) -> dict[str, Any]:
+        """Obtiene todas las tecnologías disponibles."""
+        data = self._request("GET", "/tecnologias")
+        return dict(data or {})
+
+    def get_proyecto_tecnologia(self, project_id: int) -> dict[str, Any]:
+        """Obtiene la tecnología asignada a un proyecto."""
+        data = self._request("GET", f"/proyectos/{project_id}/tecnologia")
+        return dict(data or {})
+
+    def asignar_tecnologia(
+        self, project_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Asigna una tecnología a un proyecto."""
+        data = self._request(
+            "POST", f"/proyectos/{project_id}/tecnologia", payload=payload
+        )
+        return dict(data or {})
+
+    def actualizar_tecnologia(
+        self, project_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Actualiza la tecnología de un proyecto."""
+        data = self._request(
+            "PATCH", f"/proyectos/{project_id}/tecnologia", payload=payload
+        )
+        return dict(data or {})
+
+    # ========================================================================
+    # GESTIÓN DE TECNOLOGÍAS
+    # ========================================================================
+
+    def get_tecnologias(self) -> dict[str, Any]:
+        """Obtiene todas las tecnologías disponibles."""
+        data = self._request("GET", "/tecnologias")
+        return dict(data or {})
+
+    def get_proyecto_tecnologia(self, project_id: int) -> dict[str, Any]:
+        """Obtiene la tecnología asignada a un proyecto."""
+        data = self._request("GET", f"/proyectos/{project_id}/tecnologia")
+        return dict(data or {})
+
+    def asignar_tecnologia(
+        self, project_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Asigna una tecnología a un proyecto."""
+        data = self._request(
+            "POST", f"/proyectos/{project_id}/tecnologia", payload=payload
+        )
+        return dict(data or {})
+
+    def actualizar_tecnologia(
+        self, project_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Actualiza la tecnología de un proyecto."""
+        data = self._request(
+            "PATCH", f"/proyectos/{project_id}/tecnologia", payload=payload
+        )
+        return dict(data or {})

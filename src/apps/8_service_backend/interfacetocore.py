@@ -493,6 +493,30 @@ class CoreBackendClient:
             payload={"respuesta": respuesta, "user_id": user_id},
         )
 
+    # ========================================================================
+    # GESTIÓN DE TECNOLOGÍAS
+    # ========================================================================
+
+    def get_tecnologias(self) -> dict[str, Any]:
+        """Obtiene todas las tecnologías disponibles."""
+        return self._request("GET", "/tecnologias")
+
+    def get_proyecto_tecnologia(self, project_id: int) -> dict[str, Any]:
+        """Obtiene la tecnología asignada a un proyecto."""
+        return self._request("GET", f"/proyectos/{project_id}/tecnologia")
+
+    def asignar_tecnologia(
+        self, project_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Asigna una tecnología a un proyecto."""
+        return self._request("POST", f"/proyectos/{project_id}/tecnologia", payload=payload)
+
+    def actualizar_tecnologia(
+        self, project_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Actualiza la tecnología de un proyecto."""
+        return self._request("PATCH", f"/proyectos/{project_id}/tecnologia", payload=payload)
+
     def _apply_headers(self, headers: dict[str, str]) -> None:
         """Aplica headers de seguridad al contexto del cliente.
 

@@ -1360,6 +1360,52 @@ class TicketListResponse(BaseModel):
     total: int
 
 
+# ============================================================================
+# DTOs para Tecnologías
+# ============================================================================
+
+
+class TecnologiaDto(BaseModel):
+    """DTO de tecnología."""
+
+    id: int
+    name: str
+    descripcion: str
+    active: bool
+
+
+class TecnologiasListResponse(BaseModel):
+    """Respuesta con lista de tecnologías."""
+
+    tecnologias: list[TecnologiaDto]
+    total: int
+
+
+class ProyectoTecnologiaDto(BaseModel):
+    """DTO de asignación proyecto-tecnología."""
+
+    id: int
+    id_proyecto: int
+    id_tecnologia: int
+    coste_base: str | None = None
+    tecnologia_name: str | None = None
+
+
+class ProyectoTecnologiaResponse(BaseModel):
+    """Respuesta de asignación de tecnología."""
+
+    success: bool
+    asignacion: ProyectoTecnologiaDto | None = None
+    mensaje: str | None = None
+
+
+class AsignarTecnologiaRequest(BaseModel):
+    """Request para asignar tecnología a proyecto."""
+
+    id_tecnologia: int
+    coste_base: str = "17% sobre base"
+
+
 class ProjectDto(BaseModel):
     """DTO de proyecto.
     
@@ -1934,6 +1980,112 @@ def add_ticket_response_endpoint(
     try:
         response = router.add_ticket_response(ticket_id, request.respuesta, session)
         return TicketUpdateResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# ENDPOINTS DE TECNOLOGÍAS
+# ============================================================================
+
+
+@app.get("/tecnologias", response_model=TecnologiasListResponse, tags=["tecnologias"])
+def get_tecnologias_endpoint(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> TecnologiasListResponse:
+    """Obtiene todas las tecnologías disponibles."""
+    _logger = logging.getLogger(__name__)
+    _logger.info("[middleware] Consultando tecnologías")
+
+    try:
+        response = router.get_tecnologias(session)
+        return TecnologiasListResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get(
+    "/proyectos/{project_id}/tecnologia",
+    response_model=ProyectoTecnologiaResponse,
+    tags=["tecnologias"],
+)
+def get_proyecto_tecnologia_endpoint(
+    project_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> ProyectoTecnologiaResponse:
+    """Obtiene la tecnología asignada a un proyecto."""
+    _logger = logging.getLogger(__name__)
+    _logger.info("[middleware] Consultando tecnología de proyecto %s", project_id)
+
+    try:
+        response = router.get_proyecto_tecnologia(project_id, session)
+        return ProyectoTecnologiaResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post(
+    "/proyectos/{project_id}/tecnologia",
+    response_model=ProyectoTecnologiaResponse,
+    tags=["tecnologias"],
+)
+def asignar_tecnologia_endpoint(
+    project_id: int,
+    request: AsignarTecnologiaRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> ProyectoTecnologiaResponse:
+    """Asigna una tecnología a un proyecto (primera asignación - Frontend)."""
+    _logger = logging.getLogger(__name__)
+    _logger.info(
+        "[middleware] Asignando tecnología %s a proyecto %s",
+        request.id_tecnologia,
+        project_id,
+    )
+
+    try:
+        response = router.asignar_tecnologia(project_id, request.model_dump(), session)
+        return ProyectoTecnologiaResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/proyectos/{project_id}/tecnologia",
+    response_model=ProyectoTecnologiaResponse,
+    tags=["tecnologias"],
+)
+def actualizar_tecnologia_endpoint(
+    project_id: int,
+    request: AsignarTecnologiaRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> ProyectoTecnologiaResponse:
+    """Actualiza la tecnología de un proyecto (solo Backoffice)."""
+    _logger = logging.getLogger(__name__)
+    _logger.info(
+        "[middleware] Actualizando tecnología de proyecto %s a %s",
+        project_id,
+        request.id_tecnologia,
+    )
+
+    try:
+        response = router.actualizar_tecnologia(project_id, request.model_dump(), session)
+        return ProyectoTecnologiaResponse(**response)
     except BusinessRuleError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

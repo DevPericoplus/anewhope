@@ -9,11 +9,14 @@ from typing import Optional
 import reflex as rx
 
 from adapters.api_client import (
+    asignar_tecnologia,
     create_organization_project,
     create_organization_user,
     delete_organization_project,
     get_organization_projects,
     get_organization_users,
+    get_proyecto_tecnologia,
+    get_tecnologias,
     get_user_permissions,
     login_user,
     logout_user,
@@ -25,6 +28,7 @@ from adapters.api_client import (
 )
 from pages.flujos import FlujosState, flujos_diagram, load_flujos_content
 from pages.organizacion import load_organizacion_content
+from pages.tecnologias import load_tecnologias_content
 from low_panel_pages.show_md import show_md  # noqa: F401 - Importado para registrar la ruta
 from web_frontend.shared_state import SharedSessionState
 
@@ -131,6 +135,15 @@ class State(SharedSessionState):
     support_error: str = ""
     support_success: str = ""
     is_creating_support: bool = False
+    
+    # Estado para gestión de tecnologías
+    tecnologias_list: list[dict] = []  # Lista de tecnologías disponibles
+    selected_tech_project_id: int = 0  # Proyecto seleccionado para asignar tecnología
+    selected_tecnologia_id: int = 0  # Tecnología seleccionada
+    proyecto_tecnologia_asignada: dict = {}  # Asignación actual del proyecto
+    tech_assign_error: str = ""
+    tech_assign_success: str = ""
+    is_loading_tecnologias: bool = False
     
     # Nota: Los siguientes campos ya vienen de SharedSessionState:
     # - user_logged_in, access_token, session_token, user_id, organization_id
@@ -253,6 +266,9 @@ class State(SharedSessionState):
             self.load_org_projects()
             self.load_project_assignments()
             self.load_project_roles_base()
+        if menu == "tecnologias":
+            self.load_org_projects()  # Para el selector de proyectos
+            self.load_tecnologias()
 
     # ========== Gestión de Usuarios de la Organización ==========
     
@@ -1082,6 +1098,126 @@ class State(SharedSessionState):
             print(f"[ERROR] Error creando ticket: {e}")
         finally:
             self.is_creating_support = False
+
+    # ========== Métodos de gestión de tecnologías ==========
+
+    def load_tecnologias(self):
+        """Carga la lista de tecnologías disponibles."""
+        from adapters.api_client import get_tecnologias
+        
+        self.is_loading_tecnologias = True
+        try:
+            result = get_tecnologias(
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            self.tecnologias_list = result.get("tecnologias", [])
+            print(f"[DEBUG] Tecnologías cargadas: {len(self.tecnologias_list)}")
+        except Exception as e:
+            print(f"[ERROR] Error cargando tecnologías: {e}")
+            self.tecnologias_list = []
+        finally:
+            self.is_loading_tecnologias = False
+
+    def set_tech_project(self, value: str):
+        """Establece el proyecto seleccionado para tecnología.
+        
+        Mapea el nombre del proyecto al id correspondiente
+        buscando en org_projects.
+        """
+        if not value:
+            self.selected_tech_project_id = 0
+            return
+        
+        # Buscar el proyecto por nombre
+        for project in self.org_projects:
+            if project.get("name") == value:
+                project_id = project.get("id", 0)
+                self.select_tech_project(project_id)
+                return
+        
+        self.selected_tech_project_id = 0
+
+    def select_tech_project(self, project_id: int):
+        """Selecciona un proyecto para asignar/ver tecnología."""
+        from adapters.api_client import get_proyecto_tecnologia
+        
+        self.selected_tech_project_id = project_id
+        self.tech_assign_error = ""
+        self.tech_assign_success = ""
+        self.selected_tecnologia_id = 0
+        
+        # Cargar asignación actual del proyecto
+        try:
+            result = get_proyecto_tecnologia(
+                project_id=project_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            if result.get("success") and result.get("asignacion"):
+                self.proyecto_tecnologia_asignada = result["asignacion"]
+                self.selected_tecnologia_id = result["asignacion"].get("id_tecnologia", 0)
+            else:
+                self.proyecto_tecnologia_asignada = {}
+            print(f"[DEBUG] Tecnología de proyecto {project_id}: {self.proyecto_tecnologia_asignada}")
+        except Exception as e:
+            print(f"[ERROR] Error obteniendo tecnología de proyecto: {e}")
+            self.proyecto_tecnologia_asignada = {}
+
+    def set_tecnologia(self, tech: dict):
+        """Establece la tecnología seleccionada desde el click en el item.
+        
+        Recibe el diccionario completo de la tecnología.
+        """
+        tech_id = tech.get("id", 0) if isinstance(tech, dict) else 0
+        # Solo permitir seleccionar tecnologías activas
+        is_active = tech.get("active", False) if isinstance(tech, dict) else False
+        if is_active:
+            self.selected_tecnologia_id = tech_id
+            self.tech_assign_error = ""
+            self.tech_assign_success = ""
+            print(f"[DEBUG] Tecnología seleccionada: {tech_id}")
+
+    def select_tecnologia(self, tecnologia_id: int):
+        """Selecciona una tecnología de la lista (por ID directo)."""
+        self.selected_tecnologia_id = tecnologia_id
+        self.tech_assign_error = ""
+        self.tech_assign_success = ""
+
+    def asignar_tecnologia_proyecto(self):
+        """Asigna la tecnología seleccionada al proyecto seleccionado."""
+        from adapters.api_client import asignar_tecnologia
+        
+        if self.selected_tech_project_id <= 0:
+            self.tech_assign_error = "Selecciona un proyecto"
+            return
+        if self.selected_tecnologia_id <= 0:
+            self.tech_assign_error = "Selecciona una tecnología"
+            return
+        
+        # Verificar que no esté ya asignada (Frontend solo puede asignar una vez)
+        if self.proyecto_tecnologia_asignada:
+            self.tech_assign_error = "Este proyecto ya tiene una tecnología asignada"
+            return
+        
+        self.tech_assign_error = ""
+        try:
+            result = asignar_tecnologia(
+                project_id=self.selected_tech_project_id,
+                id_tecnologia=self.selected_tecnologia_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            print(f"[DEBUG] Resultado asignar tecnología: {result}")
+            
+            if result.get("success"):
+                self.tech_assign_success = "Tecnología asignada correctamente"
+                self.proyecto_tecnologia_asignada = result.get("asignacion", {})
+            else:
+                self.tech_assign_error = result.get("error", "Error al asignar tecnología")
+        except Exception as e:
+            self.tech_assign_error = f"Error: {e}"
+            print(f"[ERROR] Error asignando tecnología: {e}")
 
     def on_page_load(self):
         """
@@ -2687,6 +2823,189 @@ def project_assignments_panel() -> rx.Component:
     )
 
 
+def tecnologia_item(tech: dict) -> rx.Component:
+    """Renderiza un item de tecnología seleccionable."""
+    is_active = tech.get("active", False)
+    tech_id = tech.get("id", 0)
+    is_selected = State.selected_tecnologia_id == tech_id
+    
+    return rx.box(
+        rx.hstack(
+            # Indicador de selección (círculo verde)
+            rx.box(
+                rx.cond(
+                    is_selected,
+                    rx.icon("check", size=20, color="white"),
+                    rx.fragment(),
+                ),
+                width="32px",
+                height="32px",
+                border_radius="50%",
+                border=rx.cond(
+                    is_selected,
+                    f"3px solid {COLORS['primary']}",
+                    f"3px solid {COLORS['border']}",
+                ),
+                background_color=rx.cond(is_selected, COLORS["primary"], "transparent"),
+                display="flex",
+                align_items="center",
+                justify_content="center",
+                flex_shrink="0",
+            ),
+            rx.vstack(
+                rx.text(
+                    tech.get("name", "Sin nombre"),
+                    font_weight="bold",
+                    color=rx.cond(is_active, COLORS["foreground"], COLORS["muted_foreground"]),
+                    font_size="1.25em",
+                ),
+                rx.text(
+                    tech.get("descripcion", ""),
+                    color=COLORS["muted_foreground"],
+                    font_size="1.05em",
+                    opacity=rx.cond(is_active, "1", "0.6"),
+                ),
+                spacing="2",
+                align_items="flex-start",
+                flex="1",
+            ),
+            rx.cond(
+                ~is_active,
+                rx.badge("Inactiva", color_scheme="gray", variant="soft", size="2"),
+                rx.fragment(),
+            ),
+            spacing="4",
+            align="center",
+            width="100%",
+        ),
+        padding="1.25em",
+        background_color=rx.cond(
+            is_selected,
+            f"{COLORS['primary']}20",
+            COLORS["card"],
+        ),
+        border=rx.cond(
+            is_selected,
+            f"3px solid {COLORS['primary']}",
+            f"2px solid {COLORS['border']}",
+        ),
+        border_radius="0.75em",
+        opacity=rx.cond(is_active, "1", "0.5"),
+        cursor=rx.cond(is_active, "pointer", "not-allowed"),
+        on_click=State.set_tecnologia(tech),
+        _hover=rx.cond(
+            is_active,
+            {"background_color": f"{COLORS['primary']}15"},
+            {},
+        ),
+        width="100%",
+    )
+
+
+def tecnologias_management_panel() -> rx.Component:
+    """Panel de gestión de tecnologías por proyecto."""
+    return rx.vstack(
+        rx.hstack(
+            rx.icon("cpu", size=36, color=COLORS["primary"]),
+            rx.heading("Asignación de Tecnología", size="7", color=COLORS["foreground"]),
+            spacing="4",
+            align="center",
+        ),
+        rx.text(
+            "Selecciona un proyecto y asígnale una tecnología",
+            color=COLORS["muted_foreground"],
+            font_size="1.1em",
+        ),
+        # Selector de proyectos
+        rx.hstack(
+            rx.text("Proyecto:", font_weight="bold", color=COLORS["foreground"], font_size="1.1em"),
+            rx.select(
+                State.projects_for_assign_select,
+                placeholder="Seleccionar proyecto...",
+                on_change=State.set_tech_project,
+                width="350px",
+                size="3",
+            ),
+            spacing="4",
+            align="center",
+        ),
+        # Indicador de tecnología ya asignada
+        rx.cond(
+            State.proyecto_tecnologia_asignada.length() > 0,
+            rx.box(
+                rx.hstack(
+                    rx.icon("check-circle", size=28, color=COLORS["primary"]),
+                    rx.text(
+                        f"Tecnología asignada: ",
+                        font_weight="bold",
+                        color=COLORS["foreground"],
+                        font_size="1.15em",
+                    ),
+                    rx.text(
+                        State.proyecto_tecnologia_asignada.get("tecnologia_name", ""),
+                        color=COLORS["primary"],
+                        font_weight="bold",
+                        font_size="1.15em",
+                    ),
+                    spacing="3",
+                ),
+                padding="1.25em",
+                background_color=f"{COLORS['primary']}20",
+                border=f"2px solid {COLORS['primary']}",
+                border_radius="0.75em",
+                width="100%",
+            ),
+            rx.fragment(),
+        ),
+        # Lista de tecnologías (solo si no hay asignación o si se seleccionó proyecto)
+        rx.cond(
+            (State.selected_tech_project_id > 0) & (State.proyecto_tecnologia_asignada.length() == 0),
+            rx.vstack(
+                rx.text(
+                    "Selecciona una tecnología:",
+                    font_weight="bold",
+                    color=COLORS["foreground"],
+                    font_size="1.15em",
+                    margin_top="1em",
+                ),
+                rx.vstack(
+                    rx.foreach(
+                        State.tecnologias_list,
+                        tecnologia_item,
+                    ),
+                    width="100%",
+                    spacing="2",
+                ),
+                rx.cond(
+                    State.tech_assign_error != "",
+                    rx.text(State.tech_assign_error, color="red", font_size="0.9em"),
+                ),
+                rx.cond(
+                    State.tech_assign_success != "",
+                    rx.text(State.tech_assign_success, color="green", font_size="0.9em"),
+                ),
+                rx.button(
+                    "Asignar Tecnología",
+                    on_click=State.asignar_tecnologia_proyecto,
+                    color_scheme="blue",
+                    disabled=(State.selected_tecnologia_id <= 0),
+                    margin_top="1em",
+                ),
+                width="100%",
+                spacing="2",
+            ),
+            rx.fragment(),
+        ),
+        width="100%",
+        padding="1.5em",
+        background_color=COLORS["card"],
+        border=f"1px solid {COLORS['border']}",
+        border_radius="0.5em",
+        spacing="3",
+        align_items="flex-start",
+    )
+
+
 def organization_management_panels() -> rx.Component:
     """Paneles de gestión de usuarios y proyectos para la sección Organización."""
     return rx.vstack(
@@ -2715,9 +3034,7 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
         "contacto.txt", "Canales de contacto y atención al cliente."
     )
     organization_text = load_organizacion_content()
-    technologies_text = load_menu_content(
-        "tecnologias.txt", "Tecnologías activas y stack aplicado en tus proyectos."
-    )
+    technologies_text = load_tecnologias_content()
     projections_text = load_menu_content(
         "proyecciones.txt", "Proyecciones, estimaciones y próximos hitos."
     )
@@ -2835,6 +3152,12 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
         rx.cond(
             rx.cond(is_logged_in, active_item == "organizacion", False),
             organization_management_panels(),
+            rx.box(height="0"),
+        ),
+        # Panel de gestión de tecnologías: visible solo en menú "tecnologias"
+        rx.cond(
+            rx.cond(is_logged_in, active_item == "tecnologias", False),
+            tecnologias_management_panel(),
             rx.box(height="0"),
         ),
         # Paneles de métricas: visibles solo en menú "inicio"

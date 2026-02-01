@@ -2404,3 +2404,157 @@ class BackendCoreRouter:
             return int(payload.get("user_id", 0))
         except Exception:
             return 0
+
+    # ========================================================================
+    # GESTIÓN DE TECNOLOGÍAS
+    # ========================================================================
+
+    def get_tecnologias(self) -> dict[str, Any]:
+        """Obtiene todas las tecnologías disponibles."""
+        from sqlalchemy import text
+
+        self._logger.info("[backend-core] Consultando tecnologías")
+
+        with self._get_projects_db_connection() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT id, name, descripcion, active
+                    FROM tecnologia
+                    ORDER BY name
+                """)
+            )
+            rows = result.fetchall()
+
+            tecnologias = [
+                {
+                    "id": row[0],
+                    "name": row[1],
+                    "descripcion": row[2],
+                    "active": bool(row[3]),
+                }
+                for row in rows
+            ]
+
+            return {"tecnologias": tecnologias, "total": len(tecnologias)}
+
+    def get_proyecto_tecnologia(self, project_id: int) -> dict[str, Any]:
+        """Obtiene la tecnología asignada a un proyecto."""
+        from sqlalchemy import text
+
+        self._logger.info("[backend-core] Consultando tecnología de proyecto %s", project_id)
+
+        with self._get_projects_db_connection() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT pt.id, pt.id_proyecto, pt.id_tecnologia, pt.coste_base, t.name
+                    FROM proyectos_tecnologia pt
+                    JOIN tecnologia t ON pt.id_tecnologia = t.id
+                    WHERE pt.id_proyecto = :project_id
+                """),
+                {"project_id": project_id},
+            )
+            row = result.fetchone()
+
+            if row:
+                return {
+                    "success": True,
+                    "asignacion": {
+                        "id": row[0],
+                        "id_proyecto": row[1],
+                        "id_tecnologia": row[2],
+                        "coste_base": row[3],
+                        "tecnologia_name": row[4],
+                    },
+                }
+            return {"success": True, "asignacion": None}
+
+    def asignar_tecnologia(
+        self, project_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Asigna una tecnología a un proyecto (primera asignación)."""
+        from sqlalchemy import text
+
+        id_tecnologia = int(payload.get("id_tecnologia", 0))
+        coste_base = payload.get("coste_base", "17% sobre base")
+
+        if id_tecnologia <= 0:
+            raise BackendCoreBusinessError("ID de tecnología inválido")
+
+        self._logger.info(
+            "[backend-core] Asignando tecnología %s a proyecto %s",
+            id_tecnologia,
+            project_id,
+        )
+
+        with self._get_projects_db_writer_connection() as conn:
+            # Verificar que no exista ya una asignación
+            existing = conn.execute(
+                text("SELECT id FROM proyectos_tecnologia WHERE id_proyecto = :pid"),
+                {"pid": project_id},
+            ).fetchone()
+
+            if existing:
+                raise BackendCoreBusinessError(
+                    "El proyecto ya tiene una tecnología asignada"
+                )
+
+            # Insertar asignación
+            result = conn.execute(
+                text("""
+                    INSERT INTO proyectos_tecnologia (id_proyecto, id_tecnologia, coste_base)
+                    VALUES (:pid, :tid, :coste)
+                """),
+                {"pid": project_id, "tid": id_tecnologia, "coste": coste_base},
+            )
+            conn.commit()
+
+            # Obtener el registro creado
+            return self.get_proyecto_tecnologia(project_id)
+
+    def actualizar_tecnologia(
+        self, project_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Actualiza la tecnología de un proyecto (solo Backoffice)."""
+        from sqlalchemy import text
+
+        id_tecnologia = int(payload.get("id_tecnologia", 0))
+        coste_base = payload.get("coste_base", "17% sobre base")
+
+        if id_tecnologia <= 0:
+            raise BackendCoreBusinessError("ID de tecnología inválido")
+
+        self._logger.info(
+            "[backend-core] Actualizando tecnología de proyecto %s a %s",
+            project_id,
+            id_tecnologia,
+        )
+
+        with self._get_projects_db_writer_connection() as conn:
+            # Verificar si existe
+            existing = conn.execute(
+                text("SELECT id FROM proyectos_tecnologia WHERE id_proyecto = :pid"),
+                {"pid": project_id},
+            ).fetchone()
+
+            if existing:
+                # Actualizar
+                conn.execute(
+                    text("""
+                        UPDATE proyectos_tecnologia 
+                        SET id_tecnologia = :tid, coste_base = :coste
+                        WHERE id_proyecto = :pid
+                    """),
+                    {"pid": project_id, "tid": id_tecnologia, "coste": coste_base},
+                )
+            else:
+                # Insertar nuevo
+                conn.execute(
+                    text("""
+                        INSERT INTO proyectos_tecnologia (id_proyecto, id_tecnologia, coste_base)
+                        VALUES (:pid, :tid, :coste)
+                    """),
+                    {"pid": project_id, "tid": id_tecnologia, "coste": coste_base},
+                )
+
+            conn.commit()
+            return self.get_proyecto_tecnologia(project_id)

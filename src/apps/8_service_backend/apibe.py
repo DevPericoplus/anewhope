@@ -1089,6 +1089,52 @@ class TicketRespuestaRequest(BaseModel):
     user_id: int
 
 
+# ============================================================================
+# DTOs para Tecnologías
+# ============================================================================
+
+
+class TecnologiaDto(BaseModel):
+    """DTO de tecnología."""
+
+    id: int
+    name: str
+    descripcion: str
+    active: bool
+
+
+class TecnologiasListResponse(BaseModel):
+    """Respuesta con lista de tecnologías."""
+
+    tecnologias: list[TecnologiaDto]
+    total: int
+
+
+class ProyectoTecnologiaDto(BaseModel):
+    """DTO de asignación proyecto-tecnología."""
+
+    id: int
+    id_proyecto: int
+    id_tecnologia: int
+    coste_base: str | None = None
+    tecnologia_name: str | None = None
+
+
+class ProyectoTecnologiaResponse(BaseModel):
+    """Respuesta de asignación de tecnología."""
+
+    success: bool
+    asignacion: ProyectoTecnologiaDto | None = None
+    mensaje: str | None = None
+
+
+class AsignarTecnologiaRequest(BaseModel):
+    """Request para asignar tecnología a proyecto."""
+
+    id_tecnologia: int
+    coste_base: str = "17% sobre base"
+
+
 class TicketDto(BaseModel):
     """DTO de ticket."""
 
@@ -1690,3 +1736,136 @@ def add_ticket_response(
         return TicketUpdateResponse(**result)
     except BrokerBusinessError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ============================================================================
+# ENDPOINTS DE TECNOLOGÍAS
+# ============================================================================
+
+
+class TecnologiaDto(BaseModel):
+    """DTO de tecnología."""
+
+    id: int
+    name: str
+    descripcion: str
+    active: bool
+
+
+class TecnologiasListResponse(BaseModel):
+    """Respuesta con lista de tecnologías."""
+
+    tecnologias: list[TecnologiaDto]
+    total: int = 0
+
+
+class AsignarTecnologiaRequest(BaseModel):
+    """Request para asignar/actualizar tecnología."""
+
+    id_tecnologia: int
+    coste_base: str = "17% sobre base"
+
+
+@app.get("/tecnologias", response_model=TecnologiasListResponse, tags=["tecnologias"])
+def get_tecnologias(
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> TecnologiasListResponse:
+    """Obtiene todas las tecnologías disponibles.
+
+    Enruta a Backend Core → MariaDB (SELECT tecnologia)
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("[broker] Consultando tecnologías")
+
+    try:
+        result = router.get_tecnologias()
+        return TecnologiasListResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error obteniendo tecnologías")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get(
+    "/proyectos/{project_id}/tecnologia",
+    response_model=ProyectoTecnologiaResponse,
+    tags=["tecnologias"],
+)
+def get_proyecto_tecnologia(
+    project_id: int,
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> ProyectoTecnologiaResponse:
+    """Obtiene la tecnología asignada a un proyecto.
+
+    Enruta a Backend Core → MariaDB (SELECT proyectos_tecnologia)
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("[broker] Consultando tecnología de proyecto %s", project_id)
+
+    try:
+        result = router.get_proyecto_tecnologia(project_id)
+        return ProyectoTecnologiaResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error obteniendo tecnología de proyecto")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post(
+    "/proyectos/{project_id}/tecnologia",
+    response_model=ProyectoTecnologiaResponse,
+    tags=["tecnologias"],
+)
+def asignar_tecnologia(
+    project_id: int,
+    request: AsignarTecnologiaRequest,
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> ProyectoTecnologiaResponse:
+    """Asigna una tecnología a un proyecto (primera asignación).
+
+    Enruta a Backend Core → MariaDB (INSERT proyectos_tecnologia)
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("[broker] Asignando tecnología %s a proyecto %s", request.id_tecnologia, project_id)
+
+    try:
+        result = router.asignar_tecnologia(project_id, request.model_dump())
+        return ProyectoTecnologiaResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error asignando tecnología")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.patch(
+    "/proyectos/{project_id}/tecnologia",
+    response_model=ProyectoTecnologiaResponse,
+    tags=["tecnologias"],
+)
+def actualizar_tecnologia(
+    project_id: int,
+    request: AsignarTecnologiaRequest,
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> ProyectoTecnologiaResponse:
+    """Actualiza la tecnología de un proyecto (solo Backoffice).
+
+    Enruta a Backend Core → MariaDB (UPDATE proyectos_tecnologia)
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("[broker] Actualizando tecnología de proyecto %s a %s", project_id, request.id_tecnologia)
+
+    try:
+        result = router.actualizar_tecnologia(project_id, request.model_dump())
+        return ProyectoTecnologiaResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error actualizando tecnología")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

@@ -3511,3 +3511,71 @@ class RouterMiddleware:
             )
         except BrokerBackendCommunicationError as exc:
             raise BusinessRuleError(f"No se pudo añadir la respuesta: {exc}") from exc
+
+    # ========================================================================
+    # GESTIÓN DE TECNOLOGÍAS
+    # ========================================================================
+
+    def get_tecnologias(self, session: SessionContext) -> dict[str, Any]:
+        """Obtiene todas las tecnologías disponibles."""
+        self._configure_broker_security(session)
+
+        self._logger.info("[middleware] Consultando tecnologías")
+
+        try:
+            return self._broker_client.get_tecnologias()
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(f"No se pudieron obtener tecnologías: {exc}") from exc
+
+    def get_proyecto_tecnologia(
+        self, project_id: int, session: SessionContext
+    ) -> dict[str, Any]:
+        """Obtiene la tecnología asignada a un proyecto."""
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Consultando tecnología de proyecto %s", project_id
+        )
+
+        try:
+            return self._broker_client.get_proyecto_tecnologia(project_id)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo obtener tecnología: {exc}"
+            ) from exc
+
+    def asignar_tecnologia(
+        self, project_id: int, payload: dict[str, Any], session: SessionContext
+    ) -> dict[str, Any]:
+        """Asigna una tecnología a un proyecto (primera asignación)."""
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Asignando tecnología a proyecto %s user_id=%s",
+            project_id,
+            session.user_id,
+        )
+
+        try:
+            return self._broker_client.asignar_tecnologia(project_id, payload)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(f"No se pudo asignar tecnología: {exc}") from exc
+
+    def actualizar_tecnologia(
+        self, project_id: int, payload: dict[str, Any], session: SessionContext
+    ) -> dict[str, Any]:
+        """Actualiza la tecnología de un proyecto (solo Backoffice)."""
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Actualizando tecnología de proyecto %s user_id=%s",
+            project_id,
+            session.user_id,
+        )
+
+        try:
+            return self._broker_client.actualizar_tecnologia(project_id, payload)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo actualizar tecnología: {exc}"
+            ) from exc

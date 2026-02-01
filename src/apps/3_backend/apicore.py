@@ -1115,7 +1115,52 @@ class TicketRespuestaRequest(BaseModel):
 
     respuesta: str  # Texto de la respuesta
     user_id: int  # Usuario que escribe la respuesta
-    user_id: int  # ID del usuario que responde
+
+
+# ============================================================================
+# DTOs para Tecnologías
+# ============================================================================
+
+
+class TecnologiaDto(BaseModel):
+    """DTO de tecnología."""
+
+    id: int
+    name: str
+    descripcion: str
+    active: bool
+
+
+class TecnologiasListResponse(BaseModel):
+    """Respuesta con lista de tecnologías."""
+
+    tecnologias: list[TecnologiaDto]
+    total: int
+
+
+class ProyectoTecnologiaDto(BaseModel):
+    """DTO de asignación proyecto-tecnología."""
+
+    id: int
+    id_proyecto: int
+    id_tecnologia: int
+    coste_base: str | None = None
+    tecnologia_name: str | None = None
+
+
+class ProyectoTecnologiaResponse(BaseModel):
+    """Respuesta de asignación de tecnología."""
+
+    success: bool
+    asignacion: ProyectoTecnologiaDto | None = None
+    mensaje: str | None = None
+
+
+class AsignarTecnologiaRequest(BaseModel):
+    """Request para asignar tecnología a proyecto."""
+
+    id_tecnologia: int
+    coste_base: str = "17% sobre base"
 
 
 class TicketDto(BaseModel):
@@ -1785,5 +1830,82 @@ def add_ticket_response(
     try:
         result = router.add_ticket_response(ticket_id, request.model_dump(), headers)
         return TicketUpdateResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ============================================================================
+# ENDPOINTS DE TECNOLOGÍAS
+# ============================================================================
+
+
+@app.get("/tecnologias", response_model=TecnologiasListResponse, tags=["tecnologias"])
+def get_tecnologias(
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> TecnologiasListResponse:
+    """Obtiene todas las tecnologías disponibles.
+
+    Incluye tecnologías activas e inactivas para mostrar en UI.
+    """
+    try:
+        result = router.get_tecnologias()
+        return TecnologiasListResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get(
+    "/proyectos/{project_id}/tecnologia",
+    response_model=ProyectoTecnologiaResponse,
+    tags=["tecnologias"],
+)
+def get_proyecto_tecnologia(
+    project_id: int,
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> ProyectoTecnologiaResponse:
+    """Obtiene la tecnología asignada a un proyecto."""
+    try:
+        result = router.get_proyecto_tecnologia(project_id)
+        return ProyectoTecnologiaResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/proyectos/{project_id}/tecnologia",
+    response_model=ProyectoTecnologiaResponse,
+    tags=["tecnologias"],
+)
+def asignar_tecnologia(
+    project_id: int,
+    request: AsignarTecnologiaRequest,
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> ProyectoTecnologiaResponse:
+    """Asigna una tecnología a un proyecto (primera asignación)."""
+    try:
+        result = router.asignar_tecnologia(project_id, request.model_dump())
+        return ProyectoTecnologiaResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch(
+    "/proyectos/{project_id}/tecnologia",
+    response_model=ProyectoTecnologiaResponse,
+    tags=["tecnologias"],
+)
+def actualizar_tecnologia(
+    project_id: int,
+    request: AsignarTecnologiaRequest,
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> ProyectoTecnologiaResponse:
+    """Actualiza la tecnología de un proyecto (solo Backoffice)."""
+    try:
+        result = router.actualizar_tecnologia(project_id, request.model_dump())
+        return ProyectoTecnologiaResponse(**result)
     except BackendCoreBusinessError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
