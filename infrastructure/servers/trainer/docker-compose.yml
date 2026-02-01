@@ -70,9 +70,7 @@ services:
       - trainer-data:/data/files/trainer
     command: ["sleep", "infinity"]
     networks:
-      - trainer-network
-
-# ====================
+      - trainer-network# ====================
 # Volúmenes persistentes
 # ====================
 volumes:

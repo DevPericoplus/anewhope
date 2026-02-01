@@ -176,9 +176,7 @@ services:
         condition: service_started
     networks:
       - macbook-network
-    restart: unless-stopped
-
-# ====================
+    restart: unless-stopped# ====================
 # Volúmenes persistentes
 # ====================
 volumes:
