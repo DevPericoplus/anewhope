@@ -60,3 +60,8 @@ reflex run
 
 Activacion visual editor
 Toggle Visual Editor
+
+matar un proceso por puerto
+Ejemplos por puerto del proyecto:
+kill -9 $(lsof -t -i :8003)
+# Backend Core (8003)kill -9 $(lsof -t -i :8003)

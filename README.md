@@ -116,6 +116,76 @@ que las aplicaciones conozcan la ubicación de los otros servicios en cada entor
 - **Servidor Backend:** `3_backend`, `8_service_backend`, Fmanagement, MariaDB
 - **Servidor Trainer:** `4_trainer`, Ollama (IA local), base de datos vectorial (Keras - pendiente)
 
+### Endpoint de Consulta de Entorno Activo
+
+El sistema expone endpoints para consultar el entorno activo en tiempo de ejecución.
+Esto permite a los servicios (especialmente fmanagement en Go) configurarse dinámicamente.
+
+**Endpoints disponibles:**
+
+| Servicio | Endpoint | Puerto | Uso |
+|----------|----------|--------|-----|
+| Broker | `GET /config/environment` | 8008 | Fuente primaria del entorno |
+| Backend Core | `GET /config/environment` | 8003 | Usado por fmanagement |
+
+**Respuesta JSON:**
+
+```json
+{
+    "environment": "macbook",
+    "source": "ENVIRONMENT"
+}
+```
+
+**Valores de entorno posibles:** `macbook`, `dev`, `pre`, `pro`
+
+**Flujo de consulta para fmanagement:**
+
+```
+┌─────────────┐       GET /config/environment       ┌──────────────┐
+│ fmanagement │ ─────────────────────────────────►  │ Backend Core │
+│    (Go)     │                                     │   (Python)   │
+│ Puerto 1666 │ ◄─────────────────────────────────  │  Puerto 8003 │
+└─────────────┘   {"environment": "macbook", ...}   └──────────────┘
+```
+
+**Uso en fmanagement (Go) - inicialización:**
+
+```go
+// En init() o main()
+func getActiveEnvironment() string {
+    resp, err := http.Get("http://localhost:8003/config/environment")
+    if err != nil {
+        return "unknown"
+    }
+    defer resp.Body.Close()
+    
+    var result struct {
+        Environment string `json:"environment"`
+    }
+    json.NewDecoder(resp.Body).Decode(&result)
+    return result.Environment
+}
+
+// Uso para configurar rutas base
+env := getActiveEnvironment()
+switch env {
+case "macbook":
+    basePath = "/Users/administrator/develop/anewhope/data"
+case "dev", "pre", "pro":
+    basePath = "/data/files/external"
+}
+```
+
+**Uso en Python (Backend Core/Broker):**
+
+```python
+import os
+
+# Directamente desde variable de entorno
+environment = os.environ.get("ENVIRONMENT", "unknown")
+```
+
 ### Cómo obtener URLs de servicios en código
 
 Las aplicaciones deben usar `get_env_value()` del módulo `env_settings.py` para obtener las URLs
@@ -1456,6 +1526,71 @@ Al implementar nuevas funcionalidades que requieran control de acceso:
 5. ✅ Retornar HTTP 403 si el usuario no tiene permisos
 6. ✅ Documentar en esta sección y en AGENTS.md
 
+### Borrado lógico de usuarios (IMPORTANTE)
+
+El sistema implementa **borrado LÓGICO** de usuarios, no borrado físico. Esto significa:
+
+- **Borrar usuario**: Actualiza `active = false` en la tabla `users`
+- **Habilitar usuario**: Actualiza `active = true` en la tabla `users`
+- **El registro NUNCA se elimina** de la base de datos
+
+#### Comportamiento por aplicación
+
+| Aplicación | Parámetro | Usuarios visibles | Acciones disponibles |
+|------------|-----------|-------------------|----------------------|
+| **Frontend** | `active_only=true` | Solo activos | Borrar (→ inactivo) |
+| **Backoffice** | `active_only=false` | Todos | Habilitar, Deshabilitar, Borrar |
+
+#### Flujo de datos
+
+```
+Frontend/Backoffice
+       │
+       ▼
+    Middleware (update_user_status)
+       │
+       ▼
+    Broker Backend
+       │
+       ▼
+    Backend Core
+       │
+       ▼
+    MariaDB: UPDATE users SET active = 0/1 WHERE user_id = ?
+```
+
+#### Endpoint utilizado
+
+```
+PUT /users/{user_id}/status
+{
+    "active": true/false
+}
+```
+
+#### Indicadores visuales
+
+- **Badge "Activo"** (verde): Usuario con `active = true`
+- **Badge "Inactivo"** (rojo): Usuario con `active = false`
+
+#### Botones de acción (Backoffice)
+
+| Botón | Icono | Acción | Resultado |
+|-------|-------|--------|-----------|
+| Habilitar usuario | `user-check` | `active = true` | Usuario puede iniciar sesión |
+| Deshabilitar usuario | `user-x` | `active = false` | Usuario no puede iniciar sesión |
+| Borrar usuario | `trash-2` | `active = false` | Igual que deshabilitar |
+
+**Nota**: "Borrar" y "Deshabilitar" tienen el mismo efecto (borrado lógico).
+La diferencia es semántica: "Borrar" sugiere permanencia, "Deshabilitar" sugiere temporalidad.
+
+#### Permisos requeridos
+
+Solo usuarios con `identity_type_id` en `(1, 2, 10)` pueden gestionar usuarios:
+- `1`: SuperAdmin
+- `2`: Administrador de Organización
+- `10`: Agente Administrador
+
 ### Gestión de ficheros (fmanagement)
 
 Las operaciones sobre carpetas y ficheros se delegan desde `3_backend` a la API externa
@@ -1986,6 +2121,123 @@ Notas de UX y trazabilidad (Flujos):
 - El selector de versiones **sí** muestra el `id_version` (visible para el usuario),
   ya que es el identificador usado en consultas a `versiones` y `estado`.
 
+### Configuración de permisos MariaDB (CRÍTICO)
+
+El Backend Core utiliza **dos usuarios de MariaDB** según el tipo de operación:
+
+| Usuario | Propósito | Operaciones |
+|---------|-----------|-------------|
+| `myllm_reader` | Solo lectura | SELECT |
+| `myllm_writer` | Escritura | INSERT, UPDATE, DELETE, EXECUTE |
+
+#### Script de permisos completo
+
+Ejecutar como root en MariaDB antes de usar las funcionalidades de proyectos y roles:
+
+```sql
+-- ============================================================================
+-- PERMISOS PARA myllm_writer EN myllm_projects_db
+-- ============================================================================
+
+-- Tablas: SELECT, INSERT, UPDATE, DELETE
+GRANT SELECT, INSERT, UPDATE, DELETE ON myllm_projects_db.proyectos TO 'myllm_writer'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON myllm_projects_db.proyectos_roles TO 'myllm_writer'@'localhost';
+GRANT SELECT, INSERT ON myllm_projects_db.cambios TO 'myllm_writer'@'localhost';
+GRANT SELECT, INSERT, UPDATE ON myllm_projects_db.estado TO 'myllm_writer'@'localhost';
+GRANT SELECT ON myllm_projects_db.flujos TO 'myllm_writer'@'localhost';
+GRANT SELECT ON myllm_projects_db.proyectos_roles_base TO 'myllm_writer'@'localhost';
+
+-- Stored Procedures: EXECUTE
+GRANT EXECUTE ON PROCEDURE myllm_projects_db.sp_registrar_cambio_proyecto TO 'myllm_writer'@'localhost';
+
+-- ============================================================================
+-- PERMISOS PARA myllm_reader EN myllm_projects_db (solo lectura)
+-- ============================================================================
+
+GRANT SELECT ON myllm_projects_db.proyectos TO 'myllm_reader'@'localhost';
+GRANT SELECT ON myllm_projects_db.proyectos_roles TO 'myllm_reader'@'localhost';
+GRANT SELECT ON myllm_projects_db.cambios TO 'myllm_reader'@'localhost';
+GRANT SELECT ON myllm_projects_db.estado TO 'myllm_reader'@'localhost';
+GRANT SELECT ON myllm_projects_db.flujos TO 'myllm_reader'@'localhost';
+GRANT SELECT ON myllm_projects_db.proyectos_roles_base TO 'myllm_reader'@'localhost';
+
+-- ============================================================================
+-- PERMISOS PARA myllm_writer EN myllm_core_db
+-- ============================================================================
+
+GRANT SELECT, UPDATE ON myllm_core_db.users TO 'myllm_writer'@'localhost';
+
+-- ============================================================================
+-- Aplicar cambios
+-- ============================================================================
+
+FLUSH PRIVILEGES;
+```
+
+#### Stored Procedure requerido
+
+Si el SP no existe, crearlo:
+
+```sql
+USE myllm_projects_db;
+
+DROP PROCEDURE IF EXISTS sp_registrar_cambio_proyecto;
+
+DELIMITER //
+
+CREATE PROCEDURE sp_registrar_cambio_proyecto(
+    IN p_id_proyecto INT,
+    IN p_id_organizacion INT,
+    IN p_tipo_cambio VARCHAR(100),
+    IN p_descripcion VARCHAR(255),
+    IN p_id_usuario INT
+)
+BEGIN
+    DECLARE v_fecha_actual TIMESTAMP DEFAULT NOW();
+    DECLARE v_id_version INT DEFAULT 1;
+    
+    SELECT COALESCE(MAX(id_version), 1) INTO v_id_version
+    FROM estado 
+    WHERE id_proyecto = p_id_proyecto AND id_organizacion = p_id_organizacion;
+    
+    INSERT INTO cambios (
+        id_version, fecha_cambio, tipo_cambio, descripcion, 
+        creado_at, id_proyecto, id_organizacion
+    ) VALUES (
+        v_id_version, v_fecha_actual, p_tipo_cambio, p_descripcion,
+        v_fecha_actual, p_id_proyecto, p_id_organizacion
+    );
+    
+    SELECT LAST_INSERT_ID() AS id_cambio, 'Cambio registrado' AS mensaje;
+END //
+
+DELIMITER ;
+
+-- Otorgar permiso
+GRANT EXECUTE ON PROCEDURE sp_registrar_cambio_proyecto TO 'myllm_writer'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+#### Verificar permisos
+
+```sql
+SHOW GRANTS FOR 'myllm_writer'@'localhost';
+SHOW GRANTS FOR 'myllm_reader'@'localhost';
+SHOW PROCEDURE STATUS WHERE Db = 'myllm_projects_db';
+```
+
+#### Archivos de migración
+
+Las migraciones SQL están en `infrastructure/database/migrations/`:
+
+| Archivo | Contenido |
+|---------|-----------|
+| `001_create_flujos_table.sql` | Catálogo de flujos de trabajo |
+| `002_flujo_historico_y_trigger.sql` | Historial de cambios de flujo |
+| `003_triggers_proyecto_estado_cambios.sql` | Triggers y SP para automatización |
+| `004_proyectos_roles_table.sql` | Tabla de asignación usuario-proyecto-rol |
+| `005_proyectos_roles_base_table.sql` | Catálogo maestro de roles de proyecto |
+
 ### Sincronización OTP (frontend y middleware)
 
 Cuando se actualiza el OTP de un usuario, el cambio se persiste **en JSON y en
@@ -2311,6 +2563,278 @@ user = User(
     otp="1234"
 )
 ```
+
+## Gestión de Proyectos
+
+El sistema de gestión de proyectos permite crear, modificar y controlar proyectos de la organización
+siguiendo el flujo de trabajo de generación de modelos LLM.
+
+### Crear Proyecto (UI)
+
+El botón "Crear proyecto" en la página Organización abre un modal con los siguientes campos:
+
+| Campo | Tipo | Obligatorio | Descripción |
+|-------|------|-------------|-------------|
+| Nombre | texto | Sí | Nombre del proyecto |
+| Descripción | texto largo | No | Descripción del proyecto |
+
+**Campos automáticos (enviados por el sistema):**
+- `id_organizacion`: de la sesión de usuario
+- `created_at`: fecha actual del sistema
+- `active`: True (proyecto activo)
+- `id_flujo`: 1 (Propuesta Cliente - primer paso)
+
+### Flujo de creación
+
+```
+┌─────────────────┐      ┌──────────────┐      ┌────────┐      ┌──────────────┐      ┌──────────┐
+│    Frontend     │ ──►  │  Middleware  │ ──►  │ Broker │ ──►  │ Backend Core │ ──►  │ MariaDB  │
+│ save_new_project│      │ POST /projects│     │  route │      │ INSERT INTO  │      │ TRIGGERS │
+└─────────────────┘      └──────────────┘      └────────┘      │  proyectos   │      └──────────┘
+                                                                └──────────────┘           │
+                                                                                           ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────────┐
+│ TRIGGERS AUTOMÁTICOS:                                                                         │
+│ 1. tr_proyecto_after_insert → Crea registro en 'estado' (versión 1, campos según id_flujo=1)│
+│ 2. tr_proyecto_after_insert → Crea registro en 'cambios' (tipo="Alta proyecto")              │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Tipos de cambio registrados
+
+La tabla `cambios` registra automáticamente (vía triggers) o manualmente (vía Backend Core):
+
+| Tipo de cambio | Origen | Descripción |
+|----------------|--------|-------------|
+| Alta proyecto | Trigger INSERT | Al crear un nuevo proyecto |
+| Modificación proyecto | Trigger UPDATE | Al cambiar nombre/descripción |
+| Cambio de flujo | Trigger UPDATE | Al cambiar el paso del flujo |
+| Borrado de proyecto | Trigger DELETE | Al eliminar un proyecto |
+| Bloquear proyecto | Trigger UPDATE | Al bloquear un proyecto |
+| Desbloquear proyecto | Trigger UPDATE | Al desbloquear un proyecto |
+| Asignación usuario | Backend Core | Al asignar usuario al proyecto |
+| Quitar usuario | Backend Core | Al quitar usuario del proyecto |
+| Solicitud soporte proyecto | Backend Core | Al solicitar soporte técnico |
+| Respuesta soporte proyecto | Backend Core | Al responder solicitud de soporte |
+
+### Tabla `estado` (sincronizada automáticamente)
+
+Cuando se crea un proyecto, el trigger crea un registro en `estado` con:
+
+- `id_organizacion`: del proyecto
+- `id_proyecto`: del proyecto creado
+- `id_version`: 1 (primera versión)
+- `creado_at`: fecha de creación
+- `actualizado_at`: NULL (en alta)
+- Campos booleanos del flujo: calculados según `id_flujo` (solo el paso actual y anteriores = TRUE)
+
+**Función auxiliar:** `fn_get_estado_por_flujo(id_flujo, campo)` calcula si un campo debe estar a TRUE.
+
+### Migraciones SQL
+
+| Archivo | Descripción |
+|---------|-------------|
+| `001_create_flujos_table.sql` | Catálogo de pasos del flujo |
+| `002_flujo_historico_y_trigger.sql` | Histórico de cambios de flujo |
+| `003_triggers_proyecto_estado_cambios.sql` | Triggers para estado y cambios |
+
+### Ejemplo de uso (SQL)
+
+```sql
+-- Ver proyectos con su estado actual
+SELECT * FROM view_proyectos_completo WHERE id_organizacion = 1;
+
+-- Ver cambios recientes
+SELECT * FROM view_cambios_recientes WHERE id_proyecto = 1;
+
+-- Avanzar proyecto al siguiente paso del flujo
+UPDATE proyectos SET id_flujo = 2 WHERE id = 1;  -- El trigger actualiza estado y cambios
+```
+
+### Endpoints de API para Proyectos
+
+El sistema expone endpoints REST en cada capa para gestionar proyectos:
+
+| Endpoint | Método | Descripción | Permiso requerido |
+|----------|--------|-------------|-------------------|
+| `/projects/organization/{org_id}` | GET | Listar proyectos de organización | project_read |
+| `/projects` | POST | Crear nuevo proyecto | project_create |
+| `/projects/{project_id}` | PATCH | Actualizar proyecto | project_update |
+| `/projects/{project_id}` | DELETE | Eliminar proyecto | project_delete |
+| `/projects/{project_id}/support` | POST | Solicitar soporte | (ninguno) |
+
+**Flujo completo de cada endpoint:**
+
+```
+Frontend (api_client.py)
+    │
+    ▼
+Middleware (apife.py + routermiddleware.py)
+    │ Valida permisos (Security by Design)
+    ▼
+Broker (apibe.py + routerbroker.py)
+    │ Enruta a Backend Core
+    ▼
+Backend Core (apicore.py + routercore.py)
+    │ Ejecuta operación en BD
+    ▼
+MariaDB (myllm_projects_db)
+    │ Triggers automáticos
+    ▼
+estado + cambios (registros auditados)
+```
+
+**Ejemplo de uso desde Frontend (Python):**
+
+```python
+from adapters.api_client import (
+    get_organization_projects,
+    create_organization_project,
+    update_project_status,
+    delete_organization_project,
+    request_project_support_api,
+)
+
+# Listar proyectos
+projects = get_organization_projects(
+    organization_id=1,
+    access_token=token,
+    session_token=session,
+)
+
+# Crear proyecto
+result = create_organization_project(
+    organization_id=1,
+    project_name="Nuevo LLM",
+    project_description="Modelo de lenguaje personalizado",
+    access_token=token,
+    session_token=session,
+)
+
+# Bloquear proyecto
+update_project_status(
+    project_id=result["project_id"],
+    locked=True,
+    access_token=token,
+    session_token=session,
+)
+
+# Solicitar soporte
+request_project_support_api(
+    project_id=result["project_id"],
+    access_token=token,
+    session_token=session,
+)
+
+# Eliminar proyecto
+delete_organization_project(
+    project_id=result["project_id"],
+    access_token=token,
+    session_token=session,
+)
+```
+
+## Jerarquía de Trabajo y Roles de Proyecto
+
+El sistema implementa una jerarquía de trabajo que determina la visibilidad y acceso de los usuarios.
+
+### Jerarquía de acceso
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    JERARQUÍA DE TRABAJO DEL USUARIO                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   Organización  ──►  Proyectos  ──►  Versiones  ──►  Contenido              │
+│        │                  │                │                │                │
+│   id_organizacion    id_proyecto      id_version      archivos/datos        │
+│                          │                                                   │
+│                    ┌─────▼─────┐                                            │
+│                    │ FILTRO DE │                                            │
+│                    │VISIBILIDAD│                                            │
+│                    └─────┬─────┘                                            │
+│                          │                                                   │
+│            ┌─────────────┴─────────────┐                                    │
+│            │   proyectos_roles         │                                    │
+│            │   (id_usuario, id_rol,    │                                    │
+│            │    id_proyecto, active)   │                                    │
+│            └───────────────────────────┘                                    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Reglas de visibilidad de proyectos
+
+Un usuario **SOLO puede ver** un proyecto si cumple **TODAS** las condiciones:
+
+| Condición | Requerido | Descripción |
+|-----------|-----------|-------------|
+| Registro existe | ✅ | Debe existir registro en `proyectos_roles` para el usuario y proyecto |
+| `active = TRUE` | ✅ | El registro debe estar activo |
+| `id_rol > 0` | ✅ | El rol NO puede ser "Sin asignar" (id=0) |
+
+**Si cualquier condición falla → El usuario NO VE el proyecto.**
+
+### Catálogo de roles de proyecto (proyectos_roles_base)
+
+| ID | Nombre | Descripción | Visibilidad |
+|----|--------|-------------|-------------|
+| 0 | Sin asignar | Usuario sin rol asignado | ❌ No ve el proyecto |
+| 3 | Editor | Puede crear, modificar y eliminar contenido | ✅ Ve el proyecto |
+| 4 | Lector | Solo puede ver el contenido (lectura) | ✅ Ve el proyecto |
+| 5 | Auditor | Acceso limitado para auditoría y revisión | ✅ Ve el proyecto |
+
+### Tabla proyectos_roles_base
+
+```sql
+-- Base de datos: myllm_projects_db
+CREATE TABLE proyectos_roles_base (
+    id INT NOT NULL PRIMARY KEY,           -- 0, 3, 4, 5
+    nombre_rol VARCHAR(50) NOT NULL,       -- "Sin asignar", "Editor", "Lector", "Auditor"
+    descripcion VARCHAR(255) DEFAULT NULL, -- Descripción del rol
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
+### Endpoint para consultar roles base
+
+```
+GET /project-roles-base
+```
+
+**Flujo:** Frontend → Middleware → Broker → Backend Core → MariaDB
+
+**Respuesta:**
+```json
+{
+  "roles": [
+    {"id": 0, "nombre_rol": "Sin asignar", "descripcion": "Usuario sin rol asignado"},
+    {"id": 3, "nombre_rol": "Editor", "descripcion": "Puede modificar contenido"},
+    {"id": 4, "nombre_rol": "Lector", "descripcion": "Solo lectura"},
+    {"id": 5, "nombre_rol": "Auditor", "descripcion": "Acceso limitado"}
+  ],
+  "total": 4
+}
+```
+
+### Uso en selectores (Frontend)
+
+```python
+# Cargar roles base desde API
+from adapters.api_client import get_project_roles_base
+
+roles = get_project_roles_base(access_token=token, session_token=session)
+# Resultado: [{"id": 0, "nombre_rol": "Sin asignar", ...}, ...]
+
+# En selectores, excluir "Sin asignar" (id=0)
+roles_para_selector = [r["nombre_rol"] for r in roles if r["id"] > 0]
+# Resultado: ["Editor", "Lector", "Auditor"]
+```
+
+### Migración SQL
+
+Archivo: `infrastructure/database/migrations/005_proyectos_roles_base_table.sql`
 
 ## Sistema de Permisos (Security by Design)
 

@@ -66,12 +66,71 @@ deben consultar MariaDB directamente, sin fallback a mocks.
 ### Base de datos de proyectos (`myllm_projects_db`)
 
 Relación esperada: `organizaciones` → `proyectos` → `versiones` → `cambios`.
+Relación de flujos: `flujos` ← `proyectos` (cada proyecto tiene un paso actual en el flujo).
 
 - `organizaciones`: organizaciones (PK `organization_id`).
-- `proyectos`: proyectos por organización (FK `id_organizacion` → `organizaciones.organization_id`).
+- `proyectos`: proyectos por organización (FK `id_organizacion` → `organizaciones.organization_id`, FK `id_flujo` → `flujos.id_flujo`).
 - `versiones`: versiones por proyecto (FK `id_proyecto` → `proyectos.id`, FK `id_organizacion` → `organizaciones.organization_id`).
   - Único por proyecto: `id_proyecto` + `id_version`.
 - `cambios`: cambios por versión (FK `id_version` → `versiones.id`, FK `id_proyecto` → `proyectos.id`, FK `id_organizacion` → `organizaciones.organization_id`).
+- `flujos`: catálogo de pasos del flujo de trabajo para generación de modelos LLM.
+- `estado`: estado booleano de cada paso del flujo por versión.
+
+#### Tabla `flujos` (catálogo de pasos del flujo de trabajo)
+
+| id_flujo | clave | nombre | emoji | orden |
+|----------|-------|--------|-------|-------|
+| 1 | propuesta_cliente | Propuesta Cliente | 📝 | 1 |
+| 2 | revision_interna | Revisión Interna | 🔍 | 2 |
+| 3 | propuesta_mejoras | Propuesta de Mejoras | ⚙️ | 3 |
+| 4 | aceptacion_cliente | Aceptación Cliente | ✅ | 4 |
+| 5 | aceptacion_interna | Aceptación Interna | ✅ | 5 |
+| 6 | entrenamiento_inicial | Entrenamiento Inicial | 🎓 | 6 |
+| 7 | evaluacion_entrenamiento | Evaluación Entrenamiento | 📊 | 7 |
+| 8 | reentrenamiento | Reentrenamiento | 🔄 | 8 |
+| 9 | optimizacion | Optimización | ⚡ | 9 |
+| 10 | aprobacion_calidad | Aprobación Calidad | ✅ | 10 |
+| 11 | generacion_llm | Generación del Modelo LLM | 🤖 | 11 |
+| 12 | notificacion_descarga | Notificación de Descarga | 🔔 | 12 |
+
+**Vista útil:** `view_proyectos_flujo` - muestra proyectos con su paso actual del flujo.
+
+**Migración:** `infrastructure/database/migrations/001_create_flujos_table.sql`
+
+#### Sistema de auditoría de cambios de flujo
+
+El sistema registra automáticamente cada cambio de flujo en proyectos mediante triggers.
+
+**Tablas:**
+- `proyecto_flujo_historico`: Registro de cada transición entre pasos del flujo.
+- `sesion_contexto`: Contexto temporal de sesión para pasar datos a triggers.
+
+**Triggers:**
+- `tr_proyecto_flujo_cambio`: Se dispara en UPDATE de `proyectos.id_flujo`.
+- `tr_proyecto_flujo_inicial`: Se dispara en INSERT de proyecto con `id_flujo`.
+
+**Vistas:**
+- `view_proyecto_flujo_historico`: Histórico enriquecido con nombres de flujos.
+- `view_flujo_metricas`: Métricas de tiempo promedio por cada paso.
+
+**Procedimientos almacenados:**
+- `sp_set_sesion_contexto(usuario, ip, app, motivo)`: Establece contexto antes de cambios.
+- `sp_clear_sesion_contexto()`: Limpia contexto después de cambios.
+- `sp_avanzar_proyecto_flujo(proyecto, usuario, motivo, ip, app)`: Avanza proyecto al siguiente paso.
+
+**Ejemplo de uso desde aplicación:**
+```sql
+-- Antes de hacer cambios
+CALL sp_set_sesion_contexto(123, '192.168.1.100', 'frontend', 'Aprobación del cliente');
+
+-- Actualizar flujo del proyecto
+UPDATE proyectos SET id_flujo = 4 WHERE id = 1;
+
+-- O usar el procedimiento de avance
+CALL sp_avanzar_proyecto_flujo(1, 123, 'Completada revisión interna', '192.168.1.100', 'backoffice');
+```
+
+**Migración:** `infrastructure/database/migrations/002_flujo_historico_y_trigger.sql`
 
 ## Almacenamiento de ficheros (fmanagement)
 

@@ -144,6 +144,141 @@ Si un test falla de forma inconsistente:
 * **Obligatorio:** La base `myllm_projects_db` no tiene espejo en JSON. Cualquier
   operación debe consultarse directamente en MariaDB, sin fallback a mocks.
 
+### Tabla `flujos` (catálogo de pasos del flujo de trabajo)
+
+La tabla `flujos` es un catálogo con los 12 pasos del flujo de trabajo para la generación
+de modelos LLM. Cada proyecto tiene un campo `id_flujo` que indica su paso actual.
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `id_flujo` | INT PK | Identificador único del paso |
+| `clave` | VARCHAR(50) UNIQUE | Identificador interno (snake_case) |
+| `nombre` | VARCHAR(100) | Nombre visible del paso |
+| `descripcion` | VARCHAR(255) | Descripción del paso |
+| `emoji` | VARCHAR(10) | Emoji representativo |
+| `color` | VARCHAR(20) | Color hexadecimal para UI |
+| `orden` | INT | Orden secuencial (1-12) |
+| `es_bloque_inicio` | TINYINT(1) | Pertenece al bloque inicial |
+| `es_bloque_iteracion` | TINYINT(1) | Pertenece al bloque de iteración |
+
+**Relación con `proyectos`:**
+- Campo `proyectos.id_flujo` → FK a `flujos.id_flujo`
+- Valor por defecto: 1 (propuesta_cliente)
+- ON DELETE SET NULL, ON UPDATE CASCADE
+
+**Vista útil:** `view_proyectos_flujo` - consulta proyectos con información del flujo actual.
+
+**Migración:** `infrastructure/database/migrations/001_create_flujos_table.sql`
+
+### Tipos de cambio en proyectos (OBLIGATORIO)
+
+La tabla `tipos_cambio` define los tipos de cambio que se registran en la tabla `cambios`.
+Los triggers y la lógica del Backend Core usan estos tipos para auditoría.
+
+| Clave | Nombre | Descripción | Origen |
+|-------|--------|-------------|--------|
+| `alta_proyecto` | Alta proyecto | Creación de un nuevo proyecto | Trigger INSERT |
+| `modificacion_proyecto` | Modificación proyecto | Cambio de nombre/descripción | Trigger UPDATE |
+| `cambio_flujo` | Cambio de flujo | Cambio de paso en el flujo | Trigger UPDATE |
+| `borrado_proyecto` | Borrado de proyecto | Eliminación del proyecto | Trigger DELETE |
+| `bloquear_proyecto` | Bloquear proyecto | Bloqueo del proyecto | Trigger UPDATE |
+| `desbloquear_proyecto` | Desbloquear proyecto | Desbloqueo del proyecto | Trigger UPDATE |
+| `asignacion_usuario` | Asignación usuario | Asignación de usuario | Backend Core |
+| `quitar_usuario` | Quitar usuario | Eliminación de usuario | Backend Core |
+| `solicitud_soporte` | Solicitud soporte proyecto | Solicitud de soporte | Backend Core |
+| `respuesta_soporte` | Respuesta soporte proyecto | Respuesta a soporte | Backend Core |
+
+**Triggers automáticos en tabla `proyectos`:**
+- `tr_proyecto_after_insert`: Crea registro en `estado` (v1) + `cambios` (alta)
+- `tr_proyecto_flujo_update`: Actualiza `estado` + registra cambio de flujo
+- `tr_proyecto_before_delete`: Registra borrado antes de eliminar
+
+**Función auxiliar:**
+- `fn_get_estado_por_flujo(id_flujo, campo)`: Retorna TRUE/FALSE según orden del flujo
+
+**Procedimiento para cambios manuales:**
+```sql
+CALL sp_registrar_cambio_proyecto(
+    p_id_proyecto,
+    p_id_organizacion,
+    'Asignación usuario',
+    'Usuario X asignado al proyecto',
+    p_id_usuario
+);
+```
+
+**Flujo de alta de proyecto:**
+1. Frontend: Modal "Crear proyecto" → `save_new_project()`
+2. API Client: `create_organization_project()` → POST /projects
+3. Middleware: Valida permisos → Broker → Backend Core
+4. Backend Core: INSERT en `proyectos` (nombre, descripcion, id_organizacion, active=1, id_flujo=1)
+5. Trigger BD: 
+   - Crea registro en `estado` (versión 1, campos booleanos según id_flujo=1)
+   - Crea registro en `cambios` (tipo="Alta proyecto")
+
+**Migración:** `infrastructure/database/migrations/003_triggers_proyecto_estado_cambios.sql`
+
+### Endpoints de API para proyectos (OBLIGATORIO)
+
+Los endpoints de proyectos siguen el flujo arquitectónico completo:
+
+```
+Frontend → Middleware → Broker → Backend Core → MariaDB
+```
+
+**Endpoints disponibles:**
+
+| Endpoint | Método | Permiso | Descripción |
+|----------|--------|---------|-------------|
+| `/projects/organization/{org_id}` | GET | `project_read` | Listar proyectos |
+| `/projects` | POST | `project_create` | Crear proyecto |
+| `/projects/{id}` | PATCH | `project_update` | Actualizar proyecto |
+| `/projects/{id}` | DELETE | `project_delete` | Eliminar proyecto |
+| `/projects/{id}/support` | POST | - | Solicitar soporte |
+
+**Archivos por capa:**
+
+| Capa | API | Router/Lógica | Cliente |
+|------|-----|---------------|---------|
+| **Frontend** | - | `web_frontend.py` | `adapters/api_client.py` |
+| **Middleware** | `apife.py` | `routermiddleware.py` | `broker_backend_client.py` |
+| **Broker** | `apibe.py` | `routerbroker.py` | `interfacetocore.py` |
+| **Backend Core** | `apicore.py` | `routercore.py` | - |
+
+**Reglas obligatorias:**
+1. ✅ Toda operación de proyecto debe validar permisos en el Middleware (HTTP 403 si no tiene permiso)
+2. ✅ Los headers `Authorization`, `X-Session-Token` y `X-Client-App` deben propagarse en cada capa
+3. ✅ Las operaciones CREATE/UPDATE/DELETE activan triggers que actualizan `estado` y `cambios`
+4. ✅ La operación de soporte usa `sp_registrar_cambio_proyecto` en Backend Core
+5. ✅ Los métodos de UI (`rx.button`) deben usar `rx.cond()` para mostrar/ocultar según permisos
+
+**Ejemplo de validación en Middleware (Security by Design):**
+```python
+# En apife.py - OBLIGATORIO para endpoints que modifican datos
+@app.post("/projects", response_model=ProjectCreateResponse)
+def create_project_endpoint(...):
+    # SECURITY BY DESIGN: Validar permiso antes de ejecutar
+    if not router.has_low_level_permission(session, "project_create"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sin permisos para crear proyectos",
+        )
+    # ... resto de la lógica
+```
+
+**Ejemplo de validación en UI (Reflex):**
+```python
+# En web_frontend.py - OBLIGATORIO para botones de acción
+rx.cond(
+    State.can_project_create,  # Permiso desde SharedSessionState
+    rx.button(
+        "Crear proyecto",
+        on_click=State.create_project,
+    ),
+    rx.fragment(),  # No mostrar si no tiene permiso
+)
+```
+
 ## 5.5 Transferencia de versiones (Backend Core ↔ Trainer)
 
 La transferencia de versiones permite replicar proyectos entre el servidor backend y el 
@@ -278,6 +413,59 @@ current_environment: macbook
 **Rutas de configuración por entorno:**
 - Variables públicas: `infrastructure/environments/<entorno>/env.yaml`
 - Variables protegidas: `infrastructure/environments/<entorno>/protected_values.py`
+
+### Endpoint de Consulta de Entorno Activo (OBLIGATORIO)
+
+**CRÍTICO:** El sistema expone endpoints para consultar el entorno activo en tiempo de ejecución.
+Esto es **obligatorio** para servicios que necesitan configurarse dinámicamente (especialmente fmanagement).
+
+#### Endpoints disponibles
+
+| Servicio | Endpoint | Puerto | Uso principal |
+|----------|----------|--------|---------------|
+| **Broker** | `GET /config/environment` | 8008 | Fuente primaria |
+| **Backend Core** | `GET /config/environment` | 8003 | Usado por fmanagement |
+
+#### Respuesta
+
+```json
+{
+    "environment": "macbook",  // Valores: macbook, dev, pre, pro
+    "source": "ENVIRONMENT"
+}
+```
+
+#### Flujo para fmanagement
+
+```
+fmanagement (Go:1666) → GET /config/environment → Backend Core (Python:8003)
+                      ←─── {"environment": "macbook"} ───┘
+```
+
+**REGLA:** fmanagement debe consultar este endpoint en su inicialización para configurar:
+- Rutas base del sistema de archivos
+- Configuración de conexiones a bases de datos
+- URLs de servicios externos
+
+#### Implementación obligatoria en servicios externos (Go, etc.)
+
+```go
+// OBLIGATORIO en fmanagement durante inicialización
+func getActiveEnvironment() string {
+    resp, err := http.Get("http://localhost:8003/config/environment")
+    if err != nil {
+        log.Printf("WARN: No se pudo obtener entorno, usando 'unknown'")
+        return "unknown"
+    }
+    defer resp.Body.Close()
+    
+    var result struct {
+        Environment string `json:"environment"`
+    }
+    json.NewDecoder(resp.Body).Decode(&result)
+    return result.Environment
+}
+```
 
 ### Variables de aplicaciones en servidores
 
@@ -573,6 +761,52 @@ environment:
 - **Obligatorio:** Al crear un proyecto se generan 4 agentes automáticos con el
   patrón `agente_rol_organizacion_proyecto` y roles `identity_type_id` 10-13.
 - **Persistencia:** Los agentes deben guardarse en `users.json` y en la tabla `users`.
+
+### Borrado lógico de usuarios (OBLIGATORIO)
+
+**CRÍTICO:** El sistema usa **borrado LÓGICO**, nunca físico. Los usuarios NUNCA se eliminan de la base de datos.
+
+#### Reglas de implementación:
+
+1. **Borrar usuario** = `UPDATE users SET active = 0 WHERE user_id = ?`
+2. **Habilitar usuario** = `UPDATE users SET active = 1 WHERE user_id = ?`
+3. **NUNCA usar** `DELETE FROM users`
+
+#### Diferencia entre Frontend y Backoffice:
+
+| Aplicación | Consulta | Propósito |
+|------------|----------|-----------|
+| **Frontend** | `active_only=true` | Solo muestra usuarios activos |
+| **Backoffice** | `active_only=false` | Muestra todos para reactivar inactivos |
+
+#### Flujo arquitectónico:
+
+```
+UI (Frontend/Backoffice) → Middleware → Broker → Backend Core → MariaDB
+     update_user_status()    PUT /users/{id}/status    UPDATE users SET active = ?
+```
+
+#### Indicadores visuales obligatorios:
+
+- **Badge "Activo"** (verde): `active = true`
+- **Badge "Inactivo"** (rojo): `active = false`
+
+#### Permisos requeridos (Security by Design):
+
+Solo `identity_type_id` en `(1, 2, 10)` pueden gestionar usuarios:
+- Validar en UI con `rx.cond(State.can_manage_org_users, ...)`
+- Validar en Middleware antes de ejecutar (HTTP 403 si no tiene permiso)
+
+#### Archivos involucrados:
+
+| Capa | Archivo | Método |
+|------|---------|--------|
+| Frontend State | `web_frontend.py` | `delete_user()` |
+| Backoffice State | `web_backoffice.py` | `enable_user()`, `disable_user()`, `delete_user()` |
+| API Client | `api_client.py` | `update_user_status()` |
+| Middleware API | `apife.py` | `PUT /users/{user_id}/status` |
+| Middleware Router | `routermiddleware.py` | `update_user_status()` |
+| Backend Core | `routercore.py` | `update_user_status()` |
 
 ### SharedSessionState (estado compartido Reflex)
 - **Ubicación:** `src/2_shared_application/reflex_shared/shared_session_state.py`
@@ -1063,6 +1297,66 @@ Los tests de creación de usuarios deben verificar que:
 - No se puede crear un segundo administrador en la misma organización
 - El usuario tiene permisos de auditor (solo lectura)
 
+### Jerarquía de Trabajo y Roles de Proyecto (CRÍTICO)
+
+**IMPORTANTE:** La jerarquía de trabajo determina qué puede ver y hacer un usuario en el sistema.
+
+#### Jerarquía de acceso
+
+```
+Organización → Proyectos → Versiones → Contenido
+```
+
+#### Reglas de visibilidad de proyectos (OBLIGATORIO)
+
+Un usuario **SOLO puede ver** un proyecto si cumple **TODAS** las condiciones:
+
+1. ✅ **Existe registro** en `proyectos_roles` para el usuario y proyecto
+2. ✅ **`active = TRUE`** en el registro
+3. ✅ **`id_rol > 0`** (NO puede ser "Sin asignar")
+
+**Si cualquier condición falla → El usuario NO VE el proyecto.**
+
+#### Tabla proyectos_roles_base (catálogo maestro)
+
+| ID | Nombre | Visibilidad |
+|----|--------|-------------|
+| 0 | Sin asignar | ❌ No ve el proyecto |
+| 3 | Editor | ✅ Puede modificar |
+| 4 | Lector | ✅ Solo lectura |
+| 5 | Auditor | ✅ Acceso limitado |
+
+**Ubicación:** `myllm_projects_db.proyectos_roles_base`
+
+#### Endpoint para consultar roles base
+
+```
+GET /project-roles-base
+Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+```
+
+#### Reglas de implementación
+
+1. **Controladores y adaptadores:** Esta información debe ser accesible desde todas las capas
+   - Backend Core: `routercore.get_project_roles_base()`
+   - Broker: `routerbroker.get_project_roles_base()`
+   - Middleware: `routermiddleware.get_project_roles_base()`
+   - Frontend: `api_client.get_project_roles_base()`
+
+2. **Selectores de UI:** Excluir "Sin asignar" (id=0) en selectores de asignación
+   ```python
+   roles_para_selector = [r["nombre_rol"] for r in roles if r["id"] > 0]
+   ```
+
+3. **Validación de acceso:** Al cargar proyectos de un usuario, filtrar por:
+   ```sql
+   WHERE pr.id_usuario = :user_id
+     AND pr.active = TRUE
+     AND pr.id_rol > 0
+   ```
+
+4. **Migración:** `infrastructure/database/migrations/005_proyectos_roles_base_table.sql`
+
 ### Roles y Permisos por Defecto
 
 El sistema define roles con permisos predefinidos. Usa `low_level_permissions.json` como referencia única.
@@ -1286,6 +1580,73 @@ explícitamente permitido.
 2. Si añades nuevos hosts (otros dominios), actualiza `patch_vite_config.py` en ambas apps
 3. Nunca editar `.web/vite.config.js` manualmente sin usar el script de parche
 4. Documentar nuevos hosts en `README.md` (sección Troubleshooting, Problema 8)
+
+### Verificación de permisos en MariaDB (OBLIGATORIO)
+
+**CRÍTICO:** Cada vez que se diseñe una nueva consulta SQL (SELECT, INSERT, UPDATE, DELETE, CALL) 
+se DEBE verificar y documentar los permisos necesarios en MariaDB.
+
+#### Proceso obligatorio tras diseñar consultas SQL:
+
+1. **Identificar el usuario de conexión:**
+   - Operaciones de lectura (SELECT): `myllm_reader`
+   - Operaciones de escritura (INSERT, UPDATE, DELETE): `myllm_writer`
+   - Stored Procedures (CALL): `myllm_writer` con permiso EXECUTE
+
+2. **Verificar permisos existentes:**
+   ```sql
+   SHOW GRANTS FOR 'myllm_writer'@'localhost';
+   SHOW GRANTS FOR 'myllm_reader'@'localhost';
+   ```
+
+3. **Otorgar permisos faltantes:**
+   ```sql
+   -- Para tablas
+   GRANT SELECT, INSERT, UPDATE, DELETE ON <database>.<table> TO '<user>'@'localhost';
+   
+   -- Para stored procedures
+   GRANT EXECUTE ON PROCEDURE <database>.<procedure_name> TO '<user>'@'localhost';
+   
+   FLUSH PRIVILEGES;
+   ```
+
+4. **Documentar en README.md:**
+   - Añadir la consulta GRANT a la sección "Configuración de permisos MariaDB"
+   - Indicar qué funcionalidad requiere el permiso
+
+5. **Verificar que el SP existe** (si se usa CALL):
+   ```sql
+   SHOW PROCEDURE STATUS WHERE Db = '<database>' AND Name = '<procedure_name>';
+   ```
+   Si no existe, crearlo y documentar en la migración correspondiente.
+
+#### Matriz de permisos por usuario:
+
+| Usuario | Base de datos | Permisos |
+|---------|---------------|----------|
+| `myllm_reader` | `myllm_core_db` | SELECT en todas las tablas |
+| `myllm_reader` | `myllm_projects_db` | SELECT en todas las tablas |
+| `myllm_writer` | `myllm_core_db` | SELECT, UPDATE en `users` |
+| `myllm_writer` | `myllm_projects_db` | SELECT, INSERT, UPDATE, DELETE en tablas de datos |
+| `myllm_writer` | `myllm_projects_db` | EXECUTE en stored procedures |
+
+#### Checklist para nuevas funcionalidades con SQL:
+
+- [ ] ¿Qué usuario de MariaDB ejecutará la consulta?
+- [ ] ¿Tiene permisos en la tabla/procedimiento?
+- [ ] ¿Se ha ejecutado el GRANT correspondiente?
+- [ ] ¿Se ha documentado en README.md (sección "Configuración de permisos MariaDB")?
+- [ ] ¿Se ha probado la funcionalidad después de otorgar permisos?
+
+#### Errores comunes y soluciones:
+
+| Error | Causa | Solución |
+|-------|-------|----------|
+| `INSERT command denied` | Falta permiso INSERT | `GRANT INSERT ON db.table TO 'user'@'localhost';` |
+| `UPDATE command denied` | Falta permiso UPDATE | `GRANT UPDATE ON db.table TO 'user'@'localhost';` |
+| `execute command denied for routine` | Falta permiso EXECUTE | `GRANT EXECUTE ON PROCEDURE db.sp_name TO 'user'@'localhost';` |
+| `Unknown column 'X' in 'INSERT INTO'` | Columna no existe en tabla | Verificar estructura con `DESCRIBE table;` |
+| `FUNCTION or PROCEDURE does not exist` | SP no creado | Ejecutar migración SQL que crea el SP |
 
 ## 6. Performance & Security
 * **Complexity:** Avoid $O(n^2)$ operations on large datasets. Use `set` for $O(1)$ lookups.
