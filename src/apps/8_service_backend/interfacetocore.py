@@ -517,6 +517,10 @@ class CoreBackendClient:
         """Actualiza la tecnología de un proyecto."""
         return self._request("PATCH", f"/proyectos/{project_id}/tecnologia", payload=payload)
 
+    def get_tecnologias_asignadas_org(self, org_id: int) -> dict[str, Any]:
+        """Obtiene todas las tecnologías asignadas a proyectos de una organización."""
+        return self._request("GET", f"/organizaciones/{org_id}/tecnologias-asignadas")
+
     def _apply_headers(self, headers: dict[str, str]) -> None:
         """Aplica headers de seguridad al contexto del cliente.
 

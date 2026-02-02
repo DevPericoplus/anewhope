@@ -2558,3 +2558,45 @@ class BackendCoreRouter:
 
             conn.commit()
             return self.get_proyecto_tecnologia(project_id)
+
+    def get_tecnologias_asignadas_org(self, org_id: int) -> dict[str, Any]:
+        """Obtiene todas las tecnologías asignadas a proyectos de una organización.
+        
+        Args:
+            org_id: ID de la organización
+            
+        Returns:
+            Dict con lista de proyectos y sus tecnologías asignadas
+        """
+        from sqlalchemy import text
+
+        self._logger.info(
+            "[backend-core] Consultando tecnologías asignadas para organización %s",
+            org_id,
+        )
+
+        with self._get_projects_db_connection() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT p.id, p.nombre, t.id, t.name
+                    FROM proyectos p
+                    LEFT JOIN proyectos_tecnologia pt ON p.id = pt.id_proyecto
+                    LEFT JOIN tecnologia t ON pt.id_tecnologia = t.id
+                    WHERE p.id_organizacion = :org_id AND p.existe = 1
+                    ORDER BY p.nombre
+                """),
+                {"org_id": org_id},
+            )
+            rows = result.fetchall()
+
+            asignaciones = [
+                {
+                    "project_id": row[0],
+                    "project_name": row[1],
+                    "tecnologia_id": row[2],
+                    "tecnologia_name": row[3],
+                }
+                for row in rows
+            ]
+
+            return {"asignaciones": asignaciones, "total": len(asignaciones)}

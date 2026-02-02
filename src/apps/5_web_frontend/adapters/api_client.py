@@ -1311,3 +1311,29 @@ def actualizar_tecnologia(
     )
     
     return dict(response) if isinstance(response, dict) else {"success": False}
+
+
+def get_tecnologias_asignadas_org(
+    org_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Obtiene todas las tecnologías asignadas a proyectos de una organización.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Returns:
+        {"asignaciones": [{"project_id": int, "project_name": str, 
+                          "tecnologia_id": int|None, "tecnologia_name": str|None}], 
+         "total": int}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    response = _request_middleware(
+        "GET",
+        f"/organizaciones/{org_id}/tecnologias-asignadas",
+        headers=headers,
+    )
+    
+    return dict(response) if isinstance(response, dict) else {"asignaciones": [], "total": 0}

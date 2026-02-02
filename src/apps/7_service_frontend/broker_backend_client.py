@@ -660,6 +660,10 @@ class BrokerBackendClient:
         )
         return dict(data or {})
 
+    def get_tecnologias_asignadas_org(self, org_id: int) -> dict[str, Any]:
+        """Obtiene todas las tecnologías asignadas a proyectos de una organización."""
+        data = self._request("GET", f"/organizaciones/{org_id}/tecnologias-asignadas")
+        return dict(data or {})
     # ========================================================================
     # GESTIÓN DE TECNOLOGÍAS
     # ========================================================================
@@ -692,6 +696,10 @@ class BrokerBackendClient:
         )
         return dict(data or {})
 
+    def get_tecnologias_asignadas_org(self, org_id: int) -> dict[str, Any]:
+        """Obtiene todas las tecnologías asignadas a proyectos de una organización."""
+        data = self._request("GET", f"/organizaciones/{org_id}/tecnologias-asignadas")
+        return dict(data or {})
     # ========================================================================
     # GESTIÓN DE TECNOLOGÍAS
     # ========================================================================
@@ -722,4 +730,9 @@ class BrokerBackendClient:
         data = self._request(
             "PATCH", f"/proyectos/{project_id}/tecnologia", payload=payload
         )
+        return dict(data or {})
+
+    def get_tecnologias_asignadas_org(self, org_id: int) -> dict[str, Any]:
+        """Obtiene todas las tecnologías asignadas a proyectos de una organización."""
+        data = self._request("GET", f"/organizaciones/{org_id}/tecnologias-asignadas")
         return dict(data or {})

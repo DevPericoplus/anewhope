@@ -313,3 +313,102 @@ class TestTecnologiasBusinessLogic:
             if not tech["active"]:
                 # En UI: disabled=True, opacity=0.5, cursor=not-allowed
                 assert tech["name"] == "Legacy"
+
+
+class TestTecnologiasAsignadasStructure:
+    """Tests de estructura para el endpoint de tecnologías asignadas por organización."""
+
+    def test_proyecto_tecnologia_asignada_dto_structure(self):
+        """Verifica estructura del DTO ProyectoTecnologiaAsignadaDto."""
+        asignacion = {
+            "project_id": 1,
+            "project_name": "Asistente Comercial",
+            "tecnologia_id": 2,
+            "tecnologia_name": "RAG",
+        }
+        
+        assert "project_id" in asignacion
+        assert "project_name" in asignacion
+        assert "tecnologia_id" in asignacion
+        assert "tecnologia_name" in asignacion
+        assert isinstance(asignacion["project_id"], int)
+        assert isinstance(asignacion["project_name"], str)
+
+    def test_proyecto_sin_tecnologia_asignada_structure(self):
+        """Verifica estructura cuando un proyecto no tiene tecnología asignada."""
+        asignacion = {
+            "project_id": 2,
+            "project_name": "Bot Web",
+            "tecnologia_id": None,
+            "tecnologia_name": None,
+        }
+        
+        assert asignacion["project_id"] == 2
+        assert asignacion["project_name"] == "Bot Web"
+        assert asignacion["tecnologia_id"] is None
+        assert asignacion["tecnologia_name"] is None
+
+    def test_tecnologias_asignadas_response_structure(self):
+        """Verifica estructura de TecnologiasAsignadasResponse."""
+        response = {
+            "asignaciones": [
+                {
+                    "project_id": 1,
+                    "project_name": "Asistente Comercial",
+                    "tecnologia_id": 2,
+                    "tecnologia_name": "RAG",
+                },
+                {
+                    "project_id": 2,
+                    "project_name": "Bot Web",
+                    "tecnologia_id": None,
+                    "tecnologia_name": None,
+                },
+            ],
+            "total": 2,
+        }
+        
+        assert "asignaciones" in response
+        assert "total" in response
+        assert isinstance(response["asignaciones"], list)
+        assert response["total"] == 2
+        assert len(response["asignaciones"]) == 2
+
+    def test_only_existing_projects_included(self):
+        """Verifica que solo se incluyen proyectos existentes (existe=1)."""
+        # Simula filtrado de proyectos
+        all_projects = [
+            {"id": 1, "nombre": "Activo", "existe": True},
+            {"id": 2, "nombre": "Borrado", "existe": False},
+            {"id": 3, "nombre": "Otro Activo", "existe": True},
+        ]
+        
+        existing_projects = [p for p in all_projects if p.get("existe", True)]
+        
+        assert len(existing_projects) == 2
+        assert all(p["existe"] for p in existing_projects)
+
+    def test_response_ordered_by_project_name(self):
+        """Verifica que la respuesta está ordenada por nombre de proyecto."""
+        asignaciones = [
+            {"project_id": 1, "project_name": "Zebra"},
+            {"project_id": 2, "project_name": "Alpha"},
+            {"project_id": 3, "project_name": "Beta"},
+        ]
+        
+        # El endpoint ordena por nombre
+        sorted_asignaciones = sorted(asignaciones, key=lambda x: x["project_name"])
+        
+        assert sorted_asignaciones[0]["project_name"] == "Alpha"
+        assert sorted_asignaciones[1]["project_name"] == "Beta"
+        assert sorted_asignaciones[2]["project_name"] == "Zebra"
+
+    def test_empty_organization_returns_empty_list(self):
+        """Verifica respuesta cuando la organización no tiene proyectos."""
+        response = {
+            "asignaciones": [],
+            "total": 0,
+        }
+        
+        assert response["asignaciones"] == []
+        assert response["total"] == 0

@@ -830,3 +830,17 @@ class BrokerBackendRouter:
             raise BrokerBusinessError(
                 f"No se pudo actualizar tecnología: {exc}"
             ) from exc
+
+    def get_tecnologias_asignadas_org(self, org_id: int) -> dict[str, Any]:
+        """Obtiene todas las tecnologías asignadas a proyectos de una organización."""
+        self._logger.info(
+            "[%s] Consultando tecnologías asignadas para organización %s",
+            self._client_app,
+            org_id,
+        )
+        try:
+            return self._core_client.get_tecnologias_asignadas_org(org_id)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"No se pudieron obtener tecnologías asignadas: {exc}"
+            ) from exc

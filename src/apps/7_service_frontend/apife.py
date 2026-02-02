@@ -1406,6 +1406,22 @@ class AsignarTecnologiaRequest(BaseModel):
     coste_base: str = "17% sobre base"
 
 
+class ProyectoTecnologiaAsignadaDto(BaseModel):
+    """DTO para mostrar proyecto con su tecnología asignada."""
+
+    project_id: int
+    project_name: str
+    tecnologia_id: int | None = None
+    tecnologia_name: str | None = None
+
+
+class TecnologiasAsignadasResponse(BaseModel):
+    """Respuesta con lista de proyectos y sus tecnologías asignadas."""
+
+    asignaciones: list[ProyectoTecnologiaAsignadaDto]
+    total: int
+
+
 class ProjectDto(BaseModel):
     """DTO de proyecto.
     
@@ -2086,6 +2102,37 @@ def actualizar_tecnologia_endpoint(
     try:
         response = router.actualizar_tecnologia(project_id, request.model_dump(), session)
         return ProyectoTecnologiaResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get(
+    "/organizaciones/{org_id}/tecnologias-asignadas",
+    response_model=TecnologiasAsignadasResponse,
+    tags=["tecnologias"],
+)
+def get_tecnologias_asignadas_org_endpoint(
+    org_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> TecnologiasAsignadasResponse:
+    """Obtiene todas las tecnologías asignadas a proyectos de una organización."""
+    _logger = logging.getLogger(__name__)
+    _logger.info("[middleware] Consultando tecnologías asignadas para organización %s", org_id)
+
+    # Validar que el usuario pertenece a la organización solicitada
+    if session.organization_id != org_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tiene permisos para ver tecnologías de esta organización",
+        )
+
+    try:
+        response = router.get_tecnologias_asignadas_org(org_id, session)
+        return TecnologiasAsignadasResponse(**response)
     except BusinessRuleError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

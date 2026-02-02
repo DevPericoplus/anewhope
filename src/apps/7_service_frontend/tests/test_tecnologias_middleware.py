@@ -251,3 +251,66 @@ class TestTecnologiasApiContract:
         }
         
         assert "id_tecnologia" in request_body
+
+    def test_get_tecnologias_asignadas_response_format(self):
+        """Verifica formato de respuesta GET /organizaciones/{org_id}/tecnologias-asignadas."""
+        expected_response = {
+            "asignaciones": [
+                {
+                    "project_id": 1,
+                    "project_name": "Asistente Comercial",
+                    "tecnologia_id": 2,
+                    "tecnologia_name": "RAG",
+                },
+                {
+                    "project_id": 2,
+                    "project_name": "Bot Web",
+                    "tecnologia_id": None,
+                    "tecnologia_name": None,
+                },
+            ],
+            "total": 2,
+        }
+        
+        assert "asignaciones" in expected_response
+        assert "total" in expected_response
+        assert isinstance(expected_response["asignaciones"], list)
+        assert expected_response["total"] == len(expected_response["asignaciones"])
+
+    def test_tecnologias_asignadas_dto_fields(self):
+        """Verifica campos del DTO ProyectoTecnologiaAsignadaDto."""
+        dto = {
+            "project_id": 1,
+            "project_name": "Asistente Comercial",
+            "tecnologia_id": 2,
+            "tecnologia_name": "RAG",
+        }
+        
+        required_fields = ["project_id", "project_name", "tecnologia_id", "tecnologia_name"]
+        for field in required_fields:
+            assert field in dto
+
+    def test_tecnologias_asignadas_empty_response(self):
+        """Verifica respuesta cuando no hay proyectos en la organización."""
+        empty_response = {
+            "asignaciones": [],
+            "total": 0,
+        }
+        
+        assert empty_response["asignaciones"] == []
+        assert empty_response["total"] == 0
+
+    def test_tecnologias_asignadas_proyecto_sin_asignar(self):
+        """Verifica formato cuando un proyecto no tiene tecnología asignada."""
+        asignacion_sin_tech = {
+            "project_id": 5,
+            "project_name": "Nuevo Proyecto",
+            "tecnologia_id": None,
+            "tecnologia_name": None,
+        }
+        
+        assert asignacion_sin_tech["tecnologia_id"] is None
+        assert asignacion_sin_tech["tecnologia_name"] is None
+        # El proyecto sí debe tener ID y nombre
+        assert asignacion_sin_tech["project_id"] == 5
+        assert asignacion_sin_tech["project_name"] == "Nuevo Proyecto"

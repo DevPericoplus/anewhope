@@ -19,6 +19,7 @@ from adapters.api_client import (
     get_organization_users,
     get_proyecto_tecnologia,
     get_tecnologias,
+    get_tecnologias_asignadas_org,
     get_user_permissions,
     login_user,
     logout_user,
@@ -111,6 +112,7 @@ class State(SharedSessionState):
     tech_assign_error: str = ""
     tech_assign_success: str = ""
     is_loading_tecnologias: bool = False
+    tecnologias_asignadas_list: list[dict] = []  # Proyectos con sus tecnologías asignadas
     
     # Nota: Los siguientes campos ya vienen de SharedSessionState:
     # - is_logged_in, access_token, session_token, user_id, organization_id
@@ -274,6 +276,7 @@ class State(SharedSessionState):
         if menu == "tecnologias":
             self.load_org_projects()  # Para el selector de proyectos
             self.load_tecnologias()
+            self.load_tecnologias_asignadas()  # Cargar proyectos con sus asignaciones
 
     # ========== Gestión de Usuarios de la Organización ==========
     
@@ -813,6 +816,31 @@ class State(SharedSessionState):
             self.tecnologias_list = []
         finally:
             self.is_loading_tecnologias = False
+
+    def load_tecnologias_asignadas(self):
+        """Carga la lista de proyectos con sus tecnologías asignadas.
+        
+        Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+        """
+        try:
+            org_id = self.organization_id
+            if org_id <= 0 and self.access_token:
+                org_id = self._extract_org_id_from_token(self.access_token)
+            
+            if org_id <= 0:
+                self.tecnologias_asignadas_list = []
+                return
+            
+            result = get_tecnologias_asignadas_org(
+                org_id=org_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            self.tecnologias_asignadas_list = result.get("asignaciones", [])
+            print(f"[DEBUG] Tecnologías asignadas cargadas: {len(self.tecnologias_asignadas_list)}")
+        except Exception as e:
+            print(f"[ERROR] load_tecnologias_asignadas: {type(e).__name__}: {e}")
+            self.tecnologias_asignadas_list = []
     
     def select_tech_project(self, value: str):
         """Selecciona un proyecto para asignar tecnología.
@@ -2106,6 +2134,81 @@ def tecnologia_item(tech: dict) -> rx.Component:
     )
 
 
+def tecnologia_asignada_row(item: dict) -> rx.Component:
+    """Fila que muestra un proyecto y su tecnología asignada."""
+    return rx.hstack(
+        rx.text(
+            item["project_name"],
+            font_weight="medium",
+            color=COLORS["foreground"],
+            font_size="1em",
+            flex="1",
+        ),
+        rx.cond(
+            item["tecnologia_name"],
+            rx.badge(
+                item["tecnologia_name"],
+                color_scheme="orange",
+                variant="soft",
+                size="2",
+            ),
+            rx.badge(
+                "(sin asignar)",
+                color_scheme="gray",
+                variant="soft",
+                size="2",
+            ),
+        ),
+        width="100%",
+        padding="0.75em 1em",
+        background_color=COLORS["card"],
+        border=f"1px solid {COLORS['border']}",
+        border_radius="0.5em",
+        justify="between",
+        align="center",
+    )
+
+
+def tecnologias_asignadas_panel() -> rx.Component:
+    """Panel informativo que muestra proyectos con sus tecnologías asignadas."""
+    return rx.vstack(
+        rx.hstack(
+            rx.icon("list", size=28, color=COLORS["primary"]),
+            rx.heading(
+                "Tecnologías asignadas a proyecto",
+                size="6",
+                color=COLORS["foreground"],
+            ),
+            spacing="3",
+            align="center",
+        ),
+        rx.cond(
+            State.tecnologias_asignadas_list.length() > 0,
+            rx.vstack(
+                rx.foreach(
+                    State.tecnologias_asignadas_list,
+                    tecnologia_asignada_row,
+                ),
+                width="100%",
+                spacing="2",
+            ),
+            rx.text(
+                "No hay proyectos en la organización",
+                color=COLORS["muted_foreground"],
+                font_size="0.95em",
+            ),
+        ),
+        width="100%",
+        padding="1.5em",
+        background_color=COLORS["card"],
+        border=f"1px solid {COLORS['border']}",
+        border_radius="0.5em",
+        spacing="3",
+        align_items="flex-start",
+        margin_top="1em",
+    )
+
+
 def tecnologias_management_panel() -> rx.Component:
     """Panel de gestión de tecnologías por proyecto.
     
@@ -2364,7 +2467,12 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
         # Panel de gestión de tecnologías: visible solo en menú "tecnologias"
         rx.cond(
             rx.cond(is_logged_in, active_item == "tecnologias", False),
-            tecnologias_management_panel(),
+            rx.vstack(
+                tecnologias_management_panel(),
+                tecnologias_asignadas_panel(),
+                width="100%",
+                spacing="4",
+            ),
             rx.box(height="0"),
         ),
         rx.cond(

@@ -1087,3 +1087,48 @@ def actualizar_tecnologia(
         logger.error(f"Error actualizando tecnología: {exc}")
         return {"success": False, "error": str(exc)}
 
+
+def get_tecnologias_asignadas_org(
+    organization_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Obtiene todas las tecnologías asignadas a proyectos de una organización.
+    
+    Args:
+        organization_id: ID de la organización
+        access_token: Token de acceso JWT
+        session_token: Token de sesión
+        
+    Returns:
+        {"asignaciones": [...], "total": int}
+        Cada asignación tiene: project_id, project_name, tecnologia_id, tecnologia_name
+    """
+    url = f"{_get_middleware_base_url()}/organizaciones/{organization_id}/tecnologias-asignadas"
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+    
+    request = urllib.request.Request(url, headers=request_headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        error_msg = f"Error HTTP desde middleware: {exc.code}"
+        try:
+            error_payload = exc.read().decode("utf-8")
+            error_msg = f"{error_msg} - {error_payload}"
+        except Exception:
+            pass
+        print(error_msg)
+        return {"asignaciones": [], "total": 0}
+    except Exception as exc:
+        print(f"Error consultando tecnologías asignadas: {exc}")
+        return {"asignaciones": [], "total": 0}
+

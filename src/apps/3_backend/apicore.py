@@ -1163,6 +1163,22 @@ class AsignarTecnologiaRequest(BaseModel):
     coste_base: str = "17% sobre base"
 
 
+class ProyectoTecnologiaAsignadaDto(BaseModel):
+    """DTO para mostrar proyecto con su tecnología asignada."""
+
+    project_id: int
+    project_name: str
+    tecnologia_id: int | None = None
+    tecnologia_name: str | None = None
+
+
+class TecnologiasAsignadasResponse(BaseModel):
+    """Respuesta con lista de proyectos y sus tecnologías asignadas."""
+
+    asignaciones: list[ProyectoTecnologiaAsignadaDto]
+    total: int
+
+
 class TicketDto(BaseModel):
     """DTO de ticket para respuestas."""
 
@@ -1907,5 +1923,27 @@ def actualizar_tecnologia(
     try:
         result = router.actualizar_tecnologia(project_id, request.model_dump())
         return ProyectoTecnologiaResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get(
+    "/organizaciones/{org_id}/tecnologias-asignadas",
+    response_model=TecnologiasAsignadasResponse,
+    tags=["tecnologias"],
+)
+def get_tecnologias_asignadas_org(
+    org_id: int,
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> TecnologiasAsignadasResponse:
+    """Obtiene todas las tecnologías asignadas a proyectos de una organización.
+
+    Retorna lista de proyectos con su tecnología asignada (o None si no tiene).
+    Solo incluye proyectos existentes (existe=1).
+    """
+    try:
+        result = router.get_tecnologias_asignadas_org(org_id)
+        return TecnologiasAsignadasResponse(**result)
     except BackendCoreBusinessError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
