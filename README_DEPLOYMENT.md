@@ -75,6 +75,8 @@ Relación de flujos: `flujos` ← `proyectos` (cada proyecto tiene un paso actua
 - `cambios`: cambios por versión (FK `id_version` → `versiones.id`, FK `id_proyecto` → `proyectos.id`, FK `id_organizacion` → `organizaciones.organization_id`).
 - `flujos`: catálogo de pasos del flujo de trabajo para generación de modelos LLM.
 - `estado`: estado booleano de cada paso del flujo por versión.
+- **`version_states`** ✨ *Nuevo 2026-02-03*: Estados y configuraciones de versiones (Abierta, Bloqueada, Protegida, Final). Almacena flags `final_c` (cliente solicitó entrenamiento) y `final_i` (interno confirmó). UK: `id_proyecto` + `id_version`.
+- **`version_events`** ✨ *Nuevo 2026-02-03*: Auditoría de eventos de cambios de estado en versiones. Registra transiciones, operaciones de archivos y eventos de entrenamiento. Incluye metadata JSON para información adicional.
 
 #### Tabla `flujos` (catálogo de pasos del flujo de trabajo)
 

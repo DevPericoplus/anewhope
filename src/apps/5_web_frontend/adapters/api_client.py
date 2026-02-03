@@ -1337,3 +1337,445 @@ def get_tecnologias_asignadas_org(
     )
     
     return dict(response) if isinstance(response, dict) else {"asignaciones": [], "total": 0}
+
+
+# ============================================================================
+# GESTIÓN DE VERSIONES
+# ============================================================================
+
+
+def get_project_versions(
+    project_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Obtiene todas las versiones de un proyecto.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Args:
+        project_id: ID del proyecto
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+        
+    Returns:
+        {"versiones": [{"id_version": int, "id_proyecto": int, 
+                        "id_organizacion": int, "version_folder": str}], 
+         "total": int}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    response = _request_middleware(
+        "GET",
+        f"/proyectos/{project_id}/versiones",
+        headers=headers,
+    )
+    
+    return dict(response) if isinstance(response, dict) else {"versiones": [], "total": 0}
+
+
+def create_project_version(
+    project_id: int,
+    organization_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Crea una nueva versión para un proyecto.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Args:
+        project_id: ID del proyecto
+        organization_id: ID de la organización
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+        
+    Returns:
+        {"success": bool, "version": VersionDto | None, "mensaje": str | None}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    payload = {
+        "id_proyecto": project_id,
+        "id_organizacion": organization_id,
+    }
+    
+    response = _request_middleware(
+        "POST",
+        f"/proyectos/{project_id}/versiones",
+        headers=headers,
+        payload=payload,
+    )
+    
+    return dict(response) if isinstance(response, dict) else {"success": False}
+
+
+# ============================================================================
+# Gestión de Estados de Versión
+# ============================================================================
+
+
+def get_version_state(
+    project_id: int,
+    version_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Obtiene el estado actual de una versión.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Args:
+        project_id: ID del proyecto
+        version_id: ID de la versión
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+        
+    Returns:
+        {
+            "success": bool,
+            "state": {
+                "id": int,
+                "id_organizacion": int,
+                "id_proyecto": int,
+                "id_version": int,
+                "state": str,  # "Abierta", "Bloqueada", "Protegida", "Final"
+                "protected": bool,
+                "size_bytes": int,
+                "final_c": bool,
+                "final_i": bool,
+                "created_at": str,
+                "updated_at": str,
+                "updated_by_user_id": int | None
+            } | None,
+            "mensaje": str | None
+        }
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    response = _request_middleware(
+        "GET",
+        f"/proyectos/{project_id}/versiones/{version_id}/estado",
+        headers=headers,
+    )
+    
+    return dict(response) if isinstance(response, dict) else {"success": False}
+
+
+def update_version_state(
+    project_id: int,
+    version_id: int,
+    state: str | None = None,
+    protected: bool | None = None,
+    size_bytes: int | None = None,
+    final_c: bool | None = None,
+    final_i: bool | None = None,
+    updated_by_user_id: int | None = None,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Actualiza el estado de una versión.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Args:
+        project_id: ID del proyecto
+        version_id: ID de la versión
+        state: Nuevo estado ("Abierta", "Bloqueada", "Protegida", "Final")
+        protected: Marca de protección
+        size_bytes: Tamaño en bytes
+        final_c: Finalización por cliente
+        final_i: Finalización por interno
+        updated_by_user_id: ID del usuario que actualiza
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+        
+    Returns:
+        {
+            "success": bool,
+            "state": VersionStateDto | None,
+            "mensaje": str | None
+        }
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    payload = {}
+    if state is not None:
+        payload["state"] = state
+    if protected is not None:
+        payload["protected"] = protected
+    if size_bytes is not None:
+        payload["size_bytes"] = size_bytes
+    if final_c is not None:
+        payload["final_c"] = final_c
+    if final_i is not None:
+        payload["final_i"] = final_i
+    if updated_by_user_id is not None:
+        payload["updated_by_user_id"] = updated_by_user_id
+    
+    response = _request_middleware(
+        "PATCH",
+        f"/proyectos/{project_id}/versiones/{version_id}/estado",
+        headers=headers,
+        payload=payload,
+    )
+    
+    return dict(response) if isinstance(response, dict) else {"success": False}
+
+
+def get_version_events(
+    project_id: int,
+    version_id: int,
+    limit: int = 50,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Obtiene el historial de eventos de una versión.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    
+    Args:
+        project_id: ID del proyecto
+        version_id: ID de la versión
+        limit: Número máximo de eventos a retornar
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+        
+    Returns:
+        {
+            "success": bool,
+            "events": [
+                {
+                    "id": int,
+                    "id_organizacion": int,
+                    "id_proyecto": int,
+                    "id_version": int,
+                    "evento": str,
+                    "mensaje": str | None,
+                    "user_id": int,
+                    "user_name": str | None,
+                    "old_state": str | None,
+                    "new_state": str | None,
+                    "metadata": dict | None,
+                    "timestamp": str
+                }
+            ],
+            "total": int,
+            "mensaje": str | None
+        }
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    response = _request_middleware(
+        "GET",
+        f"/proyectos/{project_id}/versiones/{version_id}/eventos?limit={limit}",
+        headers=headers,
+    )
+    
+    return dict(response) if isinstance(response, dict) else {"success": False, "events": [], "total": 0}
+
+
+def create_version_full(
+    project_id: int,
+    organization_id: int,
+    version_name: str,
+    user_id: int,
+    user_name: str,
+    description: str | None = None,
+    clone_from_version_id: int | None = None,
+    initial_state: str = "Abierta",
+    protected: bool = False,
+    final_c: bool = False,
+    final_i: bool = False,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Crea una nueva versión completa (DB + fmanagement).
+    
+    Esta operación es atómica:
+    1. Inserta en tabla versiones
+    2. Inserta en tabla version_states
+    3. Inserta en tabla version_events
+    4. Crea carpeta física vía fmanagement (clonando si se especifica)
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB + fmanagement
+    
+    Args:
+        project_id: ID del proyecto
+        organization_id: ID de la organización
+        version_name: Nombre de la versión (ej: "V001")
+        user_id: ID del usuario que crea
+        user_name: Nombre del usuario que crea
+        description: Descripción opcional
+        clone_from_version_id: ID de versión a clonar (opcional)
+        initial_state: Estado inicial ("Abierta", "Bloqueada", "Protegida", "Final")
+        protected: Marca de protección
+        final_c: Finalización por cliente
+        final_i: Finalización por interno
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+        
+    Returns:
+        {
+            "success": bool,
+            "version": VersionDto | None,
+            "state": VersionStateDto | None,
+            "mensaje": str | None
+        }
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    payload = {
+        "id_organizacion": organization_id,
+        "nombre_version": version_name,
+        "user_id": user_id,
+        "user_name": user_name,
+        "initial_state": initial_state,
+        "protected": protected,
+        "final_c": final_c,
+        "final_i": final_i,
+    }
+    
+    if description is not None:
+        payload["descripcion"] = description
+    if clone_from_version_id is not None:
+        payload["clone_from_version_id"] = clone_from_version_id
+    
+    response = _request_middleware(
+        "POST",
+        f"/proyectos/{project_id}/versiones/crear-completa",
+        headers=headers,
+        payload=payload,
+    )
+    
+    return dict(response) if isinstance(response, dict) else {"success": False}
+
+
+# ============================================================================
+# Integración con fmanagement
+# ============================================================================
+
+
+def fmanagement_list(
+    org_folder: str,
+    prj_folder: str,
+    version_folder: str,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Lista estructura de archivos vía fmanagement.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → fmanagement
+    
+    Args:
+        org_folder: Carpeta de organización (ej: "ORG0001")
+        prj_folder: Carpeta de proyecto (ej: "PRJ0001")
+        version_folder: Carpeta de versión (ej: "V001")
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+        
+    Returns:
+        {
+            "success": bool,
+            "items": [
+                {
+                    "name": str,
+                    "type": str,  # "folder" | "file"
+                    "path": str,
+                    "size": int | None,
+                    "modified": str | None
+                }
+            ],
+            "mensaje": str | None
+        }
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    payload = {
+        "org_folder": org_folder,
+        "prj_folder": prj_folder,
+        "version_folder": version_folder,
+    }
+    
+    response = _request_middleware(
+        "POST",
+        "/fmanagement/list",
+        headers=headers,
+        payload=payload,
+    )
+    
+    return dict(response) if isinstance(response, dict) else {"success": False, "items": []}
+
+
+def fmanagement_operation(
+    operation: str,
+    params: dict[str, Any],
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Ejecuta una operación genérica en fmanagement.
+    
+    Operaciones soportadas:
+    - create_folder
+    - rename_folder
+    - delete_folder
+    - create_file
+    - rename_file
+    - delete_file
+    - download_file
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → fmanagement
+    
+    Args:
+        operation: Nombre de la operación
+        params: Parámetros específicos de la operación
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+        
+    Returns:
+        {
+            "success": bool,
+            "data": dict | None,
+            "mensaje": str | None
+        }
+    
+    Example:
+        # Crear carpeta
+        fmanagement_operation(
+            "create_folder",
+            {"org": "ORG0001", "prj": "PRJ0001", "version": "V001", "folder_name": "docs"},
+            access_token,
+            session_token
+        )
+        
+        # Renombrar archivo
+        fmanagement_operation(
+            "rename_file",
+            {"org": "ORG0001", "prj": "PRJ0001", "version": "V001", 
+             "old_name": "file1.txt", "new_name": "file2.txt"},
+            access_token,
+            session_token
+        )
+    """
+    headers = _build_auth_headers(access_token, session_token)
+    
+    payload = {
+        "operation": operation,
+        "params": params,
+    }
+    
+    response = _request_middleware(
+        "POST",
+        "/fmanagement/operation",
+        headers=headers,
+        payload=payload,
+    )
+    
+    return dict(response) if isinstance(response, dict) else {"success": False}

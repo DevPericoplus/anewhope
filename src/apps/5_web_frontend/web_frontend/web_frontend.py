@@ -12,10 +12,12 @@ from adapters.api_client import (
     asignar_tecnologia,
     create_organization_project,
     create_organization_user,
+    create_project_version,
     delete_organization_project,
     ensure_valid_tokens,
     get_organization_projects,
     get_organization_users,
+    get_project_versions,
     get_proyecto_tecnologia,
     get_tecnologias,
     get_tecnologias_asignadas_org,
@@ -30,6 +32,7 @@ from adapters.api_client import (
 )
 from pages.flujos import FlujosState, flujos_diagram, load_flujos_content
 from pages.organizacion import load_organizacion_content
+from pages.proyecciones import load_proyecciones_content
 from pages.tecnologias import load_tecnologias_content
 from low_panel_pages.show_md import show_md  # noqa: F401 - Importado para registrar la ruta
 from web_frontend.shared_state import SharedSessionState
@@ -54,6 +57,48 @@ except Exception as e:
 # Logger de actividad del frontend
 activity_log = _activity_module.get_frontend_logger()
 activity_log.log_startup()
+
+# Configurar el logging root de Python para que también escriba en los archivos de log
+# Esto hace que todos los loggers (incluyendo los de módulos como common_security)
+# también escriban en activity.log y console.log
+import logging as std_logging
+from logging.handlers import RotatingFileHandler
+
+# Solo configurar si no está ya configurado
+if not std_logging.getLogger().handlers:
+    # Obtener el logger root
+    root_logger = std_logging.getLogger()
+    root_logger.setLevel(std_logging.INFO)
+
+    # Crear directorio de logs si no existe
+    logs_dir = Path(__file__).parent.parent / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    # Handler para console.log (mismo que usa activity_logger)
+    console_handler = RotatingFileHandler(
+        logs_dir / "console.log",
+        maxBytes=10 * 1024 * 1024,  # 10 MB
+        backupCount=5,
+        encoding="utf-8",
+    )
+    console_handler.setLevel(std_logging.INFO)
+    console_formatter = std_logging.Formatter(
+        "%(asctime)s | %(levelname)-8s | %(name)-15s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    console_handler.setFormatter(console_formatter)
+    root_logger.addHandler(console_handler)
+
+    # Handler para activity.log
+    activity_handler = RotatingFileHandler(
+        logs_dir / "activity.log",
+        maxBytes=10 * 1024 * 1024,  # 10 MB
+        backupCount=5,
+        encoding="utf-8",
+    )
+    activity_handler.setLevel(std_logging.INFO)
+    activity_handler.setFormatter(console_formatter)
+    root_logger.addHandler(activity_handler)
 
 COLORS = {
     "background": "#1a1a1a",
@@ -147,6 +192,18 @@ class State(SharedSessionState):
     tech_assign_error: str = ""
     tech_assign_success: str = ""
     is_loading_tecnologias: bool = False
+    
+    # Estado para gestión de proyecciones (versiones y contenidos)
+    proyecciones_project_id: int = 0  # Proyecto seleccionado en proyecciones
+    proyecciones_project_name: str = ""  # Nombre del proyecto seleccionado
+    proyecciones_versions: list[dict] = []  # Lista de versiones del proyecto
+    proyecciones_version_id: int = 0  # Versión seleccionada
+    proyecciones_version_folder: str = ""  # Carpeta de versión (v001, v002, etc.)
+    proyecciones_org_folder: str = ""  # Carpeta de organización (ORG0001, etc.)
+    proyecciones_prj_folder: str = ""  # Carpeta de proyecto (PRJ0001, etc.)
+    proyecciones_error: str = ""
+    proyecciones_success: str = ""
+    is_loading_versions: bool = False
     
     # Nota: Los siguientes campos ya vienen de SharedSessionState:
     # - user_logged_in, access_token, session_token, user_id, organization_id
@@ -273,6 +330,9 @@ class State(SharedSessionState):
             self.load_org_projects()  # Para el selector de proyectos
             self.load_tecnologias()
             self.load_tecnologias_asignadas()  # Cargar proyectos con sus asignaciones
+        if menu == "proyecciones":
+            self.load_org_projects()  # Para el selector de proyectos
+            self.reset_proyecciones_state()  # Limpiar estado anterior
 
     # ========== Gestión de Usuarios de la Organización ==========
     
@@ -1147,6 +1207,149 @@ class State(SharedSessionState):
         except Exception as e:
             print(f"[ERROR] load_tecnologias_asignadas: {type(e).__name__}: {e}")
             self.tecnologias_asignadas_list = []
+
+    # ========== Gestión de Proyecciones (Versiones y Contenidos) ==========
+
+    def reset_proyecciones_state(self):
+        """Limpia el estado de proyecciones al cambiar de menú o proyecto."""
+        self.proyecciones_project_id = 0
+        self.proyecciones_project_name = ""
+        self.proyecciones_versions = []
+        self.proyecciones_version_id = 0
+        self.proyecciones_version_folder = ""
+        self.proyecciones_org_folder = ""
+        self.proyecciones_prj_folder = ""
+        self.proyecciones_error = ""
+        self.proyecciones_success = ""
+
+    def set_proyecciones_project(self, value: str):
+        """Selecciona un proyecto y carga sus versiones.
+        
+        Args:
+            value: Nombre del proyecto seleccionado
+        """
+        import sys
+        from pathlib import Path
+        
+        # Agregar ruta a shared_application
+        shared_app_path = Path(__file__).resolve().parents[3] / "2_shared_application"
+        if str(shared_app_path) not in sys.path:
+            sys.path.insert(0, str(shared_app_path))
+        
+        from storage_access_structure import (
+            get_folder_by_id_organization,
+            get_folder_by_id_project,
+        )
+        
+        if not value:
+            self.reset_proyecciones_state()
+            return
+        
+        # Buscar el proyecto por nombre
+        for project in self.org_projects:
+            if project.get("name") == value:
+                self.proyecciones_project_id = project.get("id", 0)
+                self.proyecciones_project_name = value
+                
+                # Generar carpetas formateadas
+                self.proyecciones_org_folder = get_folder_by_id_organization(self.organization_id)
+                self.proyecciones_prj_folder = get_folder_by_id_project(self.proyecciones_project_id)
+                
+                # Cargar versiones del proyecto
+                self.load_proyecciones_versions()
+                return
+        
+        self.reset_proyecciones_state()
+
+    def load_proyecciones_versions(self):
+        """Carga las versiones del proyecto seleccionado."""
+        from adapters.api_client import get_project_versions
+        
+        if self.proyecciones_project_id <= 0:
+            self.proyecciones_versions = []
+            return
+        
+        self.is_loading_versions = True
+        self.proyecciones_error = ""
+        
+        try:
+            result = get_project_versions(
+                project_id=self.proyecciones_project_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            self.proyecciones_versions = result.get("versiones", [])
+            print(f"[DEBUG] Versiones cargadas: {len(self.proyecciones_versions)}")
+            
+            # Seleccionar la primera versión si existe
+            if self.proyecciones_versions:
+                first_version = self.proyecciones_versions[0]
+                self.proyecciones_version_id = first_version.get("id_version", 0)
+                self.proyecciones_version_folder = first_version.get("version_folder", "")
+        except Exception as e:
+            print(f"[ERROR] Error cargando versiones: {type(e).__name__}: {e}")
+            self.proyecciones_error = f"Error cargando versiones: {e}"
+            self.proyecciones_versions = []
+        finally:
+            self.is_loading_versions = False
+
+    def set_proyecciones_version(self, value: str):
+        """Selecciona una versión.
+        
+        Args:
+            value: version_folder de la versión seleccionada (ej: "v001")
+        """
+        for version in self.proyecciones_versions:
+            if version.get("version_folder") == value:
+                self.proyecciones_version_id = version.get("id_version", 0)
+                self.proyecciones_version_folder = value
+                return
+
+    def create_new_version(self):
+        """Crea una nueva versión para el proyecto seleccionado."""
+        from adapters.api_client import create_project_version
+        
+        if self.proyecciones_project_id <= 0:
+            self.proyecciones_error = "Selecciona un proyecto primero"
+            return
+        
+        self.is_loading_versions = True
+        self.proyecciones_error = ""
+        self.proyecciones_success = ""
+        
+        try:
+            result = create_project_version(
+                project_id=self.proyecciones_project_id,
+                organization_id=self.organization_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            
+            if result.get("success"):
+                self.proyecciones_success = "Nueva versión creada correctamente"
+                # Recargar versiones
+                self.load_proyecciones_versions()
+            else:
+                self.proyecciones_error = result.get("mensaje", "Error al crear versión")
+        except Exception as e:
+            print(f"[ERROR] Error creando versión: {type(e).__name__}: {e}")
+            self.proyecciones_error = f"Error creando versión: {e}"
+        finally:
+            self.is_loading_versions = False
+
+    @rx.var
+    def proyecciones_projects_select(self) -> list[str]:
+        """Lista de nombres de proyectos para el selector."""
+        return [
+            project.get("name", "Sin nombre")
+            for project in self.org_projects
+            if project.get("name") and project.get("existe", True)
+        ]
+
+    @rx.var
+    def proyecciones_versions_select(self) -> list[str]:
+        """Lista de versiones formateadas para el selector."""
+        return [v.get("version_folder", "") for v in self.proyecciones_versions if v.get("version_folder")]
 
     def set_tech_project(self, value: str):
         """Establece el proyecto seleccionado para tecnología.
@@ -3162,6 +3365,157 @@ def tecnologias_asignadas_panel() -> rx.Component:
     )
 
 
+def proyecciones_management_panel() -> rx.Component:
+    """Panel de gestión de versiones de proyecto (3 capas)."""
+    return rx.vstack(
+        # ===== CAPA 1: Selector de proyecto =====
+        rx.vstack(
+            rx.hstack(
+                rx.icon("folder-git-2", size=36, color=COLORS["primary"]),
+                rx.heading("Gestión de Versiones", size="7", color=COLORS["foreground"]),
+                spacing="4",
+                align="center",
+            ),
+            rx.text(
+                "Administra las versiones de los proyectos y sus contenidos",
+                color=COLORS["muted_foreground"],
+                font_size="1.1em",
+            ),
+            rx.hstack(
+                rx.text("Proyecto:", font_weight="bold", color=COLORS["foreground"], font_size="1.1em"),
+                rx.select(
+                    State.proyecciones_projects_select,
+                    placeholder="Seleccionar proyecto...",
+                    value=State.proyecciones_project_name,
+                    on_change=State.set_proyecciones_project,
+                    width="350px",
+                    size="3",
+                ),
+                spacing="4",
+                align="center",
+            ),
+            width="100%",
+            spacing="3",
+            padding="1.5em",
+            background_color=COLORS["card"],
+            border=f"1px solid {COLORS['border']}",
+            border_radius="0.5em",
+        ),
+        # ===== CAPA 2: Selector de versión + Botón crear =====
+        rx.cond(
+            State.proyecciones_project_id > 0,
+            rx.vstack(
+                rx.hstack(
+                    rx.icon("git-branch", size=28, color=COLORS["primary"]),
+                    rx.heading("Versiones del Proyecto", size="6", color=COLORS["foreground"]),
+                    spacing="3",
+                    align="center",
+                ),
+                rx.hstack(
+                    rx.vstack(
+                        rx.text("Versión:", font_weight="bold", color=COLORS["foreground"]),
+                        rx.select(
+                            State.proyecciones_versions_select,
+                            placeholder="Seleccionar versión...",
+                            value=State.proyecciones_version_folder,
+                            on_change=State.set_proyecciones_version,
+                            width="200px",
+                            size="3",
+                            disabled=State.is_loading_versions,
+                        ),
+                        spacing="1",
+                    ),
+                    rx.button(
+                        rx.icon("plus", size=18),
+                        "Crear nueva versión",
+                        on_click=State.create_new_version,
+                        color_scheme="green",
+                        size="3",
+                        disabled=State.is_loading_versions,
+                        style={"font_weight": "bold", "color": "black"},
+                    ),
+                    spacing="4",
+                    align="end",
+                ),
+                rx.cond(
+                    State.proyecciones_error != "",
+                    rx.text(State.proyecciones_error, color="red", font_size="0.95em"),
+                ),
+                rx.cond(
+                    State.proyecciones_success != "",
+                    rx.text(State.proyecciones_success, color="green", font_size="0.95em"),
+                ),
+                width="100%",
+                spacing="3",
+                padding="1.5em",
+                background_color=COLORS["card"],
+                border=f"1px solid {COLORS['border']}",
+                border_radius="0.5em",
+            ),
+            rx.fragment(),
+        ),
+        # ===== CAPA 3: Explorador de archivos (placeholder) =====
+        rx.cond(
+            (State.proyecciones_project_id > 0) & (State.proyecciones_version_id > 0),
+            rx.vstack(
+                rx.hstack(
+                    rx.icon("folder-tree", size=28, color=COLORS["primary"]),
+                    rx.heading("Explorador de Archivos", size="6", color=COLORS["foreground"]),
+                    spacing="3",
+                    align="center",
+                ),
+                rx.divider(color=COLORS["border"]),
+                # Información de contexto para el futuro componente
+                rx.vstack(
+                    rx.text(
+                        "Contexto para el Administrador de Archivos:",
+                        font_weight="bold",
+                        color=COLORS["foreground"],
+                        font_size="1.1em",
+                    ),
+                    rx.hstack(
+                        rx.text("Organización:", font_weight="bold", color=COLORS["muted_foreground"]),
+                        rx.code(State.proyecciones_org_folder, color=COLORS["primary"]),
+                        spacing="2",
+                    ),
+                    rx.hstack(
+                        rx.text("Proyecto:", font_weight="bold", color=COLORS["muted_foreground"]),
+                        rx.code(State.proyecciones_prj_folder, color=COLORS["primary"]),
+                        spacing="2",
+                    ),
+                    rx.hstack(
+                        rx.text("Versión:", font_weight="bold", color=COLORS["muted_foreground"]),
+                        rx.code(State.proyecciones_version_folder, color=COLORS["primary"]),
+                        spacing="2",
+                    ),
+                    spacing="2",
+                    padding="1em",
+                    background_color=f"{COLORS['primary']}10",
+                    border_radius="0.5em",
+                ),
+                rx.text(
+                    "🚧 El componente 'Explorador de Archivos' se implementará próximamente",
+                    color=COLORS["muted_foreground"],
+                    font_size="1.05em",
+                    font_style="italic",
+                    text_align="center",
+                    margin_top="1em",
+                ),
+                width="100%",
+                spacing="3",
+                padding="1.5em",
+                background_color=COLORS["card"],
+                border=f"1px solid {COLORS['border']}",
+                border_radius="0.5em",
+                min_height="300px",
+            ),
+            rx.fragment(),
+        ),
+        width="100%",
+        spacing="4",
+    )
+
+
 def organization_management_panels() -> rx.Component:
     """Paneles de gestión de usuarios y proyectos para la sección Organización."""
     return rx.vstack(
@@ -3191,9 +3545,7 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
     )
     organization_text = load_organizacion_content()
     technologies_text = load_tecnologias_content()
-    projections_text = load_menu_content(
-        "proyecciones.txt", "Proyecciones, estimaciones y próximos hitos."
-    )
+    projections_text = load_proyecciones_content()
     tracking_text = load_menu_content(
         "seguimiento.txt", "Seguimiento de avances, entregas y validaciones."
     )
@@ -3319,6 +3671,12 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
                 width="100%",
                 spacing="4",
             ),
+            rx.box(height="0"),
+        ),
+        # Panel de gestión de proyecciones: visible solo en menú "proyecciones"
+        rx.cond(
+            rx.cond(is_logged_in, active_item == "proyecciones", False),
+            proyecciones_management_panel(),
             rx.box(height="0"),
         ),
         # Paneles de métricas: visibles solo en menú "inicio"

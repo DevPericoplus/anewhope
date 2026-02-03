@@ -446,10 +446,13 @@ def send_message_by_sms(otp: str, phone_number: str) -> bool:
             response_data = response.json()
             logger.info(f"SMS enviado exitosamente al número {phone_number}")
             logger.info(f"Respuesta completa de la API: {json.dumps(response_data, indent=2)}")
-            
+
             # Verificar el estado de entrega en la respuesta
             # La API de Infobip puede retornar 200 pero con información sobre el estado de entrega
             sms_actually_sent = True
+            message_id = None
+            status_name = "UNKNOWN"
+
             try:
                 if "messages" in response_data:
                     for msg in response_data.get("messages", []):
@@ -457,29 +460,94 @@ def send_message_by_sms(otp: str, phone_number: str) -> bool:
                         status_name = status.get("name", "UNKNOWN")
                         status_description = status.get("description", "")
                         message_id = msg.get("messageId", "")
-                        
+
                         logger.info(
-                            f"Estado del mensaje (ID: {message_id}): {status_name} - {status_description}"
+                            f"Estado inicial del mensaje (ID: {message_id}): {status_name} - {status_description}"
                         )
-                        
-                        # Si el estado no es "PENDING_ACCEPTED" o similar, puede haber un problema
-                        # Estados comunes de Infobip: PENDING, PENDING_ACCEPTED, ACCEPTED, DELIVERED, REJECTED, etc.
-                        if status_name not in ["PENDING", "PENDING_ACCEPTED", "ACCEPTED", "DELIVERED", "DELIVERED_TO_HANDSET"]:
-                            logger.warning(
-                                f"⚠️ El mensaje puede no haberse enviado correctamente. "
+
+                        # Si el estado es rechazado inmediatamente, no continuar
+                        if status_name in ["REJECTED", "UNDELIVERABLE", "EXPIRED", "MESSAGE_NOT_SENT"]:
+                            logger.error(
+                                f"❌ El SMS fue rechazado o no se pudo entregar. "
                                 f"Estado: {status_name} - {status_description}"
                             )
-                            # Si el estado es REJECTED o similar, registrar como error
-                            if status_name in ["REJECTED", "UNDELIVERABLE", "EXPIRED", "MESSAGE_NOT_SENT"]:
-                                logger.error(
-                                    f"❌ El SMS fue rechazado o no se pudo entregar. "
-                                    f"Estado: {status_name} - {status_description}"
+                            sms_actually_sent = False
+                            break
+
+                        # Si es un estado intermedio (PENDING_*), verificar el delivery status final
+                        # Estados intermedios: PENDING, PENDING_ACCEPTED, ACCEPTED
+                        # Estados finales: DELIVERED_TO_HANDSET, DELIVERED_TO_NETWORK, REJECTED, etc.
+                        if status_name.startswith("PENDING") or status_name == "ACCEPTED":
+                            logger.info(
+                                f"⏳ Estado intermedio detectado ({status_name}). "
+                                f"Verificando delivery status final..."
+                            )
+
+                            # Importar y usar el verificador de delivery status
+                            try:
+                                # Intentar importación relativa primero (cuando se usa como módulo)
+                                try:
+                                    from .sms_delivery_checker import check_sms_delivery_status, get_delivery_status_summary
+                                except ImportError:
+                                    # Importación absoluta (cuando se usa desde scripts)
+                                    import importlib.util
+                                    checker_path = Path(__file__).parent / "sms_delivery_checker.py"
+                                    spec = importlib.util.spec_from_file_location("sms_delivery_checker", checker_path)
+                                    checker_module = importlib.util.module_from_spec(spec)
+                                    spec.loader.exec_module(checker_module)
+                                    check_sms_delivery_status = checker_module.check_sms_delivery_status
+                                    get_delivery_status_summary = checker_module.get_delivery_status_summary
+
+                                # Verificar el estado final (espera hasta 30 segundos)
+                                delivered, final_status, delivery_report = check_sms_delivery_status(
+                                    message_id=message_id,
+                                    api_url=sms_api_url,
+                                    api_key=sms_api_key,
+                                    max_wait_seconds=30,
+                                    check_interval=5,
                                 )
-                                sms_actually_sent = False
+
+                                # Actualizar variables con el estado final
+                                status_name = final_status
+                                sms_actually_sent = delivered
+
+                                logger.info(
+                                    f"{'✅' if delivered else '❌'} Estado final verificado: {final_status} - "
+                                    f"{get_delivery_status_summary(final_status)}"
+                                )
+
+                                # Si obtuvimos delivery report, actualizar response_data con info adicional
+                                if delivery_report:
+                                    msg["delivery_report"] = delivery_report
+                                    msg["final_status"] = final_status
+                                    msg["delivery_verified"] = True
+                                    # Actualizar el status en el mensaje para que se registre correctamente
+                                    msg["status"] = delivery_report.get("status", msg.get("status"))
+
+                            except ImportError as e:
+                                logger.warning(
+                                    f"No se pudo importar sms_delivery_checker: {e}. "
+                                    f"Usando estado intermedio {status_name}"
+                                )
+                            except Exception as e:
+                                logger.error(
+                                    f"Error al verificar delivery status: {e}",
+                                    exc_info=True
+                                )
+                        elif status_name in ["DELIVERED_TO_HANDSET", "DELIVERED_TO_NETWORK"]:
+                            # Ya está en estado final de entrega exitosa
+                            logger.info(f"✅ Mensaje entregado inmediatamente: {status_name}")
+                            sms_actually_sent = True
+                        else:
+                            # Otros estados
+                            logger.warning(
+                                f"⚠️ Estado no reconocido: {status_name} - {status_description}"
+                            )
+
             except Exception as e:
-                logger.debug(f"No se pudo analizar el estado de entrega: {e}")
-            
-            # Registrar en log de seguridad
+                logger.error(f"Error al analizar el estado de entrega: {e}", exc_info=True)
+
+            # Registrar en log de seguridad con el estado final
             send_sms_details_to_log(otp, phone_number, success=sms_actually_sent, response_data=response_data)
             return sms_actually_sent
         else:

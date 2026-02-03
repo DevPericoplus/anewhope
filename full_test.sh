@@ -100,9 +100,21 @@ pytest -v --rootdir=src/apps/3_backend src/apps/3_backend/tests/test_tecnologias
 echo ""
 
 echo "=========================================="
+echo "TESTS: Versiones API (3_backend)"
+echo "=========================================="
+pytest -v --rootdir=src/apps/3_backend src/apps/3_backend/tests/test_versiones_api.py
+echo ""
+
+echo "=========================================="
 echo "TESTS: Tecnologías Middleware (7_service_frontend)"
 echo "=========================================="
 pytest -v --rootdir=src/apps/7_service_frontend src/apps/7_service_frontend/tests/test_tecnologias_middleware.py
+echo ""
+
+echo "=========================================="
+echo "TESTS: Versiones Middleware (7_service_frontend)"
+echo "=========================================="
+pytest -v --rootdir=src/apps/7_service_frontend src/apps/7_service_frontend/tests/test_versiones_middleware.py
 echo ""
 
 deactivate
@@ -144,7 +156,9 @@ echo "  ✅ Service Backend (8_service_backend)"
 echo "  ✅ Backend Core (3_backend)"
 echo "  ✅ Version Transfer (3_backend)"
 echo "  ✅ Tecnologías API (3_backend)"
+echo "  ✅ Versiones API (3_backend)"
 echo "  ✅ Tecnologías Middleware (7_service_frontend)"
+echo "  ✅ Versiones Middleware (7_service_frontend)"
 if [ -d "$FMANAGEMENT_PATH" ] && [ -f "$FMANAGEMENT_PATH/main_test.go" ]; then
     echo "  ✅ fmanagement (Go API)"
 fi

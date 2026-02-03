@@ -391,6 +391,117 @@ def test_secure_access_redirect():
     assert state.user_email == ""
 
 
+@patch("pages.change_password.get_user_by_email")
+@patch("pages.change_password._send_message_by_sms")
+def test_request_otp_for_adminone_user(mock_send_sms, mock_get_user):
+    """
+    Test de integración que simula el flujo completo de solicitud de OTP para el usuario adminone.
+
+    Este test verifica:
+    1. Que se puede solicitar OTP para el usuario adminone@myllm.ai
+    2. Que el SMS se envía al teléfono correcto (+34639775978)
+    3. Que el OTP se obtiene del usuario correctamente
+    4. Que la interfaz muestra el mensaje de éxito
+
+    Uso futuro:
+    - Ejecutar este test para verificar que la funcionalidad sigue funcionando
+    - Si falla, indica problemas en:
+      * get_user_by_email
+      * send_message_by_sms
+      * Lógica de request_otp en ChangePasswordState
+
+    Para ejecutar:
+        pytest src/apps/5_web_frontend/tests/test_change_password.py::test_request_otp_for_adminone_user -v
+    """
+    # Datos reales del usuario adminone (mock basado en users.json)
+    mock_adminone_user = {
+        "user_id": 1,
+        "organization_id": 1,
+        "identity_type_id": 1,
+        "user_name": "adminone",
+        "user_password": "gAAAAABpb4h-XLaIMoNXOCTwy_OMRgxyQ_EQc3mZhe95orpSp4j0Y5XBFY07MbfDYm4VsRo9cqbd-orOZ_YiiApJ158VK04tLQ==",  # Password01 cifrado
+        "user_email": "adminone@myllm.ai",
+        "user_mobile": "+34639775978",
+        "user_otp": "8379",  # OTP actual del sistema
+        "active": True,
+        "blocked": False,
+    }
+
+    # Configurar mocks
+    mock_get_user.return_value = mock_adminone_user
+    mock_send_sms.return_value = True  # Simula envío exitoso
+
+    # Crear estado y simular ingreso de email
+    state = ChangePasswordState()
+    state.user_email = "adminone@myllm.ai"
+
+    # Simular clic en "Solicitar código OTP"
+    state.request_otp()
+
+    # Verificaciones
+    assert state.user_found is True, "El usuario adminone debe ser encontrado"
+    assert state.otp_sent is True, "El OTP debe marcarse como enviado"
+    assert state.step == 2, "Debe avanzar al paso 2 (ingresar OTP)"
+    assert state.message_type == "success", "Debe mostrar mensaje de éxito"
+    assert "Código OTP enviado exitosamente" in state.message or "exitosamente" in state.message.lower()
+
+    # Verificar que se llamó a get_user_by_email con el email correcto
+    mock_get_user.assert_called_once()
+    called_email = mock_get_user.call_args[0][0]
+    assert called_email == "adminone@myllm.ai", f"Debe buscar por email adminone@myllm.ai, pero se llamó con {called_email}"
+
+    # Verificar que se llamó a send_message_by_sms con los parámetros correctos
+    mock_send_sms.assert_called_once()
+    otp_sent = mock_send_sms.call_args[0][0]
+    phone_sent = mock_send_sms.call_args[0][1]
+
+    assert otp_sent == "8379", f"El OTP enviado debe ser 8379, pero se envió {otp_sent}"
+    assert phone_sent == "+34639775978", f"El teléfono debe ser +34639775978, pero se envió {phone_sent}"
+
+    # Verificar que user_data se guardó correctamente en el estado
+    assert state.user_data is not None, "user_data debe guardarse en el estado"
+    assert state.user_data.get("user_email") == "adminone@myllm.ai"
+    assert state.user_data.get("user_mobile") == "+34639775978"
+
+    print("✅ Test exitoso: La funcionalidad de solicitud de OTP funciona correctamente para adminone")
+
+
+@patch("pages.change_password.get_user_by_email")
+@patch("pages.change_password._send_message_by_sms")
+def test_request_otp_adminone_sms_delivery_failure(mock_send_sms, mock_get_user):
+    """
+    Test que verifica el manejo cuando el SMS falla al enviarse para adminone.
+
+    Simula el escenario donde Infobip acepta el request pero no entrega el SMS
+    (el problema actual que estamos investigando).
+    """
+    # Datos del usuario adminone
+    mock_adminone_user = {
+        "user_id": 1,
+        "user_email": "adminone@myllm.ai",
+        "user_mobile": "+34639775978",
+        "user_otp": "8379",
+    }
+
+    # Configurar mocks
+    mock_get_user.return_value = mock_adminone_user
+    mock_send_sms.return_value = False  # Simula fallo en envío
+
+    # Crear estado y ejecutar
+    state = ChangePasswordState()
+    state.user_email = "adminone@myllm.ai"
+    state.request_otp()
+
+    # Verificaciones
+    assert state.user_found is True, "El usuario debe ser encontrado"
+    assert state.otp_sent is False, "El OTP no debe marcarse como enviado si falló el SMS"
+    assert state.step == 1, "No debe avanzar de paso si falló el envío"
+    assert state.message_type == "error", "Debe mostrar mensaje de error"
+    assert "Error al enviar el código OTP" in state.message
+
+    print("✅ Test exitoso: El manejo de errores de envío SMS funciona correctamente")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 

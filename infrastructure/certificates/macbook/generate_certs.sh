@@ -32,21 +32,28 @@ else
 fi
 
 echo ""
+echo "📋 Detectando IPs locales..."
+LOCAL_IPS=$(ifconfig | grep "inet " | grep -v "127.0.0.1" | awk '{print $2}' | tr '\n' ' ')
+echo "  IPs detectadas: ${LOCAL_IPS}"
+echo ""
 echo "📋 Generando certificados para:"
 echo "  - tfmmyllm.ai"
 echo "  - *.tfmmyllm.ai (wildcard)"
 echo "  - localhost"
 echo "  - 127.0.0.1"
 echo "  - ::1"
+for ip in $LOCAL_IPS; do
+    echo "  - $ip (IP local detectada)"
+done
 echo ""
 
 # Navegar al directorio de certificados
 cd "$(dirname "$0")"
 
-# Generar certificados
+# Generar certificados incluyendo IPs locales
 mkcert -key-file tfmmyllm.ai-key.pem \
        -cert-file tfmmyllm.ai.pem \
-       tfmmyllm.ai "*.tfmmyllm.ai" localhost 127.0.0.1 ::1
+       tfmmyllm.ai "*.tfmmyllm.ai" localhost 127.0.0.1 ::1 $LOCAL_IPS
 
 echo ""
 echo "✅ Certificados generados exitosamente"

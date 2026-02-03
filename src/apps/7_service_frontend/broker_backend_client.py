@@ -736,3 +736,77 @@ class BrokerBackendClient:
         """Obtiene todas las tecnologías asignadas a proyectos de una organización."""
         data = self._request("GET", f"/organizaciones/{org_id}/tecnologias-asignadas")
         return dict(data or {})
+    # ========================================================================
+    # GESTIÓN DE VERSIONES DE PROYECTOS
+    # ========================================================================
+
+    def get_project_versions(self, project_id: int, org_id: int) -> dict[str, Any]:
+        """Obtiene todas las versiones de un proyecto."""
+        data = self._request("GET", f"/proyectos/{project_id}/versiones?org_id={org_id}")
+        return dict(data or {})
+
+    def create_project_version(self, project_id: int, org_id: int) -> dict[str, Any]:
+        """Crea una nueva versión para un proyecto."""
+        payload = {"id_proyecto": project_id, "id_organizacion": org_id}
+        data = self._request("POST", f"/proyectos/{project_id}/versiones", payload=payload)
+        return dict(data or {})
+
+    # ===================================================================
+    # GESTIÓN DE ESTADOS DE VERSIÓN
+    # ===================================================================
+
+    def get_version_state(
+        self, project_id: int, version_id: int, org_id: int
+    ) -> dict[str, Any]:
+        """Obtiene el estado actual de una versión."""
+        data = self._request(
+            "GET",
+            f"/proyectos/{project_id}/versiones/{version_id}/estado?org_id={org_id}",
+        )
+        return dict(data or {})
+
+    def update_version_state(
+        self, project_id: int, version_id: int, org_id: int, update_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Actualiza el estado de una versión."""
+        data = self._request(
+            "PATCH",
+            f"/proyectos/{project_id}/versiones/{version_id}/estado?org_id={org_id}",
+            payload=update_data,
+        )
+        return dict(data or {})
+
+    def get_version_events(
+        self, project_id: int, version_id: int, org_id: int, limit: int = 50
+    ) -> dict[str, Any]:
+        """Obtiene el historial de eventos de una versión."""
+        data = self._request(
+            "GET",
+            f"/proyectos/{project_id}/versiones/{version_id}/eventos?org_id={org_id}&limit={limit}",
+        )
+        return dict(data or {})
+
+    def create_version_full(
+        self, project_id: int, request_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Crea una versión completa (DB + fmanagement)."""
+        data = self._request(
+            "POST",
+            f"/proyectos/{project_id}/versiones/crear-completa",
+            payload=request_data,
+        )
+        return dict(data or {})
+
+    # ===================================================================
+    # INTEGRACIÓN CON FMANAGEMENT
+    # ===================================================================
+
+    def fmanagement_list(self, request_data: dict[str, Any]) -> dict[str, Any]:
+        """Lista estructura de archivos vía fmanagement."""
+        data = self._request("POST", "/fmanagement/list", payload=request_data)
+        return dict(data or {})
+
+    def fmanagement_operation(self, request_data: dict[str, Any]) -> dict[str, Any]:
+        """Ejecuta una operación genérica en fmanagement."""
+        data = self._request("POST", "/fmanagement/operation", payload=request_data)
+        return dict(data or {})

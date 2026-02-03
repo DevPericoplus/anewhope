@@ -1,0 +1,119 @@
+# ============================================================================
+# fmanagement - File Management Operations API
+# Configuración completa de rutas y operaciones para entorno: macbook
+# ============================================================================
+#
+# SINCRONIZACIÓN: Este archivo debe mantenerse sincronizado con
+# /Users/administrator/develop/fmanagement/env/macbook/fmanagement_paths.yml
+#
+
+# --------------------------------------------------------------------------
+# Configuración de permisos
+# --------------------------------------------------------------------------
+permissions_source: mock
+middleware_base_url: http://localhost:8007
+core_backend_base_url: http://localhost:8003
+
+# --------------------------------------------------------------------------
+# Rutas base de almacenamiento - External (contenido de clientes)
+# --------------------------------------------------------------------------
+backend_core_base_storage: ~/data/anewhope/files/backend_server/external
+backend_ia_base_storage: ~/data/anewhope/files/trainer_server/external
+
+# --------------------------------------------------------------------------
+# Rutas base de almacenamiento - Internal (contenido generado por sistema)
+# --------------------------------------------------------------------------
+backend_core_internal_storage: ~/data/anewhope/files/backend_server/internal
+backend_ia_internal_storage: ~/data/anewhope/files/trainer_server/internal
+
+# Rutas específicas dentro de internal
+backend_core_models_storage: ~/data/anewhope/files/backend_server/internal/models
+backend_core_reports_storage: ~/data/anewhope/files/backend_server/internal/reports
+backend_ia_models_storage: ~/data/anewhope/files/trainer_server/internal/models
+backend_ia_reports_storage: ~/data/anewhope/files/trainer_server/internal/reports
+
+# --------------------------------------------------------------------------
+# Rutas de logs por servicio
+# --------------------------------------------------------------------------
+# Backend server
+backend_core_logs_path: ~/data/anewhope/files/backend_server/backend_core/logs
+service_backend_logs_path: ~/data/anewhope/files/backend_server/service_backend/logs
+fmanagement_logs_path: ~/data/anewhope/files/backend_server/fmanagement/logs
+
+# Frontend server
+backoffice_logs_path: ~/data/anewhope/files/frontend_server/backoffice/logs
+frontend_logs_path: ~/data/anewhope/files/frontend_server/frontend/logs
+middleware_logs_path: ~/data/anewhope/files/frontend_server/middleware/logs
+
+# Trainer server
+backend_ia_logs_path: ~/data/anewhope/files/trainer_server/backend_ia/logs
+
+# --------------------------------------------------------------------------
+# Rutas de persistencia de bases de datos
+# --------------------------------------------------------------------------
+mariadb_data_path: ~/data/anewhope/files/backend_server/Mariadb
+redis_data_path: ~/data/anewhope/files/frontend_server/persistence/redis
+chroma_data_path: ~/data/anewhope/files/trainer_server/persistence/chroma
+
+# --------------------------------------------------------------------------
+# Rutas de imágenes Docker (tar.gz)
+# --------------------------------------------------------------------------
+backend_images_path: ~/data/anewhope/files/backend_server/images
+frontend_images_path: ~/data/anewhope/files/frontend_server/images
+trainer_images_path: ~/data/anewhope/files/trainer_server/images
+
+# --------------------------------------------------------------------------
+# Versiones de imágenes Docker
+# --------------------------------------------------------------------------
+docker_image_name_prefix: anewhope
+backend_core_image_version: 1.0.0
+service_backend_image_version: 1.0.0
+fmanagement_image_version: 1.0.0
+frontend_image_version: 1.0.0
+backoffice_image_version: 1.0.0
+middleware_image_version: 1.0.0
+backend_ia_image_version: 1.0.0
+
+# --------------------------------------------------------------------------
+# Configuración de transferencia de versiones
+# --------------------------------------------------------------------------
+transfer_mode: local
+
+# --------------------------------------------------------------------------
+# Configuración de sincronización rsync
+# --------------------------------------------------------------------------
+rsync_enabled: false
+
+# Direcciones de sincronización (no aplica en macbook - desarrollo local)
+rsync_external_direction: backend_to_trainer
+rsync_external_trigger: on_demand
+rsync_models_direction: trainer_to_backend
+rsync_models_trigger: automatic
+rsync_reports_direction: trainer_to_backend
+rsync_reports_trigger: automatic
+
+# Intervalo de sincronización automática (segundos)
+rsync_automatic_interval: 300
+
+# --------------------------------------------------------------------------
+# Configuración SSH para transferencias remotas (NO USADO en macbook)
+# --------------------------------------------------------------------------
+trainer_ssh_host: ""
+trainer_ssh_user: ""
+trainer_ssh_key_path: ""
+trainer_ssh_port: 22
+
+core_ssh_host: ""
+core_ssh_user: ""
+core_ssh_key_path: ""
+core_ssh_port: 22
+
+# --------------------------------------------------------------------------
+# Notas de configuración
+# --------------------------------------------------------------------------
+# Entorno: macbook (desarrollo local)
+# - TRANSFER_MODE=local (emula transferencias con dos rutas locales)
+# - RSYNC_ENABLED=false (no se usa rsync en desarrollo)
+# - Rutas con ~ (expandido a HOME del usuario)
+# - Sin configuración SSH (no se usa en desarrollo local)
+# - Backend y Trainer comparten mismo filesystem (no necesitan sincronización)

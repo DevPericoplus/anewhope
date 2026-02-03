@@ -1151,6 +1151,160 @@ class TecnologiasAsignadasResponse(BaseModel):
     total: int
 
 
+# ========================================================================
+# DTOs para Gestión de Versiones
+# ========================================================================
+
+
+class VersionDto(BaseModel):
+    """DTO de versión de proyecto."""
+
+    id_version: int
+    id_proyecto: int
+    id_organizacion: int
+    version_folder: str
+
+
+class VersionesListResponse(BaseModel):
+    """Respuesta con lista de versiones de un proyecto."""
+
+    versiones: list[VersionDto]
+    total: int
+
+
+class CrearVersionRequest(BaseModel):
+    """Request para crear una nueva versión."""
+
+    id_proyecto: int
+    id_organizacion: int
+
+
+class CrearVersionResponse(BaseModel):
+    """Respuesta de creación de versión."""
+
+    success: bool
+    version: VersionDto | None = None
+    mensaje: str | None = None
+
+
+# DTOs para Estados de Versión
+# ========================================================================
+
+
+class VersionStateDto(BaseModel):
+    """Estado completo de una versión."""
+
+    id: int
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    state: str
+    protected: bool
+    size_bytes: int
+    final_c: bool
+    final_i: bool
+    created_at: str
+    updated_at: str
+    updated_by_user_id: int | None
+
+
+class VersionStateResponse(BaseModel):
+    """Respuesta con estado de versión."""
+
+    success: bool
+    message: str
+    data: VersionStateDto | None
+
+
+class UpdateVersionStateRequest(BaseModel):
+    """Request para actualizar estado de versión."""
+
+    state: str | None = None
+    protected: bool | None = None
+    final_c: bool | None = None
+    final_i: bool | None = None
+    user_id: int
+
+
+class VersionEventDto(BaseModel):
+    """Evento de versión para auditoría."""
+
+    id: int
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    evento: str
+    mensaje: str
+    user_id: int
+    user_name: str | None
+    old_state: str | None
+    new_state: str | None
+    metadata: dict | None
+    timestamp: str
+
+
+class VersionEventsResponse(BaseModel):
+    """Respuesta con lista de eventos de versión."""
+
+    success: bool
+    message: str
+    data: list[VersionEventDto]
+    total: int
+
+
+class CreateVersionFullRequest(BaseModel):
+    """Request para crear versión completa (DB + fmanagement)."""
+
+    id_organizacion: int
+    user_id: int
+    identity_type_id: int
+    descripcion: str | None = None
+    clone_from_version: int | None = None
+
+
+class CreateVersionFullResponse(BaseModel):
+    """Respuesta de creación completa de versión."""
+
+    success: bool
+    message: str
+    version_id: int | None
+    version_folder: str | None
+    fmanagement_result: dict | None
+
+
+class FmanagementListRequest(BaseModel):
+    """Request para listar estructura vía fmanagement."""
+
+    org_folder: str
+    prj_folder: str
+    version_folder: str
+    user_id: int
+    identity_type_id: int
+
+
+class FmanagementListResponse(BaseModel):
+    """Respuesta de listado de fmanagement."""
+
+    success: bool
+    message: str
+    data: dict | None
+
+
+class FmanagementOperationRequest(BaseModel):
+    """Request genérico para operaciones fmanagement."""
+
+    operation: str
+    params: dict
+
+
+class FmanagementOperationResponse(BaseModel):
+    """Respuesta de operación fmanagement."""
+
+    success: bool
+    message: str
+    data: dict | None
+
+
 class TicketDto(BaseModel):
     """DTO de ticket."""
 
@@ -1911,4 +2065,499 @@ def get_tecnologias_asignadas_org(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Error consultando tecnologías asignadas")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ========================================================================
+# Endpoints de Gestión de Versiones
+# ========================================================================
+
+
+@app.get(
+    "/proyectos/{project_id}/versiones",
+    response_model=VersionesListResponse,
+    tags=["versiones"],
+)
+def get_project_versions(
+    project_id: int,
+    org_id: int,
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> VersionesListResponse:
+    """Obtiene todas las versiones de un proyecto.
+
+    Enruta a Backend Core → MariaDB
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("[broker] Consultando versiones proyecto=%s org=%s", project_id, org_id)
+
+    try:
+        result = router.get_project_versions(project_id, org_id)
+        return VersionesListResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error consultando versiones")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post(
+    "/proyectos/{project_id}/versiones",
+    response_model=CrearVersionResponse,
+    tags=["versiones"],
+)
+def create_project_version(
+    project_id: int,
+    request: CrearVersionRequest,
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> CrearVersionResponse:
+    """Crea una nueva versión para un proyecto.
+
+    Enruta a Backend Core → MariaDB
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("[broker] Creando versión proyecto=%s org=%s", project_id, request.id_organizacion)
+
+    try:
+        result = router.create_project_version(project_id, request.id_organizacion)
+        return CrearVersionResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error creando versión")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# Endpoints de Estados de Versión
+# ========================================================================
+
+
+@app.get(
+    "/proyectos/{project_id}/versiones/{version_id}/estado",
+    response_model=VersionStateResponse,
+    tags=["version-states"],
+)
+def get_version_state(
+    project_id: int,
+    version_id: int,
+    org_id: int,
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> VersionStateResponse:
+    """Obtiene el estado actual de una versión.
+    
+    Enruta a Backend Core → MariaDB
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[broker] [%s] Obteniendo estado versión=%s proyecto=%s org=%s",
+        client_app,
+        version_id,
+        project_id,
+        org_id,
+    )
+
+    try:
+        result = router.get_version_state(project_id, version_id, org_id)
+        return VersionStateResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error obteniendo estado versión")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.patch(
+    "/proyectos/{project_id}/versiones/{version_id}/estado",
+    response_model=VersionStateResponse,
+    tags=["version-states"],
+)
+def update_version_state(
+    project_id: int,
+    version_id: int,
+    org_id: int,
+    request: UpdateVersionStateRequest,
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> VersionStateResponse:
+    """Actualiza el estado de una versión.
+    
+    Enruta a Backend Core → MariaDB
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[broker] [%s] Actualizando estado versión=%s proyecto=%s",
+        client_app,
+        version_id,
+        project_id,
+    )
+
+    try:
+        result = router.update_version_state(project_id, version_id, org_id, request.model_dump(exclude_unset=True))
+        return VersionStateResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error actualizando estado versión")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get(
+    "/proyectos/{project_id}/versiones/{version_id}/eventos",
+    response_model=VersionEventsResponse,
+    tags=["version-states"],
+)
+def get_version_events(
+    project_id: int,
+    version_id: int,
+    org_id: int,
+    limit: int = 50,
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> VersionEventsResponse:
+    """Obtiene el historial de eventos de una versión.
+    
+    Enruta a Backend Core → MariaDB
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[broker] [%s] Obteniendo eventos versión=%s proyecto=%s",
+        client_app,
+        version_id,
+        project_id,
+    )
+
+    try:
+        result = router.get_version_events(project_id, version_id, org_id, limit)
+        return VersionEventsResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error obteniendo eventos versión")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post(
+    "/proyectos/{project_id}/versiones/crear-completa",
+    response_model=CreateVersionFullResponse,
+    tags=["versiones"],
+)
+def create_version_full(
+    project_id: int,
+    request: CreateVersionFullRequest,
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> CreateVersionFullResponse:
+    """Crea una nueva versión completa (DB + fmanagement).
+    
+    Enruta a Backend Core → MariaDB + fmanagement
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[broker] [%s] Creando versión completa proyecto=%s org=%s user=%s",
+        client_app,
+        project_id,
+        request.id_organizacion,
+        request.user_id,
+    )
+
+    try:
+        result = router.create_version_full(project_id, request.model_dump())
+        return CreateVersionFullResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error creando versión completa")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# Endpoints de Integración con fmanagement
+# ========================================================================
+
+
+@app.post(
+    "/fmanagement/list",
+    response_model=FmanagementListResponse,
+    tags=["fmanagement"],
+)
+def fmanagement_list(
+    request: FmanagementListRequest,
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> FmanagementListResponse:
+    """Lista estructura de archivos vía fmanagement.
+    
+    Enruta a Backend Core → fmanagement
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[broker] [%s] Listando fmanagement org=%s prj=%s version=%s",
+        client_app,
+        request.org_folder,
+        request.prj_folder,
+        request.version_folder,
+    )
+
+    try:
+        result = router.fmanagement_list(request.model_dump())
+        return FmanagementListResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error listando fmanagement")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post(
+    "/fmanagement/operation",
+    response_model=FmanagementOperationResponse,
+    tags=["fmanagement"],
+)
+def fmanagement_operation(
+    request: FmanagementOperationRequest,
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> FmanagementOperationResponse:
+    """Ejecuta una operación genérica en fmanagement.
+    
+    Enruta a Backend Core → fmanagement
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[broker] [%s] Operación fmanagement: %s",
+        client_app,
+        request.operation,
+    )
+
+    try:
+        result = router.fmanagement_operation(request.model_dump())
+        return FmanagementOperationResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error en operación fmanagement")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# Endpoints de Estados de Versión
+# ========================================================================
+
+
+@app.get(
+    "/proyectos/{project_id}/versiones/{version_id}/estado",
+    response_model=VersionStateResponse,
+    tags=["version-states"],
+)
+def get_version_state(
+    project_id: int,
+    version_id: int,
+    org_id: int,
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> VersionStateResponse:
+    """Obtiene el estado actual de una versión.
+    
+    Enruta a Backend Core → MariaDB
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[broker] Obteniendo estado versión=%s proyecto=%s org=%s",
+        version_id,
+        project_id,
+        org_id,
+    )
+
+    try:
+        result = router.get_version_state(project_id, version_id, org_id)
+        return VersionStateResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error obteniendo estado de versión")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.patch(
+    "/proyectos/{project_id}/versiones/{version_id}/estado",
+    response_model=VersionStateResponse,
+    tags=["version-states"],
+)
+def update_version_state(
+    project_id: int,
+    version_id: int,
+    org_id: int,
+    request: UpdateVersionStateRequest,
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> VersionStateResponse:
+    """Actualiza el estado de una versión.
+    
+    Enruta a Backend Core → MariaDB
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[broker] Actualizando estado versión=%s proyecto=%s",
+        version_id,
+        project_id,
+    )
+
+    try:
+        result = router.update_version_state(
+            project_id, version_id, org_id, request.model_dump(exclude_unset=True)
+        )
+        return VersionStateResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error actualizando estado de versión")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get(
+    "/proyectos/{project_id}/versiones/{version_id}/eventos",
+    response_model=VersionEventsResponse,
+    tags=["version-states"],
+)
+def get_version_events(
+    project_id: int,
+    version_id: int,
+    org_id: int,
+    limit: int = 50,
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> VersionEventsResponse:
+    """Obtiene el historial de eventos de una versión.
+    
+    Enruta a Backend Core → MariaDB
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[broker] Obteniendo eventos versión=%s proyecto=%s",
+        version_id,
+        project_id,
+    )
+
+    try:
+        result = router.get_version_events(project_id, version_id, org_id, limit)
+        return VersionEventsResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error obteniendo eventos de versión")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post(
+    "/proyectos/{project_id}/versiones/crear-completa",
+    response_model=CreateVersionFullResponse,
+    tags=["versiones"],
+)
+def create_version_full(
+    project_id: int,
+    request: CreateVersionFullRequest,
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> CreateVersionFullResponse:
+    """Crea una nueva versión completa (DB + fmanagement).
+    
+    Enruta a Backend Core → MariaDB + fmanagement
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[broker] Creando versión completa proyecto=%s org=%s user=%s",
+        project_id,
+        request.id_organizacion,
+        request.user_id,
+    )
+
+    try:
+        result = router.create_version_full(
+            project_id,
+            request.id_organizacion,
+            request.user_id,
+            request.identity_type_id,
+            request.descripcion,
+            request.clone_from_version,
+        )
+        return CreateVersionFullResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error creando versión completa")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# Endpoints de Integración con fmanagement
+# ========================================================================
+
+
+@app.post(
+    "/fmanagement/list",
+    response_model=FmanagementListResponse,
+    tags=["fmanagement"],
+)
+def fmanagement_list(
+    request: FmanagementListRequest,
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> FmanagementListResponse:
+    """Lista estructura de archivos vía fmanagement.
+    
+    Enruta a Backend Core → fmanagement
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[broker] Listando fmanagement org=%s prj=%s version=%s",
+        request.org_folder,
+        request.prj_folder,
+        request.version_folder,
+    )
+
+    try:
+        result = router.fmanagement_list(
+            request.org_folder,
+            request.prj_folder,
+            request.version_folder,
+            request.user_id,
+            request.identity_type_id,
+        )
+        return FmanagementListResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error listando fmanagement")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post(
+    "/fmanagement/operation",
+    response_model=FmanagementOperationResponse,
+    tags=["fmanagement"],
+)
+def fmanagement_operation(
+    request: FmanagementOperationRequest,
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> FmanagementOperationResponse:
+    """Ejecuta una operación genérica en fmanagement.
+    
+    Enruta a Backend Core → fmanagement
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[broker] Operación fmanagement: %s",
+        request.operation,
+    )
+
+    try:
+        result = router.fmanagement_operation(
+            request.operation,
+            request.params,
+        )
+        return FmanagementOperationResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error en operación fmanagement")
         raise HTTPException(status_code=500, detail=str(exc)) from exc

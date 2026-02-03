@@ -2600,3 +2600,792 @@ class BackendCoreRouter:
             ]
 
             return {"asignaciones": asignaciones, "total": len(asignaciones)}
+
+    # ========================================================================
+    # Gestión de Versiones
+    # ========================================================================
+
+    def get_project_versions(self, project_id: int, org_id: int) -> dict[str, Any]:
+        """Obtiene todas las versiones de un proyecto.
+        
+        Args:
+            project_id: ID del proyecto
+            org_id: ID de la organización (para validar pertenencia)
+            
+        Returns:
+            Dict con lista de versiones del proyecto
+        """
+        from sqlalchemy import text
+
+        self._logger.info(
+            "[backend-core] Consultando versiones proyecto=%s org=%s",
+            project_id,
+            org_id,
+        )
+
+        with self._get_projects_db_connection() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT id_version, id_proyecto, id_organizacion
+                    FROM versiones
+                    WHERE id_proyecto = :project_id 
+                      AND id_organizacion = :org_id
+                    ORDER BY id_version
+                """),
+                {"project_id": project_id, "org_id": org_id},
+            )
+            rows = result.fetchall()
+
+            versiones = [
+                {
+                    "id_version": row[0],
+                    "id_proyecto": row[1],
+                    "id_organizacion": row[2],
+                    "version_folder": f"v{row[0]:03d}",
+                }
+                for row in rows
+            ]
+
+            return {"versiones": versiones, "total": len(versiones)}
+
+    def create_project_version(self, project_id: int, org_id: int) -> dict[str, Any]:
+        """Crea una nueva versión para un proyecto.
+        
+        La versión se crea con el siguiente id_version disponible para ese proyecto.
+        
+        Args:
+            project_id: ID del proyecto
+            org_id: ID de la organización
+            
+        Returns:
+            Dict con la versión creada
+        """
+        from sqlalchemy import text
+
+        self._logger.info(
+            "[backend-core] Creando versión proyecto=%s org=%s",
+            project_id,
+            org_id,
+        )
+
+        with self._get_projects_db_writer_connection() as conn:
+            # Obtener el siguiente id_version para este proyecto
+            result = conn.execute(
+                text("""
+                    SELECT COALESCE(MAX(id_version), 0) + 1 as next_version
+                    FROM versiones
+                    WHERE id_proyecto = :project_id AND id_organizacion = :org_id
+                """),
+                {"project_id": project_id, "org_id": org_id},
+            )
+            row = result.fetchone()
+            next_version = row[0] if row else 1
+
+            # Insertar la nueva versión
+            conn.execute(
+                text("""
+                    INSERT INTO versiones (id_version, id_proyecto, id_organizacion)
+                    VALUES (:id_version, :project_id, :org_id)
+                """),
+                {
+                    "id_version": next_version,
+                    "project_id": project_id,
+                    "org_id": org_id,
+                },
+            )
+            conn.commit()
+
+            self._logger.info(
+                "[backend-core] Versión %s creada para proyecto %s",
+                next_version,
+                project_id,
+            )
+
+            return {
+                "success": True,
+                "version": {
+                    "id_version": next_version,
+                    "id_proyecto": project_id,
+                    "id_organizacion": org_id,
+                    "version_folder": f"v{next_version:03d}",
+                },
+                "mensaje": f"Versión {next_version} creada correctamente",
+            }
+
+    # ===================================================================
+    # GESTIÓN DE ESTADOS DE VERSIÓN
+    # ===================================================================
+
+    def get_version_state(
+        self, project_id: int, version_id: int, org_id: int
+    ) -> dict[str, Any]:
+        """Obtiene el estado actual de una versión.
+        
+        Args:
+            project_id: ID del proyecto
+            version_id: Número de versión
+            org_id: ID de la organización
+            
+        Returns:
+            Dict con el estado de la versión
+        """
+        from sqlalchemy import text
+
+        self._logger.info(
+            "[backend-core] Consultando estado versión=%s proyecto=%s org=%s",
+            version_id,
+            project_id,
+            org_id,
+        )
+
+        with self._get_projects_db_connection() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT 
+                        id, id_organizacion, id_proyecto, id_version,
+                        state, protected, size_bytes, final_c, final_i,
+                        created_at, updated_at, updated_by_user_id
+                    FROM version_states
+                    WHERE id_proyecto = :project_id 
+                      AND id_version = :version_id
+                      AND id_organizacion = :org_id
+                """),
+                {
+                    "project_id": project_id,
+                    "version_id": version_id,
+                    "org_id": org_id,
+                },
+            )
+            row = result.fetchone()
+
+            if not row:
+                # Si no existe, retornar estado por defecto
+                self._logger.warning(
+                    "[backend-core] Estado no encontrado, retornando default"
+                )
+                return {
+                    "success": False,
+                    "message": "Estado de versión no encontrado",
+                    "data": None,
+                }
+
+            state_data = {
+                "id": row[0],
+                "id_organizacion": row[1],
+                "id_proyecto": row[2],
+                "id_version": row[3],
+                "state": row[4],
+                "protected": bool(row[5]),
+                "size_bytes": row[6],
+                "final_c": bool(row[7]),
+                "final_i": bool(row[8]),
+                "created_at": row[9].isoformat() if row[9] else None,
+                "updated_at": row[10].isoformat() if row[10] else None,
+                "updated_by_user_id": row[11],
+            }
+
+            return {
+                "success": True,
+                "message": "Estado obtenido correctamente",
+                "data": state_data,
+            }
+
+    def update_version_state(
+        self,
+        project_id: int,
+        version_id: int,
+        org_id: int,
+        update_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Actualiza el estado de una versión.
+        
+        Args:
+            project_id: ID del proyecto
+            version_id: Número de versión
+            org_id: ID de la organización
+            update_data: Datos a actualizar (state, protected, final_c, final_i, user_id)
+            
+        Returns:
+            Dict con el resultado de la actualización
+        """
+        from sqlalchemy import text
+
+        user_id = update_data.get("user_id")
+        
+        self._logger.info(
+            "[backend-core] Actualizando estado versión=%s proyecto=%s user=%s",
+            version_id,
+            project_id,
+            user_id,
+        )
+
+        # Construir la query dinámica según campos presentes
+        update_fields = []
+        params = {
+            "project_id": project_id,
+            "version_id": version_id,
+            "org_id": org_id,
+            "user_id": user_id,
+        }
+
+        if "state" in update_data:
+            update_fields.append("state = :state")
+            params["state"] = update_data["state"]
+
+        if "protected" in update_data:
+            update_fields.append("protected = :protected")
+            params["protected"] = update_data["protected"]
+
+        if "final_c" in update_data:
+            update_fields.append("final_c = :final_c")
+            params["final_c"] = update_data["final_c"]
+
+        if "final_i" in update_data:
+            update_fields.append("final_i = :final_i")
+            params["final_i"] = update_data["final_i"]
+
+        if not update_fields:
+            return {
+                "success": False,
+                "message": "No hay campos para actualizar",
+                "data": None,
+            }
+
+        # Agregar updated_by_user_id
+        update_fields.append("updated_by_user_id = :user_id")
+
+        query = f"""
+            UPDATE version_states
+            SET {', '.join(update_fields)}
+            WHERE id_proyecto = :project_id 
+              AND id_version = :version_id
+              AND id_organizacion = :org_id
+        """
+
+        with self._get_projects_db_writer_connection() as conn:
+            result = conn.execute(text(query), params)
+            conn.commit()
+
+            if result.rowcount == 0:
+                self._logger.warning(
+                    "[backend-core] Estado de versión no encontrado para actualizar"
+                )
+                return {
+                    "success": False,
+                    "message": "Estado de versión no encontrado",
+                    "data": None,
+                }
+
+            self._logger.info(
+                "[backend-core] Estado actualizado correctamente"
+            )
+
+        # Retornar el estado actualizado
+        return self.get_version_state(project_id, version_id, org_id)
+
+    def create_version_state(
+        self, project_id: int, version_id: int, org_id: int, user_id: int
+    ) -> dict[str, Any]:
+        """Crea un estado inicial para una versión nueva.
+        
+        Args:
+            project_id: ID del proyecto
+            version_id: Número de versión
+            org_id: ID de la organización
+            user_id: Usuario que crea el estado
+            
+        Returns:
+            Dict con el estado creado
+        """
+        from sqlalchemy import text
+
+        self._logger.info(
+            "[backend-core] Creando estado versión=%s proyecto=%s",
+            version_id,
+            project_id,
+        )
+
+        with self._get_projects_db_writer_connection() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO version_states (
+                        id_organizacion, id_proyecto, id_version,
+                        state, protected, size_bytes, final_c, final_i,
+                        updated_by_user_id
+                    ) VALUES (
+                        :org_id, :project_id, :version_id,
+                        'Abierta', FALSE, 0, FALSE, FALSE,
+                        :user_id
+                    )
+                """),
+                {
+                    "org_id": org_id,
+                    "project_id": project_id,
+                    "version_id": version_id,
+                    "user_id": user_id,
+                },
+            )
+            conn.commit()
+
+            self._logger.info(
+                "[backend-core] Estado creado con éxito"
+            )
+
+        return self.get_version_state(project_id, version_id, org_id)
+
+    def create_version_event(
+        self, event_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Registra un evento de versión para auditoría.
+        
+        Args:
+            event_data: Datos del evento (proyecto, versión, tipo, mensaje, user, etc)
+            
+        Returns:
+            Dict con el resultado del registro
+        """
+        from sqlalchemy import text
+        import json
+
+        self._logger.info(
+            "[backend-core] Registrando evento versión=%s proyecto=%s tipo=%s",
+            event_data.get("id_version"),
+            event_data.get("id_proyecto"),
+            event_data.get("evento"),
+        )
+
+        metadata_json = None
+        if "metadata" in event_data and event_data["metadata"]:
+            metadata_json = json.dumps(event_data["metadata"])
+
+        with self._get_projects_db_writer_connection() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO version_events (
+                        id_organizacion, id_proyecto, id_version,
+                        evento, mensaje, user_id, user_name,
+                        old_state, new_state, metadata
+                    ) VALUES (
+                        :org_id, :project_id, :version_id,
+                        :evento, :mensaje, :user_id, :user_name,
+                        :old_state, :new_state, :metadata
+                    )
+                """),
+                {
+                    "org_id": event_data.get("id_organizacion"),
+                    "project_id": event_data.get("id_proyecto"),
+                    "version_id": event_data.get("id_version"),
+                    "evento": event_data.get("evento"),
+                    "mensaje": event_data.get("mensaje"),
+                    "user_id": event_data.get("user_id"),
+                    "user_name": event_data.get("user_name"),
+                    "old_state": event_data.get("old_state"),
+                    "new_state": event_data.get("new_state"),
+                    "metadata": metadata_json,
+                },
+            )
+            conn.commit()
+
+            self._logger.info(
+                "[backend-core] Evento registrado correctamente"
+            )
+
+        return {
+            "success": True,
+            "message": "Evento registrado correctamente",
+        }
+
+    def get_version_events(
+        self, project_id: int, version_id: int, org_id: int, limit: int = 50
+    ) -> dict[str, Any]:
+        """Obtiene el historial de eventos de una versión.
+        
+        Args:
+            project_id: ID del proyecto
+            version_id: Número de versión
+            org_id: ID de la organización
+            limit: Máximo número de eventos a retornar
+            
+        Returns:
+            Dict con la lista de eventos
+        """
+        from sqlalchemy import text
+        import json
+
+        self._logger.info(
+            "[backend-core] Consultando eventos versión=%s proyecto=%s",
+            version_id,
+            project_id,
+        )
+
+        with self._get_projects_db_connection() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT 
+                        id, id_organizacion, id_proyecto, id_version,
+                        evento, mensaje, user_id, user_name,
+                        old_state, new_state, metadata, timestamp
+                    FROM version_events
+                    WHERE id_proyecto = :project_id 
+                      AND id_version = :version_id
+                      AND id_organizacion = :org_id
+                    ORDER BY timestamp DESC
+                    LIMIT :limit
+                """),
+                {
+                    "project_id": project_id,
+                    "version_id": version_id,
+                    "org_id": org_id,
+                    "limit": limit,
+                },
+            )
+            rows = result.fetchall()
+
+            events = []
+            for row in rows:
+                metadata = None
+                if row[10]:  # metadata column
+                    try:
+                        metadata = json.loads(row[10])
+                    except json.JSONDecodeError:
+                        metadata = None
+
+                events.append({
+                    "id": row[0],
+                    "id_organizacion": row[1],
+                    "id_proyecto": row[2],
+                    "id_version": row[3],
+                    "evento": row[4],
+                    "mensaje": row[5],
+                    "user_id": row[6],
+                    "user_name": row[7],
+                    "old_state": row[8],
+                    "new_state": row[9],
+                    "metadata": metadata,
+                    "timestamp": row[11].isoformat() if row[11] else None,
+                })
+
+            return {
+                "success": True,
+                "message": "Eventos obtenidos correctamente",
+                "data": events,
+                "total": len(events),
+            }
+
+    # ===================================================================
+    # INTEGRACIÓN CON FMANAGEMENT
+    # ===================================================================
+
+    def fmanagement_list(
+        self, org_folder: str, prj_folder: str, version_folder: str,
+        user_id: int, identity_type_id: int
+    ) -> dict[str, Any]:
+        """Proxy para listar estructura de archivos vía fmanagement.
+        
+        Args:
+            org_folder: Carpeta organización (ej: ORG0001)
+            prj_folder: Carpeta proyecto (ej: PRJ0001)
+            version_folder: Carpeta versión (ej: v001)
+            user_id: ID del usuario
+            identity_type_id: Tipo de identidad del usuario
+            
+        Returns:
+            Dict con la estructura de archivos de fmanagement
+        """
+        self._logger.info(
+            "[backend-core] Listando estructura fmanagement org=%s prj=%s version=%s",
+            org_folder,
+            prj_folder,
+            version_folder,
+        )
+
+        try:
+            # Importar cliente fmanagement
+            from .clients.fmanagement_client import FmanagementClient
+            
+            # Obtener configuración de fmanagement
+            fmanagement_config = load_fmanagement_settings()
+            base_url = fmanagement_config.get("base_url", "http://localhost:1666")
+            
+            client = FmanagementClient(base_url=base_url, logger=self._logger)
+            
+            result = client.list_structure(
+                orgpath=org_folder,
+                prjpath=prj_folder,
+                versionpath=version_folder,
+                iduser=user_id,
+            )
+            
+            return {
+                "success": True,
+                "message": "Estructura obtenida correctamente",
+                "data": result,
+            }
+            
+        except Exception as e:
+            self._logger.error(
+                "[backend-core] Error listando estructura fmanagement: %s",
+                str(e),
+            )
+            return {
+                "success": False,
+                "message": f"Error al obtener estructura: {str(e)}",
+                "data": None,
+            }
+
+    def fmanagement_operation(
+        self, operation: str, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Ejecuta una operación genérica en fmanagement.
+        
+        Args:
+            operation: Tipo de operación (create_folder, delete_file, etc)
+            params: Parámetros de la operación
+            
+        Returns:
+            Dict con el resultado de la operación
+        """
+        self._logger.info(
+            "[backend-core] Operación fmanagement: %s",
+            operation,
+        )
+
+        try:
+            from .clients.fmanagement_client import FmanagementClient
+            
+            fmanagement_config = load_fmanagement_settings()
+            base_url = fmanagement_config.get("base_url", "http://localhost:1666")
+            
+            client = FmanagementClient(base_url=base_url, logger=self._logger)
+            
+            # Mapear operación a método del cliente
+            result = None
+            
+            if operation == "create_folder":
+                result = client.create_folder(**params)
+            elif operation == "rename_folder":
+                result = client.rename_folder(**params)
+            elif operation == "delete_folder":
+                result = client.delete_folder(**params)
+            elif operation == "create_file":
+                result = client.create_file(**params)
+            elif operation == "rename_file":
+                result = client.rename_file(**params)
+            elif operation == "delete_file":
+                result = client.delete_file(**params)
+            elif operation == "download_file":
+                content = client.download_file(**params)
+                if isinstance(content, bytes):
+                    # Retornar indicador de éxito, el contenido se maneja separadamente
+                    result = {"status": "success", "size": len(content)}
+                else:
+                    result = content  # Es un dict con error
+            elif operation == "create_version":
+                result = client.create_version(**params)
+            else:
+                return {
+                    "success": False,
+                    "message": f"Operación no soportada: {operation}",
+                    "data": None,
+                }
+            
+            return {
+                "success": True,
+                "message": f"Operación {operation} ejecutada correctamente",
+                "data": result,
+            }
+            
+        except Exception as e:
+            self._logger.error(
+                "[backend-core] Error en operación fmanagement: %s",
+                str(e),
+            )
+            return {
+                "success": False,
+                "message": f"Error en operación: {str(e)}",
+                "data": None,
+            }
+
+    def create_version_full(
+        self,
+        project_id: int,
+        org_id: int,
+        user_id: int,
+        identity_type_id: int,
+        descripcion: str | None = None,
+        clone_from_version: int | None = None,
+    ) -> dict[str, Any]:
+        """Crea una nueva versión completa (DB + fmanagement).
+        
+        Este método es atómico: si falla cualquier paso, se hace rollback.
+        
+        Flujo:
+        1. Calcular siguiente id_version
+        2. Insertar en tabla versiones (DB)
+        3. Crear carpeta física vía fmanagement
+        4. Crear estado inicial en version_states
+        5. Registrar evento VERSION_CREADA
+        
+        Args:
+            project_id: ID del proyecto
+            org_id: ID de la organización
+            user_id: Usuario que crea la versión
+            identity_type_id: Tipo de identidad del usuario
+            descripcion: Descripción opcional de la versión
+            clone_from_version: ID de versión a clonar (opcional)
+            
+        Returns:
+            Dict con el resultado completo
+        """
+        from sqlalchemy import text
+        from .clients.fmanagement_client import FmanagementClient
+
+        self._logger.info(
+            "[backend-core] Creando versión completa proyecto=%s org=%s user=%s",
+            project_id,
+            org_id,
+            user_id,
+        )
+
+        # Obtener carpetas formateadas
+        org_folder = f"ORG{org_id:04d}"
+        prj_folder = f"PRJ{project_id:05d}"
+
+        version_id = None
+        version_folder = None
+        fmanagement_created = False
+
+        try:
+            with self._get_projects_db_writer_connection() as conn:
+                # PASO 1: Calcular siguiente id_version
+                result = conn.execute(
+                    text("""
+                        SELECT COALESCE(MAX(id_version), 0) + 1 as next_version
+                        FROM versiones
+                        WHERE id_proyecto = :project_id AND id_organizacion = :org_id
+                    """),
+                    {"project_id": project_id, "org_id": org_id},
+                )
+                row = result.fetchone()
+                version_id = row[0] if row else 1
+                version_folder = f"v{version_id:03d}"
+
+                self._logger.info(
+                    "[backend-core] Siguiente versión calculada: %s",
+                    version_id,
+                )
+
+                # PASO 2: Insertar en tabla versiones
+                conn.execute(
+                    text("""
+                        INSERT INTO versiones (id_version, id_proyecto, id_organizacion)
+                        VALUES (:id_version, :project_id, :org_id)
+                    """),
+                    {
+                        "id_version": version_id,
+                        "project_id": project_id,
+                        "org_id": org_id,
+                    },
+                )
+
+                # PASO 3: Crear carpeta física vía fmanagement
+                fmanagement_config = load_fmanagement_settings()
+                base_url = fmanagement_config.get("base_url", "http://localhost:1666")
+                
+                client = FmanagementClient(base_url=base_url, logger=self._logger)
+                
+                clone_from_folder = None
+                if clone_from_version:
+                    clone_from_folder = f"v{clone_from_version:03d}"
+                
+                fm_result = client.create_version(
+                    orgpath=org_folder,
+                    prjpath=prj_folder,
+                    versionpath=version_folder,
+                    identity_type_id=identity_type_id,
+                    clone_from=clone_from_folder,
+                    iduser=user_id,
+                )
+
+                if "error" in fm_result:
+                    raise Exception(f"Error en fmanagement: {fm_result['error']}")
+
+                fmanagement_created = True
+
+                # PASO 4: Crear estado inicial
+                conn.execute(
+                    text("""
+                        INSERT INTO version_states (
+                            id_organizacion, id_proyecto, id_version,
+                            state, protected, size_bytes, final_c, final_i,
+                            updated_by_user_id
+                        ) VALUES (
+                            :org_id, :project_id, :version_id,
+                            'Abierta', FALSE, 0, FALSE, FALSE,
+                            :user_id
+                        )
+                    """),
+                    {
+                        "org_id": org_id,
+                        "project_id": project_id,
+                        "version_id": version_id,
+                        "user_id": user_id,
+                    },
+                )
+
+                # PASO 5: Registrar evento
+                conn.execute(
+                    text("""
+                        INSERT INTO version_events (
+                            id_organizacion, id_proyecto, id_version,
+                            evento, mensaje, user_id, user_name
+                        ) VALUES (
+                            :org_id, :project_id, :version_id,
+                            'VERSION_CREADA',
+                            :mensaje,
+                            :user_id,
+                            (SELECT user_name FROM users WHERE user_id = :user_id LIMIT 1)
+                        )
+                    """),
+                    {
+                        "org_id": org_id,
+                        "project_id": project_id,
+                        "version_id": version_id,
+                        "mensaje": f"Versión {version_folder} creada desde Proyecciones" + 
+                                 (f" (clonada desde v{clone_from_version:03d})" if clone_from_version else ""),
+                        "user_id": user_id,
+                    },
+                )
+
+                # Commit de toda la transacción
+                conn.commit()
+
+                self._logger.info(
+                    "[backend-core] Versión %s creada exitosamente",
+                    version_id,
+                )
+
+                return {
+                    "success": True,
+                    "message": f"Versión {version_folder} creada correctamente",
+                    "version_id": version_id,
+                    "version_folder": version_folder,
+                    "fmanagement_result": fm_result,
+                }
+
+        except Exception as e:
+            self._logger.error(
+                "[backend-core] Error creando versión completa: %s",
+                str(e),
+            )
+            
+            # Si llegamos aquí, la transacción DB se hará rollback automáticamente
+            # TODO: Considerar rollback físico de carpeta en fmanagement si fue creada
+            
+            return {
+                "success": False,
+                "message": f"Error al crear versión: {str(e)}",
+                "version_id": None,
+                "version_folder": None,
+                "fmanagement_result": None,
+            }

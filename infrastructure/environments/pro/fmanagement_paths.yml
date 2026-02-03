@@ -1,0 +1,123 @@
+# ============================================================================
+# fmanagement - File Management Operations API
+# Configuración completa de rutas y operaciones para entorno: pro
+# ============================================================================
+#
+# SINCRONIZACIÓN: Este archivo debe mantenerse sincronizado con
+# /Users/administrator/develop/fmanagement/env/pro/fmanagement_paths.yml
+#
+
+# --------------------------------------------------------------------------
+# Configuración de permisos
+# --------------------------------------------------------------------------
+permissions_source: db_only
+middleware_base_url: http://frontend.anewhope.aws:8007
+core_backend_base_url: http://backend.anewhope.aws:8003
+
+# --------------------------------------------------------------------------
+# Rutas base de almacenamiento - External (contenido de clientes)
+# --------------------------------------------------------------------------
+backend_core_base_storage: /data/external
+backend_ia_base_storage: /data/external
+
+# --------------------------------------------------------------------------
+# Rutas base de almacenamiento - Internal (contenido generado por sistema)
+# --------------------------------------------------------------------------
+backend_core_internal_storage: /data/internal
+backend_ia_internal_storage: /data/internal
+
+# Rutas específicas dentro de internal
+backend_core_models_storage: /data/internal/models
+backend_core_reports_storage: /data/internal/reports
+backend_ia_models_storage: /data/internal/models
+backend_ia_reports_storage: /data/internal/reports
+
+# --------------------------------------------------------------------------
+# Rutas de logs por servicio
+# --------------------------------------------------------------------------
+# Backend server
+backend_core_logs_path: /data/backend_core/logs
+service_backend_logs_path: /data/service_backend/logs
+fmanagement_logs_path: /data/fmanagement/logs
+
+# Frontend server
+backoffice_logs_path: /data/backoffice/logs
+frontend_logs_path: /data/frontend/logs
+middleware_logs_path: /data/middleware/logs
+
+# Trainer server
+backend_ia_logs_path: /data/backend_ia/logs
+
+# --------------------------------------------------------------------------
+# Rutas de persistencia de bases de datos
+# --------------------------------------------------------------------------
+mariadb_data_path: /data/Mariadb
+redis_data_path: /data/persistence/redis
+chroma_data_path: /data/persistence/chroma
+
+# --------------------------------------------------------------------------
+# Rutas de imágenes Docker (tar.gz)
+# --------------------------------------------------------------------------
+backend_images_path: /data/images
+frontend_images_path: /data/images
+trainer_images_path: /data/images
+
+# --------------------------------------------------------------------------
+# Versiones de imágenes Docker
+# --------------------------------------------------------------------------
+docker_image_name_prefix: anewhope
+backend_core_image_version: 1.0.0
+service_backend_image_version: 1.0.0
+fmanagement_image_version: 1.0.0
+frontend_image_version: 1.0.0
+backoffice_image_version: 1.0.0
+middleware_image_version: 1.0.0
+backend_ia_image_version: 1.0.0
+
+# --------------------------------------------------------------------------
+# Configuración de transferencia de versiones
+# --------------------------------------------------------------------------
+transfer_mode: remote
+
+# --------------------------------------------------------------------------
+# Configuración de sincronización rsync
+# --------------------------------------------------------------------------
+rsync_enabled: true
+
+# Direcciones de sincronización
+rsync_external_direction: backend_to_trainer
+rsync_external_trigger: on_demand
+rsync_models_direction: trainer_to_backend
+rsync_models_trigger: automatic
+rsync_reports_direction: trainer_to_backend
+rsync_reports_trigger: automatic
+
+# Intervalo de sincronización automática (segundos)
+rsync_automatic_interval: 300
+
+# --------------------------------------------------------------------------
+# Configuración SSH para transferencias remotas
+# --------------------------------------------------------------------------
+# Trainer server SSH
+trainer_ssh_host: trainer.anewhope.aws
+trainer_ssh_user: rsync_user
+trainer_ssh_key_path: /opt/anewhope/keys/rsync_key
+trainer_ssh_port: 22
+
+# Backend server SSH (para sincronización inversa)
+core_ssh_host: backend.anewhope.aws
+core_ssh_user: rsync_user
+core_ssh_key_path: /opt/anewhope/keys/rsync_key
+core_ssh_port: 22
+
+# --------------------------------------------------------------------------
+# Notas de configuración
+# --------------------------------------------------------------------------
+# Entorno: pro (producción en anewhope.aws)
+# - TRANSFER_MODE=remote (rsync over SSH entre backend y trainer)
+# - RSYNC_ENABLED=true (sincronización automática + bajo demanda)
+# - PERMISSIONS_SOURCE=db_only (sin mocks en producción)
+# - Rutas absolutas en /data
+# - Configuración SSH con clave privada en /opt/anewhope/keys
+# - Backend (backend.anewhope.aws) y Trainer (trainer.anewhope.aws) son servidores separados
+# - CRÍTICO: Verificar backups antes de operaciones de transferencia o sincronización

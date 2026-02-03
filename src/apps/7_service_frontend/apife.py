@@ -1422,6 +1422,203 @@ class TecnologiasAsignadasResponse(BaseModel):
     total: int
 
 
+# ========================================================================
+# DTOs para Gestión de Versiones
+# ========================================================================
+
+
+class VersionDto(BaseModel):
+    """DTO de versión de proyecto."""
+
+    id_version: int
+    id_proyecto: int
+    id_organizacion: int
+    version_folder: str  # Formato "v001", "v002", etc.
+
+
+class VersionesListResponse(BaseModel):
+    """Respuesta con lista de versiones de un proyecto."""
+
+    versiones: list[VersionDto]
+    total: int
+
+
+class CrearVersionRequest(BaseModel):
+    """Request para crear una nueva versión."""
+
+    id_proyecto: int
+    id_organizacion: int
+
+
+class CrearVersionResponse(BaseModel):
+    """Respuesta de creación de versión."""
+
+    success: bool
+    version: VersionDto | None = None
+    mensaje: str | None = None
+
+
+# ============================================================================
+# DTOs de Estados de Versión y fmanagement
+# ============================================================================
+
+
+class VersionStateDto(BaseModel):
+    """Estado de una versión de proyecto."""
+
+    id: int
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    state: str  # "Abierta", "Bloqueada", "Protegida", "Final"
+    protected: bool
+    size_bytes: int
+    final_c: bool
+    final_i: bool
+    created_at: str
+    updated_at: str
+    updated_by_user_id: int | None
+
+
+class CreateVersionStateRequest(BaseModel):
+    """Request para crear estado de versión."""
+
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    state: str = "Abierta"
+    protected: bool = False
+    size_bytes: int = 0
+    final_c: bool = False
+    final_i: bool = False
+    updated_by_user_id: int | None = None
+
+
+class UpdateVersionStateRequest(BaseModel):
+    """Request para actualizar estado de versión."""
+
+    state: str | None = None
+    protected: bool | None = None
+    size_bytes: int | None = None
+    final_c: bool | None = None
+    final_i: bool | None = None
+    updated_by_user_id: int | None = None
+
+
+class VersionStateResponse(BaseModel):
+    """Response con estado de versión."""
+
+    success: bool
+    state: VersionStateDto | None = None
+    mensaje: str | None = None
+
+
+class VersionEventDto(BaseModel):
+    """Evento de versión para auditoría."""
+
+    id: int
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    evento: str
+    mensaje: str | None
+    user_id: int
+    user_name: str | None
+    old_state: str | None
+    new_state: str | None
+    metadata: dict[str, Any] | None
+    timestamp: str
+
+
+class CreateVersionEventRequest(BaseModel):
+    """Request para crear evento de versión."""
+
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    evento: str
+    mensaje: str | None = None
+    user_id: int
+    user_name: str | None = None
+    old_state: str | None = None
+    new_state: str | None = None
+    metadata: dict[str, Any] | None = None
+
+
+class VersionEventsResponse(BaseModel):
+    """Response con lista de eventos."""
+
+    success: bool
+    events: list[VersionEventDto]
+    total: int
+    mensaje: str | None = None
+
+
+class FmanagementListRequest(BaseModel):
+    """Request para listar estructura fmanagement."""
+
+    org_folder: str
+    prj_folder: str
+    version_folder: str
+
+
+class FmanagementItemDto(BaseModel):
+    """Item de estructura fmanagement."""
+
+    name: str
+    type: str  # "folder" | "file"
+    path: str
+    size: int | None = None
+    modified: str | None = None
+
+
+class FmanagementListResponse(BaseModel):
+    """Response de listado fmanagement."""
+
+    success: bool
+    items: list[FmanagementItemDto]
+    mensaje: str | None = None
+
+
+class FmanagementOperationRequest(BaseModel):
+    """Request para operación genérica fmanagement."""
+
+    operation: str  # "create_folder", "rename_folder", "delete_folder", etc.
+    params: dict[str, Any]
+
+
+class FmanagementOperationResponse(BaseModel):
+    """Response de operación fmanagement."""
+
+    success: bool
+    data: dict[str, Any] | None = None
+    mensaje: str | None = None
+
+
+class CreateVersionFullRequest(BaseModel):
+    """Request para crear versión completa (DB + fmanagement)."""
+
+    id_organizacion: int
+    nombre_version: str
+    descripcion: str | None = None
+    user_id: int
+    user_name: str
+    clone_from_version_id: int | None = None
+    initial_state: str = "Abierta"
+    protected: bool = False
+    final_c: bool = False
+    final_i: bool = False
+
+
+class CreateVersionFullResponse(BaseModel):
+    """Response de creación de versión completa."""
+
+    success: bool
+    version: VersionDto | None = None
+    state: VersionStateDto | None = None
+    mensaje: str | None = None
+
+
 class ProjectDto(BaseModel):
     """DTO de proyecto.
     
@@ -2133,6 +2330,315 @@ def get_tecnologias_asignadas_org_endpoint(
     try:
         response = router.get_tecnologias_asignadas_org(org_id, session)
         return TecnologiasAsignadasResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+# ========================================================================
+# ENDPOINTS DE VERSIONES
+# ========================================================================
+
+
+@app.get(
+    "/proyectos/{project_id}/versiones",
+    response_model=VersionesListResponse,
+    tags=["versiones"],
+)
+def get_project_versions_endpoint(
+    project_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> VersionesListResponse:
+    """Obtiene todas las versiones de un proyecto."""
+    _logger = logging.getLogger(__name__)
+    _logger.info(
+        "[middleware] Consultando versiones proyecto=%s org=%s",
+        project_id,
+        session.organization_id,
+    )
+
+    try:
+        response = router.get_project_versions(project_id, session.organization_id, session)
+        return VersionesListResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post(
+    "/proyectos/{project_id}/versiones",
+    response_model=CrearVersionResponse,
+    tags=["versiones"],
+)
+def create_project_version_endpoint(
+    project_id: int,
+    request: CrearVersionRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> CrearVersionResponse:
+    """Crea una nueva versión para un proyecto."""
+    _logger = logging.getLogger(__name__)
+    _logger.info(
+        "[middleware] Creando versión proyecto=%s org=%s",
+        project_id,
+        session.organization_id,
+    )
+
+    # Validar que el proyecto pertenece a la organización del usuario
+    if request.id_organizacion != session.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tiene permisos para crear versiones en esta organización",
+        )
+
+    try:
+        response = router.create_project_version(project_id, session.organization_id, session)
+        return CrearVersionResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# Endpoints de Estados de Versión
+# ============================================================================
+
+
+@app.get(
+    "/proyectos/{project_id}/versiones/{version_id}/estado",
+    response_model=VersionStateResponse,
+    tags=["version-states"],
+)
+def get_version_state_endpoint(
+    project_id: int,
+    version_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> VersionStateResponse:
+    """Obtiene el estado actual de una versión.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    """
+    _logger = logging.getLogger(__name__)
+    _logger.info(
+        "[middleware] Obteniendo estado versión=%s proyecto=%s org=%s user=%s",
+        version_id,
+        project_id,
+        session.organization_id,
+        session.user_id,
+    )
+
+    try:
+        response = router.get_version_state(
+            project_id, version_id, session.organization_id, session
+        )
+        return VersionStateResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/proyectos/{project_id}/versiones/{version_id}/estado",
+    response_model=VersionStateResponse,
+    tags=["version-states"],
+)
+def update_version_state_endpoint(
+    project_id: int,
+    version_id: int,
+    request: UpdateVersionStateRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> VersionStateResponse:
+    """Actualiza el estado de una versión.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    """
+    _logger = logging.getLogger(__name__)
+    _logger.info(
+        "[middleware] Actualizando estado versión=%s proyecto=%s user=%s",
+        version_id,
+        project_id,
+        session.user_id,
+    )
+
+    try:
+        update_data = request.model_dump(exclude_unset=True)
+        response = router.update_version_state(
+            project_id, version_id, session.organization_id, update_data, session
+        )
+        return VersionStateResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get(
+    "/proyectos/{project_id}/versiones/{version_id}/eventos",
+    response_model=VersionEventsResponse,
+    tags=["version-states"],
+)
+def get_version_events_endpoint(
+    project_id: int,
+    version_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+    limit: int = 50,
+) -> VersionEventsResponse:
+    """Obtiene el historial de eventos de una versión.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+    """
+    _logger = logging.getLogger(__name__)
+    _logger.info(
+        "[middleware] Obteniendo eventos versión=%s proyecto=%s limit=%s",
+        version_id,
+        project_id,
+        limit,
+    )
+
+    try:
+        response = router.get_version_events(
+            project_id, version_id, session.organization_id, session, limit
+        )
+        return VersionEventsResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post(
+    "/proyectos/{project_id}/versiones/crear-completa",
+    response_model=CreateVersionFullResponse,
+    tags=["versiones"],
+)
+def create_version_full_endpoint(
+    project_id: int,
+    request: CreateVersionFullRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> CreateVersionFullResponse:
+    """Crea una nueva versión completa (DB + fmanagement).
+    
+    Esta operación es atómica:
+    1. Inserta en tabla versiones
+    2. Inserta en tabla version_states
+    3. Inserta en tabla version_events
+    4. Crea carpeta física vía fmanagement (clonando si se especifica)
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB + fmanagement
+    """
+    _logger = logging.getLogger(__name__)
+    _logger.info(
+        "[middleware] Creando versión completa proyecto=%s org=%s user=%s",
+        project_id,
+        request.id_organizacion,
+        session.user_id,
+    )
+
+    # Validar que el proyecto pertenece a la organización del usuario
+    if request.id_organizacion != session.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tiene permisos para crear versiones en esta organización",
+        )
+
+    try:
+        request_data = request.model_dump()
+        response = router.create_version_full(project_id, request_data, session)
+        return CreateVersionFullResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# Endpoints de Integración con fmanagement
+# ============================================================================
+
+
+@app.post(
+    "/fmanagement/list",
+    response_model=FmanagementListResponse,
+    tags=["fmanagement"],
+)
+def fmanagement_list_endpoint(
+    request: FmanagementListRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> FmanagementListResponse:
+    """Lista estructura de archivos vía fmanagement.
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → fmanagement
+    """
+    _logger = logging.getLogger(__name__)
+    _logger.info(
+        "[middleware] Listando fmanagement org=%s prj=%s version=%s",
+        request.org_folder,
+        request.prj_folder,
+        request.version_folder,
+    )
+
+    try:
+        request_data = request.model_dump()
+        response = router.fmanagement_list(request_data, session)
+        return FmanagementListResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post(
+    "/fmanagement/operation",
+    response_model=FmanagementOperationResponse,
+    tags=["fmanagement"],
+)
+def fmanagement_operation_endpoint(
+    request: FmanagementOperationRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> FmanagementOperationResponse:
+    """Ejecuta una operación genérica en fmanagement.
+    
+    Operaciones soportadas:
+    - create_folder
+    - rename_folder
+    - delete_folder
+    - create_file
+    - rename_file
+    - delete_file
+    - download_file
+    
+    Flujo: Frontend → Middleware → Broker → Backend Core → fmanagement
+    """
+    _logger = logging.getLogger(__name__)
+    _logger.info(
+        "[middleware] Operación fmanagement: %s user=%s",
+        request.operation,
+        session.user_id,
+    )
+
+    try:
+        request_data = request.model_dump()
+        response = router.fmanagement_operation(request_data, session)
+        return FmanagementOperationResponse(**response)
     except BusinessRuleError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

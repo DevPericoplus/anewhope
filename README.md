@@ -327,6 +327,165 @@ python infrastructure/export_env.py --environment macbook --format envfile
 - `dev`: virtualización en VirtualBox con Oracle Linux 10 (util01, frontend, backend, trainer).
 - `pre` y `pro`: instancias en AWS con Oracle Linux 10 (util01, frontend, backend, trainer).
 
+## Infraestructura de almacenamiento y datos
+
+El proyecto utiliza una estructura de carpetas específica para organizar logs, datos de clientes, modelos generados y persistencia de bases de datos.
+
+### Estructura base por entorno
+
+| Entorno | Ruta base | Descripción |
+|---------|-----------|-------------|
+| **macbook** | `~/data/anewhope/files/` | Desarrollo local con subdirectorios por tipo de servidor |
+| **dev/pre/pro** | `/data/` | Producción - cada servidor tiene su propia estructura en `/data/` |
+
+### Organización por servidor
+
+**Backend Server** (`backend.house.loc` / `backend.anewhope.aws`):
+```
+/data/
+├── backend_core/logs/       # Logs de backend_core (puerto 8003)
+├── service_backend/logs/    # Logs de broker (puerto 8008)
+├── fmanagement/logs/        # Logs de fmanagement (puerto 1666)
+├── external/                # Contenido de clientes (ORG####/PRJ#####/v###/)
+├── internal/                # Contenido generado (models/, reports/)
+├── Mariadb/                 # Persistencia de MariaDB
+└── images/                  # Imágenes Docker (tar.gz)
+```
+
+**Frontend Server** (`frontend.house.loc` / `frontend.anewhope.aws`):
+```
+/data/
+├── frontend/logs/           # Logs de frontend (puerto 8005)
+├── backoffice/logs/         # Logs de backoffice (puerto 8006)
+├── middleware/logs/         # Logs de middleware (puerto 8007)
+├── persistence/redis/       # Persistencia de Redis
+└── images/                  # Imágenes Docker (tar.gz)
+```
+
+**Trainer Server** (`trainer.house.loc` / `trainer.anewhope.aws`):
+```
+/data/
+├── backend_ia/logs/         # Logs de backend_ia (puerto 8004)
+├── external/                # Contenido sincronizado desde backend
+├── internal/                # Modelos y reports generados
+├── persistence/chroma/      # Persistencia de Chroma DB (vectorial)
+└── images/                  # Imágenes Docker (tar.gz)
+```
+
+### External vs Internal
+
+| Carpeta | Contenido | Acceso | Sincronización |
+|---------|-----------|--------|----------------|
+| **external** | Documentos/imágenes de clientes | Frontend → fmanagement → Backend | Backend → Trainer (bajo demanda con `transferversion`) |
+| **internal** | Modelos LLM y reportes generados | Solo sistema | Trainer → Backend (automático cada 5 min) |
+
+**Estructura de external:**
+- Jerarquía: `ORG####/PRJ#####/v###/` (los usuarios pueden crear cualquier estructura dentro de cada versión)
+- Ejemplo: `external/ORG0001/PRJ00001/v001/images/logo.png`
+
+**Estructura de internal:**
+- Carpetas fijas: `models/` y `reports/`
+- Jerarquía: `ORG####/PRJ#####/v###/` (igual que external)
+- Ejemplo: `internal/models/ORG0001/PRJ00001/v001/model_llm.tar.gz`
+- Ejemplo: `internal/reports/ORG0001/PRJ00001/v001/training_report.md`
+
+### Variables de configuración
+
+Todas las rutas se configuran en `infrastructure/environments/{entorno}/fmanagement_paths.yml`:
+
+```yaml
+# External (contenido de clientes)
+backend_core_base_storage: /data/external              # dev/pre/pro
+backend_ia_base_storage: /data/external                # dev/pre/pro
+
+# Internal (contenido generado por sistema)
+backend_core_internal_storage: /data/internal
+backend_ia_internal_storage: /data/internal
+backend_core_models_storage: /data/internal/models
+backend_core_reports_storage: /data/internal/reports
+
+# Logs por servicio
+backend_core_logs_path: /data/backend_core/logs
+frontend_logs_path: /data/frontend/logs
+middleware_logs_path: /data/middleware/logs
+
+# Persistencia
+mariadb_data_path: /data/Mariadb
+redis_data_path: /data/persistence/redis
+chroma_data_path: /data/persistence/chroma
+
+# Versiones de imágenes Docker
+backend_core_image_version: 1.0.0
+frontend_image_version: 1.0.0
+```
+
+### Scripts de gestión
+
+| Script | Descripción | Uso |
+|--------|-------------|-----|
+| `scripts/setup_data_structure.sh` | Crear toda la jerarquía de carpetas | `./scripts/setup_data_structure.sh macbook` |
+| `scripts/generate_docker_env.sh` | Generar `.env` desde YAML para docker-compose | `./scripts/generate_docker_env.sh dev backend` |
+| `scripts/verify_fmanagement_sync.sh` | Verificar sincronización de configuración | `./scripts/verify_fmanagement_sync.sh` |
+
+**Crear estructura de carpetas:**
+```bash
+# Desarrollo local (macbook)
+./scripts/setup_data_structure.sh macbook
+
+# Producción (ejecutar en cada servidor)
+./scripts/setup_data_structure.sh dev backend    # En backend server
+./scripts/setup_data_structure.sh dev frontend   # En frontend server
+./scripts/setup_data_structure.sh dev trainer    # En trainer server
+```
+
+**Generar archivos .env para Docker:**
+```bash
+# Generar .env para todos los servicios de un servidor
+./scripts/generate_docker_env.sh dev backend
+# Genera: infrastructure/environments/dev/.env.backend
+
+# Los archivos .env se utilizan en docker-compose.yml:
+# docker-compose --env-file .env.backend up -d
+```
+
+### Sincronización rsync (dev/pre/pro)
+
+Entre backend y trainer servers se sincroniza contenido automáticamente:
+
+| Contenido | Dirección | Frecuencia |
+|-----------|-----------|------------|
+| `external/` | Backend → Trainer | Bajo demanda (`transferversion`) |
+| `internal/models/` | Trainer → Backend | Automático (cada 5 min) |
+| `internal/reports/` | Trainer → Backend | Automático (cada 5 min) |
+
+**Configuración SSH:**
+```yaml
+# En fmanagement_paths.yml
+trainer_ssh_host: trainer.house.loc
+trainer_ssh_user: rsync_user
+trainer_ssh_key_path: /opt/anewhope/keys/rsync_key
+rsync_automatic_interval: 300  # 5 minutos
+```
+
+**NO se sincronizan:**
+- `logs/` - Cada servidor mantiene sus propios logs
+- `persistence/` - Cada base de datos es independiente
+- `images/` - Las imágenes Docker son específicas de cada servidor
+
+### Diferencias macbook vs producción
+
+| Aspecto | Macbook | Dev/Pre/Pro |
+|---------|---------|-------------|
+| Ruta base | `~/data/anewhope/files/{servidor}/` | `/data/` |
+| Servidores | 3 subdirectorios en misma máquina | 3 servidores físicos separados |
+| Sincronización | No necesaria | rsync over SSH |
+| Docker | No se usa (ejecutar con `run.sh`) | docker-compose por servidor |
+
+**Documentación completa:**
+- Variables por entorno: `infrastructure/environments/{entorno}/fmanagement_paths.yml`
+- Reglas de infraestructura: `AGENTS.md` sección 5.3.1
+- Sincronización fmanagement: `infrastructure/environments/README_FMANAGEMENT_SYNC.md`
+
 ## Estrategia de Dockerfiles y despliegue
 
 ### Dockerfiles por aplicación
@@ -2247,6 +2406,196 @@ validación de consistencia que compara los OTP entre `users.json` y la tabla
 
 - `src/apps/5_web_frontend/logs/frontend_secure.log`
 
+### Envío de SMS con verificación de entrega (Infobip)
+
+El sistema utiliza la API de **Infobip** para enviar mensajes SMS (códigos OTP).
+A partir de ahora, la aplicación **verifica automáticamente el estado final de entrega**
+de cada mensaje SMS para garantizar que llegó al dispositivo del destinatario.
+
+#### Estados de entrega
+
+Infobip devuelve múltiples estados durante el ciclo de vida de un SMS:
+
+| Estado | Tipo | Descripción |
+|--------|------|-------------|
+| `PENDING_ACCEPTED` | Intermedio | Mensaje aceptado por Infobip y enviado al operador móvil |
+| `PENDING` | Intermedio | Mensaje en tránsito |
+| `DELIVERED_TO_HANDSET` | **Final** | ✅ Mensaje entregado exitosamente al dispositivo |
+| `DELIVERED_TO_NETWORK` | **Final** | ✅ Mensaje entregado a la red del operador |
+| `REJECTED` | **Final** | ❌ Mensaje rechazado por el operador |
+| `REJECTED_NETWORK` | **Final** | ❌ Mensaje rechazado por la red |
+| `UNDELIVERABLE` | **Final** | ❌ Mensaje no se pudo entregar |
+| `EXPIRED` | **Final** | ❌ Mensaje expiró antes de entregarse |
+
+**Importante**: El estado `PENDING_ACCEPTED` NO significa que el mensaje fue entregado.
+Solo indica que fue aceptado por Infobip y enviado al operador. La entrega real puede
+tardar entre 3 y 30 segundos adicionales.
+
+#### Verificación automática de entrega
+
+La función `send_message_by_sms()` en `src/2_shared_application/security/common_security.py`
+ahora detecta automáticamente estados intermedios (`PENDING_*`) y consulta el **delivery report**
+de Infobip para obtener el estado final:
+
+```python
+# En common_security.py
+from .sms_delivery_checker import check_sms_delivery_status
+
+# Si recibe estado intermedio, verifica el delivery status final
+delivered, final_status, delivery_report = check_sms_delivery_status(
+    message_id=message_id,
+    api_url=sms_api_url,
+    api_key=sms_api_key,
+    max_wait_seconds=30,  # Espera hasta 30 segundos
+    check_interval=5,      # Consulta cada 5 segundos
+)
+```
+
+El proceso completo:
+1. **Envío inicial**: Se envía el SMS a Infobip vía `POST /sms/2/text/advanced`
+2. **Respuesta inmediata**: Infobip devuelve `PENDING_ACCEPTED` con un `messageId`
+3. **Verificación automática**: Si el estado es intermedio, se activa el verificador
+4. **Polling**: Consulta `GET /sms/3/reports?messageId={id}` cada 5 segundos
+5. **Estado final**: Cuando Infobip devuelve `DELIVERED_TO_HANDSET`, se confirma la entrega
+6. **Logging**: Se registra el estado final en `frontend_secure.log`
+
+#### Módulo `sms_delivery_checker.py`
+
+Ubicación: `src/2_shared_application/security/sms_delivery_checker.py`
+
+**Función principal**:
+
+```python
+def check_sms_delivery_status(
+    message_id: str,
+    api_url: str,
+    api_key: str,
+    max_wait_seconds: int = 30,
+    check_interval: int = 5,
+) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+    """
+    Verifica el estado final de entrega de un mensaje SMS.
+
+    Returns:
+        Tupla de (delivered, status_name, full_report):
+        - delivered (bool): True si el mensaje fue entregado exitosamente
+        - status_name (str): Nombre del estado final (ej: "DELIVERED_TO_HANDSET")
+        - full_report (dict): Delivery report completo de Infobip
+    """
+```
+
+**Uso standalone**:
+
+```python
+from src.2_shared_application.security.sms_delivery_checker import check_sms_delivery_status
+
+delivered, status, report = check_sms_delivery_status(
+    message_id="4700646034707951434964",
+    api_url="https://pdy6d3.api.infobip.com",
+    api_key="your-api-key",
+    max_wait_seconds=30,
+    check_interval=5,
+)
+
+if delivered:
+    print(f"✅ SMS entregado: {status}")
+    print(f"Enviado: {report['sentAt']}")
+    print(f"Entregado: {report['doneAt']}")
+else:
+    print(f"❌ SMS no entregado: {status}")
+```
+
+#### Configuración
+
+Las credenciales de Infobip deben estar configuradas en
+`infrastructure/environments/{entorno}/protected_values.py`:
+
+```python
+# API de Infobip para envío de SMS
+sms_api_url = "https://pdy6d3.api.infobip.com"
+sms_api_key = "tu-api-key-de-infobip"
+sms_from = "InfoSMS"  # Sender ID
+```
+
+#### Testing
+
+**Test manual con script**:
+
+```bash
+cd /Users/administrator/develop/anewhope
+python test_sms_with_verification.py
+```
+
+Este script:
+1. Envía un SMS de prueba al número configurado
+2. Muestra el estado inicial (normalmente `PENDING_ACCEPTED`)
+3. Verifica automáticamente el delivery status
+4. Muestra el estado final (`DELIVERED_TO_HANDSET` si todo va bien)
+5. Muestra el tiempo total de entrega (típicamente 3-6 segundos)
+
+**Test automatizado**:
+
+```bash
+cd src/apps/5_web_frontend
+source .venv_frontend313/bin/activate
+pytest tests/test_change_password.py::test_request_otp_for_adminone_user -v
+```
+
+Este test:
+- Simula una solicitud de OTP para el usuario `adminone`
+- Verifica que el SMS se envía correctamente
+- Confirma que el estado final es `DELIVERED_TO_HANDSET`
+- Valida que el OTP se guardó en la base de datos
+
+#### Logs
+
+Los envíos de SMS se registran en:
+
+```
+src/apps/5_web_frontend/logs/frontend_secure.log
+```
+
+Ejemplo de log exitoso:
+
+```
+2026-02-02 20:36:43 | INFO     | common_security | 📤 SMS enviado - Status: PENDING_ACCEPTED, MessageId: 4700664472197950960814
+2026-02-02 20:36:43 | INFO     | common_security | ⏳ Estado intermedio detectado (PENDING_ACCEPTED). Verificando delivery status final...
+2026-02-02 20:36:46 | INFO     | sms_delivery_checker | Delivery report obtenido - MessageId: 4700664472197950960814, Status: DELIVERED_TO_HANDSET
+2026-02-02 20:36:46 | INFO     | common_security | ✅ Estado final verificado: DELIVERED_TO_HANDSET - ✅ Mensaje entregado exitosamente al dispositivo
+```
+
+#### Troubleshooting
+
+**Problema**: SMS marcado como "enviado" pero no llega al móvil
+
+**Diagnóstico**:
+1. Verificar el log en `frontend_secure.log`
+2. Buscar el `messageId` del mensaje
+3. Verificar el estado final registrado
+
+**Causas comunes**:
+
+| Estado Final | Causa | Solución |
+|--------------|-------|----------|
+| `REJECTED` | Número inválido o bloqueado | Verificar formato del número (+34...) |
+| `REJECTED_NETWORK` | Operador rechazó el mensaje | Verificar sender ID y cuenta Infobip |
+| `EXPIRED` | Mensaje no entregado en tiempo límite | El móvil estuvo apagado o sin cobertura |
+| `TIMEOUT` | No se obtuvo estado final en 30s | Red lenta o problema en Infobip |
+
+**Verificación manual en Infobip**:
+1. Acceder a https://portal.infobip.com
+2. Ir a "Logs" → "SMS Logs"
+3. Buscar el `messageId`
+4. Revisar el "Delivery Report" completo
+
+**Problema**: Error "requests module not found"
+
+**Solución**:
+```bash
+source src/apps/5_web_frontend/.venv_frontend313/bin/activate
+pip install requests
+```
+
 ### Agentes automáticos por proyecto
 
 Al crear un proyecto, el sistema genera **4 agentes automáticos** asociados a la
@@ -2892,6 +3241,207 @@ source .venv_middleware313/bin/activate
 pytest -v src/apps/3_backend/tests/test_tecnologias_api.py
 pytest -v src/apps/7_service_frontend/tests/test_tecnologias_middleware.py
 ```
+
+---
+
+## Gestión de Versiones de Proyectos (Proyecciones)
+
+El sistema permite administrar las versiones de los proyectos y organizar el repositorio de contenidos
+para el entrenamiento de modelos LLM. Cada proyecto puede tener múltiples versiones numeradas secuencialmente.
+
+### Tabla de Versiones
+
+Base de datos: `myllm_projects_db`, tabla: `versiones`
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `id_version` | INT | Número de versión dentro del proyecto (1, 2, 3, ...) |
+| `id_proyecto` | INT | ID del proyecto al que pertenece |
+| `id_organizacion` | INT | ID de la organización (para aislamiento) |
+
+**Constraint UNIQUE**: (`id_proyecto`, `id_version`) - Cada proyecto tiene sus versiones numeradas desde 1.
+
+### Formato de Carpetas
+
+El sistema utiliza identificadores formateados para organizar el sistema de archivos:
+
+| Entidad | Función Helper | Formato | Ejemplo |
+|---------|----------------|---------|---------|
+| Organización | `get_folder_by_id_organization(1)` | `ORG####` | `ORG0001` |
+| Proyecto | `get_folder_by_id_project(2)` | `PRJ####` | `PRJ0002` |
+| Versión | `get_folder_by_id_version(3)` | `v###` | `v003` |
+
+**Helper disponible**: `src/2_shared_application/storage_access_structure.py`
+
+### Componente UI (3 Capas)
+
+La página de Proyecciones está dividida en 3 capas funcionales:
+
+#### Capa 1: Selector de Proyecto
+- Dropdown con proyectos activos y existentes de la organización
+- Al seleccionar un proyecto, se generan automáticamente:
+  - `proyecciones_org_folder`: Ej. `ORG0001`
+  - `proyecciones_prj_folder`: Ej. `PRJ0002`
+- Se cargan las versiones asociadas al proyecto
+
+#### Capa 2: Selector de Versión + Botón Crear
+- Dropdown con versiones del proyecto formateadas: `v001`, `v002`, `v003`, ...
+- Botón "Crear nueva versión" que:
+  - Calcula el siguiente `id_version` (MAX + 1)
+  - Inserta en tabla `versiones`
+  - Recarga la lista automáticamente
+- Al seleccionar una versión, se genera:
+  - `proyecciones_version_folder`: Ej. `v003`
+
+#### Capa 3: Explorador de Archivos (Placeholder)
+- Recibe contexto completo: `ORG0001` / `PRJ0002` / `v003`
+- Componente complejo a implementar próximamente
+- Permitirá navegar y gestionar archivos de la versión
+
+### Flujo de Creación de Versión
+
+```
+┌─────────────────┐      ┌──────────────┐      ┌────────┐      ┌──────────────┐      ┌──────────┐
+│ Frontend/       │ ──►  │  Middleware  │ ──►  │ Broker │ ──►  │ Backend Core │ ──►  │ MariaDB  │
+│ Backoffice      │      │     /api     │      │  8008  │      │     8003     │      │          │
+│ POST /versiones │      └──────────────┘      └────────┘      └──────────────┘      └──────────┘
+└─────────────────┘                                                                        │
+                                                                                           ▼
+                   1. Backend Core calcula: SELECT MAX(id_version) + 1 WHERE id_proyecto=X
+                   2. Inserta nueva versión: INSERT INTO versiones (id_version, id_proyecto, id_organizacion)
+                   3. Retorna versión creada con version_folder formateado
+```
+
+### Endpoints de API
+
+| Método | Endpoint | Descripción | Cliente |
+|--------|----------|-------------|---------|
+| GET | `/proyectos/{id}/versiones?org_id={org_id}` | Lista versiones de un proyecto | Frontend/Backoffice |
+| POST | `/proyectos/{id}/versiones` | Crea nueva versión (auto-incrementa) | Frontend/Backoffice |
+
+### Request de Creación de Versión
+
+```json
+{
+  "id_proyecto": 2,
+  "id_organizacion": 5
+}
+```
+
+### Response de Lista de Versiones
+
+```json
+{
+  "versiones": [
+    {
+      "id_version": 1,
+      "id_proyecto": 2,
+      "id_organizacion": 5,
+      "version_folder": "v001"
+    },
+    {
+      "id_version": 2,
+      "id_proyecto": 2,
+      "id_organizacion": 5,
+      "version_folder": "v002"
+    }
+  ],
+  "total": 2
+}
+```
+
+### Response de Creación de Versión
+
+```json
+{
+  "success": true,
+  "version": {
+    "id_version": 3,
+    "id_proyecto": 2,
+    "id_organizacion": 5,
+    "version_folder": "v003"
+  },
+  "mensaje": "Versión v003 creada correctamente"
+}
+```
+
+### Uso en Frontend/Backoffice (Reflex)
+
+```python
+from adapters.api_client import get_project_versions, create_project_version
+
+# Obtener versiones de un proyecto
+versiones = get_project_versions(
+    project_id=2,
+    access_token=token,
+    session_token=session,
+)
+
+# Versiones retornadas: [{"id_version": 1, "version_folder": "v001"}, ...]
+
+# Crear nueva versión (calcula automáticamente el siguiente id_version)
+result = create_project_version(
+    project_id=2,
+    organization_id=5,
+    access_token=token,
+    session_token=session,
+)
+
+if result.get("success"):
+    nueva_version_folder = result["version"]["version_folder"]  # "v003"
+    nueva_version_id = result["version"]["id_version"]  # 3
+```
+
+### Estado en Reflex (Componente de 3 capas)
+
+```python
+# Estado para gestión de proyecciones
+proyecciones_project_id: int = 0          # ID del proyecto seleccionado
+proyecciones_project_name: str = ""       # Nombre del proyecto
+proyecciones_versions: list[dict] = []    # Lista de versiones del proyecto
+proyecciones_version_id: int = 0          # ID de versión seleccionada
+proyecciones_version_folder: str = ""     # Carpeta formateada (v001, v002, etc.)
+proyecciones_org_folder: str = ""         # Carpeta de organización (ORG0001)
+proyecciones_prj_folder: str = ""         # Carpeta de proyecto (PRJ0002)
+```
+
+### Helpers de Formato
+
+```python
+from storage_access_structure import (
+    get_folder_by_id_organization,
+    get_folder_by_id_project,
+    get_folder_by_id_version,
+)
+
+# Generar identificadores formateados
+org_folder = get_folder_by_id_organization(1)  # "ORG0001"
+prj_folder = get_folder_by_id_project(2)       # "PRJ0002"
+ver_folder = get_folder_by_id_version(3)       # "v003"
+
+# Ruta completa para el explorador de archivos
+# /data/files/external/ORG0001/PRJ0002/v003/
+```
+
+### Tests
+
+Los tests de versiones se encuentran en:
+
+| Archivo | Entorno Virtual | Descripción |
+|---------|-----------------|-------------|
+| `src/apps/3_backend/tests/test_versiones_api.py` | `.venv_middleware313` | Tests de DTOs, numeración automática, aislamiento por org |
+| `src/apps/7_service_frontend/tests/test_versiones_middleware.py` | `.venv_middleware313` | Tests de estructuras, reglas de negocio, seguridad |
+
+Ejecutar tests:
+```bash
+./full_test.sh
+# O individualmente:
+source .venv_middleware313/bin/activate
+pytest -v src/apps/3_backend/tests/test_versiones_api.py
+pytest -v src/apps/7_service_frontend/tests/test_versiones_middleware.py
+```
+
+---
 
 ## Jerarquía de Trabajo y Roles de Proyecto
 

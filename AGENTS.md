@@ -134,11 +134,304 @@ Si un test falla de forma inconsistente:
 * **Endpoints:** La lista de endpoints activos de `fmanagement` debe mantenerse
   actualizada en `README.md` (sección de gestión de ficheros).
 
+### 5.2.1 Sincronización de configuración fmanagement (CRÍTICO)
+
+**OBLIGATORIO:** Los archivos de configuración `fmanagement_paths.yml` deben mantenerse 
+**idénticos** entre los dos proyectos para cada entorno.
+
+#### Ubicación de archivos por entorno
+
+| Entorno | Ruta en anewhope | Ruta en fmanagement |
+|---------|------------------|---------------------|
+| **macbook** | `infrastructure/environments/macbook/fmanagement_paths.yml` | `/Users/administrator/develop/fmanagement/env/macbook/fmanagement_paths.yml` |
+| **dev** | `infrastructure/environments/dev/fmanagement_paths.yml` | `/Users/administrator/develop/fmanagement/env/dev/fmanagement_paths.yml` |
+| **pre** | `infrastructure/environments/pre/fmanagement_paths.yml` | `/Users/administrator/develop/fmanagement/env/pre/fmanagement_paths.yml` |
+| **pro** | `infrastructure/environments/pro/fmanagement_paths.yml` | `/Users/administrator/develop/fmanagement/env/pro/fmanagement_paths.yml` |
+
+#### Contenido del archivo fmanagement_paths.yml
+
+El archivo contiene la configuración completa de operaciones de fmanagement:
+
+```yaml
+# Configuración de permisos
+permissions_source: mock | db_only
+middleware_base_url: http://...
+core_backend_base_url: http://...
+
+# Rutas de almacenamiento
+backend_core_base_storage: ~/data/files/external | /data/files/external
+backend_ia_base_storage: ~/data/files/trainer | /data/files/trainer
+
+# Configuración de transferencia
+transfer_mode: local | remote
+
+# SSH (solo si transfer_mode=remote)
+trainer_ssh_host: trainer.example.com
+trainer_ssh_user: rsync_user
+trainer_ssh_key_path: /opt/anewhope/keys/rsync_key
+trainer_ssh_port: 22
+core_ssh_host: backend.example.com
+core_ssh_user: rsync_user
+core_ssh_key_path: /opt/anewhope/keys/rsync_key
+core_ssh_port: 22
+```
+
+#### Reglas de sincronización
+
+1. ✅ **Sincronización bidireccional:** Cualquier cambio en un archivo debe replicarse 
+   inmediatamente en su contraparte del otro proyecto.
+
+2. ✅ **Validación antes de commit:** Antes de hacer commit en cualquiera de los dos proyectos,
+   verificar que ambos archivos del mismo entorno son idénticos.
+
+3. ✅ **Script de verificación:** Usar el script automatizado para verificar sincronización:
+   ```bash
+   # Verificar todos los entornos
+   ./scripts/verify_fmanagement_sync.sh
+   
+   # Verificar un entorno específico
+   ./scripts/verify_fmanagement_sync.sh macbook
+   
+   # El script ignora automáticamente los comentarios de sincronización
+   # (que intencionalmente son diferentes en cada archivo)
+   ```
+   
+   Salida esperada:
+   ```
+   ✅ SINCRONIZADO   - Archivos idénticos (correcto)
+   ❌ DESINCRONIZADO - Archivos diferentes (corregir inmediatamente)
+   ```
+
+4. ✅ **Comentarios de sincronización:** Cada archivo incluye un comentario en la cabecera
+   indicando la ruta del archivo gemelo:
+   ```yaml
+   # SINCRONIZACIÓN: Este archivo debe mantenerse sincronizado con
+   # /ruta/al/archivo/gemelo/fmanagement_paths.yml
+   ```
+
+5. ✅ **Deploy en producción:** En entornos `pre` y `pro`, verificar sincronización antes
+   de cualquier deploy de fmanagement o anewhope.
+
+#### Configuración por entorno
+
+| Entorno | `permissions_source` | `transfer_mode` | Rutas base | SSH |
+|---------|---------------------|-----------------|------------|-----|
+| **macbook** | `mock` | `local` | `~/data/files/*` | No usado |
+| **dev** | `db_only` | `remote` | `/data/files/*` | `*.house.loc` |
+| **pre** | `db_only` | `remote` | `/data/files/*` | `*.anewhope.aws` |
+| **pro** | `db_only` | `remote` | `/data/files/*` | `*.anewhope.aws` |
+
+#### Motivo de sincronización
+
+fmanagement se ejecuta dockerizado y necesita leer la configuración desde su propio 
+entorno (`/Users/administrator/develop/fmanagement/env/{entorno}/fmanagement_paths.yml`), 
+pero los valores deben coincidir exactamente con los configurados en anewhope para 
+garantizar coherencia en:
+
+- Rutas de almacenamiento (`backend_core_base_storage`, `backend_ia_base_storage`)
+- URLs de servicios (`middleware_base_url`, `core_backend_base_url`)
+- Configuración SSH para transferencias remotas
+- Modo de transferencia de versiones
+
+#### Flujo de trabajo recomendado
+
+1. **Modificar** configuración en anewhope:
+   ```bash
+   vim infrastructure/environments/dev/fmanagement_paths.yml
+   ```
+
+2. **Copiar** inmediatamente a fmanagement:
+   ```bash
+   cp infrastructure/environments/dev/fmanagement_paths.yml \
+      /Users/administrator/develop/fmanagement/env/dev/fmanagement_paths.yml
+   ```
+
+3. **Verificar** sincronización:
+   ```bash
+   diff infrastructure/environments/dev/fmanagement_paths.yml \
+        /Users/administrator/develop/fmanagement/env/dev/fmanagement_paths.yml
+   ```
+
+4. **Commit** en ambos proyectos con mensaje descriptivo del cambio.
+
 ## 5.3 Nomenclatura de carpetas en storage
 * **Obligatorio:** Para construir nombres de carpeta por organización y proyecto
   se deben usar los helpers de `src/2_shared_application/storage_access_structure.py`
   (`get_folder_by_id_organization`, `get_folder_by_id_project`). No se permite
   formatear manualmente los strings `ORGXXXX` o `PRJXXXX` en código de aplicación.
+
+### 5.3.1 Infraestructura de almacenamiento por entorno (CRÍTICO)
+
+**OBLIGATORIO:** El proyecto utiliza una estructura de carpetas específica que varía
+según el entorno (macbook, dev, pre, pro) y el tipo de servidor (backend, frontend, trainer).
+
+#### Estructura base por entorno
+
+| Entorno | Ruta base | Descripción |
+|---------|-----------|-------------|
+| **macbook** | `~/data/anewhope/files/` | Desarrollo local con subdirectorios por servidor |
+| **dev/pre/pro** | `/data/` | Producción - cada servidor tiene su propia estructura |
+
+#### Organización por servidor
+
+**En macbook (desarrollo):**
+```
+~/data/anewhope/
+├── docs/                    # Documentación del proyecto (no para Docker)
+└── files/
+    ├── backend_server/      # Backend Core, Service Backend, fmanagement
+    ├── frontend_server/     # Frontend, Backoffice, Middleware
+    └── trainer_server/      # Backend IA (trainer)
+```
+
+**En dev/pre/pro (producción):**
+Cada servidor físico tiene su contenido directamente en `/data/`:
+- Backend server: `/data/backend_core/`, `/data/service_backend/`, `/data/fmanagement/`, `/data/external/`, `/data/internal/`
+- Frontend server: `/data/frontend/`, `/data/backoffice/`, `/data/middleware/`, `/data/persistence/redis/`
+- Trainer server: `/data/backend_ia/`, `/data/external/`, `/data/internal/`, `/data/persistence/chroma/`
+
+#### Estructura detallada
+
+**Backend Server:**
+```
+/data/                       # En producción (~/data/anewhope/files/backend_server/ en macbook)
+├── backend_core/logs/       # Logs de backend_core (puerto 8003)
+├── service_backend/logs/    # Logs de broker (puerto 8008)
+├── fmanagement/logs/        # Logs de fmanagement (puerto 1666)
+├── external/                # Contenido de clientes (organizaciones/proyectos/versiones)
+│   └── ORG0001/PRJ00001/v001/
+│       ├── images/
+│       └── text/
+├── internal/                # Contenido generado por el sistema
+│   ├── models/              # Modelos LLM generados por trainer
+│   └── reports/             # Informes generados por trainer
+├── Mariadb/                 # Persistencia de MariaDB (volumen Docker)
+└── images/                  # Imágenes Docker en tar.gz
+```
+
+**Frontend Server:**
+```
+/data/                       # En producción (~/data/anewhope/files/frontend_server/ en macbook)
+├── frontend/logs/           # Logs de frontend (puerto 8005)
+├── backoffice/logs/         # Logs de backoffice (puerto 8006)
+├── middleware/logs/         # Logs de middleware (puerto 8007)
+├── persistence/redis/       # Persistencia de Redis (volumen Docker)
+└── images/                  # Imágenes Docker en tar.gz
+```
+
+**Trainer Server:**
+```
+/data/                       # En producción (~/data/anewhope/files/trainer_server/ en macbook)
+├── backend_ia/logs/         # Logs de backend_ia (puerto 8004)
+├── external/                # Contenido sincronizado desde backend (solo lectura)
+├── internal/                # Contenido generado y sincronizado a backend
+│   ├── models/              # Modelos LLM generados
+│   └── reports/             # Informes generados
+├── persistence/chroma/      # Persistencia de Chroma DB (volumen Docker)
+└── images/                  # Imágenes Docker en tar.gz
+```
+
+#### Diferencias: external vs internal
+
+| Carpeta | Propósito | Contenido | Sincronización |
+|---------|-----------|-----------|----------------|
+| **external** | Contenido de clientes | Documentos, imágenes, textos subidos por usuarios | Backend → Trainer (rsync bajo demanda) |
+| **internal** | Contenido generado | Modelos LLM y reportes generados por el sistema | Trainer → Backend (rsync automático) |
+
+**Reglas de external:**
+- ✅ Estructura: `ORG####/PRJ#####/v###/` (flexible dentro de cada versión)
+- ✅ Los usuarios pueden crear cualquier estructura de carpetas dentro de cada versión
+- ✅ Se sincroniza desde backend a trainer cuando se ejecuta `transferversion`
+- ✅ Corresponde a la variable `backend_core_base_storage` y `backend_ia_base_storage`
+
+**Reglas de internal:**
+- ✅ Estructura fija: `models/` y `reports/` con jerarquía `ORG####/PRJ#####/v###/`
+- ✅ Solo la aplicación puede escribir aquí (usuarios no tienen acceso directo)
+- ✅ Se sincroniza bidireccionalmente entre backend y trainer
+- ✅ Models: Trainer genera → Backend sirve para descarga
+- ✅ Reports: Trainer genera → Backend sirve al visor (frontend/backoffice)
+
+#### Variables de entorno
+
+Todas las rutas se configuran en `fmanagement_paths.yml` por entorno:
+
+```yaml
+# External (contenido de clientes)
+backend_core_base_storage: ~/data/anewhope/files/backend_server/external  # macbook
+backend_core_base_storage: /data/external  # dev/pre/pro
+
+# Internal (contenido generado)
+backend_core_internal_storage: ~/data/anewhope/files/backend_server/internal  # macbook
+backend_core_internal_storage: /data/internal  # dev/pre/pro
+
+# Logs por servicio
+backend_core_logs_path: ~/data/anewhope/files/backend_server/backend_core/logs  # macbook
+backend_core_logs_path: /data/backend_core/logs  # dev/pre/pro
+
+# Persistencia de bases de datos
+mariadb_data_path: ~/data/anewhope/files/backend_server/Mariadb  # macbook
+mariadb_data_path: /data/Mariadb  # dev/pre/pro
+
+# Versiones de imágenes Docker
+backend_core_image_version: 1.0.0
+```
+
+#### Scripts de gestión
+
+| Script | Propósito | Uso |
+|--------|-----------|-----|
+| `scripts/setup_data_structure.sh` | Crear toda la jerarquía de carpetas | `./scripts/setup_data_structure.sh macbook` |
+| `scripts/generate_docker_env.sh` | Generar .env desde YAML para docker-compose | `./scripts/generate_docker_env.sh dev backend` |
+| `scripts/verify_fmanagement_sync.sh` | Verificar sincronización de configuración | `./scripts/verify_fmanagement_sync.sh` |
+
+#### Flujo de trabajo Docker
+
+1. **Desarrollo (macbook)**: Usar `run.sh` de cada aplicación sin Docker
+2. **Producción (dev/pre/pro)**:
+   - Cada Dockerfile genera una imagen Docker versionada
+   - Las imágenes se guardan en `/data/images/` como tar.gz
+   - El `docker-compose.yml` de cada servidor usa las imágenes y monta volúmenes
+   - Generar `.env` automáticamente: `./scripts/generate_docker_env.sh dev backend`
+
+#### Sincronización rsync (dev/pre/pro)
+
+**Configuración híbrida:**
+- **Automática**: `internal/models/` y `internal/reports/` se sincronizan cada 5 minutos (Trainer → Backend)
+- **Bajo demanda**: `external/` se sincroniza solo cuando fmanagement ejecuta `transferversion` (Backend → Trainer)
+- **Full replication**: Disponible manualmente con script para recuperación ante fallas
+
+```yaml
+# En fmanagement_paths.yml
+rsync_enabled: true
+rsync_models_direction: trainer_to_backend
+rsync_models_trigger: automatic
+rsync_automatic_interval: 300  # 5 minutos
+```
+
+#### Reglas obligatorias
+
+1. ✅ **Rutas fijas en Dockerfiles**: Los contenedores siempre usan `/app/` internamente
+2. ✅ **Volúmenes en docker-compose**: Mapear desde variables de entorno (generadas desde YAML)
+3. ✅ **No sincronizar**: logs/, persistence/, images/ (cada servidor tiene lo suyo)
+4. ✅ **Sincronizar**: external/ (bajo demanda), internal/ (automático)
+5. ✅ **Scripts como fuente de verdad**: No editar `.env` manualmente, regenerar desde YAML
+6. ✅ **Validar estructura**: Ejecutar `setup_data_structure.sh` antes de primer deploy
+
+#### Adaptación por entorno
+
+Al desarrollar en macbook, la IA debe saber cómo adaptar rutas para producción:
+
+| Aspecto | Macbook | Dev/Pre/Pro |
+|---------|---------|-------------|
+| Ruta base | `~/data/anewhope/files/{servidor}/` | `/data/` |
+| Organización | Por subdirectorio `*_server/` | Por servidor físico |
+| Docker | No se usa (run.sh) | docker-compose.yml por servidor |
+| Sincronización | No necesaria (mismo filesystem) | rsync over SSH entre servidores |
+
+**Documentación relacionada:**
+- Configuración completa: `infrastructure/environments/{entorno}/fmanagement_paths.yml`
+- Sincronización: `infrastructure/environments/README_FMANAGEMENT_SYNC.md`
+- Scripts: `scripts/setup_data_structure.sh`, `scripts/generate_docker_env.sh`
 
 ## 5.4 Base de datos de proyectos (sin mocks)
 * **Obligatorio:** La base `myllm_projects_db` no tiene espejo en JSON. Cualquier
@@ -1769,6 +2062,76 @@ rx.markdown(
 
 - Frontend: `src/apps/5_web_frontend/web_frontend/web_frontend.py` (función `info_panel()`)
 - Backoffice: `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py` (función `info_panel()`)
+
+## Estilos de botones en Reflex (OBLIGATORIO)
+
+**Regla fundamental:** Todos los botones en aplicaciones Reflex deben seguir un estilo consistente
+para mantener la coherencia visual en toda la aplicación.
+
+### Estilo estándar de botones
+
+| Propiedad | Valor | Propósito |
+|-----------|-------|-----------|
+| `color` | `"black"` | Fuente siempre en negro para legibilidad |
+| `font_weight` | `"bold"` | Texto en negrita para destacar acciones |
+| `size` | `"3"` | Tamaño medio estándar (salvo excepciones) |
+| `color_scheme` | Según app | `"green"` (frontend) / `"orange"` (backoffice) |
+
+### Implementación obligatoria
+
+```python
+# ✅ CORRECTO - Botón con estilo estándar
+rx.button(
+    "Crear nueva versión",
+    on_click=State.create_new_version,
+    color_scheme="green",  # o "orange" en backoffice
+    size="3",
+    style={"font_weight": "bold", "color": "black"},
+)
+
+# ✅ CORRECTO - Botón con icono
+rx.button(
+    rx.icon("plus", size=18),
+    "Crear nueva versión",
+    on_click=State.create_new_version,
+    color_scheme="green",
+    size="3",
+    style={"font_weight": "bold", "color": "black"},
+)
+
+# ❌ INCORRECTO - Sin estilo de fuente
+rx.button(
+    "Crear nueva versión",
+    on_click=State.create_new_version,
+    color_scheme="green",
+    # Falta: style={"font_weight": "bold", "color": "black"}
+)
+
+# ❌ INCORRECTO - Color de fuente inconsistente
+rx.button(
+    "Crear nueva versión",
+    on_click=State.create_new_version,
+    color_scheme="green",
+    style={"font_weight": "bold", "color": "white"},  # Debe ser "black"
+)
+```
+
+### Excepciones permitidas
+
+| Caso | Excepción | Ejemplo |
+|------|-----------|---------|
+| Botones de acción crítica | `color_scheme="red"` | Eliminar, Cancelar |
+| Botones secundarios | `variant="soft"` o `variant="outline"` | Opciones menos prioritarias |
+| Botones deshabilitados | `disabled=True` | Mantener estilo base |
+
+### Color scheme por aplicación
+
+| Aplicación | Color Principal | Botones de Acción | Botones Secundarios |
+|------------|----------------|-------------------|---------------------|
+| Frontend (8005) | `"green"` | `color_scheme="green"` | `color_scheme="gray"` |
+| Backoffice (8006) | `"orange"` | `color_scheme="orange"` | `color_scheme="gray"` |
+
+**Nota:** El `color_scheme` define el color de fondo del botón. El texto siempre debe ser negro (`color: "black"`).
 
 ## Regla de puertos (estándar)
 

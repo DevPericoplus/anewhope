@@ -3598,3 +3598,190 @@ class RouterMiddleware:
             raise BusinessRuleError(
                 f"No se pudieron obtener tecnologías asignadas: {exc}"
             ) from exc
+
+    # ========================================================================
+    # Gestión de Versiones de Proyectos
+    # ========================================================================
+
+    def get_project_versions(
+        self, project_id: int, org_id: int, session: SessionContext
+    ) -> dict[str, Any]:
+        """Obtiene todas las versiones de un proyecto."""
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Consultando versiones proyecto=%s org=%s user_id=%s",
+            project_id,
+            org_id,
+            session.user_id,
+        )
+
+        try:
+            return self._broker_client.get_project_versions(project_id, org_id)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudieron obtener versiones del proyecto: {exc}"
+            ) from exc
+
+    def create_project_version(
+        self, project_id: int, org_id: int, session: SessionContext
+    ) -> dict[str, Any]:
+        """Crea una nueva versión para un proyecto."""
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Creando versión proyecto=%s org=%s user_id=%s",
+            project_id,
+            org_id,
+            session.user_id,
+        )
+
+        try:
+            return self._broker_client.create_project_version(project_id, org_id)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo crear versión para el proyecto: {exc}"
+            ) from exc
+
+    # ===================================================================
+    # GESTIÓN DE ESTADOS DE VERSIÓN
+    # ===================================================================
+
+    def get_version_state(
+        self, project_id: int, version_id: int, org_id: int, session: SessionContext
+    ) -> dict[str, Any]:
+        """Obtiene el estado actual de una versión."""
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Consultando estado versión=%s proyecto=%s org=%s user_id=%s",
+            version_id,
+            project_id,
+            org_id,
+            session.user_id,
+        )
+
+        try:
+            return self._broker_client.get_version_state(project_id, version_id, org_id)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo obtener estado de versión: {exc}"
+            ) from exc
+
+    def update_version_state(
+        self,
+        project_id: int,
+        version_id: int,
+        org_id: int,
+        update_data: dict[str, Any],
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Actualiza el estado de una versión."""
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Actualizando estado versión=%s proyecto=%s user_id=%s",
+            version_id,
+            project_id,
+            session.user_id,
+        )
+
+        try:
+            return self._broker_client.update_version_state(
+                project_id, version_id, org_id, update_data
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo actualizar estado de versión: {exc}"
+            ) from exc
+
+    def get_version_events(
+        self,
+        project_id: int,
+        version_id: int,
+        org_id: int,
+        session: SessionContext,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Obtiene el historial de eventos de una versión."""
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Consultando eventos versión=%s proyecto=%s user_id=%s",
+            version_id,
+            project_id,
+            session.user_id,
+        )
+
+        try:
+            return self._broker_client.get_version_events(
+                project_id, version_id, org_id, limit
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudieron obtener eventos de versión: {exc}"
+            ) from exc
+
+    def create_version_full(
+        self, project_id: int, request_data: dict[str, Any], session: SessionContext
+    ) -> dict[str, Any]:
+        """Crea una versión completa (DB + fmanagement)."""
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Creando versión completa proyecto=%s org=%s user_id=%s",
+            project_id,
+            request_data.get("id_organizacion"),
+            session.user_id,
+        )
+
+        try:
+            return self._broker_client.create_version_full(project_id, request_data)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo crear versión completa: {exc}"
+            ) from exc
+
+    # ===================================================================
+    # INTEGRACIÓN CON FMANAGEMENT
+    # ===================================================================
+
+    def fmanagement_list(
+        self, request_data: dict[str, Any], session: SessionContext
+    ) -> dict[str, Any]:
+        """Lista estructura de archivos vía fmanagement."""
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Listando fmanagement org=%s prj=%s version=%s user_id=%s",
+            request_data.get("org_folder"),
+            request_data.get("prj_folder"),
+            request_data.get("version_folder"),
+            session.user_id,
+        )
+
+        try:
+            return self._broker_client.fmanagement_list(request_data)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo listar estructura fmanagement: {exc}"
+            ) from exc
+
+    def fmanagement_operation(
+        self, request_data: dict[str, Any], session: SessionContext
+    ) -> dict[str, Any]:
+        """Ejecuta una operación genérica en fmanagement."""
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Operación fmanagement: %s user_id=%s",
+            request_data.get("operation"),
+            session.user_id,
+        )
+
+        try:
+            return self._broker_client.fmanagement_operation(request_data)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo ejecutar operación fmanagement: {exc}"
+            ) from exc

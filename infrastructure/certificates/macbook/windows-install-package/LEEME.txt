@@ -1,0 +1,42 @@
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║  Instalación de Certificado SSL para Anewhope               ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+
+PASOS RÁPIDOS:
+
+1. Haz doble clic en: mkcert-rootCA.crt
+
+2. Clic en "Instalar certificado..."
+
+3. Selecciona "Equipo local" (necesita admin)
+
+4. Selecciona "Colocar todos los certificados en el siguiente almacén"
+
+5. Examinar → Selecciona: "Entidades de certificación raíz de confianza"
+
+6. Siguiente → Finalizar → Aceptar advertencia de seguridad
+
+7. Reinicia tu navegador
+
+8. Accede a: https://192.168.0.39
+
+
+Para instrucciones detalladas, consulta: INSTRUCCIONES.md
+
+═══════════════════════════════════════════════════════════════
+
+URLs que funcionarán después de instalar:
+
+  • https://192.168.0.39          (Frontend)
+  • https://192.168.0.39:8443     (Backoffice)
+
+═══════════════════════════════════════════════════════════════
+
+⚠️  IMPORTANTE:
+   - Solo instala en equipos de confianza de tu red local
+   - NO compartas este certificado fuera de tu red
+   - Este certificado es solo para desarrollo, no producción
+
+═══════════════════════════════════════════════════════════════
