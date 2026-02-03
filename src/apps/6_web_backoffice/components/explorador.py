@@ -17,14 +17,7 @@ import logging
 from typing import Any
 
 # Imports de la capa compartida
-try:
-    from src.apps.2_shared_application.reflex_shared.shared_session_state import (
-        SharedSessionState,
-    )
-except ImportError:
-    from ...2_shared_application.reflex_shared.shared_session_state import (
-        SharedSessionState,
-    )
+from web_backoffice.shared_state import SharedSessionState
 
 # Imports de API client
 from ..adapters.api_client import (
