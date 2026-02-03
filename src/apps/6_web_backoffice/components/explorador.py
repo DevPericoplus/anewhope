@@ -705,6 +705,26 @@ class ExploradorState(SharedSessionState):
         logger.info("Item seleccionado: %s", item_id)
         yield  # Actualizar UI
 
+    def handle_item_click(self, item_id: str):
+        """Maneja el click en un item (carpeta o archivo).
+
+        Si es carpeta: expande/colapsa
+        Si es archivo: selecciona
+        """
+        for item in self.items:
+            if item.id == item_id:
+                if item.item_type == "folder":
+                    # Es carpeta: toggle expand
+                    item.is_expanded = not item.is_expanded
+                    logger.info("Toggle expand: %s → %s", item.name, item.is_expanded)
+                    self._update_visibility()
+                else:
+                    # Es archivo: seleccionar
+                    self.selected_item_id = item_id
+                    logger.info("Item seleccionado: %s", item_id)
+                break
+        yield  # Actualizar UI
+
 
 # ============================================================================
 # Componentes UI
@@ -765,7 +785,7 @@ def explorador_panel(state: ExploradorState) -> rx.Component:
                     item.is_visible,
                     rx.box(
                         rx.hstack(
-                            rx.text("📁" if item.item_type == "folder" else "📄"),
+                            rx.text(rx.cond(item.item_type == "folder", "📁", "📄")),
                             rx.text(item.name),
                             rx.text(item.version_state_label, color=item.version_state_color),
                             rx.text(item.size_str, size="1", color="gray"),
@@ -782,9 +802,7 @@ def explorador_panel(state: ExploradorState) -> rx.Component:
                             spacing="2",
                         ),
                         padding_left=f"{item.depth * 20}px",
-                        on_click=lambda: state.toggle_expand(item.id)
-                        if item.item_type == "folder"
-                        else state.select_item(item.id),
+                        on_click=lambda: state.handle_item_click(item.id),
                         cursor="pointer",
                         _hover={"background": "gray.100"},
                         padding="8px",

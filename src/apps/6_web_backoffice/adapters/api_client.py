@@ -218,15 +218,22 @@ def _request_middleware(
         try:
             error_payload = exc.read().decode("utf-8")
             logger.error(f"Error HTTP desde middleware: {exc.code} - {error_payload}")
+            # Intentar parsear el error como JSON para extraer el mensaje
+            try:
+                error_data = json.loads(error_payload)
+                error_message = error_data.get("detail", "Error desconocido")
+            except json.JSONDecodeError:
+                error_message = error_payload
+            return {"error": True, "detail": error_message, "status_code": exc.code}
         except Exception:
             logger.error(f"Error HTTP desde middleware: {exc.code}")
-        return {}
+            return {"error": True, "detail": "Error en la comunicación con el middleware", "status_code": exc.code}
     except urllib.error.URLError as exc:
         logger.error(f"No se pudo contactar con el middleware: {exc}")
-        return {}
+        return {"error": True, "detail": "No se pudo contactar con el middleware"}
     except json.JSONDecodeError:
         logger.error("Respuesta del middleware no es JSON válido")
-        return {}
+        return {"error": True, "detail": "Respuesta inválida del servidor"}
 
 
 def login_user(user_name: str, password: str, otp: str) -> dict[str, Any]:
@@ -1279,7 +1286,10 @@ def get_version_state(
         with urllib.request.urlopen(request, timeout=10) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        print(f"Error HTTP: {exc.code}")
+        error_body = exc.read().decode("utf-8") if exc.fp else ""
+        print(f"Error HTTP: {exc.code} al obtener estado versión")
+        print(f"  URL: {url}")
+        print(f"  Respuesta: {error_body}")
         return {"success": False, "mensaje": f"Error HTTP: {exc.code}"}
     except Exception as exc:
         print(f"Error obteniendo estado versión: {exc}")
@@ -1349,7 +1359,11 @@ def update_version_state(
         with urllib.request.urlopen(request, timeout=10) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        print(f"Error HTTP: {exc.code}")
+        error_body = exc.read().decode("utf-8") if exc.fp else ""
+        print(f"Error HTTP: {exc.code} al actualizar estado versión")
+        print(f"  URL: {url}")
+        print(f"  Payload: {payload.decode('utf-8')}")
+        print(f"  Respuesta: {error_body}")
         return {"success": False, "mensaje": f"Error HTTP: {exc.code}"}
     except Exception as exc:
         print(f"Error actualizando estado versión: {exc}")
@@ -1393,7 +1407,10 @@ def get_version_events(
         with urllib.request.urlopen(request, timeout=10) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        print(f"Error HTTP: {exc.code}")
+        error_body = exc.read().decode("utf-8") if exc.fp else ""
+        print(f"Error HTTP: {exc.code} al obtener eventos versión")
+        print(f"  URL: {url}")
+        print(f"  Respuesta: {error_body}")
         return {"success": False, "events": [], "total": 0, "mensaje": f"Error HTTP: {exc.code}"}
     except Exception as exc:
         print(f"Error obteniendo eventos versión: {exc}")
@@ -1406,6 +1423,7 @@ def create_version_full(
     version_name: str,
     user_id: int,
     user_name: str,
+    identity_type_id: int,
     description: str | None = None,
     clone_from_version_id: int | None = None,
     initial_state: str = "Abierta",
@@ -1432,6 +1450,7 @@ def create_version_full(
         version_name: Nombre de la versión (ej: "V001")
         user_id: ID del usuario que crea
         user_name: Nombre del usuario que crea
+        identity_type_id: ID del tipo de identidad del usuario (1=SuperAdmin, 2=OrgAdmin, etc.)
         description: Descripción opcional
         clone_from_version_id: ID de versión a clonar (opcional)
         initial_state: Estado inicial ("Abierta", "Bloqueada", "Protegida", "Final")
@@ -1459,6 +1478,7 @@ def create_version_full(
         "nombre_version": version_name,
         "user_id": user_id,
         "user_name": user_name,
+        "identity_type_id": identity_type_id,
         "initial_state": initial_state,
         "protected": protected,
         "final_c": final_c,
@@ -1477,7 +1497,11 @@ def create_version_full(
         with urllib.request.urlopen(request, timeout=15) as response:  # Más tiempo por operación compleja
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        print(f"Error HTTP: {exc.code}")
+        error_body = exc.read().decode("utf-8") if exc.fp else ""
+        print(f"Error HTTP: {exc.code} al crear versión completa")
+        print(f"  URL: {url}")
+        print(f"  Payload: {payload.decode('utf-8')}")
+        print(f"  Respuesta: {error_body}")
         return {"success": False, "mensaje": f"Error HTTP: {exc.code}"}
     except Exception as exc:
         print(f"Error creando versión completa: {exc}")
@@ -1532,7 +1556,11 @@ def fmanagement_list(
         with urllib.request.urlopen(request, timeout=10) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        print(f"Error HTTP: {exc.code}")
+        error_body = exc.read().decode("utf-8") if exc.fp else ""
+        print(f"Error HTTP: {exc.code} al listar fmanagement")
+        print(f"  URL: {url}")
+        print(f"  Payload: {payload.decode('utf-8')}")
+        print(f"  Respuesta: {error_body}")
         return {"success": False, "items": [], "mensaje": f"Error HTTP: {exc.code}"}
     except Exception as exc:
         print(f"Error listando fmanagement: {exc}")
@@ -1588,7 +1616,12 @@ def fmanagement_operation(
         with urllib.request.urlopen(request, timeout=10) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        print(f"Error HTTP: {exc.code}")
+        error_body = exc.read().decode("utf-8") if exc.fp else ""
+        print(f"Error HTTP: {exc.code} en operación fmanagement")
+        print(f"  URL: {url}")
+        print(f"  Operation: {operation}")
+        print(f"  Params: {params}")
+        print(f"  Respuesta: {error_body}")
         return {"success": False, "mensaje": f"Error HTTP: {exc.code}"}
     except Exception as exc:
         print(f"Error en operación fmanagement: {exc}")

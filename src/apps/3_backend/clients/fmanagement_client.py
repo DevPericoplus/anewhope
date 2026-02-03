@@ -364,7 +364,7 @@ class FmanagementClient:
             return {"error": str(e)}
     
     # === GESTIÓN DE VERSIONES ===
-    
+
     def create_version(
         self,
         orgpath: str,
@@ -376,34 +376,147 @@ class FmanagementClient:
         basepath: str = "default",
     ) -> dict[str, Any]:
         """Crea una nueva versión (carpeta de versión en disco).
-        
-        Endpoint: POST /fmo/newversion
-        
+
+        Si clone_from es None, crea versión vacía con estructura base.
+        Si clone_from está especificado, clona desde esa versión.
+
         Args:
             orgpath: Carpeta organización (ej: ORG0001)
-            prjpath: Carpeta proyecto (ej: PRJ0001)
-            versionpath: Nueva versión (ej: v003)
+            prjpath: Carpeta proyecto (ej: PRJ00001)
+            versionpath: Nueva versión a crear (ej: v001, v002)
             identity_type_id: Tipo de identidad del usuario
-            clone_from: Versión a clonar (ej: v002). Si None, crea vacía.
+            clone_from: Versión origen a clonar (ej: v001). Si None, crea vacía.
             iduser: ID del usuario
             basepath: Ruta base (default usa configuración de fmanagement)
+
+        Returns:
+            Dict con resultado de la operación
         """
-        params = {
+        if clone_from is None:
+            # Crear versión vacía con estructura base
+            return self._create_empty_version(
+                orgpath=orgpath,
+                prjpath=prjpath,
+                versionpath=versionpath,
+                identity_type_id=identity_type_id,
+                iduser=iduser,
+                basepath=basepath,
+            )
+        else:
+            # Clonar desde versión existente usando /fmo/newversion
+            return self._clone_version(
+                orgpath=orgpath,
+                prjpath=prjpath,
+                source_version=clone_from,
+                identity_type_id=identity_type_id,
+                iduser=iduser,
+                basepath=basepath,
+            )
+
+    def _create_empty_version(
+        self,
+        orgpath: str,
+        prjpath: str,
+        versionpath: str,
+        identity_type_id: int,
+        iduser: int = 0,
+        basepath: str = "default",
+    ) -> dict[str, Any]:
+        """Crea una versión vacía con estructura base.
+
+        Usa /fmo/createfolder para crear:
+        - ORG.../PRJ.../vXXX/
+        - ORG.../PRJ.../vXXX/datos/
+        - ORG.../PRJ.../vXXX/modelos/
+        - ORG.../PRJ.../vXXX/evaluaciones/
+        - ORG.../PRJ.../vXXX/resultados/
+        """
+        self._logger.info(
+            f"Creando versión vacía: {orgpath}/{prjpath}/{versionpath}"
+        )
+
+        # Crear carpeta raíz de la versión
+        result = self.create_folder(
+            orgpath=orgpath,
+            prjpath=prjpath,
+            versionpath=versionpath,
+            subfolders="",  # Raíz de la versión
+            identity_type_id=identity_type_id,
+            iduser=iduser,
+            basepath=basepath,
+        )
+
+        if "error" in result:
+            return result
+
+        # Crear subcarpetas base
+        base_folders = ["datos", "modelos", "evaluaciones", "resultados"]
+        for folder in base_folders:
+            folder_result = self.create_folder(
+                orgpath=orgpath,
+                prjpath=prjpath,
+                versionpath=versionpath,
+                subfolders=folder,
+                identity_type_id=identity_type_id,
+                iduser=iduser,
+                basepath=basepath,
+            )
+            if "error" in folder_result:
+                self._logger.warning(
+                    f"No se pudo crear subcarpeta {folder}: {folder_result.get('error')}"
+                )
+
+        return {
+            "status": "success",
+            "message": f"Versión vacía {versionpath} creada exitosamente",
+            "new_version": versionpath,
+            "old_version": None,
+        }
+
+    def _clone_version(
+        self,
+        orgpath: str,
+        prjpath: str,
+        source_version: str,
+        identity_type_id: int,
+        iduser: int = 0,
+        basepath: str = "default",
+    ) -> dict[str, Any]:
+        """Clona una versión existente a la siguiente.
+
+        Endpoint: POST /fmo/newversion
+
+        IMPORTANTE: fmanagement calcula automáticamente la siguiente versión.
+        Si source_version=v001, crea v002.
+        Si source_version=v002, crea v003.
+
+        Args:
+            orgpath: Carpeta organización
+            prjpath: Carpeta proyecto
+            source_version: Versión origen a clonar
+            identity_type_id: Tipo de identidad
+            iduser: ID del usuario
+            basepath: Ruta base
+        """
+        self._logger.info(
+            f"Clonando versión: {orgpath}/{prjpath}/{source_version} -> siguiente"
+        )
+
+        # NOTA: versionpath en /fmo/newversion es la versión ORIGEN
+        # fmanagement calcula automáticamente la siguiente
+        payload = {
             "iduser": iduser,
             "basepath": basepath,
             "orgpath": orgpath,
             "prjpath": prjpath,
-            "versionpath": versionpath,
+            "versionpath": source_version,  # Versión a clonar (origen)
             "identity_type_id": identity_type_id,
         }
-        
-        if clone_from:
-            params["clone_from"] = clone_from
-        
+
         try:
             with httpx.Client(base_url=self.base_url, timeout=self.timeout) as client:
-                response = client.post("/fmo/newversion", params=params)
+                response = client.post("/fmo/newversion", json=payload)
             return self._handle_response(response)
         except Exception as e:
-            self._logger.error(f"Error en create_version: {e}")
+            self._logger.error(f"Error clonando versión: {e}")
             return {"error": str(e)}

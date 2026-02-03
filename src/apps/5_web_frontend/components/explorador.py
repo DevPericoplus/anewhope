@@ -20,6 +20,9 @@ from web_frontend.shared_state import SharedSessionState
 from adapters.api_client import (
     fmanagement_list,
     fmanagement_operation,
+    fmanagement_download,
+    fmanagement_diff,
+    fmanagement_transfer,
     get_version_state,
     update_version_state,
 )
@@ -119,6 +122,12 @@ class ExploradorState(SharedSessionState):
 
     # Estados de todas las versiones (cache local)
     version_states: dict = {}  # {version_key: state_data}
+
+    # Campos para Diff y Transfer
+    diff_v2: str = "" # Versión destino para comparar
+    transfer_target: str = "trainer" # "trainer" o "core"
+    show_diff_dialog: bool = False
+    show_transfer_dialog: bool = False
 
     # ========================================================================
     # Propiedades Computadas
@@ -310,6 +319,34 @@ class ExploradorState(SharedSessionState):
     # Operaciones CRUD
     # ========================================================================
 
+    def accion_diff_version(self):
+        """Ejecuta la acción de comparar versión.
+
+        Construye el FolderItem internamente para evitar problemas con variables
+        reactivas de Reflex en tiempo de compilación.
+        """
+        item = FolderItem(
+            id="0",
+            name=self.id_version,
+            depth=1,
+            is_protected=True
+        )
+        return self.acciones("diff_version", item)
+
+    def accion_transfer_version(self):
+        """Ejecuta la acción de transferir versión.
+
+        Construye el FolderItem internamente para evitar problemas con variables
+        reactivas de Reflex en tiempo de compilación.
+        """
+        item = FolderItem(
+            id="0",
+            name=self.id_version,
+            depth=1,
+            is_protected=True
+        )
+        return self.acciones("transfer_version", item)
+
     def acciones(self, accion: str, item: FolderItem):
         """Ejecuta una acción sobre un item del explorador.
         
@@ -463,23 +500,42 @@ class ExploradorState(SharedSessionState):
                 "prj": prj_folder,
                 "version": version_folder,
                 "file_path": item.name,
+                "filename": item.name.split("/")[-1],
             }
 
-            response = fmanagement_operation(
-                operation="download_file",
-                params=params,
-                access_token=self.access_token,
-                session_token=self.session_token,
-            )
+            try:
+                content = fmanagement_download(
+                    params=params,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+                logger.info("Contenido descargado: %d bytes", len(content))
+                return rx.download(data=content, filename=params["filename"])
+            except Exception as e:
+                logger.error("Error descargando archivo: %s", e)
+                return rx.toast.error(f"Error al descargar: {e}")
 
-            if response.get("success"):
-                logger.info("Descarga iniciada: %s", item.name)
-                # TODO: Procesar data del archivo para descarga
-                return rx.toast.success(f"Descargando: {item.name}")
-            else:
-                error_msg = response.get("mensaje", "Error desconocido")
-                logger.error("Error descargando: %s", error_msg)
-                return rx.toast.error(f"Error: {error_msg}")
+        # ====================================================================
+        # OPERACIONES DE COMPARACIÓN Y TRANSFERENCIA (NUEVAS)
+        # ====================================================================
+
+        elif accion == "diff_version":
+            # Validar permiso (requiere lectura de archivos)
+            if not self.can_file_read:
+                return rx.window_alert("Sin permisos para comparar versiones")
+            
+            # Abrir diálogo para seleccionar v2
+            self.show_diff_dialog = True
+            return rx.toast.info("Seleccione versión para comparar")
+
+        elif accion == "transfer_version":
+            # Validar permiso (solo internos)
+            if not self.is_internal_user:
+                return rx.window_alert("Solo internos pueden transferir versiones")
+
+            # Abrir diálogo para seleccionar destino
+            self.show_transfer_dialog = True
+            return rx.toast.info("Seleccione destino de transferencia")
 
         # ====================================================================
         # OPERACIONES ADMINISTRATIVAS DE VERSIÓN
@@ -546,6 +602,54 @@ class ExploradorState(SharedSessionState):
         else:
             logger.warning("Acción no reconocida: %s", accion)
             return rx.window_alert(f"Acción '{accion}' no implementada")
+
+    def execute_diff(self):
+        """Ejecuta la comparación de versiones con los parámetros seleccionados."""
+        if not self.diff_v2:
+            return rx.toast.error("Debe seleccionar una versión destino")
+
+        org_folder = f"ORG{str(self.organization_id).zfill(4)}"
+        prj_folder = f"PRJ{str(self.id_proyecto).zfill(4)}"
+        
+        params = {
+            "org": org_folder,
+            "prj": prj_folder,
+            "v1": self.id_version,
+            "v2": self.diff_v2,
+        }
+
+        try:
+            response = fmanagement_diff(params, self.access_token, self.session_token)
+            self.show_diff_dialog = False
+            if response.get("success"):
+                # TODO: Mostrar resultados en un panel
+                return rx.toast.success(f"Comparación ok entre {self.id_version} y {self.diff_v2}")
+            else:
+                return rx.toast.error(f"Error diff: {response.get('mensaje')}")
+        except Exception as e:
+            return rx.toast.error(f"Error diff fatal: {e}")
+
+    def execute_transfer(self):
+        """Ejecuta la transferencia de versión al servidor seleccionado."""
+        org_folder = f"ORG{str(self.organization_id).zfill(4)}"
+        prj_folder = f"PRJ{str(self.id_proyecto).zfill(4)}"
+        
+        params = {
+            "org": org_folder,
+            "prj": prj_folder,
+            "version": self.id_version,
+            "target": self.transfer_target,
+        }
+
+        try:
+            response = fmanagement_transfer(params, self.access_token, self.session_token)
+            self.show_transfer_dialog = False
+            if response.get("success"):
+                return rx.toast.success(f"Transferencia a {self.transfer_target} iniciada")
+            else:
+                return rx.toast.error(f"Error transfer: {response.get('mensaje')}")
+        except Exception as e:
+            return rx.toast.error(f"Error transfer fatal: {e}")
 
     # ========================================================================
     # Lógica de Negocio
@@ -702,6 +806,26 @@ class ExploradorState(SharedSessionState):
         logger.info("Item seleccionado: %s", item_id)
         yield  # Actualizar UI
 
+    def handle_item_click(self, item_id: str):
+        """Maneja el click en un item (carpeta o archivo).
+
+        Si es carpeta: expande/colapsa
+        Si es archivo: selecciona
+        """
+        for item in self.items:
+            if item.id == item_id:
+                if item.item_type == "folder":
+                    # Es carpeta: toggle expand
+                    item.is_expanded = not item.is_expanded
+                    logger.info("Toggle expand: %s → %s", item.name, item.is_expanded)
+                    self._update_visibility()
+                else:
+                    # Es archivo: seleccionar
+                    self.selected_item_id = item_id
+                    logger.info("Item seleccionado: %s", item_id)
+                break
+        yield  # Actualizar UI
+
 
 # ============================================================================
 # Componentes UI
@@ -724,6 +848,78 @@ class ExploradorState(SharedSessionState):
 # y no requieren modificación, solo copia directa del original.
 
 
+def render_diff_dialog(state: ExploradorState) -> rx.Component:
+    """Diálogo para seleccionar versión a comparar."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Comparar Versiones"),
+            rx.dialog.description(
+                f"Seleccione la versión para comparar con {state.id_version}"
+            ),
+            rx.select.root(
+                rx.select.trigger(),
+                rx.select.content(
+                    rx.select.group(
+                        rx.foreach(
+                            state.items,
+                            lambda item: rx.cond(
+                                item.depth == 1,
+                                rx.select.item(item.name, value=item.name),
+                                rx.fragment()
+                            )
+                        )
+                    )
+                ),
+                on_change=state.set_diff_v2,
+            ),
+            rx.hstack(
+                rx.dialog.close(
+                    rx.button("Cancelar", variant="soft", color_scheme="gray"),
+                    on_click=lambda: state.set_show_diff_dialog(False)
+                ),
+                rx.button("Comparar", on_click=state.execute_diff),
+                spacing="3",
+                margin_top="15px",
+                justify="end",
+            ),
+        ),
+        open=state.show_diff_dialog,
+    )
+
+def render_transfer_dialog(state: ExploradorState) -> rx.Component:
+    """Diálogo para seleccionar destino de transferencia."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Transferir Versión"),
+            rx.dialog.description(
+                f"Seleccione el destino para transferir {state.id_version}"
+            ),
+            rx.select.root(
+                rx.select.trigger(),
+                rx.select.content(
+                    rx.select.group(
+                        rx.select.item("Trainer (Servidor IA)", value="trainer"),
+                        rx.select.item("Core (Servidor Principal)", value="core"),
+                    )
+                ),
+                default_value="trainer",
+                on_change=state.set_transfer_target,
+            ),
+            rx.hstack(
+                rx.dialog.close(
+                    rx.button("Cancelar", variant="soft", color_scheme="gray"),
+                    on_click=lambda: state.set_show_transfer_dialog(False)
+                ),
+                rx.button("Transferir", on_click=state.execute_transfer),
+                spacing="3",
+                margin_top="15px",
+                justify="end",
+            ),
+        ),
+        open=state.show_transfer_dialog,
+    )
+
+
 def explorador_panel(state: ExploradorState) -> rx.Component:
     """Componente principal del explorador (FUNCIONAL - UI simplificada).
     
@@ -738,20 +934,42 @@ def explorador_panel(state: ExploradorState) -> rx.Component:
         Componente Reflex renderizable
     """
     return rx.box(
+        render_diff_dialog(state),
+        render_transfer_dialog(state),
         # Header
         rx.heading(
             f"Explorador de Archivos - Proyecto {state.id_proyecto} - Versión {state.id_version}",
             size="6",
         ),
         rx.text(f"Usuario: {state.user_name} ({state.current_role_label})", size="2"),
-        rx.text(
-            f"Estado de versión: {state.version_state}",
-            color=rx.cond(
-                state.version_protected,
-                "orange",
-                "green",
+        rx.hstack(
+            rx.text(
+                f"Estado de versión: {state.version_state}",
+                color=rx.cond(
+                    state.version_protected,
+                    "orange",
+                    "green",
+                ),
+                size="3",
             ),
-            size="3",
+            rx.spacer(),
+            # Botones de acción global
+            rx.button(
+                "Comparar",
+                on_click=state.accion_diff_version,
+                size="2",
+                variant="outline"
+            ),
+            rx.button(
+                "Transferir",
+                on_click=state.accion_transfer_version,
+                size="2",
+                variant="solid",
+                color_scheme="blue",
+                display=rx.cond(state.is_internal_user, "block", "none")
+            ),
+            spacing="2",
+            margin_bottom="10px"
         ),
         rx.divider(),
         # Lista de items (simplificada)
@@ -762,7 +980,7 @@ def explorador_panel(state: ExploradorState) -> rx.Component:
                     item.is_visible,
                     rx.box(
                         rx.hstack(
-                            rx.text("📁" if item.item_type == "folder" else "📄"),
+                            rx.text(rx.cond(item.item_type == "folder", "📁", "📄")),
                             rx.text(item.name),
                             rx.text(item.version_state_label, color=item.version_state_color),
                             rx.text(item.size_str, size="1", color="gray"),
@@ -776,12 +994,17 @@ def explorador_panel(state: ExploradorState) -> rx.Component:
                                 rx.badge("Bloqueado", color_scheme="orange"),
                                 rx.fragment(),
                             ),
+                            # Acciones por item
+                            rx.spacer(),
+                            rx.cond(
+                                item.item_type == "file",
+                                rx.button("⬇️", on_click=lambda: state.acciones("download", item), size="1", variant="ghost"),
+                                rx.fragment()
+                            ),
                             spacing="2",
                         ),
                         padding_left=f"{item.depth * 20}px",
-                        on_click=lambda: state.toggle_expand(item.id)
-                        if item.item_type == "folder"
-                        else state.select_item(item.id),
+                        on_click=lambda: state.handle_item_click(item.id),
                         cursor="pointer",
                         _hover={"background": "gray.100"},
                         padding="8px",

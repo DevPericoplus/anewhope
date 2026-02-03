@@ -870,7 +870,15 @@ class RouterMiddleware:
         )
 
     def _load_users(self, data_path: Path) -> list[UserDto]:
-        """Carga los usuarios desde archivo JSON."""
+        """Carga los usuarios desde la fuente de datos configurada.
+
+        En modo db_only: consulta EXCLUSIVAMENTE MariaDB vía broker.
+        El JSON local se actualiza como cache pero NUNCA se lee para autenticación.
+
+        En modo mock: consulta EXCLUSIVAMENTE el JSON local.
+
+        En modo mock_and_db: consulta MariaDB vía broker y replica al JSON.
+        """
 
         if self._should_use_broker_reads():
             try:
@@ -879,7 +887,9 @@ class RouterMiddleware:
                 raise BusinessRuleError(
                     "No se pudo cargar usuarios desde el broker"
                 ) from exc
+            # Actualizar cache local (para debugging y cambios de modo)
             self._sync_users_cache(data_path, records)
+            # RETORNAR datos de la base de datos, NO del JSON
             return [UserDto.model_validate(record) for record in records]
         try:
             with data_path.open("r", encoding="utf-8") as file_handle:
@@ -891,15 +901,19 @@ class RouterMiddleware:
         return [UserDto.model_validate(record) for record in records]
 
     def _store_users(self, data_path: Path, users: list[UserDto]) -> None:
-        """Guarda los usuarios en el archivo JSON con retry automático.
-        
-        IMPORTANTE: En modo db_only, NO escribe al cache local porque el
-        backend core ya lo hace después de sincronizar con MariaDB.
-        Esto evita que el middleware sobrescriba el OTP correcto.
+        """Guarda los usuarios con retry automático.
+
+        IMPORTANTE: En modo db_only o mock_and_db, primero sincroniza con MariaDB
+        vía broker, y luego SIEMPRE actualiza el cache JSON local. Esto garantiza:
+        1. Consistencia: el JSON siempre refleja el último estado conocido
+        2. Flexibilidad: permite cambiar de modo sin datos desactualizados
+        3. Debugging: el JSON es útil para inspección manual
+
+        En db_only, la lectura (_load_users) siempre consulta MariaDB, nunca el JSON.
         """
 
         payload = [user.model_dump() for user in users]
-        
+
         # Log detallado para debugging de OTP
         admin_users = [u for u in payload if u.get("user_name") == "adminone"]
         if admin_users:
@@ -908,18 +922,18 @@ class RouterMiddleware:
                 admin_users[0].get("user_otp"),
                 self._storage_mode.value,
             )
-        
+
         use_broker = self._should_use_broker_reads()
         replicate = self._should_replicate()
         self._logger.info(
             "_store_users: use_broker=%s, replicate=%s",
             use_broker, replicate
         )
-        
+
         if use_broker or replicate:
             max_retries = 3
             last_exception = None
-            
+
             for attempt in range(max_retries):
                 try:
                     self._logger.info(
@@ -950,24 +964,19 @@ class RouterMiddleware:
                             "tras %d intentos: %s",
                             max_retries, exc
                         )
-            
+
             # Si todos los intentos fallaron, lanzar excepción
             if last_exception:
                 raise BusinessRuleError(
                     f"No se pudo guardar usuarios en broker tras {max_retries} intentos. "
                     f"OTP NO sincronizado."
                 ) from last_exception
-            
-            # En modo db_only, NO escribir al cache local
-            # El backend core ya sincroniza con MariaDB y escribe al JSON
-            if use_broker:
-                self._logger.info(
-                    "Modo db_only: cache local NO actualizado (delegado a backend core)"
-                )
-                return
-        
-        # Solo en modo mock o mock_and_db: escribir al cache local
-        self._logger.info("Escribiendo cache local en %s", data_path)
+
+        # Siempre actualizar el cache local para mantenerlo sincronizado
+        self._logger.info(
+            "Actualizando cache local en %s (mode=%s)",
+            data_path, self._storage_mode.value
+        )
         self._sync_users_cache(data_path, payload)
 
     def _sync_users_cache(
@@ -3785,3 +3794,36 @@ class RouterMiddleware:
             raise BusinessRuleError(
                 f"No se pudo ejecutar operación fmanagement: {exc}"
             ) from exc
+
+    def fmanagement_download(
+        self, request_data: dict[str, Any], session: SessionContext
+    ) -> bytes:
+        """Descarga un archivo vía fmanagement."""
+        self._configure_broker_security(session)
+        self._logger.info("[middleware] Descargando archivo fmanagement user_id=%s", session.user_id)
+        try:
+            return self._broker_client.fmanagement_download(request_data)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(f"Error descargando archivo: {exc}") from exc
+
+    def fmanagement_diff(
+        self, request_data: dict[str, Any], session: SessionContext
+    ) -> dict[str, Any]:
+        """Compara versiones vía fmanagement."""
+        self._configure_broker_security(session)
+        self._logger.info("[middleware] Comparando versiones fmanagement user_id=%s", session.user_id)
+        try:
+            return self._broker_client.fmanagement_diff(request_data)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(f"Error comparando versiones: {exc}") from exc
+
+    def fmanagement_transfer(
+        self, request_data: dict[str, Any], session: SessionContext
+    ) -> dict[str, Any]:
+        """Transfiere versiones vía fmanagement."""
+        self._configure_broker_security(session)
+        self._logger.info("[middleware] Transfiriendo versión fmanagement user_id=%s", session.user_id)
+        try:
+            return self._broker_client.fmanagement_transfer(request_data)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(f"Error transfiriendo versión: {exc}") from exc

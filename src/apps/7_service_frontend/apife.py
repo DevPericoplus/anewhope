@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager, suppress
 from typing import Annotated, Any, AsyncIterator
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 try:
@@ -1603,6 +1603,7 @@ class CreateVersionFullRequest(BaseModel):
     descripcion: str | None = None
     user_id: int
     user_name: str
+    identity_type_id: int
     clone_from_version_id: int | None = None
     initial_state: str = "Abierta"
     protected: bool = False
@@ -2618,13 +2619,8 @@ def fmanagement_operation_endpoint(
     """Ejecuta una operación genérica en fmanagement.
     
     Operaciones soportadas:
-    - create_folder
-    - rename_folder
-    - delete_folder
-    - create_file
-    - rename_file
-    - delete_file
-    - download_file
+    - create_folder, delete_folder, rename_folder
+    - create_file, rename_file, delete_file, download_file
     
     Flujo: Frontend → Middleware → Broker → Backend Core → fmanagement
     """
@@ -2644,3 +2640,61 @@ def fmanagement_operation_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+@app.post(
+    "/fmanagement/download",
+    tags=["fmanagement"],
+)
+def fmanagement_download_endpoint(
+    request: FmanagementOperationRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> Response:
+    """Descarga un archivo vía fmanagement (binario)."""
+    try:
+        content = router.fmanagement_download(request.model_dump(), session)
+        filename = request.params.get("filename", "download")
+        return Response(
+            content=content,
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/fmanagement/diff",
+    response_model=FmanagementOperationResponse,
+    tags=["fmanagement"],
+)
+def fmanagement_diff_endpoint(
+    request_data: dict[str, Any],
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> FmanagementOperationResponse:
+    """Compara versiones vía fmanagement."""
+    try:
+        response = router.fmanagement_diff(request_data, session)
+        return FmanagementOperationResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/fmanagement/transfer",
+    response_model=FmanagementOperationResponse,
+    tags=["fmanagement"],
+)
+def fmanagement_transfer_endpoint(
+    request_data: dict[str, Any],
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> FmanagementOperationResponse:
+    """Transfiere versiones vía fmanagement."""
+    try:
+        response = router.fmanagement_transfer(request_data, session)
+        return FmanagementOperationResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

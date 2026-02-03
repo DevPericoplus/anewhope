@@ -273,15 +273,51 @@ def _request_middleware(
         try:
             error_payload = exc.read().decode("utf-8")
             logger.error(f"Error HTTP desde middleware: {exc.code} - {error_payload}")
+            # Intentar parsear el error como JSON para extraer el mensaje
+            try:
+                error_data = json.loads(error_payload)
+                error_message = error_data.get("detail", "Error desconocido")
+            except json.JSONDecodeError:
+                error_message = error_payload
+            return {"error": True, "detail": error_message, "status_code": exc.code}
         except Exception:
             logger.error(f"Error HTTP desde middleware: {exc.code}")
-        return {}
+            return {"error": True, "detail": "Error en la comunicación con el middleware", "status_code": exc.code}
     except urllib.error.URLError as exc:
         logger.error(f"No se pudo contactar con el middleware: {exc}")
-        return {}
+        return {"error": True, "detail": "No se pudo contactar con el middleware"}
     except json.JSONDecodeError:
         logger.error("Respuesta del middleware no es JSON válido")
-        return {}
+        return {"error": True, "detail": "Respuesta inválida del servidor"}
+
+
+def _request_middleware_raw(
+    method: str, path: str, payload: dict[str, Any] | None = None, headers: dict[str, str] | None = None
+) -> tuple[bytes, str]:
+    """Realiza una petición HTTP al middleware y retorna los bytes y el content-type."""
+
+    url = f"{_get_middleware_base_url()}{path}"
+    body = None
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "frontend",
+    }
+    if headers:
+        request_headers.update(headers)
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+
+    request = urllib.request.Request(url, data=body, headers=request_headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            content_type = response.headers.get("Content-Type", "")
+            return response.read(), content_type
+    except urllib.error.HTTPError as exc:
+        logger.error(f"Error HTTP desde middleware (RAW): {exc.code}")
+        raise
+    except urllib.error.URLError as exc:
+        logger.error(f"No se pudo contactar con el middleware (RAW): {exc}")
+        raise
 
 
 def login_user(user_name: str, password: str, otp: str) -> dict[str, Any]:
@@ -1585,6 +1621,7 @@ def create_version_full(
     version_name: str,
     user_id: int,
     user_name: str,
+    identity_type_id: int,
     description: str | None = None,
     clone_from_version_id: int | None = None,
     initial_state: str = "Abierta",
@@ -1611,6 +1648,7 @@ def create_version_full(
         version_name: Nombre de la versión (ej: "V001")
         user_id: ID del usuario que crea
         user_name: Nombre del usuario que crea
+        identity_type_id: ID del tipo de identidad del usuario (1=SuperAdmin, 2=OrgAdmin, etc.)
         description: Descripción opcional
         clone_from_version_id: ID de versión a clonar (opcional)
         initial_state: Estado inicial ("Abierta", "Bloqueada", "Protegida", "Final")
@@ -1635,6 +1673,7 @@ def create_version_full(
         "nombre_version": version_name,
         "user_id": user_id,
         "user_name": user_name,
+        "identity_type_id": identity_type_id,
         "initial_state": initial_state,
         "protected": protected,
         "final_c": final_c,
@@ -1721,48 +1760,6 @@ def fmanagement_operation(
 ) -> dict[str, Any]:
     """
     Ejecuta una operación genérica en fmanagement.
-    
-    Operaciones soportadas:
-    - create_folder
-    - rename_folder
-    - delete_folder
-    - create_file
-    - rename_file
-    - delete_file
-    - download_file
-    
-    Flujo: Frontend → Middleware → Broker → Backend Core → fmanagement
-    
-    Args:
-        operation: Nombre de la operación
-        params: Parámetros específicos de la operación
-        access_token: Token de acceso JWT
-        session_token: Token de sesión JWT
-        
-    Returns:
-        {
-            "success": bool,
-            "data": dict | None,
-            "mensaje": str | None
-        }
-    
-    Example:
-        # Crear carpeta
-        fmanagement_operation(
-            "create_folder",
-            {"org": "ORG0001", "prj": "PRJ0001", "version": "V001", "folder_name": "docs"},
-            access_token,
-            session_token
-        )
-        
-        # Renombrar archivo
-        fmanagement_operation(
-            "rename_file",
-            {"org": "ORG0001", "prj": "PRJ0001", "version": "V001", 
-             "old_name": "file1.txt", "new_name": "file2.txt"},
-            access_token,
-            session_token
-        )
     """
     headers = _build_auth_headers(access_token, session_token)
     
@@ -1778,4 +1775,60 @@ def fmanagement_operation(
         payload=payload,
     )
     
+    return dict(response) if isinstance(response, dict) else {"success": False}
+
+
+def fmanagement_download(
+    params: dict[str, Any],
+    access_token: str = "",
+    session_token: str = "",
+) -> bytes:
+    """Descarga un archivo vía fmanagement."""
+    headers = _build_auth_headers(access_token, session_token)
+    
+    payload = {
+        "operation": "download_file",
+        "params": params,
+    }
+    
+    content, _ = _request_middleware_raw(
+        "POST",
+        "/fmanagement/download",
+        headers=headers,
+        payload=payload,
+    )
+    return content
+
+
+def fmanagement_diff(
+    params: dict[str, Any],
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Compara versiones vía fmanagement."""
+    headers = _build_auth_headers(access_token, session_token)
+    
+    response = _request_middleware(
+        "POST",
+        "/fmanagement/diff",
+        headers=headers,
+        payload=params,
+    )
+    return dict(response) if isinstance(response, dict) else {"success": False}
+
+
+def fmanagement_transfer(
+    params: dict[str, Any],
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Transfiere versiones vía fmanagement."""
+    headers = _build_auth_headers(access_token, session_token)
+    
+    response = _request_middleware(
+        "POST",
+        "/fmanagement/transfer",
+        headers=headers,
+        payload=params,
+    )
     return dict(response) if isinstance(response, dict) else {"success": False}

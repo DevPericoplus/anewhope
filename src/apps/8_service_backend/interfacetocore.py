@@ -598,6 +598,38 @@ class CoreBackendClient:
             payload=request_data,
         )
 
+    def fmanagement_download(self, request_data: dict[str, Any]) -> bytes:
+        """Descarga un archivo vía fmanagement."""
+        url = f"{self._base_url}/fmanagement/operation"
+        headers = self._build_headers()
+        
+        try:
+            # Forzamos la operación a download_file si no viene
+            if "operation" not in request_data:
+                request_data["operation"] = "download_file"
+                
+            response = self._client.post(url, json=request_data, headers=headers, timeout=30.0)
+            response.raise_for_status()
+            return response.content
+        except Exception as exc:
+            raise CoreBackendCommunicationError(f"Error descargando archivo: {exc}") from exc
+
+    def fmanagement_diff(self, request_data: dict[str, Any]) -> dict[str, Any]:
+        """Compara versiones vía fmanagement."""
+        payload = {
+            "operation": "diff",
+            "params": request_data
+        }
+        return self.fmanagement_operation(payload)
+
+    def fmanagement_transfer(self, request_data: dict[str, Any]) -> dict[str, Any]:
+        """Transfiere versiones vía fmanagement."""
+        payload = {
+            "operation": "transfer",
+            "params": request_data
+        }
+        return self.fmanagement_operation(payload)
+
     def _apply_headers(self, headers: dict[str, str]) -> None:
         """Aplica headers de seguridad al contexto del cliente.
 

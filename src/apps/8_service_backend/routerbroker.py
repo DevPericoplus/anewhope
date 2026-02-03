@@ -989,3 +989,27 @@ class BrokerBackendRouter:
             raise BrokerBusinessError(
                 f"No se pudo ejecutar operación fmanagement: {exc}"
             ) from exc
+
+    def fmanagement_diff(self, request_data: dict[str, Any]) -> dict[str, Any]:
+        """Compara versiones vía fmanagement."""
+        self._logger.info("[%s] Comparando versiones fmanagement", self._client_app)
+        try:
+            return self._core_client.fmanagement_diff(request_data)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"Error comparando versiones: {exc}") from exc
+
+    def fmanagement_transfer(self, request_data: dict[str, Any]) -> dict[str, Any]:
+        """Transfiere versiones vía fmanagement."""
+        self._logger.info("[%s] Transfiriendo versión fmanagement", self._client_app)
+        try:
+            return self._core_client.fmanagement_transfer(request_data)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"Error transfiriendo versión: {exc}") from exc
+
+    def fmanagement_download(self, request_data: dict[str, Any]) -> bytes:
+        """Descarga un archivo vía fmanagement."""
+        self._logger.info("[%s] Descargando archivo fmanagement", self._client_app)
+        try:
+            return self._core_client.fmanagement_download(request_data)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"Error descargando archivo: {exc}") from exc

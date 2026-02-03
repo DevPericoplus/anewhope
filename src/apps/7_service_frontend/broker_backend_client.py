@@ -810,3 +810,24 @@ class BrokerBackendClient:
         """Ejecuta una operación genérica en fmanagement."""
         data = self._request("POST", "/fmanagement/operation", payload=request_data)
         return dict(data or {})
+
+    def fmanagement_download(self, request_data: dict[str, Any]) -> bytes:
+        """Descarga un archivo vía fmanagement."""
+        url = f"{self._base_url}/fmanagement/download"
+        headers = self._build_headers()
+        try:
+            response = self._client.post(url, json=request_data, headers=headers, timeout=30.0)
+            response.raise_for_status()
+            return response.content
+        except Exception as exc:
+            raise BrokerCommunicationError(f"Error descargando archivo del broker: {exc}") from exc
+
+    def fmanagement_diff(self, request_data: dict[str, Any]) -> dict[str, Any]:
+        """Compara versiones vía fmanagement."""
+        data = self._request("POST", "/fmanagement/diff", payload=request_data)
+        return dict(data or {})
+
+    def fmanagement_transfer(self, request_data: dict[str, Any]) -> dict[str, Any]:
+        """Transfiere versiones vía fmanagement."""
+        data = self._request("POST", "/fmanagement/transfer", payload=request_data)
+        return dict(data or {})

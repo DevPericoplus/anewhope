@@ -12,7 +12,7 @@ from collections.abc import Iterator
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any, AsyncIterator
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, status, Response
 from pydantic import BaseModel, Field
 from typing import Annotated
 
@@ -1256,10 +1256,16 @@ class CreateVersionFullRequest(BaseModel):
     """Request para crear versión completa (DB + fmanagement)."""
 
     id_organizacion: int
+    nombre_version: str
     user_id: int
+    user_name: str
     identity_type_id: int
     descripcion: str | None = None
-    clone_from_version: int | None = None
+    clone_from_version_id: int | None = None
+    initial_state: str = "Abierta"
+    protected: bool = False
+    final_c: bool = False
+    final_i: bool = False
 
 
 class CreateVersionFullResponse(BaseModel):
@@ -2561,3 +2567,58 @@ def fmanagement_operation(
     except Exception as exc:
         logger.exception("Error en operación fmanagement")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post(
+    "/fmanagement/download",
+    tags=["fmanagement"],
+)
+def fmanagement_download(
+    request: FmanagementOperationRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> Response:
+    """Descarga un archivo vía fmanagement (binario)."""
+    try:
+        content = router.fmanagement_download(request.params)
+        filename = request.params.get("filename", "download")
+        return Response(
+            content=content,
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/fmanagement/diff",
+    response_model=FmanagementOperationResponse,
+    tags=["fmanagement"],
+)
+def fmanagement_diff(
+    request: dict[str, Any],
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> FmanagementOperationResponse:
+    """Compara versiones vía fmanagement."""
+    try:
+        result = router.fmanagement_diff(request)
+        return FmanagementOperationResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/fmanagement/transfer",
+    response_model=FmanagementOperationResponse,
+    tags=["fmanagement"],
+)
+def fmanagement_transfer(
+    request: dict[str, Any],
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> FmanagementOperationResponse:
+    """Transfiere versiones vía fmanagement."""
+    try:
+        result = router.fmanagement_transfer(request)
+        return FmanagementOperationResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
