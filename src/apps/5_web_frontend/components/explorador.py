@@ -17,7 +17,7 @@ from typing import Any
 from web_frontend.shared_state import SharedSessionState
 
 # Imports de API client
-from ..adapters.api_client import (
+from adapters.api_client import (
     fmanagement_list,
     fmanagement_operation,
     get_version_state,
