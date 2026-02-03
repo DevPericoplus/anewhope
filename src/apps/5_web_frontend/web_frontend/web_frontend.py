@@ -13,6 +13,7 @@ from adapters.api_client import (
     create_organization_project,
     create_organization_user,
     create_project_version,
+    create_version_full,
     delete_organization_project,
     ensure_valid_tokens,
     get_organization_projects,
@@ -36,6 +37,7 @@ from pages.proyecciones import load_proyecciones_content
 from pages.tecnologias import load_tecnologias_content
 from low_panel_pages.show_md import show_md  # noqa: F401 - Importado para registrar la ruta
 from web_frontend.shared_state import SharedSessionState
+from components.explorador import explorador_panel, ExploradorState
 
 # Importar logger de actividad usando importlib (el directorio tiene número)
 _activity_logger_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "reflex_shared" / "activity_logger.py"
@@ -1286,6 +1288,13 @@ class State(SharedSessionState):
                 first_version = self.proyecciones_versions[0]
                 self.proyecciones_version_id = first_version.get("id_version", 0)
                 self.proyecciones_version_folder = first_version.get("version_folder", "")
+                
+                # Inicializar explorador con la primera versión
+                explorador_state = self.get_state(ExploradorState)
+                explorador_state.init_page(
+                    project_id=self.proyecciones_project_id,
+                    version_id=self.proyecciones_version_id,
+                )
         except Exception as e:
             print(f"[ERROR] Error cargando versiones: {type(e).__name__}: {e}")
             self.proyecciones_error = f"Error cargando versiones: {e}"
@@ -1294,7 +1303,7 @@ class State(SharedSessionState):
             self.is_loading_versions = False
 
     def set_proyecciones_version(self, value: str):
-        """Selecciona una versión.
+        """Selecciona una versión y inicializa el explorador.
         
         Args:
             value: version_folder de la versión seleccionada (ej: "v001")
@@ -1303,12 +1312,17 @@ class State(SharedSessionState):
             if version.get("version_folder") == value:
                 self.proyecciones_version_id = version.get("id_version", 0)
                 self.proyecciones_version_folder = value
+                
+                # Inicializar explorador con el contexto
+                explorador_state = self.get_state(ExploradorState)
+                explorador_state.init_page(
+                    project_id=self.proyecciones_project_id,
+                    version_id=self.proyecciones_version_id,
+                )
                 return
 
     def create_new_version(self):
-        """Crea una nueva versión para el proyecto seleccionado."""
-        from adapters.api_client import create_project_version
-        
+        """Crea una nueva versión completa (DB + fmanagement) para el proyecto seleccionado."""
         if self.proyecciones_project_id <= 0:
             self.proyecciones_error = "Selecciona un proyecto primero"
             return
@@ -1316,26 +1330,53 @@ class State(SharedSessionState):
         self.is_loading_versions = True
         self.proyecciones_error = ""
         self.proyecciones_success = ""
+        yield  # Actualizar UI
         
         try:
-            result = create_project_version(
+            # Generar nombre de versión (V001, V002, etc.)
+            existing_versions = len(self.proyecciones_versions)
+            version_name = f"V{existing_versions + 1:03d}"
+            
+            # Llamar al endpoint atómico create_version_full
+            result = create_version_full(
                 project_id=self.proyecciones_project_id,
                 organization_id=self.organization_id,
+                version_name=version_name,
+                user_id=self.user_id,
+                user_name=self.user_name,
+                description=f"Versión creada automáticamente por {self.user_name}",
+                clone_from_version_id=self.proyecciones_version_id if self.proyecciones_version_id > 0 else None,
+                initial_state="Abierta",
+                protected=False,
+                final_c=False,
+                final_i=False,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
             
             if result.get("success"):
-                self.proyecciones_success = "Nueva versión creada correctamente"
+                new_version_id = result.get("version_id", 0)
+                self.proyecciones_success = f"✅ Versión {version_name} creada correctamente (ID: {new_version_id})"
                 # Recargar versiones
                 self.load_proyecciones_versions()
+                # Seleccionar automáticamente la nueva versión
+                self.proyecciones_version_id = new_version_id
+                self.proyecciones_version_folder = version_name
+                
+                # Inicializar explorador con la nueva versión
+                explorador_state = self.get_state(ExploradorState)
+                explorador_state.init_page(
+                    project_id=self.proyecciones_project_id,
+                    version_id=new_version_id,
+                )
             else:
                 self.proyecciones_error = result.get("mensaje", "Error al crear versión")
         except Exception as e:
-            print(f"[ERROR] Error creando versión: {type(e).__name__}: {e}")
+            print(f"[ERROR] Error creando versión completa: {type(e).__name__}: {e}")
             self.proyecciones_error = f"Error creando versión: {e}"
         finally:
             self.is_loading_versions = False
+            yield  # Actualizar UI final
 
     @rx.var
     def proyecciones_projects_select(self) -> list[str]:
@@ -3454,52 +3495,12 @@ def proyecciones_management_panel() -> rx.Component:
             ),
             rx.fragment(),
         ),
-        # ===== CAPA 3: Explorador de archivos (placeholder) =====
+        # ===== CAPA 3: Explorador de archivos (INTEGRADO) =====
         rx.cond(
             (State.proyecciones_project_id > 0) & (State.proyecciones_version_id > 0),
             rx.vstack(
-                rx.hstack(
-                    rx.icon("folder-tree", size=28, color=COLORS["primary"]),
-                    rx.heading("Explorador de Archivos", size="6", color=COLORS["foreground"]),
-                    spacing="3",
-                    align="center",
-                ),
-                rx.divider(color=COLORS["border"]),
-                # Información de contexto para el futuro componente
-                rx.vstack(
-                    rx.text(
-                        "Contexto para el Administrador de Archivos:",
-                        font_weight="bold",
-                        color=COLORS["foreground"],
-                        font_size="1.1em",
-                    ),
-                    rx.hstack(
-                        rx.text("Organización:", font_weight="bold", color=COLORS["muted_foreground"]),
-                        rx.code(State.proyecciones_org_folder, color=COLORS["primary"]),
-                        spacing="2",
-                    ),
-                    rx.hstack(
-                        rx.text("Proyecto:", font_weight="bold", color=COLORS["muted_foreground"]),
-                        rx.code(State.proyecciones_prj_folder, color=COLORS["primary"]),
-                        spacing="2",
-                    ),
-                    rx.hstack(
-                        rx.text("Versión:", font_weight="bold", color=COLORS["muted_foreground"]),
-                        rx.code(State.proyecciones_version_folder, color=COLORS["primary"]),
-                        spacing="2",
-                    ),
-                    spacing="2",
-                    padding="1em",
-                    background_color=f"{COLORS['primary']}10",
-                    border_radius="0.5em",
-                ),
-                rx.text(
-                    "🚧 El componente 'Explorador de Archivos' se implementará próximamente",
-                    color=COLORS["muted_foreground"],
-                    font_size="1.05em",
-                    font_style="italic",
-                    text_align="center",
-                    margin_top="1em",
+                explorador_panel(
+                    ExploradorState,
                 ),
                 width="100%",
                 spacing="3",
@@ -3507,7 +3508,6 @@ def proyecciones_management_panel() -> rx.Component:
                 background_color=COLORS["card"],
                 border=f"1px solid {COLORS['border']}",
                 border_radius="0.5em",
-                min_height="300px",
             ),
             rx.fragment(),
         ),
