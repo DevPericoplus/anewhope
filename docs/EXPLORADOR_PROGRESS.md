@@ -461,7 +461,73 @@ Verificada la estructura del middleware en `src/apps/7_service_frontend/`.
 
 ---
 
-## ⏭️ FASE 6: Adaptar Componente Explorador (0% PENDIENTE)
+## ⏳ FASE 6: Adaptar Componente Explorador (20% EN PROGRESO)
+
+### PASO 6.1 - Lectura y análisis del componente original ✅
+**Estado**: Completado
+
+**Archivo analizado**: `/Users/administrator/develop/reflex_components_templates/reflex_components_templates/pages/explorador/explorador.py`
+
+**Métricas del componente**:
+- **Líneas totales**: 1,405 líneas
+- **Clases**: 2 (`FolderItem`, `ExploradorState`)
+- **Métodos críticos**: 8 (4 de carga, 4 de operaciones)
+- **Datos mockeados**: 3 archivos JSON
+  - `data/proyecto.json` → Estructura de archivos
+  - `data/estado_version.json` → Estados de versiones
+  - `data/seguridad.json` → Permisos de usuario
+
+**Análisis realizado**:
+- ✅ Identificados métodos de carga de datos
+- ✅ Identificadas operaciones CRUD
+- ✅ Analizada lógica de negocio (`interpretacion_estados`)
+- ✅ Revisada matriz de permisos
+- ✅ Entendido sistema de roles (Cliente vs Interno)
+
+---
+
+### PASO 6.2 - Documentación del plan de adaptación ✅
+**Estado**: Completado
+
+**Archivo creado**: `docs/EXPLORADOR_ADAPTATION_PLAN.md` (350 líneas)
+
+**Contenido del plan** (7 secciones):
+
+1. ✅ **Análisis del componente original**
+   - Estructura de datos (`FolderItem`, `ExploradorState`)
+   - Métodos críticos a adaptar (8 métodos)
+   - Lógica de negocio a mantener
+
+2. ✅ **Estrategia de adaptación**
+   - Integración con `SharedSessionState`
+   - Adaptación de métodos de carga (JSON → API)
+   - Ejemplos de código antes/después
+
+3. ✅ **Plan de implementación**
+   - Fase 6A: Copiar y adaptar estructura base
+   - Fase 6B: Adaptar métodos de carga
+   - Fase 6C: Conectar operaciones CRUD
+   - Fase 6D: Testing y ajustes
+
+4. ✅ **Consideraciones críticas**
+   - Asincronía en Reflex (uso de `yield`)
+   - Endpoint `POST /fmo/newversion` (verificar si existe)
+   - Sincronización de tamaños (`size_bytes`)
+
+5. ✅ **Resumen de cambios por archivo**
+   - ~180 líneas modificadas de 1,405 totales (12.8%)
+
+6. ✅ **Próximos pasos** (5 pasos enumerados)
+
+7. ✅ **Riesgos y mitigaciones** (5 riesgos identificados)
+
+**Decisiones clave tomadas**:
+- ✅ Heredar de `SharedSessionState` (elimina ~40 líneas duplicadas)
+- ✅ Mantener lógica de `interpretacion_estados()` sin cambios
+- ✅ Usar wrappers síncronos para llamadas HTTP
+- ✅ Mapeo completo de acciones CRUD a endpoints API
+
+---
 
 ### Archivo origen:
 `/Users/administrator/develop/reflex_components_templates/reflex_components_templates/pages/explorador/explorador.py`
@@ -646,9 +712,9 @@ except Exception as e:
 | 3 | Broker Backend | ✅ Completada | 100% | ~355 / 355 |
 | 4 | Middleware | ✅ Completada | 100% | ~605 / 605 |
 | 5 | Frontend/Backoffice Clients | ✅ Completada | 100% | ~730 / 730 |
-| 6 | Adaptar Explorador | ⏭️ Pendiente | 0% | 0 / 300 |
+| 6 | Adaptar Explorador | ⏳ En Progreso | 20% | 0 / 300 |
 | 7 | Integrar en Proyecciones | ⏭️ Pendiente | 0% | 0 / 150 |
-| **TOTAL** | | | **84%** | **3690 / 4140** |
+| **TOTAL** | | | **87%** | **3690 / 4140** |
 
 ---
 
@@ -672,4 +738,4 @@ except Exception as e:
 
 ---
 
-**Última actualización**: 2026-02-03 (FASE 5 completada - Progreso 84% ✅)
+**Última actualización**: 2026-02-03 (FASE 6 iniciada - Progreso 87% ✅)
