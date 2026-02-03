@@ -7,7 +7,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, AsyncIterator
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, status, Response
 from pydantic import BaseModel, Field
 
 import importlib.util
@@ -767,14 +767,30 @@ def store_manage_roles(
 
 @app.get("/permissions", response_model=PermissionsResponse)
 def get_permissions(
-    identity_type_id: int,
+    identity_type_id: int | None = None,
+    user_id: int | None = None,
     router: BackendCoreRouter = Depends(get_router_core),
 ) -> PermissionsResponse:
-    """Obtiene permisos asociados a un rol."""
+    """Obtiene permisos asociados a un rol o a un usuario."""
 
     try:
+        if user_id is not None and identity_type_id is None:
+            identity_type_id = router.get_user_role(user_id)
+            if identity_type_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Usuario {user_id} no encontrado",
+                )
+
+        if identity_type_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Se requiere identity_type_id o user_id",
+            )
+
         response = router.get_permissions(identity_type_id)
         response["identity_type_id"] = identity_type_id
+        response["user_id"] = user_id
         return PermissionsResponse(**response)
     except BackendCoreBusinessError as exc:
         raise HTTPException(
@@ -1284,10 +1300,21 @@ class CreateVersionFullRequest(BaseModel):
     """Request para crear versión completa (DB + fmanagement)."""
 
     id_organizacion: int
+    nombre_version: str
     user_id: int
+    user_name: str
     identity_type_id: int
     descripcion: str | None = None
-    clone_from_version: int | None = None
+    clone_from_version_id: int | None = None
+    initial_state: str = "Abierta"
+    protected: bool = False
+    final_c: bool = False
+    final_i: bool = False
+
+    # Alias para mantener compatibilidad con código que usa clone_from_version
+    @property
+    def clone_from_version(self) -> int | None:
+        return self.clone_from_version_id
 
 
 class CreateVersionFullResponse(BaseModel):
@@ -2282,6 +2309,8 @@ def get_version_events(
 def create_version_full(
     project_id: int,
     request: CreateVersionFullRequest,
+    authorization: str | None = Header(None, alias="Authorization"),
+    session_token: str | None = Header(None, alias="X-Session-Token"),
     client_app: str = Depends(get_client_app),
     router: BackendCoreRouter = Depends(get_router_core),
 ) -> CreateVersionFullResponse:
@@ -2315,6 +2344,8 @@ def create_version_full(
             identity_type_id=request.identity_type_id,
             descripcion=request.descripcion,
             clone_from_version=request.clone_from_version,
+            access_token=authorization.replace("Bearer ", "") if authorization else None,
+            session_token=session_token,
         )
         return CreateVersionFullResponse(**result)
     except BackendCoreBusinessError as exc:
@@ -2399,6 +2430,18 @@ def fmanagement_operation(
             operation=request.operation,
             params=request.params,
         )
+        
+        # Si el resultado contiene datos binarios (caso descarga), retornamos Response directo
+        if result.get("success") and isinstance(result.get("data"), dict) and result["data"].get("is_binary"):
+            data = result["data"]
+            return Response(
+                content=data["_raw_data"],
+                media_type=data["content_type"],
+                headers={
+                    "Content-Disposition": f'attachment; filename="{request.params.get("filename", "download")}"'
+                }
+            )
+
         return FmanagementOperationResponse(**result)
     except BackendCoreBusinessError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

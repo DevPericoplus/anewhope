@@ -391,6 +391,12 @@ class BackendCoreRouter:
         except StorageAdapterError as exc:
             raise BackendCoreBusinessError("No se pudo cargar usuarios") from exc
 
+    def get_user_role(self, user_id: int) -> int | None:
+        """Obtiene el identity_type_id de un usuario por su ID."""
+        users = self.list_users()
+        user = next((u for u in users if u.user_id == user_id), None)
+        return user.identity_type_id if user else None
+
     def store_users(self, users: list[UserDto]) -> None:
         """Guarda usuarios."""
 
@@ -1252,7 +1258,13 @@ class BackendCoreRouter:
     def create_project(
         self, payload: dict[str, Any], headers: dict[str, str]
     ) -> dict[str, Any]:
-        """Crea un nuevo proyecto en MariaDB.
+        """Crea un nuevo proyecto en MariaDB con su infraestructura inicial.
+
+        Flujo completo:
+        1. Crea el proyecto en la tabla proyectos
+        2. Crea automáticamente la versión v001 en tabla versiones
+        3. Crea la estructura de carpetas v001 en fmanagement (ORG.../PRJ.../v001/)
+        4. Crea el estado inicial de la versión
 
         El trigger tr_proyecto_after_insert crea automáticamente:
         - Registro en tabla estado (versión 1)
@@ -1264,28 +1276,75 @@ class BackendCoreRouter:
         active = payload.get("active", True)
         id_flujo = int(payload.get("id_flujo", 1))
 
+        # Extraer información del usuario (necesaria para crear v001)
+        user_id = int(headers.get("X-User-ID", 1))
+        identity_type_id = int(headers.get("X-Identity-Type-ID", 1))
+
         if not nombre:
             raise BackendCoreBusinessError("El nombre del proyecto es obligatorio")
         if id_organizacion <= 0:
             raise BackendCoreBusinessError("ID de organización inválido")
 
         self._logger.info(
-            "[%s] Creando proyecto: nombre=%s org_id=%s",
+            "[%s] Creando proyecto con infraestructura: nombre=%s org_id=%s user_id=%s",
             headers.get("X-Client-App", "unknown"),
             nombre,
             id_organizacion,
+            user_id,
         )
 
         try:
+            # PASO 1: Crear registro del proyecto en base de datos
             project_id = self._insert_project_in_db(
                 nombre, descripcion, id_organizacion, active, id_flujo
             )
-            return {
-                "project_id": project_id,
-                "nombre": nombre,
-                "id_organizacion": id_organizacion,
-                "id_flujo": id_flujo,
-            }
+
+            self._logger.info(
+                "[backend-core] Proyecto creado con ID=%s. Creando v001...",
+                project_id,
+            )
+
+            # PASO 2: Crear versión v001 con estructura completa en fmanagement
+            try:
+                version_result = self.create_version_full(
+                    project_id=project_id,
+                    org_id=id_organizacion,
+                    user_id=user_id,
+                    identity_type_id=identity_type_id,
+                    descripcion="Versión inicial del proyecto",
+                    clone_from_version=None,  # v001 siempre se crea vacía
+                )
+
+                self._logger.info(
+                    "[backend-core] Versión v001 creada para proyecto %s",
+                    project_id,
+                )
+
+                return {
+                    "success": True,
+                    "project_id": project_id,
+                    "nombre": nombre,
+                    "id_organizacion": id_organizacion,
+                    "id_flujo": id_flujo,
+                    "version": version_result,  # Información de v001 creada
+                }
+
+            except Exception as version_exc:
+                self._logger.error(
+                    "[backend-core] Error creando v001 para proyecto %s: %s",
+                    project_id,
+                    version_exc,
+                )
+                # El proyecto ya fue creado, así que devolvemos un warning
+                return {
+                    "success": True,
+                    "project_id": project_id,
+                    "nombre": nombre,
+                    "id_organizacion": id_organizacion,
+                    "id_flujo": id_flujo,
+                    "warning": f"Proyecto creado pero error en v001: {version_exc}",
+                }
+
         except Exception as exc:
             self._logger.error("Error creando proyecto: %s", exc)
             raise BackendCoreBusinessError(
@@ -2684,13 +2743,14 @@ class BackendCoreRouter:
             # Insertar la nueva versión
             conn.execute(
                 text("""
-                    INSERT INTO versiones (id_version, id_proyecto, id_organizacion)
-                    VALUES (:id_version, :project_id, :org_id)
+                    INSERT INTO versiones (id_version, id_proyecto, id_organizacion, fecha_lanzamiento, descripcion)
+                    VALUES (:id_version, :project_id, :org_id, CURDATE(), :descripcion)
                 """),
                 {
                     "id_version": next_version,
                     "project_id": project_id,
                     "org_id": org_id,
+                    "descripcion": description,
                 },
             )
             conn.commit()
@@ -3105,8 +3165,8 @@ class BackendCoreRouter:
             
             # Obtener configuración de fmanagement
             fmanagement_config = load_fmanagement_settings()
-            base_url = fmanagement_config.get("base_url", "http://localhost:1666")
-            
+            base_url = fmanagement_config.base_url
+
             client = FmanagementClient(base_url=base_url, logger=self._logger)
             
             result = client.list_structure(
@@ -3154,41 +3214,58 @@ class BackendCoreRouter:
             from .clients.fmanagement_client import FmanagementClient
             
             fmanagement_config = load_fmanagement_settings()
-            base_url = fmanagement_config.get("base_url", "http://localhost:1666")
-            
+            base_url = fmanagement_config.base_url
+
             client = FmanagementClient(base_url=base_url, logger=self._logger)
             
-            # Mapear operación a método del cliente
-            result = None
+            # Normalizar parámetros si vienen con nombres cortos
+            params = params.copy()
+            if "org" in params: params["orgpath"] = params.pop("org")
+            if "prj" in params: params["prjpath"] = params.pop("prj")
+            if "version" in params: params["versionpath"] = params.pop("version")
+            if "user_id" in params: params["iduser"] = params.pop("user_id")
+            if "id_user" in params: params["iduser"] = params.pop("id_user")
             
-            if operation == "create_folder":
-                result = client.create_folder(**params)
-            elif operation == "rename_folder":
-                result = client.rename_folder(**params)
-            elif operation == "delete_folder":
-                result = client.delete_folder(**params)
-            elif operation == "create_file":
-                result = client.create_file(**params)
-            elif operation == "rename_file":
-                result = client.rename_file(**params)
-            elif operation == "delete_file":
-                result = client.delete_file(**params)
-            elif operation == "download_file":
-                content = client.download_file(**params)
-                if isinstance(content, bytes):
-                    # Retornar indicador de éxito, el contenido se maneja separadamente
-                    result = {"status": "success", "size": len(content)}
+            # Subfolders y Extensiones
+            if "file_path" in params:
+                full_path = params.pop("file_path")
+                if "." in full_path:
+                    parts = full_path.rsplit(".", 1)
+                    params["filename"] = parts[0]
+                    params["extfile"] = parts[1]
                 else:
-                    result = content  # Es un dict con error
+                    params["filename"] = full_path
+
+            # Mapear operación a método del cliente o endpoint genérico
+            result = None
+            if operation == "create_folder":
+                if "folder_name" not in params and "path" in params:
+                    params["folder_name"] = params["path"]
+                result = client.request_json("POST", "/fmo/createfolder", form=params)
+            elif operation == "delete_folder":
+                result = client.request_json("DELETE", "/fmo/deletefolder", params=params)
+            elif operation == "delete_file":
+                result = client.request_json("DELETE", "/fmo/deletefile", params=params)
+            elif operation == "download_file" or operation == "read_file":
+                result = client.request_json("GET", "/fmo", params=params)
+            elif operation == "diff_version" or operation == "diff":
+                if "v1" in params: params["versionpath"] = params.pop("v1")
+                if "v2" in params: params["compare_versionpath"] = params.pop("v2")
+                result = client.request_json("GET", "/fmo/diffversion", params=params)
+            elif operation == "transfer_version" or operation == "transfer":
+                if "target" in params: params["target_type"] = params.pop("target")
+                result = client.request_json("POST", "/fmo/transferversion", form=params)
             elif operation == "create_version":
                 result = client.create_version(**params)
             else:
-                return {
-                    "success": False,
-                    "message": f"Operación no soportada: {operation}",
-                    "data": None,
-                }
+                # Fallback genérico para otras operaciones (create_file, rename_file, etc.)
+                result = client.request_json("POST", "/fmo", form=params)
             
+            # Si el resultado es binario (download_file), lo devolvemos tal cual para apicore.py
+            if isinstance(result, dict) and result.get("is_binary"):
+                self._logger.info("[backend-core] Descarga de archivo detectada")
+                return result
+
             return {
                 "success": True,
                 "message": f"Operación {operation} ejecutada correctamente",
@@ -3214,6 +3291,8 @@ class BackendCoreRouter:
         identity_type_id: int,
         descripcion: str | None = None,
         clone_from_version: int | None = None,
+        access_token: str | None = None,
+        session_token: str | None = None,
     ) -> dict[str, Any]:
         """Crea una nueva versión completa (DB + fmanagement).
         
@@ -3238,7 +3317,17 @@ class BackendCoreRouter:
             Dict con el resultado completo
         """
         from sqlalchemy import text
-        from .clients.fmanagement_client import FmanagementClient
+
+        # Cargar FmanagementClient usando importlib (evitar import relativo)
+        _fmanagement_client_path = (
+            Path(__file__).resolve().parent / "clients" / "fmanagement_client.py"
+        )
+        _spec = importlib.util.spec_from_file_location(
+            "fmanagement_client_backend", _fmanagement_client_path
+        )
+        _fmanagement_module = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_fmanagement_module)
+        FmanagementClient = _fmanagement_module.FmanagementClient
 
         self._logger.info(
             "[backend-core] Creando versión completa proyecto=%s org=%s user=%s",
@@ -3278,82 +3367,131 @@ class BackendCoreRouter:
                 # PASO 2: Insertar en tabla versiones
                 conn.execute(
                     text("""
-                        INSERT INTO versiones (id_version, id_proyecto, id_organizacion)
-                        VALUES (:id_version, :project_id, :org_id)
+                        INSERT INTO versiones (id_version, id_proyecto, id_organizacion, fecha_lanzamiento, descripcion)
+                        VALUES (:id_version, :project_id, :org_id, CURDATE(), :descripcion)
                     """),
                     {
                         "id_version": version_id,
                         "project_id": project_id,
                         "org_id": org_id,
+                        "descripcion": descripcion,
                     },
                 )
 
                 # PASO 3: Crear carpeta física vía fmanagement
-                fmanagement_config = load_fmanagement_settings()
-                base_url = fmanagement_config.get("base_url", "http://localhost:1666")
-                
-                client = FmanagementClient(base_url=base_url, logger=self._logger)
-                
+                # Usar el cliente inyectado que ya tiene la configuración correcta
+                client = self._get_fmanagement_client()
+
+                # Determinar estrategia de creación:
+                # - Si es v001: crear vacía con estructura base
+                # - Si es v002+: clonar desde versión anterior (o la especificada)
+
                 clone_from_folder = None
-                if clone_from_version:
+                if version_id == 1:
+                    # Primera versión: crear estructura base vacía
+                    self._logger.info(
+                        "[backend-core] Creando v001 con estructura base vacía"
+                    )
+                    clone_from_folder = None
+                elif clone_from_version:
+                    # Clonar desde versión específica
                     clone_from_folder = f"v{clone_from_version:03d}"
-                
-                fm_result = client.create_version(
-                    orgpath=org_folder,
-                    prjpath=prj_folder,
-                    versionpath=version_folder,
-                    identity_type_id=identity_type_id,
-                    clone_from=clone_from_folder,
-                    iduser=user_id,
-                )
+                    self._logger.info(
+                        "[backend-core] Clonando desde versión específica: %s",
+                        clone_from_folder,
+                    )
+                else:
+                    # Clonar desde versión anterior (automático)
+                    previous_version_id = version_id - 1
+                    clone_from_folder = f"v{previous_version_id:03d}"
+                    self._logger.info(
+                        "[backend-core] Clonando desde versión anterior: %s",
+                        clone_from_folder,
+                    )
 
-                if "error" in fm_result:
-                    raise Exception(f"Error en fmanagement: {fm_result['error']}")
+                # Crear estructura en fmanagement
+                try:
+                    self._logger.info(
+                        "[backend-core] Creando estructura en fmanagement: %s/%s/%s",
+                        org_folder,
+                        prj_folder,
+                        version_folder,
+                    )
 
-                fmanagement_created = True
+                    # Llamar a fmanagement para crear la versión
+                    fm_result = client.create_version(
+                        orgpath=org_folder,
+                        prjpath=prj_folder,
+                        versionpath=version_folder,
+                        identity_type_id=identity_type_id,
+                        clone_from=clone_from_folder,
+                        iduser=user_id,
+                    )
 
-                # PASO 4: Crear estado inicial
+                    if fm_result.get("error"):
+                        self._logger.error(
+                            "[backend-core] Error en fmanagement: %s",
+                            fm_result.get("error")
+                        )
+                        # No fallar la transacción, solo registrar el error
+                        # La carpeta se creará con el script de sincronización
+                        fmanagement_created = False
+                    else:
+                        self._logger.info(
+                            "[backend-core] Estructura creada en fmanagement exitosamente"
+                        )
+                        fmanagement_created = True
+
+                except Exception as e:
+                    self._logger.error(
+                        "[backend-core] Excepción al crear en fmanagement: %s",
+                        str(e)
+                    )
+                    # No fallar la transacción, continuar
+                    fmanagement_created = False
+                    fm_result = {"error": str(e)}
+
+                # PASO 4: Crear estado inicial en la tabla estado
+                # Inicializar todos los estados del flujo de trabajo en FALSE
                 conn.execute(
                     text("""
-                        INSERT INTO version_states (
+                        INSERT INTO estado (
                             id_organizacion, id_proyecto, id_version,
-                            state, protected, size_bytes, final_c, final_i,
-                            updated_by_user_id
+                            propuesta_cliente, revision_interna, propuesta_mejoras,
+                            aceptacion_cliente, aceptacion_interna, entrenamiento_inicial,
+                            evaluacion_entrenamiento, reentrenamiento, optimizacion,
+                            aprobacion_calidad, generacion_llm, notificacion_descarga
                         ) VALUES (
                             :org_id, :project_id, :version_id,
-                            'Abierta', FALSE, 0, FALSE, FALSE,
-                            :user_id
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
                         )
                     """),
                     {
                         "org_id": org_id,
                         "project_id": project_id,
                         "version_id": version_id,
-                        "user_id": user_id,
                     },
                 )
 
-                # PASO 5: Registrar evento
+                # PASO 5: Registrar cambio en la tabla cambios
                 conn.execute(
                     text("""
-                        INSERT INTO version_events (
+                        INSERT INTO cambios (
                             id_organizacion, id_proyecto, id_version,
-                            evento, mensaje, user_id, user_name
+                            fecha_cambio, tipo_cambio, descripcion
                         ) VALUES (
                             :org_id, :project_id, :version_id,
+                            CURDATE(),
                             'VERSION_CREADA',
-                            :mensaje,
-                            :user_id,
-                            (SELECT user_name FROM users WHERE user_id = :user_id LIMIT 1)
+                            :descripcion
                         )
                     """),
                     {
                         "org_id": org_id,
                         "project_id": project_id,
                         "version_id": version_id,
-                        "mensaje": f"Versión {version_folder} creada desde Proyecciones" + 
+                        "descripcion": f"Versión {version_folder} creada desde Proyecciones" +
                                  (f" (clonada desde v{clone_from_version:03d})" if clone_from_version else ""),
-                        "user_id": user_id,
                     },
                 )
 
