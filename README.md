@@ -1844,6 +1844,449 @@ POST /fmo/transferversion
 ./scripts/setup_transfer_environment.sh
 ```
 
+#### Integración de Permisos Backend Core ↔ fmanagement
+
+El sistema de permisos entre Backend Core y fmanagement está completamente implementado, permitiendo que fmanagement valide los permisos de los usuarios autenticados en Frontend/Backoffice mediante consultas en tiempo real al Backend Core.
+
+**Estado:** ✅ **FUNCIONAL Y EN PRODUCCIÓN**
+
+**Flujo de Permisos:**
+
+```
+Frontend/Backoffice (usuario logado)
+  ↓ Authorization + X-Session-Token + user_id + identity_type_id
+Backend Core
+  ├─ Valida permisos localmente
+  └─ Llama a fmanagement con parámetros:
+     • iduser (user_id)
+     • identity_type_id (rol del usuario)
+     • operation (createfolder, readfile, etc.)
+     ↓
+fmanagement
+  ├─ Extrae iduser + identity_type_id de query params
+  ├─ Consulta: GET /permissions?identity_type_id=X
+  │  Headers: Authorization + X-Session-Token
+  │  → Backend Core responde con low_level_permissions
+  ├─ Valida permisos requeridos para la operación
+  └─ Si OK: ejecuta operación
+     Si NO: HTTP 403 Forbidden
+```
+
+**Configuración de fmanagement (db_only mode):**
+
+Archivo: `/Users/administrator/develop/fmanagement/env/<entorno>/.env`
+
+```env
+# Modo de validación: "db_only" (consulta directa al Backend Core)
+PERMISSIONS_SOURCE=db_only
+
+# URL del Backend Core
+CORE_BACKEND_BASE_URL=http://localhost:8003
+
+# Rutas de almacenamiento
+BACKEND_CORE_BASE_STORAGE=/Users/administrator/data/anewhope/files/backend_server/external
+BACKEND_IA_BASE_STORAGE=/Users/administrator/data/anewhope/files/trainer_server/external
+TRANSFER_MODE=local
+```
+
+**Permisos Implementados (44+ permisos granulares):**
+
+| Categoría | Permisos |
+|-----------|----------|
+| **Carpetas** | `folder_create`, `folder_delete`, `folder_rename`, `folder_read`, `folder_list` |
+| **Archivos** | `file_create`, `file_read`, `file_update`, `file_delete`, `file_list` |
+| **Versiones** | `version_create`, `version_read`, `version_update`, `version_delete`, `version_list` |
+| **Proyectos** | `project_create`, `project_read`, `project_update`, `project_delete`, `project_list` |
+| **Training** | `training_create`, `training_read`, `training_update`, `training_delete`, `training_start`, `training_stop` |
+| **Otros** | `parameters_*`, `notifications_*`, `user_*` (create/read/update/delete) |
+
+**Mapeo de Operaciones a Permisos:**
+
+| Operación fmanagement | Permission Key |
+|----------------------|----------------|
+| `POST /fmo/createfolder` | `folder_create` |
+| `DELETE /fmo/deletefolder` | `folder_delete` |
+| `PATCH /fmo/renamefolder` | `folder_rename` |
+| `GET /fmo/readfolder` | `folder_list`, `file_list` |
+| `POST /fmo/createfile` | `file_create` |
+| `GET /fmo/readfile` | `file_read` |
+| `PUT /fmo/updatefile` | `file_update` |
+| `DELETE /fmo/deletefile` | `file_delete` |
+| `POST /fmo/newversion` | `version_create` |
+| `GET /fmo/diffversion` | `version_read` |
+| `POST /fmo/transferversion` | `version_create` |
+
+**Endpoint de Consulta de Permisos (Backend Core):**
+
+```
+GET /permissions?identity_type_id=<id>
+Headers:
+  - Authorization: Bearer <access_token>
+  - X-Session-Token: <session_token>
+
+Response:
+{
+  "identity_type_id": 1,
+  "user_id": 1,
+  "permissions": [...],
+  "low_level_permissions": {
+    "folder_create": true,
+    "folder_delete": true,
+    "file_read": true,
+    "file_create": true,
+    ...
+  }
+}
+```
+
+**Validación Doble de Seguridad:**
+
+1. **Backend Core:** Valida permisos ANTES de llamar a fmanagement
+2. **fmanagement:** Valida permisos de nuevo al recibir la petición
+
+Esto asegura que incluso si se bypasea Backend Core, fmanagement valida independientemente.
+
+**Logs de fmanagement:**
+
+Ubicación: `/Users/administrator/develop/fmanagement/logs/file_management_operations.log`
+
+Ejemplo de logs:
+```
+[Mon, 03 Feb 2026 10:15:32] REQUEST: op=readfolder UserID=1 IP=127.0.0.1
+[Mon, 03 Feb 2026 10:15:32] PERMISSION: UserID=1 checking folder_list, file_list
+[Mon, 03 Feb 2026 10:15:32] PERMISSION: UserID=1 ALLOWED
+[Mon, 03 Feb 2026 10:15:32] SUCCESS: readfolder completed
+```
+
+Si permisos denegados:
+```
+[Mon, 03 Feb 2026 10:15:32] FORBIDDEN: UserID=4 denied op='deletefolder' reason='folder_delete=false'
+```
+
+**Script de Verificación:**
+
+Para verificar que el flujo de permisos funciona correctamente:
+
+```bash
+cd /Users/administrator/develop/anewhope
+python verify_permissions_flow.py
+```
+
+Este script verifica:
+- ✅ Backend Core corriendo (puerto 8003)
+- ✅ fmanagement corriendo (puerto 1666)
+- ✅ Login exitoso
+- ✅ Endpoint `/permissions` responde
+- ✅ fmanagement puede consultar permisos
+- ✅ Operaciones validan permisos correctamente
+
+**Documentación Detallada:**
+
+Para información completa sobre la arquitectura de permisos, configuración, troubleshooting y mejoras futuras, consulta:
+
+📄 [`docs/INTEGRACION_PERMISOS_FMANAGEMENT.md`](docs/INTEGRACION_PERMISOS_FMANAGEMENT.md)
+
+**Archivos Clave:**
+
+- Backend Core:
+  - `src/apps/3_backend/apicore.py:768-799` - Endpoint `/permissions`
+  - `src/apps/3_backend/routercore.py:781-815` - Lógica de permisos
+  - `src/2_shared_application/moks/low_level_permisions.json` - Definición de permisos
+- fmanagement:
+  - `main.go:246-268` - Función `checkPermissions()`
+  - `main.go:270-300` - Función `fetchLowLevelPermissions()`
+  - `env/macbook/.env` - Configuración de permisos
+
+### Flujo de Creación de Versiones
+
+El flujo de creación de versiones es **la funcionalidad más importante** para los usuarios, permitiendo gestionar el contenido de las versiones de los proyectos de su organización. Este proceso va desde el click en el botón "Crear nueva versión" en el frontend hasta la creación física de carpetas en fmanagement.
+
+#### Arquitectura del Flujo
+
+```
+Frontend (Reflex)
+    ↓ HTTP POST /proyectos/{id}/versiones/crear-completa
+Middleware (7_service_frontend)
+    ↓ HTTP POST a Broker
+Broker (8_service_backend)
+    ↓ HTTP POST a Backend Core
+Backend Core (3_backend)
+    ├──→ MariaDB (bases de datos: versiones, estado, eventos)
+    └──→ fmanagement (API Go) → Sistema de archivos físico
+```
+
+#### Casos de Uso
+
+**1. Primera versión (v001) - Crear estructura vacía**
+
+Cuando un proyecto no tiene versiones previas:
+- **Acción**: Usuario hace click en "Crear nueva versión"
+- **Backend**: Detecta que `version_id = 1`
+- **fmanagement**: Crea estructura base con `POST /fmo/createfolder`
+- **Resultado**: `ORG0001/PRJ00001/v001/` con carpetas: `datos/`, `modelos/`, `evaluaciones/`, `resultados/`
+
+**2. Versión subsecuente (v002+) - Clonar versión anterior**
+
+Cuando ya existe al menos una versión:
+- **Acción**: Usuario hace click en "Crear nueva versión" con v001 seleccionada
+- **Backend**: Calcula `version_id = 2`, determina `clone_from = "v001"`
+- **fmanagement**: Clona recursivamente con `POST /fmo/newversion`
+- **Resultado**: `ORG0001/PRJ00001/v002/` con copia completa de v001
+
+**3. Clonar versión específica (v007 desde v003)**
+
+Cuando el usuario quiere clonar una versión específica:
+- **Acción**: Usuario selecciona v003, hace click en "Crear nueva versión"
+- **Frontend**: Envía `clone_from_version_id = 3`
+- **Backend**: Calcula `version_id = 7` (siguiente disponible), determina `clone_from = "v003"`
+- **fmanagement**: Clona desde v003 → pero crea v004 (LIMITACIÓN, ver abajo)
+
+#### Flujo Detallado
+
+**Paso 1: Frontend → Middleware**
+
+Archivo: `src/apps/5_web_frontend/adapters/api_client.py:create_version_full()`
+
+```python
+POST /proyectos/{project_id}/versiones/crear-completa
+Headers:
+  - Authorization: Bearer {access_token}
+  - X-Session-Token: {session_token}
+Body:
+  {
+    "id_organizacion": 1,
+    "nombre_version": "v002",  # Opcional, calculado automáticamente
+    "user_id": 123,
+    "user_name": "usuario@example.com",
+    "descripcion": "Nueva versión", # Opcional
+    "clone_from_version_id": 1,  # Opcional: clonar desde esta versión
+    "initial_state": "Abierta",
+    "protected": false,
+    "final_c": false,
+    "final_i": false
+  }
+```
+
+**Paso 2: Middleware → Broker → Backend Core**
+
+El middleware valida tokens y reenvía al broker, que añade traceability y reenvía al backend core.
+
+**Paso 3: Backend Core - Procesamiento**
+
+Archivo: `src/apps/3_backend/routercore.py:create_version_full()`
+
+1. **Calcular siguiente versión**:
+   ```sql
+   SELECT COALESCE(MAX(id_version), 0) + 1 as next_version
+   FROM versiones
+   WHERE id_proyecto = :project_id AND id_organizacion = :org_id
+   ```
+   Resultado: `version_id = 3` → `version_folder = "v003"`
+
+2. **Insertar en tabla versiones**:
+   ```sql
+   INSERT INTO versiones (id_version, id_proyecto, id_organizacion)
+   VALUES (:id_version, :project_id, :org_id)
+   ```
+
+3. **Determinar estrategia de creación**:
+   ```python
+   if version_id == 1:
+       # Primera versión: crear vacía con estructura base
+       clone_from = None
+   elif clone_from_version is not None:
+       # Clonar desde versión específica
+       clone_from = f"v{clone_from_version:03d}"
+   else:
+       # Clonar desde versión anterior (por defecto)
+       clone_from = f"v{(version_id - 1):03d}"
+   ```
+
+4. **Crear estructura física en fmanagement**:
+
+   Archivo: `src/apps/3_backend/clients/fmanagement_client.py`
+
+   **Caso A - Crear versión vacía (v001)**:
+   ```python
+   client._create_empty_version(
+       orgpath="ORG0001",
+       prjpath="PRJ00001",
+       versionpath="v001",
+       identity_type_id=10,
+       iduser=123
+   )
+   # → POST /fmo/createfolder (múltiples veces)
+   # Crea: v001/datos/, v001/modelos/, v001/evaluaciones/, v001/resultados/
+   ```
+
+   **Caso B - Clonar versión (v002+)**:
+   ```python
+   client._clone_version(
+       orgpath="ORG0001",
+       prjpath="PRJ00001",
+       source_version="v002",  # Versión ORIGEN (a clonar)
+       identity_type_id=10,
+       iduser=123
+   )
+   # → POST /fmo/newversion
+   # fmanagement calcula automáticamente next_version = v003
+   ```
+
+5. **Crear estado inicial**:
+   ```sql
+   INSERT INTO version_states (
+       id_organizacion, id_proyecto, id_version,
+       state, protected, size_bytes, final_c, final_i,
+       updated_by_user_id
+   ) VALUES (
+       :org_id, :project_id, :version_id,
+       'Abierta', FALSE, 0, FALSE, FALSE,
+       :user_id
+   )
+   ```
+
+6. **Registrar evento**:
+   ```sql
+   INSERT INTO version_events (
+       id_organizacion, id_proyecto, id_version,
+       evento, mensaje, user_id, user_name
+   ) VALUES (
+       :org_id, :project_id, :version_id,
+       'VERSION_CREADA',
+       'Versión v003 creada desde Proyecciones (clonada desde v002)',
+       :user_id,
+       :user_name
+   )
+   ```
+
+**Paso 4: fmanagement - Operaciones en Disco**
+
+Aplicación: `~/develop/fmanagement` (Go)
+
+Base de archivos: `/tmp/tfmmyllm/files/default/` (configurable en macbook)
+
+**Crear versión vacía (v001)**: Endpoint `POST /fmo/createfolder` (múltiples llamadas)
+
+**Clonar versión (v002+)**: Endpoint `POST /fmo/newversion`
+
+Request:
+```json
+{
+  "iduser": 123,
+  "basepath": "default",
+  "orgpath": "ORG0001",
+  "prjpath": "PRJ00001",
+  "versionpath": "v002",  // Versión ORIGEN (a clonar)
+  "identity_type_id": 10
+}
+```
+
+Proceso interno en fmanagement:
+1. Recibe `versionpath = "v002"` (origen)
+2. Calcula automáticamente `next_version = "v003"` con `incrementVersion()`
+3. Clona recursivamente: `ORG.../PRJ.../v002/` → `ORG.../PRJ.../v003/`
+
+Response:
+```json
+{
+  "status": "success",
+  "message": "New version created successfully",
+  "old_version": "v002",
+  "new_version": "v003",
+  "path": "/tmp/tfmmyllm/files/default/ORG0001/PRJ00001/v003"
+}
+```
+
+#### Limitaciones Actuales
+
+**1. No se pueden saltar versiones**
+
+**Problema**: fmanagement siempre calcula la siguiente versión secuencial.
+
+**Ejemplo**: Si existe v001, v002, v003, y quieres crear v007 clonando desde v002:
+- Backend calcula correctamente `version_id = 4` (siguiente en DB)
+- Backend pasa `versionpath="v002"` a fmanagement
+- fmanagement crea `v003` (siguiente a v002), no `v004`
+
+**Impacto**: Hay desalineación entre DB y filesystem.
+
+**Solución propuesta**: Modificar fmanagement para aceptar `target_version` como parámetro.
+
+**2. No hay rollback de filesystem en caso de error**
+
+**Problema**: Si la transacción DB falla después de crear carpetas en fmanagement, las carpetas quedan huérfanas.
+
+**Solución propuesta**: Implementar rollback físico usando endpoint `/fmo/deletefolder` en caso de error.
+
+#### Tablas de Base de Datos Involucradas
+
+**versiones**:
+```sql
+CREATE TABLE versiones (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    id_proyecto INT NOT NULL,
+    id_organizacion INT NOT NULL,
+    id_version INT NOT NULL,  -- Número secuencial 1, 2, 3...
+    fecha_lanzamiento DATE NOT NULL,
+    descripcion TEXT,
+    archivo_bloqueo BLOB,
+    creado_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    actualizado_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY (id_proyecto, id_organizacion, id_version)
+);
+```
+
+**version_states**: Guarda el estado de cada versión (Abierta, Bloqueada, Protegida, Final).
+
+**version_events**: Auditoría de eventos (VERSION_CREADA, VERSION_BLOQUEADA, etc.).
+
+#### Testing
+
+**Test Manual**:
+```bash
+# 1. Crear primera versión (v001)
+curl -X POST http://localhost:8000/proyectos/1/versiones/crear-completa \
+  -H "Authorization: Bearer TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id_organizacion": 1,
+    "user_id": 1,
+    "user_name": "test@example.com",
+    "identity_type_id": 10
+  }'
+
+# 2. Crear segunda versión clonando v001
+curl -X POST http://localhost:8000/proyectos/1/versiones/crear-completa \
+  -H "Authorization: Bearer TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id_organizacion": 1,
+    "user_id": 1,
+    "user_name": "test@example.com",
+    "identity_type_id": 10,
+    "clone_from_version_id": 1
+  }'
+```
+
+**Verificar Resultado**:
+```bash
+# Verificar en DB
+mysql -u myllm_writer -p myllm_projects_db \
+  -e "SELECT * FROM versiones WHERE id_proyecto = 1"
+
+# Verificar en filesystem
+ls -la /tmp/tfmmyllm/files/default/ORG0001/PRJ00001/
+```
+
+#### Referencias
+
+- **fmanagement API**: `~/develop/fmanagement/README.md`
+- **fmanagement Swagger**: `~/develop/fmanagement/swagger.yaml`
+- **Backend Core Router**: `src/apps/3_backend/routercore.py:3291-3336`
+- **Cliente fmanagement**: `src/apps/3_backend/clients/fmanagement_client.py:368-522`
+- **Frontend API Client**: `src/apps/5_web_frontend/adapters/api_client.py:1582-1656`
+- **Documentación completa**: `FLUJO_CREACION_VERSIONES.md` (400+ líneas con detalles exhaustivos)
+
 ## ADRs (Architecture Decision Records)
 
 El proyecto documenta decisiones arquitectónicas importantes en:
@@ -2235,6 +2678,48 @@ Frontend/Backoffice → Middleware → Broker → Backend Core → MariaDB
 Cuando el modo es `mock_and_db` o `db_only`, el middleware delega persistencia en el
 broker backend (`8_service_backend`) mediante `BROKER_BACKEND_BASE_URL`.
 
+#### Gestión del Cache JSON en modo db_only
+
+**GARANTÍA ARQUITECTÓNICA:** En modo `db_only`, **TODAS las operaciones de lectura consultan EXCLUSIVAMENTE MariaDB**, nunca los archivos JSON locales.
+
+**Comportamiento del cache JSON:**
+
+1. **Lectura (autenticación, consultas):**
+   - El middleware consulta MariaDB vía broker: `_load_users() → broker.fetch_users() → MariaDB`
+   - Los datos obtenidos se usan directamente para autenticación
+   - El JSON se actualiza como cache, pero **NUNCA se lee** para decisiones de autenticación
+   - Referencia: `routermiddleware.py:872-901`
+
+2. **Escritura (OTP rotation, bloqueos):**
+   - El middleware escribe a MariaDB vía broker: `_store_users() → broker.store_users() → MariaDB`
+   - Después sincroniza el cache JSON local con los mismos datos
+   - Esto garantiza consistencia inmediata entre MariaDB y JSON
+   - Referencia: `routermiddleware.py:903-970`
+
+**¿Por qué mantener el cache JSON actualizado en db_only?**
+
+- **Cambios de modo:** Permite cambiar entre modos (`mock`, `mock_and_db`, `db_only`) sin datos desactualizados
+- **Debugging:** El JSON es útil para inspección manual del estado del sistema
+- **Consistencia:** Evita divergencias entre fuentes de datos al cambiar configuración
+
+**Diagrama del flujo de autenticación en db_only:**
+```
+Login Request
+    ↓
+_load_users()
+    ↓
+broker.fetch_users() → MariaDB ✓ (fuente de verdad)
+    ↓
+datos_db = [user1, user2, ...]
+    ↓
+    ├──→ JSON cache actualizado (solo para debugging)
+    └──→ RETURN datos_db ✓ (usados para autenticación)
+         ↓
+authenticate_user(datos_db)
+    ↓
+Comparación OTP/password con datos de MariaDB ✓
+```
+
 ### Sincronización DB → JSON (active_sync_db_jsons)
 
 La variable `active_sync_db_jsons` controla la sincronización periódica de MariaDB a JSON:
@@ -2405,6 +2890,126 @@ validación de consistencia que compara los OTP entre `users.json` y la tabla
 `users`, registrando el resultado en:
 
 - `src/apps/5_web_frontend/logs/frontend_secure.log`
+
+### Mensajes de Error de Autenticación
+
+El sistema propaga mensajes de error específicos desde el middleware hasta el frontend, permitiendo que el usuario comprenda exactamente qué falló durante el login.
+
+#### Arquitectura de Propagación de Errores
+
+```
+Middleware (7_service_frontend)
+    ↓ BusinessRuleError con mensaje específico
+    ↓ HTTPException 400 con {"detail": "mensaje"}
+API Client (frontend/backoffice)
+    ↓ Captura HTTPError y extrae "detail"
+    ↓ Retorna {"error": true, "detail": "mensaje"}
+Frontend State (web_frontend.py)
+    ↓ Verifica response.get("error")
+    ↓ Muestra response.get("detail") al usuario
+```
+
+#### Implementación
+
+**Middleware (`routermiddleware.py`):**
+```python
+# Líneas 1379-1391, 1407-1421, 1434-1448
+if not user_record.active or user_record.blocked:
+    raise BusinessRuleError("El usuario no está habilitado")
+
+if decrypted_password != password:
+    raise BusinessRuleError("Usuario o credenciales inválidas")
+
+if str(user_record.user_otp) != str(otp):
+    raise BusinessRuleError("OTP inválido")
+```
+
+**API Client (`api_client.py`):**
+```python
+# Frontend: src/apps/5_web_frontend/adapters/api_client.py:272-291
+# Backoffice: src/apps/6_web_backoffice/adapters/api_client.py:217-236
+
+except urllib.error.HTTPError as exc:
+    error_payload = exc.read().decode("utf-8")
+    error_data = json.loads(error_payload)
+    error_message = error_data.get("detail", "Error desconocido")
+    return {"error": True, "detail": error_message, "status_code": exc.code}
+```
+
+**Frontend State (`web_frontend.py`):**
+```python
+# src/apps/5_web_frontend/web_frontend/web_frontend.py:1675-1680
+
+response = login_user(self.user_username, self.user_password, self.user_otp)
+
+# Verificar si hay un error específico del middleware
+if response.get("error"):
+    error_detail = response.get("detail", "Error desconocido")
+    self.login_error = error_detail
+    return
+```
+
+#### Mensajes de Error por Situación
+
+| Situación | Código HTTP | Mensaje al Usuario | Código Error |
+|-----------|-------------|-------------------|--------------|
+| **Usuario bloqueado** | 400 | "El usuario no está habilitado" | `USER_BLOCKED` |
+| **Usuario inactivo** | 400 | "El usuario no está habilitado" | `USER_BLOCKED` |
+| **Contraseña incorrecta** | 400 | "Usuario o credenciales inválidas" | `INVALID_PASSWORD` |
+| **OTP inválido** | 400 | "OTP inválido" | `INVALID_OTP` |
+| **Usuario no existe** | 400 | "Usuario o credenciales inválidas" | `USER_NOT_FOUND` |
+| **Demasiados intentos** | 400 | "Usuario bloqueado por intentos fallidos" | `TOO_MANY_ATTEMPTS` |
+| **Error de conexión** | - | "No se pudo contactar con el middleware" | - |
+| **Respuesta inválida** | - | "Respuesta inválida del servidor" | - |
+
+**Notas de seguridad:**
+- Los mensajes para "usuario no existe" y "contraseña incorrecta" son **idénticos** para evitar enumeration attacks
+- El sistema registra el `error_code` específico en logs para debugging, pero no lo expone al usuario
+- Después de 3 intentos fallidos, el usuario se bloquea automáticamente
+
+#### Logs de Auditoría
+
+Todos los intentos de login se registran con detalles completos:
+
+**Ubicación:** `src/apps/7_service_frontend/logs/middleware_secure.log`
+
+**Ejemplo de log de usuario bloqueado:**
+```
+2026-02-03 13:45:12 | WARNING | routermiddleware | LOGIN ATTEMPT FAILED
+  user_name=adminone
+  event=login_attempt
+  status=failed
+  error_code=USER_BLOCKED
+  details=Usuario bloqueado o inactivo
+  ip_address=127.0.0.1
+  user_agent=Mozilla/5.0
+```
+
+#### Desbloqueo de Usuarios
+
+Si un usuario está bloqueado, un administrador puede desbloquearlo:
+
+**Desde la base de datos (desarrollo):**
+```bash
+# Desbloquear usuario en MariaDB
+/usr/local/opt/mariadb@10.6/bin/mysql -u myllm_writer -p'Us3r@wr1t3rP@ss' \
+  -D myllm_core_db \
+  -e "UPDATE users SET blocked = 0 WHERE user_name = 'adminone';"
+
+# La sincronización DB→JSON lo actualizará automáticamente
+```
+
+**Desde el backoffice (producción):**
+- Ir a "Gestión de Usuarios"
+- Buscar el usuario bloqueado (badge rojo "Inactivo")
+- Click en "Habilitar usuario"
+
+#### Referencias
+
+- **Middleware Router**: `src/apps/7_service_frontend/routermiddleware.py:1379-1448`
+- **API Client Frontend**: `src/apps/5_web_frontend/adapters/api_client.py:272-291`
+- **API Client Backoffice**: `src/apps/6_web_backoffice/adapters/api_client.py:217-236`
+- **Frontend State**: `src/apps/5_web_frontend/web_frontend/web_frontend.py:1675-1680`
 
 ### Envío de SMS con verificación de entrega (Infobip)
 
