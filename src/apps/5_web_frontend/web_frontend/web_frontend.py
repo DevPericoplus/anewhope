@@ -6,6 +6,12 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+# Configurar sys.path ANTES de cualquier import local
+# para que los módulos puedan encontrar adapters, components, etc.
+_frontend_dir = Path(__file__).parent.parent
+if str(_frontend_dir) not in sys.path:
+    sys.path.insert(0, str(_frontend_dir))
+
 import reflex as rx
 
 from adapters.api_client import (
@@ -55,6 +61,15 @@ try:
     _send_message_by_sms = getattr(_common_security_module, "send_message_by_sms", None)
 except Exception as e:
     logging.warning(f"No se pudo cargar send_message_by_sms: {e}")
+
+# Importar storage_access_structure usando importlib
+_storage_structure_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "storage_access_structure.py"
+_storage_spec = importlib.util.spec_from_file_location("storage_access_structure", _storage_structure_path)
+_storage_module = importlib.util.module_from_spec(_storage_spec)
+_storage_spec.loader.exec_module(_storage_module)
+get_folder_by_id_organization = _storage_module.get_folder_by_id_organization
+get_folder_by_id_project = _storage_module.get_folder_by_id_project
+get_folder_by_id_version = _storage_module.get_folder_by_id_version
 
 # Logger de actividad del frontend
 activity_log = _activity_module.get_frontend_logger()
@@ -1226,23 +1241,10 @@ class State(SharedSessionState):
 
     def set_proyecciones_project(self, value: str):
         """Selecciona un proyecto y carga sus versiones.
-        
+
         Args:
             value: Nombre del proyecto seleccionado
         """
-        import sys
-        from pathlib import Path
-        
-        # Agregar ruta a shared_application
-        shared_app_path = Path(__file__).resolve().parents[3] / "2_shared_application"
-        if str(shared_app_path) not in sys.path:
-            sys.path.insert(0, str(shared_app_path))
-        
-        from storage_access_structure import (
-            get_folder_by_id_organization,
-            get_folder_by_id_project,
-        )
-        
         if not value:
             self.reset_proyecciones_state()
             return
@@ -1288,13 +1290,7 @@ class State(SharedSessionState):
                 first_version = self.proyecciones_versions[0]
                 self.proyecciones_version_id = first_version.get("id_version", 0)
                 self.proyecciones_version_folder = first_version.get("version_folder", "")
-                
-                # Inicializar explorador con la primera versión
-                explorador_state = self.get_state(ExploradorState)
-                explorador_state.init_page(
-                    project_id=self.proyecciones_project_id,
-                    version_id=self.proyecciones_version_id,
-                )
+                # El explorador se auto-inicializará al detectar el cambio de version_id
         except Exception as e:
             print(f"[ERROR] Error cargando versiones: {type(e).__name__}: {e}")
             self.proyecciones_error = f"Error cargando versiones: {e}"
@@ -1303,8 +1299,8 @@ class State(SharedSessionState):
             self.is_loading_versions = False
 
     def set_proyecciones_version(self, value: str):
-        """Selecciona una versión y inicializa el explorador.
-        
+        """Selecciona una versión.
+
         Args:
             value: version_folder de la versión seleccionada (ej: "v001")
         """
@@ -1312,13 +1308,7 @@ class State(SharedSessionState):
             if version.get("version_folder") == value:
                 self.proyecciones_version_id = version.get("id_version", 0)
                 self.proyecciones_version_folder = value
-                
-                # Inicializar explorador con el contexto
-                explorador_state = self.get_state(ExploradorState)
-                explorador_state.init_page(
-                    project_id=self.proyecciones_project_id,
-                    version_id=self.proyecciones_version_id,
-                )
+                # El explorador se auto-inicializará al detectar el cambio de version_id
                 return
 
     def create_new_version(self):
@@ -1344,6 +1334,7 @@ class State(SharedSessionState):
                 version_name=version_name,
                 user_id=self.user_id,
                 user_name=self.user_name,
+                identity_type_id=self.identity_type_id,
                 description=f"Versión creada automáticamente por {self.user_name}",
                 clone_from_version_id=self.proyecciones_version_id if self.proyecciones_version_id > 0 else None,
                 initial_state="Abierta",
@@ -1362,13 +1353,7 @@ class State(SharedSessionState):
                 # Seleccionar automáticamente la nueva versión
                 self.proyecciones_version_id = new_version_id
                 self.proyecciones_version_folder = version_name
-                
-                # Inicializar explorador con la nueva versión
-                explorador_state = self.get_state(ExploradorState)
-                explorador_state.init_page(
-                    project_id=self.proyecciones_project_id,
-                    version_id=new_version_id,
-                )
+                # El explorador se auto-inicializará al detectar el cambio de version_id
             else:
                 self.proyecciones_error = result.get("mensaje", "Error al crear versión")
         except Exception as e:
@@ -1665,6 +1650,14 @@ class State(SharedSessionState):
 
         activity_log.log_middleware_request("/auth/login", "POST")
         response = login_user(self.user_username, self.user_password, self.user_otp)
+
+        # Verificar si hay un error específico del middleware
+        if response.get("error"):
+            error_detail = response.get("detail", "Error desconocido")
+            self.login_error = error_detail
+            activity_log.log_user_login(self.user_username, success=False)
+            return
+
         access_token = response.get("access_token")
         session_token = response.get("session_token")
         if not access_token or not session_token:

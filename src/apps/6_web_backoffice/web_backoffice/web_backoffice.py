@@ -6,6 +6,12 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+# Configurar sys.path ANTES de cualquier import local
+# para que los módulos puedan encontrar adapters, components, etc.
+_backoffice_dir = Path(__file__).parent.parent
+if str(_backoffice_dir) not in sys.path:
+    sys.path.insert(0, str(_backoffice_dir))
+
 import reflex as rx
 
 from adapters.api_client import (
@@ -50,6 +56,15 @@ _spec.loader.exec_module(_activity_module)
 # Logger de actividad del backoffice
 activity_log = _activity_module.get_backoffice_logger()
 activity_log.log_startup()
+
+# Importar storage_access_structure usando importlib
+_storage_structure_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "storage_access_structure.py"
+_storage_spec = importlib.util.spec_from_file_location("storage_access_structure", _storage_structure_path)
+_storage_module = importlib.util.module_from_spec(_storage_spec)
+_storage_spec.loader.exec_module(_storage_module)
+get_folder_by_id_organization = _storage_module.get_folder_by_id_organization
+get_folder_by_id_project = _storage_module.get_folder_by_id_project
+get_folder_by_id_version = _storage_module.get_folder_by_id_version
 
 COLORS = {
     "background": "#1a1a1a",
@@ -878,15 +893,10 @@ class State(SharedSessionState):
 
     def set_proyecciones_project(self, value: str):
         """Selecciona un proyecto y carga sus versiones.
-        
+
         Args:
             value: Nombre del proyecto seleccionado
         """
-        from storage_access_structure import (
-            get_folder_by_id_organization,
-            get_folder_by_id_project,
-        )
-        
         if not value:
             self.reset_proyecciones_state()
             return
@@ -939,7 +949,7 @@ class State(SharedSessionState):
 
     def set_proyecciones_version(self, value: str):
         """Selecciona una versión.
-        
+
         Args:
             value: version_folder de la versión seleccionada (ej: "v001")
         """
@@ -947,13 +957,7 @@ class State(SharedSessionState):
             if version.get("version_folder") == value:
                 self.proyecciones_version_id = version.get("id_version", 0)
                 self.proyecciones_version_folder = value
-                
-                # Inicializar explorador con el contexto
-                explorador_state = self.get_state(ExploradorState)
-                explorador_state.init_page(
-                    project_id=self.proyecciones_project_id,
-                    version_id=self.proyecciones_version_id,
-                )
+                # El explorador se auto-inicializará al detectar el cambio de version_id
                 return
 
     def create_new_version(self):
@@ -979,6 +983,7 @@ class State(SharedSessionState):
                 version_name=version_name,
                 user_id=self.user_id,
                 user_name=self.user_name,
+                identity_type_id=self.identity_type_id,
                 description=f"Versión creada por {self.user_name} (Backoffice)",
                 clone_from_version_id=self.proyecciones_version_id if self.proyecciones_version_id > 0 else None,
                 initial_state="Abierta",
@@ -997,13 +1002,7 @@ class State(SharedSessionState):
                 # Seleccionar automáticamente la nueva versión
                 self.proyecciones_version_id = new_version_id
                 self.proyecciones_version_folder = version_name
-                
-                # Inicializar explorador con la nueva versión
-                explorador_state = self.get_state(ExploradorState)
-                explorador_state.init_page(
-                    project_id=self.proyecciones_project_id,
-                    version_id=new_version_id,
-                )
+                # El explorador se auto-inicializará al detectar el cambio de version_id
             else:
                 self.proyecciones_error = result.get("mensaje", "Error al crear versión")
         except Exception as e:
@@ -3260,13 +3259,7 @@ app.add_page(
 )
 
 # User creation route
-import sys
-from pathlib import Path
-# Agregar el directorio 5_web_frontend al path para importar pages
-frontend_dir = Path(__file__).parent.parent
-if str(frontend_dir) not in sys.path:
-    sys.path.insert(0, str(frontend_dir))
-
+# NOTA: sys.path ya está configurado al inicio del archivo
 try:
     from pages.user_creation import user_creation_page
     app.add_page(user_creation_page, route="/user_creation", title="Myllm - Crear Usuario")
