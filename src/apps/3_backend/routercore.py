@@ -3365,7 +3365,7 @@ class BackendCoreRouter:
                 )
 
                 # PASO 2: Insertar en tabla versiones
-                conn.execute(
+                result_insert = conn.execute(
                     text("""
                         INSERT INTO versiones (id_version, id_proyecto, id_organizacion, fecha_lanzamiento, descripcion)
                         VALUES (:id_version, :project_id, :org_id, CURDATE(), :descripcion)
@@ -3376,6 +3376,14 @@ class BackendCoreRouter:
                         "org_id": org_id,
                         "descripcion": descripcion,
                     },
+                )
+
+                # Obtener el ID autoincremental generado
+                version_db_id = result_insert.lastrowid
+                self._logger.info(
+                    "[backend-core] Versión insertada en BD con id=%s, id_version=%s",
+                    version_db_id,
+                    version_id,
                 )
 
                 # PASO 3: Crear carpeta física vía fmanagement
@@ -3453,6 +3461,7 @@ class BackendCoreRouter:
 
                 # PASO 4: Crear estado inicial en la tabla estado
                 # Inicializar todos los estados del flujo de trabajo en FALSE
+                # IMPORTANTE: usar version_db_id (id autoincremental) no version_id (número de versión)
                 conn.execute(
                     text("""
                         INSERT INTO estado (
@@ -3462,25 +3471,26 @@ class BackendCoreRouter:
                             evaluacion_entrenamiento, reentrenamiento, optimizacion,
                             aprobacion_calidad, generacion_llm, notificacion_descarga
                         ) VALUES (
-                            :org_id, :project_id, :version_id,
+                            :org_id, :project_id, :version_db_id,
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
                         )
                     """),
                     {
                         "org_id": org_id,
                         "project_id": project_id,
-                        "version_id": version_id,
+                        "version_db_id": version_db_id,
                     },
                 )
 
                 # PASO 5: Registrar cambio en la tabla cambios
+                # IMPORTANTE: usar version_db_id (id autoincremental) no version_id (número de versión)
                 conn.execute(
                     text("""
                         INSERT INTO cambios (
                             id_organizacion, id_proyecto, id_version,
                             fecha_cambio, tipo_cambio, descripcion
                         ) VALUES (
-                            :org_id, :project_id, :version_id,
+                            :org_id, :project_id, :version_db_id,
                             CURDATE(),
                             'VERSION_CREADA',
                             :descripcion
@@ -3489,7 +3499,7 @@ class BackendCoreRouter:
                     {
                         "org_id": org_id,
                         "project_id": project_id,
-                        "version_id": version_id,
+                        "version_db_id": version_db_id,
                         "descripcion": f"Versión {version_folder} creada desde Proyecciones" +
                                  (f" (clonada desde v{clone_from_version:03d})" if clone_from_version else ""),
                     },
