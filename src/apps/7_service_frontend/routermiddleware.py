@@ -3695,9 +3695,12 @@ class RouterMiddleware:
             session.user_id,
         )
 
+        # Agregar user_id al payload (requerido por el broker)
+        payload = {**update_data, "user_id": session.user_id}
+
         try:
             return self._broker_client.update_version_state(
-                project_id, version_id, org_id, update_data
+                project_id, version_id, org_id, payload
             )
         except BrokerBackendCommunicationError as exc:
             raise BusinessRuleError(
@@ -3768,6 +3771,10 @@ class RouterMiddleware:
             request_data.get("version_folder"),
             session.user_id,
         )
+
+        # Agregar user_id e identity_type_id desde la sesión
+        request_data["user_id"] = session.user_id
+        request_data["identity_type_id"] = session.identity_type_id
 
         try:
             return self._broker_client.fmanagement_list(request_data)

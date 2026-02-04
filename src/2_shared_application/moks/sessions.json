@@ -1855,6 +1855,2710 @@
       "expires_at": "2026-02-03T18:34:10Z",
       "ip_address": "127.0.0.1",
       "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "33b2bc01-bcf8-4b44-88c0-6863fc2a9c38",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "f49127c4-e967-479f-b573-abb0d675aded",
+        "session_token_jti": "1d620c38-b74a-4d7f-962e-a2a6da0fc954"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-03T18:17:20.745163Z",
+      "last_activity": "2026-02-03T18:24:25.438582Z",
+      "expires_at": "2026-02-03T19:02:20Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "9feede8e-f293-4181-98d4-21ae69691d83",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "85a46fc9-9415-487d-9319-9f5f38594e66",
+        "session_token_jti": "fb8a8e7e-d8fb-4a68-b107-7ce57bb0344d"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-03T18:24:59.022524Z",
+      "last_activity": "2026-02-03T18:28:18.398021Z",
+      "expires_at": "2026-02-03T19:09:59Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "31494f59-b2a4-47d4-9693-82399f67aeb8",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "c403081f-2145-46e0-a340-2ccc7888197e",
+        "session_token_jti": "981ec45f-1639-4b8b-bb83-17f47904744c"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-03T18:29:27.977873Z",
+      "last_activity": "2026-02-03T18:32:07.828386Z",
+      "expires_at": "2026-02-03T19:14:27Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "87c25eb9-a2b0-4107-8b85-260553a83c98",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "11384652-382f-40d7-8ed1-d3ba5001cdd8",
+        "session_token_jti": "9b2cc015-e1d9-4625-8728-478aac8e2388"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-03T18:39:41.863830Z",
+      "last_activity": "2026-02-03T18:50:27.021280Z",
+      "expires_at": "2026-02-03T19:24:41Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "2d165527-b518-4fcc-a8be-06d3f3774cdf",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "4b77d0c3-e964-4d0b-9433-3079f3428b72",
+        "session_token_jti": "85021d36-d84b-4257-88dd-fd8ee1bc719c"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T18:50:59.088750Z",
+      "last_activity": "2026-02-03T18:51:08.590409Z",
+      "expires_at": "2026-02-03T19:35:59Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "c07da3ea-63cd-4104-ae52-e3afeb75e6b5",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "a195fa7c-260c-4593-a354-1a3fd78f3d76",
+        "session_token_jti": "05dc95cc-761b-4205-9346-b3859c0f3b6a"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T19:01:10.326440Z",
+      "last_activity": "2026-02-03T19:01:10.497997Z",
+      "expires_at": "2026-02-03T19:46:10Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "c611674c-bf44-420c-9ae9-b8d53cfff4f8",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "ad28b878-19a1-49df-b5c1-d438aff1a181",
+        "session_token_jti": "c33b4442-8178-425b-b8e2-da918d81ec41"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T19:07:16.197852Z",
+      "last_activity": "2026-02-03T19:07:16.386252Z",
+      "expires_at": "2026-02-03T19:52:16Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "5d8994a5-3fde-457b-914e-4ebd99827d06",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "b8ed1f3c-e74b-4bb4-9f21-828741e0af8f",
+        "session_token_jti": "e7d31541-de81-4fd5-a000-27586c035a8a"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T19:08:17.038096Z",
+      "last_activity": "2026-02-03T19:08:17.216845Z",
+      "expires_at": "2026-02-03T19:53:17Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "93a75784-f649-41b2-be40-5e65dd50fc3a",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "eecb779f-f3f4-4618-aa74-c4b799418307",
+        "session_token_jti": "47c1e17c-e51c-4843-9ad3-a87ed3c1def4"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T19:09:49.824561Z",
+      "last_activity": "2026-02-03T19:09:49.989562Z",
+      "expires_at": "2026-02-03T19:54:49Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "9e8825b8-ad45-40cf-803e-14cde502b6fe",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "6d7a9adc-fc6c-4160-a4e2-e6d43dd32ac2",
+        "session_token_jti": "029e2e47-fe5c-4c90-a324-fe268f4e3fa1"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T19:16:23.446423Z",
+      "last_activity": "2026-02-03T19:16:23.623218Z",
+      "expires_at": "2026-02-03T20:01:23Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "8bcafa98-2fe1-4c7e-aacb-3a29d14c769c",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "2f7d26d4-319d-4683-a078-c42fadb3f528",
+        "session_token_jti": "9f5e47a6-b7ac-4b03-8b56-a137fc943676"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T19:19:31.676917Z",
+      "last_activity": "2026-02-03T19:19:31.854337Z",
+      "expires_at": "2026-02-03T20:04:31Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "ba6f8f1c-76df-4598-9fa0-1efb161b85fe",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "8ae84eab-3daa-467b-ad78-5e4fad9add05",
+        "session_token_jti": "2e466bef-351c-4978-ba1a-77b7fa758ed2"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T19:20:28.554446Z",
+      "last_activity": "2026-02-03T19:20:28.727641Z",
+      "expires_at": "2026-02-03T20:05:28Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "3cdf1d0b-8dee-4515-8276-cb47929120d3",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "7330da4f-48f7-40d5-9c8d-52eeb7b0590f",
+        "session_token_jti": "9a632754-ade1-4b78-bfe6-f409988cc336"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T19:22:38.485580Z",
+      "last_activity": "2026-02-03T19:22:38.661265Z",
+      "expires_at": "2026-02-03T20:07:38Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "7cec2482-bddb-499d-9b48-6115d28583ec",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "81314ef9-ff27-4f1d-92f0-303084bb4a50",
+        "session_token_jti": "b7d4c80f-7d73-4dc8-ae85-337c704f124b"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T19:23:38.863562Z",
+      "last_activity": "2026-02-03T19:23:39.041321Z",
+      "expires_at": "2026-02-03T20:08:38Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "c4526b7c-afa1-46de-979d-a61121f58b65",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "250b71a0-593f-4fd8-b5ed-941332b17548",
+        "session_token_jti": "996408a3-3bdc-4f3f-9c58-b0c25dbb4672"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T19:25:40.786784Z",
+      "last_activity": "2026-02-03T19:25:41.089282Z",
+      "expires_at": "2026-02-03T20:10:40Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "bd0c9b23-fb97-4f18-b023-b3ed209d6951",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "a871f764-bc34-4f6b-889c-f526839cab6a",
+        "session_token_jti": "22e52f79-4632-43ec-ab3c-a250c2216778"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T19:29:54.704098Z",
+      "last_activity": "2026-02-03T19:29:54.888578Z",
+      "expires_at": "2026-02-03T20:14:54Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "bf0b6412-80b1-4e1e-913f-4d4b3b7e35fb",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "9d2c0a11-b225-4888-bd4a-57b2fbb8d2ce",
+        "session_token_jti": "fa7cb6ea-0861-4cf2-a27f-a9d42e6fa660"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T19:34:04.224398Z",
+      "last_activity": "2026-02-03T19:34:04.389414Z",
+      "expires_at": "2026-02-03T20:19:04Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "a31dd40f-ddf9-43f4-8541-567eacfde66a",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "76b68383-7641-49d2-b706-7e0468a91fbe",
+        "session_token_jti": "54368283-78c5-4add-9d15-887ec61c47fb"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T19:35:52.931182Z",
+      "last_activity": "2026-02-03T19:36:33.862266Z",
+      "expires_at": "2026-02-03T20:20:52Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "11788743-1412-42d1-9f76-3c1a60417bb0",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "504d0479-2e87-47b5-be2a-8d8f38d5a790",
+        "session_token_jti": "4ebc6a8d-7a58-42fe-8810-2552a38cd8e3"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T19:43:16.148939Z",
+      "last_activity": "2026-02-03T19:52:46.803289Z",
+      "expires_at": "2026-02-03T20:28:16Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "ed780537-afbf-4511-b4fe-8e5ebb195a8e",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "89b9d66c-0fc5-4b1c-985e-ec8cebadfea6",
+        "session_token_jti": "500bd78a-bf96-4b3b-98f2-cf92358543bc"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-03T20:15:03.321202Z",
+      "last_activity": "2026-02-03T20:21:08.610234Z",
+      "expires_at": "2026-02-03T21:00:03Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "d8647a28-ca82-4fe3-bfb7-faff7a432602",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "85388367-c13c-4f47-8ab6-b43b27921a50",
+        "session_token_jti": "ef2c5808-3901-40a7-b1c5-bc43d2f0c1e8"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-03T20:21:45.872049Z",
+      "last_activity": "2026-02-03T20:25:52.770571Z",
+      "expires_at": "2026-02-03T21:06:45Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "c2f6c5ec-3e0e-4f4b-847a-87e81ddec908",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "55caed64-f66e-44bc-8f28-9d81daf541c3",
+        "session_token_jti": "15880d03-ecef-45be-9e94-819396c80154"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T20:23:46.189171Z",
+      "last_activity": "2026-02-03T20:23:46.384282Z",
+      "expires_at": "2026-02-03T21:08:46Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "b4fa2cc9-ec5f-4c0b-a9c9-a053ceb5a337",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "992aab96-194e-4715-80be-df2b864afbb6",
+        "session_token_jti": "3c0e8ea3-a1b2-4500-966f-97bf994d90a7"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-03T20:26:34.689172Z",
+      "last_activity": "2026-02-03T20:30:35.117703Z",
+      "expires_at": "2026-02-03T21:11:34Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "3ec901e9-d4f7-45a1-9533-df3f9f9854aa",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "5e2f9dbc-3ea4-42d2-8b48-1acd315b37c8",
+        "session_token_jti": "0a467eb4-ac67-41fb-827a-da085fc38100"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-03T20:31:12.141759Z",
+      "last_activity": "2026-02-03T20:36:27.500863Z",
+      "expires_at": "2026-02-03T21:16:12Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "756af212-0cfc-4813-a3ee-47cd96073409",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "6098fbaf-c973-47ac-9505-73887f21e813",
+        "session_token_jti": "31f63723-0f51-4825-bc70-05bbcc6970d2"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-03T20:36:59.555645Z",
+      "last_activity": "2026-02-03T20:49:59.320980Z",
+      "expires_at": "2026-02-03T21:21:59Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "b59fe005-1f8c-4eed-bbb5-f5aac29cfbf7",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "1956d780-4414-4cb8-b572-227ae93b02b6",
+        "session_token_jti": "505e337e-5222-4221-b14c-eb9e63202c87"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-03T20:50:30.236866Z",
+      "last_activity": "2026-02-03T21:03:58.566583Z",
+      "expires_at": "2026-02-03T21:35:30Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "29344d57-ca3e-4315-a482-530d77a6e82d",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "5dc300f8-46b3-484f-8b9d-d8c90d4b0623",
+        "session_token_jti": "df2a9f13-f408-4145-a416-03ccc6a4b7b9"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-03T21:04:25.706631Z",
+      "last_activity": "2026-02-03T21:17:02.377449Z",
+      "expires_at": "2026-02-03T21:49:25Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "89e52d70-c8b0-4b4f-8420-71afca06aa72",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "9cf7a08c-8400-4da1-99ec-4b234f89b8e7",
+        "session_token_jti": "1b4bed9a-a6f6-451a-bb10-7a9a839773bd"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T21:17:50.044908Z",
+      "last_activity": "2026-02-03T21:18:07.577735Z",
+      "expires_at": "2026-02-03T22:02:50Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "5e00c99c-d112-45af-9460-d41a575fbd8e",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "3288d488-4bcb-4bd0-95b0-f73943dedcda",
+        "session_token_jti": "742360d0-91e8-4910-958c-def1f86b4b6b"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-03T22:15:06.490732Z",
+      "last_activity": "2026-02-03T22:27:12.493980Z",
+      "expires_at": "2026-02-03T23:00:06Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "92cf13d0-97fa-4451-9056-aeca82fb71da",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "f7103a83-a575-4788-804f-580a92571f9d",
+        "session_token_jti": "96154ac6-747c-4059-862c-5da184bc6356"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-03T22:27:50.000517Z",
+      "last_activity": "2026-02-03T22:31:52.345262Z",
+      "expires_at": "2026-02-03T23:12:49Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "32f6f8d5-6486-44d4-8f6a-b2482633624f",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "6fecb783-0e1d-466f-ae6d-47672400d530",
+        "session_token_jti": "1586693e-4976-417d-8299-1d565e813bab"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-03T22:32:44.077850Z",
+      "last_activity": "2026-02-03T22:40:26.469964Z",
+      "expires_at": "2026-02-03T23:17:44Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "81533fab-a271-4f1d-ad3a-462b6d85cb55",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "01f5b3d3-b28a-485b-ac97-2d04cf03c382",
+        "session_token_jti": "1cc195d8-574a-4311-a85f-0224c38328b3"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T22:40:56.806291Z",
+      "last_activity": "2026-02-03T22:43:06.118054Z",
+      "expires_at": "2026-02-03T23:25:56Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "e7a24559-453f-4ab7-8c9f-a2d6e0a18c7e",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "16fd4458-e6f2-4bb3-89f6-7c96eaab760b",
+        "session_token_jti": "41df130f-e74e-4bb5-95b7-0eb4b9ff5232"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-03T23:00:10.575489Z",
+      "last_activity": "2026-02-03T23:08:57.328039Z",
+      "expires_at": "2026-02-03T23:45:10Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "0a451977-3eee-4a8a-8453-e16eaf9fb619",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "5c6d2cc1-f769-41f2-9987-a6029ac6fdbf",
+        "session_token_jti": "cb63ba65-6195-4fa4-8a26-8e607187742f"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:09:29.863884Z",
+      "last_activity": "2026-02-03T23:09:49.326879Z",
+      "expires_at": "2026-02-03T23:54:29Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "3cd881ab-3f52-4b46-8aad-1fde15e7d3f2",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "f51d5bbe-9406-4d0f-b856-103612e1a30c",
+        "session_token_jti": "4dfc25e4-ab3d-420a-960d-888b2ba929d9"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:29:56.186705Z",
+      "last_activity": "2026-02-03T23:29:56.186705Z",
+      "expires_at": "2026-02-04T00:14:56Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "8865bd36-80a6-4243-8317-c09573ceb4fb",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "5aa5f23c-6d3e-4fad-9e83-9c1b621aed87",
+        "session_token_jti": "82a7e889-9f87-408f-9d1e-6faa685f71e9"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:30:59.648988Z",
+      "last_activity": "2026-02-03T23:30:59.648988Z",
+      "expires_at": "2026-02-04T00:15:59Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "686fdb6c-5ad0-4d19-b7b0-ae521502523d",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "3ae46bff-3742-43b6-b9c1-05390cfeb4a0",
+        "session_token_jti": "2f78687a-f259-4932-a549-3f4e413acd5d"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:31:20.235947Z",
+      "last_activity": "2026-02-03T23:31:20.235947Z",
+      "expires_at": "2026-02-04T00:16:20Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "9a2ed074-4a4d-49eb-b4f1-31da47a9e822",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "0a5e57e5-0fd5-431a-ad8f-3df3a67edae1",
+        "session_token_jti": "f02b0127-eec3-4c3f-aade-008fb99e89d8"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:31:36.511541Z",
+      "last_activity": "2026-02-03T23:31:36.511541Z",
+      "expires_at": "2026-02-04T00:16:36Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "f62208f4-738b-461e-987e-22ac3c867e0c",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "1e681709-3fca-49c3-83cd-a402eadde9c2",
+        "session_token_jti": "6c7756c9-c954-4359-a52e-82596214c219"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:31:37.399936Z",
+      "last_activity": "2026-02-03T23:31:37.489689Z",
+      "expires_at": "2026-02-04T00:16:37Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "d15b6adb-aac3-4b96-b04f-5187aff63e43",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "03dea756-159b-4089-a16e-67f8761b3ce1",
+        "session_token_jti": "7103c280-6be1-4df0-b4c6-234602ea0323"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:31:38.482176Z",
+      "last_activity": "2026-02-03T23:31:38.575850Z",
+      "expires_at": "2026-02-04T00:16:38Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "d7451e62-3952-4654-b508-92fa333155d8",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "0e828b83-af1a-4772-b01d-39fc2df8c2c7",
+        "session_token_jti": "950df515-cd0b-43b7-80bc-2fc4ca02c665"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:31:39.568557Z",
+      "last_activity": "2026-02-03T23:31:39.666535Z",
+      "expires_at": "2026-02-04T00:16:39Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "8b10764e-1a86-4b3d-b50c-1981176517d3",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "202aeaee-0eb0-4863-864b-4f1ebcb15c25",
+        "session_token_jti": "fca4c95e-eea7-4889-be7e-28478a89fd60"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:31:40.616866Z",
+      "last_activity": "2026-02-03T23:31:40.707985Z",
+      "expires_at": "2026-02-04T00:16:40Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "978621ce-4b7b-4a09-8841-757fd908fea5",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "95b939c9-5a30-4691-a87b-9ee78ee41851",
+        "session_token_jti": "8882466d-e3f8-4861-818e-b4eb01e2c9c4"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:31:41.645905Z",
+      "last_activity": "2026-02-03T23:31:41.734986Z",
+      "expires_at": "2026-02-04T00:16:41Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "87e42a96-0990-4c55-804b-5956c9eeca25",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "af82ad22-3f2d-435a-8655-db57f1e87828",
+        "session_token_jti": "18a2347b-b589-49e6-bcd7-a2361bcf499b"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:31:42.653115Z",
+      "last_activity": "2026-02-03T23:31:42.740483Z",
+      "expires_at": "2026-02-04T00:16:42Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "7f950042-fc3b-452f-bdd2-26ab6cb2e7d8",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "0b7adae1-747f-4bf1-8cfd-531a6db1ca5f",
+        "session_token_jti": "a411bdc7-f266-471e-b5e1-58bf60ddb46f"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:31:43.708759Z",
+      "last_activity": "2026-02-03T23:31:43.798913Z",
+      "expires_at": "2026-02-04T00:16:43Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "421f20aa-5258-468f-b48d-b8a99b96a036",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "334098cb-108c-4d36-9c62-bd5e43836215",
+        "session_token_jti": "f215a904-466a-456d-b41e-b16ba1245f71"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:31:44.741157Z",
+      "last_activity": "2026-02-03T23:31:44.829901Z",
+      "expires_at": "2026-02-04T00:16:44Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "37901963-1d8e-4a7e-9b2b-568ef7c32024",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "4cbfe843-16d2-49f8-bc00-ee712139d0d6",
+        "session_token_jti": "91a1cfd8-b667-4c61-bd46-0d01852f6fe1"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:31:45.791976Z",
+      "last_activity": "2026-02-03T23:31:45.791976Z",
+      "expires_at": "2026-02-04T00:16:45Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "8fa69243-b405-435e-8765-bd5ce0ea32c3",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "56c088c7-bf67-4b8f-9424-f210be27cb53",
+        "session_token_jti": "8668856c-a383-4682-a612-bd9c9c1fe73e"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:31:46.657243Z",
+      "last_activity": "2026-02-03T23:31:46.742673Z",
+      "expires_at": "2026-02-04T00:16:46Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "3fc7cfa5-e6a4-4194-8d8a-0fd9ff93f22f",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "d88cbc9b-f9db-4352-b029-5664cd1dd9ad",
+        "session_token_jti": "813726aa-dee7-494d-af06-db769c82e7d3"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:31:47.676227Z",
+      "last_activity": "2026-02-03T23:31:47.763933Z",
+      "expires_at": "2026-02-04T00:16:47Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "35289340-ead7-4056-9c53-f28084097436",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "2a180c55-b233-45f8-943e-4ae75e50f0a4",
+        "session_token_jti": "1c029ff9-dea6-4ff3-a2d7-01fff827a264"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:32:51.093379Z",
+      "last_activity": "2026-02-03T23:33:14.021728Z",
+      "expires_at": "2026-02-04T00:17:51Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "curl/8.7.1"
+    },
+    {
+      "session_id": "ff53f208-9d37-4942-a8ff-fafd58d12908",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "a8e51da3-a939-4edf-9b9d-3c63e8220f01",
+        "session_token_jti": "838430c9-6da7-4630-9538-a9b72d6cc6eb"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:34:32.743767Z",
+      "last_activity": "2026-02-03T23:34:32.965013Z",
+      "expires_at": "2026-02-04T00:19:32Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "curl/8.7.1"
+    },
+    {
+      "session_id": "f3510ea4-9130-42ce-b1bb-3bc335979a89",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "a60bed81-bd73-4c46-9b1e-787e768c6df0",
+        "session_token_jti": "21148368-0d6e-4127-898d-cedf188f6085"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:34:50.335414Z",
+      "last_activity": "2026-02-03T23:34:51.125541Z",
+      "expires_at": "2026-02-04T00:19:50Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "ee19d05b-56bd-4131-bd55-aceb808f3c3e",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "889f97b0-b174-4dc0-8e3c-ee857c8dd57c",
+        "session_token_jti": "d7c5a120-7f07-42fd-a119-b6c4ea2de9f6"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:35:02.021327Z",
+      "last_activity": "2026-02-03T23:35:02.021327Z",
+      "expires_at": "2026-02-04T00:20:02Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "0489193c-aa2e-42c1-9515-39566f764ba4",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "6ec12ca5-8ccb-417a-8c76-f9caa4bec17d",
+        "session_token_jti": "9cbbbfc7-4d98-4427-b2d3-56a574eadb52"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:35:02.929984Z",
+      "last_activity": "2026-02-03T23:35:03.022696Z",
+      "expires_at": "2026-02-04T00:20:02Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "340b41ea-a2d1-48a0-967d-cee85ecc4148",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "de268b8f-33cf-4efd-b59f-d610ad075ac6",
+        "session_token_jti": "7028f5cb-004e-4d77-8652-13145a2cd2c4"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:35:03.948391Z",
+      "last_activity": "2026-02-03T23:35:04.718439Z",
+      "expires_at": "2026-02-04T00:20:03Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "ab113b4d-853f-47e3-aa66-dd5ea8a01544",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "f0517b8a-a73e-46a9-945e-2ce19666e853",
+        "session_token_jti": "57fdcd19-bc11-4c8f-9013-6806d1794a6b"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:35:06.178244Z",
+      "last_activity": "2026-02-03T23:35:06.953016Z",
+      "expires_at": "2026-02-04T00:20:06Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "05aa4f4b-9f06-43d2-8f67-154d54bd300d",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "175b6616-3f3f-4e63-a4cc-e5bfc85e550b",
+        "session_token_jti": "2ae2c260-7092-406c-94fe-c649cdcfde7f"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:35:08.508564Z",
+      "last_activity": "2026-02-03T23:35:09.284137Z",
+      "expires_at": "2026-02-04T00:20:08Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "5ceb45d7-129b-45c4-aade-50510b3640f1",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "c0e8503a-d4a4-485e-93b3-204f6669a78d",
+        "session_token_jti": "3b7f94ef-b3d1-4a52-8307-388c859c3da3"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:35:10.760609Z",
+      "last_activity": "2026-02-03T23:35:11.560452Z",
+      "expires_at": "2026-02-04T00:20:10Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "b7fd2392-ee98-4eba-8ed9-bb52812558be",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "8cee9e1a-1ef5-4ba3-9395-f2661611a409",
+        "session_token_jti": "a66502e4-d639-447a-9ddf-cb106f18dad8"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:35:12.994963Z",
+      "last_activity": "2026-02-03T23:35:13.771379Z",
+      "expires_at": "2026-02-04T00:20:12Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "0fc8d3f6-bc0b-4de5-ab8a-56aef945a696",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "8f873f20-e094-4a99-bf30-32ff73d588b2",
+        "session_token_jti": "dec14c18-b133-466f-8044-33873e62a7d0"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:35:14.758710Z",
+      "last_activity": "2026-02-03T23:35:14.846542Z",
+      "expires_at": "2026-02-04T00:20:14Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "a0291df8-5ebf-41f9-b0a7-c36aff5a4673",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "186e1485-dad4-4d0b-a567-ade6f43e6c85",
+        "session_token_jti": "8720b190-1bed-488e-a8f7-b7a26e439827"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:35:15.801838Z",
+      "last_activity": "2026-02-03T23:35:15.889914Z",
+      "expires_at": "2026-02-04T00:20:15Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "811e1824-9fb9-41c8-a161-961e3b71e7ba",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "8127a35a-b94d-4696-8c9a-359109f95c87",
+        "session_token_jti": "7e6da1e7-38d9-4238-9a43-7697aaef2ded"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:35:16.830179Z",
+      "last_activity": "2026-02-03T23:35:16.830179Z",
+      "expires_at": "2026-02-04T00:20:16Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "a6ebda46-12ff-45c1-be9e-ad0a43f4f4af",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "f508a04d-5eb3-4005-b268-a64aa1902573",
+        "session_token_jti": "3cb7a654-d9ef-40c6-b5c3-2449c90582c8"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:35:17.679687Z",
+      "last_activity": "2026-02-03T23:35:17.764836Z",
+      "expires_at": "2026-02-04T00:20:17Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "93953598-508e-464f-8432-420c0efde370",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "68c6d71c-dd4b-44b1-b9a4-3c5b127b572d",
+        "session_token_jti": "364c0491-278d-483e-9ea1-604430d9e908"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:35:18.715733Z",
+      "last_activity": "2026-02-03T23:35:18.804050Z",
+      "expires_at": "2026-02-04T00:20:18Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "c38f6494-44fb-4e53-b355-d21b627ace0c",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "801fc30e-ba4a-491f-9a45-a6071e631dd7",
+        "session_token_jti": "ebda15da-1a8e-484b-abea-2a7f811a3a69"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:36:22.195117Z",
+      "last_activity": "2026-02-03T23:36:22.970909Z",
+      "expires_at": "2026-02-04T00:21:22Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "8429c7bb-ec8d-4ad7-8bb0-a7942eb0d17d",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "de964279-58b8-47ae-81a8-f1eb7b9fa9d3",
+        "session_token_jti": "10e35d27-8e4c-468c-a10f-a184cb8b5b95"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:36:24.396889Z",
+      "last_activity": "2026-02-03T23:36:25.171945Z",
+      "expires_at": "2026-02-04T00:21:24Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "f975fd43-7306-4f1b-8e02-67ea2ebe4646",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "5bb6f8ac-c9dd-4d36-bc19-d96e2a49e7e2",
+        "session_token_jti": "6ec22c23-e094-4a62-aa8d-4d91ae844640"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:36:26.660834Z",
+      "last_activity": "2026-02-03T23:36:26.660834Z",
+      "expires_at": "2026-02-04T00:21:26Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "ad265eb0-def1-4855-bb7e-6aa35ab40d16",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "e7d18ebc-25ec-4b9e-993b-70801278b9dd",
+        "session_token_jti": "9549c13b-6200-47b5-a04a-7ca3fcba28b6"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:36:28.223896Z",
+      "last_activity": "2026-02-03T23:36:28.223896Z",
+      "expires_at": "2026-02-04T00:21:28Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "c3c6cd0c-dee8-450b-88f1-dc3d1d2e6ede",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "8cc7dbaa-1d21-452a-8192-562a6b6d1b4f",
+        "session_token_jti": "cb64fda1-a243-4889-8c35-bec692739224"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:36:29.299680Z",
+      "last_activity": "2026-02-03T23:36:29.385712Z",
+      "expires_at": "2026-02-04T00:21:29Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "e3466205-46f3-47af-a51a-33019358e9dd",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "7e8b764f-e3c4-43ed-b6b8-86ecb7d7a258",
+        "session_token_jti": "71e50968-e238-47f2-b1a6-4d4d061a0d04"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:36:30.831026Z",
+      "last_activity": "2026-02-03T23:36:31.942408Z",
+      "expires_at": "2026-02-04T00:21:30Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "40e4d43a-2224-47c6-a7f6-a49835418acd",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "2086c502-0fb9-4529-b729-ecc7d44734ea",
+        "session_token_jti": "4c39ed03-9e18-49ed-b3b7-1e14b07fb0e1"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:36:32.905783Z",
+      "last_activity": "2026-02-03T23:36:32.994264Z",
+      "expires_at": "2026-02-04T00:21:32Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "5d8e4ab0-fc77-44e6-8dfc-dad5c8d97f16",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "d2297655-c04f-4cf0-b0e7-88dacf32a833",
+        "session_token_jti": "8c2d3f04-2091-4e34-8640-8c68589a5849"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:39:29.702022Z",
+      "last_activity": "2026-02-03T23:39:29.936098Z",
+      "expires_at": "2026-02-04T00:24:29Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "curl/8.7.1"
+    },
+    {
+      "session_id": "097fea57-be55-4201-bd89-6d92c4c44ba3",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "38856fcf-cffd-4c24-9aca-cbdff953acac",
+        "session_token_jti": "1585af35-d8e8-4ee2-9db5-471a3ed2768f"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:39:48.164607Z",
+      "last_activity": "2026-02-03T23:39:48.262388Z",
+      "expires_at": "2026-02-04T00:24:48Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "b1ac28ba-e3d0-4bd3-b0d4-d69ba06ede3e",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "eefb1eba-81a2-4c10-88d0-0656826b80f3",
+        "session_token_jti": "7385d7b5-4479-4674-8e12-48273aeb41ef"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:40:15.497425Z",
+      "last_activity": "2026-02-03T23:40:15.733204Z",
+      "expires_at": "2026-02-04T00:25:15Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "curl/8.7.1"
+    },
+    {
+      "session_id": "118931d4-3461-4e50-95ab-c20543de24bb",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "8320e126-c27f-45d8-9e90-b19909a9a719",
+        "session_token_jti": "e3e4b0ea-e0e4-4c63-bde8-38259ad97a70"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:42:43.345727Z",
+      "last_activity": "2026-02-03T23:42:44.145062Z",
+      "expires_at": "2026-02-04T00:27:43Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "1a201f70-2e6d-457a-b23d-dde150690b57",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "85563746-1cbd-4a43-9826-ce6769ca0c24",
+        "session_token_jti": "beceb9fb-bf52-4226-b107-22f98c1071d7"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:42:45.611346Z",
+      "last_activity": "2026-02-03T23:42:46.399597Z",
+      "expires_at": "2026-02-04T00:27:45Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "80974b1e-4aa9-4e2b-9bb7-598be2d6ac76",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "75ffc3b6-5f90-40b8-9713-739a1853ae84",
+        "session_token_jti": "ba36c6cf-3cf7-4439-bd80-88db2e49a28e"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:42:47.878906Z",
+      "last_activity": "2026-02-03T23:42:47.878906Z",
+      "expires_at": "2026-02-04T00:27:47Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "5d67bf80-d33d-41c1-9fd2-f723b675af66",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "1fa60324-881e-4caa-8bf6-9c960f7c13c8",
+        "session_token_jti": "ef157575-4ea0-4df9-93a1-b4e9ed9b6652"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:42:48.747953Z",
+      "last_activity": "2026-02-03T23:42:48.845596Z",
+      "expires_at": "2026-02-04T00:27:48Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "e4737610-9b54-482c-99ea-6b27842fe547",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "e42ea74c-8de9-4744-8b8b-05d26c280f94",
+        "session_token_jti": "ca3c69f0-97f4-48c3-98f8-73eb3eaa9dde"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:42:50.398457Z",
+      "last_activity": "2026-02-03T23:42:50.398457Z",
+      "expires_at": "2026-02-04T00:27:50Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "15d0e6b0-5a6c-4c2d-b906-b953797cd447",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "3f852e82-6953-436e-a0e4-2de389cdff41",
+        "session_token_jti": "eca060b1-1352-423f-89ac-790e2ea39415"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:42:51.252435Z",
+      "last_activity": "2026-02-03T23:42:51.347613Z",
+      "expires_at": "2026-02-04T00:27:51Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "654a1232-a915-4c11-a2f3-76aab7a2ccfd",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "e4eabfd7-66ec-4366-a371-a0f285cfa9da",
+        "session_token_jti": "cf9a18b7-a5c8-4855-a395-61aad956b2d9"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:42:52.297363Z",
+      "last_activity": "2026-02-03T23:42:52.386050Z",
+      "expires_at": "2026-02-04T00:27:52Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "f96e2de4-b3e5-4a27-95a0-861637082b30",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "61ea3b56-99a7-4887-9b56-406bc2932df9",
+        "session_token_jti": "e3e1c13b-880d-4b95-ad5f-f2dbf8870495"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:42:53.337405Z",
+      "last_activity": "2026-02-03T23:42:54.417879Z",
+      "expires_at": "2026-02-04T00:27:53Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "ebe5c55d-c80e-446f-8111-3cfc4407620e",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "2114b13f-4c36-4f0f-9098-24f67c4e7a70",
+        "session_token_jti": "d3dee34d-1aa8-48b7-9d92-90fc0ec25da5"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:42:55.330458Z",
+      "last_activity": "2026-02-03T23:42:55.420502Z",
+      "expires_at": "2026-02-04T00:27:55Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "22aac56b-c953-498f-87fb-ced247c81f42",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "994ec613-d653-432f-bb20-9aa0871a1caf",
+        "session_token_jti": "72c01f08-1e7d-4881-9d66-2ecdc0833bb9"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:43:52.064744Z",
+      "last_activity": "2026-02-03T23:43:52.338610Z",
+      "expires_at": "2026-02-04T00:28:52Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "curl/8.7.1"
+    },
+    {
+      "session_id": "dccf8544-dac0-44b2-9658-a9abbc3eac2c",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "43fc52b8-834c-4698-9d37-cf3d7171d51b",
+        "session_token_jti": "258999d9-92cb-4aea-a1c0-33772940d58a"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:45:25.386214Z",
+      "last_activity": "2026-02-03T23:45:25.386214Z",
+      "expires_at": "2026-02-04T00:30:25Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "b33c7e3f-047f-4b2a-ae50-3c4abc06d2ac",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "6018cde8-2d67-4985-8f50-f2236308f4eb",
+        "session_token_jti": "089315af-3a6a-4715-95a4-459d9068be80"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:45:26.219409Z",
+      "last_activity": "2026-02-03T23:45:26.306641Z",
+      "expires_at": "2026-02-04T00:30:26Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "bcac3468-9aa8-4c5e-9f14-eeeb6498463b",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "2869ef4c-c75d-4ff8-97d8-80eb92798601",
+        "session_token_jti": "c559baf5-0a07-41a1-afd9-c411accb2545"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:45:27.376088Z",
+      "last_activity": "2026-02-03T23:45:28.138061Z",
+      "expires_at": "2026-02-04T00:30:27Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "17fead62-70a0-4c16-ad0a-782cb55a6737",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "ce82b2da-721b-4296-aed7-0fafae39b7cc",
+        "session_token_jti": "b1058c91-47ce-4e36-bfd5-b1a7302e3d5c"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:45:29.554141Z",
+      "last_activity": "2026-02-03T23:45:30.318928Z",
+      "expires_at": "2026-02-04T00:30:29Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "15f24481-3310-4359-8db8-72b9b795a1b0",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "424fb86a-01de-4f17-b188-c244874ce473",
+        "session_token_jti": "bba16545-86aa-4958-ae6f-72fa327efcd4"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:45:31.832814Z",
+      "last_activity": "2026-02-03T23:45:32.591403Z",
+      "expires_at": "2026-02-04T00:30:31Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "8f3c8ba7-8df5-407f-8758-64da0930caad",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "87b2f54f-2294-4973-a70d-9809ca2ce0b3",
+        "session_token_jti": "955c8309-74f1-4fed-979f-5b91a7f6e5f7"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:45:34.064098Z",
+      "last_activity": "2026-02-03T23:45:34.819787Z",
+      "expires_at": "2026-02-04T00:30:34Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "4cdd7733-fad5-4af0-a7d4-fdb0bc082e43",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "b6a326ab-5175-4df9-94d4-e24bdc2870d4",
+        "session_token_jti": "be2824ee-e388-44f8-a6c5-60f5057f9eeb"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:45:36.239757Z",
+      "last_activity": "2026-02-03T23:45:36.333019Z",
+      "expires_at": "2026-02-04T00:30:36Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "9db21c26-7b6c-4020-af2f-e2eaec11566b",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "f5dfd4b1-f0c5-4fc3-a258-9948f23549a0",
+        "session_token_jti": "9a94b90c-52cd-45eb-88c9-0c8cd55e8139"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:45:37.340088Z",
+      "last_activity": "2026-02-03T23:45:38.101991Z",
+      "expires_at": "2026-02-04T00:30:37Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "cbe40940-87e6-4d12-b0b5-d284f83ff18e",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "bcc93cab-5661-42be-935b-583fb6fc772b",
+        "session_token_jti": "d31a4f58-8447-4ee0-a0b4-25b18c7b4749"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:45:39.487628Z",
+      "last_activity": "2026-02-03T23:45:40.249034Z",
+      "expires_at": "2026-02-04T00:30:39Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "dec7e74b-f7ce-4a00-b6bd-fc632256201b",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "eda49025-c6a9-4295-bdb7-89d47536fe97",
+        "session_token_jti": "14740243-81e4-491d-8966-6bfedaaf38d6"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:45:41.659468Z",
+      "last_activity": "2026-02-03T23:45:41.659468Z",
+      "expires_at": "2026-02-04T00:30:41Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "22969577-fbd9-48b2-902c-872fd401b6d8",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "cfae7010-036a-4398-9d7c-88945bcfb70a",
+        "session_token_jti": "2554da47-8c1b-4f85-9098-af914715879b"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:45:42.517530Z",
+      "last_activity": "2026-02-03T23:45:42.608514Z",
+      "expires_at": "2026-02-04T00:30:42Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "9b0f8b0d-0b3b-410d-ba35-e4354e1006f3",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "00f31177-7bfb-4747-9c97-de1618f24f6e",
+        "session_token_jti": "341a9586-c297-4228-879a-6cbc0f9c1f63"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:45:43.497147Z",
+      "last_activity": "2026-02-03T23:45:43.588600Z",
+      "expires_at": "2026-02-04T00:30:43Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "674d649d-581d-498e-9951-a14127fc7d56",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "c0ca5c8e-f027-4dac-a899-12d421d32b3a",
+        "session_token_jti": "77058dd1-2e92-467f-8623-e27ce557b108"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:50:11.436231Z",
+      "last_activity": "2026-02-03T23:50:11.436231Z",
+      "expires_at": "2026-02-04T00:35:11Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "975c8812-6277-4fad-b252-e72f7ca2c4bc",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "8774d01a-6adb-498e-90c8-42e09bfc70fb",
+        "session_token_jti": "fd5a2dfd-178e-447b-92fa-f358e1b71c16"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:50:12.265606Z",
+      "last_activity": "2026-02-03T23:50:12.358588Z",
+      "expires_at": "2026-02-04T00:35:12Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "c1e13b43-d4d0-467b-b770-ee282a86f80c",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "8f871778-84a2-4cf6-a54d-70ae2869a245",
+        "session_token_jti": "ba92cc5d-3a76-4c17-afbb-514bbdceb688"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:50:13.285598Z",
+      "last_activity": "2026-02-03T23:50:14.046513Z",
+      "expires_at": "2026-02-04T00:35:13Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "368d9c3d-8836-4079-8cd5-817c43ecf143",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "13b65de9-cb75-46d3-bcdb-5e07c4bf5545",
+        "session_token_jti": "93e4ed64-3bd1-42e9-b142-78bb78c0965c"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:50:15.454417Z",
+      "last_activity": "2026-02-03T23:50:16.219147Z",
+      "expires_at": "2026-02-04T00:35:15Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "554a37d9-a89c-44bf-a66a-ca03dbf35fc3",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "47e415be-a9a4-45a3-b8e6-acc07376ab83",
+        "session_token_jti": "adefd82a-7d0f-48dc-859d-0342a1da6b9a"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:50:17.680368Z",
+      "last_activity": "2026-02-03T23:50:18.461457Z",
+      "expires_at": "2026-02-04T00:35:17Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "663856c2-8047-421c-950f-b65384fba392",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "6e90cfc9-60e9-43e3-80a3-0998bbadb026",
+        "session_token_jti": "7c0323bc-25ec-4acc-9536-3d1744119ad5"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:50:19.952504Z",
+      "last_activity": "2026-02-03T23:50:20.712590Z",
+      "expires_at": "2026-02-04T00:35:19Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "da725357-4c50-41b6-8e8b-7e9b119373da",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "6cb86c8b-6cc8-4bcd-94ea-e0f111dfff72",
+        "session_token_jti": "9689108a-938e-4f88-96d4-2c5705137112"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:50:22.169205Z",
+      "last_activity": "2026-02-03T23:50:22.932790Z",
+      "expires_at": "2026-02-04T00:35:22Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "3a32bd4b-7502-4c60-90e1-8b7a1c2a3ff1",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "143e1ddd-4802-4a77-9d09-82564c818a3a",
+        "session_token_jti": "b936997c-fdd4-4c07-9e45-55682a5cd821"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:50:24.399330Z",
+      "last_activity": "2026-02-03T23:50:25.161250Z",
+      "expires_at": "2026-02-04T00:35:24Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "ca37f5ba-1e6b-4a7d-940a-6f61de71de19",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "1a93aa4a-9102-458a-9917-6ad7f727a46d",
+        "session_token_jti": "1012ef81-636e-40b4-bd8e-63fc9db40962"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:50:26.603044Z",
+      "last_activity": "2026-02-03T23:50:27.474372Z",
+      "expires_at": "2026-02-04T00:35:26Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "cba8a44f-0efe-4da3-87ee-88c34f1b3964",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "afeacf25-1160-4f86-b118-47017775b75c",
+        "session_token_jti": "cb87aa2c-cd75-455e-b38e-ea92b7e53c46"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:50:28.942382Z",
+      "last_activity": "2026-02-03T23:50:28.942382Z",
+      "expires_at": "2026-02-04T00:35:28Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "e8a0bf9b-fe59-4572-bdc4-23ff46658fff",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "d6689580-8e32-44fa-9c4c-796838cda2dd",
+        "session_token_jti": "3dcd6a6e-1711-4d78-bad3-defc9b9bc671"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:50:29.786898Z",
+      "last_activity": "2026-02-03T23:50:29.884337Z",
+      "expires_at": "2026-02-04T00:35:29Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "0a6344f2-7dff-4f28-bca7-5da1ca94b0e7",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "c36a4225-dcb7-4558-ad69-63029ad11578",
+        "session_token_jti": "c7c4d2c7-0c1e-442d-acda-2c55952b2a1c"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:50:30.804434Z",
+      "last_activity": "2026-02-03T23:50:30.894940Z",
+      "expires_at": "2026-02-04T00:35:30Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "641d884e-1189-442f-8f0c-0e1e1f4efe7c",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "84ea4d82-ed87-45eb-9410-cb3eb5c07d9e",
+        "session_token_jti": "480120ad-e434-4dc3-ae46-d0e064035f61"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:52:33.919451Z",
+      "last_activity": "2026-02-03T23:52:34.696505Z",
+      "expires_at": "2026-02-04T00:37:33Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "989d8909-a6f5-4b44-a324-597882fd8471",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "2ca1291b-24fd-4894-88fd-f9e313f5ca90",
+        "session_token_jti": "2e9cadb7-850e-4eeb-8ac0-7ce02d6fde97"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:53:22.445158Z",
+      "last_activity": "2026-02-03T23:53:22.876872Z",
+      "expires_at": "2026-02-04T00:38:22Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "curl/8.7.1"
+    },
+    {
+      "session_id": "76c645f1-3b71-45b4-b89d-4281e3ae0756",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "b9a8b914-dfb4-4e9b-9da8-e61c71e31007",
+        "session_token_jti": "05dc0738-4652-419c-b2ca-9ba3b657633e"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:53:57.349480Z",
+      "last_activity": "2026-02-03T23:53:58.776617Z",
+      "expires_at": "2026-02-04T00:38:57Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "0ff163ed-9c40-429a-bbb7-4268261df795",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "1807c808-3a3a-468d-844d-67d9a6fa63e7",
+        "session_token_jti": "dd90fc55-f418-4435-a664-6380dfce72b5"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:54:31.690208Z",
+      "last_activity": "2026-02-03T23:54:31.690208Z",
+      "expires_at": "2026-02-04T00:39:31Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "a15c864f-2c47-41e2-bf3c-72539aa735b1",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "b476f051-7096-4292-9af0-b2521ba3de5e",
+        "session_token_jti": "cccc1850-1785-44a7-84eb-c1447b816825"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:54:32.616612Z",
+      "last_activity": "2026-02-03T23:54:32.746307Z",
+      "expires_at": "2026-02-04T00:39:32Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "5e4b4631-fa02-4c9b-bad4-8db852faac83",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "0bc0cd77-3e2a-4d0b-ba1f-2106b8350381",
+        "session_token_jti": "d70bc4d8-578a-4780-b288-b0aceabaccb9"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:54:33.745699Z",
+      "last_activity": "2026-02-03T23:54:34.521658Z",
+      "expires_at": "2026-02-04T00:39:33Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "bd4dd27c-87bb-49ee-bc9b-c32638f05731",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "1340385a-01f3-43d8-be22-007352af73b1",
+        "session_token_jti": "9de24700-2788-4f7e-a11d-d395d4feb57f"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:54:36.002074Z",
+      "last_activity": "2026-02-03T23:54:36.776200Z",
+      "expires_at": "2026-02-04T00:39:36Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "e9985f88-8c8b-4554-b33a-310121a2b12a",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "731af910-f747-42e8-96a9-1dbdd3478611",
+        "session_token_jti": "0cded7f8-7a23-4282-9cfc-c37b522840e2"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:54:38.260335Z",
+      "last_activity": "2026-02-03T23:54:39.026790Z",
+      "expires_at": "2026-02-04T00:39:38Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "7f27519a-ab10-48b8-9250-13b6e7b80cc7",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "11c35272-41db-4a3a-9115-4d5c4bf428e6",
+        "session_token_jti": "3c344e43-ddc6-4ddb-a3be-96edce81869d"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:54:40.447975Z",
+      "last_activity": "2026-02-03T23:54:41.217121Z",
+      "expires_at": "2026-02-04T00:39:40Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "8fa996d9-3fd8-4fa0-ad28-f5b22d631052",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "80bf4fd5-4532-44fa-bccb-68566599a319",
+        "session_token_jti": "57c8a381-8d12-49d6-bae3-8dd41da10879"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:54:42.621468Z",
+      "last_activity": "2026-02-03T23:54:44.570879Z",
+      "expires_at": "2026-02-04T00:39:42Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "16ea5ecd-6ae3-4307-8e16-b844b7992d47",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "4c9f7075-5341-4042-9620-8100183228a5",
+        "session_token_jti": "0ae9ece5-54f3-402e-8100-ab4ef7f92fd5"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:54:45.563479Z",
+      "last_activity": "2026-02-03T23:54:46.327171Z",
+      "expires_at": "2026-02-04T00:39:45Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "58aef095-a11d-4ce3-b239-060648a51540",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "8858cd2e-2bce-4e7c-b96a-55293b9a96a6",
+        "session_token_jti": "3ed3b6de-7fa4-46a5-b5b8-dc84e7d50816"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:54:47.747862Z",
+      "last_activity": "2026-02-03T23:54:48.516114Z",
+      "expires_at": "2026-02-04T00:39:47Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "b9bdb21a-5001-4707-85a1-adc44044f69e",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "20a8d55e-86cc-4480-8ff5-6007705819d7",
+        "session_token_jti": "5b35267a-98ce-4304-a744-29d770153adf"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:54:49.905457Z",
+      "last_activity": "2026-02-03T23:54:49.905457Z",
+      "expires_at": "2026-02-04T00:39:49Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "950887a9-8529-486e-860d-89e299d39b4a",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "152b9ddb-2d16-4d1c-a364-f05e7fcaa590",
+        "session_token_jti": "8d034f2e-c275-423e-8e09-ecdfaf95bbd8"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:54:50.769183Z",
+      "last_activity": "2026-02-03T23:54:50.858473Z",
+      "expires_at": "2026-02-04T00:39:50Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "c163ed6f-bcf3-4fee-bbf7-837a3fb15bcf",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "c0939a01-42d2-4a36-b853-123e7657846e",
+        "session_token_jti": "e9101c95-39f0-41ff-ad23-71300e6982d0"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:54:51.733523Z",
+      "last_activity": "2026-02-03T23:54:51.827791Z",
+      "expires_at": "2026-02-04T00:39:51Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "6b703474-30d8-4040-9af8-fb1a9fb80742",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "b31a8a9e-5a83-4022-ad32-fdf0c1f1dd9b",
+        "session_token_jti": "fdd7ef37-d385-45f0-8e8d-9cebec551cc6"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:54:53.984628Z",
+      "last_activity": "2026-02-03T23:54:54.749986Z",
+      "expires_at": "2026-02-04T00:39:53Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "eaa2e1df-363f-432a-af22-7ea308b73c30",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "ef629aaf-a01d-4257-9857-61969f85da7c",
+        "session_token_jti": "9d432f7f-fc3e-4dc2-9261-ca17d0daef4e"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:54:56.169895Z",
+      "last_activity": "2026-02-03T23:54:56.933455Z",
+      "expires_at": "2026-02-04T00:39:56Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "4daa6314-15e2-46b6-8292-14bcba6eb2c9",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "ccb0d1d7-cc8a-45e3-83fe-91fecfaac6f3",
+        "session_token_jti": "63e2c564-52c2-4916-9e46-3b78e1d339cf"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:54:58.369161Z",
+      "last_activity": "2026-02-03T23:54:58.369161Z",
+      "expires_at": "2026-02-04T00:39:58Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "728465ee-df59-47bf-ab10-f3e6340cd4eb",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "aa7c8e5d-4b06-47af-b024-e44a79d89d19",
+        "session_token_jti": "e91b4aff-cdd5-4808-8d07-be392c86dc89"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:54:59.206360Z",
+      "last_activity": "2026-02-03T23:54:59.364946Z",
+      "expires_at": "2026-02-04T00:39:59Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "6dca32ce-ba07-45b7-98d8-a80ffc876f13",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "05ab80ad-eef6-4d23-9596-b32cd9afd4a5",
+        "session_token_jti": "941f37e6-f6a4-4112-ae1f-deab9768eb22"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:55:00.852651Z",
+      "last_activity": "2026-02-03T23:55:00.852651Z",
+      "expires_at": "2026-02-04T00:40:00Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "54cfb362-b51a-4f12-8d47-48a9cdfbde64",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "84ce81ac-4f0e-4421-9874-2615c8ea7211",
+        "session_token_jti": "c763a492-7c33-4868-8809-2208e706359e"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:55:01.700720Z",
+      "last_activity": "2026-02-03T23:55:01.791165Z",
+      "expires_at": "2026-02-04T00:40:01Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "95d062f7-c4a0-480e-8f43-a107e29e000a",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "d480a05b-a106-4693-9422-671d874236ba",
+        "session_token_jti": "ef8c0e57-0b84-40f9-a305-6b995db58844"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:55:02.794591Z",
+      "last_activity": "2026-02-03T23:55:02.887132Z",
+      "expires_at": "2026-02-04T00:40:02Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "7ab55e47-aa96-4198-bcf3-a80bb26b398d",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "218b90d7-cb60-445e-89c2-5e888e961300",
+        "session_token_jti": "1283378b-21ff-49e9-bc8e-a3eb1b931b73"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:55:04.307476Z",
+      "last_activity": "2026-02-03T23:55:05.386082Z",
+      "expires_at": "2026-02-04T00:40:04Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "2f8cee13-f5c0-4411-a1f2-c09a79e0cd7f",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "7035aca1-35dc-4a90-a1a2-51779738cac4",
+        "session_token_jti": "4fa52050-593c-412b-a2b5-cc00b1cd9024"
+      },
+      "status": "active",
+      "created_at": "2026-02-03T23:55:06.369050Z",
+      "last_activity": "2026-02-03T23:55:06.460602Z",
+      "expires_at": "2026-02-04T00:40:06Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "f588570c-5f69-4aac-b314-d959f9487015",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "f34daec7-57ca-4755-9f96-fb03a895becb",
+        "session_token_jti": "b3d61a46-954a-4c47-b87a-c61de8975a4f"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T10:29:03.506802Z",
+      "last_activity": "2026-02-04T10:40:55.087197Z",
+      "expires_at": "2026-02-04T11:14:03Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "199e3cf0-4d6f-408c-8f75-905bc955e375",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "2d6852f7-4c6d-46d4-aba2-afd3c4ebe17f",
+        "session_token_jti": "41a2b0a5-4358-4167-91e9-fe03b412184c"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T10:32:06.842943Z",
+      "last_activity": "2026-02-04T10:32:07.245374Z",
+      "expires_at": "2026-02-04T11:17:06Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "curl/8.7.1"
+    },
+    {
+      "session_id": "0e972cdf-e6c3-4973-a0e8-f02a3c363e95",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "6bee6939-39ee-41f2-b106-a7e85fccc3bd",
+        "session_token_jti": "dce66943-c240-44cb-a1e1-fd25525ed169"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T10:32:23.018872Z",
+      "last_activity": "2026-02-04T10:32:24.553363Z",
+      "expires_at": "2026-02-04T11:17:23Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "curl/8.7.1"
+    },
+    {
+      "session_id": "68100324-83ae-48f6-b63f-e9688b911d42",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "25abcf84-135f-4ac5-bfbd-0f488fe40854",
+        "session_token_jti": "9666b4cc-bf99-4bb1-8907-3357d21df59f"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T10:52:21.339273Z",
+      "last_activity": "2026-02-04T10:52:41.073744Z",
+      "expires_at": "2026-02-04T11:37:21Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "5b721ad7-68df-4357-9c6b-596fb62d149d",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "d1febed1-4949-41fd-9214-6b223cdc2acb",
+        "session_token_jti": "b2408d59-f3d0-46c7-bd7e-b50a53b36139"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T11:25:10.678359Z",
+      "last_activity": "2026-02-04T11:25:27.376388Z",
+      "expires_at": "2026-02-04T12:10:10Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "aafee2b1-91d8-4f9b-a65c-5e21d4d7c7da",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "4d23e0d1-926b-44a6-aa77-cfa23d3e0a6e",
+        "session_token_jti": "ab50c0dc-ad8e-4137-9a99-ca958df99cf5"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T11:31:32.788366Z",
+      "last_activity": "2026-02-04T11:31:45.229765Z",
+      "expires_at": "2026-02-04T12:16:32Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "9ccb6836-d29f-4338-96fd-93e933df70c2",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "17de101c-ef84-4926-8231-53700e5634ee",
+        "session_token_jti": "79b4200b-2288-43f9-a7f3-42a667f45853"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T11:39:03.837479Z",
+      "last_activity": "2026-02-04T11:39:19.720588Z",
+      "expires_at": "2026-02-04T12:24:03Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "8f26d64e-e086-4c93-baeb-19638a1a4af1",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "4700e174-c7f0-4425-bd3b-45f164cfc76b",
+        "session_token_jti": "3ef2ca96-a420-46f5-b34c-66debca98a59"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T11:45:22.512236Z",
+      "last_activity": "2026-02-04T11:52:12.024057Z",
+      "expires_at": "2026-02-04T12:30:22Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "43a4865e-70d3-4a80-a7ed-d773eac1c0db",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "ae8ff3a1-3099-4b90-84c9-e820a9ea60b9",
+        "session_token_jti": "41d94758-f9f4-4417-8140-e0a182d35b6d"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T11:57:49.145084Z",
+      "last_activity": "2026-02-04T11:58:11.882604Z",
+      "expires_at": "2026-02-04T12:42:49Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "726bcf38-726b-41f9-9bfe-e8f931519d03",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "ea255542-dce3-497e-a42b-104c3bda66f0",
+        "session_token_jti": "a98842b6-e7d4-42d1-b040-75097c4d802a"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T12:09:29.739269Z",
+      "last_activity": "2026-02-04T12:09:41.361213Z",
+      "expires_at": "2026-02-04T12:54:29Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "d70f907e-f45e-4518-b066-03212abc98e2",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "c4065a18-a7b3-46c2-b0e7-fafb14e82b33",
+        "session_token_jti": "903d23f5-3626-49b6-b67c-b63517455ef7"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T12:17:33.040931Z",
+      "last_activity": "2026-02-04T12:17:53.432243Z",
+      "expires_at": "2026-02-04T13:02:33Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "f3a10100-4afe-4912-9105-e66bef22da3d",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "dd2d2bb3-e7d3-4f84-804d-a9e7452b070f",
+        "session_token_jti": "ebfeca7f-f08e-42d3-8ab6-d36bb1582a92"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T13:24:40.288362Z",
+      "last_activity": "2026-02-04T13:24:50.051909Z",
+      "expires_at": "2026-02-04T14:09:40Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "e270d6dc-2892-4a0e-81b6-72939223fa49",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "2c23d0c2-8c0a-4b8c-b9c5-ebe57703e8df",
+        "session_token_jti": "63cb68e6-016d-4726-b485-aa9d543eadd5"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T14:32:26.281093Z",
+      "last_activity": "2026-02-04T14:33:37.724064Z",
+      "expires_at": "2026-02-04T15:17:26Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "21a400d0-216c-41fe-87e9-dadbf397ee86",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "8f2ec8a3-15e0-4f7b-9e13-8989249c2b47",
+        "session_token_jti": "95b685b0-66e7-4ea5-84a9-05b3f8f84083"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T15:34:50.349686Z",
+      "last_activity": "2026-02-04T15:41:01.044948Z",
+      "expires_at": "2026-02-04T16:19:50Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "c8be1a0b-bbcc-4305-b40f-2368c3e28ad2",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "69a03aaa-7854-4651-a1d1-2b3302ff0dd4",
+        "session_token_jti": "1b9db2b1-e7f8-4da3-aea4-8298739ba101"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T16:03:50.054285Z",
+      "last_activity": "2026-02-04T16:03:50.054285Z",
+      "expires_at": "2026-02-04T16:48:50Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "df353cde-bd76-471b-974e-bbbd9bc3de18",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "7ab1ca7a-ed06-4205-b3b4-ddff9d0a05b6",
+        "session_token_jti": "97a9a4a3-7d82-45c3-9525-b536174f68d1"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T16:04:21.547028Z",
+      "last_activity": "2026-02-04T16:04:22.109405Z",
+      "expires_at": "2026-02-04T16:49:21Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "d6dc9daf-47a2-4f72-9a8d-19c6b4ef84c9",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "791e027f-743d-4814-a8e9-e65fdfc53ea3",
+        "session_token_jti": "ffccc880-4d41-4cdb-8406-318d901df78c"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T16:05:45.023005Z",
+      "last_activity": "2026-02-04T16:05:45.629193Z",
+      "expires_at": "2026-02-04T16:50:45Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "ad67eece-14b7-4d4d-a629-1b5e34d263f1",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "6e760057-9222-44f9-85c1-75387d8f8f21",
+        "session_token_jti": "a311d0fb-c45a-4be2-b1cd-d7d82ca69081"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T16:06:20.038160Z",
+      "last_activity": "2026-02-04T16:06:20.686466Z",
+      "expires_at": "2026-02-04T16:51:20Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "b8e24087-6c57-44c2-8426-8b325f1cf089",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "7d48ece4-237f-455d-bf8d-4de87ec9b054",
+        "session_token_jti": "4501ec4e-2264-45b8-aad4-1475e9123601"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T16:07:04.676190Z",
+      "last_activity": "2026-02-04T16:07:05.314219Z",
+      "expires_at": "2026-02-04T16:52:04Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "ee519326-0fe2-4c3f-b68d-71bd9388ad8a",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "b1e7afe4-e187-4073-9cd1-7a9dd104b9fd",
+        "session_token_jti": "9d695649-9656-4933-bd65-56e7c0f74c07"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T16:07:36.196594Z",
+      "last_activity": "2026-02-04T16:07:36.875617Z",
+      "expires_at": "2026-02-04T16:52:36Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "session_id": "99222576-1256-4e2a-ad9c-95bef88147af",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "42f09776-94e0-441e-a893-c9be1ca9ddb5",
+        "session_token_jti": "61afab95-4843-4a95-94ed-865785e02b13"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-04T16:09:06.054504Z",
+      "last_activity": "2026-02-04T16:13:43.030696Z",
+      "expires_at": "2026-02-04T16:54:06Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "a38449c0-035b-42b3-a0d5-0391687904f9",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "5513fb22-3537-4da2-a6f4-14b20af24ab3",
+        "session_token_jti": "cc4e09eb-33f1-43f6-9481-75200369a89d"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T16:14:16.517656Z",
+      "last_activity": "2026-02-04T16:26:21.400017Z",
+      "expires_at": "2026-02-04T16:59:16Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "411123dd-976d-43cc-9975-083b74242d08",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "4e9476a9-60eb-4e8b-bc15-2e2959ed92b9",
+        "session_token_jti": "a039f95c-9cbf-4436-ab71-985882ed7ed1"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T16:47:17.444489Z",
+      "last_activity": "2026-02-04T16:48:11.726606Z",
+      "expires_at": "2026-02-04T17:32:17Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "33c34807-44dd-4504-9316-f6bfbee515da",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "b7714103-5f53-46c4-934f-a778968df2d3",
+        "session_token_jti": "8775e5aa-5fd3-4299-acfb-3ab4085a1fb7"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T17:07:31.270632Z",
+      "last_activity": "2026-02-04T17:07:58.540713Z",
+      "expires_at": "2026-02-04T17:52:31Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "df7e64f2-dd42-4136-a10d-a42e33d1be48",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "de4bfe1d-fe81-4770-b65a-7eab05a215e9",
+        "session_token_jti": "5ad89d77-b7ee-417d-a31f-8f92af7b5032"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T17:17:05.011453Z",
+      "last_activity": "2026-02-04T17:20:10.219268Z",
+      "expires_at": "2026-02-04T18:02:05Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "b0fb6f05-2a2d-47ec-87da-1fa57e35026d",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "e12caec3-f151-4ad1-85c8-0f898701516f",
+        "session_token_jti": "ca607e81-7bc0-4e7b-80b9-3e97b69d4f55"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-04T17:28:45.409367Z",
+      "last_activity": "2026-02-04T17:41:34.746301Z",
+      "expires_at": "2026-02-04T18:13:45Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "0b5fdc0d-830b-4429-9836-f88ba7e2adc5",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "45f64708-53eb-40cd-8594-6ecc60ad7ba3",
+        "session_token_jti": "c2da7d3b-860a-4111-9eea-32942ed05561"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T17:42:17.482554Z",
+      "last_activity": "2026-02-04T17:53:52.689196Z",
+      "expires_at": "2026-02-04T18:27:17Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "8dd29094-1d56-4f85-90b9-3b8dea9ca469",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "502c1fa4-6c14-445b-9ee3-525dd9105cc4",
+        "session_token_jti": "8f94cd17-1c4a-480a-a663-ac13ec571092"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-04T18:05:07.337336Z",
+      "last_activity": "2026-02-04T18:10:39.836584Z",
+      "expires_at": "2026-02-04T18:50:07Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "08a2da8e-1450-4b91-92d5-1cd731abe250",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "322c9c22-dad0-4fce-95c5-4e530a809ece",
+        "session_token_jti": "a01ab8ba-cb2f-4553-bd5c-2abdebed4d84"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-04T18:11:11.096833Z",
+      "last_activity": "2026-02-04T18:18:07.615500Z",
+      "expires_at": "2026-02-04T18:56:11Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "96a1a7e9-8446-4909-9fc5-6e5206e8ca3b",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "71b07cc8-cc6b-479b-b830-b119a8e80932",
+        "session_token_jti": "69d645bf-b724-4851-8aed-7f595c437772"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-04T18:18:37.260379Z",
+      "last_activity": "2026-02-04T18:23:38.776949Z",
+      "expires_at": "2026-02-04T19:03:37Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "efbf93d0-8b2a-48f5-a996-f0f0ad39745c",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "245f4d29-ae87-4d5a-a97f-416267a91a62",
+        "session_token_jti": "b39bd117-18dc-4190-985b-2121c363da17"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-04T18:24:30.762923Z",
+      "last_activity": "2026-02-04T18:29:36.052535Z",
+      "expires_at": "2026-02-04T19:09:30Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "284a43be-81dd-427e-9ccc-5d7104e3f9f1",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "c62a6198-57d1-429a-ad08-95275ac3af67",
+        "session_token_jti": "4ced888b-96cb-414b-94b3-c120df0126cb"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-04T18:30:03.837905Z",
+      "last_activity": "2026-02-04T18:36:24.166127Z",
+      "expires_at": "2026-02-04T19:15:03Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "56148be0-8daf-4020-ba78-71cfceb74dde",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "645bc016-abc8-469e-bab3-7bb3063e4aff",
+        "session_token_jti": "536f3289-3c18-43da-8e67-d5ae57a5b8d0"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-04T18:36:54.708025Z",
+      "last_activity": "2026-02-04T18:39:35.725235Z",
+      "expires_at": "2026-02-04T19:21:54Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "57109478-bf87-4e38-896a-436e0862c151",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "8751983d-1603-4cad-ac79-e3b2a46ebac3",
+        "session_token_jti": "8acc2329-3d44-46ff-9f68-71045709a21a"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-04T18:40:06.307960Z",
+      "last_activity": "2026-02-04T18:43:14.031509Z",
+      "expires_at": "2026-02-04T19:25:06Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "f97be2b1-792d-45b4-bb52-be3d90c56757",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "dab9d2f9-3068-41d4-814b-b58baf87c068",
+        "session_token_jti": "e7a11b0a-47c0-44d4-be08-1899ff95712f"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-04T18:43:45.296174Z",
+      "last_activity": "2026-02-04T18:45:00.096363Z",
+      "expires_at": "2026-02-04T19:28:45Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "63205f66-02b5-4858-beb7-d99e54842264",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "996c86d3-898c-4dfb-bee4-7fc5efa33cdc",
+        "session_token_jti": "2f13949c-d3ec-4551-a3ca-f857541ff043"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T18:45:39.180658Z",
+      "last_activity": "2026-02-04T18:46:04.822232Z",
+      "expires_at": "2026-02-04T19:30:39Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "e1b5ea55-1d3f-4a3e-abdc-81c7768df383",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "71e9ebb0-1275-4635-a3f2-421e08f628b1",
+        "session_token_jti": "1c37c088-38f0-4378-a46e-39905e4dd05d"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T18:51:15.697175Z",
+      "last_activity": "2026-02-04T18:51:48.570079Z",
+      "expires_at": "2026-02-04T19:36:15Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
     }
   ],
   "auth_logs": [
@@ -3718,6 +6422,1842 @@
       "status": "success",
       "ip_address": "127.0.0.1",
       "session_id": "9d8476cc-3931-431d-b280-a800d707874d",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T18:17:20.752407Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "33b2bc01-bcf8-4b44-88c0-6863fc2a9c38",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T18:24:25.438602Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "33b2bc01-bcf8-4b44-88c0-6863fc2a9c38",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T18:24:59.028189Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "9feede8e-f293-4181-98d4-21ae69691d83",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T18:28:18.398041Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "9feede8e-f293-4181-98d4-21ae69691d83",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T18:29:27.984726Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "31494f59-b2a4-47d4-9693-82399f67aeb8",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T18:32:07.828413Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "31494f59-b2a4-47d4-9693-82399f67aeb8",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T18:39:41.873513Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "87c25eb9-a2b0-4107-8b85-260553a83c98",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T18:50:27.021310Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "87c25eb9-a2b0-4107-8b85-260553a83c98",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T18:50:59.093991Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "2d165527-b518-4fcc-a8be-06d3f3774cdf",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T18:59:28.143287Z",
+      "user_name": "adminone",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "INVALID_OTP",
+      "details": "OTP inválido",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T19:01:10.333731Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "c07da3ea-63cd-4104-ae52-e3afeb75e6b5",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T19:03:41.939797Z",
+      "user_name": "adminone",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "INVALID_OTP",
+      "details": "OTP inválido",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T19:07:16.206146Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "c611674c-bf44-420c-9ae9-b8d53cfff4f8",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T19:08:17.048299Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "5d8994a5-3fde-457b-914e-4ebd99827d06",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T19:09:49.832348Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "93a75784-f649-41b2-be40-5e65dd50fc3a",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T19:16:23.454256Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "9e8825b8-ad45-40cf-803e-14cde502b6fe",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T19:19:31.685556Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "8bcafa98-2fe1-4c7e-aacb-3a29d14c769c",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T19:20:28.560899Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "ba6f8f1c-76df-4598-9fa0-1efb161b85fe",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T19:22:38.492817Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "3cdf1d0b-8dee-4515-8276-cb47929120d3",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T19:23:38.871171Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "7cec2482-bddb-499d-9b48-6115d28583ec",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T19:25:40.795610Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "c4526b7c-afa1-46de-979d-a61121f58b65",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T19:29:54.712712Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "bd0c9b23-fb97-4f18-b023-b3ed209d6951",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T19:34:04.230790Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "bf0b6412-80b1-4e1e-913f-4d4b3b7e35fb",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T19:35:52.938599Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "a31dd40f-ddf9-43f4-8541-567eacfde66a",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T19:43:16.156259Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "11788743-1412-42d1-9f76-3c1a60417bb0",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T20:15:03.330711Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "ed780537-afbf-4511-b4fe-8e5ebb195a8e",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T20:21:08.610254Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "ed780537-afbf-4511-b4fe-8e5ebb195a8e",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T20:21:45.880177Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "d8647a28-ca82-4fe3-bfb7-faff7a432602",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T20:23:46.198792Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "c2f6c5ec-3e0e-4f4b-847a-87e81ddec908",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T20:25:52.770611Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "d8647a28-ca82-4fe3-bfb7-faff7a432602",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T20:26:34.697398Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "b4fa2cc9-ec5f-4c0b-a9c9-a053ceb5a337",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T20:30:35.117730Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "b4fa2cc9-ec5f-4c0b-a9c9-a053ceb5a337",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T20:31:12.147916Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "3ec901e9-d4f7-45a1-9533-df3f9f9854aa",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T20:36:27.500885Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "3ec901e9-d4f7-45a1-9533-df3f9f9854aa",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T20:36:59.563880Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "756af212-0cfc-4813-a3ee-47cd96073409",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T20:49:59.321014Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "756af212-0cfc-4813-a3ee-47cd96073409",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T20:50:30.243835Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "b59fe005-1f8c-4eed-bbb5-f5aac29cfbf7",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T21:03:58.566602Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "b59fe005-1f8c-4eed-bbb5-f5aac29cfbf7",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T21:04:25.713308Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "29344d57-ca3e-4315-a482-530d77a6e82d",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T21:17:02.377469Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "29344d57-ca3e-4315-a482-530d77a6e82d",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T21:17:50.051049Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "89e52d70-c8b0-4b4f-8420-71afca06aa72",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T22:14:46.311858Z",
+      "user_name": "adminone",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "INVALID_OTP",
+      "details": "OTP inválido",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T22:15:06.500709Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "5e00c99c-d112-45af-9460-d41a575fbd8e",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T22:27:12.494002Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "5e00c99c-d112-45af-9460-d41a575fbd8e",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T22:27:50.007003Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "92cf13d0-97fa-4451-9056-aeca82fb71da",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T22:31:52.345281Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "92cf13d0-97fa-4451-9056-aeca82fb71da",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T22:32:44.085551Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "32f6f8d5-6486-44d4-8f6a-b2482633624f",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T22:40:26.469983Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "32f6f8d5-6486-44d4-8f6a-b2482633624f",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T22:40:56.814305Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "81533fab-a271-4f1d-ad3a-462b6d85cb55",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T23:00:10.585404Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "e7a24559-453f-4ab7-8c9f-a2d6e0a18c7e",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T23:08:57.328057Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "e7a24559-453f-4ab7-8c9f-a2d6e0a18c7e",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T23:09:29.870975Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "0a451977-3eee-4a8a-8453-e16eaf9fb619",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-03T23:25:02.503841Z",
+      "user_name": "adminone",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "INVALID_PASSWORD",
+      "details": "Contraseña inválida",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:29:56.195253Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "3cd881ab-3f52-4b46-8aad-1fde15e7d3f2",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:30:59.656642Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "8865bd36-80a6-4243-8317-c09573ceb4fb",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:31:20.243166Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "686fdb6c-5ad0-4d19-b7b0-ae521502523d",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:31:36.519215Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "9a2ed074-4a4d-49eb-b4f1-31da47a9e822",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:31:37.407393Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "f62208f4-738b-461e-987e-22ac3c867e0c",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:31:38.489990Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "d15b6adb-aac3-4b96-b04f-5187aff63e43",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:31:39.579237Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "d7451e62-3952-4654-b508-92fa333155d8",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:31:40.627032Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "8b10764e-1a86-4b3d-b50c-1981176517d3",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:31:41.655077Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "978621ce-4b7b-4a09-8841-757fd908fea5",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:31:42.662697Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "87e42a96-0990-4c55-804b-5956c9eeca25",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:31:43.718913Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "7f950042-fc3b-452f-bdd2-26ab6cb2e7d8",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:31:44.750432Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "421f20aa-5258-468f-b48d-b8a99b96a036",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:31:45.798518Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "37901963-1d8e-4a7e-9b2b-568ef7c32024",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:31:46.664132Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "8fa69243-b405-435e-8765-bd5ce0ea32c3",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:31:47.683203Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "3fc7cfa5-e6a4-4194-8d8a-0fd9ff93f22f",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:32:51.101257Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "35289340-ead7-4056-9c53-f28084097436",
+      "user_agent": "curl/8.7.1"
+    },
+    {
+      "timestamp": "2026-02-03T23:34:32.750688Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "ff53f208-9d37-4942-a8ff-fafd58d12908",
+      "user_agent": "curl/8.7.1"
+    },
+    {
+      "timestamp": "2026-02-03T23:34:40.451985Z",
+      "user_name": "adminone",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "INVALID_OTP",
+      "details": "OTP inválido",
+      "user_agent": "curl/8.7.1"
+    },
+    {
+      "timestamp": "2026-02-03T23:34:50.343442Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "f3510ea4-9130-42ce-b1bb-3bc335979a89",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:35:02.029269Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "ee19d05b-56bd-4131-bd55-aceb808f3c3e",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:35:02.937814Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "0489193c-aa2e-42c1-9515-39566f764ba4",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:35:03.956138Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "340b41ea-a2d1-48a0-967d-cee85ecc4148",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:35:06.186550Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "ab113b4d-853f-47e3-aa66-dd5ea8a01544",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:35:08.515727Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "05aa4f4b-9f06-43d2-8f67-154d54bd300d",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:35:10.768035Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "5ceb45d7-129b-45c4-aade-50510b3640f1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:35:13.003437Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "b7fd2392-ee98-4eba-8ed9-bb52812558be",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:35:14.766393Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "0fc8d3f6-bc0b-4de5-ab8a-56aef945a696",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:35:15.809773Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "a0291df8-5ebf-41f9-b0a7-c36aff5a4673",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:35:16.838006Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "811e1824-9fb9-41c8-a161-961e3b71e7ba",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:35:17.687727Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "a6ebda46-12ff-45c1-be9e-ad0a43f4f4af",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:35:18.723870Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "93953598-508e-464f-8432-420c0efde370",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:36:22.203292Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "c38f6494-44fb-4e53-b355-d21b627ace0c",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:36:24.404471Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "8429c7bb-ec8d-4ad7-8bb0-a7942eb0d17d",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:36:26.667990Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "f975fd43-7306-4f1b-8e02-67ea2ebe4646",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:36:26.860379Z",
+      "user_name": "admintwo",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "USER_NOT_FOUND",
+      "details": "Usuario no existe",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:36:28.231988Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "ad265eb0-def1-4855-bb7e-6aa35ab40d16",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:36:28.425519Z",
+      "user_name": "editorone",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "USER_NOT_FOUND",
+      "details": "Usuario no existe",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:36:29.307088Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "c3c6cd0c-dee8-450b-88f1-dc3d1d2e6ede",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:36:30.838486Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "e3466205-46f3-47af-a51a-33019358e9dd",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:36:32.913182Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "40e4d43a-2224-47c6-a7f6-a49835418acd",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:39:29.710470Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "5d8e4ab0-fc77-44e6-8dfc-dad5c8d97f16",
+      "user_agent": "curl/8.7.1"
+    },
+    {
+      "timestamp": "2026-02-03T23:39:48.174717Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "097fea57-be55-4201-bd89-6d92c4c44ba3",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:40:15.505647Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "b1ac28ba-e3d0-4bd3-b0d4-d69ba06ede3e",
+      "user_agent": "curl/8.7.1"
+    },
+    {
+      "timestamp": "2026-02-03T23:42:43.355810Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "118931d4-3461-4e50-95ab-c20543de24bb",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:42:45.620055Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "1a201f70-2e6d-457a-b23d-dde150690b57",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:42:47.888172Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "80974b1e-4aa9-4e2b-9bb7-598be2d6ac76",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:42:48.757397Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "5d67bf80-d33d-41c1-9fd2-f723b675af66",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:42:50.408261Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "e4737610-9b54-482c-99ea-6b27842fe547",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:42:51.261949Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "15d0e6b0-5a6c-4c2d-b906-b953797cd447",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:42:52.304995Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "654a1232-a915-4c11-a2f3-76aab7a2ccfd",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:42:53.345516Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "f96e2de4-b3e5-4a27-95a0-861637082b30",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:42:55.338617Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "ebe5c55d-c80e-446f-8111-3cfc4407620e",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:43:52.075736Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "22aac56b-c953-498f-87fb-ced247c81f42",
+      "user_agent": "curl/8.7.1"
+    },
+    {
+      "timestamp": "2026-02-03T23:45:25.394117Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "dccf8544-dac0-44b2-9658-a9abbc3eac2c",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:45:26.227348Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "b33c7e3f-047f-4b2a-ae50-3c4abc06d2ac",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:45:27.384620Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "bcac3468-9aa8-4c5e-9f14-eeeb6498463b",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:45:29.561793Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "17fead62-70a0-4c16-ad0a-782cb55a6737",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:45:31.841854Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "15f24481-3310-4359-8db8-72b9b795a1b0",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:45:34.073064Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "8f3c8ba7-8df5-407f-8758-64da0930caad",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:45:36.249056Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "4cdd7733-fad5-4af0-a7d4-fdb0bc082e43",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:45:37.348719Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "9db21c26-7b6c-4020-af2f-e2eaec11566b",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:45:39.495445Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "cbe40940-87e6-4d12-b0b5-d284f83ff18e",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:45:41.668150Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "dec7e74b-f7ce-4a00-b6bd-fc632256201b",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:45:42.527423Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "22969577-fbd9-48b2-902c-872fd401b6d8",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:45:43.506329Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "9b0f8b0d-0b3b-410d-ba35-e4354e1006f3",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:50:11.445906Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "674d649d-581d-498e-9951-a14127fc7d56",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:50:12.276915Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "975c8812-6277-4fad-b252-e72f7ca2c4bc",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:50:13.294422Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "c1e13b43-d4d0-467b-b770-ee282a86f80c",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:50:15.462797Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "368d9c3d-8836-4079-8cd5-817c43ecf143",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:50:17.689112Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "554a37d9-a89c-44bf-a66a-ca03dbf35fc3",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:50:19.961148Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "663856c2-8047-421c-950f-b65384fba392",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:50:22.178315Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "da725357-4c50-41b6-8e8b-7e9b119373da",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:50:24.408315Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "3a32bd4b-7502-4c60-90e1-8b7a1c2a3ff1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:50:26.612283Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "ca37f5ba-1e6b-4a7d-940a-6f61de71de19",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:50:28.950890Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "cba8a44f-0efe-4da3-87ee-88c34f1b3964",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:50:29.798799Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "e8a0bf9b-fe59-4572-bdc4-23ff46658fff",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:50:30.813505Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "0a6344f2-7dff-4f28-bca7-5da1ca94b0e7",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:52:33.928582Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "641d884e-1189-442f-8f0c-0e1e1f4efe7c",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:53:22.453569Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "989d8909-a6f5-4b44-a324-597882fd8471",
+      "user_agent": "curl/8.7.1"
+    },
+    {
+      "timestamp": "2026-02-03T23:53:57.358509Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "76c645f1-3b71-45b4-b89d-4281e3ae0756",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:54:31.699712Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "0ff163ed-9c40-429a-bbb7-4268261df795",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:54:32.627132Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "a15c864f-2c47-41e2-bf3c-72539aa735b1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:54:33.755501Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "5e4b4631-fa02-4c9b-bad4-8db852faac83",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:54:36.011128Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "bd4dd27c-87bb-49ee-bc9b-c32638f05731",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:54:38.269757Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "e9985f88-8c8b-4554-b33a-310121a2b12a",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:54:40.457428Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "7f27519a-ab10-48b8-9250-13b6e7b80cc7",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:54:42.631474Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "8fa996d9-3fd8-4fa0-ad28-f5b22d631052",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:54:45.573083Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "16ea5ecd-6ae3-4307-8e16-b844b7992d47",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:54:47.756524Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "58aef095-a11d-4ce3-b239-060648a51540",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:54:49.915391Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "b9bdb21a-5001-4707-85a1-adc44044f69e",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:54:50.779866Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "950887a9-8529-486e-860d-89e299d39b4a",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:54:51.744847Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "c163ed6f-bcf3-4fee-bbf7-837a3fb15bcf",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:54:53.995428Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "6b703474-30d8-4040-9af8-fb1a9fb80742",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:54:56.178925Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "eaa2e1df-363f-432a-af22-7ea308b73c30",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:54:58.378181Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "4daa6314-15e2-46b6-8292-14bcba6eb2c9",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:54:59.216070Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "728465ee-df59-47bf-ab10-f3e6340cd4eb",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:55:00.862108Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "6dca32ce-ba07-45b7-98d8-a80ffc876f13",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:55:01.710053Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "54cfb362-b51a-4f12-8d47-48a9cdfbde64",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:55:02.804286Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "95d062f7-c4a0-480e-8f43-a107e29e000a",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:55:04.317298Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "7ab55e47-aa96-4198-bcf3-a80bb26b398d",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-03T23:55:06.379256Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "2f8cee13-f5c0-4411-a1f2-c09a79e0cd7f",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-04T10:29:03.517847Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "f588570c-5f69-4aac-b314-d959f9487015",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T10:32:06.852303Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "199e3cf0-4d6f-408c-8f75-905bc955e375",
+      "user_agent": "curl/8.7.1"
+    },
+    {
+      "timestamp": "2026-02-04T10:32:23.028506Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "0e972cdf-e6c3-4973-a0e8-f02a3c363e95",
+      "user_agent": "curl/8.7.1"
+    },
+    {
+      "timestamp": "2026-02-04T10:51:13.532078Z",
+      "user_name": "adminone",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "INVALID_OTP",
+      "details": "OTP inválido",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T10:51:49.689731Z",
+      "user_name": "adminone",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "INVALID_OTP",
+      "details": "OTP inválido",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T10:52:21.350638Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "68100324-83ae-48f6-b63f-e9688b911d42",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T11:25:10.689116Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "5b721ad7-68df-4357-9c6b-596fb62d149d",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T11:31:32.798951Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "aafee2b1-91d8-4f9b-a65c-5e21d4d7c7da",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T11:39:03.849815Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "9ccb6836-d29f-4338-96fd-93e933df70c2",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T11:45:22.522869Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "8f26d64e-e086-4c93-baeb-19638a1a4af1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T11:57:49.161082Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "43a4865e-70d3-4a80-a7ed-d773eac1c0db",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T12:09:29.751523Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "726bcf38-726b-41f9-9bfe-e8f931519d03",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T12:17:33.054158Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "d70f907e-f45e-4518-b066-03212abc98e2",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T13:24:40.300944Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "f3a10100-4afe-4912-9105-e66bef22da3d",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T14:32:26.295183Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "e270d6dc-2892-4a0e-81b6-72939223fa49",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T15:34:50.361459Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "21a400d0-216c-41fe-87e9-dadbf397ee86",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T16:03:50.066761Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "c8be1a0b-bbcc-4305-b40f-2368c3e28ad2",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-04T16:04:21.559147Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "df353cde-bd76-471b-974e-bbbd9bc3de18",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-04T16:05:45.034013Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "d6dc9daf-47a2-4f72-9a8d-19c6b4ef84c9",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-04T16:06:20.050737Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "ad67eece-14b7-4d4d-a629-1b5e34d263f1",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-04T16:07:04.688153Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "b8e24087-6c57-44c2-8426-8b325f1cf089",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-04T16:07:36.211481Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "ee519326-0fe2-4c3f-b68d-71bd9388ad8a",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-04T16:09:06.066291Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "99222576-1256-4e2a-ad9c-95bef88147af",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T16:13:43.030735Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "99222576-1256-4e2a-ad9c-95bef88147af",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T16:14:16.530670Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "a38449c0-035b-42b3-a0d5-0391687904f9",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T16:47:17.462156Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "411123dd-976d-43cc-9975-083b74242d08",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T17:07:31.283536Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "33c34807-44dd-4504-9316-f6bfbee515da",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T17:17:05.023746Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "df7e64f2-dd42-4136-a10d-a42e33d1be48",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T17:28:45.421650Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "b0fb6f05-2a2d-47ec-87da-1fa57e35026d",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T17:41:34.746323Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "b0fb6f05-2a2d-47ec-87da-1fa57e35026d",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T17:42:17.492821Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "0b5fdc0d-830b-4429-9836-f88ba7e2adc5",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T18:05:07.349478Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "8dd29094-1d56-4f85-90b9-3b8dea9ca469",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T18:10:39.836612Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "8dd29094-1d56-4f85-90b9-3b8dea9ca469",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T18:11:11.106947Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "08a2da8e-1450-4b91-92d5-1cd731abe250",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T18:18:07.615523Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "08a2da8e-1450-4b91-92d5-1cd731abe250",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T18:18:37.273374Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "96a1a7e9-8446-4909-9fc5-6e5206e8ca3b",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T18:23:38.776974Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "96a1a7e9-8446-4909-9fc5-6e5206e8ca3b",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T18:24:30.775390Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "efbf93d0-8b2a-48f5-a996-f0f0ad39745c",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T18:29:36.052553Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "efbf93d0-8b2a-48f5-a996-f0f0ad39745c",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T18:30:03.848802Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "284a43be-81dd-427e-9ccc-5d7104e3f9f1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T18:36:24.166144Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "284a43be-81dd-427e-9ccc-5d7104e3f9f1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T18:36:54.721637Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "56148be0-8daf-4020-ba78-71cfceb74dde",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T18:39:35.725253Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "56148be0-8daf-4020-ba78-71cfceb74dde",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T18:40:06.320411Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "57109478-bf87-4e38-896a-436e0862c151",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T18:43:14.031539Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "57109478-bf87-4e38-896a-436e0862c151",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T18:43:45.308082Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "f97be2b1-792d-45b4-bb52-be3d90c56757",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T18:45:00.096380Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "f97be2b1-792d-45b4-bb52-be3d90c56757",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T18:45:39.191609Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "63205f66-02b5-4858-beb7-d99e54842264",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T18:51:15.708747Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "e1b5ea55-1d3f-4a3e-abdc-81c7768df383",
       "user_agent": "Python-urllib/3.13"
     }
   ]

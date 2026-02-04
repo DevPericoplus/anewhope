@@ -7,9 +7,9 @@
     "user_password": "gAAAAABpb4h-XLaIMoNXOCTwy_OMRgxyQ_EQc3mZhe95orpSp4j0Y5XBFY07MbfDYm4VsRo9cqbd-orOZ_YiiApJ158VK04tLQ==",
     "user_email": "adminone@myllm.ai",
     "user_mobile": "+34639775978",
-    "user_otp": "1427",
+    "user_otp": "9676",
     "active": true,
-    "blocked": true,
+    "blocked": false,
     "contact_info": {
       "first_name": "admin",
       "sur_name": "one internal",
@@ -63,7 +63,7 @@
     "user_password": "gAAAAABpb4h-XLaIMoNXOCTwy_OMRgxyQ_EQc3mZhe95orpSp4j0Y5XBFY07MbfDYm4VsRo9cqbd-orOZ_YiiApJ158VK04tLQ==",
     "user_email": "admint3@yllm.ai",
     "user_mobile": "+34639775978",
-    "user_otp": "5934",
+    "user_otp": "3193",
     "active": true,
     "blocked": false,
     "contact_info": {

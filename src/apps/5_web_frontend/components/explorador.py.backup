@@ -1,4 +1,4 @@
-"""Componente Explorador de Archivos - Backoffice.
+"""Componente Explorador de Archivos - Frontend.
 
 Este componente gestiona la navegación y operaciones CRUD sobre la estructura
 de archivos de proyectos y versiones, integrándose con fmanagement y la base
@@ -6,9 +6,6 @@ de datos de estados de versión.
 
 Adaptado desde reflex_components_templates para usar APIs reales en lugar de
 JSON mockeados.
-
-NOTA: Este componente es idéntico al de Frontend. Ambos usan la misma
-infraestructura de APIs y SharedSessionState.
 """
 
 import reflex as rx
@@ -17,15 +14,15 @@ import logging
 from typing import Any
 
 # Imports de la capa compartida
-from web_backoffice.shared_state import SharedSessionState
+from web_frontend.shared_state import SharedSessionState
 
 # Imports de API client
 from adapters.api_client import (
     fmanagement_list,
-    fmanagement_list_for_explorador,
-    fmanagement_list_all_project_versions,
     fmanagement_operation,
-    get_project_versions,
+    fmanagement_download,
+    fmanagement_diff,
+    fmanagement_transfer,
     get_version_state,
     update_version_state,
 )
@@ -35,7 +32,7 @@ from adapters.api_client import (
 # Configuración de Logging
 # ============================================================================
 
-logger = logging.getLogger("ExploradorBackoffice")
+logger = logging.getLogger("ExploradorFrontend")
 logger.setLevel(logging.INFO)
 
 
@@ -111,18 +108,26 @@ class ExploradorState(SharedSessionState):
     fmanagementlist: dict = {}
     selected_item_id: str = ""
 
-    # Menú contextual global
-    context_menu_open: bool = False
-    context_menu_item_id: str = ""
-    context_menu_x: int = 0
-    context_menu_y: int = 0
-
-    # Contexto de proyecto actual
+    # Contexto de proyecto y versión actual
     id_proyecto: int = 0
+    id_version_int: int = 0
+    id_version: str = ""  # ej: "v001"
 
-    # Estados de todas las versiones del proyecto
-    # Estructura: {"v001": {state, protected, size, final_c, final_i}, "v002": {...}}
+    # Estado de la versión actual
+    version_state: str = "Abierta"  # "Abierta", "Bloqueada", "Protegida", "Final"
+    version_protected: bool = False
+    version_final_c: bool = False  # Flag cliente
+    version_final_i: bool = False  # Flag interno
+    version_size_bytes: int = 0
+
+    # Estados de todas las versiones (cache local)
     version_states: dict = {}  # {version_key: state_data}
+
+    # Campos para Diff y Transfer
+    diff_v2: str = "" # Versión destino para comparar
+    transfer_target: str = "trainer" # "trainer" o "core"
+    show_diff_dialog: bool = False
+    show_transfer_dialog: bool = False
 
     # ========================================================================
     # Propiedades Computadas
@@ -130,13 +135,13 @@ class ExploradorState(SharedSessionState):
 
     @rx.var
     def is_internal_user(self) -> bool:
-        """En Backoffice siempre es usuario Interno.
+        """En Frontend siempre es usuario Cliente (externo).
 
-        El backoffice es la interfaz para personal interno, por lo que
+        El frontend es la interfaz para clientes, por lo que
         independientemente de los permisos del usuario, siempre
-        se considera como usuario interno.
+        se considera como usuario externo/cliente.
         """
-        return True  # Backoffice = Interno
+        return False  # Frontend = Cliente
 
     @rx.var
     def current_role_label(self) -> str:
@@ -150,19 +155,24 @@ class ExploradorState(SharedSessionState):
 
     @rx.var
     def available_status_options(self) -> list[str]:
-        """Opciones de estado disponibles en Backoffice.
+        """Opciones de estado disponibles según el rol.
 
-        Backoffice: Abierta, Bloqueada, Protegida, Final.
+        Frontend: Solo admin de organización puede cambiar estados
+        Opciones limitadas: Abierta, Bloqueada
         """
-        return ["Abierta", "Bloqueada", "Protegida", "Final"]
+        if self.is_admin:
+            return ["Abierta", "Bloqueada"]
+        return []
 
     @rx.var
     def can_change_state(self) -> bool:
         """Verifica si el usuario puede cambiar el estado de la versión.
 
-        Backoffice: Todos los internos pueden cambiar estados (soporte)
+        Condiciones:
+        - Debe ser administrador (identity_type_id 1 o 2)
+        - La versión no debe tener final_c o final_i activos
         """
-        return self.is_internal_user
+        return self.is_admin and not self.version_final_c and not self.version_final_i
 
     @rx.var
     def is_access_authorized(self) -> bool:
@@ -177,126 +187,109 @@ class ExploradorState(SharedSessionState):
     # Métodos de Inicialización (A IMPLEMENTAR EN PASO 6.4b)
     # ========================================================================
 
-    def init_page(self, project_id: int):
-        """Inicializa el explorador para un proyecto (con todas sus versiones).
+    def init_page(self, project_id: int, version_id: int):
+        """Inicializa el explorador para un proyecto y versión específicos.
 
         Args:
             project_id: ID del proyecto
+            version_id: ID de la versión
         """
         logger.info(
-            "Inicializando explorador: project_id=%s, user_id=%s",
+            "Inicializando explorador: project_id=%s, version_id=%s, user_id=%s",
             project_id,
+            version_id,
             self.user_id,
         )
 
         # Guardar contexto
         self.id_proyecto = project_id
+        self.id_version_int = version_id
+        self.id_version = f"v{str(version_id).zfill(3)}"
 
-        # Cargar datos desde APIs (todas las versiones del proyecto)
+        # Cargar datos desde APIs
         self.load_from_api()
+        self.load_version_state_from_api()
         self.interpretacion_estados()
 
         logger.info("Explorador inicializado correctamente")
         yield  # Actualizar UI
 
-    def reload_project(self, project_id: int):
-        """Recarga el explorador con un nuevo proyecto.
+    def reload_version(self, project_id: int, version_id: int):
+        """Recarga el explorador con una nueva versión.
 
         Este método es llamado desde otros estados para actualizar
-        el explorador cuando cambia el proyecto seleccionado.
+        el explorador cuando cambia la versión seleccionada.
 
         Args:
             project_id: ID del proyecto
+            version_id: ID de la versión
         """
         logger.info(
-            "Recargando explorador: project_id=%s, user_id=%s",
+            "Recargando explorador: project_id=%s, version_id=%s",
             project_id,
-            self.user_id,
+            version_id,
         )
 
-        # Guardar contexto
+        # Actualizar contexto
         self.id_proyecto = project_id
+        self.id_version_int = version_id
+        self.id_version = f"v{str(version_id).zfill(3)}"
 
-        # Cargar datos desde APIs (todas las versiones)
+        # Recargar datos
         self.load_from_api()
+        self.load_version_state_from_api()
         self.interpretacion_estados()
 
         logger.info("Explorador recargado correctamente")
         yield  # Actualizar UI
-
-    def reload_project_with_tokens(self, project_id: int, org_id: int, access_token: str, session_token: str):
-        """Recarga el explorador con un nuevo proyecto incluyendo tokens.
-
-        Args:
-            project_id: ID del proyecto a cargar
-            org_id: ID de la organización
-            access_token: Token de acceso
-            session_token: Token de sesión
-        """
-        logger.info(f"Recargando explorador para proyecto {project_id}...")
-
-        # Actualizar IDs y tokens
-        self.id_proyecto = project_id
-        self.id_organizacion = org_id
-        self.access_token = access_token
-        self.session_token = session_token
-
-        # Cargar desde API
-        if self.access_token and self.session_token and self.id_proyecto > 0:
-            logger.info(f"Cargando proyecto {self.id_proyecto} desde API")
-            self.load_from_api()
-        else:
-            logger.warning("Tokens no disponibles, no se puede cargar desde API")
 
     # ========================================================================
     # Métodos de Carga de Datos
     # ========================================================================
 
     def load_from_api(self):
-        """Carga todas las versiones del proyecto desde fmanagement API.
-
-        Flujo: Backoffice → Middleware → Backend Core → MariaDB (versiones)
-               Backoffice → Middleware → Broker → Backend Core → fmanagement (contenido)
-
+        """Carga estructura de archivos desde fmanagement API.
+        
+        Flujo: Frontend → Middleware → Broker → Backend Core → fmanagement
+        
         Construye los nombres de carpetas según convención:
         - org_folder: "ORG{organization_id:04d}"  (ej: "ORG0001")
-        - prj_folder: "PRJ{id_proyecto:05d}"      (ej: "PRJ00001")
+        - prj_folder: "PRJ{id_proyecto:04d}"      (ej: "PRJ0005")
+        - version_folder: "v{id_version_int:03d}" (ej: "v001")
         """
         try:
             # Construir nombres de carpetas
             org_folder = f"ORG{str(self.organization_id).zfill(4)}"
             prj_folder = f"PRJ{str(self.id_proyecto).zfill(5)}"
+            version_folder = self.id_version  # Ya está formateado como "v001"
 
             logger.info(
-                "Cargando todas las versiones del proyecto: org=%s, prj=%s",
+                "Cargando estructura fmanagement: org=%s, prj=%s, version=%s",
                 org_folder,
                 prj_folder,
+                version_folder,
             )
 
-            # Usar el adaptador que carga todas las versiones
-            response = fmanagement_list_all_project_versions(
-                org_id=self.organization_id,
-                project_id=self.id_proyecto,
+            # Llamar API de fmanagement
+            response = fmanagement_list(
                 org_folder=org_folder,
                 prj_folder=prj_folder,
+                version_folder=version_folder,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
 
-            if response.get("status") == "success":
-                # El adaptador ya devuelve el formato correcto
-                self.fmanagementlist = response
-                logger.info("Estructura cargada: path=%s", response.get("path", ""))
+            if response.get("success"):
+                # Mapear response al formato esperado por process_fmanagementlist()
+                items = response.get("items", [])
+                self.fmanagementlist = {"items": items}
+
+                logger.info("Estructura cargada: %d items", len(items))
 
                 # Procesar estructura
                 self.process_fmanagementlist()
-
-                # Cargar estados de versión desde la API
-                self.load_all_version_states()
-
-                logger.info(f"Explorador cargado: {len(self.items)} items, {len(self.version_states)} versiones")
             else:
-                error_msg = response.get("mensaje", "Error desconocido")
+                error_msg = response.get("message", "Error desconocido")
                 logger.error("Error cargando fmanagement: %s", error_msg)
                 self.fmanagementlist = {"items": []}
 
@@ -304,72 +297,114 @@ class ExploradorState(SharedSessionState):
             logger.exception("Excepción cargando desde fmanagement API: %s", e)
             self.fmanagementlist = {"items": []}
 
-    def load_all_version_states(self):
-        """Carga los estados de todas las versiones del proyecto desde la API.
-
-        Obtiene los estados desde version_states tabla vía API del backend.
+    def load_version_state_from_api(self):
+        """Carga estado de la versión actual desde API.
+        
+        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+        
+        Obtiene el estado de la versión desde la tabla version_states y lo
+        almacena tanto en campos individuales (version_state, version_protected, etc.)
+        como en el diccionario version_states para uso en interpretacion_estados().
         """
         try:
-            # Obtener versiones del proyecto
-            versions_response = get_project_versions(
+            logger.info(
+                "Cargando estado de versión: project_id=%s, version_id=%s",
+                self.id_proyecto,
+                self.id_version_int,
+            )
+
+            # Llamar API de estado de versión
+            response = get_version_state(
                 project_id=self.id_proyecto,
+                version_id=self.id_version_int,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
 
-            versiones = versions_response.get("versiones", [])
+            logger.info(f"[DEBUG] Respuesta completa de get_version_state: {response}")
 
-            if not versiones:
-                logger.warning(f"No se encontraron versiones para proyecto {self.id_proyecto}")
-                return
+            if response.get("success"):
+                state_data = response.get("data", {})  # Backend devuelve "data", no "state"
+                logger.info(f"[DEBUG] state_data extraído: {state_data}")
 
-            # Limpiar diccionario de estados
-            self.version_states = {}
+                # Mapear a campos individuales
+                self.version_state = state_data.get("state", "Abierta")
+                self.version_protected = state_data.get("protected", False)
+                self.version_final_c = state_data.get("final_c", False)
+                self.version_final_i = state_data.get("final_i", False)
+                self.version_size_bytes = state_data.get("size", 0)
 
-            # Para cada versión, obtener su estado desde la API
-            for version_info in versiones:
-                version_id = version_info.get("id_version", 0)
-                version_key = f"v{str(version_id).zfill(3)}"
-
-                # Obtener estado de esta versión
-                state_response = get_version_state(
-                    project_id=self.id_proyecto,
-                    version_id=version_id,
-                    access_token=self.access_token,
-                    session_token=self.session_token,
+                logger.info(
+                    "Estado cargado: state=%s, protected=%s, final_c=%s, final_i=%s",
+                    self.version_state,
+                    self.version_protected,
+                    self.version_final_c,
+                    self.version_final_i,
                 )
 
-                if state_response.get("success"):
-                    state_data = state_response.get("data", {}) if state_response.get("data") else state_response.get("state", {})
-                    self.version_states[version_key] = {
-                        "id_organizacion": state_data.get("id_organizacion", self.organization_id),
-                        "id_proyecto": state_data.get("id_proyecto", self.id_proyecto),
-                        "state": state_data.get("state", "Abierta"),
-                        "protected": state_data.get("protected", False),
-                        "size": state_data.get("size_bytes", state_data.get("size", 0)),
-                        "final_c": state_data.get("final_c", False),
-                        "final_i": state_data.get("final_i", False),
-                    }
-                else:
-                    # Valores por defecto si falla la carga
-                    self.version_states[version_key] = {
-                        "id_organizacion": version_info.get("id_organizacion", self.organization_id),
-                        "id_proyecto": version_info.get("id_proyecto", self.id_proyecto),
-                        "state": "Abierta",
-                        "protected": False,
-                        "size": 0,
-                        "final_c": False,
-                        "final_i": False,
-                    }
+                # Guardar en cache local para interpretacion_estados()
+                version_key = self.id_version  # "v001"
+                self.version_states[version_key] = {
+                    "id_organizacion": state_data.get("id_organizacion", self.organization_id),
+                    "id_proyecto": state_data.get("id_proyecto", self.id_proyecto),
+                    "state": self.version_state,
+                    "protected": self.version_protected,
+                    "size": self.version_size_bytes,
+                    "final_c": self.version_final_c,
+                    "final_i": self.version_final_i,
+                }
 
-            logger.info(f"Estados de versiones cargados: {list(self.version_states.keys())}")
+                logger.info("Estado almacenado en cache: %s", version_key)
+            else:
+                error_msg = response.get("message", "Error desconocido")
+                logger.error("Error cargando estado de versión: %s", error_msg)
+                # Usar valores por defecto
+                self.version_state = "Abierta"
+                self.version_protected = False
+                self.version_final_c = False
+                self.version_final_i = False
+                self.version_size_bytes = 0
 
         except Exception as e:
-            logger.exception("Error cargando estados de versiones: %s", e)
+            logger.exception("Excepción cargando estado de versión: %s", e)
+            # Usar valores por defecto en caso de error
+            self.version_state = "Abierta"
+            self.version_protected = False
+            self.version_final_c = False
+            self.version_final_i = False
+            self.version_size_bytes = 0
 
     # ========================================================================
     # Operaciones CRUD
     # ========================================================================
+
+    def accion_diff_version(self):
+        """Ejecuta la acción de comparar versión.
+
+        Construye el FolderItem internamente para evitar problemas con variables
+        reactivas de Reflex en tiempo de compilación.
+        """
+        item = FolderItem(
+            id="0",
+            name=self.id_version,
+            depth=1,
+            is_protected=True
+        )
+        return self.acciones("diff_version", item)
+
+    def accion_transfer_version(self):
+        """Ejecuta la acción de transferir versión.
+
+        Construye el FolderItem internamente para evitar problemas con variables
+        reactivas de Reflex en tiempo de compilación.
+        """
+        item = FolderItem(
+            id="0",
+            name=self.id_version,
+            depth=1,
+            is_protected=True
+        )
+        return self.acciones("transfer_version", item)
 
     def solicitar_entrenamiento(self):
         """Cliente solicita entrenamiento: Abierta → Protegida (final_c=True).
@@ -519,195 +554,25 @@ class ExploradorState(SharedSessionState):
             logger.exception("Error desbloqueando versión: %s", e)
             return rx.toast.error(f"Error al desbloquear versión: {str(e)}")
 
-    def abrir_version(self, item_or_id):
-        """Cambia el estado de una versión a 'Abierta' (protected=False)."""
-        # Obtener el item si es un ID
-        if isinstance(item_or_id, str):
-            item = next((i for i in self.items if i.id == item_or_id), None)
-            if not item:
-                return rx.toast.error("Item no encontrado")
-        else:
-            item = item_or_id
-
-        version_key = item.name  # ej: "v001"
-
-        try:
-            from adapters.api_client import update_version_state
-
-            result = update_version_state(
-                project_id=self.id_proyecto,
-                version_id=int(version_key.replace("v", "")),  # Convertir "v001" a 1
-                state="Abierta",
-                protected=False,
-                access_token=self.access_token,
-                session_token=self.session_token
-            )
-
-            if result.get("success"):
-                # Actualizar estado local
-                if version_key in self.version_states:
-                    self.version_states[version_key]["state"] = "Abierta"
-                    self.version_states[version_key]["protected"] = False
-
-                self.interpretacion_estados()
-                yield
-                return rx.toast.success(f"Versión {version_key} abierta")
-            else:
-                return rx.toast.error(f"Error: {result.get('message', 'Error desconocido')}")
-
-        except Exception as e:
-            logger.exception("Error abriendo versión: %s", e)
-            return rx.toast.error(f"Error al abrir versión: {str(e)}")
-
-    def bloquear_version(self, item_or_id):
-        """Cambia el estado de una versión a 'Bloqueada' (protected=True)."""
-        # Obtener el item si es un ID
-        if isinstance(item_or_id, str):
-            item = next((i for i in self.items if i.id == item_or_id), None)
-            if not item:
-                return rx.toast.error("Item no encontrado")
-        else:
-            item = item_or_id
-
-        version_key = item.name  # ej: "v001"
-
-        try:
-            from adapters.api_client import update_version_state
-
-            result = update_version_state(
-                project_id=self.id_proyecto,
-                version_id=int(version_key.replace("v", "")),
-                state="Bloqueada",
-                protected=True,
-                access_token=self.access_token,
-                session_token=self.session_token
-            )
-
-            if result.get("success"):
-                # Actualizar estado local
-                if version_key in self.version_states:
-                    self.version_states[version_key]["state"] = "Bloqueada"
-                    self.version_states[version_key]["protected"] = True
-
-                self.interpretacion_estados()
-                yield
-                return rx.toast.success(f"Versión {version_key} bloqueada")
-            else:
-                return rx.toast.error(f"Error: {result.get('message', 'Error desconocido')}")
-
-        except Exception as e:
-            logger.exception("Error bloqueando versión: %s", e)
-            return rx.toast.error(f"Error al bloquear versión: {str(e)}")
-
-    def proteger_version(self, item_or_id):
-        """Cambia el estado de una versión a 'Protegida' (protected=True, final_c=True)."""
-        # Obtener el item si es un ID
-        if isinstance(item_or_id, str):
-            item = next((i for i in self.items if i.id == item_or_id), None)
-            if not item:
-                return rx.toast.error("Item no encontrado")
-        else:
-            item = item_or_id
-
-        version_key = item.name  # ej: "v001"
-
-        try:
-            from adapters.api_client import update_version_state
-
-            result = update_version_state(
-                project_id=self.id_proyecto,
-                version_id=int(version_key.replace("v", "")),
-                state="Protegida",
-                protected=True,
-                final_c=True,
-                access_token=self.access_token,
-                session_token=self.session_token
-            )
-
-            if result.get("success"):
-                # Actualizar estado local
-                if version_key in self.version_states:
-                    self.version_states[version_key]["state"] = "Protegida"
-                    self.version_states[version_key]["protected"] = True
-                    self.version_states[version_key]["final_c"] = True
-
-                self.interpretacion_estados()
-                yield
-                return rx.toast.success(f"Versión {version_key} protegida")
-            else:
-                return rx.toast.error(f"Error: {result.get('message', 'Error desconocido')}")
-
-        except Exception as e:
-            logger.exception("Error protegiendo versión: %s", e)
-            return rx.toast.error(f"Error al proteger versión: {str(e)}")
-
-    def finalizar_version(self, item_or_id):
-        """Cambia el estado de una versión a 'Final' (protected=True, final_c=True, final_i=True)."""
-        # Obtener el item si es un ID
-        if isinstance(item_or_id, str):
-            item = next((i for i in self.items if i.id == item_or_id), None)
-            if not item:
-                return rx.toast.error("Item no encontrado")
-        else:
-            item = item_or_id
-
-        version_key = item.name  # ej: "v001"
-
-        try:
-            from adapters.api_client import update_version_state
-
-            result = update_version_state(
-                project_id=self.id_proyecto,
-                version_id=int(version_key.replace("v", "")),
-                state="Final",
-                protected=True,
-                final_c=True,
-                final_i=True,
-                access_token=self.access_token,
-                session_token=self.session_token
-            )
-
-            if result.get("success"):
-                # Actualizar estado local
-                if version_key in self.version_states:
-                    self.version_states[version_key]["state"] = "Final"
-                    self.version_states[version_key]["protected"] = True
-                    self.version_states[version_key]["final_c"] = True
-                    self.version_states[version_key]["final_i"] = True
-
-                self.interpretacion_estados()
-                yield
-                return rx.toast.success(f"Versión {version_key} finalizada")
-            else:
-                return rx.toast.error(f"Error: {result.get('message', 'Error desconocido')}")
-
-        except Exception as e:
-            logger.exception("Error finalizando versión: %s", e)
-            return rx.toast.error(f"Error al finalizar versión: {str(e)}")
-
     def set_version_state(self, val: str):
-        """Cambia el estado de la versión mediante selector (interno: soporte al cliente).
+        """Cambia el estado de la versión mediante selector (solo admin).
 
-        Backoffice: Permite cambiar a cualquier estado para dar soporte
+        Frontend: Solo permite Abierta ↔ Bloqueada
         """
-        if not self.is_internal_user:
-            return rx.toast.error("Esta función es solo para usuarios internos")
+        if not self.can_change_state:
+            return rx.toast.error("No tiene permisos para cambiar el estado")
 
         try:
             from adapters.api_client import update_version_state
 
-            # Determinar protected, final_c, final_i según el nuevo estado
-            protected = (val != "Abierta")
-            final_c = (val in ["Protegida", "Final"])
-            final_i = (val == "Final")
+            # Determinar protected según el nuevo estado
+            protected = (val == "Bloqueada")
 
             result = update_version_state(
                 project_id=self.id_proyecto,
                 version_id=self.id_version_int,
                 state=val,
                 protected=protected,
-                final_c=final_c,
-                final_i=final_i,
                 access_token=self.access_token,
                 session_token=self.session_token
             )
@@ -715,33 +580,23 @@ class ExploradorState(SharedSessionState):
             logger.info(f"[DEBUG] Resultado de update_version_state: {result}")
 
             if result.get("success"):
-                logger.info(f"[DEBUG] Antes de recargar - version_state: {self.version_state}, protected: {self.version_protected}")
-
                 # Actualizar estado inmediatamente desde el resultado de update
                 if result.get("data"):
                     update_data = result.get("data")
                     self.version_state = update_data.get("state", val)
                     self.version_protected = update_data.get("protected", protected)
-                    self.version_final_c = update_data.get("final_c", final_c)
-                    self.version_final_i = update_data.get("final_i", final_i)
+                    self.version_final_c = update_data.get("final_c", False)
+                    self.version_final_i = update_data.get("final_i", False)
                     logger.info(f"[DEBUG] Estado actualizado desde update_data: {self.version_state}")
                 else:
                     # Fallback: actualizar directamente con los valores enviados
                     self.version_state = val
                     self.version_protected = protected
-                    self.version_final_c = final_c
-                    self.version_final_i = final_i
                     logger.info(f"[DEBUG] Estado actualizado directamente: {self.version_state}")
 
                 # Recargar desde API para confirmar (y actualizar cache)
                 self.load_version_state_from_api()
-
-                logger.info(f"[DEBUG] Después de recargar - version_state: {self.version_state}, protected: {self.version_protected}")
-
                 self.interpretacion_estados()
-
-                logger.info(f"[DEBUG] Después de interpretacion_estados - items bloqueados: {sum(1 for item in self.items if item.is_blocked)}/{len(self.items)}")
-
                 yield
                 return rx.toast.success(f"Estado cambiado a {val}")
             else:
@@ -752,9 +607,9 @@ class ExploradorState(SharedSessionState):
             return rx.toast.error(f"Error al cambiar estado: {str(e)}")
 
     def set_version_protected(self, val: bool):
-        """Cambia la protección de la versión mediante checkbox (interno: soporte)."""
-        if not self.is_internal_user:
-            return rx.toast.error("Esta función es solo para usuarios internos")
+        """Cambia la protección de la versión mediante checkbox (solo admin)."""
+        if not self.can_change_state:
+            return rx.toast.error("No tiene permisos para cambiar la protección")
 
         try:
             from adapters.api_client import update_version_state
@@ -784,9 +639,12 @@ class ExploradorState(SharedSessionState):
             return rx.toast.error(f"Error al cambiar protección: {str(e)}")
 
     def set_version_final_c(self, val: bool):
-        """Cambia el flag final_c (interno: control directo para soporte)."""
-        if not self.is_internal_user:
-            return rx.toast.error("Esta función es solo para usuarios internos")
+        """Cambia el flag final_c (solo admin, solo si final_i es false)."""
+        if not self.is_admin:
+            return rx.toast.error("Solo administradores pueden modificar este flag")
+
+        if self.version_final_i:
+            return rx.toast.error("No se puede modificar final_c cuando final_i está activo")
 
         try:
             from adapters.api_client import update_version_state
@@ -812,9 +670,9 @@ class ExploradorState(SharedSessionState):
             return rx.toast.error(f"Error al cambiar final_c: {str(e)}")
 
     def set_version_final_i(self, val: bool):
-        """Cambia el flag final_i (interno: control directo para soporte)."""
-        if not self.is_internal_user:
-            return rx.toast.error("Esta función es solo para usuarios internos")
+        """Cambia el flag final_i (solo admin)."""
+        if not self.is_admin:
+            return rx.toast.error("Solo administradores pueden modificar este flag")
 
         try:
             from adapters.api_client import update_version_state
@@ -1005,23 +863,42 @@ class ExploradorState(SharedSessionState):
                 "prj": prj_folder,
                 "version": version_folder,
                 "file_path": item.name,
+                "filename": item.name.split("/")[-1],
             }
 
-            response = fmanagement_operation(
-                operation="download_file",
-                params=params,
-                access_token=self.access_token,
-                session_token=self.session_token,
-            )
+            try:
+                content = fmanagement_download(
+                    params=params,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+                logger.info("Contenido descargado: %d bytes", len(content))
+                return rx.download(data=content, filename=params["filename"])
+            except Exception as e:
+                logger.error("Error descargando archivo: %s", e)
+                return rx.toast.error(f"Error al descargar: {e}")
 
-            if response.get("success"):
-                logger.info("Descarga iniciada: %s", item.name)
-                # TODO: Procesar data del archivo para descarga
-                return rx.toast.success(f"Descargando: {item.name}")
-            else:
-                error_msg = response.get("message", "Error desconocido")
-                logger.error("Error descargando: %s", error_msg)
-                return rx.toast.error(f"Error: {error_msg}")
+        # ====================================================================
+        # OPERACIONES DE COMPARACIÓN Y TRANSFERENCIA (NUEVAS)
+        # ====================================================================
+
+        elif accion == "diff_version":
+            # Validar permiso (requiere lectura de archivos)
+            if not self.can_file_read:
+                return rx.window_alert("Sin permisos para comparar versiones")
+            
+            # Abrir diálogo para seleccionar v2
+            self.show_diff_dialog = True
+            return rx.toast.info("Seleccione versión para comparar")
+
+        elif accion == "transfer_version":
+            # Validar permiso (solo internos)
+            if not self.is_internal_user:
+                return rx.window_alert("Solo internos pueden transferir versiones")
+
+            # Abrir diálogo para seleccionar destino
+            self.show_transfer_dialog = True
+            return rx.toast.info("Seleccione destino de transferencia")
 
         # ====================================================================
         # OPERACIONES ADMINISTRATIVAS DE VERSIÓN
@@ -1089,6 +966,54 @@ class ExploradorState(SharedSessionState):
             logger.warning("Acción no reconocida: %s", accion)
             return rx.window_alert(f"Acción '{accion}' no implementada")
 
+    def execute_diff(self):
+        """Ejecuta la comparación de versiones con los parámetros seleccionados."""
+        if not self.diff_v2:
+            return rx.toast.error("Debe seleccionar una versión destino")
+
+        org_folder = f"ORG{str(self.organization_id).zfill(4)}"
+        prj_folder = f"PRJ{str(self.id_proyecto).zfill(5)}"
+        
+        params = {
+            "org": org_folder,
+            "prj": prj_folder,
+            "v1": self.id_version,
+            "v2": self.diff_v2,
+        }
+
+        try:
+            response = fmanagement_diff(params, self.access_token, self.session_token)
+            self.show_diff_dialog = False
+            if response.get("success"):
+                # TODO: Mostrar resultados en un panel
+                return rx.toast.success(f"Comparación ok entre {self.id_version} y {self.diff_v2}")
+            else:
+                return rx.toast.error(f"Error diff: {response.get('mensaje')}")
+        except Exception as e:
+            return rx.toast.error(f"Error diff fatal: {e}")
+
+    def execute_transfer(self):
+        """Ejecuta la transferencia de versión al servidor seleccionado."""
+        org_folder = f"ORG{str(self.organization_id).zfill(4)}"
+        prj_folder = f"PRJ{str(self.id_proyecto).zfill(5)}"
+        
+        params = {
+            "org": org_folder,
+            "prj": prj_folder,
+            "version": self.id_version,
+            "target": self.transfer_target,
+        }
+
+        try:
+            response = fmanagement_transfer(params, self.access_token, self.session_token)
+            self.show_transfer_dialog = False
+            if response.get("success"):
+                return rx.toast.success(f"Transferencia a {self.transfer_target} iniciada")
+            else:
+                return rx.toast.error(f"Error transfer: {response.get('mensaje')}")
+        except Exception as e:
+            return rx.toast.error(f"Error transfer fatal: {e}")
+
     # ========================================================================
     # Lógica de Negocio
     # ========================================================================
@@ -1102,8 +1027,9 @@ class ExploradorState(SharedSessionState):
         3. Reglas para panel de simulación
         """
         # 1. Protección estructural básica (Security by Design)
+        # Solo la VERSIÓN (depth=1) está protegida, NO carpetas ni ficheros
         for item in self.items:
-            item.is_protected = item.depth < 2
+            item.is_protected = (item.depth == 1)  # Solo versión
             item.is_blocked = False
 
         # 2. Bloqueo operativo por versión
@@ -1148,17 +1074,32 @@ class ExploradorState(SharedSessionState):
                 if version_state_data.get("size", 0) > 0:
                     item.size_str = self._format_size(version_state_data.get("size", 0))
 
-        # 3. Actualizar visibilidad
+        # 3. Reglas para panel de simulación
+        if self.version_state == "Protegida":
+            self.version_protected = True
+            self.version_final_c = True
+
+        if self.version_state == "Final":
+            self.version_protected = True
+            self.version_final_c = True
+            self.version_final_i = True
+
         self._update_visibility()
 
     def process_fmanagementlist(self):
         """Procesa la estructura fmanagementlist para aplanarla."""
         if not self.fmanagementlist or "items" not in self.fmanagementlist:
+            logger.warning("fmanagementlist vacío o sin items")
             return
 
+        logger.info("Procesando fmanagementlist: %d items raw", len(self.fmanagementlist["items"]))
         self.items = []
         self._flatten_recursive(self.fmanagementlist["items"])
+        logger.info("Items procesados: %d items totales", len(self.items))
+        for item in self.items:
+            logger.debug("  - %s (depth=%d, visible=%s)", item.name, item.depth, item.is_visible)
         self._update_visibility()
+        logger.info("Después de _update_visibility: %d items visibles", sum(1 for i in self.items if i.is_visible))
 
     def _flatten_recursive(self, json_items, depth=0, parent_id=""):
         """Función interna para aplanar el JSON."""
@@ -1166,8 +1107,8 @@ class ExploradorState(SharedSessionState):
             item_id = f"{parent_id}_{i}" if parent_id else str(i)
             is_dir = item.get("is_dir", True)
 
-            # Niveles 0 (Proyecto) y 1 (Versión) están protegidos
-            is_protected = depth < 2
+            # Solo nivel 1 (Versión) está protegido, NO carpetas ni ficheros
+            is_protected = (depth == 1)
 
             # Gestionar tamaño
             bytes_val = item.get("size_bytes", 0)
@@ -1230,8 +1171,13 @@ class ExploradorState(SharedSessionState):
         yield  # Actualizar UI
 
     def toggle_folder(self, item_id: str):
-        """Expande o colapsa una carpeta (alias de toggle_expand)."""
-        return self.toggle_expand(item_id)
+        """Expande o colapsa una carpeta."""
+        for item in self.items:
+            if item.id == item_id and item.item_type == "folder":
+                item.is_expanded = not item.is_expanded
+                break
+        self._update_visibility()
+        yield  # Actualizar UI
 
     def select_item(self, item_id: str):
         """Selecciona un item."""
@@ -1259,25 +1205,6 @@ class ExploradorState(SharedSessionState):
                 break
         yield  # Actualizar UI
 
-    def open_context_menu(self, item_id: str):
-        """Abre el menú contextual para un item específico."""
-        self.context_menu_item_id = item_id
-        self.context_menu_open = True
-        logger.info("Menú contextual abierto para: %s", item_id)
-
-    def close_context_menu(self):
-        """Cierra el menú contextual."""
-        self.context_menu_open = False
-        self.context_menu_item_id = ""
-
-    @rx.var
-    def context_menu_item(self) -> FolderItem | None:
-        """Retorna el item actualmente seleccionado en el menú contextual."""
-        for item in self.items:
-            if item.id == self.context_menu_item_id:
-                return item
-        return None
-
 
 # ============================================================================
 # Componentes UI
@@ -1300,189 +1227,225 @@ class ExploradorState(SharedSessionState):
 # y no requieren modificación, solo copia directa del original.
 
 
+def render_diff_dialog(state: ExploradorState) -> rx.Component:
+    """Diálogo para seleccionar versión a comparar."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Comparar Versiones"),
+            rx.dialog.description(
+                f"Seleccione la versión para comparar con {state.id_version}"
+            ),
+            rx.select.root(
+                rx.select.trigger(),
+                rx.select.content(
+                    rx.select.group(
+                        rx.foreach(
+                            state.items,
+                            lambda item: rx.cond(
+                                item.depth == 1,
+                                rx.select.item(item.name, value=item.name),
+                                rx.fragment()
+                            )
+                        )
+                    )
+                ),
+                on_change=state.set_diff_v2,
+            ),
+            rx.hstack(
+                rx.dialog.close(
+                    rx.button("Cancelar", variant="soft", color_scheme="gray"),
+                    on_click=lambda: state.set_show_diff_dialog(False)
+                ),
+                rx.button("Comparar", on_click=state.execute_diff),
+                spacing="3",
+                margin_top="15px",
+                justify="end",
+            ),
+        ),
+        open=state.show_diff_dialog,
+    )
+
+def render_transfer_dialog(state: ExploradorState) -> rx.Component:
+    """Diálogo para seleccionar destino de transferencia."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Transferir Versión"),
+            rx.dialog.description(
+                f"Seleccione el destino para transferir {state.id_version}"
+            ),
+            rx.select.root(
+                rx.select.trigger(),
+                rx.select.content(
+                    rx.select.group(
+                        rx.select.item("Trainer (Servidor IA)", value="trainer"),
+                        rx.select.item("Core (Servidor Principal)", value="core"),
+                    )
+                ),
+                default_value="trainer",
+                on_change=state.set_transfer_target,
+            ),
+            rx.hstack(
+                rx.dialog.close(
+                    rx.button("Cancelar", variant="soft", color_scheme="gray"),
+                    on_click=lambda: state.set_show_transfer_dialog(False)
+                ),
+                rx.button("Transferir", on_click=state.execute_transfer),
+                spacing="3",
+                margin_top="15px",
+                justify="end",
+            ),
+        ),
+        open=state.show_transfer_dialog,
+    )
+
+
 def render_item(item: FolderItem) -> rx.Component:
-    """Renderiza un item del explorador sin menú contextual."""
-    item_id = item.id  # Capturar el id en una variable local
+    """Renderiza una única fila del explorador - COPIA EXACTA DEL ORIGINAL."""
     return rx.cond(
         item.is_visible,
         rx.hstack(
-        # Espaciador de niveles
-        rx.box(width=f"{item.depth * 20}px"),
-        # Botón de expansión (+/-)
-        rx.cond(
-            item.has_children,
-            rx.box(
-                rx.icon(
-                    tag=rx.cond(item.is_expanded, "minus", "plus"),
-                    size=10,
-                    color="#444",
-                ),
-                border="1px solid #999",
-                bg="white",
-                width="14px",
-                height="14px",
-                display="flex",
-                align_items="center",
-                justify_content="center",
-                cursor="pointer",
-                on_click=lambda: ExploradorState.toggle_folder(item_id),
-                margin_right="6px",
-            ),
-            rx.box(width="20px"),  # Espacio para alinear si no hay botón
-        ),
-        # Icono (Carpeta o Fichero con extensión personalizada)
-        rx.cond(
-            item.item_type == "folder",
-            rx.icon(tag="folder", fill="#F8D775", color="#C6A15B", size=24),
+            # Espaciador de niveles (Jerarquía)
+            rx.box(width=(item.depth * 20).to(str) + "px"),
+
+            # Botón de expansión (+/-)
             rx.cond(
-                item.name.contains(".txt"),
-                rx.image(src="/txt_icon.png", width="24px", height="24px", object_fit="contain"),
-                rx.cond(
-                    item.name.contains(".pdf"),
-                    rx.image(src="/pdf_icon.png", width="24px", height="24px", object_fit="contain"),
-                    rx.cond(
-                        item.name.contains(".docx"),
-                        rx.image(src="/docx_icon.png", width="24px", height="24px", object_fit="contain"),
-                        rx.cond(
-                            item.name.contains(".doc"),
-                            rx.image(src="/doc_icon.png", width="24px", height="24px", object_fit="contain"),
-                            rx.cond(
-                                item.name.contains(".xlsx"),
-                                rx.image(src="/xlsx_icon.png", width="24px", height="24px", object_fit="contain"),
-                                rx.cond(
-                                    item.name.contains(".xls"),
-                                    rx.image(src="/xls_icon.png", width="24px", height="24px", object_fit="contain"),
-                                    rx.cond(
-                                        item.name.contains(".pptx"),
-                                        rx.image(src="/pptx_icon.png", width="24px", height="24px", object_fit="contain"),
-                                        rx.cond(
-                                            item.name.contains(".ppt"),
-                                            rx.image(src="/ppt_icon.png", width="24px", height="24px", object_fit="contain"),
-                                            rx.cond(
-                                                item.name.contains(".jpg"),
-                                                rx.image(src="/jpg_icon.png", width="24px", height="24px", object_fit="contain"),
-                                                rx.cond(
-                                                    item.name.contains(".bmp"),
-                                                    rx.image(src="/bmp_icon.png", width="24px", height="24px", object_fit="contain"),
-                                                    rx.cond(
-                                                        item.name.contains(".html"),
-                                                        rx.image(src="/html_icon.png", width="24px", height="24px", object_fit="contain"),
-                                                        rx.cond(
-                                                            item.name.contains(".svg"),
-                                                            rx.image(src="/svg_icon.png", width="24px", height="24px", object_fit="contain"),
-                                                            rx.cond(
-                                                                item.name.contains(".tiff"),
-                                                                rx.image(src="/tiff_icon.png", width="24px", height="24px", object_fit="contain"),
-                                                                rx.cond(
-                                                                    item.name.contains(".zip"),
-                                                                    rx.image(src="/zip_icon.png", width="24px", height="24px", object_fit="contain"),
-                                                                    rx.cond(
-                                                                        item.name.contains(".mp3"),
-                                                                        rx.image(src="/mp3_icon.png", width="24px", height="24px", object_fit="contain"),
-                                                                        rx.icon(tag="file-text", color="#888", size=24)
-                                                                    ),
-                                                                ),
-                                                            ),
-                                                        ),
-                                                    ),
-                                                ),
-                                            ),
-                                        ),
-                                    ),
-                                ),
-                            ),
-                        ),
+                item.has_children,
+                rx.box(
+                    rx.icon(
+                        tag=rx.cond(item.is_expanded, "minus", "plus"),
+                        size=10,
+                        color="#444",
                     ),
+                    border="1px solid #999",
+                    bg="white",
+                    width="14px",
+                    height="14px",
+                    display="flex",
+                    align_items="center",
+                    justify_content="center",
+                    cursor="pointer",
+                    on_click=lambda: ExploradorState.toggle_folder(item.id),
+                    margin_right="6px",
+                ),
+                rx.box(width="20px") # Espacio para alinear si no hay botón
+            ),
+
+            # Icono (Carpeta o Fichero)
+            rx.cond(
+                item.item_type == "folder",
+                rx.icon(tag="folder", fill="#F8D775", color="#C6A15B", size=18),
+                rx.icon(tag="file-text", color="#888", size=18)
+            ),
+
+            # Lock icon for protected levels
+            rx.cond(
+                item.is_protected,
+                rx.icon(tag="lock", size=12, color="#aaa", margin_left="4px"),
+            ),
+
+            # Nombre del Directorio/Fichero
+            rx.text(
+                item.name,
+                font_family="Tahoma, sans-serif",
+                font_size="13px",
+                color=rx.cond(item.is_protected, "#555", "black"),
+                font_weight=rx.cond(item.depth == 0, "bold", "normal"),
+                margin_left="4px",
+                white_space="nowrap",
+            ),
+
+            # Indicador de estado para carpetas de versión
+            rx.cond(
+                (item.depth == 1) & (item.version_state_label != ""),
+                rx.text(
+                    f" {item.version_state_label}",
+                    color=item.version_state_color,
+                    font_weight="bold",
+                    font_size="12px",
+                    margin_left="4px",
                 ),
             ),
-        ),
-        # Nombre
-        rx.text(item.name, font_size="18px", font_weight=rx.cond(item.depth == 0, "bold", "normal")),
-        # Estado de versión
-        rx.text(item.version_state_label, color=item.version_state_color, font_size="17px", font_weight="bold"),
-        # Tamaño
-        rx.text(item.size_str, font_size="16px", color="#888"),
-        # Badges
-        rx.cond(
-            item.is_protected,
-            rx.badge("Protegido", color_scheme="red", size="1"),
-            rx.fragment(),
-        ),
-        rx.cond(
-            item.is_blocked,
-            rx.badge("Bloqueado", color_scheme="orange", size="1"),
-            rx.fragment(),
-        ),
-        spacing="2",
-        padding="10px 12px",
-        bg=rx.cond(ExploradorState.selected_item_id == item.id, "#cfe8ff", "transparent"),
-        _hover={"background": "gray.100"},
-        cursor="pointer",
-        width="100%",
-        align_items="center",
-        on_click=lambda: ExploradorState.select_item(item_id),
+
+            rx.spacer(),
+
+            # Tamaño
+            rx.cond(
+                item.size_str != "",
+                rx.text(
+                    item.size_str,
+                    font_size="11px",
+                    color="#888",
+                    padding_right="8px"
+                ),
+            ),
+
+            spacing="0",
+            align_items="center",
+            padding_y="2px",
+            padding_x="4px",
+            bg=rx.cond(ExploradorState.selected_item_id == item.id, "#cfe8ff", "transparent"),
+            opacity=rx.cond(item.is_blocked, "0.5", "1.0"),
+            _hover={"bg": "#e5f3ff", "outline": "1px dotted #999"},
+            width="100%",
+            cursor="default",
+            on_click=lambda: ExploradorState.select_item(item.id),
         ),
         rx.fragment()
     )
 
 
-def create_folder_menu_items(item_obj: FolderItem):
-    """Crea los menu items para una carpeta, capturando correctamente el item."""
-    # Capturar el item_id en una variable local
-    item_id = item_obj.id
-
+def create_folder_menu_items(item: FolderItem):
+    """Crea los menu items para una carpeta, pasando el item completo."""
     return [
-        # Opciones de versión (depth == 1) - Backoffice
+        # Opciones admin para versiones (depth == 1)
         rx.cond(
-            item_obj.depth == 1,
+            ExploradorState.is_internal_user & (item.depth == 1),
             rx.fragment(
-                rx.context_menu.item(
-                    rx.hstack(rx.icon(tag="lock-open", size=16), rx.text("Abrir"), spacing="2"),
-                    on_click=lambda id=item_id: ExploradorState.abrir_version(id),
+                rx.cond(
+                    item.version_state_label.contains("Abierta"),
+                    rx.context_menu.item(
+                        rx.hstack(rx.icon(tag="lock", size=16), rx.text("Bloquear"), spacing="2"),
+                        on_click=lambda: ExploradorState.acciones("block_version", item),
+                    ),
                 ),
-                rx.context_menu.item(
-                    rx.hstack(rx.icon(tag="lock", size=16), rx.text("Bloquear"), spacing="2"),
-                    on_click=lambda id=item_id: ExploradorState.bloquear_version(id),
-                ),
-                rx.context_menu.item(
-                    rx.hstack(rx.icon(tag="shield", size=16), rx.text("Proteger"), spacing="2"),
-                    on_click=lambda id=item_id: ExploradorState.proteger_version(id),
-                ),
-                rx.context_menu.item(
-                    rx.hstack(rx.icon(tag="check-circle", size=16), rx.text("Finalizar"), spacing="2"),
-                    on_click=lambda id=item_id: ExploradorState.finalizar_version(id),
+                rx.cond(
+                    item.version_state_label.contains("Bloqueada"),
+                    rx.context_menu.item(
+                        rx.hstack(rx.icon(tag="lock-open", size=16), rx.text("Desbloquear"), spacing="2"),
+                        on_click=lambda: ExploradorState.acciones("unblock_version", item),
+                    ),
                 ),
                 rx.context_menu.separator(),
             ),
         ),
         # Opciones estándar de carpeta
         rx.cond(
-            ExploradorState.can_folder_create & ~item_obj.is_blocked,
+            ExploradorState.can_folder_create & ~item.is_blocked,
             rx.context_menu.item(
                 rx.hstack(rx.icon(tag="folder-plus", size=16), rx.text("Crear Carpeta"), spacing="2"),
-                on_click=lambda id=item_id: ExploradorState.acciones("create_folder", id),
+                on_click=lambda: ExploradorState.acciones("create_folder", item),
             ),
         ),
         rx.cond(
-            ExploradorState.can_file_create & ~item_obj.is_blocked,
+            ExploradorState.can_file_create & ~item.is_blocked,
             rx.context_menu.item(
                 rx.hstack(rx.icon(tag="upload", size=16), rx.text("Subir archivo"), spacing="2"),
-                on_click=lambda id=item_id: ExploradorState.acciones("upload_file", id),
+                on_click=lambda: ExploradorState.acciones("upload_file", item),
             ),
         ),
         rx.cond(
-            ExploradorState.can_folder_rename & ~item_obj.is_protected & ~item_obj.is_blocked,
+            ExploradorState.can_folder_rename & ~item.is_protected & ~item.is_blocked,
             rx.context_menu.item(
                 rx.hstack(rx.icon(tag="pencil", size=16), rx.text("Renombrar"), spacing="2"),
-                on_click=lambda id=item_id: ExploradorState.acciones("rename", id),
+                on_click=lambda: ExploradorState.acciones("rename", item),
             ),
         ),
         rx.context_menu.separator(),
         rx.cond(
-            ExploradorState.can_folder_delete & ~item_obj.is_protected & ~item_obj.is_blocked,
+            ExploradorState.can_folder_delete & ~item.is_protected & ~item.is_blocked,
             rx.context_menu.item(
                 rx.hstack(rx.icon(tag="trash-2", size=16, color="red"), rx.text("Eliminar", color="red"), spacing="2"),
-                on_click=lambda id=item_id: ExploradorState.acciones("delete", id),
+                on_click=lambda: ExploradorState.acciones("delete", item),
                 color="red",
             ),
         ),
@@ -1491,30 +1454,27 @@ def create_folder_menu_items(item_obj: FolderItem):
             ExploradorState.can_folder_read,
             rx.context_menu.item(
                 rx.hstack(rx.icon(tag="info", size=16), rx.text("Propiedades"), spacing="2"),
-                on_click=lambda id=item_id: ExploradorState.acciones("properties", id),
+                on_click=lambda: ExploradorState.acciones("properties", item),
             ),
         ),
     ]
 
 
-def create_file_menu_items(item_obj: FolderItem):
-    """Crea los menu items para un archivo, capturando correctamente el item."""
-    # Capturar el item_id en una variable local
-    item_id = item_obj.id
-
+def create_file_menu_items(item: FolderItem):
+    """Crea los menu items para un archivo, pasando el item completo."""
     return [
         rx.cond(
             ExploradorState.can_file_read,
             rx.context_menu.item(
                 rx.hstack(rx.icon(tag="download", size=16), rx.text("Descargar"), spacing="2"),
-                on_click=lambda id=item_id: ExploradorState.acciones("download", id),
+                on_click=lambda: ExploradorState.acciones("download", item),
             ),
         ),
         rx.cond(
             ExploradorState.can_file_update,
             rx.context_menu.item(
                 rx.hstack(rx.icon(tag="pencil", size=16), rx.text("Renombrar"), spacing="2"),
-                on_click=lambda id=item_id: ExploradorState.acciones("rename", id),
+                on_click=lambda: ExploradorState.acciones("rename", item),
             ),
         ),
         rx.context_menu.separator(),
@@ -1522,7 +1482,7 @@ def create_file_menu_items(item_obj: FolderItem):
             ExploradorState.can_file_delete,
             rx.context_menu.item(
                 rx.hstack(rx.icon(tag="trash-2", size=16, color="red"), rx.text("Eliminar", color="red"), spacing="2"),
-                on_click=lambda id=item_id: ExploradorState.acciones("delete", id),
+                on_click=lambda: ExploradorState.acciones("delete", item),
                 color="red",
             ),
         ),
@@ -1531,7 +1491,7 @@ def create_file_menu_items(item_obj: FolderItem):
             ExploradorState.can_file_read,
             rx.context_menu.item(
                 rx.hstack(rx.icon(tag="info", size=16), rx.text("Propiedades"), spacing="2"),
-                on_click=lambda id=item_id: ExploradorState.acciones("properties", id),
+                on_click=lambda: ExploradorState.acciones("properties", item),
             ),
         ),
     ]
@@ -1581,78 +1541,14 @@ def render_item_with_menu_button(item: FolderItem) -> rx.Component:
             ),
             rx.box(width="20px"),
         ),
-        # Icono (Carpeta o Fichero con extensión personalizada)
-        rx.cond(
-            item.item_type == "folder",
-            rx.icon(tag="folder", fill="#F8D775", color="#C6A15B", size=24),
-            rx.cond(
-                item.name.contains(".txt"),
-                rx.image(src="/txt_icon.png", width="24px", height="24px", object_fit="contain"),
-                rx.cond(
-                    item.name.contains(".pdf"),
-                    rx.image(src="/pdf_icon.png", width="24px", height="24px", object_fit="contain"),
-                    rx.cond(
-                        item.name.contains(".docx"),
-                        rx.image(src="/docx_icon.png", width="24px", height="24px", object_fit="contain"),
-                        rx.cond(
-                            item.name.contains(".doc"),
-                            rx.image(src="/doc_icon.png", width="24px", height="24px", object_fit="contain"),
-                            rx.cond(
-                                item.name.contains(".xlsx"),
-                                rx.image(src="/xlsx_icon.png", width="24px", height="24px", object_fit="contain"),
-                                rx.cond(
-                                    item.name.contains(".xls"),
-                                    rx.image(src="/xls_icon.png", width="24px", height="24px", object_fit="contain"),
-                                    rx.cond(
-                                        item.name.contains(".pptx"),
-                                        rx.image(src="/pptx_icon.png", width="24px", height="24px", object_fit="contain"),
-                                        rx.cond(
-                                            item.name.contains(".ppt"),
-                                            rx.image(src="/ppt_icon.png", width="24px", height="24px", object_fit="contain"),
-                                            rx.cond(
-                                                item.name.contains(".jpg"),
-                                                rx.image(src="/jpg_icon.png", width="24px", height="24px", object_fit="contain"),
-                                                rx.cond(
-                                                    item.name.contains(".bmp"),
-                                                    rx.image(src="/bmp_icon.png", width="24px", height="24px", object_fit="contain"),
-                                                    rx.cond(
-                                                        item.name.contains(".html"),
-                                                        rx.image(src="/html_icon.png", width="24px", height="24px", object_fit="contain"),
-                                                        rx.cond(
-                                                            item.name.contains(".svg"),
-                                                            rx.image(src="/svg_icon.png", width="24px", height="24px", object_fit="contain"),
-                                                            rx.cond(
-                                                                item.name.contains(".tiff"),
-                                                                rx.image(src="/tiff_icon.png", width="24px", height="24px", object_fit="contain"),
-                                                                rx.cond(
-                                                                    item.name.contains(".zip"),
-                                                                    rx.image(src="/zip_icon.png", width="24px", height="24px", object_fit="contain"),
-                                                                    rx.cond(
-                                                                        item.name.contains(".mp3"),
-                                                                        rx.image(src="/mp3_icon.png", width="24px", height="24px", object_fit="contain"),
-                                                                        rx.icon(tag="file-text", color="#888", size=24)
-                                                                    ),
-                                                                ),
-                                                            ),
-                                                        ),
-                                                    ),
-                                                ),
-                                            ),
-                                        ),
-                                    ),
-                                ),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-        ),
+        # Icono
+        rx.text(rx.cond(item.item_type == "folder", "📁", "📄")),
         # Nombre
-        rx.text(item.name, font_size="18px", font_weight=rx.cond(item.depth == 0, "bold", "normal")),
+        rx.text(item.name),
         # Estado de versión
-        rx.text(item.version_state_label, color=item.version_state_color, font_size="17px", font_weight="bold"),
+        rx.text(item.version_state_label, color=item.version_state_color),
         # Tamaño
-        rx.text(item.size_str, font_size="16px", color="#888"),
+        rx.text(item.size_str, size="1", color="gray"),
         # Badges
         rx.cond(
             item.is_protected,
@@ -1688,7 +1584,7 @@ def render_item_with_menu_button(item: FolderItem) -> rx.Component:
             rx.fragment(),
         ),
         spacing="2",
-        padding="10px 12px",
+        padding="8px",
         bg=rx.cond(ExploradorState.selected_item_id == item.id, "#cfe8ff", "transparent"),
         _hover={"background": "gray.100"},
         cursor="pointer",
@@ -1698,16 +1594,19 @@ def render_item_with_menu_button(item: FolderItem) -> rx.Component:
     )
 
 
-def render_item_with_context_menu(item: FolderItem) -> rx.Component:
-    """Renderiza un item con menú contextual según tipo y permisos."""
-    # Condición para mostrar menú en carpetas
+def render_item_with_context_menu(item: FolderItem):
+    """
+    Renderiza un elemento del explorador envuelto en menú contextual.
+    Copia EXACTA del original que funciona.
+    """
+    # Condición de menú carpeta
     should_show_menu_folder = (
         (item.item_type == "folder") &
         (item.depth > 0) &
         (~item.is_blocked | ((item.depth == 1) & ExploradorState.is_internal_user))
     )
 
-    # Condición para mostrar menú en archivos
+    # Condición de menú fichero
     should_show_menu_file = (
         (item.item_type != "folder") &
         ~item.is_blocked
@@ -1715,95 +1614,289 @@ def render_item_with_context_menu(item: FolderItem) -> rx.Component:
 
     return rx.cond(
         should_show_menu_folder,
-        # MENÚ CONTEXTUAL PARA CARPETAS
+        # MENÚ CONTEXTUAL CARPETA
         rx.context_menu.root(
             rx.context_menu.trigger(
                 rx.box(render_item(item), width="100%"),
                 as_child=True,
             ),
             rx.context_menu.content(
-                *create_folder_menu_items(item),
+                # SECCIÓN ADMIN
+                rx.cond(
+                    ExploradorState.is_internal_user & (item.depth == 1),
+                    rx.fragment(
+                        rx.cond(
+                            item.version_state_label.contains("Abierta"),
+                            rx.context_menu.item(
+                                rx.hstack(rx.icon(tag="lock", size=16), rx.text("Bloquear"), spacing="2"),
+                                on_click=lambda: ExploradorState.acciones("block_version", item),
+                            ),
+                        ),
+                        rx.cond(
+                            item.version_state_label.contains("Bloqueada"),
+                            rx.context_menu.item(
+                                rx.hstack(rx.icon(tag="lock-open", size=16), rx.text("Desbloquear"), spacing="2"),
+                                on_click=lambda: ExploradorState.acciones("unblock_version", item),
+                            ),
+                        ),
+                        rx.cond(
+                            item.version_state_label.contains("Solicitado") & item.is_final_c & ~item.is_final_i,
+                            rx.context_menu.item(
+                                rx.hstack(rx.icon(tag="rotate-ccw", size=16), rx.text("Revisar (Revertir)"), spacing="2"),
+                                on_click=lambda: ExploradorState.acciones("review_version", item),
+                            ),
+                        ),
+                        rx.context_menu.separator(),
+                    )
+                ),
+                # SECCIÓN ESTÁNDAR
+                rx.cond(
+                    ExploradorState.can_folder_create & ~item.is_blocked,
+                    rx.context_menu.item(
+                        rx.hstack(rx.icon(tag="folder-plus", size=16), rx.text("Crear Carpeta"), spacing="2"),
+                        on_click=lambda: ExploradorState.acciones("create_folder", item),
+                    ),
+                ),
+                rx.cond(
+                    ExploradorState.can_file_create & ~item.is_blocked,
+                    rx.context_menu.item(
+                        rx.hstack(rx.icon(tag="upload", size=16), rx.text("Subir archivo"), spacing="2"),
+                        on_click=lambda: ExploradorState.acciones("upload_file", item),
+                    ),
+                ),
+                rx.cond(
+                    ExploradorState.can_folder_rename & ~item.is_protected & ~item.is_blocked,
+                    rx.context_menu.item(
+                        rx.hstack(rx.icon(tag="pencil", size=16), rx.text("Renombrar"), spacing="2"),
+                        on_click=lambda: ExploradorState.acciones("rename", item),
+                    ),
+                ),
+                rx.context_menu.separator(),
+                rx.cond(
+                    ExploradorState.can_folder_delete & ~item.is_protected & ~item.is_blocked,
+                    rx.context_menu.item(
+                        rx.hstack(rx.icon(tag="trash-2", size=16, color="red"), rx.text("Eliminar", color="red"), spacing="2"),
+                        on_click=lambda: ExploradorState.acciones("delete", item),
+                        color="red",
+                    ),
+                ),
+                rx.context_menu.separator(),
+                rx.cond(
+                    ExploradorState.can_folder_read,
+                    rx.context_menu.item(
+                        rx.hstack(rx.icon(tag="info", size=16), rx.text("Propiedades"), spacing="2"),
+                        on_click=lambda: ExploradorState.acciones("properties", item),
+                    ),
+                ),
             ),
         ),
+        # OPCIÓN 2 y 3
         rx.cond(
             should_show_menu_file,
-            # MENÚ CONTEXTUAL PARA ARCHIVOS
+            # MENÚ CONTEXTUAL FICHERO
             rx.context_menu.root(
                 rx.context_menu.trigger(
                     rx.box(render_item(item), width="100%"),
                     as_child=True,
                 ),
                 rx.context_menu.content(
-                    *create_file_menu_items(item),
+                    rx.cond(
+                        ExploradorState.can_file_read,
+                        rx.context_menu.item(
+                            rx.hstack(rx.icon(tag="download", size=16), rx.text("Descargar"), spacing="2"),
+                            on_click=lambda: ExploradorState.acciones("download", item),
+                        ),
+                    ),
+                    rx.cond(
+                        ExploradorState.can_file_update,
+                        rx.context_menu.item(
+                            rx.hstack(rx.icon(tag="pencil", size=16), rx.text("Renombrar"), spacing="2"),
+                            on_click=lambda: ExploradorState.acciones("rename", item),
+                        ),
+                    ),
+                    rx.context_menu.separator(),
+                    rx.cond(
+                        ExploradorState.can_file_delete,
+                        rx.context_menu.item(
+                            rx.hstack(rx.icon(tag="trash-2", size=16, color="red"), rx.text("Eliminar", color="red"), spacing="2"),
+                            on_click=lambda: ExploradorState.acciones("delete", item),
+                            color="red",
+                        ),
+                    ),
+                    rx.context_menu.separator(),
+                    rx.cond(
+                        ExploradorState.can_file_read,
+                        rx.context_menu.item(
+                            rx.hstack(rx.icon(tag="info", size=16), rx.text("Propiedades"), spacing="2"),
+                            on_click=lambda: ExploradorState.acciones("properties", item),
+                        ),
+                    ),
                 ),
             ),
-            # RENDER SIMPLE (sin menú)
+            # RENDER SIMPLE
             render_item(item)
         )
     )
 
 
 def explorador_panel(state: ExploradorState) -> rx.Component:
-    """Panel del explorador adaptado para backoffice.
-
-    Sistema de permisos:
-    - Los permisos vienen de low_level_permissions usando identity_type_id del usuario
-    - Prefijos: folder_ para carpetas, file_ para archivos
-    - Los menús contextuales filtran opciones según permisos (security by design)
-
-    Flujo de operaciones file system:
-    Frontend/Backoffice → Middleware → Broker → Backend Core → fmanagement
-
-    Persistencia de datos:
-    - Acciones a nivel de versión (cambios de estado) → tabla version_states
-    - Acciones con carpetas/archivos (crear, renombrar, eliminar) → tabla cambios
-      * tipo_cambio: 'folder_create', 'folder_rename', 'folder_delete', 'file_create', 'file_update', 'file_delete'
-      * descripcion: Detalle de la acción realizada
-      * fecha_cambio: Fecha de la operación
-      * id_version, id_proyecto, id_organizacion: Contexto
-
-    Nota: En backoffice solo se muestra el botón "Documentación preparada para entrenamiento".
-
+    """Componente principal del explorador (FUNCIONAL - UI simplificada).
+    
+    NOTA: Esta es una versión simplificada funcional.
+    Para UI completa con menús contextuales, badges, iconos, etc.,
+    copiar del original (líneas 800-1405).
+    
     Args:
         state: Estado del explorador (ExploradorState)
-
+        
     Returns:
         Componente Reflex renderizable
     """
     return rx.box(
-        rx.vstack(
-            # Header con título del explorador
-            rx.hstack(
-                rx.heading("Explorador de versiones del proyecto", size="6", color="white"),
-                rx.spacer(),
-                width="100%",
-                align_items="center",
-                margin_bottom="1em",
+        render_diff_dialog(state),
+        render_transfer_dialog(state),
+        # Header
+        rx.heading(
+            f"Explorador de Archivos - Proyecto {state.id_proyecto} - Versión {state.id_version}",
+            size="6",
+        ),
+        rx.text(f"Usuario: {state.user_name} ({state.current_role_label})", size="2"),
+        rx.hstack(
+            rx.text(
+                f"Estado de versión: {state.version_state}",
+                color=rx.cond(
+                    state.version_protected,
+                    "orange",
+                    "green",
+                ),
+                size="3",
+                weight="bold",
             ),
-
-            # Contenedor del Explorador (Estilo Windows)
+            rx.spacer(),
+            # Botones de control de estado de versión (Solo Admin: identity_type_id 1 o 2)
+            # Admin: Bloquear versión (Abierta → Bloqueada)
+            rx.button(
+                "🔒 Bloquear versión",
+                on_click=state.bloquear_version,
+                size="2",
+                variant="outline",
+                color_scheme="orange",
+                display=rx.cond(
+                    state.is_admin & state.can_change_state & (state.version_state == "Abierta"),
+                    "block",
+                    "none"
+                )
+            ),
+            # Admin: Desbloquear versión (Bloqueada → Abierta)
+            rx.button(
+                "🔓 Desbloquear versión",
+                on_click=state.desbloquear_version,
+                size="2",
+                variant="outline",
+                color_scheme="orange",
+                display=rx.cond(
+                    state.is_admin & state.can_change_state & (state.version_state == "Bloqueada"),
+                    "block",
+                    "none"
+                )
+            ),
+            # Botones de acción global
+            rx.button(
+                "Comparar",
+                on_click=state.accion_diff_version,
+                size="2",
+                variant="outline"
+            ),
+            rx.button(
+                "Transferir",
+                on_click=state.accion_transfer_version,
+                size="2",
+                variant="solid",
+                color_scheme="cyan",
+                display=rx.cond(state.is_internal_user, "block", "none")
+            ),
+            spacing="2",
+            margin_bottom="10px",
+            wrap="wrap",
+        ),
+        rx.divider(),
+        # Panel de control de estados (solo admin)
+        rx.cond(
+            state.is_admin,
             rx.box(
                 rx.vstack(
-                    rx.foreach(
-                        state.items,
-                        render_item_with_context_menu
+                    rx.heading("Control de Estados (Administrador)", size="4", color="#555"),
+                    rx.hstack(
+                        rx.vstack(
+                            rx.text("Estado:", font_size="13px", color="#666"),
+                            rx.select(
+                                state.available_status_options,
+                                value=state.version_state,
+                                on_change=state.set_version_state,
+                                disabled=~state.can_change_state,
+                                width="150px",
+                                size="2",
+                            ),
+                            align_items="start",
+                        ),
+                        rx.vstack(
+                            rx.text("Protección:", font_size="13px", color="#666"),
+                            rx.hstack(
+                                rx.checkbox(
+                                    checked=state.version_protected,
+                                    on_change=state.set_version_protected,
+                                    disabled=~state.can_change_state,
+                                ),
+                                rx.text("Protegida", color="black", font_weight="bold", font_size="13px"),
+                                spacing="2",
+                            ),
+                            align_items="start",
+                        ),
+                        spacing="6",
+                        width="100%",
+                        align_items="end",
                     ),
-                    spacing="0",
-                    align_items="start",
+                    rx.cond(
+                        ~state.can_change_state,
+                        rx.text(
+                            "⚠️ No se puede cambiar el estado: versión tiene flags de finalización activos",
+                            font_size="12px",
+                            color="orange",
+                        ),
+                        rx.fragment(),
+                    ),
+                    spacing="3",
                     width="100%",
                 ),
-                bg="white",
-                border="1px solid #828790",
-                padding="10px",
-                width="100%",
-                height="60vh",
-                overflow_y="auto",
-                box_shadow="inset 2px 2px 5px rgba(0,0,0,0.05)",
+                padding="15px",
+                border="1px solid",
+                border_color="orange.200",
+                border_radius="md",
+                background="orange.50",
+                margin_bottom="10px",
             ),
-
-            width="100%",
-            padding="20px",
-            align_items="start",
+            rx.fragment(),
         ),
+        # Lista de items con menús contextuales
+        rx.box(
+            rx.foreach(
+                state.items,
+                render_item_with_context_menu,
+            ),
+            max_height="500px",
+            overflow_y="auto",
+            border="1px solid",
+            border_color="gray.200",
+            border_radius="md",
+            padding="10px",
+        ),
+        # Footer con instrucciones
+        rx.divider(),
+        rx.text(
+            "💡 Haz clic derecho sobre archivos y carpetas para ver las acciones disponibles",
+            size="1",
+            color="gray",
+        ),
+        padding="20px",
         width="100%",
     )

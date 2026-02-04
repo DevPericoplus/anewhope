@@ -2801,12 +2801,12 @@ class BackendCoreRouter:
         with self._get_projects_db_connection() as conn:
             result = conn.execute(
                 text("""
-                    SELECT 
+                    SELECT
                         id, id_organizacion, id_proyecto, id_version,
-                        state, protected, size_bytes, final_c, final_i,
-                        created_at, updated_at, updated_by_user_id
-                    FROM version_states
-                    WHERE id_proyecto = :project_id 
+                        state, protected, size, final_c, final_i,
+                        created_at, updated_at
+                    FROM estado_version
+                    WHERE id_proyecto = :project_id
                       AND id_version = :version_id
                       AND id_organizacion = :org_id
                 """),
@@ -2836,12 +2836,11 @@ class BackendCoreRouter:
                 "id_version": row[3],
                 "state": row[4],
                 "protected": bool(row[5]),
-                "size_bytes": row[6],
+                "size": row[6],
                 "final_c": bool(row[7]),
                 "final_i": bool(row[8]),
                 "created_at": row[9].isoformat() if row[9] else None,
                 "updated_at": row[10].isoformat() if row[10] else None,
-                "updated_by_user_id": row[11],
             }
 
             return {
@@ -2911,13 +2910,10 @@ class BackendCoreRouter:
                 "data": None,
             }
 
-        # Agregar updated_by_user_id
-        update_fields.append("updated_by_user_id = :user_id")
-
         query = f"""
-            UPDATE version_states
+            UPDATE estado_version
             SET {', '.join(update_fields)}
-            WHERE id_proyecto = :project_id 
+            WHERE id_proyecto = :project_id
               AND id_version = :version_id
               AND id_organizacion = :org_id
         """
@@ -2968,21 +2964,18 @@ class BackendCoreRouter:
         with self._get_projects_db_writer_connection() as conn:
             conn.execute(
                 text("""
-                    INSERT INTO version_states (
+                    INSERT INTO estado_version (
                         id_organizacion, id_proyecto, id_version,
-                        state, protected, size_bytes, final_c, final_i,
-                        updated_by_user_id
+                        state, protected, size, final_c, final_i
                     ) VALUES (
                         :org_id, :project_id, :version_id,
-                        'Abierta', FALSE, 0, FALSE, FALSE,
-                        :user_id
+                        'Abierta', FALSE, 0, FALSE, FALSE
                     )
                 """),
                 {
                     "org_id": org_id,
                     "project_id": project_id,
                     "version_id": version_id,
-                    "user_id": user_id,
                 },
             )
             conn.commit()
@@ -3161,25 +3154,45 @@ class BackendCoreRouter:
 
         try:
             # Importar cliente fmanagement
-            from .clients.fmanagement_client import FmanagementClient
+            from clients.fmanagement_client import FmanagementClient
             
             # Obtener configuración de fmanagement
             fmanagement_config = load_fmanagement_settings()
             base_url = fmanagement_config.base_url
+            base_path = fmanagement_config.base_path
+
+            # Expandir ~ en el basepath
+            import os
+            base_path = os.path.expanduser(base_path)
 
             client = FmanagementClient(base_url=base_url, logger=self._logger)
-            
+
             result = client.list_structure(
                 orgpath=org_folder,
                 prjpath=prj_folder,
                 versionpath=version_folder,
                 iduser=user_id,
+                basepath=base_path,
             )
-            
+
+            self._logger.info(
+                "[backend-core] Resultado de fmanagement: %s",
+                result
+            )
+
+            # Extraer items del resultado
+            # El fmanagement devuelve un JSON con estructura jerárquica
+            items = result.get("items", []) if isinstance(result, dict) else []
+
+            self._logger.info(
+                "[backend-core] Items extraídos: %d items",
+                len(items)
+            )
+
             return {
                 "success": True,
-                "message": "Estructura obtenida correctamente",
-                "data": result,
+                "items": items,
+                "mensaje": "Estructura obtenida correctamente",
             }
             
         except Exception as e:
@@ -3189,8 +3202,8 @@ class BackendCoreRouter:
             )
             return {
                 "success": False,
-                "message": f"Error al obtener estructura: {str(e)}",
-                "data": None,
+                "items": [],
+                "mensaje": f"Error al obtener estructura: {str(e)}",
             }
 
     def fmanagement_operation(
@@ -3211,8 +3224,8 @@ class BackendCoreRouter:
         )
 
         try:
-            from .clients.fmanagement_client import FmanagementClient
-            
+            from clients.fmanagement_client import FmanagementClient
+
             fmanagement_config = load_fmanagement_settings()
             base_url = fmanagement_config.base_url
 

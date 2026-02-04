@@ -1567,6 +1567,295 @@ def fmanagement_list(
         return {"success": False, "items": [], "mensaje": str(exc)}
 
 
+def fmanagement_list_for_explorador(
+    org_id: int,
+    project_id: int,
+    version_name: str,
+    org_folder: str = "",
+    prj_folder: str = "",
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Lista estructura de archivos y la convierte al formato del componente explorador.
+
+    Esta función combina fmanagement_list con el adaptador para retornar
+    directamente el formato jerárquico que espera el explorador.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → fmanagement → Adaptador
+
+    Args:
+        org_id: ID de la organización
+        project_id: ID del proyecto
+        version_name: Nombre de la versión (ej: "v001")
+        org_folder: Carpeta de organización (ej: "ORG0001"), se genera si no se provee
+        prj_folder: Carpeta de proyecto (ej: "PRJ00001"), se genera si no se provee
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+
+    Returns:
+        Estructura jerárquica para el explorador:
+        {
+            "status": "success",
+            "path": str,
+            "items": [
+                {
+                    "name": str (proyecto),
+                    "is_dir": true,
+                    "size_bytes": int,
+                    "items": [
+                        {
+                            "name": str (versión),
+                            "is_dir": true,
+                            "size_bytes": int,
+                            "items": [...contenido...]
+                        }
+                    ]
+                }
+            ]
+        }
+    """
+    # Generar nombres de carpetas si no se proveen
+    if not org_folder:
+        org_folder = f"ORG{str(org_id).zfill(4)}"
+    if not prj_folder:
+        prj_folder = f"PRJ{str(project_id).zfill(5)}"
+
+    # Llamar a fmanagement_list
+    fmanagement_response = fmanagement_list(
+        org_folder=org_folder,
+        prj_folder=prj_folder,
+        version_folder=version_name,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+    # Importar y usar el adaptador
+    try:
+        adapter_path = (
+            Path(__file__).resolve().parents[3]
+            / "2_shared_application/adapters/fmanagement_to_explorador.py"
+        )
+        spec = importlib.util.spec_from_file_location("fmanagement_adapter", adapter_path)
+        if spec is None or spec.loader is None:
+            logger.error("No se pudo cargar el adaptador de fmanagement")
+            return {"status": "error", "path": "", "items": []}
+
+        adapter_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(adapter_module)
+
+        # Convertir respuesta al formato del explorador
+        explorador_data = adapter_module.convert_fmanagement_to_explorador(
+            fmanagement_response=fmanagement_response,
+            org_id=org_id,
+            project_id=project_id,
+            version_name=version_name,
+            org_folder=org_folder,
+            prj_folder=prj_folder,
+        )
+
+        return explorador_data
+    except Exception as e:
+        logger.error(f"Error al convertir respuesta de fmanagement: {e}")
+        return {
+            "status": "error",
+            "path": "",
+            "items": [],
+            "mensaje": f"Error al procesar estructura de archivos: {e}"
+        }
+
+
+def _calculate_structure_size(items: list[dict]) -> int:
+    """Calcula el tamaño total de una estructura jerárquica de fmanagement.
+
+    Args:
+        items: Lista de items (carpetas y archivos) de fmanagement
+
+    Returns:
+        Tamaño total en bytes
+    """
+    total_size = 0
+    for item in items:
+        if item.get("is_dir", True):
+            # Es una carpeta, sumar recursivamente
+            total_size += _calculate_structure_size(item.get("items", []))
+        else:
+            # Es un archivo, sumar su tamaño
+            total_size += item.get("size_bytes", 0)
+    return total_size
+
+
+def fmanagement_list_all_project_versions(
+    org_id: int,
+    project_id: int,
+    org_folder: str = "",
+    prj_folder: str = "",
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Lista todas las versiones de un proyecto con sus estructuras de archivos.
+
+    Esta función obtiene todas las versiones del proyecto y carga el contenido
+    de cada una usando fmanagement, construyendo una estructura jerárquica
+    completa para el explorador.
+
+    Flujo: Backoffice → Middleware → Backend Core → MariaDB (versiones)
+           Backoffice → Middleware → Broker → Backend Core → fmanagement (contenido)
+
+    Args:
+        org_id: ID de la organización
+        project_id: ID del proyecto
+        org_folder: Carpeta de organización (ej: "ORG0001"), se genera si no se provee
+        prj_folder: Carpeta de proyecto (ej: "PRJ00001"), se genera si no se provee
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+
+    Returns:
+        Estructura jerárquica completa para el explorador:
+        {
+            "status": "success",
+            "path": str,
+            "items": [
+                {
+                    "name": str (proyecto),
+                    "is_dir": true,
+                    "size_bytes": int,
+                    "items": [
+                        {
+                            "name": "v001",
+                            "is_dir": true,
+                            "size_bytes": int,
+                            "items": [...contenido v001...]
+                        },
+                        {
+                            "name": "v002",
+                            "is_dir": true,
+                            "size_bytes": int,
+                            "items": [...contenido v002...]
+                        }
+                    ]
+                }
+            ]
+        }
+    """
+    # Generar nombres de carpetas si no se proveen
+    if not org_folder:
+        org_folder = f"ORG{str(org_id).zfill(4)}"
+    if not prj_folder:
+        prj_folder = f"PRJ{str(project_id).zfill(5)}"
+
+    # 1. Obtener lista de versiones del proyecto
+    versions_response = get_project_versions(
+        project_id=project_id,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+    versiones = versions_response.get("versiones", [])
+
+    if not versiones:
+        logger.warning(f"No se encontraron versiones para el proyecto {project_id}")
+        return {
+            "status": "success",
+            "path": f"/data/files/external/{org_folder}/{prj_folder}",
+            "items": [{
+                "name": prj_folder,
+                "is_dir": True,
+                "size_bytes": 0,
+                "items": []
+            }]
+        }
+
+    # 2. Para cada versión, obtener su contenido desde fmanagement
+    versions_data = []
+
+    for version_info in versiones:
+        version_id = version_info.get("id_version", 0)
+        version_name = f"v{str(version_id).zfill(3)}"  # v001, v002, etc.
+
+        logger.info(f"Cargando contenido de versión {version_name} para proyecto {project_id}")
+
+        # Llamar a fmanagement_list para esta versión
+        fmanagement_response = fmanagement_list(
+            org_folder=org_folder,
+            prj_folder=prj_folder,
+            version_folder=version_name,
+            access_token=access_token,
+            session_token=session_token,
+        )
+
+        versions_data.append({
+            "version_name": version_name,
+            "fmanagement_response": fmanagement_response
+        })
+
+    # 3. Usar el adaptador para convertir todas las versiones al formato del explorador
+    try:
+        adapter_path = (
+            Path(__file__).resolve().parents[3]
+            / "2_shared_application/adapters/fmanagement_to_explorador.py"
+        )
+        spec = importlib.util.spec_from_file_location("fmanagement_adapter", adapter_path)
+        if spec is None or spec.loader is None:
+            logger.error("No se pudo cargar el adaptador de fmanagement")
+            return {"status": "error", "path": "", "items": []}
+
+        adapter_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(adapter_module)
+
+        # Convertir todas las versiones al formato del explorador
+        explorador_data = adapter_module.convert_multiple_versions_to_explorador(
+            versions_data=versions_data,
+            org_id=org_id,
+            project_id=project_id,
+            org_folder=org_folder,
+            prj_folder=prj_folder,
+        )
+
+        # 4. Calcular y actualizar tamaños de cada versión en la BD
+        if explorador_data.get("status") == "success" and explorador_data.get("items"):
+            project_item = explorador_data["items"][0]
+            version_items = project_item.get("items", [])
+
+            for version_item in version_items:
+                version_name = version_item.get("name", "")  # ej: "v001"
+                if version_name.startswith("v"):
+                    try:
+                        version_id = int(version_name[1:])  # Convertir "v001" a 1
+
+                        # Calcular tamaño total de esta versión
+                        version_size = _calculate_structure_size(version_item.get("items", []))
+
+                        # Actualizar size_bytes en la BD
+                        update_result = update_version_state(
+                            project_id=project_id,
+                            version_id=version_id,
+                            size_bytes=version_size,
+                            access_token=access_token,
+                            session_token=session_token,
+                        )
+
+                        if update_result.get("success"):
+                            logger.info(f"Tamaño actualizado para {version_name}: {version_size} bytes")
+                        else:
+                            logger.warning(f"No se pudo actualizar tamaño para {version_name}")
+                    except (ValueError, Exception) as e:
+                        logger.error(f"Error procesando tamaño de {version_name}: {e}")
+
+        logger.info(f"Estructura cargada: proyecto {prj_folder} con {len(versiones)} versiones")
+        return explorador_data
+
+    except Exception as e:
+        logger.error(f"Error al convertir respuesta de fmanagement para múltiples versiones: {e}")
+        return {
+            "status": "error",
+            "path": "",
+            "items": [],
+            "mensaje": f"Error al procesar estructura de archivos: {e}"
+        }
+
+
 def fmanagement_operation(
     operation: str,
     params: dict[str, Any],
@@ -1575,7 +1864,7 @@ def fmanagement_operation(
 ) -> dict[str, Any]:
     """
     Ejecuta una operación genérica en fmanagement.
-    
+
     Operaciones soportadas:
     - create_folder
     - rename_folder
@@ -1584,9 +1873,9 @@ def fmanagement_operation(
     - rename_file
     - delete_file
     - download_file
-    
+
     Flujo: Backoffice → Middleware → Broker → Backend Core → fmanagement
-    
+
     Args:
         operation: Nombre de la operación
         params: Parámetros específicos de la operación

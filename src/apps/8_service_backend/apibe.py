@@ -1200,12 +1200,11 @@ class VersionStateDto(BaseModel):
     id_version: int
     state: str
     protected: bool
-    size_bytes: int
+    size: int  # Tamaño en bytes (sin _bytes en el nombre)
     final_c: bool
     final_i: bool
     created_at: str
     updated_at: str
-    updated_by_user_id: int | None
 
 
 class VersionStateResponse(BaseModel):
@@ -1292,8 +1291,8 @@ class FmanagementListResponse(BaseModel):
     """Respuesta de listado de fmanagement."""
 
     success: bool
-    message: str
-    data: dict | None
+    items: list
+    mensaje: str | None = None
 
 
 class FmanagementOperationRequest(BaseModel):

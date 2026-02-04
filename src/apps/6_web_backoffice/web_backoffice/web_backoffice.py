@@ -906,14 +906,21 @@ class State(SharedSessionState):
             if project.get("name") == value:
                 self.proyecciones_project_id = project.get("id", 0)
                 self.proyecciones_project_name = value
-                
+
                 # Generar carpetas formateadas
                 self.proyecciones_org_folder = get_folder_by_id_organization(self.organization_id)
                 self.proyecciones_prj_folder = get_folder_by_id_project(self.proyecciones_project_id)
-                
+
                 # Cargar versiones del proyecto
                 self.load_proyecciones_versions()
-                return
+
+                # Inicializar explorador con el nuevo proyecto (mostrará todas las versiones)
+                return ExploradorState.reload_project_with_tokens(
+                    project_id=self.proyecciones_project_id,
+                    org_id=self.organization_id,
+                    access_token=self.access_token,
+                    session_token=self.session_token
+                )
         
         self.reset_proyecciones_state()
 
@@ -948,7 +955,7 @@ class State(SharedSessionState):
             self.is_loading_versions = False
 
     def set_proyecciones_version(self, value: str):
-        """Selecciona una versión.
+        """Selecciona una versión e inicializa el explorador.
 
         Args:
             value: version_folder de la versión seleccionada (ej: "v001")
@@ -957,8 +964,12 @@ class State(SharedSessionState):
             if version.get("version_folder") == value:
                 self.proyecciones_version_id = version.get("id_version", 0)
                 self.proyecciones_version_folder = value
-                # El explorador se auto-inicializará al detectar el cambio de version_id
-                return
+
+                # Inicializar explorador con el proyecto (mostrará todas las versiones)
+                if self.proyecciones_project_id > 0:
+                    return ExploradorState.reload_project(
+                        project_id=self.proyecciones_project_id
+                    )
 
     def create_new_version(self):
         """Crea una nueva versión completa (DB + fmanagement) para el proyecto seleccionado."""
@@ -1002,7 +1013,11 @@ class State(SharedSessionState):
                 # Seleccionar automáticamente la nueva versión
                 self.proyecciones_version_id = new_version_id
                 self.proyecciones_version_folder = version_name
-                # El explorador se auto-inicializará al detectar el cambio de version_id
+
+                # Recargar explorador del proyecto (mostrará todas las versiones incluyendo la nueva)
+                return ExploradorState.reload_project(
+                    project_id=self.proyecciones_project_id
+                )
             else:
                 self.proyecciones_error = result.get("mensaje", "Error al crear versión")
         except Exception as e:
@@ -2752,30 +2767,14 @@ def proyecciones_management_panel() -> rx.Component:
             border=f"1px solid {COLORS['border']}",
             border_radius="0.5em",
         ),
-        # ===== CAPA 2: Selector de versión + Botón crear =====
+        # ===== CAPA 2: Botón crear nueva versión =====
         rx.cond(
             State.proyecciones_project_id > 0,
             rx.vstack(
                 rx.hstack(
                     rx.icon("git-branch", size=28, color=COLORS["primary"]),
-                    rx.heading("Versiones del Proyecto", size="6", color=COLORS["foreground"]),
-                    spacing="3",
-                    align="center",
-                ),
-                rx.hstack(
-                    rx.vstack(
-                        rx.text("Versión:", font_weight="bold", color=COLORS["foreground"]),
-                        rx.select(
-                            State.proyecciones_versions_select,
-                            placeholder="Seleccionar versión...",
-                            value=State.proyecciones_version_folder,
-                            on_change=State.set_proyecciones_version,
-                            width="200px",
-                            size="3",
-                            disabled=State.is_loading_versions,
-                        ),
-                        spacing="1",
-                    ),
+                    rx.heading("Gestión de Versiones", size="6", color=COLORS["foreground"]),
+                    rx.spacer(),
                     rx.button(
                         rx.icon("plus", size=18),
                         "Crear nueva versión",
@@ -2785,8 +2784,9 @@ def proyecciones_management_panel() -> rx.Component:
                         disabled=State.is_loading_versions,
                         style={"font_weight": "bold", "color": "black"},
                     ),
-                    spacing="4",
-                    align="end",
+                    spacing="3",
+                    align="center",
+                    width="100%",
                 ),
                 rx.cond(
                     State.proyecciones_error != "",
@@ -2806,8 +2806,9 @@ def proyecciones_management_panel() -> rx.Component:
             rx.fragment(),
         ),
         # ===== CAPA 3: Explorador de archivos (INTEGRADO) =====
+        # Muestra todas las versiones del proyecto seleccionado
         rx.cond(
-            (State.proyecciones_project_id > 0) & (State.proyecciones_version_id > 0),
+            State.proyecciones_project_id > 0,
             rx.vstack(
                 explorador_panel(
                     ExploradorState,

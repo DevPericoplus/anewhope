@@ -1472,12 +1472,11 @@ class VersionStateDto(BaseModel):
     id_version: int
     state: str  # "Abierta", "Bloqueada", "Protegida", "Final"
     protected: bool
-    size_bytes: int
+    size: int  # Changed from size_bytes to match backend/broker
     final_c: bool
     final_i: bool
     created_at: str
     updated_at: str
-    updated_by_user_id: int | None
 
 
 class CreateVersionStateRequest(BaseModel):
@@ -1509,8 +1508,8 @@ class VersionStateResponse(BaseModel):
     """Response con estado de versión."""
 
     success: bool
-    state: VersionStateDto | None = None
-    mensaje: str | None = None
+    data: VersionStateDto | None = None
+    message: str | None = None
 
 
 class VersionEventDto(BaseModel):
@@ -1566,8 +1565,14 @@ class FmanagementItemDto(BaseModel):
     """Item de estructura fmanagement."""
 
     name: str
-    type: str  # "folder" | "file"
-    path: str
+    is_dir: bool
+    size_bytes: int | None = None
+    size_kb: float | None = None
+    items: list['FmanagementItemDto'] | None = None  # Estructura recursiva para carpetas
+
+    # Campos opcionales para mantener compatibilidad
+    type: str | None = None  # "folder" | "file"
+    path: str | None = None
     size: int | None = None
     modified: str | None = None
 
