@@ -2479,6 +2479,10 @@ def update_version_state_endpoint(
 
     try:
         update_data = request.model_dump(exclude_unset=True)
+        _logger.info(
+            "[middleware] DEBUG update_data recibido en endpoint: %s",
+            update_data,
+        )
         response = router.update_version_state(
             project_id, version_id, session.organization_id, update_data, session
         )

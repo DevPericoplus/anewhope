@@ -1220,6 +1220,7 @@ class UpdateVersionStateRequest(BaseModel):
 
     state: str | None = None
     protected: bool | None = None
+    size_bytes: int | None = None
     final_c: bool | None = None
     final_i: bool | None = None
     user_id: int
@@ -2199,7 +2200,12 @@ def update_version_state(
     )
 
     try:
-        result = router.update_version_state(project_id, version_id, org_id, request.model_dump(exclude_unset=True))
+        update_data = request.model_dump(exclude_unset=True)
+        logger.info(
+            "[broker] DEBUG update_data desde request.model_dump(): %s",
+            update_data,
+        )
+        result = router.update_version_state(project_id, version_id, org_id, update_data)
         return VersionStateResponse(**result)
     except BrokerBusinessError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

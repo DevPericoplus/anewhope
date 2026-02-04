@@ -2803,9 +2803,9 @@ class BackendCoreRouter:
                 text("""
                     SELECT
                         id, id_organizacion, id_proyecto, id_version,
-                        state, protected, size, final_c, final_i,
+                        state, protected, size_bytes, final_c, final_i,
                         created_at, updated_at
-                    FROM estado_version
+                    FROM version_states
                     WHERE id_proyecto = :project_id
                       AND id_version = :version_id
                       AND id_organizacion = :org_id
@@ -2862,7 +2862,7 @@ class BackendCoreRouter:
             project_id: ID del proyecto
             version_id: Número de versión
             org_id: ID de la organización
-            update_data: Datos a actualizar (state, protected, final_c, final_i, user_id)
+            update_data: Datos a actualizar (state, protected, final_c, final_i, size_bytes, user_id)
             
         Returns:
             Dict con el resultado de la actualización
@@ -2876,6 +2876,10 @@ class BackendCoreRouter:
             version_id,
             project_id,
             user_id,
+        )
+        self._logger.info(
+            "[backend-core] DEBUG update_data recibido: %s",
+            update_data,
         )
 
         # Construir la query dinámica según campos presentes
@@ -2903,6 +2907,10 @@ class BackendCoreRouter:
             update_fields.append("final_i = :final_i")
             params["final_i"] = update_data["final_i"]
 
+        if "size_bytes" in update_data:
+            update_fields.append("size_bytes = :size_bytes")
+            params["size_bytes"] = update_data["size_bytes"]
+
         if not update_fields:
             return {
                 "success": False,
@@ -2911,7 +2919,7 @@ class BackendCoreRouter:
             }
 
         query = f"""
-            UPDATE estado_version
+            UPDATE version_states
             SET {', '.join(update_fields)}
             WHERE id_proyecto = :project_id
               AND id_version = :version_id
@@ -2964,9 +2972,9 @@ class BackendCoreRouter:
         with self._get_projects_db_writer_connection() as conn:
             conn.execute(
                 text("""
-                    INSERT INTO estado_version (
+                    INSERT INTO version_states (
                         id_organizacion, id_proyecto, id_version,
-                        state, protected, size, final_c, final_i
+                        state, protected, size_bytes, final_c, final_i
                     ) VALUES (
                         :org_id, :project_id, :version_id,
                         'Abierta', FALSE, 0, FALSE, FALSE

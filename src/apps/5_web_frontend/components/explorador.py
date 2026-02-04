@@ -8,6 +8,7 @@ import os
 from adapters.api_client import (
     fmanagement_list_all_project_versions,
     get_project_versions,
+    update_version_state,
 )
 
 # Configuración de Logging
@@ -273,12 +274,13 @@ class ExploradorState(rx.State):
                 item.is_final_i = final_i
                 
                 es_bloqueada = protected or (estado != "Abierta")
-                
+
                 if es_bloqueada:
-                    # Bloqueamos esta versión y todos sus descendientes
+                    # Bloqueamos todos los descendientes de esta versión
+                    # IMPORTANTE: NO bloqueamos la carpeta de versión misma (item.is_blocked = False)
+                    # para que el menú contextual pueda aparecer y permitir desbloquearla
                     version_id = item.id
-                    item.is_blocked = True
-                    
+
                     # Bloqueamos todos los hijos de esta versión
                     for descendant in self.items:
                         if descendant.id.startswith(version_id + "_"):
@@ -343,24 +345,88 @@ class ExploradorState(rx.State):
             return rx.window_alert(f"Versión {version_key} revertida a estado Abierta para revisión.")
 
     def abrir_version(self, item: FolderItem):
-        """Cambia el estado de una versión a 'Abierta' (protected=False)."""
+        """Cambia el estado de una versión a 'Abierta' (protected=False) y persiste en BD."""
         version_key = item.name  # ej: "v001"
+
+        # Extraer version_id numérico del version_key
+        try:
+            version_id = int(version_key.lstrip('v'))
+        except ValueError:
+            logger.error(f"No se pudo extraer version_id de {version_key}")
+            return rx.toast.error(f"Error: formato de versión inválido")
+
+        # Actualizar en memoria
         if version_key in self.version_states:
             self.version_states[version_key]["state"] = "Abierta"
             self.version_states[version_key]["protected"] = False
-            logger.info(f"Versión {version_key} cambiada a Abierta")
-        self.interpretacion_estados()
-        return rx.toast.success(f"Versión {version_key} abierta")
+            logger.info(f"Versión {version_key} cambiada a Abierta en memoria")
+
+        # Persistir en base de datos
+        try:
+            response = update_version_state(
+                project_id=self.id_proyecto,
+                version_id=version_id,
+                state="Abierta",
+                protected=False,
+                updated_by_user_id=self.user_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if response.get("success"):
+                logger.info(f"Versión {version_key} persistida como Abierta en BD")
+                self.interpretacion_estados()
+                return rx.toast.success(f"Versión {version_key} abierta")
+            else:
+                error_msg = response.get("mensaje", "Error desconocido")
+                logger.error(f"Error al persistir estado: {error_msg}")
+                return rx.toast.error(f"Error al guardar: {error_msg}")
+
+        except Exception as e:
+            logger.error(f"Excepción al abrir versión: {e}")
+            return rx.toast.error(f"Error al guardar cambios")
 
     def bloquear_version(self, item: FolderItem):
-        """Cambia el estado de una versión a 'Bloqueada' (protected=True)."""
+        """Cambia el estado de una versión a 'Bloqueada' (protected=True) y persiste en BD."""
         version_key = item.name  # ej: "v001"
+
+        # Extraer version_id numérico del version_key
+        try:
+            version_id = int(version_key.lstrip('v'))
+        except ValueError:
+            logger.error(f"No se pudo extraer version_id de {version_key}")
+            return rx.toast.error(f"Error: formato de versión inválido")
+
+        # Actualizar en memoria
         if version_key in self.version_states:
             self.version_states[version_key]["state"] = "Bloqueada"
             self.version_states[version_key]["protected"] = True
-            logger.info(f"Versión {version_key} cambiada a Bloqueada")
-        self.interpretacion_estados()
-        return rx.toast.success(f"Versión {version_key} bloqueada")
+            logger.info(f"Versión {version_key} cambiada a Bloqueada en memoria")
+
+        # Persistir en base de datos
+        try:
+            response = update_version_state(
+                project_id=self.id_proyecto,
+                version_id=version_id,
+                state="Bloqueada",
+                protected=True,
+                updated_by_user_id=self.user_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if response.get("success"):
+                logger.info(f"Versión {version_key} persistida como Bloqueada en BD")
+                self.interpretacion_estados()
+                return rx.toast.success(f"Versión {version_key} bloqueada")
+            else:
+                error_msg = response.get("mensaje", "Error desconocido")
+                logger.error(f"Error al persistir estado: {error_msg}")
+                return rx.toast.error(f"Error al guardar: {error_msg}")
+
+        except Exception as e:
+            logger.error(f"Excepción al bloquear versión: {e}")
+            return rx.toast.error(f"Error al guardar cambios")
 
     def set_version_protected(self, val: bool):
         """Cambia la protección de la versión seleccionada.
@@ -1117,7 +1183,7 @@ def explorador_panel(state) -> rx.Component:
                 border="1px solid #828790",
                 padding="10px",
                 width="100%",
-                height="60vh",
+                height="80vh",
                 overflow_y="auto",
                 box_shadow="inset 2px 2px 5px rgba(0,0,0,0.05)",
             ),
@@ -1185,7 +1251,7 @@ def explorador_page_internal() -> rx.Component:
                             border="1px solid #828790",
                             padding="10px",
                             width="100%",
-                            height="35vh",
+                            height="60vh",
                             overflow_y="auto",
                             box_shadow="inset 2px 2px 5px rgba(0,0,0,0.05)",
                         ),

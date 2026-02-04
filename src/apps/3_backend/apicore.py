@@ -1264,6 +1264,7 @@ class UpdateVersionStateRequest(BaseModel):
 
     state: str | None = None
     protected: bool | None = None
+    size_bytes: int | None = None
     final_c: bool | None = None
     final_i: bool | None = None
     user_id: int
