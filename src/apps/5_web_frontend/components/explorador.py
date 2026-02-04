@@ -3,12 +3,23 @@ import pydantic
 import json
 import logging
 import os
+import importlib.util
+import sys
+from pathlib import Path
 
 # Imports de adaptadores API
 from adapters.api_client import (
     fmanagement_list_all_project_versions,
     get_project_versions,
     update_version_state,
+    generate_file_upload_token,
+    generate_file_download_token,
+    fmanagement_create_folder,
+    fmanagement_rename_folder,
+    fmanagement_delete_folder,
+    fmanagement_rename_file,
+    fmanagement_delete_file,
+    fmanagement_get_properties,
 )
 
 # Configuración de Logging
@@ -25,6 +36,31 @@ if not logger.handlers:
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     handler.setFormatter(formatter)
     logger.addHandler(handler)
+
+
+def _load_storage_module():
+    """Carga el módulo de almacenamiento desde infraestructura."""
+    module_path = (
+        Path(__file__).resolve().parents[3]
+        / "src/apps/3_backend/4_infrastructure/persistence/storage_adapter.py"
+    )
+    spec = importlib.util.spec_from_file_location("frontend_storage_module", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("No se pudo cargar el módulo de almacenamiento")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["frontend_storage_module"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+# Cargar módulo de almacenamiento para acceso a BD
+try:
+    _storage_module = _load_storage_module()
+    load_mariadb_settings = _storage_module.load_mariadb_settings
+except Exception as e:
+    logger.warning(f"No se pudo cargar módulo de almacenamiento: {e}")
+    load_mariadb_settings = None
+
 
 class FolderItem(pydantic.BaseModel):
     id: str
@@ -143,6 +179,17 @@ class ExploradorState(rx.State):
     is_loading: bool = False
     error_message: str = ""
 
+    # Variables para diálogos de acciones
+    show_create_folder_dialog: bool = False
+    show_rename_dialog: bool = False
+    show_delete_confirm_dialog: bool = False
+    show_properties_dialog: bool = False
+
+    # Item actual para la acción
+    current_action_item: FolderItem | None = None
+    dialog_input_value: str = ""
+    properties_info: str = ""
+
     def apply_system_role_security(self):
         """
         Capa 2: Validacion Cruzada con Roles de Sistema (roles_by_app.json).
@@ -197,44 +244,188 @@ class ExploradorState(rx.State):
             print(f"Error en validación de seguridad capa 2: {e}")
 
     def load_security_profile(self):
-        """Carga el perfil de seguridad del usuario desde data/seguridad.json."""
+        """Carga el perfil de seguridad del usuario desde la base de datos.
+
+        Consulta proyectos_roles para obtener el id_rol del usuario en el proyecto actual,
+        y luego consulta low_level_permissions para obtener los permisos específicos.
+        """
         try:
-            # Usar ruta absoluta para evitar problemas de CWD
-            import os
-            base_path = os.getcwd()
-            json_path = os.path.join(base_path, "data", "seguridad.json")
-            
-            print(f"Intentando cargar seguridad desde: {json_path}")
-            
-            with open(json_path, "r") as f:
-                data = json.load(f)
-                usuario = data.get("usuario", {})
-                
-                self.user_id = usuario.get("user_id", 1)
-                self.user_name = usuario.get("user_name", "anonimo")
-                self.user_identity_type_id = usuario.get("identity_type_id", 0) # Nuevo campo
-                # Defaults a 1 para evitar bloqueos en desarrollo si falla la lectura parcial
-                self.user_id_organizacion = usuario.get("id_organizacion", 1)
-                self.user_project_id = usuario.get("project_id", 1)
-                
-                # Carga de matriz de permisos
-                logger.info(f"Aplicando seguridad Capa 1: Usuario '{self.user_name}' (ID: {self.user_id})")
-                self.permisos = usuario.get("permisos", self.permisos)
-                logger.debug(f"Permisos base (Capa 1): {self.permisos}")
-                
-                # APLICAR CAPA 2 DE SEGURIDAD
-                self.apply_system_role_security()
-                
-                print(f"Perfil cargado: Org={self.user_id_organizacion}, Proy={self.user_project_id}, Admin={self.is_admin}, Auditor={self.is_auditor}")
-                
-                if not self.is_access_authorized:
-                    print(f"ALERTA DE SEGURIDAD: Usuario {self.user_name} no autorizado para este proyecto.")
+            # Intentar obtener user_id y organization_id del parent state (web_frontend.State)
+            try:
+                from web_frontend.web_frontend import State as MainState
+                main_state = self.get_state(MainState)
+                if main_state and main_state.user_id > 0:
+                    self.user_id = main_state.user_id
+                    self.id_organizacion = main_state.organization_id
+                    self.user_name = main_state.user_name
+                    self.access_token = main_state.access_token
+                    self.session_token = main_state.session_token
+                    logger.info(f"✓ Datos de sesión obtenidos: user_id={self.user_id}, org_id={self.id_organizacion}, project_id={self.id_proyecto}")
+                    print(f"✓ Datos de sesión obtenidos: user_id={self.user_id}, org_id={self.id_organizacion}, project_id={self.id_proyecto}")
+                else:
+                    logger.warning(f"Estado principal no disponible o user_id=0")
+                    print(f"⚠ Estado principal no disponible o user_id=0")
+            except Exception as e:
+                logger.warning(f"No se pudo obtener datos del estado principal: {e}")
+                print(f"⚠ No se pudo obtener datos del estado principal: {e}")
+
+            # Si no tenemos user_id o project_id, usar permisos por defecto de desarrollo
+            if self.user_id <= 0 or self.id_proyecto <= 0:
+                logger.warning(f"⚠ No se puede cargar permisos desde BD: user_id={self.user_id}, project_id={self.id_proyecto}")
+                print(f"⚠ Usando permisos por defecto (modo desarrollo): user_id={self.user_id}, project_id={self.id_proyecto}")
+                # Habilitar todos los permisos por defecto para desarrollo
+                self._set_default_permissions()
+                return
+
+            # Cargar permisos desde la base de datos
+            self._load_permissions_from_database()
+
         except Exception as e:
-            logger.error(f"Error cargando perfil de seguridad: {e}")
-            print(f"Error cargando perfil de seguridad: {e}")
-            # En caso de error crítico, asegurar valores de desarrollo
-            self.user_id_organizacion = 1
-            self.user_project_id = 1
+            logger.error(f"✗ Error cargando perfil de seguridad: {e}")
+            print(f"✗ Error cargando perfil de seguridad: {e}")
+            # En caso de error, usar permisos por defecto
+            self._set_default_permissions()
+
+    def _set_default_permissions(self):
+        """Establece permisos por defecto para desarrollo."""
+        self.permisos = {
+            "folder_create": True,
+            "folder_delete": True,
+            "folder_rename": True,
+            "folder_read": True,
+            "folder_list": True,
+            "file_create": True,
+            "file_read": True,
+            "file_update": True,
+            "file_delete": True,
+            "file_list": True,
+            "version_create": True,
+        }
+        self.is_admin = True
+        logger.info("✓ Permisos por defecto establecidos (modo desarrollo)")
+        print("✓ Permisos por defecto establecidos: todos los permisos habilitados")
+
+    def _load_permissions_from_database(self):
+        """Consulta la base de datos para obtener permisos específicos del proyecto."""
+        if not load_mariadb_settings:
+            logger.warning("⚠ Función load_mariadb_settings no disponible")
+            print("⚠ Función load_mariadb_settings no disponible")
+            self._set_default_permissions()
+            return
+
+        try:
+            from sqlalchemy import create_engine, text
+
+            # Obtener configuración de la base de datos
+            mariadb_config = load_mariadb_settings()
+            dsn = mariadb_config.get("reader_dsn", "")
+
+            if not dsn:
+                logger.warning("⚠ No hay DSN configurado para consultar permisos")
+                print("⚠ No hay DSN configurado - usando permisos por defecto")
+                self._set_default_permissions()
+                return
+
+            print(f"→ Consultando permisos en BD para user_id={self.user_id}, project_id={self.id_proyecto}, org_id={self.id_organizacion}")
+            engine = create_engine(dsn)
+
+            with engine.connect() as conn:
+                # 1. Consultar proyectos_roles para obtener id_rol del usuario en este proyecto
+                # Nota: proyectos_roles está en myllm_projects_db
+                query_role = text("""
+                    SELECT id_rol
+                    FROM myllm_projects_db.proyectos_roles
+                    WHERE id_usuario = :user_id
+                      AND id_proyecto = :project_id
+                      AND id_organizacion = :org_id
+                      AND active = 1
+                    LIMIT 1
+                """)
+
+                result_role = conn.execute(
+                    query_role,
+                    {
+                        "user_id": self.user_id,
+                        "project_id": self.id_proyecto,
+                        "org_id": self.id_organizacion
+                    }
+                )
+
+                row_role = result_role.fetchone()
+
+                if not row_role:
+                    logger.warning(
+                        f"⚠ No se encontró rol para user_id={self.user_id}, "
+                        f"project_id={self.id_proyecto}, org_id={self.id_organizacion}"
+                    )
+                    print(
+                        f"⚠ No hay asignación en proyectos_roles para user_id={self.user_id}, "
+                        f"project_id={self.id_proyecto} - usando permisos por defecto"
+                    )
+                    # Usar permisos por defecto en lugar de resetear a False
+                    self._set_default_permissions()
+                    return
+
+                id_rol = row_role[0]
+                logger.info(f"✓ Rol encontrado: id_rol={id_rol}")
+                print(f"✓ Rol encontrado: id_rol={id_rol}")
+
+                # 2. Consultar low_level_permissions usando el id_rol
+                # Nota: low_level_permissions está en myllm_core_db
+                query_perms = text("""
+                    SELECT
+                        folder_create, folder_delete, folder_rename, folder_read, folder_list,
+                        file_create, file_read, file_update, file_delete, file_list,
+                        version_create
+                    FROM myllm_core_db.low_level_permissions
+                    WHERE id_permissions = :id_rol
+                    LIMIT 1
+                """)
+
+                result_perms = conn.execute(query_perms, {"id_rol": id_rol})
+                row_perms = result_perms.fetchone()
+
+                if not row_perms:
+                    logger.warning(f"⚠ No se encontraron permisos para id_rol={id_rol}")
+                    print(f"⚠ No hay permisos en low_level_permissions para id_rol={id_rol} - usando permisos por defecto")
+                    # Usar permisos por defecto en lugar de resetear a False
+                    self._set_default_permissions()
+                    return
+
+                # 3. Actualizar matriz de permisos con los valores de la BD
+                self.permisos = {
+                    "folder_create": bool(row_perms[0]),
+                    "folder_delete": bool(row_perms[1]),
+                    "folder_rename": bool(row_perms[2]),
+                    "folder_read": bool(row_perms[3]),
+                    "folder_list": bool(row_perms[4]),
+                    "file_create": bool(row_perms[5]),
+                    "file_read": bool(row_perms[6]),
+                    "file_update": bool(row_perms[7]),
+                    "file_delete": bool(row_perms[8]),
+                    "file_list": bool(row_perms[9]),
+                    "version_create": bool(row_perms[10]),
+                }
+
+                # Determinar si es admin basado en version_create
+                self.is_admin = self.permisos.get("version_create", False)
+
+                logger.info(
+                    f"Permisos cargados desde BD para user_id={self.user_id}, "
+                    f"project_id={self.id_proyecto}, id_rol={id_rol}: {self.permisos}"
+                )
+                print(
+                    f"✓ Permisos cargados: Rol={id_rol}, "
+                    f"folder_create={self.permisos['folder_create']}, "
+                    f"file_create={self.permisos['file_create']}, "
+                    f"is_admin={self.is_admin}"
+                )
+
+        except Exception as e:
+            logger.error(f"✗ Error consultando permisos en BD: {e}")
+            print(f"✗ Error consultando permisos: {e}")
+            # En caso de error, usar permisos por defecto
+            self._set_default_permissions()
 
     def interpretacion_estados(self):
         """
@@ -308,14 +499,22 @@ class ExploradorState(rx.State):
             return rx.window_alert(f"Acción '{accion}' denegada: El elemento '{item.name}' está protegido.")
         
         logger.info(f"Ejecutando acción: {accion} sobre {item.name}")
-        if accion == "delete":
-            return rx.window_alert(f"Simulando borrado de: {item.name}")
+
+        # Acciones de carpetas
+        if accion == "create_folder":
+            return self.abrir_dialogo_crear_carpeta(item)
         elif accion == "rename":
-            return rx.window_alert(f"Simulando cambio de nombre de: {item.name}")
+            return self.abrir_dialogo_renombrar(item)
+        elif accion == "delete":
+            return self.abrir_dialogo_confirmar_eliminar(item)
+        elif accion == "properties":
+            return self.abrir_dialogo_propiedades(item)
+
+        # Acciones de archivos
         elif accion == "upload_file":
-            return rx.window_alert(f"Simulando subida de archivo a: {item.name}")
+            return self.iniciar_subida_archivo(item)
         elif accion == "download":
-            return rx.window_alert(f"Iniciando descarga de: {item.name}")
+            return self.iniciar_descarga_archivo(item)
             
         # Acciones Administrativas de Versión
         elif accion == "block_version":
@@ -427,6 +626,543 @@ class ExploradorState(rx.State):
         except Exception as e:
             logger.error(f"Excepción al bloquear versión: {e}")
             return rx.toast.error(f"Error al guardar cambios")
+
+    def iniciar_subida_archivo(self, item: FolderItem):
+        """Inicia el proceso de subida de archivo.
+
+        1. Extrae project_id y version_id del item
+        2. Genera token de subida llamando al middleware
+        3. Usa JavaScript para abrir file picker y subir directamente a fmanagement
+        """
+        try:
+            # Extraer project_id y version_id del ID del item
+            # Format: "0_1_v001_subfolder" -> project_id=1, version_id=1
+            parts = item.id.split("_")
+            if len(parts) < 3:
+                logger.error(f"ID de item inválido: {item.id}")
+                return rx.toast.error("Error: estructura de carpeta inválida")
+
+            project_id = self.id_proyecto  # Usamos el proyecto actual
+
+            # Extraer version_id del nombre de la versión (ej: "v001" -> 1)
+            # Buscar la versión en el path del item
+            version_part = None
+            for part in parts:
+                if part.startswith("v") and part[1:].isdigit():
+                    version_part = part
+                    break
+
+            if not version_part:
+                logger.error(f"No se encontró versión en item.id: {item.id}")
+                return rx.toast.error("Error: no se pudo identificar la versión")
+
+            version_id = int(version_part.lstrip('v'))
+
+            # Calcular relative_path (todo después de la versión)
+            # Ejemplo: si item.id = "0_1_v001_subfolder_images", relative_path = "subfolder/images"
+            version_idx = parts.index(version_part)
+            relative_parts = parts[version_idx + 1:]
+            relative_path = "/".join(relative_parts) if relative_parts else ""
+
+            logger.info(f"Generando token de subida: project_id={project_id}, version_id={version_id}, path={relative_path}")
+
+            # Generar token de subida
+            response = generate_file_upload_token(
+                project_id=project_id,
+                version_id=version_id,
+                relative_path=relative_path,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if not response.get("success"):
+                error_msg = response.get("mensaje", "Error al generar token")
+                logger.error(f"Error generando token: {error_msg}")
+                return rx.toast.error(f"Error: {error_msg}")
+
+            token = response.get("token")
+            fmanagement_url = response.get("fmanagement_url")
+
+            if not token or not fmanagement_url:
+                logger.error("Respuesta incompleta del servidor")
+                return rx.toast.error("Error: respuesta incompleta del servidor")
+
+            # Usar JavaScript para abrir file picker y subir el archivo
+            upload_script = f"""
+            (function() {{
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.onchange = async (e) => {{
+                    const file = e.target.files[0];
+                    if (!file) return;
+
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    formData.append('relative_path', '{relative_path}');
+
+                    try {{
+                        const response = await fetch('{fmanagement_url}/upload', {{
+                            method: 'POST',
+                            headers: {{
+                                'Authorization': 'Bearer {token}'
+                            }},
+                            body: formData
+                        }});
+
+                        const result = await response.json();
+                        if (response.ok) {{
+                            alert('Archivo subido exitosamente: ' + file.name);
+                            // Recargar el explorador
+                            window.location.reload();
+                        }} else {{
+                            alert('Error al subir archivo: ' + (result.error || 'Error desconocido'));
+                        }}
+                    }} catch (error) {{
+                        alert('Error al subir archivo: ' + error.message);
+                    }}
+                }};
+                input.click();
+            }})();
+            """
+
+            return rx.call_script(upload_script)
+
+        except Exception as e:
+            logger.error(f"Error en iniciar_subida_archivo: {e}")
+            return rx.toast.error(f"Error: {str(e)}")
+
+    def iniciar_descarga_archivo(self, item: FolderItem):
+        """Inicia el proceso de descarga de archivo.
+
+        1. Extrae project_id, version_id y filename del item
+        2. Genera token de descarga llamando al middleware
+        3. Usa JavaScript para iniciar la descarga desde fmanagement
+        """
+        try:
+            # Verificar que es un archivo
+            if item.item_type != "file":
+                logger.error(f"Item no es un archivo: {item.name}")
+                return rx.toast.error("Error: solo se pueden descargar archivos")
+
+            # Extraer project_id y version_id del ID del item
+            parts = item.id.split("_")
+            if len(parts) < 3:
+                logger.error(f"ID de item inválido: {item.id}")
+                return rx.toast.error("Error: estructura de archivo inválida")
+
+            project_id = self.id_proyecto
+
+            # Extraer version_id del nombre de la versión
+            version_part = None
+            for part in parts:
+                if part.startswith("v") and part[1:].isdigit():
+                    version_part = part
+                    break
+
+            if not version_part:
+                logger.error(f"No se encontró versión en item.id: {item.id}")
+                return rx.toast.error("Error: no se pudo identificar la versión")
+
+            version_id = int(version_part.lstrip('v'))
+
+            # Calcular relative_path (sin incluir el nombre del archivo)
+            version_idx = parts.index(version_part)
+            relative_parts = parts[version_idx + 1:-1]  # Excluir el último elemento (filename)
+            relative_path = "/".join(relative_parts) if relative_parts else ""
+
+            filename = item.name
+
+            logger.info(f"Generando token de descarga: project_id={project_id}, version_id={version_id}, filename={filename}, path={relative_path}")
+
+            # Generar token de descarga
+            response = generate_file_download_token(
+                project_id=project_id,
+                version_id=version_id,
+                filename=filename,
+                relative_path=relative_path,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if not response.get("success"):
+                error_msg = response.get("mensaje", "Error al generar token")
+                logger.error(f"Error generando token: {error_msg}")
+                return rx.toast.error(f"Error: {error_msg}")
+
+            download_url = response.get("download_url")
+
+            if not download_url:
+                logger.error("Respuesta incompleta del servidor")
+                return rx.toast.error("Error: respuesta incompleta del servidor")
+
+            # Usar JavaScript para iniciar la descarga
+            download_script = f"""
+            (function() {{
+                const link = document.createElement('a');
+                link.href = '{download_url}';
+                link.download = '{filename}';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }})();
+            """
+
+            logger.info(f"Iniciando descarga de {filename}")
+            return rx.call_script(download_script)
+
+        except Exception as e:
+            logger.error(f"Error en iniciar_descarga_archivo: {e}")
+            return rx.toast.error(f"Error: {str(e)}")
+
+    # ========================================================================
+    # Métodos para diálogos y acciones de carpetas/archivos
+    # ========================================================================
+
+    def abrir_dialogo_crear_carpeta(self, item: FolderItem):
+        """Abre el diálogo para crear una nueva carpeta."""
+        self.current_action_item = item
+        self.dialog_input_value = ""
+        self.show_create_folder_dialog = True
+
+    def cerrar_dialogo_crear_carpeta(self):
+        """Cierra el diálogo de crear carpeta."""
+        self.show_create_folder_dialog = False
+        self.dialog_input_value = ""
+        self.current_action_item = None
+
+    def ejecutar_crear_carpeta(self):
+        """Ejecuta la creación de carpeta."""
+        if not self.dialog_input_value or not self.current_action_item:
+            return rx.toast.error("Debe ingresar un nombre para la carpeta")
+
+        try:
+            item = self.current_action_item
+            folder_name = self.dialog_input_value.strip()
+
+            # Extraer información del item
+            parts = item.id.split("_")
+            project_id = self.id_proyecto
+
+            # Buscar la versión
+            version_part = None
+            for part in parts:
+                if part.startswith("v") and part[1:].isdigit():
+                    version_part = part
+                    break
+
+            if not version_part:
+                return rx.toast.error("No se pudo identificar la versión")
+
+            version_id = int(version_part.lstrip('v'))
+
+            # Calcular la ruta relativa
+            version_idx = parts.index(version_part)
+            relative_parts = parts[version_idx + 1:]
+            folder_path = "/".join(relative_parts) if relative_parts else ""
+
+            logger.info(f"Creando carpeta: {folder_name} en {folder_path}")
+
+            # Llamar a la API
+            response = fmanagement_create_folder(
+                org_id=self.id_organizacion,
+                project_id=project_id,
+                version_id=version_id,
+                folder_path=folder_path,
+                folder_name=folder_name,
+                user_id=self.user_id,
+                identity_type_id=self.user_identity_type_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            self.cerrar_dialogo_crear_carpeta()
+
+            if response.get("success") or response.get("status") == "success":
+                logger.info(f"Carpeta creada: {folder_name}")
+                # Recargar el proyecto para ver la nueva carpeta
+                return [
+                    rx.toast.success(f"Carpeta '{folder_name}' creada exitosamente"),
+                    rx.call_script("window.location.reload()"),
+                ]
+            else:
+                error_msg = response.get("mensaje") or response.get("error", "Error desconocido")
+                return rx.toast.error(f"Error: {error_msg}")
+
+        except Exception as e:
+            logger.error(f"Error en ejecutar_crear_carpeta: {e}")
+            self.cerrar_dialogo_crear_carpeta()
+            return rx.toast.error(f"Error: {str(e)}")
+
+    def abrir_dialogo_renombrar(self, item: FolderItem):
+        """Abre el diálogo para renombrar."""
+        self.current_action_item = item
+        self.dialog_input_value = item.name
+        self.show_rename_dialog = True
+
+    def cerrar_dialogo_renombrar(self):
+        """Cierra el diálogo de renombrar."""
+        self.show_rename_dialog = False
+        self.dialog_input_value = ""
+        self.current_action_item = None
+
+    def ejecutar_renombrar(self):
+        """Ejecuta el renombrado de carpeta o archivo."""
+        if not self.dialog_input_value or not self.current_action_item:
+            return rx.toast.error("Debe ingresar un nuevo nombre")
+
+        try:
+            item = self.current_action_item
+            new_name = self.dialog_input_value.strip()
+
+            if new_name == item.name:
+                self.cerrar_dialogo_renombrar()
+                return rx.toast.info("El nombre no ha cambiado")
+
+            # Extraer información del item
+            parts = item.id.split("_")
+            project_id = self.id_proyecto
+
+            # Buscar la versión
+            version_part = None
+            for part in parts:
+                if part.startswith("v") and part[1:].isdigit():
+                    version_part = part
+                    break
+
+            if not version_part:
+                return rx.toast.error("No se pudo identificar la versión")
+
+            version_id = int(version_part.lstrip('v'))
+
+            # Calcular la ruta relativa (sin incluir el nombre del item)
+            version_idx = parts.index(version_part)
+            relative_parts = parts[version_idx + 1:-1]
+            folder_path = "/".join(relative_parts) if relative_parts else ""
+
+            logger.info(f"Renombrando {item.name} a {new_name}")
+
+            # Llamar a la API según si es carpeta o archivo
+            if item.item_type == "folder":
+                response = fmanagement_rename_folder(
+                    org_id=self.id_organizacion,
+                    project_id=project_id,
+                    version_id=version_id,
+                    folder_path=folder_path,
+                    old_name=item.name,
+                    new_name=new_name,
+                    user_id=self.user_id,
+                    identity_type_id=self.user_identity_type_id,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+            else:  # archivo
+                response = fmanagement_rename_file(
+                    org_id=self.id_organizacion,
+                    project_id=project_id,
+                    version_id=version_id,
+                    file_path=folder_path,
+                    old_filename=item.name,
+                    new_filename=new_name,
+                    user_id=self.user_id,
+                    identity_type_id=self.user_identity_type_id,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+
+            self.cerrar_dialogo_renombrar()
+
+            if response.get("success") or response.get("message"):
+                logger.info(f"Renombrado exitoso: {item.name} -> {new_name}")
+                return [
+                    rx.toast.success(f"Renombrado a '{new_name}' exitosamente"),
+                    rx.call_script("window.location.reload()"),
+                ]
+            else:
+                error_msg = response.get("mensaje") or response.get("error", "Error desconocido")
+                return rx.toast.error(f"Error: {error_msg}")
+
+        except Exception as e:
+            logger.error(f"Error en ejecutar_renombrar: {e}")
+            self.cerrar_dialogo_renombrar()
+            return rx.toast.error(f"Error: {str(e)}")
+
+    def abrir_dialogo_confirmar_eliminar(self, item: FolderItem):
+        """Abre el diálogo de confirmación para eliminar."""
+        self.current_action_item = item
+        self.show_delete_confirm_dialog = True
+
+    def cerrar_dialogo_eliminar(self):
+        """Cierra el diálogo de eliminar."""
+        self.show_delete_confirm_dialog = False
+        self.current_action_item = None
+
+    def ejecutar_eliminar(self):
+        """Ejecuta la eliminación de carpeta o archivo."""
+        if not self.current_action_item:
+            return rx.toast.error("No hay elemento seleccionado")
+
+        try:
+            item = self.current_action_item
+
+            # Extraer información del item
+            parts = item.id.split("_")
+            project_id = self.id_proyecto
+
+            # Buscar la versión
+            version_part = None
+            for part in parts:
+                if part.startswith("v") and part[1:].isdigit():
+                    version_part = part
+                    break
+
+            if not version_part:
+                return rx.toast.error("No se pudo identificar la versión")
+
+            version_id = int(version_part.lstrip('v'))
+
+            # Calcular la ruta relativa
+            version_idx = parts.index(version_part)
+            if item.item_type == "folder":
+                relative_parts = parts[version_idx + 1:-1]
+                folder_path = "/".join(relative_parts) if relative_parts else ""
+                folder_name = item.name
+            else:  # archivo
+                relative_parts = parts[version_idx + 1:-1]
+                file_path = "/".join(relative_parts) if relative_parts else ""
+
+            logger.info(f"Eliminando: {item.name}")
+
+            # Llamar a la API según si es carpeta o archivo
+            if item.item_type == "folder":
+                response = fmanagement_delete_folder(
+                    org_id=self.id_organizacion,
+                    project_id=project_id,
+                    version_id=version_id,
+                    folder_path=folder_path,
+                    folder_name=folder_name,
+                    user_id=self.user_id,
+                    identity_type_id=self.user_identity_type_id,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+            else:  # archivo
+                response = fmanagement_delete_file(
+                    org_id=self.id_organizacion,
+                    project_id=project_id,
+                    version_id=version_id,
+                    file_path=file_path,
+                    filename=item.name,
+                    user_id=self.user_id,
+                    identity_type_id=self.user_identity_type_id,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+
+            self.cerrar_dialogo_eliminar()
+
+            if response.get("success") or response.get("status") == "success":
+                logger.info(f"Eliminado exitosamente: {item.name}")
+                return [
+                    rx.toast.success(f"'{item.name}' eliminado exitosamente"),
+                    rx.call_script("window.location.reload()"),
+                ]
+            else:
+                error_msg = response.get("mensaje") or response.get("error", "Error desconocido")
+                return rx.toast.error(f"Error: {error_msg}")
+
+        except Exception as e:
+            logger.error(f"Error en ejecutar_eliminar: {e}")
+            self.cerrar_dialogo_eliminar()
+            return rx.toast.error(f"Error: {str(e)}")
+
+    def abrir_dialogo_propiedades(self, item: FolderItem):
+        """Abre el diálogo de propiedades."""
+        self.current_action_item = item
+        self.properties_info = "Cargando propiedades..."
+        self.show_properties_dialog = True
+        # TODO: Implementar llamada a fmanagement para obtener info con comando 'file'
+        return self.cargar_propiedades()
+
+    def cerrar_dialogo_propiedades(self):
+        """Cierra el diálogo de propiedades."""
+        self.show_properties_dialog = False
+        self.properties_info = ""
+        self.current_action_item = None
+
+    def cargar_propiedades(self):
+        """Carga las propiedades del elemento usando el comando 'file' del SO."""
+        if not self.current_action_item:
+            return rx.toast.error("No hay elemento seleccionado")
+
+        try:
+            item = self.current_action_item
+
+            # Extraer información del item
+            parts = item.id.split("_")
+            project_id = self.id_proyecto
+
+            # Buscar la versión
+            version_part = None
+            for part in parts:
+                if part.startswith("v") and part[1:].isdigit():
+                    version_part = part
+                    break
+
+            if not version_part:
+                self.properties_info = "Error: No se pudo identificar la versión"
+                return rx.toast.error("No se pudo identificar la versión")
+
+            version_id = int(version_part.lstrip('v'))
+
+            # Calcular la ruta relativa (sin incluir el nombre si es archivo)
+            version_idx = parts.index(version_part)
+            if item.item_type == "folder":
+                relative_parts = parts[version_idx + 1:]
+                item_path = "/".join(relative_parts) if relative_parts else ""
+                item_name = ""
+            else:  # archivo
+                relative_parts = parts[version_idx + 1:-1]
+                item_path = "/".join(relative_parts) if relative_parts else ""
+                item_name = item.name
+
+            logger.info(f"Obteniendo propiedades de: {item.name}")
+
+            # Llamar a la API
+            response = fmanagement_get_properties(
+                org_id=self.id_organizacion,
+                project_id=project_id,
+                version_id=version_id,
+                item_path=item_path,
+                item_name=item_name,
+                is_folder=(item.item_type == "folder"),
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if response.get("success") or response.get("status") == "success":
+                # Formatear la información
+                data = response.get("data") or response
+                info = f"═══ PROPIEDADES ═══\n\n"
+                info += f"Nombre: {data.get('name', item.name)}\n"
+                info += f"Tipo: {'Carpeta' if data.get('is_dir') else 'Archivo'}\n"
+                info += f"Tamaño: {self._format_size(data.get('size_bytes', 0))}\n"
+                info += f"Permisos: {data.get('mode', 'N/A')}\n"
+                info += f"Modificado: {data.get('mod_time', 'N/A')}\n"
+                info += f"Ruta: {data.get('path', item.id)}\n\n"
+                info += f"═══ INFORMACIÓN DEL SISTEMA ═══\n\n"
+                info += f"{data.get('file_output', 'No disponible')}\n"
+
+                self.properties_info = info
+                return rx.toast.success("Propiedades cargadas")
+            else:
+                error_msg = response.get("mensaje") or response.get("error", "Error desconocido")
+                self.properties_info = f"Error al obtener propiedades: {error_msg}"
+                return rx.toast.error(f"Error: {error_msg}")
+
+        except Exception as e:
+            logger.error(f"Error en cargar_propiedades: {e}")
+            self.properties_info = f"Error: {str(e)}"
+            return rx.toast.error(f"Error: {str(e)}")
 
     def set_version_protected(self, val: bool):
         """Cambia la protección de la versión seleccionada.
@@ -600,6 +1336,9 @@ class ExploradorState(rx.State):
         self.id_organizacion = org_id
         self.access_token = access_token
         self.session_token = session_token
+
+        # Recargar permisos para el nuevo proyecto
+        self._load_permissions_from_database()
 
         # Cargar desde API
         if self.access_token and self.session_token and self.id_proyecto > 0:
@@ -967,7 +1706,7 @@ def render_item_with_context_menu(item: FolderItem):
                     item.depth == 1,
                     rx.fragment(
                         rx.context_menu.item(
-                            rx.hstack(rx.icon(tag="lock-open", size=16), rx.text("Abrir"), spacing="2"),
+                            rx.hstack(rx.icon(tag="folder-open", size=16), rx.text("Abrir"), spacing="2"),
                             on_click=lambda: ExploradorState.abrir_version(item),
                         ),
                         rx.context_menu.item(

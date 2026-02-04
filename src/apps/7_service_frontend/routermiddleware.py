@@ -869,6 +869,57 @@ class RouterMiddleware:
             session_id=session_id,
         )
 
+    def generate_file_operation_token(
+        self,
+        session: SessionContext,
+        project_id: int,
+        version_id: int,
+        operation: str,
+        relative_path: str = "",
+        ttl_seconds: int = 300,
+    ) -> dict[str, Any]:
+        """Genera un token JWT temporal para operaciones de archivo (upload/download).
+
+        Args:
+            session: Contexto de sesión del usuario
+            project_id: ID del proyecto
+            version_id: ID de la versión
+            operation: Tipo de operación ("upload" o "download")
+            relative_path: Ruta relativa dentro de la versión
+            ttl_seconds: Tiempo de vida del token en segundos (default: 5 minutos)
+
+        Returns:
+            Dict con el token y metadata
+        """
+        now = int(time.time())
+        exp = now + ttl_seconds
+        jti = str(uuid.uuid4())
+
+        payload = {
+            "user_id": session.user_id,
+            "organization_id": session.organization_id,
+            "identity_type_id": session.identity_type_id,
+            "project_id": project_id,
+            "version_id": version_id,
+            "operation": operation,
+            "relative_path": relative_path,
+            "iat": now,
+            "exp": exp,
+            "jti": jti,
+        }
+
+        token = _encode_jwt(
+            payload,
+            self._jwt_settings.access_secret,
+            self._jwt_settings.algorithm
+        )
+
+        return {
+            "token": token,
+            "expires_at": exp,
+            "expires_in": ttl_seconds,
+        }
+
     def _load_users(self, data_path: Path) -> list[UserDto]:
         """Carga los usuarios desde la fuente de datos configurada.
 

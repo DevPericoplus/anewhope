@@ -16,6 +16,18 @@ import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
+# Cargar función de configuración de entorno
+_repo_root = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(_repo_root / "src"))
+
+# Import with sys.path manipulation for directories starting with digits
+import importlib.util
+_env_settings_path = _repo_root / "src" / "2_shared_application" / "config" / "env_settings.py"
+_spec = importlib.util.spec_from_file_location("env_settings", _env_settings_path)
+_env_settings_module = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_env_settings_module)
+get_env_value = _env_settings_module.get_env_value
+
 try:
     from .broker_backend_client import BrokerBackendClient
     from .interfacetobackend import BackendCommunicationError, InterfaceToBackend
@@ -1625,6 +1637,26 @@ class CreateVersionFullResponse(BaseModel):
     mensaje: str | None = None
 
 
+class GenerateFileTokenRequest(BaseModel):
+    """Request para generar token de operación de archivo."""
+
+    project_id: int
+    version_id: int
+    operation: str  # "upload" o "download"
+    relative_path: str = ""  # Ruta relativa dentro de la versión
+
+
+class GenerateFileTokenResponse(BaseModel):
+    """Response con token de operación de archivo."""
+
+    success: bool
+    token: str
+    fmanagement_url: str
+    expires_in: int
+    expires_at: int
+    mensaje: str | None = None
+
+
 class ProjectDto(BaseModel):
     """DTO de proyecto.
     
@@ -2707,3 +2739,64 @@ def fmanagement_transfer_endpoint(
         return FmanagementOperationResponse(**response)
     except BusinessRuleError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/files/generate-token",
+    response_model=GenerateFileTokenResponse,
+    tags=["files"],
+)
+def generate_file_token_endpoint(
+    request: GenerateFileTokenRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> GenerateFileTokenResponse:
+    """Genera un token JWT temporal para operaciones de archivo (upload/download).
+
+    Este endpoint valida los permisos del usuario y genera un token de corta duración
+    (5 minutos) que permite realizar operaciones directas con fmanagement sin pasar
+    por múltiples capas del sistema.
+
+    Validaciones de seguridad:
+    - Verifica que el usuario tenga permisos de archivo (file_create o file_read)
+    - Valida que el usuario pertenezca a la organización del proyecto
+    - Genera token con información de organización para validación en fmanagement
+    """
+    try:
+        # Validar permisos según la operación
+        permission_key = "file_create" if request.operation == "upload" else "file_read"
+        if not router.has_low_level_permission(session, permission_key):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Usuario sin permiso para {request.operation}"
+            )
+
+        # Generar token temporal
+        token_data = router.generate_file_operation_token(
+            session=session,
+            project_id=request.project_id,
+            version_id=request.version_id,
+            operation=request.operation,
+            relative_path=request.relative_path,
+            ttl_seconds=300,  # 5 minutos
+        )
+
+        # Obtener URL de fmanagement desde configuración del entorno
+        fmanagement_url = get_env_value("fmanagement_base_url", "http://localhost:1666")
+
+        return GenerateFileTokenResponse(
+            success=True,
+            token=token_data["token"],
+            fmanagement_url=fmanagement_url,
+            expires_in=token_data["expires_in"],
+            expires_at=token_data["expires_at"],
+            mensaje="Token generado exitosamente"
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error generando token de archivo: {exc}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generando token: {str(exc)}"
+        ) from exc

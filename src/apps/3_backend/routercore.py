@@ -3232,7 +3232,13 @@ class BackendCoreRouter:
         )
 
         try:
+            # Import using relative path since this is within 3_backend package
+            import sys
+            from pathlib import Path
+            _backend_root = Path(__file__).parent
+            sys.path.insert(0, str(_backend_root))
             from clients.fmanagement_client import FmanagementClient
+            sys.path.pop(0)
 
             fmanagement_config = load_fmanagement_settings()
             base_url = fmanagement_config.base_url
@@ -3257,30 +3263,27 @@ class BackendCoreRouter:
                 else:
                     params["filename"] = full_path
 
-            # Mapear operación a método del cliente o endpoint genérico
+            # Mapear operación a método del cliente
             result = None
             if operation == "create_folder":
-                if "folder_name" not in params and "path" in params:
-                    params["folder_name"] = params["path"]
-                result = client.request_json("POST", "/fmo/createfolder", form=params)
+                result = client.create_folder(**params)
+            elif operation == "rename_folder":
+                result = client.rename_folder(**params)
             elif operation == "delete_folder":
-                result = client.request_json("DELETE", "/fmo/deletefolder", params=params)
+                result = client.delete_folder(**params)
+            elif operation == "create_file":
+                result = client.create_file(**params)
+            elif operation == "rename_file":
+                result = client.rename_file(**params)
             elif operation == "delete_file":
-                result = client.request_json("DELETE", "/fmo/deletefile", params=params)
+                result = client.delete_file(**params)
             elif operation == "download_file" or operation == "read_file":
-                result = client.request_json("GET", "/fmo", params=params)
-            elif operation == "diff_version" or operation == "diff":
-                if "v1" in params: params["versionpath"] = params.pop("v1")
-                if "v2" in params: params["compare_versionpath"] = params.pop("v2")
-                result = client.request_json("GET", "/fmo/diffversion", params=params)
-            elif operation == "transfer_version" or operation == "transfer":
-                if "target" in params: params["target_type"] = params.pop("target")
-                result = client.request_json("POST", "/fmo/transferversion", form=params)
+                result = client.download_file(**params)
             elif operation == "create_version":
                 result = client.create_version(**params)
             else:
-                # Fallback genérico para otras operaciones (create_file, rename_file, etc.)
-                result = client.request_json("POST", "/fmo", form=params)
+                # Operación no soportada
+                raise ValueError(f"Operación no soportada: {operation}")
             
             # Si el resultado es binario (download_file), lo devolvemos tal cual para apicore.py
             if isinstance(result, dict) and result.get("is_binary"):

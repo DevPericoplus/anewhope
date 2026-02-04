@@ -2134,11 +2134,459 @@ def fmanagement_transfer(
 ) -> dict[str, Any]:
     """Transfiere versiones vía fmanagement."""
     headers = _build_auth_headers(access_token, session_token)
-    
+
     response = _request_middleware(
         "POST",
         "/fmanagement/transfer",
         headers=headers,
         payload=params,
+    )
+    return dict(response) if isinstance(response, dict) else {"success": False}
+
+
+def generate_file_upload_token(
+    project_id: int,
+    version_id: int,
+    relative_path: str = "",
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Genera un token JWT temporal para subida de archivos.
+
+    Args:
+        project_id: ID del proyecto
+        version_id: ID de la versión
+        relative_path: Ruta relativa dentro de la versión
+        access_token: Token de acceso del usuario
+        session_token: Token de sesión del usuario
+
+    Returns:
+        Dict con:
+        - success: bool
+        - token: str (JWT token)
+        - fmanagement_url: str (URL de fmanagement)
+        - expires_in: int (segundos)
+        - expires_at: int (timestamp)
+    """
+    headers = _build_auth_headers(access_token, session_token)
+
+    payload = {
+        "project_id": project_id,
+        "version_id": version_id,
+        "operation": "upload",
+        "relative_path": relative_path,
+    }
+
+    response = _request_middleware(
+        "POST",
+        "/files/generate-token",
+        headers=headers,
+        payload=payload,
+    )
+    return dict(response) if isinstance(response, dict) else {"success": False}
+
+
+def generate_file_download_token(
+    project_id: int,
+    version_id: int,
+    filename: str,
+    relative_path: str = "",
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Genera un token JWT temporal para descarga de archivos.
+
+    Args:
+        project_id: ID del proyecto
+        version_id: ID de la versión
+        filename: Nombre del archivo a descargar
+        relative_path: Ruta relativa dentro de la versión
+        access_token: Token de acceso del usuario
+        session_token: Token de sesión del usuario
+
+    Returns:
+        Dict con:
+        - success: bool
+        - token: str (JWT token)
+        - fmanagement_url: str (URL de fmanagement)
+        - expires_in: int (segundos)
+        - expires_at: int (timestamp)
+        - download_url: str (URL completa para descargar)
+    """
+    headers = _build_auth_headers(access_token, session_token)
+
+    payload = {
+        "project_id": project_id,
+        "version_id": version_id,
+        "operation": "download",
+        "relative_path": relative_path,
+    }
+
+    response = _request_middleware(
+        "POST",
+        "/files/generate-token",
+        headers=headers,
+        payload=payload,
+    )
+
+    # Si fue exitoso, construir la URL de descarga completa
+    if response.get("success") and response.get("token") and response.get("fmanagement_url"):
+        import urllib.parse
+        token = response["token"]
+        fmanagement_url = response["fmanagement_url"]
+        encoded_filename = urllib.parse.quote(filename)
+        download_url = f"{fmanagement_url}/download?token={token}&filename={encoded_filename}"
+        response["download_url"] = download_url
+
+    return dict(response) if isinstance(response, dict) else {"success": False}
+
+
+def fmanagement_create_folder(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    folder_path: str,
+    folder_name: str,
+    user_id: int,
+    identity_type_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Crea una carpeta en fmanagement.
+
+    Args:
+        org_id: ID de la organización
+        project_id: ID del proyecto
+        version_id: ID de la versión
+        folder_path: Ruta relativa donde crear la carpeta
+        folder_name: Nombre de la nueva carpeta
+        user_id: ID del usuario
+        identity_type_id: Tipo de identidad del usuario
+        access_token: Token de acceso
+        session_token: Token de sesión
+
+    Returns:
+        Dict con success, message, path
+    """
+    headers = _build_auth_headers(access_token, session_token)
+
+    # Construir ruta completa
+    org_folder = f"ORG{org_id:05d}"
+    prj_folder = f"PRJ{project_id:05d}"
+    version_folder = f"v{version_id:03d}"
+
+    # Si folder_path está vacío, crear en la raíz de la versión
+    subfolders = f"{folder_path}/{folder_name}" if folder_path else folder_name
+
+    payload = {
+        "operation": "create_folder",
+        "params": {
+            "iduser": user_id,
+            "orgpath": org_folder,
+            "prjpath": prj_folder,
+            "versionpath": version_folder,
+            "subfolders": subfolders,
+            "identity_type_id": identity_type_id,
+        }
+    }
+
+    response = _request_middleware(
+        "POST",
+        "/fmanagement/operation",
+        headers=headers,
+        payload=payload,
+    )
+    return dict(response) if isinstance(response, dict) else {"success": False}
+
+
+def fmanagement_rename_folder(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    folder_path: str,
+    old_name: str,
+    new_name: str,
+    user_id: int,
+    identity_type_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Renombra una carpeta en fmanagement.
+
+    Args:
+        org_id: ID de la organización
+        project_id: ID del proyecto
+        version_id: ID de la versión
+        folder_path: Ruta relativa de la carpeta
+        old_name: Nombre actual de la carpeta
+        new_name: Nuevo nombre de la carpeta
+        user_id: ID del usuario
+        identity_type_id: Tipo de identidad del usuario
+        access_token: Token de acceso
+        session_token: Token de sesión
+
+    Returns:
+        Dict con success, message, old, new
+    """
+    headers = _build_auth_headers(access_token, session_token)
+
+    org_folder = f"ORG{org_id:05d}"
+    prj_folder = f"PRJ{project_id:05d}"
+    version_folder = f"v{version_id:03d}"
+
+    # subfolders debe incluir el nombre actual
+    subfolders = f"{folder_path}/{old_name}" if folder_path else old_name
+
+    payload = {
+        "operation": "rename_folder",
+        "params": {
+            "iduser": user_id,
+            "orgpath": org_folder,
+            "prjpath": prj_folder,
+            "versionpath": version_folder,
+            "subfolders": subfolders,
+            "new_filename": new_name,
+            "identity_type_id": identity_type_id,
+        }
+    }
+
+    response = _request_middleware(
+        "POST",
+        "/fmanagement/operation",
+        headers=headers,
+        payload=payload,
+    )
+    return dict(response) if isinstance(response, dict) else {"success": False}
+
+
+def fmanagement_delete_folder(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    folder_path: str,
+    folder_name: str,
+    user_id: int,
+    identity_type_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Elimina una carpeta en fmanagement.
+
+    Args:
+        org_id: ID de la organización
+        project_id: ID del proyecto
+        version_id: ID de la versión
+        folder_path: Ruta relativa de la carpeta
+        folder_name: Nombre de la carpeta a eliminar
+        user_id: ID del usuario
+        identity_type_id: Tipo de identidad del usuario
+        access_token: Token de acceso
+        session_token: Token de sesión
+
+    Returns:
+        Dict con success, message, path
+    """
+    headers = _build_auth_headers(access_token, session_token)
+
+    org_folder = f"ORG{org_id:05d}"
+    prj_folder = f"PRJ{project_id:05d}"
+    version_folder = f"v{version_id:03d}"
+
+    subfolders = f"{folder_path}/{folder_name}" if folder_path else folder_name
+
+    payload = {
+        "operation": "delete_folder",
+        "params": {
+            "iduser": user_id,
+            "orgpath": org_folder,
+            "prjpath": prj_folder,
+            "versionpath": version_folder,
+            "subfolders": subfolders,
+            "identity_type_id": identity_type_id,
+        }
+    }
+
+    response = _request_middleware(
+        "POST",
+        "/fmanagement/operation",
+        headers=headers,
+        payload=payload,
+    )
+    return dict(response) if isinstance(response, dict) else {"success": False}
+
+
+def fmanagement_rename_file(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    file_path: str,
+    old_filename: str,
+    new_filename: str,
+    user_id: int,
+    identity_type_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Renombra un archivo en fmanagement.
+
+    Args:
+        org_id: ID de la organización
+        project_id: ID del proyecto
+        version_id: ID de la versión
+        file_path: Ruta relativa del archivo
+        old_filename: Nombre actual del archivo (con extensión)
+        new_filename: Nuevo nombre del archivo (con extensión)
+        user_id: ID del usuario
+        identity_type_id: Tipo de identidad del usuario
+        access_token: Token de acceso
+        session_token: Token de sesión
+
+    Returns:
+        Dict con success, message, old, new
+    """
+    headers = _build_auth_headers(access_token, session_token)
+
+    org_folder = f"ORG{org_id:05d}"
+    prj_folder = f"PRJ{project_id:05d}"
+    version_folder = f"v{version_id:03d}"
+
+    # Extraer nombre y extensión del archivo actual
+    import os
+    name_part, ext_part = os.path.splitext(old_filename)
+    new_name_part, new_ext_part = os.path.splitext(new_filename)
+
+    payload = {
+        "operation": "rename_file",
+        "params": {
+            "iduser": user_id,
+            "orgpath": org_folder,
+            "prjpath": prj_folder,
+            "versionpath": version_folder,
+            "subfolders": file_path,
+            "filename": name_part,
+            "extfile": ext_part.lstrip('.'),
+            "new_filename": new_name_part,
+            "new_extfile": new_ext_part.lstrip('.'),
+            "operation": "rename",
+            "identity_type_id": identity_type_id,
+        }
+    }
+
+    response = _request_middleware(
+        "POST",
+        "/fmanagement/operation",
+        headers=headers,
+        payload=payload,
+    )
+    return dict(response) if isinstance(response, dict) else {"success": False}
+
+
+def fmanagement_delete_file(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    file_path: str,
+    filename: str,
+    user_id: int,
+    identity_type_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Elimina un archivo en fmanagement.
+
+    Args:
+        org_id: ID de la organización
+        project_id: ID del proyecto
+        version_id: ID de la versión
+        file_path: Ruta relativa del archivo
+        filename: Nombre del archivo a eliminar (con extensión)
+        user_id: ID del usuario
+        identity_type_id: Tipo de identidad del usuario
+        access_token: Token de acceso
+        session_token: Token de sesión
+
+    Returns:
+        Dict con success, message, path
+    """
+    headers = _build_auth_headers(access_token, session_token)
+
+    org_folder = f"ORG{org_id:05d}"
+    prj_folder = f"PRJ{project_id:05d}"
+    version_folder = f"v{version_id:03d}"
+
+    import os
+    name_part, ext_part = os.path.splitext(filename)
+
+    payload = {
+        "operation": "delete_file",
+        "params": {
+            "iduser": user_id,
+            "orgpath": org_folder,
+            "prjpath": prj_folder,
+            "versionpath": version_folder,
+            "subfolders": file_path,
+            "filename": name_part,
+            "extfile": ext_part.lstrip('.'),
+            "operation": "delete",
+            "identity_type_id": identity_type_id,
+        }
+    }
+
+    response = _request_middleware(
+        "POST",
+        "/fmanagement/operation",
+        headers=headers,
+        payload=payload,
+    )
+    return dict(response) if isinstance(response, dict) else {"success": False}
+
+
+def fmanagement_get_properties(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    item_path: str,
+    item_name: str,
+    is_folder: bool,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Obtiene las propiedades de un archivo o carpeta usando el comando 'file'.
+
+    Args:
+        org_id: ID de la organización
+        project_id: ID del proyecto
+        version_id: ID de la versión
+        item_path: Ruta relativa del elemento
+        item_name: Nombre del elemento
+        is_folder: True si es carpeta, False si es archivo
+        access_token: Token de acceso
+        session_token: Token de sesión
+
+    Returns:
+        Dict con propiedades: name, path, size_bytes, mode, mod_time, file_output
+    """
+    headers = _build_auth_headers(access_token, session_token)
+
+    org_folder = f"ORG{org_id:05d}"
+    prj_folder = f"PRJ{project_id:05d}"
+    version_folder = f"v{version_id:03d}"
+
+    payload = {
+        "operation": "get_properties",
+        "params": {
+            "orgpath": org_folder,
+            "prjpath": prj_folder,
+            "versionpath": version_folder,
+            "subfolders": item_path,
+            "filename": "" if is_folder else item_name,
+        }
+    }
+
+    response = _request_middleware(
+        "POST",
+        "/fmanagement/operation",
+        headers=headers,
+        payload=payload,
     )
     return dict(response) if isinstance(response, dict) else {"success": False}

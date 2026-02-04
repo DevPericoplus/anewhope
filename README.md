@@ -4582,6 +4582,139 @@ Frontend/Backoffice → Middleware → Broker → Backend Core → fmanagement
 2026-01-27 10:30:46 | INFO | [backoffice] | user_id=2 | action=create_training
 ```
 
+### Arquitectura de Seguridad para Operaciones de Archivos
+
+El sistema implementa un modelo de seguridad basado en **aislamiento absoluto por organización** para todas las operaciones de archivos (subida/descarga). Este es un principio de seguridad fundamental del sistema.
+
+#### Modelo de Aislamiento por Organización
+
+**Principio CRÍTICO de seguridad:**
+- Las organizaciones están **completamente aisladas** entre sí
+- Los clientes de una organización **NUNCA** pueden acceder al contenido de otra organización
+- Solo los usuarios de backoffice pueden acceder a todas las organizaciones
+- El super administrador (`identity_type_id=1`) controla qué usuarios internos pueden acceder a qué organizaciones
+
+**Control de acceso:**
+- Las asignaciones de organización para usuarios internos se almacenan en la base de datos `myllm_core_db`
+- La tabla `user_organization_management` define qué usuarios tienen acceso a qué organizaciones
+- Los usuarios de frontend están restringidos a su propia organización (`users.organization_id`)
+- Los usuarios de backoffice pueden acceder a múltiples organizaciones según sus asignaciones
+
+**Futuro:** El backoffice incluirá un selector de organización que permitirá a usuarios autorizados "impersonar" organizaciones específicas para ayudar a los clientes, manteniendo siempre la trazabilidad de las acciones.
+
+#### Estructura de Archivos en Disco
+
+Todos los archivos del sistema siguen una estructura jerárquica estricta:
+
+```
+/ORG{id_organizacion:5 dígitos}/PRJ{id_proyecto:5 dígitos}/v{id_version:3 dígitos}/{ruta_relativa}/{archivo}
+```
+
+**Ejemplos:**
+```
+/ORG00001/PRJ00001/v001/documentos/manual.pdf
+/ORG00001/PRJ00001/v012/src/main.py
+/ORG00002/PRJ00003/v005/data/dataset.csv
+```
+
+**Rutas base por entorno:**
+
+Las rutas base se definen en archivos de configuración específicos por entorno en `~/develop/fmanagement/env/<environment>/`:
+
+- **Desarrollo local:** `~/develop/fmanagement/env/local/`
+- **Pre-producción:** `~/develop/fmanagement/env/prepro/`
+- **Producción:** `~/develop/fmanagement/env/pro/`
+
+Cada archivo de configuración debe definir la ruta raíz del almacenamiento para ese entorno.
+
+#### Arquitectura de Conexión Directa para Archivos
+
+Para operaciones de subida y descarga de archivos, el sistema utiliza una arquitectura de **Conexión Directa con Validación de Token**:
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│              Flujo: Subida/Descarga de Archivos                    │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  1. Usuario solicita subida/descarga                                │
+│     Frontend/Backoffice                                             │
+│           │                                                         │
+│           ▼                                                         │
+│  2. Solicita token de acceso                                        │
+│     POST /api/files/generate-upload-token                           │
+│     → Middleware (7_service_frontend)                               │
+│           │                                                         │
+│           ▼                                                         │
+│  3. Valida permisos y genera token JWT temporal                     │
+│     - Verifica identity_type_id y permisos de archivo              │
+│     - Valida organización del usuario                               │
+│     - Genera JWT con: user_id, organization_id, project_id,        │
+│       version_id, operation, expiration (5 min)                     │
+│           │                                                         │
+│           ▼                                                         │
+│  4. Frontend recibe token y ruta del endpoint                       │
+│     {                                                               │
+│       "upload_token": "eyJhbG...",                                  │
+│       "upload_url": "http://localhost:1666/upload",                │
+│       "expires_in": 300                                             │
+│     }                                                               │
+│           │                                                         │
+│           ▼                                                         │
+│  5. CONEXIÓN DIRECTA a fmanagement                                  │
+│     POST http://localhost:1666/upload                               │
+│     Headers: Authorization: Bearer {upload_token}                   │
+│     Body: multipart/form-data con el archivo                        │
+│           │                                                         │
+│           ▼                                                         │
+│  6. fmanagement valida token y procesa archivo                      │
+│     - Decodifica y valida JWT                                       │
+│     - Verifica expiración (max 5 minutos)                           │
+│     - Verifica organización en el token vs ruta del archivo         │
+│     - Construye ruta: /ORG{org_id}/PRJ{prj_id}/v{ver_id}/...      │
+│     - Guarda archivo en disco                                       │
+│     - Retorna confirmación                                          │
+│                                                                     │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+**Ventajas de este enfoque:**
+- Transferencia directa de archivos sin pasar por múltiples capas
+- Tokens JWT de corta duración (5 minutos) minimizan ventana de riesgo
+- Validación de organización en cada capa
+- No sobrecarga el middleware/broker con transferencia de archivos grandes
+- Trazabilidad completa de quién generó el token y realizó la operación
+
+**Validaciones de seguridad en fmanagement:**
+1. Token JWT válido y no expirado
+2. Organización en el token coincide con la organización de la ruta del archivo
+3. Usuario tiene permisos para la operación (create/read según low_level_permissions)
+4. La ruta del archivo respeta la estructura esperada
+5. El archivo no excede límites de tamaño configurados
+
+#### Implementación Pendiente
+
+Las siguientes acciones requieren implementación siguiendo esta arquitectura:
+
+**Acciones de carpeta:**
+- Subir archivo (requiere conexión directa a fmanagement)
+- Descargar (requiere conexión directa a fmanagement)
+- Crear Carpeta
+- Renombrar
+- Eliminar
+- Propiedades
+
+**Acciones de archivo:**
+- Descargar (requiere conexión directa a fmanagement)
+- Renombrar
+- Eliminar
+- Propiedades
+
+Todas estas acciones deben:
+1. Verificar permisos via `low_level_permissions` antes de generar tokens
+2. Validar que el usuario tiene acceso a la organización del proyecto
+3. Generar tokens JWT de corta duración para operaciones directas
+4. Registrar todas las operaciones en logs con trazabilidad completa
+
 ## Estructura de almacenamiento (helpers)
 
 En `src/2_shared_application/storage_access_structure.py` se definen helpers
@@ -5301,3 +5434,412 @@ FLUSH PRIVILEGES;
 ## Roles y automatización (referencia)
 
 Los roles Ansible importados se encuentran en el repositorio `anh_ansible`. Incluyen BIND, NTPD, NTPDATE, MariaDB, Nginx, Postfix, entre otros, y sirven como apoyo para el despliegue de la plataforma.
+
+### Sistema de Permisos del Explorador
+
+El componente Explorador implementa un **sistema de permisos específicos por proyecto** que determina qué acciones puede realizar cada usuario en los menús contextuales de carpetas y archivos. Los permisos se cargan dinámicamente desde la base de datos basándose en el rol del usuario en cada proyecto.
+
+#### Arquitectura de Permisos
+
+**Principio fundamental:** Cada usuario puede tener **diferentes roles en diferentes proyectos**.
+
+```
+Usuario "juan"
+  ├─ Proyecto A: Editor (puede crear, editar, eliminar)
+  ├─ Proyecto B: Lector (solo lectura)
+  └─ Proyecto C: Auditor (lectura limitada para auditoría)
+```
+
+#### Tablas Involucradas
+
+**1. `myllm_projects_db.proyectos_roles`**
+
+Almacena la asignación de roles por usuario y proyecto:
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `id_usuario` | INT | ID del usuario |
+| `id_proyecto` | INT | ID del proyecto |
+| `id_organizacion` | INT | ID de la organización |
+| `id_rol` | INT | ID del rol (3=Editor, 4=Lector, 5=Auditor) |
+| `active` | TINYINT | Si la asignación está activa |
+
+**2. `myllm_core_db.low_level_permissions`**
+
+Define los permisos granulares por rol:
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `id_permissions` | INT | ID del rol (PK) |
+| `folder_create` | TINYINT | Puede crear carpetas |
+| `folder_delete` | TINYINT | Puede eliminar carpetas |
+| `folder_rename` | TINYINT | Puede renombrar carpetas |
+| `folder_read` | TINYINT | Puede ver propiedades de carpetas |
+| `folder_list` | TINYINT | Puede listar contenido de carpetas |
+| `file_create` | TINYINT | Puede subir archivos |
+| `file_read` | TINYINT | Puede descargar archivos |
+| `file_update` | TINYINT | Puede modificar archivos |
+| `file_delete` | TINYINT | Puede eliminar archivos |
+| `file_list` | TINYINT | Puede listar archivos |
+| `version_create` | TINYINT | Puede crear versiones (admin) |
+
+#### Flujo de Carga de Permisos
+
+```
+1. Usuario selecciona un proyecto en el explorador
+   └─> ExploradorState.init_page(project_id)
+
+2. Cargar perfil de seguridad
+   └─> ExploradorState.load_security_profile()
+       ├─> Obtener user_id, organization_id del MainState
+       └─> Llamar _load_permissions_from_database()
+
+3. Consultar rol del usuario en el proyecto
+   └─> Query: proyectos_roles WHERE user_id AND project_id AND org_id
+       └─> Obtener: id_rol
+
+4. Consultar permisos del rol
+   └─> Query: low_level_permissions WHERE id_permissions = id_rol
+       └─> Obtener: {folder_create: true, file_create: true, ...}
+
+5. Actualizar matriz de permisos en memoria
+   └─> ExploradorState.permisos = {...}
+
+6. Los menús contextuales usan rx.cond() para mostrar opciones
+   └─> rx.cond(ExploradorState.can_folder_create, mostrar_opcion, ocultar)
+```
+
+#### Permisos por Defecto (Fallback)
+
+Si no se pueden cargar permisos desde la base de datos (por ejemplo, en modo desarrollo o si faltan datos), el explorador usa **permisos por defecto** con todos los permisos habilitados:
+
+```python
+def _set_default_permissions(self):
+    """Establece permisos por defecto para desarrollo."""
+    self.permisos = {
+        "folder_create": True,
+        "folder_delete": True,
+        "folder_rename": True,
+        "folder_read": True,
+        "folder_list": True,
+        "file_create": True,
+        "file_read": True,
+        "file_update": True,
+        "file_delete": True,
+        "file_list": True,
+        "version_create": True,
+    }
+    self.is_admin = True
+```
+
+**Casos en los que se usan permisos por defecto:**
+
+- ✅ No se puede obtener `user_id` del estado principal
+- ✅ No hay configuración de base de datos disponible
+- ✅ Usuario no tiene asignación en `proyectos_roles`
+- ✅ Rol no existe en `low_level_permissions`
+- ✅ Error de conexión a la base de datos
+
+#### Matriz de Permisos por Rol
+
+| Permiso | Editor (3) | Lector (4) | Auditor (5) |
+|---------|------------|------------|-------------|
+| **Carpetas** |
+| `folder_create` | ✅ Sí | ❌ No | ❌ No |
+| `folder_delete` | ✅ Sí | ❌ No | ❌ No |
+| `folder_rename` | ✅ Sí | ❌ No | ❌ No |
+| `folder_read` | ✅ Sí | ✅ Sí | ✅ Sí |
+| `folder_list` | ✅ Sí | ✅ Sí | ✅ Sí |
+| **Archivos** |
+| `file_create` | ✅ Sí | ❌ No | ❌ No |
+| `file_read` | ✅ Sí | ✅ Sí | ✅ Sí |
+| `file_update` | ✅ Sí | ❌ No | ❌ No |
+| `file_delete` | ✅ Sí | ❌ No | ❌ No |
+| `file_list` | ✅ Sí | ✅ Sí | ✅ Sí |
+| **Versiones** |
+| `version_create` | ✅ Sí | ❌ No | ❌ No |
+
+#### Menús Contextuales según Permisos
+
+Los menús contextuales del explorador usan `rx.cond()` para mostrar opciones solo si el usuario tiene el permiso correspondiente:
+
+**Para versiones (depth == 1):**
+
+```python
+rx.context_menu.content(
+    # Siempre visible (acciones básicas)
+    rx.context_menu.item("Abrir", on_click=...),
+    rx.context_menu.item("Bloquear", on_click=...),
+    
+    # Condicional según permisos
+    rx.cond(
+        ExploradorState.can_file_create,
+        rx.context_menu.item("Subir archivo", on_click=...),
+    ),
+)
+```
+
+**Para carpetas:**
+
+```python
+rx.context_menu.content(
+    # Crear carpeta (solo si tiene permiso)
+    rx.cond(
+        ExploradorState.can_folder_create & ~item.is_blocked,
+        rx.context_menu.item("Crear Carpeta", on_click=...),
+    ),
+    
+    # Subir archivo (solo si tiene permiso)
+    rx.cond(
+        ExploradorState.can_file_create & ~item.is_blocked,
+        rx.context_menu.item("Subir archivo", on_click=...),
+    ),
+    
+    # Renombrar (solo si tiene permiso y no está protegida)
+    rx.cond(
+        ExploradorState.can_folder_rename & ~item.is_protected & ~item.is_blocked,
+        rx.context_menu.item("Renombrar", on_click=...),
+    ),
+    
+    # Eliminar (solo si tiene permiso y no está protegida)
+    rx.cond(
+        ExploradorState.can_folder_delete & ~item.is_protected & ~item.is_blocked,
+        rx.context_menu.item("Eliminar", on_click=...),
+    ),
+    
+    # Propiedades (siempre visible si puede leer)
+    rx.cond(
+        ExploradorState.can_folder_read,
+        rx.context_menu.item("Propiedades", on_click=...),
+    ),
+)
+```
+
+**Para archivos:**
+
+```python
+rx.context_menu.content(
+    # Descargar (solo si puede leer)
+    rx.cond(
+        ExploradorState.can_file_read,
+        rx.context_menu.item("Descargar", on_click=...),
+    ),
+    
+    # Renombrar (solo si puede actualizar)
+    rx.cond(
+        ExploradorState.can_file_update,
+        rx.context_menu.item("Renombrar", on_click=...),
+    ),
+    
+    # Eliminar (solo si puede eliminar)
+    rx.cond(
+        ExploradorState.can_file_delete,
+        rx.context_menu.item("Eliminar", on_click=...),
+    ),
+    
+    # Propiedades (siempre visible si puede leer)
+    rx.cond(
+        ExploradorState.can_file_read,
+        rx.context_menu.item("Propiedades", on_click=...),
+    ),
+)
+```
+
+#### Propiedades Computadas de Permisos
+
+El `ExploradorState` expone los permisos como propiedades computadas (`@rx.var`) que pueden usarse directamente en los componentes:
+
+```python
+@rx.var
+def can_folder_create(self) -> bool:
+    """Permiso para crear carpetas."""
+    return self.permisos.get("folder_create", False)
+
+@rx.var
+def can_folder_rename(self) -> bool:
+    """Permiso para renombrar carpetas."""
+    return self.permisos.get("folder_rename", False)
+
+@rx.var
+def can_folder_delete(self) -> bool:
+    """Permiso para eliminar carpetas."""
+    return self.permisos.get("folder_delete", False)
+
+@rx.var
+def can_file_create(self) -> bool:
+    """Permiso para subir archivos."""
+    return self.permisos.get("file_create", False)
+
+@rx.var
+def can_file_read(self) -> bool:
+    """Permiso para descargar archivos."""
+    return self.permisos.get("file_read", False)
+
+@rx.var
+def can_file_update(self) -> bool:
+    """Permiso para modificar archivos."""
+    return self.permisos.get("file_update", False)
+
+@rx.var
+def can_file_delete(self) -> bool:
+    """Permiso para eliminar archivos."""
+    return self.permisos.get("file_delete", False)
+```
+
+#### Actualización de Permisos al Cambiar de Proyecto
+
+Cuando el usuario cambia de proyecto, los permisos se recargan automáticamente:
+
+```python
+def reload_project_with_tokens(self, project_id: int, org_id: int, ...):
+    """Recarga el explorador con un nuevo proyecto."""
+    # Actualizar IDs
+    self.id_proyecto = project_id
+    self.id_organizacion = org_id
+    
+    # Recargar permisos para el nuevo proyecto
+    self._load_permissions_from_database()
+    
+    # Cargar datos del proyecto
+    self.load_from_api()
+```
+
+#### Logging y Diagnóstico
+
+El sistema de permisos incluye logging detallado con emojis para facilitar el diagnóstico:
+
+```
+✓ Datos de sesión obtenidos: user_id=1, org_id=1, project_id=1
+→ Consultando permisos en BD para user_id=1, project_id=1, org_id=1
+✓ Rol encontrado: id_rol=3
+✓ Permisos cargados desde BD: folder_create=True, file_create=True, is_admin=True
+```
+
+**En caso de error:**
+
+```
+⚠ No se encontró rol para user_id=1, project_id=1 - usando permisos por defecto
+✓ Permisos por defecto establecidos: todos los permisos habilitados
+```
+
+#### Tests de Integración
+
+**Archivo:** `src/apps/5_web_frontend/tests/test_explorador_permissions.py`
+
+Los tests verifican:
+
+1. ✅ **Carga de permisos desde BD**: Usuario tiene rol en `proyectos_roles`
+2. ✅ **Permisos por rol**: Editor tiene permisos de edición, Lector solo lectura
+3. ✅ **Permisos específicos por proyecto**: Mismo usuario, diferentes roles
+4. ✅ **Estructura de tablas**: `proyectos_roles` y `low_level_permissions`
+5. ✅ **Matriz de permisos**: Editor vs Lector vs Auditor
+
+**Ejecutar tests:**
+
+```bash
+cd src/apps/5_web_frontend
+pytest tests/test_explorador_permissions.py -v -s
+```
+
+**Tests específicos por rol:**
+
+```bash
+# Verificar permisos de Editor
+pytest tests/test_explorador_permissions.py::test_editor_permissions -v
+
+# Verificar permisos de Lector
+pytest tests/test_explorador_permissions.py::test_lector_permissions -v
+
+# Verificar permisos de Auditor
+pytest tests/test_explorador_permissions.py::test_auditor_permissions -v
+```
+
+#### Asignación de Roles a Usuarios
+
+Para asignar un rol a un usuario en un proyecto:
+
+```sql
+-- Asignar rol de Editor (3) a usuario en proyecto
+INSERT INTO myllm_projects_db.proyectos_roles
+(id_usuario, id_proyecto, id_organizacion, id_rol, active)
+VALUES (1, 1, 1, 3, 1)
+ON DUPLICATE KEY UPDATE id_rol = 3, active = 1;
+
+-- Verificar asignación
+SELECT u.user_name, p.nombre AS proyecto, pr.id_rol,
+       CASE pr.id_rol
+           WHEN 3 THEN 'Editor'
+           WHEN 4 THEN 'Lector'
+           WHEN 5 THEN 'Auditor'
+       END AS rol_nombre
+FROM myllm_projects_db.proyectos_roles pr
+INNER JOIN myllm_core_db.users u ON pr.id_usuario = u.user_id
+INNER JOIN myllm_projects_db.proyectos p ON pr.id_proyecto = p.id
+WHERE pr.id_usuario = 1 AND pr.id_organizacion = 1;
+```
+
+#### Archivos Clave
+
+**Backend/BD:**
+- `infrastructure/database/migrations/004_proyectos_roles_table.sql` - Tabla de asignación de roles
+- `src/2_shared_application/moks/low_level_permisions.json` - Definición de permisos por rol
+
+**Frontend/Explorador:**
+- `src/apps/5_web_frontend/components/explorador.py:246-356` - Sistema de permisos
+- `src/apps/5_web_frontend/components/explorador.py:1666-1773` - Menús contextuales
+- `src/2_shared_application/reflex_shared/shared_session_state.py` - Estado compartido con permisos
+
+**Tests:**
+- `src/apps/5_web_frontend/tests/test_explorador_permissions.py` - Tests de permisos
+- `src/apps/5_web_frontend/tests/test_explorador_version_state.py` - Tests de estados
+- `src/apps/5_web_frontend/tests/test_explorador_file_actions.py` - Tests de operaciones
+
+#### Resolución de Problemas
+
+**Problema:** Menús contextuales aparecen vacíos
+
+**Diagnóstico:**
+1. Verificar que los logs muestran permisos cargados:
+   ```
+   ✓ Permisos cargados desde BD: folder_create=True, ...
+   ```
+2. Si aparece advertencia de fallback:
+   ```
+   ⚠ No se encontró rol para user_id=X, project_id=Y
+   ```
+   Entonces el usuario no tiene rol asignado en `proyectos_roles`.
+
+**Solución:**
+```sql
+-- Asignar rol de Editor al usuario
+INSERT INTO myllm_projects_db.proyectos_roles
+(id_usuario, id_proyecto, id_organizacion, id_rol, active)
+VALUES (1, 1, 1, 3, 1);
+```
+
+**Problema:** Usuario tiene permisos incorrectos
+
+**Diagnóstico:**
+1. Verificar rol asignado:
+   ```sql
+   SELECT id_rol FROM myllm_projects_db.proyectos_roles
+   WHERE id_usuario = 1 AND id_proyecto = 1 AND id_organizacion = 1;
+   ```
+2. Verificar permisos del rol:
+   ```sql
+   SELECT * FROM myllm_core_db.low_level_permissions
+   WHERE id_permissions = 3;
+   ```
+
+**Solución:**
+- Actualizar `id_rol` en `proyectos_roles` si está incorrecto
+- Modificar permisos en `low_level_permissions` si el rol tiene permisos incorrectos
+
+#### Mejoras Futuras
+
+- [ ] Cache de permisos en Redis para mejorar rendimiento
+- [ ] Permisos temporales con fecha de expiración
+- [ ] Permisos a nivel de carpeta específica (no solo proyecto)
+- [ ] Auditoría de cambios de permisos con registro en `audit_log`
+- [ ] Interface administrativa para gestionar roles desde el backoffice
+
