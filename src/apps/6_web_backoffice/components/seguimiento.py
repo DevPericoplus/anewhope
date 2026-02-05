@@ -3,7 +3,7 @@ Componente Seguimiento para Web Backoffice (Interno)
 
 Integra:
 1. Notificaciones (template completo)
-2. Calendario (template completo)
+2. Calendario (template completo con integración cambios)
 3. Visor de Tickets (custom - vista interna)
 """
 
@@ -65,6 +65,21 @@ def _load_conversaciones_adapter():
     return adapter_module
 
 
+def _load_cambios_adapter():
+    """Carga el adapter de cambios (calendario) usando importlib."""
+    adapter_path = (
+        Path(__file__).resolve().parents[3]
+        / "2_shared_application/adapters/cambios_adapter.py"
+    )
+    spec = importlib.util.spec_from_file_location("cambios_adapter", adapter_path)
+    if spec is None or spec.loader is None:
+        raise ImportError("No se pudo cargar el adaptador de cambios")
+
+    adapter_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(adapter_module)
+    return adapter_module
+
+
 # ============================================================================
 # CALENDARIO (desde template)
 # ============================================================================
@@ -75,6 +90,9 @@ class DayInfo(pydantic.BaseModel):
     has_event: bool = False
     is_today: bool = False
     events: list[dict] = []
+    event_color: str = "transparent"
+    tooltip_text: str = ""
+    is_mixed: bool = False  # True si hay eventos cliente + interno
 
 
 # ============================================================================
@@ -116,6 +134,24 @@ class SeguimientoState(rx.State):
     selected_year: str = str(datetime.datetime.now().year)
     selected_month: str = month_names[datetime.datetime.now().month - 1]
     events_data: list[dict] = []
+
+    # Selectores para calendario (backoffice)
+    organizaciones_calendario: list[dict] = []
+    selected_org_calendario: int = 0
+    selected_org_nombre: str = ""
+    proyectos_calendario: list[dict] = []
+    selected_proyecto_calendario: int = 0
+    selected_proyecto_nombre: str = "Todos"
+
+    @rx.var
+    def org_calendario_names(self) -> list[str]:
+        """Nombres de organizaciones para el selector."""
+        return [org["nombre"] for org in self.organizaciones_calendario]
+
+    @rx.var
+    def proyecto_calendario_names(self) -> list[str]:
+        """Nombres de proyectos para el selector."""
+        return ["Todos"] + [p["nombre"] for p in self.proyectos_calendario]
 
     # === TICKETS ===
     tickets_list: list[dict] = []
@@ -441,16 +477,160 @@ class SeguimientoState(rx.State):
 
     # === MÉTODOS CALENDARIO ===
 
-    def load_events_data(self):
-        """Adapter to load events (placeholder)."""
-        self.events_data = []
+    async def load_organizaciones_calendario(self):
+        """Carga las organizaciones asignadas al usuario interno (backoffice)."""
+        print("[DEBUG CALENDARIO] load_organizaciones_calendario INICIADO")
+        engine = await self._get_db_engine()
+        if not engine:
+            print("[DEBUG CALENDARIO] No se pudo obtener engine")
+            return
+
+        try:
+            from web_backoffice.web_backoffice import State as MainState
+            cambios_adapter = _load_cambios_adapter()
+
+            main_state = await self.get_state(MainState)
+            user_id = main_state.user_id
+            print(f"[DEBUG CALENDARIO] user_id={user_id}")
+
+            # Obtener organizaciones asignadas al usuario interno
+            organizaciones = cambios_adapter.obtener_organizaciones_internas_usuario(
+                engine=engine,
+                id_usuario=user_id
+            )
+
+            self.organizaciones_calendario = organizaciones
+            print(f"[DEBUG CALENDARIO] Organizaciones cargadas: {len(organizaciones)}")
+            for org in organizaciones:
+                print(f"[DEBUG CALENDARIO]   - {org['nombre']} (ID: {org['id']})")
+
+            # Si hay organizaciones, seleccionar la primera
+            if organizaciones:
+                self.selected_org_calendario = organizaciones[0]["id"]
+                self.selected_org_nombre = organizaciones[0]["nombre"]
+                print(f"[DEBUG CALENDARIO] Organización seleccionada: {self.selected_org_nombre} (ID: {self.selected_org_calendario})")
+                await self.load_proyectos_calendario()
+                await self.load_events_data()
+
+        except Exception as e:
+            print(f"[ERROR CALENDARIO] Error al cargar organizaciones: {e}")
+            import traceback
+            traceback.print_exc()
+
+    async def load_proyectos_calendario(self):
+        """Carga los proyectos de la organización seleccionada."""
+        if self.selected_org_calendario == 0:
+            self.proyectos_calendario = []
+            return
+
+        engine = await self._get_db_engine()
+        if not engine:
+            return
+
+        try:
+            cambios_adapter = _load_cambios_adapter()
+
+            # Obtener proyectos de la organización
+            proyectos = cambios_adapter.obtener_proyectos_organizacion(
+                engine=engine,
+                id_organizacion=self.selected_org_calendario
+            )
+
+            self.proyectos_calendario = proyectos
+
+            # Resetear selección de proyecto
+            self.selected_proyecto_calendario = 0
+
+            # Recargar eventos con la nueva organización
+            await self.load_events_data()
+
+        except Exception as e:
+            print(f"[ERROR] Error al cargar proyectos para calendario: {e}")
+            import traceback
+            traceback.print_exc()
+
+    async def load_events_data(self):
+        """Carga eventos del calendario desde la tabla cambios."""
+        print("[DEBUG CALENDARIO] load_events_data INICIADO")
+        if self.selected_org_calendario == 0:
+            print("[DEBUG CALENDARIO] No hay organización seleccionada, saltando carga de eventos")
+            self.events_data = []
+            return
+
+        engine = await self._get_db_engine()
+        if not engine:
+            print("[DEBUG CALENDARIO] No se pudo obtener engine")
+            self.events_data = []
+            return
+
+        try:
+            cambios_adapter = _load_cambios_adapter()
+
+            # Obtener mes y año seleccionados
+            mes = self._month_map.get(self.selected_month, datetime.datetime.now().month)
+            anio = int(self.selected_year)
+
+            # Determinar id_proyecto (None o el seleccionado)
+            id_proyecto = self.selected_proyecto_calendario if self.selected_proyecto_calendario > 0 else None
+
+            print(f"[DEBUG CALENDARIO] Consultando eventos para:")
+            print(f"[DEBUG CALENDARIO]   org_id={self.selected_org_calendario}")
+            print(f"[DEBUG CALENDARIO]   mes={mes} ({self.selected_month})")
+            print(f"[DEBUG CALENDARIO]   año={anio}")
+            print(f"[DEBUG CALENDARIO]   proyecto_id={id_proyecto}")
+
+            # Obtener eventos agrupados por día
+            eventos = cambios_adapter.obtener_cambios_agrupados_por_dia(
+                engine=engine,
+                id_organizacion=self.selected_org_calendario,
+                mes=mes,
+                anio=anio,
+                id_proyecto=id_proyecto
+            )
+
+            self.events_data = eventos
+            print(f"[DEBUG CALENDARIO] Eventos cargados: {len(eventos)} días con eventos")
+            for evento in eventos[:3]:  # Mostrar primeros 3
+                print(f"[DEBUG CALENDARIO]   - {evento['date']}: {evento['count']} evento(s), color={evento['color']}")
+
+        except Exception as e:
+            print(f"[ERROR CALENDARIO] Error al cargar eventos: {e}")
+            import traceback
+            traceback.print_exc()
+            self.events_data = []
+
+    def set_org_calendario(self, org_nombre: str):
+        """Cambia la organización seleccionada y recarga proyectos y eventos."""
+        self.selected_org_nombre = org_nombre
+        # Buscar el ID de la organización por nombre
+        for org in self.organizaciones_calendario:
+            if org["nombre"] == org_nombre:
+                self.selected_org_calendario = org["id"]
+                break
+        return SeguimientoState.load_proyectos_calendario
+
+    def set_proyecto_calendario(self, proyecto_nombre: str):
+        """Cambia el proyecto seleccionado y recarga eventos."""
+        self.selected_proyecto_nombre = proyecto_nombre
+        if proyecto_nombre == "Todos":
+            self.selected_proyecto_calendario = 0
+        else:
+            # Buscar el ID del proyecto por nombre
+            for p in self.proyectos_calendario:
+                if p["nombre"] == proyecto_nombre:
+                    self.selected_proyecto_calendario = p["id"]
+                    break
+        return SeguimientoState.load_events_data
 
     @rx.var
     def month_days_with_events(self) -> list[list[DayInfo]]:
-        """Returns a matrix of DayInfo objects for the selected month."""
+        """Returns a matrix of DayInfo objects for the selected month with events."""
         try:
             y = int(self.selected_year)
             m = self._month_map.get(self.selected_month, 1)
+
+            print(f"[DEBUG CALENDARIO] month_days_with_events calculando para {self.selected_month}/{y}")
+            print(f"[DEBUG CALENDARIO] events_data tiene {len(self.events_data)} días con eventos")
 
             now = datetime.datetime.now()
             today_day = now.day
@@ -459,6 +639,18 @@ class SeguimientoState(rx.State):
 
             cal = calendar.Calendar(firstweekday=0)
             raw_weeks = cal.monthdayscalendar(y, m)
+
+            # Crear diccionario de eventos por día
+            events_by_day = {}
+            for event in self.events_data:
+                # event['date'] es una cadena en formato ISO (YYYY-MM-DD)
+                event_date = datetime.datetime.fromisoformat(event['date'])
+                if event_date.year == y and event_date.month == m:
+                    day_num = event_date.day
+                    events_by_day[day_num] = event
+                    print(f"[DEBUG CALENDARIO] Evento agregado para día {day_num}: color={event['color']}")
+
+            print(f"[DEBUG CALENDARIO] events_by_day tiene {len(events_by_day)} días")
 
             processed_weeks = []
             for week in raw_weeks:
@@ -470,28 +662,49 @@ class SeguimientoState(rx.State):
 
                     is_today = (day == today_day and m == today_month and y == today_year)
 
-                    processed_week.append(DayInfo(
-                        day=day,
-                        border_color="transparent",
-                        has_event=False,
-                        is_today=is_today,
-                        events=[]
-                    ))
+                    # Verificar si hay eventos para este día
+                    event_info = events_by_day.get(day)
+                    if event_info:
+                        processed_week.append(DayInfo(
+                            day=day,
+                            border_color="transparent",
+                            has_event=True,
+                            is_today=is_today,
+                            events=[],
+                            event_color=event_info.get('color', 'transparent'),
+                            tooltip_text=event_info.get('tooltip', ''),
+                            is_mixed=event_info.get('has_mixed', False)
+                        ))
+                    else:
+                        processed_week.append(DayInfo(
+                            day=day,
+                            border_color="transparent",
+                            has_event=False,
+                            is_today=is_today,
+                            events=[],
+                            event_color="transparent",
+                            tooltip_text="",
+                            is_mixed=False
+                        ))
                 processed_weeks.append(processed_week)
 
             return processed_weeks
 
         except Exception as e:
             print(f"Error calculando días: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
     def set_year(self, year: str):
         self.selected_year = year
         self.current_year = int(year)
+        return SeguimientoState.load_events_data
 
     def set_month(self, month: str):
         self.selected_month = month
         self.current_month = self._month_map.get(month, 1)
+        return SeguimientoState.load_events_data
 
     # === MÉTODOS TICKETS ===
 
@@ -603,6 +816,11 @@ class SeguimientoState(rx.State):
             print("[DEBUG BACKOFFICE] Llamando a load_conversaciones_organizacion...")
             await self.load_conversaciones_organizacion()
             print("[DEBUG BACKOFFICE] load_conversaciones_organizacion completado")
+
+            # Cargar organizaciones para calendario
+            print("[DEBUG BACKOFFICE] Llamando a load_organizaciones_calendario...")
+            await self.load_organizaciones_calendario()
+            print("[DEBUG BACKOFFICE] load_organizaciones_calendario completado")
 
         except Exception as e:
             print(f"[ERROR BACKOFFICE] Error al cargar proyectos: {e}")
@@ -1084,8 +1302,30 @@ def notificaciones_component() -> rx.Component:
 # ============================================================================
 
 def calendar_cell(day_info: DayInfo):
-    """Render a single day cell."""
-    cell_visual = rx.center(
+    """Render a single day cell with event colors and tooltips."""
+    # Determinar el background: evento, hoy, o transparent
+    bg_color = rx.cond(
+        day_info.has_event,
+        day_info.event_color,
+        rx.cond(
+            day_info.is_today,
+            "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+            "transparent"
+        )
+    )
+
+    # Box shadow para hoy o para eventos mixtos
+    box_shadow_value = rx.cond(
+        day_info.is_mixed,
+        "0 0 15px rgba(255, 215, 0, 0.8)",  # Dorado brillante para mixtos
+        rx.cond(
+            day_info.is_today,
+            "0 4px 10px rgba(118, 75, 162, 0.4)",
+            "none"
+        )
+    )
+
+    cell_content = rx.center(
         rx.cond(
             day_info.day == 0,
             rx.text(""),
@@ -1093,25 +1333,26 @@ def calendar_cell(day_info: DayInfo):
                 f"{day_info.day}",
                 font_weight="500",
                 color="white",
-                font_size="0.9em"
+                font_size="1.1em"
             )
         ),
-        width="28px",
-        height="28px",
-        border_radius="12px",
-        bg=rx.cond(
-            day_info.is_today,
-            "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-            "transparent"
-        ),
-        box_shadow=rx.cond(
-            day_info.is_today,
-            "0 4px 10px rgba(118, 75, 162, 0.4)",
+        width="40px",
+        height="40px",
+        border_radius="14px",
+        bg=bg_color,
+        box_shadow=box_shadow_value,
+        border=rx.cond(
+            day_info.has_event,
+            f"2px solid {day_info.event_color}",
             "none"
         ),
         transition="all 0.2s ease",
         _hover={
-            "bg": "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+            "bg": rx.cond(
+                day_info.has_event,
+                day_info.event_color,
+                "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+            ),
             "color": "white",
             "transform": "scale(1.1)",
             "box_shadow": "0 4px 10px rgba(118, 75, 162, 0.4)"
@@ -1119,61 +1360,110 @@ def calendar_cell(day_info: DayInfo):
         cursor="pointer"
     )
 
+    # Usar rx.cond para determinar si mostrar tooltip o no
+    cell_visual = rx.cond(
+        day_info.has_event,
+        rx.tooltip(cell_content, content=day_info.tooltip_text),
+        cell_content
+    )
+
     return rx.center(
         cell_visual,
-        width="36px",
-        height="36px",
+        width="50px",
+        height="50px",
     )
 
 
 def calendario_component():
-    """Calendario widget (desde template)."""
+    """Calendario widget con integración de cambios."""
     return rx.vstack(
         # Header
         rx.text(
             "Calendario",
-            font_size="1.5em",
+            font_size="1.8em",
             font_weight="800",
             background_image="linear-gradient(45deg, #667eea 0%, #764ba2 100%)",
             background_clip="text",
             color="transparent",
-            margin_bottom="15px",
+            margin_bottom="18px",
             letter_spacing="-0.5px"
         ),
 
-        # Selectors
+        # Selector de Organización (solo backoffice)
+        rx.vstack(
+            rx.text("Organización:", color=COLORS["primary"], font_weight="bold", font_size="1em"),
+            rx.select(
+                SeguimientoState.org_calendario_names,
+                value=SeguimientoState.selected_org_nombre,
+                on_change=SeguimientoState.set_org_calendario,
+                placeholder="Seleccione organización",
+                size="3",
+                width="100%",
+                style={
+                    "fontSize": "16px",
+                    "padding": "8px 12px",
+                    "minHeight": "40px",
+                }
+            ),
+            width="100%",
+            spacing="2",
+            margin_bottom="15px"
+        ),
+
+        # Selector de Proyecto (opcional)
+        rx.vstack(
+            rx.text("Proyecto:", color=COLORS["primary"], font_weight="bold", font_size="1em"),
+            rx.select(
+                SeguimientoState.proyecto_calendario_names,
+                value=SeguimientoState.selected_proyecto_nombre,
+                on_change=SeguimientoState.set_proyecto_calendario,
+                placeholder="Todos los proyectos",
+                size="3",
+                width="100%",
+                style={
+                    "fontSize": "16px",
+                    "padding": "8px 12px",
+                    "minHeight": "40px",
+                }
+            ),
+            width="100%",
+            spacing="2",
+            margin_bottom="15px"
+        ),
+
+        # Selectors de Año y Mes
         rx.hstack(
             rx.hstack(
-                rx.text("Año:", color="yellow", font_weight="bold", font_size="0.9em"),
+                rx.text("Año:", color="yellow", font_weight="bold", font_size="1.1em"),
                 rx.select(
                     SeguimientoState.years,
                     value=SeguimientoState.selected_year,
                     on_change=SeguimientoState.set_year,
-                    size="2",
+                    size="3",
                     radius="medium",
-                    width="100px",
+                    width="140px",
                     bg="rgba(255,255,255,0.1)",
                     color="yellow",
                     border="1px solid yellow",
-                    font_size="1.1em",
+                    font_size="1.4em",
                     font_weight="bold"
                 ),
                 align="center",
                 spacing="2"
             ),
             rx.hstack(
-                rx.text("Mes:", color="yellow", font_weight="bold", font_size="0.9em"),
+                rx.text("Mes:", color="yellow", font_weight="bold", font_size="1.1em"),
                 rx.select(
                     SeguimientoState.months,
                     value=SeguimientoState.selected_month,
                     on_change=SeguimientoState.set_month,
-                    size="2",
+                    size="3",
                     radius="medium",
-                    width="80px",
+                    width="110px",
                     bg="rgba(255,255,255,0.1)",
                     color="yellow",
                     border="1px solid yellow",
-                    font_size="1.1em",
+                    font_size="1.4em",
                     font_weight="bold"
                 ),
                 align="center",
@@ -1181,15 +1471,15 @@ def calendario_component():
             ),
             justify="between",
             width="100%",
-            padding_x="10px",
+            padding_x="15px",
             margin_bottom="20px"
         ),
 
         # Weekday Headers
         rx.hstack(
             *[rx.center(
-                rx.text(d, font_weight="700", font_size="0.75em", color="#a0aec0"),
-                width="36px"
+                rx.text(d, font_weight="700", font_size="0.95em", color="#a0aec0"),
+                width="50px"
             ) for d in ["L", "M", "X", "J", "V", "S", "D"]],
             spacing="1",
             width="100%",
@@ -1214,12 +1504,12 @@ def calendario_component():
         # Container Styling
         bg="black",
         backdrop_filter="blur(10px)",
-        padding="25px",
+        padding="30px",
         border_radius="24px",
         box_shadow="0 20px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1)",
         align="center",
         width="100%",
-        max_width="340px",
+        max_width="480px",
         border="1px solid rgba(255,255,255,0.1)"
     )
 
