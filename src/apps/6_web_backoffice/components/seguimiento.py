@@ -158,6 +158,13 @@ class SeguimientoState(rx.State):
     is_loading_tickets: bool = False
     tickets_error: str = ""
 
+    # Modal de interacción con ticket
+    modal_ticket_abierto: bool = False
+    ticket_seleccionado_id: int = 0
+    ticket_seleccionado: dict = {}
+    ticket_respuesta: str = ""
+    ticket_nuevo_estado: str = ""
+
     async def _get_db_engine(self):
         """Crea el engine de la base de datos para myllm_projects_db."""
         try:
@@ -784,6 +791,168 @@ class SeguimientoState(rx.State):
             self.tickets_error = f"Error: {str(e)}"
         finally:
             self.is_loading_tickets = False
+
+    async def abrir_modal_ticket(self, ticket_id: int):
+        """Abre el modal para interactuar con un ticket."""
+        self.ticket_seleccionado_id = ticket_id
+        self.ticket_respuesta = ""
+
+        # Buscar el ticket en la lista
+        for ticket in self.tickets_list:
+            if ticket["id"] == ticket_id:
+                self.ticket_seleccionado = ticket
+                self.ticket_nuevo_estado = ticket["estado"]
+                break
+
+        # Cargar detalles adicionales del ticket desde BD
+        engine = await self._get_db_engine()
+        if engine:
+            try:
+                with engine.connect() as conn:
+                    # Obtener última consulta del ticket
+                    query = text("""
+                        SELECT consulta, fecha_consulta
+                        FROM myllm_projects_db.ticket_interacciones
+                        WHERE ticket_id = :ticket_id
+                        ORDER BY fecha_consulta DESC
+                        LIMIT 1
+                    """)
+                    result = conn.execute(query, {"ticket_id": ticket_id}).fetchone()
+
+                    if result:
+                        self.ticket_seleccionado["ultima_consulta"] = result[0]
+                        self.ticket_seleccionado["fecha_consulta"] = result[1].strftime("%Y-%m-%d %H:%M") if result[1] else ""
+                    else:
+                        self.ticket_seleccionado["ultima_consulta"] = "Sin consultas registradas"
+                        self.ticket_seleccionado["fecha_consulta"] = ""
+            except Exception as e:
+                print(f"Error cargando detalles del ticket: {e}")
+
+        self.modal_ticket_abierto = True
+
+    def cerrar_modal_ticket(self):
+        """Cierra el modal de ticket."""
+        self.modal_ticket_abierto = False
+        self.ticket_seleccionado_id = 0
+        self.ticket_seleccionado = {}
+        self.ticket_respuesta = ""
+        self.ticket_nuevo_estado = ""
+
+    def on_modal_ticket_change(self, is_open: bool):
+        """Handler para cambios en el estado del modal."""
+        if not is_open:
+            self.cerrar_modal_ticket()
+
+    def set_ticket_respuesta(self, value: str):
+        """Setter para ticket_respuesta."""
+        self.ticket_respuesta = value
+
+    def set_ticket_nuevo_estado(self, value: str):
+        """Setter para ticket_nuevo_estado."""
+        self.ticket_nuevo_estado = value
+
+    async def guardar_interaccion_ticket(self):
+        """Guarda la respuesta al ticket, actualiza estado y envía mensaje automático."""
+        # Permitir cambios de estado sin respuesta obligatoria
+        tiene_respuesta = bool(self.ticket_respuesta.strip())
+        tiene_cambio_estado = self.ticket_nuevo_estado != self.ticket_seleccionado.get("estado")
+
+        if not tiene_respuesta and not tiene_cambio_estado:
+            # No hay ni respuesta ni cambio de estado, no hacer nada
+            return
+
+        engine = await self._get_db_engine()
+        if not engine:
+            return
+
+        try:
+            from web_backoffice.web_backoffice import State as MainState
+            conversaciones_adapter = _load_conversaciones_adapter()
+
+            main_state = await self.get_state(MainState)
+            user_id = main_state.user_id
+
+            with engine.begin() as conn:
+                # 1. Guardar interacción en ticket_interacciones solo si hay respuesta
+                if tiene_respuesta:
+                    insert_interaccion = text("""
+                        INSERT INTO myllm_projects_db.ticket_interacciones
+                        (ticket_id, autor_consulta_id, autor_respuesta_id, consulta, respuesta, fecha_respuesta)
+                        VALUES (:ticket_id, :cliente_id, :autor_id, :consulta, :respuesta, NOW())
+                    """)
+                    conn.execute(insert_interaccion, {
+                        "ticket_id": self.ticket_seleccionado_id,
+                        "cliente_id": self.ticket_seleccionado.get("cliente_id"),
+                        "autor_id": user_id,
+                        "consulta": "",  # Empty for backoffice responses
+                        "respuesta": self.ticket_respuesta
+                    })
+
+                # 2. Actualizar estado del ticket si cambió
+                if tiene_cambio_estado:
+                    update_ticket = text("""
+                        UPDATE myllm_projects_db.tickets
+                        SET estado = :estado, fecha_actualizacion = NOW()
+                        WHERE id = :ticket_id
+                    """)
+                    conn.execute(update_ticket, {
+                        "ticket_id": self.ticket_seleccionado_id,
+                        "estado": self.ticket_nuevo_estado
+                    })
+
+                # 3. Enviar notificación al cliente si hay cambios
+                if tiene_respuesta or tiene_cambio_estado:
+                    # Obtener conversación asociada al cliente del ticket
+                    query_conversacion = text("""
+                        SELECT c.id_conversacion
+                        FROM myllm_projects_db.conversaciones c
+                        WHERE c.id_usuario_cliente = :cliente_id
+                          AND c.estado IN ('abierta', 'en_curso')
+                        ORDER BY c.fecha_ultima_actualizacion DESC
+                        LIMIT 1
+                    """)
+                    result = conn.execute(query_conversacion, {
+                        "cliente_id": self.ticket_seleccionado.get("cliente_id")
+                    }).fetchone()
+
+                    if result:
+                        id_conversacion = result[0]
+
+                        # Construir mensaje automático
+                        mensaje_auto = f"🎫 Actualización de ticket: {self.ticket_seleccionado.get('titulo')}\n\n"
+
+                        if tiene_cambio_estado:
+                            mensaje_auto += f"Estado: {self.ticket_nuevo_estado}\n\n"
+
+                        if tiene_respuesta:
+                            mensaje_auto += f"Respuesta del soporte:\n{self.ticket_respuesta}"
+
+                        insert_mensaje = text("""
+                            INSERT INTO myllm_projects_db.mensajes_conversacion
+                                (id_conversacion, id_usuario_emisor, tipo_emisor, texto_mensaje, id_ticket_referenciado)
+                            VALUES
+                                (:id_conversacion, :id_usuario_emisor, :tipo_emisor, :texto_mensaje, :id_ticket_referenciado)
+                        """)
+                        conn.execute(insert_mensaje, {
+                            "id_conversacion": id_conversacion,
+                            "id_usuario_emisor": user_id,
+                            "tipo_emisor": "interno",
+                            "texto_mensaje": mensaje_auto,
+                            "id_ticket_referenciado": self.ticket_seleccionado_id
+                        })
+
+                        print(f"[INFO] Mensaje automático enviado a conversación {id_conversacion}")
+                    else:
+                        print(f"[WARNING] No se encontró conversación activa para el cliente {self.ticket_seleccionado.get('cliente_id')}")
+
+            # 5. Recargar lista de tickets y cerrar modal
+            await self.load_tickets()
+            self.cerrar_modal_ticket()
+
+        except Exception as e:
+            print(f"[ERROR] Error al guardar interacción del ticket: {e}")
+            import traceback
+            traceback.print_exc()
 
     @rx.event
     async def on_mount_seguimiento(self):
@@ -1519,23 +1688,24 @@ def calendario_component():
 # ============================================================================
 
 def ticket_row(ticket: dict) -> rx.Component:
-    """Fila que muestra un ticket."""
+    """Fila que muestra un ticket con botón de soporte."""
     estado_colors = {
         "abierto": "blue",
-        "en_espera": "yellow",
+        "en_espera": "amber",  # Cambiado de yellow a amber para mejor contraste
         "resuelto": "green",
         "cerrado": "gray",
     }
 
     prioridad_colors = {
         "baja": "gray",
-        "media": "blue",
+        "media": "cyan",  # Cambiado de blue a cyan para mejor contraste
         "alta": "orange",
         "urgente": "red",
     }
 
     return rx.box(
         rx.hstack(
+            # Título del ticket
             rx.text(
                 ticket["titulo"],
                 font_weight="medium",
@@ -1546,17 +1716,32 @@ def ticket_row(ticket: dict) -> rx.Component:
                 text_overflow="ellipsis",
                 white_space="nowrap",
             ),
+            # Badge de estado (más grande y con mejor contraste)
             rx.badge(
                 ticket["estado"],
                 color_scheme=estado_colors.get(ticket["estado"], "gray"),
-                variant="soft",
-                size="3",
+                variant="solid",  # Cambiado de soft a solid para mejor contraste
+                size="2",
+                style={"fontSize": "14px", "padding": "6px 12px", "fontWeight": "600"},
             ),
+            # Badge de prioridad (más grande y con mejor contraste)
             rx.badge(
                 ticket["prioridad"],
                 color_scheme=prioridad_colors.get(ticket["prioridad"], "gray"),
-                variant="outline",
-                size="3",
+                variant="solid",  # Cambiado de outline a solid
+                size="2",
+                style={"fontSize": "14px", "padding": "6px 12px", "fontWeight": "600"},
+            ),
+            # Botón de soporte
+            rx.tooltip(
+                rx.icon_button(
+                    rx.icon("message-square-text", size=20),
+                    size="3",
+                    variant="soft",
+                    color_scheme="blue",
+                    on_click=lambda: SeguimientoState.abrir_modal_ticket(ticket["id"]),
+                ),
+                content="Soporte - Responder al ticket",
             ),
             spacing="3",
             align="center",
@@ -1571,7 +1756,6 @@ def ticket_row(ticket: dict) -> rx.Component:
             "background_color": f"{COLORS['primary']}15",
             "border_color": COLORS["primary"],
         },
-        cursor="pointer",
     )
 
 
@@ -1598,13 +1782,13 @@ def tickets_viewer_component() -> rx.Component:
             margin_bottom="0.5em",
         ),
 
-        # Lista de tickets
+        # Lista de tickets (sin scroll propio, usa el scroll de la columna)
         rx.box(
             rx.cond(
                 SeguimientoState.is_loading_tickets,
                 rx.center(
                     rx.spinner(size="3", color=COLORS["primary"]),
-                    height="100%",
+                    height="100px",
                 ),
                 rx.cond(
                     SeguimientoState.tickets_list.length() > 0,
@@ -1613,8 +1797,8 @@ def tickets_viewer_component() -> rx.Component:
                             SeguimientoState.tickets_list,
                             ticket_row,
                         ),
-                        width="100%",
                         spacing="2",
+                        width="100%",
                     ),
                     rx.center(
                         rx.text(
@@ -1622,17 +1806,15 @@ def tickets_viewer_component() -> rx.Component:
                             color=COLORS["muted_foreground"],
                             font_size="0.9em",
                         ),
-                        height="100%",
+                        height="100px",
                     ),
                 ),
             ),
             width="100%",
-            flex="1",
-            overflow_y="auto",
-            padding="1em",
-            background_color=f"{COLORS['card']}80",
+            padding="8px",
+            bg=f"{COLORS['background']}80",
             border=f"1px solid {COLORS['border']}",
-            border_radius="0.5em",
+            border_radius="8px",
         ),
 
         # Error
@@ -1648,6 +1830,154 @@ def tickets_viewer_component() -> rx.Component:
         width="100%",
         flex="1",
         spacing="2",
+    )
+
+
+def modal_ticket_soporte() -> rx.Component:
+    """Modal para interactuar con un ticket de soporte."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Header del modal
+                rx.hstack(
+                    rx.icon("message-square-text", size=24, color=COLORS["primary"]),
+                    rx.heading(
+                        "Soporte - Responder Ticket",
+                        size="6",
+                        color=COLORS["primary"],
+                    ),
+                    rx.dialog.close(
+                        rx.icon_button(
+                            rx.icon("x", size=20),
+                            variant="soft",
+                            color_scheme="gray",
+                            on_click=SeguimientoState.cerrar_modal_ticket,
+                        ),
+                    ),
+                    justify="between",
+                    align="center",
+                    width="100%",
+                    margin_bottom="1em",
+                ),
+
+                # Información del ticket
+                rx.vstack(
+                    rx.hstack(
+                        rx.text("Ticket:", font_weight="bold", color=COLORS["primary"]),
+                        rx.text(
+                            SeguimientoState.ticket_seleccionado.get("titulo", ""),
+                            color=COLORS["foreground"],
+                        ),
+                        spacing="2",
+                        width="100%",
+                    ),
+                    rx.hstack(
+                        rx.text("Estado actual:", font_weight="bold", color=COLORS["primary"]),
+                        rx.badge(
+                            SeguimientoState.ticket_seleccionado.get("estado", ""),
+                            variant="solid",
+                            size="2",
+                        ),
+                        rx.text("Prioridad:", font_weight="bold", color=COLORS["primary"], margin_left="1em"),
+                        rx.badge(
+                            SeguimientoState.ticket_seleccionado.get("prioridad", ""),
+                            variant="solid",
+                            size="2",
+                        ),
+                        spacing="2",
+                        width="100%",
+                    ),
+                    spacing="2",
+                    width="100%",
+                    padding="1em",
+                    background_color=COLORS["card"],
+                    border_radius="0.5em",
+                    margin_bottom="1em",
+                ),
+
+                # Última consulta del cliente
+                rx.vstack(
+                    rx.text("Última consulta del cliente:", font_weight="bold", color=COLORS["primary"], font_size="0.9em"),
+                    rx.box(
+                        rx.text(
+                            SeguimientoState.ticket_seleccionado.get("ultima_consulta", "Sin consultas"),
+                            color=COLORS["foreground"],
+                            font_size="0.95em",
+                        ),
+                        padding="1em",
+                        background_color=f"{COLORS['card']}80",
+                        border=f"1px solid {COLORS['border']}",
+                        border_radius="0.4em",
+                        width="100%",
+                    ),
+                    spacing="1",
+                    width="100%",
+                    margin_bottom="1em",
+                ),
+
+                # Selector de nuevo estado
+                rx.vstack(
+                    rx.text("Cambiar estado:", font_weight="bold", color=COLORS["primary"], font_size="0.9em"),
+                    rx.select(
+                        ["abierto", "en_espera", "resuelto", "cerrado"],
+                        value=SeguimientoState.ticket_nuevo_estado,
+                        on_change=SeguimientoState.set_ticket_nuevo_estado,
+                        size="3",
+                        width="100%",
+                    ),
+                    spacing="1",
+                    width="100%",
+                    margin_bottom="1em",
+                ),
+
+                # Textarea para respuesta
+                rx.vstack(
+                    rx.text("Tu respuesta:", font_weight="bold", color=COLORS["primary"], font_size="0.9em"),
+                    rx.text_area(
+                        placeholder="Escribe tu respuesta al ticket aquí...",
+                        value=SeguimientoState.ticket_respuesta,
+                        on_change=SeguimientoState.set_ticket_respuesta,
+                        size="3",
+                        width="100%",
+                        min_height="150px",
+                    ),
+                    spacing="1",
+                    width="100%",
+                    margin_bottom="1em",
+                ),
+
+                # Botones de acción
+                rx.hstack(
+                    rx.dialog.close(
+                        rx.button(
+                            "Cancelar",
+                            on_click=SeguimientoState.cerrar_modal_ticket,
+                            variant="soft",
+                            color_scheme="gray",
+                        ),
+                    ),
+                    rx.button(
+                        rx.icon("send", size=18),
+                        "Enviar Respuesta",
+                        on_click=SeguimientoState.guardar_interaccion_ticket,
+                        variant="solid",
+                        color_scheme="blue",
+                    ),
+                    spacing="3",
+                    justify="end",
+                    width="100%",
+                ),
+
+                width="100%",
+                spacing="3",
+            ),
+            max_width="600px",
+            padding="2em",
+            background_color=COLORS["background"],
+            border=f"2px solid {COLORS['border']}",
+        ),
+        open=SeguimientoState.modal_ticket_abierto,
+        on_open_change=SeguimientoState.on_modal_ticket_change,
     )
 
 
@@ -1712,35 +2042,28 @@ def seguimiento_panel() -> rx.Component:
                 max_height="calc(100vh - 150px)",
             ),
 
-            # DERECHA: Calendario + Selector + Tickets
-            rx.vstack(
-                # Calendario (arriba)
-                rx.center(
+            # DERECHA: Calendario + Selector + Tickets (con scroll igual que notificaciones)
+            rx.box(
+                rx.vstack(
+                    # Calendario (arriba)
                     calendario_component(),
-                    width="100%",
-                    padding="1em",
-                    background_color=COLORS["background"],
-                    border=f"1px solid {COLORS['border']}",
-                    border_radius="0.5em",
-                ),
 
-                # Selector de Proyecto (medio)
-                selector_proyecto_component(),
+                    # Selector de Proyecto (medio)
+                    selector_proyecto_component(),
 
-                # Tickets (abajo)
-                rx.box(
+                    # Tickets (abajo)
                     tickets_viewer_component(),
-                    width="100%",
-                    flex="1",
-                    padding="1em",
-                    background_color=COLORS["card"],
-                    border=f"1px solid {COLORS['border']}",
-                    border_radius="0.5em",
-                ),
 
+                    spacing="3",
+                    width="100%",
+                ),
                 flex="1",
-                spacing="3",
-                width="100%",
+                padding="1em",
+                background_color=COLORS["background"],
+                border=f"1px solid {COLORS['border']}",
+                border_radius="0.5em",
+                overflow_y="scroll",
+                height="700px",
             ),
 
             spacing="3",
@@ -1748,6 +2071,9 @@ def seguimiento_panel() -> rx.Component:
             align_items="stretch",
             height="calc(100vh - 120px)",
         ),
+
+        # Modal de soporte para tickets
+        modal_ticket_soporte(),
 
         width="100%",
         spacing="1",

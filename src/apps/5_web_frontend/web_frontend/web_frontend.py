@@ -1140,13 +1140,13 @@ class State(SharedSessionState):
         """Establece el texto de la consulta."""
         self.support_consulta = value
     
-    def save_support_ticket(self):
+    async def save_support_ticket(self):
         """Envía el ticket de soporte.
-        
+
         Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
         """
         from adapters.api_client import create_support_ticket
-        
+
         # Validaciones
         if not self.support_titulo.strip():
             self.support_error = "El motivo es obligatorio"
@@ -1154,10 +1154,10 @@ class State(SharedSessionState):
         if not self.support_consulta.strip():
             self.support_error = "La consulta es obligatoria"
             return
-        
+
         self.support_error = ""
         self.is_creating_support = True
-        
+
         try:
             result = create_support_ticket(
                 titulo=self.support_titulo,
@@ -1167,17 +1167,21 @@ class State(SharedSessionState):
                 session_token=self.session_token,
             )
             print(f"[DEBUG] Resultado crear ticket: {result}")
-            
+
             if result.get("success"):
                 self.support_success = f"Ticket #{result.get('ticket_id', '')} creado correctamente"
                 # Cerrar modal después de un momento
                 self.support_titulo = ""
                 self.support_consulta = ""
+                # Cerrar modal después de mostrar éxito
+                await self.close_support_modal()
             else:
                 self.support_error = result.get("error", "Error al crear el ticket")
         except Exception as e:
             self.support_error = f"Error: {e}"
             print(f"[ERROR] Error creando ticket: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             self.is_creating_support = False
 

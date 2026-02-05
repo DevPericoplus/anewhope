@@ -708,14 +708,14 @@ def ticket_row(ticket: dict) -> rx.Component:
     """Fila que muestra un ticket."""
     estado_colors = {
         "abierto": "blue",
-        "en_espera": "yellow",
+        "en_espera": "amber",  # Mejorado de yellow a amber para mejor contraste
         "resuelto": "green",
         "cerrado": "gray",
     }
 
     prioridad_colors = {
         "baja": "gray",
-        "media": "blue",
+        "media": "cyan",  # Mejorado de blue a cyan para mejor contraste
         "alta": "orange",
         "urgente": "red",
     }
@@ -732,17 +732,21 @@ def ticket_row(ticket: dict) -> rx.Component:
                 text_overflow="ellipsis",
                 white_space="nowrap",
             ),
+            # Badge de estado (mejorado para mejor visibilidad)
             rx.badge(
                 ticket["estado"],
                 color_scheme=estado_colors.get(ticket["estado"], "gray"),
-                variant="soft",
-                size="3",
+                variant="solid",  # Cambiado de soft a solid para mejor contraste
+                size="2",
+                style={"fontSize": "14px", "padding": "6px 12px", "fontWeight": "600"},
             ),
+            # Badge de prioridad (mejorado para mejor visibilidad)
             rx.badge(
                 ticket["prioridad"],
                 color_scheme=prioridad_colors.get(ticket["prioridad"], "gray"),
-                variant="outline",
-                size="3",
+                variant="solid",  # Cambiado de outline a solid para mejor contraste
+                size="2",
+                style={"fontSize": "14px", "padding": "6px 12px", "fontWeight": "600"},
             ),
             spacing="3",
             align="center",
