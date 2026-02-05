@@ -5843,3 +5843,250 @@ VALUES (1, 1, 1, 3, 1);
 - [ ] Auditoría de cambios de permisos con registro en `audit_log`
 - [ ] Interface administrativa para gestionar roles desde el backoffice
 
+
+## Sistema de Conversaciones Cliente-Interno
+
+El sistema de conversaciones permite la comunicación en tiempo real entre usuarios cliente (frontend) y usuarios internos (backoffice) sobre proyectos y tickets de soporte.
+
+### Arquitectura
+
+**Base de datos:** `myllm_projects_db`  
+**Referencia cross-database:** `myllm_core_db.users`, `myllm_core_db.organizations`
+
+```
+┌─────────────────────┐        ┌──────────────────────┐
+│   myllm_core_db     │        │  myllm_projects_db   │
+│                     │        │                      │
+│ ├─ users            │◄───────┤ ├─ conversaciones    │
+│ └─ organizations    │        │ ├─ mensajes          │
+│                     │        │ ├─ participantes     │
+│                     │        │ ├─ asignaciones      │
+│                     │        │ └─ tickets           │
+└─────────────────────┘        └──────────────────────┘
+```
+
+### Tablas Implementadas
+
+| Tabla | Descripción | FKs Locales | Referencias Cross-DB |
+|-------|-------------|-------------|----------------------|
+| `asignaciones_organizaciones_internas` | Usuarios internos asignados a organizaciones | `id_rol` → `proyectos_roles_base` | `id_usuario_interno`, `id_organizacion`, `asignado_por`, `desactivado_por` |
+| `conversaciones` | Registro de cada conversación | `id_ticket_principal` → `tickets` | `id_organizacion`, `id_usuario_cliente`, `cerrada_por` |
+| `participantes_conversacion` | Participantes de cada conversación | `id_conversacion` → `conversaciones` | `id_usuario` |
+| `mensajes_conversacion` | Todos los mensajes | `id_conversacion`, `id_ticket_referenciado` | `id_usuario_emisor`, `editado_por` |
+| `conversaciones_tickets_relacionados` | Relaciones N:M con tickets | `id_conversacion`, `id_ticket` | `mencionado_por` |
+
+### Flujo de Trabajo
+
+#### Frontend (Cliente):
+1. Usuario crea conversación desde proyecto/ticket
+2. Envía mensajes tipo `cliente`
+3. Ve solo conversaciones propias (filtradas por `id_usuario_cliente`)
+4. Icono "Cliente" visible, icono "Interno" oculto
+
+#### Backoffice (Interno):
+1. Usuario interno ve organizaciones asignadas (desde `asignaciones_organizaciones_internas`)
+2. Selecciona organización
+3. Ve lista de conversaciones activas de esa organización
+4. Se une a conversación (registro en `participantes_conversacion`)
+5. Envía mensajes tipo `interno`
+6. Puede referenciar tickets en mensajes
+7. Icono "Interno" visible, icono "Cliente" oculto
+
+### Integridad Referencial
+
+**⚠️ IMPORTANTE:** Las referencias a `users` y `organizations` **NO tienen FKs** porque están en `myllm_core_db` (base de datos diferente). La validación se realiza en la capa de aplicación.
+
+**Estrategia de validación:**
+```python
+# En conversaciones_adapter.py
+def crear_conversacion(engine_projects, engine_core, ...):
+    # 1. Validar en myllm_core_db que usuario existe
+    with engine_core.connect() as conn:
+        result = conn.execute(
+            text("SELECT id FROM users WHERE id = :user_id"),
+            {"user_id": id_usuario_cliente}
+        )
+        if not result.fetchone():
+            raise ValueError(f"Usuario {id_usuario_cliente} no existe")
+    
+    # 2. Crear en myllm_projects_db
+    with engine_projects.connect() as conn:
+        ...
+```
+
+### Instalación
+
+```bash
+# Ejecutar DDL en myllm_projects_db
+/usr/local/opt/mariadb@10.6/bin/mariadb -u myllm_admin -p'Us3r@dminP@ss' \
+    myllm_projects_db < infrastructure/database/migrations/007_conversaciones_sistema_final.sql
+
+# Verificar tablas creadas
+/usr/local/opt/mariadb@10.6/bin/mariadb -u myllm_admin -p'Us3r@dminP@ss' \
+    myllm_projects_db -e "SHOW TABLES LIKE '%conversaciones%';"
+```
+
+### Uso del Adapter
+
+```python
+from src.app_2_shared_application.adapters import conversaciones_adapter
+
+# Crear conversación
+id_conv = conversaciones_adapter.crear_conversacion(
+    engine=engine_projects,
+    id_organizacion=1,
+    id_usuario_cliente=2,
+    asunto="Consulta sobre proyecto X",
+    id_ticket_principal=123,  # Opcional
+    prioridad="alta"
+)
+
+# Enviar mensaje
+conversaciones_adapter.enviar_mensaje(
+    engine=engine_projects,
+    id_conversacion=id_conv,
+    id_usuario_emisor=2,
+    tipo_emisor="cliente",
+    texto_mensaje="Necesito ayuda con..."
+)
+
+# Usuario interno se une
+conversaciones_adapter.unirse_a_conversacion(
+    engine=engine_projects,
+    id_conversacion=id_conv,
+    id_usuario_interno=5
+)
+
+# Obtener mensajes
+mensajes = conversaciones_adapter.obtener_mensajes_conversacion(
+    engine=engine_projects,
+    id_conversacion=id_conv
+)
+```
+
+### Triggers Automáticos
+
+El sistema incluye triggers que se ejecutan automáticamente:
+
+1. **`after_mensaje_insert`**: Al insertar mensaje
+   - Actualiza `conversaciones.ultimo_mensaje_texto`
+   - Actualiza `conversaciones.total_mensajes`
+   - Incrementa contadores de mensajes sin leer
+   - Si hay ticket referenciado, crea relación automática
+
+2. **`after_mensaje_leido_cliente`**: Al marcar mensaje como leído por cliente
+   - Decrementa `conversaciones.mensajes_sin_leer_cliente`
+
+3. **`after_mensaje_leido_interno`**: Al marcar mensaje como leído por interno
+   - Decrementa `conversaciones.mensajes_sin_leer_interno`
+
+### Vista Consolidada
+
+```sql
+-- v_conversaciones_activas: Vista para reportes
+SELECT * FROM myllm_projects_db.v_conversaciones_activas
+WHERE id_organizacion = 1;
+```
+
+### Tests
+
+```bash
+# Tests unitarios (entidades de dominio)
+pytest tests/unit/test_conversacion_entities.py -v
+
+# Tests de integración (adapter con BD)
+pytest tests/integration/test_conversaciones_adapter.py -v
+```
+
+### Archivos Clave
+
+**Base de datos:**
+- `infrastructure/database/migrations/007_conversaciones_sistema_final.sql` - DDL completo
+
+**Dominio:**
+- `src/1_shared_domain/conversacion.py` - Entidades de negocio
+
+**Aplicación:**
+- `src/2_shared_application/adapters/conversaciones_adapter.py` - Adapter con 15+ funciones
+
+**Componentes UI:**
+- `src/apps/5_web_frontend/components/seguimiento.py` - Componente frontend
+- `src/apps/6_web_backoffice/components/seguimiento.py` - Componente backoffice
+
+**Documentación:**
+- `docs/SISTEMA_CONVERSACIONES.md` - Guía completa
+- `src/docs/adr/008_conversaciones_cross_database.md` - ADR decisión técnica
+
+**Tests:**
+- `tests/unit/test_conversacion_entities.py` - Tests entidades
+- `tests/integration/test_conversaciones_adapter.py` - Tests adapter
+
+### Decisión Arquitectónica
+
+**ADR 008:** Sistema de Conversaciones con Referencias Cross-Database
+
+**Decisión:** Crear tablas en `myllm_projects_db` sin FKs a `myllm_core_db`
+
+**Razones:**
+- ✅ Cohesión del dominio: Conversaciones cerca de proyectos y tickets
+- ✅ FKs internas garantizadas: Relaciones con tickets protegidas
+- ❌ Integridad parcial: Sin FKs a users/organizations
+- ✅ Mitigación: Validación estricta en adapters
+
+Consulta `src/docs/adr/008_conversaciones_cross_database.md` para detalles completos.
+
+### Estadísticas y Reportes
+
+```python
+# Estadísticas de organización
+stats = conversaciones_adapter.obtener_estadisticas_conversaciones_organizacion(
+    engine=engine_projects,
+    id_organizacion=1
+)
+# Retorna: total, abiertas, en_curso, resueltas, cerradas, mensajes_sin_leer
+
+# Tickets relacionados con conversación
+tickets = conversaciones_adapter.obtener_tickets_conversacion(
+    engine=engine_projects,
+    id_conversacion=123
+)
+```
+
+### Resolución de Problemas
+
+**Problema:** Error al crear conversación - usuario no existe
+
+**Causa:** `id_usuario_cliente` no existe en `myllm_core_db.users`
+
+**Solución:** Validar usuario antes de crear conversación
+```python
+# Verificar en myllm_core_db
+SELECT id FROM myllm_core_db.users WHERE id = <user_id>;
+```
+
+---
+
+**Problema:** Conversaciones "huérfanas" (usuario borrado)
+
+**Causa:** Usuario fue eliminado de `myllm_core_db` pero conversación permanece
+
+**Solución:** Job de limpieza periódico
+```python
+def limpiar_conversaciones_huerfanas(engine_projects, engine_core):
+    """Cierra conversaciones de usuarios inexistentes."""
+    # Identificar conversaciones con id_usuario_cliente que no existe
+    # Marcar como "cerrada" automáticamente
+```
+
+### Mejoras Futuras
+
+- [ ] Notificaciones push en tiempo real
+- [ ] Adjuntar archivos a mensajes
+- [ ] Búsqueda full-text en mensajes
+- [ ] Etiquetas/tags para conversaciones
+- [ ] Plantillas de mensajes predefinidos
+- [ ] Métricas de satisfacción del cliente (CSAT)
+- [ ] Integración con sistema de notificaciones por email
+- [ ] API REST para integraciones externas
+- [ ] Cache de permisos en Redis
+- [ ] Job automático de limpieza de huérfanos

@@ -572,6 +572,200 @@ rx.cond(
 )
 ```
 
+### Sistema de Conversaciones Cliente-Interno (OBLIGATORIO)
+
+El sistema de conversaciones permite comunicación bidireccional entre usuarios cliente (frontend)
+y usuarios internos (backoffice) sobre proyectos y tickets de soporte.
+
+**Arquitectura Cross-Database:**
+
+El sistema presenta un desafío arquitectónico único: las tablas de conversaciones están en
+`myllm_projects_db`, pero referencian usuarios y organizaciones que están en `myllm_core_db`.
+MariaDB/MySQL **NO permite crear Foreign Keys entre bases de datos diferentes**.
+
+**Decisión arquitectónica:** (Ver ADR 008: `docs/adr/008_conversaciones_cross_database.md`)
+- ✅ Todas las tablas de conversaciones están en `myllm_projects_db`
+- ✅ Las FKs a `users` y `organizations` **NO existen** (imposibilidad técnica)
+- ✅ La integridad referencial se valida **en la capa de aplicación**
+- ✅ Las FKs locales (a `tickets`, `proyectos_roles_base`) **SÍ existen**
+
+**Tablas del sistema:**
+
+1. `asignaciones_organizaciones_internas` - Asignación de usuarios internos a organizaciones
+2. `conversaciones` - Registro de cada conversación
+3. `participantes_conversacion` - Participantes de cada conversación
+4. `mensajes_conversacion` - Todos los mensajes
+5. `conversaciones_tickets_relacionados` - Relación N:M con tickets
+
+**Migración:** `infrastructure/database/migrations/007_conversaciones_sistema_final.sql`
+
+**REGLA CRÍTICA: Validación Cross-Database Obligatoria**
+
+Cuando crees o modifiques conversaciones, mensajes o participantes, **SIEMPRE** debes:
+
+1. **Usar dos engines separados:**
+   ```python
+   from sqlalchemy import create_engine
+
+   # Engine para myllm_core_db (users, organizations)
+   engine_core = create_engine("mysql+pymysql://user:pass@localhost/myllm_core_db")
+
+   # Engine para myllm_projects_db (conversaciones, tickets, proyectos)
+   engine_projects = create_engine("mysql+pymysql://user:pass@localhost/myllm_projects_db")
+   ```
+
+2. **Validar existencia ANTES de insertar:**
+   ```python
+   # ❌ INCORRECTO - Insertar sin validar
+   result = engine_projects.execute(
+       text("INSERT INTO conversaciones (id_organizacion, id_usuario_cliente, ...) VALUES (:org, :user, ...)"),
+       {"org": org_id, "user": user_id}
+   )
+
+   # ✅ CORRECTO - Validar primero en myllm_core_db
+   with engine_core.connect() as conn:
+       # Validar organización
+       org = conn.execute(
+           text("SELECT id FROM organizations WHERE id = :org_id"),
+           {"org_id": org_id}
+       ).fetchone()
+       if not org:
+           raise ValueError(f"Organización {org_id} no existe")
+
+       # Validar usuario
+       user = conn.execute(
+           text("SELECT id FROM users WHERE id = :user_id"),
+           {"user_id": user_id}
+       ).fetchone()
+       if not user:
+           raise ValueError(f"Usuario {user_id} no existe")
+
+   # Ahora sí, insertar en myllm_projects_db
+   with engine_projects.connect() as conn:
+       result = conn.execute(
+           text("INSERT INTO conversaciones (id_organizacion, id_usuario_cliente, ...) VALUES (:org, :user, ...)"),
+           {"org": org_id, "user": user_id}
+       )
+   ```
+
+3. **Campos que requieren validación cross-database:**
+   - `conversaciones.id_organizacion` → `myllm_core_db.organizations.id`
+   - `conversaciones.id_usuario_cliente` → `myllm_core_db.users.id`
+   - `conversaciones.cerrada_por` → `myllm_core_db.users.id`
+   - `asignaciones_organizaciones_internas.id_usuario_interno` → `myllm_core_db.users.id`
+   - `asignaciones_organizaciones_internas.id_organizacion` → `myllm_core_db.organizations.id`
+   - `participantes_conversacion.id_usuario` → `myllm_core_db.users.id`
+   - `mensajes_conversacion.id_usuario_emisor` → `myllm_core_db.users.id`
+
+**Adapter disponible:**
+
+El adapter `src/2_shared_application/adapters/conversaciones_adapter.py` implementa todas las
+validaciones necesarias. **SIEMPRE úsalo en lugar de queries directas.**
+
+**Funciones principales del adapter:**
+
+| Función | Descripción | Validación Cross-DB |
+|---------|-------------|---------------------|
+| `asignar_usuario_interno_a_organizacion()` | Asigna interno a organización | ✅ Valida user y org |
+| `crear_conversacion()` | Crea nueva conversación | ✅ Valida user_cliente y org |
+| `enviar_mensaje()` | Envía mensaje en conversación | ✅ Valida user_emisor |
+| `unirse_a_conversacion()` | Usuario interno se une | ✅ Valida user_interno |
+| `cerrar_conversacion()` | Cierra conversación | ✅ Valida cerrada_por |
+| `obtener_conversaciones_organizacion()` | Lista conversaciones | - |
+| `obtener_mensajes()` | Obtiene mensajes | - |
+| `marcar_mensajes_como_leidos()` | Marca mensajes leídos | - |
+
+**Ejemplo de uso del adapter:**
+
+```python
+from src.2_shared_application.adapters import conversaciones_adapter
+from sqlalchemy import create_engine
+
+# Crear engines
+engine_core = create_engine("mysql+pymysql://user:pass@localhost/myllm_core_db")
+engine_projects = create_engine("mysql+pymysql://user:pass@localhost/myllm_projects_db")
+
+# Crear conversación (validación automática incluida)
+id_conv = conversaciones_adapter.crear_conversacion(
+    engine=engine_projects,
+    id_organizacion=1,
+    id_usuario_cliente=5,
+    asunto="Consulta sobre proyecto X",
+    id_ticket_principal=123,
+    prioridad="media"
+)
+
+# Enviar mensaje
+id_msg = conversaciones_adapter.enviar_mensaje(
+    engine=engine_projects,
+    id_conversacion=id_conv,
+    id_usuario_emisor=5,
+    tipo_emisor="cliente",
+    texto_mensaje="Necesito ayuda con la configuración"
+)
+```
+
+**Sistema de triggers automáticos:**
+
+El sistema usa triggers para mantener contadores actualizados automáticamente. **NO los modifiques manualmente.**
+
+| Trigger | Acción | Efecto |
+|---------|--------|--------|
+| `after_mensaje_insert` | Nuevo mensaje | Actualiza `total_mensajes`, `mensajes_sin_leer_*`, `ultimo_mensaje_*` |
+| `after_mensaje_leido_cliente` | Marca leído cliente | Decrementa `mensajes_sin_leer_cliente` |
+| `after_mensaje_leido_interno` | Marca leído interno | Decrementa `mensajes_sin_leer_interno` |
+
+**Distinción Cliente/Interno:**
+
+El sistema distingue dos tipos de participantes mediante el enum `TipoParticipante`:
+
+- **`cliente`**: Usuarios del frontend (usuarios cliente de organizaciones)
+- **`interno`**: Usuarios del backoffice (equipo interno que da soporte)
+
+**Reglas de visibilidad:**
+- Los mensajes de tipo `interno` incrementan `mensajes_sin_leer_cliente`
+- Los mensajes de tipo `cliente` incrementan `mensajes_sin_leer_interno`
+- Cada tipo solo puede marcar como leídos sus propios mensajes
+
+**Entidades de dominio:**
+
+Las entidades están en `src/1_shared_domain/conversacion.py`:
+
+- `Conversacion` - Entidad principal con métodos: `esta_activa()`, `es_urgente()`, `cambiar_estado()`
+- `MensajeConversacion` - Mensaje con métodos: `es_de_cliente()`, `marcar_como_leido_por_cliente()`, `editar()`
+- `ParticipanteConversacion` - Participante con métodos: `es_cliente()`, `actualizar_ultimo_acceso()`
+- `AsignacionOrganizacionInterna` - Asignación con métodos: `desactivar()`, `reactivar()`
+
+**Tests:**
+
+```bash
+# Tests unitarios (sin base de datos)
+pytest tests/unit/test_conversacion_entities.py -v
+
+# Tests de integración (con base de datos)
+pytest tests/integration/test_conversaciones_adapter.py -v
+```
+
+**Vista útil:**
+
+`v_conversaciones_activas` - Conversaciones abiertas o en curso con información consolidada
+
+**Documentación completa:**
+
+- Arquitectura y uso: `README.md` → "Sistema de Conversaciones Cliente-Interno"
+- ADR completo: `docs/adr/008_conversaciones_cross_database.md`
+- Documentación técnica: `docs/SISTEMA_CONVERSACIONES.md`
+
+**Reglas de diseño obligatorias:**
+
+1. ✅ **NUNCA** intentes crear FKs entre `myllm_core_db` y `myllm_projects_db`
+2. ✅ **SIEMPRE** usa dos engines separados para operaciones cross-database
+3. ✅ **SIEMPRE** valida users/organizations en `myllm_core_db` antes de insertar en `myllm_projects_db`
+4. ✅ **SIEMPRE** usa el adapter en lugar de queries directas
+5. ✅ **NUNCA** modifiques manualmente los contadores (`total_mensajes`, `mensajes_sin_leer_*`) - los triggers lo hacen
+6. ✅ Respeta la distinción `cliente`/`interno` en tipos de emisor y participante
+7. ✅ Las conversaciones están fuertemente acopladas a proyectos/tickets, por eso viven en `myllm_projects_db`
+
 ## 5.5 Transferencia de versiones (Backend Core ↔ Trainer)
 
 La transferencia de versiones permite replicar proyectos entre el servidor backend y el 

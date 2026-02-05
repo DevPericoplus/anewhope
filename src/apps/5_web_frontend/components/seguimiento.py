@@ -11,7 +11,9 @@ import reflex as rx
 import datetime
 import pydantic
 import calendar
-from sqlalchemy import text
+import importlib.util
+from pathlib import Path
+from sqlalchemy import create_engine, text
 
 
 # ============================================================================
@@ -48,6 +50,21 @@ def get_formatted_time():
     return f"{now.day} de {meses[now.month]} de {now.year} a las {now.strftime('%H:%M')}"
 
 
+def _load_conversaciones_adapter():
+    """Carga el adapter de conversaciones usando importlib."""
+    adapter_path = (
+        Path(__file__).resolve().parents[3]
+        / "2_shared_application/adapters/conversaciones_adapter.py"
+    )
+    spec = importlib.util.spec_from_file_location("conversaciones_adapter", adapter_path)
+    if spec is None or spec.loader is None:
+        raise ImportError("No se pudo cargar el adaptador de conversaciones")
+
+    adapter_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(adapter_module)
+    return adapter_module
+
+
 # ============================================================================
 # CALENDARIO (desde template)
 # ============================================================================
@@ -73,14 +90,11 @@ class SeguimientoState(rx.State):
     seguimiento_project_id: int = 0
 
     # === NOTIFICACIONES ===
-    messages: list[Message] = [
-        Message(text="¡Buenas! Soy el interface de notificaciones", sender="interno", time="27 de enero de 2026 a las 23:00"),
-        Message(text="Te tendré informado en todo momento de los pasos a seguir", sender="interno", time="27 de enero de 2026 a las 23:01"),
-        Message(text="¿En mensajes como este puedo solicitar información o comunicar cambios?", sender="cliente", time="27 de enero de 2026 a las 23:05"),
-        Message(text="Sí, la idea es asesorarte sobre ellas y consensuar los cambios", sender="interno", time="27 de enero de 2026 a las 23:06"),
-    ]
+    messages: list[Message] = []
     new_message: str = ""
-    current_identity: str = "cliente"
+    current_identity: str = "cliente"  # Fijo en frontend
+    id_conversacion_actual: int = 0
+    conversaciones_error: str = ""
 
     # === CALENDARIO ===
     current_year: int = datetime.datetime.now().year
@@ -98,48 +112,141 @@ class SeguimientoState(rx.State):
     is_loading_tickets: bool = False
     tickets_error: str = ""
 
-    def _get_db_engine(self):
-        """Obtiene el engine de la base de datos desde el State principal."""
+    async def _get_db_engine(self):
+        """Crea el engine de la base de datos para myllm_projects_db."""
         try:
-            from ..web_frontend.web_frontend import State as MainState
-            state = self.get_state(MainState)
-            return state._db_engine
+            # Crear engine para myllm_projects_db
+            DB_USER = "myllm_admin"
+            DB_PASS = "Us3r%40dminP%40ss"  # URL-encoded
+            DB_HOST = "localhost"
+            engine = create_engine(f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}/myllm_projects_db")
+            return engine
         except Exception as e:
-            print(f"Error obteniendo engine: {e}")
+            print(f"Error creando engine: {e}")
             return None
+
+    def set_new_message(self, value: str):
+        """Setter explícito para new_message."""
+        self.new_message = value
 
     # === MÉTODOS NOTIFICACIONES ===
 
-    def format_and_add_message(self, sender: str, text: str):
-        """Añade mensajes desde aplicaciones externas"""
-        formatted_text = text[0].upper() + text[1:] if len(text) > 0 else text
-        if not formatted_text.endswith((".", "!", "?")):
-            formatted_text += "."
+    async def load_or_create_conversacion(self):
+        """Carga o crea la conversación del usuario actual con su organización."""
+        engine = await self._get_db_engine()
+        if not engine:
+            self.conversaciones_error = "Error de conexión a base de datos"
+            return
 
-        self.messages.append(
-            Message(
-                text=formatted_text,
-                sender=sender,
-                time=get_formatted_time()
+        try:
+            from web_frontend.web_frontend import State as MainState
+            conversaciones_adapter = _load_conversaciones_adapter()
+
+            main_state = await self.get_state(MainState)
+            user_id = main_state.user_id
+            org_id = main_state.organization_id
+
+            # Buscar conversación existente del usuario
+            with engine.connect() as conn:
+                query = text("""
+                    SELECT id_conversacion
+                    FROM myllm_projects_db.conversaciones
+                    WHERE id_organizacion = :org_id
+                      AND id_usuario_cliente = :user_id
+                      AND estado IN ('abierta', 'en_curso')
+                    ORDER BY fecha_ultima_actualizacion DESC
+                    LIMIT 1
+                """)
+                result = conn.execute(query, {"org_id": org_id, "user_id": user_id}).fetchone()
+
+                if result:
+                    self.id_conversacion_actual = result[0]
+                else:
+                    # Crear nueva conversación
+                    self.id_conversacion_actual = conversaciones_adapter.crear_conversacion(
+                        engine=engine,
+                        id_organizacion=org_id,
+                        id_usuario_cliente=user_id,
+                        asunto="Consulta sobre proyecto",
+                        prioridad="media"
+                    )
+
+            # Cargar mensajes
+            await self.load_messages()
+
+        except Exception as e:
+            print(f"Error al cargar/crear conversación: {e}")
+            self.conversaciones_error = f"Error: {str(e)}"
+
+    async def load_messages(self):
+        """Carga los mensajes de la conversación actual desde la BD."""
+        engine = await self._get_db_engine()
+        if not engine or self.id_conversacion_actual == 0:
+            return
+
+        try:
+            conversaciones_adapter = _load_conversaciones_adapter()
+
+            mensajes = conversaciones_adapter.obtener_mensajes_conversacion(
+                engine=engine,
+                id_conversacion=self.id_conversacion_actual
             )
-        )
-        return rx.scroll_to("chat_bottom")
 
-    def send_message(self):
-        """Envía el mensaje escrito en el input"""
-        if self.new_message:
-            self.format_and_add_message(self.current_identity, self.new_message)
+            self.messages = []
+            for msg in mensajes:
+                self.messages.append(Message(
+                    text=msg["texto_mensaje"],
+                    sender=msg["tipo_emisor"],
+                    time=msg["fecha_envio"].strftime("%d de %B de %Y a las %H:%M") if msg["fecha_envio"] else ""
+                ))
+
+            # Marcar como leídos por cliente
+            conversaciones_adapter.marcar_mensajes_como_leidos(
+                engine=engine,
+                id_conversacion=self.id_conversacion_actual,
+                tipo_lector="cliente"
+            )
+
+        except Exception as e:
+            print(f"Error al cargar mensajes: {e}")
+            self.conversaciones_error = f"Error: {str(e)}"
+
+    async def send_message(self):
+        """Envía el mensaje a la base de datos."""
+        if not self.new_message or self.id_conversacion_actual == 0:
+            return
+
+        engine = await self._get_db_engine()
+        if not engine:
+            return
+
+        try:
+            from web_frontend.web_frontend import State as MainState
+            conversaciones_adapter = _load_conversaciones_adapter()
+
+            main_state = await self.get_state(MainState)
+            user_id = main_state.user_id
+
+            # Guardar en BD
+            conversaciones_adapter.enviar_mensaje(
+                engine=engine,
+                id_conversacion=self.id_conversacion_actual,
+                id_usuario_emisor=user_id,
+                tipo_emisor="cliente",
+                texto_mensaje=self.new_message
+            )
+
+            # Recargar mensajes
             self.new_message = ""
+            await self.load_messages()
 
-    def handle_keypress(self, key: str):
+        except Exception as e:
+            print(f"Error al enviar mensaje: {e}")
+            self.conversaciones_error = f"Error: {str(e)}"
+
+    async def handle_keypress(self, key: str):
         if key == "Enter":
-            return self.send_message()
-
-    def set_identity_interno(self):
-        self.current_identity = "interno"
-
-    def set_identity_cliente(self):
-        self.current_identity = "cliente"
+            await self.send_message()
 
     # === MÉTODOS CALENDARIO ===
 
@@ -197,10 +304,10 @@ class SeguimientoState(rx.State):
 
     # === MÉTODOS TICKETS ===
 
-    def set_seguimiento_project(self, project_name: str):
+    async def set_seguimiento_project(self, project_name: str):
         """Cambia el proyecto seleccionado y carga los tickets."""
         self.seguimiento_project_name = project_name
-        engine = self._get_db_engine()
+        engine = await self._get_db_engine()
         if not engine:
             self.tickets_error = "Error de conexión a base de datos"
             return
@@ -216,7 +323,7 @@ class SeguimientoState(rx.State):
 
                 if result:
                     self.seguimiento_project_id = result[0]
-                    yield self.load_tickets()
+                    await self.load_tickets()
                 else:
                     self.seguimiento_project_id = 0
                     self.tickets_list = []
@@ -225,19 +332,19 @@ class SeguimientoState(rx.State):
             print(f"Error al obtener project_id: {e}")
             self.tickets_error = f"Error: {str(e)}"
 
-    def load_tickets(self):
+    async def load_tickets(self):
         """Carga los tickets del proyecto seleccionado."""
         self.is_loading_tickets = True
         self.tickets_error = ""
-        engine = self._get_db_engine()
+        engine = await self._get_db_engine()
         if not engine:
             self.tickets_error = "Error de conexión a base de datos"
             self.is_loading_tickets = False
             return
 
         try:
-            from ..web_frontend.web_frontend import State as MainState
-            main_state = self.get_state(MainState)
+            from web_frontend.web_frontend import State as MainState
+            main_state = await self.get_state(MainState)
             user_id = main_state.user_id
             org_id = main_state.organization_id
 
@@ -278,15 +385,16 @@ class SeguimientoState(rx.State):
     @rx.event
     async def on_mount_seguimiento(self):
         """Se ejecuta cuando se monta el componente."""
-        engine = self._get_db_engine()
+        engine = await self._get_db_engine()
         if not engine:
             return
 
         try:
-            from ..web_frontend.web_frontend import State as MainState
-            main_state = self.get_state(MainState)
+            from web_frontend.web_frontend import State as MainState
+            main_state = await self.get_state(MainState)
             org_id = main_state.organization_id
 
+            # Cargar proyectos
             with engine.connect() as conn:
                 query = text("""
                     SELECT nombre FROM myllm_projects_db.proyectos
@@ -295,6 +403,9 @@ class SeguimientoState(rx.State):
                 """)
                 results = conn.execute(query, {"org_id": org_id})
                 self.seguimiento_projects_select = [row[0] for row in results]
+
+            # Cargar conversación y mensajes
+            await self.load_or_create_conversacion()
 
         except Exception as e:
             print(f"Error al cargar proyectos: {e}")
@@ -367,36 +478,22 @@ def notificaciones_component() -> rx.Component:
         ),
         # Barra de entrada inferior
         rx.vstack(
-            # Selector de emisor
+            # Indicador de identidad (solo cliente en frontend)
             rx.hstack(
                 rx.box(
                     rx.vstack(
-                        rx.icon(tag="user", size=26, color=rx.cond(SeguimientoState.current_identity == "cliente", "#222", "#999")),
+                        rx.icon(tag="user", size=26, color="#222"),
                         rx.text("Cliente", size="3", color="#666"),
                         spacing="1",
                         align="center",
                     ),
-                    on_click=SeguimientoState.set_identity_cliente,
-                    cursor="pointer",
                     padding="10px",
-                    bg=rx.cond(SeguimientoState.current_identity == "cliente", "#f3c7d6", "transparent"),
-                    border_radius="14px",
-                ),
-                rx.box(
-                    rx.vstack(
-                        rx.icon(tag="shield-check", size=26, color=rx.cond(SeguimientoState.current_identity == "interno", "#222", "#999")),
-                        rx.text("Interno", size="3", color="#666"),
-                        spacing="1",
-                        align="center",
-                    ),
-                    on_click=SeguimientoState.set_identity_interno,
-                    cursor="pointer",
-                    padding="10px",
-                    bg=rx.cond(SeguimientoState.current_identity == "interno", "white", "transparent"),
+                    bg="#f3c7d6",
                     border_radius="14px",
                 ),
                 spacing="6",
                 margin_bottom="10px",
+                justify="center",
             ),
             rx.hstack(
                 rx.icon(tag="circle-plus", color="#666", size=26),

@@ -11,7 +11,9 @@ import reflex as rx
 import datetime
 import pydantic
 import calendar
-from sqlalchemy import text
+import importlib.util
+from pathlib import Path
+from sqlalchemy import create_engine, text
 
 
 # ============================================================================
@@ -48,6 +50,21 @@ def get_formatted_time():
     return f"{now.day} de {meses[now.month]} de {now.year} a las {now.strftime('%H:%M')}"
 
 
+def _load_conversaciones_adapter():
+    """Carga el adapter de conversaciones usando importlib."""
+    adapter_path = (
+        Path(__file__).resolve().parents[3]
+        / "2_shared_application/adapters/conversaciones_adapter.py"
+    )
+    spec = importlib.util.spec_from_file_location("conversaciones_adapter", adapter_path)
+    if spec is None or spec.loader is None:
+        raise ImportError("No se pudo cargar el adaptador de conversaciones")
+
+    adapter_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(adapter_module)
+    return adapter_module
+
+
 # ============================================================================
 # CALENDARIO (desde template)
 # ============================================================================
@@ -73,14 +90,21 @@ class SeguimientoState(rx.State):
     seguimiento_project_id: int = 0
 
     # === NOTIFICACIONES ===
-    messages: list[Message] = [
-        Message(text="¡Buenas! Soy el interface de notificaciones", sender="interno", time="27 de enero de 2026 a las 23:00"),
-        Message(text="Te tendré informado en todo momento de los pasos a seguir", sender="interno", time="27 de enero de 2026 a las 23:01"),
-        Message(text="¿En mensajes como este puedo solicitar información o comunicar cambios?", sender="cliente", time="27 de enero de 2026 a las 23:05"),
-        Message(text="Sí, la idea es asesorarte sobre ellas y consensuar los cambios", sender="interno", time="27 de enero de 2026 a las 23:06"),
-    ]
+    messages: list[Message] = []
     new_message: str = ""
-    current_identity: str = "interno"  # DIFERENCIA: interno por defecto en backoffice
+    current_identity: str = "interno"  # Fijo en backoffice
+    conversaciones_list: list[dict] = []
+    id_conversacion_actual: int = 0
+    conversaciones_error: str = ""
+
+    # Filtros y búsqueda
+    filtro_estado: str = "todas"  # todas, abierta, en_curso, resuelta
+    filtro_prioridad: str = "todas"  # todas, baja, media, alta, urgente
+    busqueda_texto: str = ""
+
+    # Información del cliente actual
+    cliente_info: dict = {}
+    conversacion_actual_info: dict = {}
 
     # === CALENDARIO ===
     current_year: int = datetime.datetime.now().year
@@ -98,48 +122,322 @@ class SeguimientoState(rx.State):
     is_loading_tickets: bool = False
     tickets_error: str = ""
 
-    def _get_db_engine(self):
-        """Obtiene el engine de la base de datos desde el State principal."""
+    async def _get_db_engine(self):
+        """Crea el engine de la base de datos para myllm_projects_db."""
         try:
-            from ..web_backoffice.web_backoffice import State as MainState
-            state = self.get_state(MainState)
-            return state._db_engine
+            # Crear engine para myllm_projects_db
+            DB_USER = "myllm_admin"
+            DB_PASS = "Us3r%40dminP%40ss"  # URL-encoded
+            DB_HOST = "localhost"
+            engine = create_engine(f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}/myllm_projects_db")
+            return engine
         except Exception as e:
-            print(f"Error obteniendo engine: {e}")
+            print(f"Error creando engine: {e}")
             return None
+
+    def set_new_message(self, value: str):
+        """Setter explícito para new_message."""
+        self.new_message = value
 
     # === MÉTODOS NOTIFICACIONES ===
 
-    def format_and_add_message(self, sender: str, text: str):
-        """Añade mensajes desde aplicaciones externas"""
-        formatted_text = text[0].upper() + text[1:] if len(text) > 0 else text
-        if not formatted_text.endswith((".", "!", "?")):
-            formatted_text += "."
+    async def load_conversaciones_organizacion(self):
+        """Carga las conversaciones de la organización."""
+        engine = await self._get_db_engine()
+        if not engine:
+            self.conversaciones_error = "Error de conexión a base de datos"
+            print("[DEBUG] No se pudo obtener el engine de BD")
+            return
 
-        self.messages.append(
-            Message(
-                text=formatted_text,
-                sender=sender,
-                time=get_formatted_time()
+        try:
+            from web_backoffice.web_backoffice import State as MainState
+            conversaciones_adapter = _load_conversaciones_adapter()
+
+            main_state = await self.get_state(MainState)
+            org_id = main_state.organization_id
+            print(f"[DEBUG] Cargando conversaciones para organization_id={org_id}")
+
+            # Obtener conversaciones de la organización
+            conversaciones = conversaciones_adapter.obtener_conversaciones_organizacion(
+                engine=engine,
+                id_organizacion=org_id,
+                solo_activas=True
             )
-        )
-        return rx.scroll_to("chat_bottom")
+            print(f"[DEBUG] Conversaciones encontradas: {len(conversaciones)}")
+            for conv in conversaciones:
+                print(f"[DEBUG]   - Conversación {conv['id_conversacion']}: {conv.get('asunto', 'Sin asunto')} (estado: {conv.get('estado', 'N/A')})")
 
-    def send_message(self):
-        """Envía el mensaje escrito en el input"""
-        if self.new_message:
-            self.format_and_add_message(self.current_identity, self.new_message)
+            self.conversaciones_list = conversaciones
+
+            # Si hay conversaciones, seleccionar la primera
+            if conversaciones:
+                self.id_conversacion_actual = conversaciones[0]["id_conversacion"]
+                print(f"[DEBUG] Conversación seleccionada: {self.id_conversacion_actual}")
+                await self.load_messages()
+                await self.unirse_a_conversacion()
+            else:
+                print("[DEBUG] No hay conversaciones para mostrar")
+
+        except Exception as e:
+            print(f"[ERROR] Error al cargar conversaciones: {e}")
+            import traceback
+            traceback.print_exc()
+            self.conversaciones_error = f"Error: {str(e)}"
+
+    async def unirse_a_conversacion(self):
+        """El usuario interno se une a la conversación actual."""
+        if self.id_conversacion_actual == 0:
+            return
+
+        engine = await self._get_db_engine()
+        if not engine:
+            return
+
+        try:
+            from web_backoffice.web_backoffice import State as MainState
+            conversaciones_adapter = _load_conversaciones_adapter()
+
+            main_state = await self.get_state(MainState)
+            user_id = main_state.user_id
+
+            # Unirse a la conversación
+            conversaciones_adapter.unirse_a_conversacion(
+                engine=engine,
+                id_conversacion=self.id_conversacion_actual,
+                id_usuario_interno=user_id
+            )
+
+        except Exception as e:
+            print(f"Error al unirse a conversación: {e}")
+
+    async def load_messages(self):
+        """Carga los mensajes de la conversación actual desde la BD."""
+        engine = await self._get_db_engine()
+        if not engine or self.id_conversacion_actual == 0:
+            return
+
+        try:
+            conversaciones_adapter = _load_conversaciones_adapter()
+
+            mensajes = conversaciones_adapter.obtener_mensajes_conversacion(
+                engine=engine,
+                id_conversacion=self.id_conversacion_actual
+            )
+
+            self.messages = []
+            for msg in mensajes:
+                self.messages.append(Message(
+                    text=msg["texto_mensaje"],
+                    sender=msg["tipo_emisor"],
+                    time=msg["fecha_envio"].strftime("%d de %B de %Y a las %H:%M") if msg["fecha_envio"] else ""
+                ))
+
+            # Marcar como leídos por interno
+            conversaciones_adapter.marcar_mensajes_como_leidos(
+                engine=engine,
+                id_conversacion=self.id_conversacion_actual,
+                tipo_lector="interno"
+            )
+
+        except Exception as e:
+            print(f"Error al cargar mensajes: {e}")
+            self.conversaciones_error = f"Error: {str(e)}"
+
+    async def send_message(self):
+        """Envía el mensaje a la base de datos."""
+        if not self.new_message or self.id_conversacion_actual == 0:
+            return
+
+        engine = await self._get_db_engine()
+        if not engine:
+            return
+
+        try:
+            from web_backoffice.web_backoffice import State as MainState
+            conversaciones_adapter = _load_conversaciones_adapter()
+
+            main_state = await self.get_state(MainState)
+            user_id = main_state.user_id
+
+            # Guardar en BD
+            conversaciones_adapter.enviar_mensaje(
+                engine=engine,
+                id_conversacion=self.id_conversacion_actual,
+                id_usuario_emisor=user_id,
+                tipo_emisor="interno",
+                texto_mensaje=self.new_message
+            )
+
+            # Recargar mensajes
             self.new_message = ""
+            await self.load_messages()
 
-    def handle_keypress(self, key: str):
+        except Exception as e:
+            print(f"Error al enviar mensaje: {e}")
+            self.conversaciones_error = f"Error: {str(e)}"
+
+    async def handle_keypress(self, key: str):
         if key == "Enter":
-            return self.send_message()
+            await self.send_message()
 
-    def set_identity_interno(self):
-        self.current_identity = "interno"
+    # === MÉTODOS ESPECIALES BACKOFFICE ===
 
-    def set_identity_cliente(self):
-        self.current_identity = "cliente"
+    async def seleccionar_conversacion(self, id_conversacion: int):
+        """Selecciona una conversación de la lista y carga sus mensajes."""
+        self.id_conversacion_actual = id_conversacion
+        await self.load_messages()
+        await self.cargar_info_conversacion()
+        await self.unirse_a_conversacion()
+
+    async def cargar_info_conversacion(self):
+        """Carga información detallada de la conversación y el cliente."""
+        if self.id_conversacion_actual == 0:
+            return
+
+        engine = await self._get_db_engine()
+        if not engine:
+            return
+
+        try:
+            with engine.connect() as conn:
+                # Obtener info de la conversación
+                query = text("""
+                    SELECT c.id_conversacion, c.asunto, c.estado, c.prioridad,
+                           c.id_usuario_cliente, c.fecha_creacion,
+                           c.mensajes_sin_leer_interno, c.total_mensajes
+                    FROM conversaciones c
+                    WHERE c.id_conversacion = :id_conv
+                """)
+                result = conn.execute(query, {"id_conv": self.id_conversacion_actual}).fetchone()
+
+                if result:
+                    self.conversacion_actual_info = {
+                        "id_conversacion": result[0],
+                        "asunto": result[1],
+                        "estado": result[2],
+                        "prioridad": result[3],
+                        "id_usuario_cliente": result[4],
+                        "fecha_creacion": result[5],
+                        "mensajes_sin_leer": result[6],
+                        "total_mensajes": result[7]
+                    }
+
+                    # Obtener info del cliente (desde moks porque está en otra BD)
+                    # Por ahora guardamos solo el ID
+                    self.cliente_info = {
+                        "id_usuario": result[4],
+                        "nombre": f"Usuario {result[4]}"  # Placeholder
+                    }
+
+        except Exception as e:
+            print(f"Error al cargar info de conversación: {e}")
+
+    async def cambiar_prioridad(self, nueva_prioridad: str):
+        """Cambia la prioridad de la conversación actual."""
+        if self.id_conversacion_actual == 0:
+            return
+
+        engine = await self._get_db_engine()
+        if not engine:
+            return
+
+        try:
+            with engine.connect() as conn:
+                query = text("""
+                    UPDATE conversaciones
+                    SET prioridad = :prioridad
+                    WHERE id_conversacion = :id_conv
+                """)
+                conn.execute(query, {
+                    "prioridad": nueva_prioridad,
+                    "id_conv": self.id_conversacion_actual
+                })
+                conn.commit()
+
+            # Recargar info
+            await self.cargar_info_conversacion()
+            await self.load_conversaciones_organizacion()
+
+        except Exception as e:
+            print(f"Error al cambiar prioridad: {e}")
+
+    async def cambiar_estado_conversacion(self, nuevo_estado: str):
+        """Cambia el estado de la conversación actual."""
+        if self.id_conversacion_actual == 0:
+            return
+
+        engine = await self._get_db_engine()
+        if not engine:
+            return
+
+        try:
+            conversaciones_adapter = _load_conversaciones_adapter()
+
+            if nuevo_estado == "cerrada":
+                from web_backoffice.web_backoffice import State as MainState
+                main_state = await self.get_state(MainState)
+                user_id = main_state.user_id
+
+                conversaciones_adapter.cerrar_conversacion(
+                    engine=engine,
+                    id_conversacion=self.id_conversacion_actual,
+                    id_usuario_cierre=user_id
+                )
+            else:
+                # Cambio de estado simple
+                with engine.connect() as conn:
+                    query = text("""
+                        UPDATE conversaciones
+                        SET estado = :estado
+                        WHERE id_conversacion = :id_conv
+                    """)
+                    conn.execute(query, {
+                        "estado": nuevo_estado,
+                        "id_conv": self.id_conversacion_actual
+                    })
+                    conn.commit()
+
+            # Recargar conversaciones
+            await self.load_conversaciones_organizacion()
+
+        except Exception as e:
+            print(f"Error al cambiar estado: {e}")
+
+    def set_filtro_estado(self, estado: str):
+        """Cambia el filtro de estado."""
+        self.filtro_estado = estado
+
+    def set_filtro_prioridad(self, prioridad: str):
+        """Cambia el filtro de prioridad."""
+        self.filtro_prioridad = prioridad
+
+    def set_busqueda_texto(self, texto: str):
+        """Actualiza el texto de búsqueda."""
+        self.busqueda_texto = texto
+
+    @rx.var
+    def conversaciones_filtradas(self) -> list[dict]:
+        """Retorna las conversaciones filtradas según los criterios actuales."""
+        resultado = self.conversaciones_list
+
+        # Filtrar por estado
+        if self.filtro_estado != "todas":
+            resultado = [c for c in resultado if c.get("estado") == self.filtro_estado]
+
+        # Filtrar por prioridad
+        if self.filtro_prioridad != "todas":
+            resultado = [c for c in resultado if c.get("prioridad") == self.filtro_prioridad]
+
+        # Filtrar por texto de búsqueda
+        if self.busqueda_texto:
+            texto_lower = self.busqueda_texto.lower()
+            resultado = [
+                c for c in resultado
+                if (texto_lower in c.get("asunto", "").lower() or
+                    texto_lower in c.get("ultimo_mensaje_texto", "").lower())
+            ]
+
+        return resultado
 
     # === MÉTODOS CALENDARIO ===
 
@@ -197,10 +495,10 @@ class SeguimientoState(rx.State):
 
     # === MÉTODOS TICKETS ===
 
-    def set_seguimiento_project(self, project_name: str):
+    async def set_seguimiento_project(self, project_name: str):
         """Cambia el proyecto seleccionado y carga los tickets."""
         self.seguimiento_project_name = project_name
-        engine = self._get_db_engine()
+        engine = await self._get_db_engine()
         if not engine:
             self.tickets_error = "Error de conexión a base de datos"
             return
@@ -216,7 +514,7 @@ class SeguimientoState(rx.State):
 
                 if result:
                     self.seguimiento_project_id = result[0]
-                    yield self.load_tickets()
+                    await self.load_tickets()
                 else:
                     self.seguimiento_project_id = 0
                     self.tickets_list = []
@@ -225,19 +523,19 @@ class SeguimientoState(rx.State):
             print(f"Error al obtener project_id: {e}")
             self.tickets_error = f"Error: {str(e)}"
 
-    def load_tickets(self):
+    async def load_tickets(self):
         """Carga los tickets del proyecto seleccionado (VISTA INTERNA - todos los usuarios)."""
         self.is_loading_tickets = True
         self.tickets_error = ""
-        engine = self._get_db_engine()
+        engine = await self._get_db_engine()
         if not engine:
             self.tickets_error = "Error de conexión a base de datos"
             self.is_loading_tickets = False
             return
 
         try:
-            from ..web_backoffice.web_backoffice import State as MainState
-            main_state = self.get_state(MainState)
+            from web_backoffice.web_backoffice import State as MainState
+            main_state = await self.get_state(MainState)
             org_id = main_state.organization_id
 
             with engine.connect() as conn:
@@ -277,15 +575,20 @@ class SeguimientoState(rx.State):
     @rx.event
     async def on_mount_seguimiento(self):
         """Se ejecuta cuando se monta el componente."""
-        engine = self._get_db_engine()
+        print("[DEBUG BACKOFFICE] on_mount_seguimiento INICIADO")
+        engine = await self._get_db_engine()
         if not engine:
+            print("[DEBUG BACKOFFICE] ERROR: No se pudo obtener el engine")
             return
 
+        print("[DEBUG BACKOFFICE] Engine obtenido correctamente")
         try:
-            from ..web_backoffice.web_backoffice import State as MainState
-            main_state = self.get_state(MainState)
+            from web_backoffice.web_backoffice import State as MainState
+            main_state = await self.get_state(MainState)
             org_id = main_state.organization_id
+            print(f"[DEBUG BACKOFFICE] Organization ID: {org_id}")
 
+            # Cargar proyectos
             with engine.connect() as conn:
                 query = text("""
                     SELECT nombre FROM myllm_projects_db.proyectos
@@ -294,9 +597,17 @@ class SeguimientoState(rx.State):
                 """)
                 results = conn.execute(query, {"org_id": org_id})
                 self.seguimiento_projects_select = [row[0] for row in results]
+            print(f"[DEBUG BACKOFFICE] Proyectos cargados: {len(self.seguimiento_projects_select)}")
+
+            # Cargar conversaciones
+            print("[DEBUG BACKOFFICE] Llamando a load_conversaciones_organizacion...")
+            await self.load_conversaciones_organizacion()
+            print("[DEBUG BACKOFFICE] load_conversaciones_organizacion completado")
 
         except Exception as e:
-            print(f"Error al cargar proyectos: {e}")
+            print(f"[ERROR BACKOFFICE] Error al cargar proyectos: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 # ============================================================================
@@ -339,121 +650,432 @@ def chat_bubble(msg: Message) -> rx.Component:
     )
 
 
-def notificaciones_component() -> rx.Component:
-    """Chat estilo móvil (desde template)."""
-    return rx.vstack(
-        # Pantalla del chat
+def conversacion_item(conv: dict) -> rx.Component:
+    """Item de conversación en la lista lateral."""
+    return rx.box(
         rx.vstack(
-            rx.auto_scroll(
-                rx.vstack(
-                    rx.foreach(SeguimientoState.messages, chat_bubble),
-                    width="100%",
-                    padding_top="2.5em",
-                    padding_bottom="40px",
-                ),
-                height="100%",
-                style={
-                    "&::-webkit-scrollbar": {"display": "none"},
-                    "scrollbar-width": "none",
-                    "-ms-overflow-style": "none",
-                },
-            ),
-            flex="1",
-            width="100%",
-            bg="transparent",
-            padding_x="12px",
-            overflow="hidden",
-        ),
-        # Barra de entrada inferior
-        rx.vstack(
-            # Selector de emisor
             rx.hstack(
-                rx.box(
-                    rx.vstack(
-                        rx.icon(tag="user", size=26, color=rx.cond(SeguimientoState.current_identity == "cliente", "#222", "#999")),
-                        rx.text("Cliente", size="3", color="#666"),
-                        spacing="1",
-                        align="center",
+                rx.text(
+                    conv.get("asunto", "Sin asunto"),
+                    font_weight="700",
+                    font_size="1.3em",
+                    color=rx.cond(
+                        SeguimientoState.id_conversacion_actual == conv.get("id_conversacion"),
+                        COLORS["primary"],
+                        "#fff"
                     ),
-                    on_click=SeguimientoState.set_identity_cliente,
-                    cursor="pointer",
-                    padding="10px",
-                    bg=rx.cond(SeguimientoState.current_identity == "cliente", "#f3c7d6", "transparent"),
-                    border_radius="14px",
-                ),
-                rx.box(
-                    rx.vstack(
-                        rx.icon(tag="shield-check", size=26, color=rx.cond(SeguimientoState.current_identity == "interno", "#222", "#999")),
-                        rx.text("Interno", size="3", color="#666"),
-                        spacing="1",
-                        align="center",
-                    ),
-                    on_click=SeguimientoState.set_identity_interno,
-                    cursor="pointer",
-                    padding="10px",
-                    bg=rx.cond(SeguimientoState.current_identity == "interno", "white", "transparent"),
-                    border_radius="14px",
-                ),
-                spacing="6",
-                margin_bottom="10px",
-            ),
-            rx.hstack(
-                rx.icon(tag="circle-plus", color="#666", size=26),
-                rx.input(
-                    placeholder="Escribe un mensaje...",
-                    value=SeguimientoState.new_message,
-                    on_change=SeguimientoState.set_new_message,
-                    bg="white",
-                    border="1px solid #ddd",
-                    border_radius="28px",
+                    no_of_lines=1,
                     flex="1",
-                    color="black",
-                    font_size="1.15em",
-                    _placeholder={"color": "#999", "font_size": "1.15em"},
-                    on_key_down=SeguimientoState.handle_keypress,
-                    height="52px",
                 ),
-                rx.icon(
-                    tag="send",
-                    color="#666",
-                    size=26,
-                    on_click=SeguimientoState.send_message,
-                    cursor="pointer",
+                rx.badge(
+                    conv.get("mensajes_sin_leer_interno", 0),
+                    color_scheme="red",
+                    size="2",
+                    display=rx.cond(
+                        conv.get("mensajes_sin_leer_interno", 0),
+                        "block",
+                        "none"
+                    ),
                 ),
+                justify="between",
                 width="100%",
-                padding="12px 20px",
-                bg="#e0e0e0",
-                border_radius="38px",
-                spacing="4",
                 align="center",
-                box_shadow="0px 4px 15px rgba(0,0,0,0.2)",
             ),
-            # Home Bar del móvil
-            rx.center(
-                rx.box(
-                    width="100px",
-                    height="5px",
-                    bg="#222",
-                    border_radius="10px",
-                    opacity="0.2",
-                    margin_top="12px",
+            rx.hstack(
+                rx.match(
+                    conv.get("prioridad", "media"),
+                    ("urgente", rx.box(width="10px", height="10px", bg="#FF4444", border_radius="50%")),
+                    ("alta", rx.box(width="10px", height="10px", bg="#FF8800", border_radius="50%")),
+                    ("media", rx.box(width="10px", height="10px", bg="#4CAF50", border_radius="50%")),
+                    ("baja", rx.box(width="10px", height="10px", bg="#999999", border_radius="50%")),
+                    rx.box(width="10px", height="10px", bg="#999999", border_radius="50%"),
                 ),
-                width="100%",
+                rx.text(
+                    f"Usuario {conv.get('id_usuario_cliente', 'N/A')}",
+                    font_size="1.1em",
+                    color="#bbb",
+                    font_weight="500",
+                ),
+                spacing="2",
+            ),
+            rx.text(
+                conv.get("ultimo_mensaje_texto", "Sin mensajes"),
+                font_size="1.05em",
+                color="#888",
+                no_of_lines=2,
+            ),
+            spacing="1",
+            width="100%",
+        ),
+        padding="12px",
+        bg=rx.cond(
+            SeguimientoState.id_conversacion_actual == conv.get("id_conversacion"),
+            COLORS["border"],
+            "transparent"
+        ),
+        border_radius="8px",
+        cursor="pointer",
+        _hover={"bg": COLORS["border"]},
+        on_click=lambda conv=conv: SeguimientoState.seleccionar_conversacion(conv.get("id_conversacion", 0)),
+        width="100%",
+    )
+
+
+def panel_filtros() -> rx.Component:
+    """Panel de filtros y búsqueda."""
+    return rx.vstack(
+        rx.text("Filtros", font_weight="bold", color=COLORS["primary"], font_size="1.8em"),
+        # Filtro por estado
+        rx.hstack(
+            rx.text("Estado:", font_size="1.3em", color=COLORS["muted_foreground"], font_weight="bold"),
+            rx.select(
+                ["todas", "abierta", "en_curso", "resuelta"],
+                value=SeguimientoState.filtro_estado,
+                on_change=SeguimientoState.set_filtro_estado,
+                size="2",
             ),
             width="100%",
-            padding_x="18px",
-            padding_bottom="25px",
+            justify="between",
+            align="center",
+        ),
+        # Filtro por prioridad
+        rx.hstack(
+            rx.text("Prioridad:", font_size="1.3em", color=COLORS["muted_foreground"], font_weight="bold"),
+            rx.select(
+                ["todas", "baja", "media", "alta", "urgente"],
+                value=SeguimientoState.filtro_prioridad,
+                on_change=SeguimientoState.set_filtro_prioridad,
+                size="2",
+            ),
+            width="100%",
+            justify="between",
+            align="center",
+        ),
+        # Búsqueda
+        rx.input(
+            placeholder="Buscar...",
+            value=SeguimientoState.busqueda_texto,
+            on_change=SeguimientoState.set_busqueda_texto,
+            size="2",
+            width="100%",
+        ),
+        spacing="3",
+        padding="12px",
+        bg=COLORS["card"],
+        border_radius="8px",
+        border=f"1px solid {COLORS['border']}",
+        width="100%",
+    )
+
+
+def panel_acciones() -> rx.Component:
+    """Panel de acciones para la conversación actual."""
+    return rx.vstack(
+        rx.text("Acciones", font_weight="bold", color=COLORS["primary"], font_size="1.2em"),
+        rx.vstack(
+            # Cambiar prioridad
+            rx.vstack(
+                rx.text("Prioridad:", font_size="0.85em", color=COLORS["muted_foreground"]),
+                rx.hstack(
+                    rx.button(
+                        "Baja",
+                        size="1",
+                        variant="soft",
+                        on_click=lambda: SeguimientoState.cambiar_prioridad("baja"),
+                    ),
+                    rx.button(
+                        "Media",
+                        size="1",
+                        variant="soft",
+                        on_click=lambda: SeguimientoState.cambiar_prioridad("media"),
+                    ),
+                    rx.button(
+                        "Alta",
+                        size="1",
+                        variant="soft",
+                        color_scheme="orange",
+                        on_click=lambda: SeguimientoState.cambiar_prioridad("alta"),
+                    ),
+                    rx.button(
+                        "Urgente",
+                        size="1",
+                        variant="soft",
+                        color_scheme="red",
+                        on_click=lambda: SeguimientoState.cambiar_prioridad("urgente"),
+                    ),
+                    spacing="2",
+                    wrap="wrap",
+                ),
+                spacing="2",
+                width="100%",
+            ),
+            # Cambiar estado
+            rx.vstack(
+                rx.text("Estado:", font_size="0.85em", color=COLORS["muted_foreground"]),
+                rx.hstack(
+                    rx.button(
+                        "En Curso",
+                        size="1",
+                        variant="soft",
+                        on_click=lambda: SeguimientoState.cambiar_estado_conversacion("en_curso"),
+                    ),
+                    rx.button(
+                        "Resuelta",
+                        size="1",
+                        variant="soft",
+                        color_scheme="green",
+                        on_click=lambda: SeguimientoState.cambiar_estado_conversacion("resuelta"),
+                    ),
+                    rx.button(
+                        "Cerrar",
+                        size="1",
+                        variant="soft",
+                        color_scheme="red",
+                        on_click=lambda: SeguimientoState.cambiar_estado_conversacion("cerrada"),
+                    ),
+                    spacing="2",
+                    wrap="wrap",
+                ),
+                spacing="2",
+                width="100%",
+            ),
+            spacing="4",
+            width="100%",
+        ),
+        spacing="3",
+        padding="12px",
+        bg=COLORS["card"],
+        border_radius="8px",
+        border=f"1px solid {COLORS['border']}",
+        width="100%",
+    )
+
+
+def lista_conversaciones() -> rx.Component:
+    """Panel lateral con lista de conversaciones."""
+    return rx.vstack(
+        rx.text(
+            "Conversaciones",
+            font_weight="bold",
+            font_size="1.2em",
+            color=COLORS["primary"],
+        ),
+        panel_filtros(),
+        rx.vstack(
+            rx.foreach(
+                SeguimientoState.conversaciones_filtradas,
+                conversacion_item
+            ),
+            spacing="2",
+            width="100%",
+            overflow_y="auto",
+            max_height="calc(100vh - 400px)",
+        ),
+        spacing="3",
+        width="320px",
+        min_width="320px",
+        height="100%",
+        padding="16px",
+        bg=COLORS["card"],
+        border_right=f"1px solid {COLORS['border']}",
+        overflow_y="auto",
+    )
+
+
+def chat_area_compacta() -> rx.Component:
+    """Área de chat estilo móvil - integrado como en el frontend."""
+    return rx.box(
+        rx.vstack(
+            # Área de mensajes con scroll
+            rx.vstack(
+                rx.auto_scroll(
+                    rx.vstack(
+                        rx.foreach(SeguimientoState.messages, chat_bubble),
+                        width="100%",
+                        padding_top="2em",
+                        padding_bottom="2em",
+                        padding_x="1em",
+                    ),
+                    height="100%",
+                    style={
+                        "&::-webkit-scrollbar": {"display": "none"},
+                        "scrollbar-width": "none",
+                        "-ms-overflow-style": "none",
+                    },
+                ),
+                flex="1",
+                width="100%",
+                bg="transparent",
+                overflow="hidden",
+            ),
+
+            # Barra inferior con identidad e input (DENTRO del componente)
+            rx.vstack(
+                # Indicador de identidad
+                rx.hstack(
+                    rx.box(
+                        rx.vstack(
+                            rx.icon(tag="shield-check", size=24, color=COLORS["primary"]),
+                            rx.text("Interno", size="2", color=COLORS["primary"], font_weight="bold"),
+                            spacing="1",
+                            align="center",
+                        ),
+                        padding="10px",
+                        bg=COLORS["card"],
+                        border_radius="12px",
+                    ),
+                    spacing="3",
+                    margin_bottom="10px",
+                    justify="center",
+                ),
+                # Input de mensaje
+                rx.hstack(
+                    rx.icon(tag="circle-plus", color=COLORS["primary"], size=24),
+                    rx.input(
+                        placeholder="Escribe un mensaje...",
+                        value=SeguimientoState.new_message,
+                        on_change=SeguimientoState.set_new_message,
+                        bg=COLORS["card"],
+                        border=f"1px solid {COLORS['border']}",
+                        border_radius="28px",
+                        flex="1",
+                        color=COLORS["foreground"],
+                        font_size="1.1em",
+                        on_key_down=SeguimientoState.handle_keypress,
+                        height="50px",
+                    ),
+                    rx.icon(
+                        tag="send",
+                        color=COLORS["primary"],
+                        size=24,
+                        on_click=SeguimientoState.send_message,
+                        cursor="pointer",
+                    ),
+                    width="100%",
+                    padding="12px 20px",
+                    bg=COLORS["background"],
+                    border_radius="35px",
+                    spacing="3",
+                    align="center",
+                ),
+                width="100%",
+                padding_x="18px",
+                padding_bottom="20px",
+                spacing="0",
+            ),
+
+            width="100%",
+            height="750px",
             spacing="0",
         ),
-        width="520px",
-        height="calc(100vh - 140px)",
-        border="5px solid #222",
-        border_radius="70px",
-        bg="linear-gradient(180deg, #FFFF00 0%, #00FFFF 100%)",
-        box_shadow="0px 25px 70px rgba(0,0,0,0.3)",
-        spacing="0",
+        width="100%",
+        border=f"3px solid {COLORS['border']}",
+        border_radius="25px",
+        bg="linear-gradient(180deg, #1a1a2e 0%, #16213e 100%)",
         overflow="hidden",
-        position="relative",
+    )
+
+
+def notificaciones_component() -> rx.Component:
+    """Componente de notificaciones completo para backoffice - Layout vertical."""
+    return rx.vstack(
+        # 1. Título
+        rx.hstack(
+            rx.icon("message-circle", size=24, color=COLORS["primary"]),
+            rx.heading("Notificaciones", size="7", color=COLORS["primary"]),
+            rx.badge(
+                "Vista Interna",
+                color_scheme="green",
+                variant="soft",
+                size="1",
+            ),
+            spacing="3",
+            align="center",
+            width="100%",
+        ),
+
+        # 2. Área de chat compacta
+        chat_area_compacta(),
+
+        # 3. Filtros
+        panel_filtros(),
+
+        # 4. Lista de conversaciones
+        rx.vstack(
+            rx.text(
+                "Conversaciones",
+                font_weight="bold",
+                font_size="1.8em",
+                color=COLORS["primary"],
+            ),
+            rx.box(
+                rx.vstack(
+                    rx.foreach(
+                        SeguimientoState.conversaciones_filtradas,
+                        conversacion_item
+                    ),
+                    spacing="2",
+                    width="100%",
+                ),
+                width="100%",
+                max_height="400px",
+                overflow_y="auto",
+                padding="8px",
+                bg=COLORS["background"],
+                border=f"1px solid {COLORS['border']}",
+                border_radius="8px",
+            ),
+            spacing="2",
+            width="100%",
+        ),
+
+        # 5. Información y acciones (solo si hay conversación seleccionada)
+        rx.cond(
+            SeguimientoState.id_conversacion_actual > 0,
+            rx.vstack(
+                # Información
+                rx.vstack(
+                    rx.text("Información", font_weight="bold", color=COLORS["primary"], font_size="1.2em"),
+                    rx.vstack(
+                        rx.hstack(
+                            rx.text("Estado:", font_size="0.85em", color=COLORS["muted_foreground"]),
+                            rx.badge(
+                                SeguimientoState.conversacion_actual_info.get("estado", "N/A"),
+                                color_scheme="blue",
+                            ),
+                            justify="between",
+                            width="100%",
+                        ),
+                        rx.hstack(
+                            rx.text("Prioridad:", font_size="0.85em", color=COLORS["muted_foreground"]),
+                            rx.badge(
+                                SeguimientoState.conversacion_actual_info.get("prioridad", "N/A"),
+                                color_scheme="orange",
+                            ),
+                            justify="between",
+                            width="100%",
+                        ),
+                        spacing="2",
+                        width="100%",
+                    ),
+                    spacing="2",
+                    padding="12px",
+                    bg=COLORS["card"],
+                    border_radius="8px",
+                    border=f"1px solid {COLORS['border']}",
+                    width="100%",
+                ),
+                # Acciones
+                panel_acciones(),
+                spacing="3",
+                width="100%",
+            ),
+            rx.fragment(),
+        ),
+
+        width="100%",
+        spacing="3",
+        padding="1em",
     )
 
 
@@ -796,9 +1418,8 @@ def seguimiento_panel() -> rx.Component:
                 background_color=COLORS["background"],
                 border=f"1px solid {COLORS['border']}",
                 border_radius="0.5em",
-                display="flex",
-                justify_content="center",
-                align_items="flex-start",
+                overflow_y="auto",
+                max_height="calc(100vh - 150px)",
             ),
 
             # DERECHA: Calendario + Selector + Tickets
