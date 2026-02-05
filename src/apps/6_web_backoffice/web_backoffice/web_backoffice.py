@@ -46,6 +46,7 @@ from pages.tecnologias import load_tecnologias_content
 from low_panel_pages.show_md import show_md  # noqa: F401 - Importado para registrar la ruta
 from web_backoffice.shared_state import SharedSessionState
 from components.explorador import explorador_panel, ExploradorState
+from components.seguimiento import seguimiento_panel, SeguimientoState
 
 # Importar logger de actividad usando importlib (el directorio tiene número)
 _activity_logger_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "reflex_shared" / "activity_logger.py"
@@ -2577,7 +2578,7 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             ("organizacion", organization_text),
             ("tecnologias", technologies_text),
             ("proyecciones", projections_text),
-            ("seguimiento", tracking_text),
+            ("seguimiento", ""),  # Sin contenido markdown para seguimiento
             ("flujos", flows_text),
             ("descargas", downloads_text),
             presentation_text,
@@ -2676,6 +2677,12 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             proyecciones_management_panel(),
             rx.box(height="0"),
         ),
+        # Panel de seguimiento: visible solo en menú "seguimiento"
+        rx.cond(
+            rx.cond(is_logged_in, active_item == "seguimiento", False),
+            seguimiento_panel(),
+            rx.box(height="0"),
+        ),
         rx.cond(
             rx.cond(
                 is_logged_in,
@@ -2725,8 +2732,8 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             ),
             rx.box(height="0"),
         ),
-        spacing="4",
-        padding="2em",
+        spacing=rx.cond(active_item == "seguimiento", "1", "4"),
+        padding=rx.cond(active_item == "seguimiento", "0.5em 2em", "2em"),
         width="100%",
     )
 

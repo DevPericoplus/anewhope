@@ -5291,8 +5291,40 @@
       },
       "status": "active",
       "created_at": "2026-02-04T23:41:49.214476Z",
-      "last_activity": "2026-02-04T23:41:51.272345Z",
+      "last_activity": "2026-02-04T23:52:53.128974Z",
       "expires_at": "2026-02-05T00:26:49Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "ac1ed1ff-a26e-4b43-af5f-2a60bf7c3068",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "997e868d-42d8-4c46-9d41-3db1f1eb4dfa",
+        "session_token_jti": "11b40356-c1b6-465b-9dc5-43290f987ad2"
+      },
+      "status": "active",
+      "created_at": "2026-02-04T23:59:15.136326Z",
+      "last_activity": "2026-02-04T23:59:17.119775Z",
+      "expires_at": "2026-02-05T00:44:15Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "495f16bd-7159-4b1e-86cf-e22b96a917f1",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "fde17678-df75-42ac-90b8-b2243165090f",
+        "session_token_jti": "e00fa3c2-4059-4228-8924-d43232a819ae"
+      },
+      "status": "active",
+      "created_at": "2026-02-05T01:08:20.804163Z",
+      "last_activity": "2026-02-05T01:08:22.980948Z",
+      "expires_at": "2026-02-05T01:53:20Z",
       "ip_address": "127.0.0.1",
       "user_agent": "Python-urllib/3.13"
     }
@@ -9503,6 +9535,24 @@
       "status": "success",
       "ip_address": "127.0.0.1",
       "session_id": "8c75d133-ad37-4b40-adb5-c38a86149943",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-04T23:59:15.153431Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "ac1ed1ff-a26e-4b43-af5f-2a60bf7c3068",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-05T01:08:20.819921Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "495f16bd-7159-4b1e-86cf-e22b96a917f1",
       "user_agent": "Python-urllib/3.13"
     }
   ]
