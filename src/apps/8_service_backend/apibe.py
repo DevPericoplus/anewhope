@@ -866,6 +866,56 @@ def trainer_health_check(
         ) from exc
 
 
+# =============================================================================
+# OLLAMA TRAINER ENDPOINTS
+# =============================================================================
+
+@app.get("/training/ollama/health")
+def ollama_health(
+    router: BrokerBackendRouter = Depends(get_router_broker),
+):
+    """Health check de Ollama en el trainer."""
+    try:
+        return router.ollama_health()
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/training/ollama/models")
+def ollama_list_models(
+    router: BrokerBackendRouter = Depends(get_router_broker),
+):
+    """Lista modelos disponibles en Ollama."""
+    try:
+        return router.ollama_list_models()
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/training/ollama/generate")
+def ollama_generate(
+    request: dict,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+):
+    """Genera texto con Ollama."""
+    try:
+        return router.ollama_generate(request)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/training/ollama/chat")
+def ollama_chat(
+    request: dict,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+):
+    """Chat con Ollama."""
+    try:
+        return router.ollama_chat(request)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.post("/training/clone-version", response_model=VersionCloneResponse)
 def clone_version_for_training(
     payload: VersionCloneRequest,

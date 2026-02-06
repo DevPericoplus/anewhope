@@ -2800,3 +2800,69 @@ def generate_file_token_endpoint(
             status_code=500,
             detail=f"Error generando token: {str(exc)}"
         ) from exc
+
+
+# =============================================================================
+# OLLAMA TRAINER PROXY ROUTES
+# =============================================================================
+
+@app.get("/trainer/ollama/health")
+def ollama_health_proxy(
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+):
+    """Proxy para health check de Ollama en el trainer."""
+    try:
+        return router.ollama_health(session)
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error(f"Error en proxy ollama health: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/trainer/ollama/models")
+def ollama_models_proxy(
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+):
+    """Proxy para listar modelos de Ollama."""
+    try:
+        return router.ollama_list_models(session)
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error(f"Error en proxy ollama models: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/trainer/ollama/generate")
+def ollama_generate_proxy(
+    request: dict,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+):
+    """Proxy para generar texto con Ollama."""
+    try:
+        return router.ollama_generate(request, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error(f"Error en proxy ollama generate: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/trainer/ollama/chat")
+def ollama_chat_proxy(
+    request: dict,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+):
+    """Proxy para chat con Ollama."""
+    try:
+        return router.ollama_chat(request, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error(f"Error en proxy ollama chat: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

@@ -83,7 +83,7 @@ COLORS = {
 # Define the State class for managing application state
 class State(SharedSessionState):
     """Backoffice state with Redis-based session sharing."""
-    
+
     # User portal state (campos locales del backoffice, no compartidos)
     user_active_menu: str = "inicio"
     user_username: str = ""
@@ -93,7 +93,20 @@ class State(SharedSessionState):
     user_permissions: list[dict[str, str]] = []
     login_error: str = ""
     otp_request_message: str = ""
-    
+
+    # Internal menu state
+    internal_active_menu: str = ""
+
+    # Estado para página Asistente (Ollama)
+    asistente_ollama_available: bool = False
+    asistente_ollama_status: str = "Verificando..."
+    asistente_models: list[str] = []
+    asistente_selected_model: str = ""
+    asistente_prompt: str = ""
+    asistente_response: str = ""
+    asistente_is_loading: bool = False
+    asistente_error: str = ""
+
     # Estado para gestión de usuarios y proyectos de la organización
     # Estado para gestión de usuarios de la organización
     # Estructura: {"user_id": int, "user_name": str, "active": bool}
@@ -314,6 +327,154 @@ class State(SharedSessionState):
         if menu == "proyecciones":
             self.load_org_projects()  # Para el selector de proyectos
             self.reset_proyecciones_state()  # Limpiar estado anterior
+
+    def set_internal_menu(self, menu: str):
+        """Set active menu item for internal tools."""
+        print(f"[DEBUG] set_internal_menu called with menu='{menu}'")
+        self.internal_active_menu = menu
+        self.user_active_menu = ""  # Desactivar menú principal cuando se activa menú interno
+
+        # Log de navegación
+        if self.is_logged_in and self.user_id > 0:
+            activity_log.log_navigation(self.user_id, f"internal:{menu}")
+
+        # Cargar datos específicos según el menú interno
+        if menu == "asistente":
+            print("[DEBUG] Loading Asistente data...")
+            self.check_ollama_health()
+            self.load_ollama_models()
+            print("[DEBUG] Asistente data loading complete")
+
+    # ========== Página Asistente (Ollama) ==========
+
+    def check_ollama_health(self):
+        """Verifica si Ollama está disponible en el trainer."""
+        try:
+            from adapters.api_client import check_ollama_health
+
+            result = check_ollama_health(
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if result and result.get("status") == "healthy":
+                self.asistente_ollama_available = True
+                self.asistente_ollama_status = "✅ Ollama disponible"
+            else:
+                self.asistente_ollama_available = False
+                self.asistente_ollama_status = "❌ Ollama no disponible"
+        except Exception as e:
+            self.asistente_ollama_available = False
+            self.asistente_ollama_status = f"❌ Error: {str(e)}"
+
+    def load_ollama_models(self):
+        """Carga la lista de modelos disponibles en Ollama."""
+        try:
+            from adapters.api_client import get_ollama_models
+
+            result = get_ollama_models(
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            print(f"[DEBUG] Ollama models result: {result}")
+            print(f"[DEBUG] Type of result: {type(result)}")
+
+            if result and "models" in result:
+                models_list = result["models"]
+                print(f"[DEBUG] Models list length: {len(models_list)}")
+
+                # Extraer nombres de modelos
+                model_names = []
+                for i, model in enumerate(models_list):
+                    name = model.get("name", "")
+                    print(f"[DEBUG] Model {i}: name='{name}', type={type(name)}")
+                    if name and name.strip():  # Verificar que no esté vacío ni solo espacios
+                        model_names.append(name)
+
+                self.asistente_models = model_names
+                print(f"[DEBUG] Final model names: {self.asistente_models}")
+
+                if self.asistente_models:
+                    self.asistente_selected_model = self.asistente_models[0]
+                    print(f"[DEBUG] Selected model: '{self.asistente_selected_model}'")
+                else:
+                    self.asistente_error = "No se encontraron modelos con nombre válido"
+                    print("[DEBUG] No valid model names found")
+            else:
+                self.asistente_models = []
+                self.asistente_error = f"Respuesta inválida del servidor"
+                print(f"[DEBUG] Invalid result structure")
+        except Exception as e:
+            self.asistente_models = []
+            self.asistente_error = f"Error cargando modelos: {str(e)}"
+            print(f"[ERROR] Exception loading models: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def set_asistente_model(self, model: str):
+        """Cambia el modelo seleccionado."""
+        self.asistente_selected_model = model
+
+    def set_asistente_prompt(self, prompt: str):
+        """Actualiza el prompt."""
+        self.asistente_prompt = prompt
+
+    @rx.event(background=True)
+    async def submit_asistente_prompt(self):
+        """Envía el prompt al modelo seleccionado y obtiene la respuesta."""
+        # Leer valores antes del context manager
+        prompt = self.asistente_prompt
+        model = self.asistente_selected_model
+        access_token = self.access_token
+        session_token = self.session_token
+
+        if not prompt or not model:
+            async with self:
+                self.asistente_error = "Debe seleccionar un modelo e ingresar un prompt"
+            return
+
+        async with self:
+            self.asistente_is_loading = True
+            self.asistente_error = ""
+            self.asistente_response = ""
+
+        try:
+            from adapters.api_client import generate_with_ollama, chat_with_ollama
+
+            # Intento 1: Usar endpoint generate
+            result = generate_with_ollama(
+                model=model,
+                prompt=prompt,
+                access_token=access_token,
+                session_token=session_token,
+            )
+
+            if result and result.get("response", "").strip():
+                async with self:
+                    self.asistente_response = result["response"]
+            else:
+                # Fallback: Usar endpoint chat
+                result = chat_with_ollama(
+                    model=model,
+                    message=prompt,
+                    access_token=access_token,
+                    session_token=session_token,
+                )
+
+                if result and result.get("message", {}).get("content", "").strip():
+                    async with self:
+                        self.asistente_response = result["message"]["content"]
+                else:
+                    async with self:
+                        self.asistente_error = "El modelo no generó respuesta"
+
+        except Exception as e:
+            async with self:
+                self.asistente_error = f"Error: {str(e)}"
+        finally:
+            async with self:
+                self.asistente_is_loading = False
 
     # ========== Gestión de Usuarios de la Organización ==========
     
@@ -1565,6 +1726,99 @@ def sidebar_menu(is_logged_in: bool) -> rx.Component:
         )
 
 
+def internal_menu(is_logged_in: bool) -> rx.Component:
+    """Internal tools menu (only visible when logged in)."""
+    internal_items = [
+        "asignaciones",
+        "estado_proyectos",
+        "analisis_documentacion",
+        "entrenamientos",
+        "analisis_resultados",
+        "crear_llm",
+        "asistente",
+    ]
+
+    return rx.cond(
+        is_logged_in,
+        rx.vstack(
+            rx.text(
+                "Internal",
+                font_size="1.3em",
+                font_weight="bold",
+                color=COLORS["foreground"],
+                margin_top="2em",
+                margin_bottom="1em"
+            ),
+            rx.vstack(
+                rx.foreach(
+                    internal_items,
+                    lambda item: rx.cond(
+                        # Si es "asignaciones", solo mostrar si identity_type_id == 1
+                        item == "asignaciones",
+                        rx.cond(
+                            State.identity_type_id == 1,
+                            rx.button(
+                                item.replace("_", " ").title(),
+                                on_click=lambda _, i=item: State.set_internal_menu(i),
+                                background_color=rx.cond(
+                                    State.internal_active_menu == item,
+                                    COLORS["primary"],
+                                    "transparent"
+                                ),
+                                color=rx.cond(
+                                    State.internal_active_menu == item,
+                                    COLORS["background"],
+                                    COLORS["foreground"]
+                                ),
+                                width="100%",
+                                justify_content="flex-start",
+                                border="none",
+                                padding="0.75em",
+                                border_radius="0.5em",
+                                cursor="pointer",
+                                text_align="left",
+                                font_size="1.1em",
+                                _hover={"opacity": "0.8"},
+                            ),
+                            rx.fragment(),  # No mostrar nada si no es super admin
+                        ),
+                        # Para cualquier otro item, siempre mostrar
+                        rx.button(
+                            item.replace("_", " ").title(),
+                            on_click=lambda _, i=item: State.set_internal_menu(i),
+                            background_color=rx.cond(
+                                State.internal_active_menu == item,
+                                COLORS["primary"],
+                                "transparent"
+                            ),
+                            color=rx.cond(
+                                State.internal_active_menu == item,
+                                COLORS["background"],
+                                COLORS["foreground"]
+                            ),
+                            width="100%",
+                            justify_content="flex-start",
+                            border="none",
+                            padding="0.75em",
+                            border_radius="0.5em",
+                            cursor="pointer",
+                            text_align="left",
+                            font_size="1.1em",
+                            _hover={"opacity": "0.8"},
+                        ),
+                    ),
+                ),
+                spacing="1",
+                align_items="flex-start",
+                width="100%",
+            ),
+            align_items="flex-start",
+            width="100%",
+        ),
+        rx.fragment(),
+    )
+
+
 def user_action_button(icon: str, tooltip: str, on_click, color: str = COLORS["muted_foreground"]) -> rx.Component:
     """Botón de acción con icono y tooltip."""
     return rx.tooltip(
@@ -2526,6 +2780,244 @@ def tecnologias_management_panel() -> rx.Component:
     )
 
 
+def asistente_panel() -> rx.Component:
+    """Panel del Asistente IA con integración Ollama."""
+    return rx.vstack(
+        # Estado de Ollama
+        rx.hstack(
+            rx.icon("activity", size=20, color=COLORS["primary"]),
+            rx.text("Estado de Ollama:", font_weight="bold", font_size="1.1em", color=COLORS["primary"]),
+            rx.text(
+                State.asistente_ollama_status,
+                color=rx.cond(
+                    State.asistente_ollama_available,
+                    "#22c55e",  # Verde
+                    "#ef4444",  # Rojo
+                ),
+                font_weight="bold",
+            ),
+            rx.button(
+                rx.icon("refresh-cw", size=16),
+                on_click=State.check_ollama_health,
+                size="1",
+                variant="soft",
+                background_color=COLORS["primary"],
+                color="white",
+                _hover={"opacity": "0.9"},
+            ),
+            spacing="3",
+            align_items="center",
+            padding="1em",
+            background_color=COLORS["card"],
+            border_radius="0.5em",
+            border=f"2px solid {COLORS['primary']}",
+            width="100%",
+        ),
+        # Selector de modelo
+        rx.vstack(
+            rx.hstack(
+                rx.icon("cpu", size=20, color=COLORS["primary"]),
+                rx.text("Modelo:", font_weight="bold", font_size="1.1em", color=COLORS["primary"]),
+                spacing="2",
+            ),
+            rx.cond(
+                (State.asistente_models.length() > 0) & (State.asistente_selected_model != ""),
+                rx.select.root(
+                    rx.select.trigger(placeholder="Selecciona un modelo..."),
+                    rx.select.content(
+                        rx.foreach(
+                            State.asistente_models,
+                            lambda model: rx.select.item(model, value=model),
+                        ),
+                    ),
+                    value=State.asistente_selected_model,
+                    on_change=State.set_asistente_model,
+                    size="3",
+                    width="100%",
+                ),
+                rx.cond(
+                    State.asistente_models.length() > 0,
+                    rx.text(
+                        "Cargando modelos...",
+                        color=COLORS["muted_foreground"],
+                        font_style="italic",
+                    ),
+                    rx.text(
+                        "No hay modelos disponibles",
+                        color=COLORS["muted_foreground"],
+                        font_style="italic",
+                    ),
+                ),
+            ),
+            spacing="2",
+            padding="1em",
+            background_color=COLORS["card"],
+            border_radius="0.5em",
+            border=f"2px solid {COLORS['primary']}",
+            width="100%",
+        ),
+        # Panel de consulta
+        rx.vstack(
+            rx.hstack(
+                rx.icon("message-square", size=20, color=COLORS["primary"]),
+                rx.text("Consulta", font_weight="bold", font_size="1.1em", color=COLORS["primary"]),
+                spacing="2",
+            ),
+            rx.text_area(
+                value=State.asistente_prompt,
+                on_change=State.set_asistente_prompt,
+                placeholder="Escribe tu consulta aquí...",
+                size="3",
+                rows="8",
+                width="100%",
+                style={"font-size": "1.1em", "line-height": "1.6"},
+            ),
+            rx.button(
+                rx.cond(
+                    State.asistente_is_loading,
+                    rx.hstack(
+                        rx.spinner(size="2"),
+                        rx.text("Procesando..."),
+                        spacing="2",
+                    ),
+                    rx.hstack(
+                        rx.icon("send", size=16),
+                        rx.text("Enviar consulta"),
+                        spacing="2",
+                    ),
+                ),
+                on_click=State.submit_asistente_prompt,
+                disabled=State.asistente_is_loading,
+                size="3",
+                background_color=COLORS["primary"],
+                color="white",
+                width="100%",
+                _hover={"opacity": "0.9"},
+            ),
+            spacing="2",
+            padding="1em",
+            background_color=COLORS["card"],
+            border_radius="0.5em",
+            border=f"1px solid {COLORS['border']}",
+            width="100%",
+        ),
+        # Error (si existe)
+        rx.cond(
+            State.asistente_error != "",
+            rx.box(
+                rx.hstack(
+                    rx.icon("alert-circle", size=20, color="#ef4444"),
+                    rx.text(State.asistente_error, color="#ef4444"),
+                    spacing="2",
+                ),
+                padding="1em",
+                background_color="#fef2f2",
+                border_radius="0.5em",
+                border="1px solid #fecaca",
+                width="100%",
+            ),
+            rx.fragment(),
+        ),
+        # Panel de respuesta
+        rx.vstack(
+            rx.hstack(
+                rx.icon("message-circle", size=20, color=COLORS["primary"]),
+                rx.text("Respuesta", font_weight="bold", font_size="1.1em", color=COLORS["primary"]),
+                spacing="2",
+            ),
+            rx.cond(
+                State.asistente_response != "",
+                rx.box(
+                    rx.markdown(State.asistente_response),
+                    padding="1em",
+                    background_color=COLORS["background"],
+                    border_radius="0.5em",
+                    width="100%",
+                    min_height="200px",
+                    max_height="600px",
+                    overflow_y="auto",
+                    style={"font-size": "1.1em", "line-height": "1.6"},
+                ),
+                rx.box(
+                    rx.text(
+                        "La respuesta aparecerá aquí...",
+                        color=COLORS["muted_foreground"],
+                        font_style="italic",
+                        font_size="1.1em",
+                    ),
+                    padding="2em",
+                    background_color=COLORS["background"],
+                    border_radius="0.5em",
+                    width="100%",
+                    min_height="200px",
+                ),
+            ),
+            spacing="2",
+            padding="1em",
+            background_color=COLORS["card"],
+            border_radius="0.5em",
+            border=f"1px solid {COLORS['border']}",
+            width="100%",
+        ),
+        spacing="4",
+        width="100%",
+        align_items="flex-start",
+    )
+
+
+def internal_panel(active_item: str) -> rx.Component:
+    """Panel for internal tools menu items."""
+    heading_text = rx.match(
+        active_item,
+        ("asignaciones", "Asignaciones"),
+        ("estado_proyectos", "Estado de Proyectos"),
+        ("analisis_documentacion", "Análisis de Documentación"),
+        ("entrenamientos", "Entrenamientos"),
+        ("analisis_resultados", "Análisis de Resultados"),
+        ("crear_llm", "Crear LLM"),
+        ("asistente", "Asistente"),
+        "Internal Tools",
+    )
+
+    # Contenido para cada sección
+    content = rx.match(
+        active_item,
+        ("asignaciones", rx.text("Panel de asignaciones de recursos y tareas.", color=COLORS["muted_foreground"])),
+        ("estado_proyectos", rx.text("Panel de seguimiento del estado de proyectos.", color=COLORS["muted_foreground"])),
+        ("analisis_documentacion", rx.text("Panel de análisis de documentación.", color=COLORS["muted_foreground"])),
+        ("entrenamientos", rx.text("Panel de gestión de entrenamientos de modelos.", color=COLORS["muted_foreground"])),
+        ("analisis_resultados", rx.text("Panel de análisis de resultados de entrenamiento.", color=COLORS["muted_foreground"])),
+        ("crear_llm", rx.text("Panel de creación y configuración de LLMs.", color=COLORS["muted_foreground"])),
+        ("asistente", asistente_panel()),
+        rx.text("Selecciona una opción del menú Internal.", color=COLORS["muted_foreground"]),
+    )
+
+    # Para asistente, mostrar sin el box contenedor extra
+    return rx.cond(
+        active_item == "asistente",
+        rx.vstack(
+            rx.heading(heading_text, size="8", color=COLORS["primary"], margin_bottom="0.5em"),
+            content,
+            padding="2em",
+            width="100%",
+            align_items="flex-start",
+        ),
+        rx.vstack(
+            rx.heading(heading_text, size="8", color=COLORS["foreground"], margin_bottom="0.5em"),
+            rx.box(
+                content,
+                padding="2em",
+                background_color=COLORS["card"],
+                border_radius="0.5em",
+                border=f"1px solid {COLORS['border']}",
+            ),
+            padding="2em",
+            width="100%",
+            align_items="flex-start",
+        ),
+    )
+
+
 def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
     """Info panel displaying content based on active menu item."""
     presentation_text = load_presentation_content()
@@ -3192,6 +3684,7 @@ def user_portal() -> rx.Component:
                 rx.box(
                     rx.vstack(
                         sidebar_menu(State.is_logged_in),
+                        internal_menu(State.is_logged_in),
                         spacing="4",
                         padding="1.5em",
                     ),
@@ -3200,9 +3693,14 @@ def user_portal() -> rx.Component:
                     background_color=COLORS["card"],
                     border_right=f"1px solid {COLORS['border']}",
                     height="100%",
+                    overflow_y="auto",
                 ),
                 rx.box(
-                    info_panel(State.user_active_menu, State.is_logged_in),
+                    rx.cond(
+                        State.internal_active_menu != "",
+                        internal_panel(State.internal_active_menu),
+                        info_panel(State.user_active_menu, State.is_logged_in),
+                    ),
                     width="75%",
                     background_color=COLORS["background"],
                     padding="0",

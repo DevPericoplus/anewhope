@@ -386,6 +386,44 @@ class BrokerBackendRouter:
                 "No se pudo verificar el estado del trainer"
             ) from exc
 
+    def ollama_health(self) -> dict[str, Any]:
+        """Verifica el estado de Ollama en el trainer."""
+        client = self._ensure_trainer_client()
+        try:
+            return client.ollama_health()
+        except TrainerBackendCommunicationError as exc:
+            raise BrokerBusinessError("No se pudo verificar el estado de Ollama") from exc
+
+    def ollama_list_models(self) -> dict[str, Any]:
+        """Lista modelos disponibles en Ollama."""
+        client = self._ensure_trainer_client()
+        try:
+            return client.ollama_list_models()
+        except TrainerBackendCommunicationError as exc:
+            raise BrokerBusinessError("No se pudo obtener la lista de modelos") from exc
+
+    def ollama_generate(self, request: dict) -> dict[str, Any]:
+        """Genera texto con Ollama."""
+        client = self._ensure_trainer_client()
+        try:
+            print(f"[DEBUG BROKER] Calling trainer ollama_generate with request: {request}")
+            result = client.ollama_generate(request)
+            print(f"[DEBUG BROKER] Trainer returned: {result}")
+            return result
+        except TrainerBackendCommunicationError as exc:
+            print(f"[ERROR BROKER] TrainerBackendCommunicationError: {exc}")
+            import traceback
+            traceback.print_exc()
+            raise BrokerBusinessError("Error generando texto con Ollama") from exc
+
+    def ollama_chat(self, request: dict) -> dict[str, Any]:
+        """Chat con Ollama."""
+        client = self._ensure_trainer_client()
+        try:
+            return client.ollama_chat(request)
+        except TrainerBackendCommunicationError as exc:
+            raise BrokerBusinessError("Error en chat con Ollama") from exc
+
     def clone_version_for_training(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Clona una versión para entrenamiento."""
 

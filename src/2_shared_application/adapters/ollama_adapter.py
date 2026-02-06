@@ -86,8 +86,13 @@ class OllamaAdapter:
         self._host = host
         self._headers = headers or {}
         self._timeout = timeout
-        self._client = Client(host=host, headers=self._headers, timeout=timeout)
-        self._async_client = AsyncClient(host=host, headers=self._headers, timeout=timeout)
+
+        # Importar httpx para crear un objeto Timeout explícito
+        from httpx import Timeout as HttpxTimeout
+        timeout_config = HttpxTimeout(timeout=timeout, read=timeout, write=timeout, connect=timeout)
+
+        self._client = Client(host=host, headers=self._headers, timeout=timeout_config)
+        self._async_client = AsyncClient(host=host, headers=self._headers, timeout=timeout_config)
 
         logger.info(f"OllamaAdapter inicializado con host: {host}")
 
@@ -286,7 +291,7 @@ class OllamaAdapter:
 
             models = [
                 ModelDto(
-                    name=m.get("name", ""),
+                    name=m.get("name") or m.get("model", ""),
                     model=m.get("model", ""),
                     size=m.get("size", 0),
                     digest=m.get("digest", ""),
@@ -315,7 +320,7 @@ class OllamaAdapter:
 
             models = [
                 ModelDto(
-                    name=m.get("name", ""),
+                    name=m.get("name") or m.get("model", ""),
                     model=m.get("model", ""),
                     size=m.get("size", 0),
                     digest=m.get("digest", ""),

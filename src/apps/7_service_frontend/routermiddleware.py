@@ -2897,6 +2897,38 @@ class RouterMiddleware:
                 "No se pudo verificar el estado del trainer"
             ) from exc
 
+    def ollama_health(self, session: SessionContext) -> dict[str, Any]:
+        """Verifica el estado de Ollama en el trainer."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.ollama_health()
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("No se pudo verificar el estado de Ollama") from exc
+
+    def ollama_list_models(self, session: SessionContext) -> dict[str, Any]:
+        """Obtiene la lista de modelos de Ollama."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.ollama_list_models()
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("No se pudo obtener la lista de modelos") from exc
+
+    def ollama_generate(self, request: dict, session: SessionContext) -> dict[str, Any]:
+        """Genera texto con Ollama."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.ollama_generate(request)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("Error generando texto con Ollama") from exc
+
+    def ollama_chat(self, request: dict, session: SessionContext) -> dict[str, Any]:
+        """Chat con Ollama."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.ollama_chat(request)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("Error en chat con Ollama") from exc
+
     def clone_version_for_training(
         self,
         payload: dict[str, Any],

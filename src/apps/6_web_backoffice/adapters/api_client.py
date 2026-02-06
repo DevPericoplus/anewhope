@@ -1915,3 +1915,159 @@ def fmanagement_operation(
     except Exception as exc:
         print(f"Error en operación fmanagement: {exc}")
         return {"success": False, "mensaje": str(exc)}
+
+
+# =============================================================================
+# OLLAMA AI ASSISTANT API FUNCTIONS
+# =============================================================================
+
+def check_ollama_health(access_token: str, session_token: str) -> dict:
+    """
+    Verifica el estado de Ollama en el trainer.
+
+    Flujo: Backoffice → Middleware → Broker → Trainer
+    """
+    middleware_base_url = os.environ.get("MIDDLEWARE_BASE_URL", "http://localhost:8007")
+    url = f"{middleware_base_url}/trainer/ollama/health"
+
+    request_headers = {
+        "Authorization": f"Bearer {access_token}",
+        "X-Session-Token": session_token,
+        "X-Client-App": "backoffice",
+        "Content-Type": "application/json",
+    }
+
+    request = urllib.request.Request(url, headers=request_headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8") if exc.fp else ""
+        print(f"Error checking Ollama health: {exc.code}")
+        print(f"  Response: {error_body}")
+        return {"status": "error", "detail": error_body}
+    except Exception as exc:
+        print(f"Error checking Ollama health: {exc}")
+        return {"status": "error", "detail": str(exc)}
+
+
+def get_ollama_models(access_token: str, session_token: str) -> dict:
+    """
+    Obtiene la lista de modelos disponibles en Ollama.
+
+    Flujo: Backoffice → Middleware → Broker → Trainer
+    """
+    middleware_base_url = os.environ.get("MIDDLEWARE_BASE_URL", "http://localhost:8007")
+    url = f"{middleware_base_url}/trainer/ollama/models"
+
+    request_headers = {
+        "Authorization": f"Bearer {access_token}",
+        "X-Session-Token": session_token,
+        "X-Client-App": "backoffice",
+        "Content-Type": "application/json",
+    }
+
+    request = urllib.request.Request(url, headers=request_headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8") if exc.fp else ""
+        print(f"Error getting Ollama models: {exc.code}")
+        print(f"  Response: {error_body}")
+        return {"models": []}
+    except Exception as exc:
+        print(f"Error getting Ollama models: {exc}")
+        return {"models": []}
+
+
+def generate_with_ollama(
+    model: str,
+    prompt: str,
+    access_token: str,
+    session_token: str,
+    temperature: float = 0.7,
+    num_predict: int = 500,
+) -> dict:
+    """
+    Genera texto con Ollama usando el endpoint generate.
+
+    Flujo: Backoffice → Middleware → Broker → Trainer
+    """
+    middleware_base_url = os.environ.get("MIDDLEWARE_BASE_URL", "http://localhost:8007")
+    url = f"{middleware_base_url}/trainer/ollama/generate"
+
+    request_headers = {
+        "Authorization": f"Bearer {access_token}",
+        "X-Session-Token": session_token,
+        "X-Client-App": "backoffice",
+        "Content-Type": "application/json",
+    }
+
+    payload = json.dumps({
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "temperature": temperature,
+            "num_predict": num_predict,
+        }
+    }).encode("utf-8")
+
+    request = urllib.request.Request(url, data=payload, headers=request_headers, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=1800) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8") if exc.fp else ""
+        print(f"Error generating with Ollama: {exc.code}")
+        print(f"  Response: {error_body}")
+        return {"response": "", "error": error_body}
+    except Exception as exc:
+        print(f"Error generating with Ollama: {exc}")
+        return {"response": "", "error": str(exc)}
+
+
+def chat_with_ollama(
+    model: str,
+    message: str,
+    access_token: str,
+    session_token: str,
+    temperature: float = 0.7,
+) -> dict:
+    """
+    Chatea con Ollama usando el endpoint chat (fallback para generate).
+
+    Flujo: Backoffice → Middleware → Broker → Trainer
+    """
+    middleware_base_url = os.environ.get("MIDDLEWARE_BASE_URL", "http://localhost:8007")
+    url = f"{middleware_base_url}/trainer/ollama/chat"
+
+    request_headers = {
+        "Authorization": f"Bearer {access_token}",
+        "X-Session-Token": session_token,
+        "X-Client-App": "backoffice",
+        "Content-Type": "application/json",
+    }
+
+    payload = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": message}],
+        "stream": False,
+        "options": {
+            "temperature": temperature,
+        }
+    }).encode("utf-8")
+
+    request = urllib.request.Request(url, data=payload, headers=request_headers, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=1800) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8") if exc.fp else ""
+        print(f"Error chatting with Ollama: {exc.code}")
+        print(f"  Response: {error_body}")
+        return {"message": {"content": ""}, "error": error_body}
+    except Exception as exc:
+        print(f"Error chatting with Ollama: {exc}")
+        return {"message": {"content": ""}, "error": str(exc)}

@@ -110,8 +110,9 @@ def init_ollama_adapter(host: str = "http://localhost:11434") -> None:
     """
     global _ollama_adapter
     try:
-        _ollama_adapter = OllamaAdapter(host=host)
-        logger.info(f"Adaptador de Ollama inicializado con host: {host}")
+        # Timeout de 1800 segundos (30 minutos) para modelos en CPU
+        _ollama_adapter = OllamaAdapter(host=host, timeout=1800.0)
+        logger.info(f"Adaptador de Ollama inicializado con host: {host}, timeout: 1800s")
     except Exception as e:
         logger.error(f"Error inicializando adaptador de Ollama: {e}")
         _ollama_adapter = None

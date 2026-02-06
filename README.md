@@ -1685,6 +1685,51 @@ Al implementar nuevas funcionalidades que requieran control de acceso:
 5. ✅ Retornar HTTP 403 si el usuario no tiene permisos
 6. ✅ Documentar en esta sección y en AGENTS.md
 
+#### Menú Internal en Backoffice
+
+El **Backoffice** incluye un menú especializado llamado "**Internal**" con herramientas internas para gestión avanzada del sistema.
+
+**Ubicación:** Panel lateral derecho del backoffice, debajo del menú principal "Menú"
+
+**Visibilidad:** Solo visible para usuarios autenticados (`is_logged_in == true`)
+
+##### Opciones del menú Internal
+
+| Opción | Requisito de acceso | Descripción |
+|--------|---------------------|-------------|
+| **Asignaciones** | `identity_type_id == 1` (SuperAdmin) | Gestión de asignaciones de recursos y tareas (solo super administradores) |
+| Estado Proyectos | Todos los usuarios autenticados | Panel de seguimiento del estado de proyectos |
+| Análisis Documentación | Todos los usuarios autenticados | Panel de análisis de documentación |
+| Entrenamientos | Todos los usuarios autenticados | Gestión de entrenamientos de modelos |
+| Análisis Resultados | Todos los usuarios autenticados | Análisis de resultados de entrenamiento |
+| Crear LLM | Todos los usuarios autenticados | Creación y configuración de LLMs |
+| Asistente | Todos los usuarios autenticados | Asistente inteligente |
+
+##### Restricción especial: Asignaciones
+
+La opción "**Asignaciones**" tiene una restricción adicional de seguridad:
+
+```python
+# Implementación en web_backoffice.py
+rx.cond(
+    item == "asignaciones",
+    rx.cond(
+        State.identity_type_id == 1,  # Solo SuperAdmin
+        rx.button(...),
+        rx.fragment(),  # Ocultar para otros roles
+    ),
+    rx.button(...),  # Otras opciones siempre visibles
+)
+```
+
+**Justificación:** La gestión de asignaciones es una operación crítica que solo debe estar disponible para super administradores (`identity_type_id == 1`) que tienen control total sobre el sistema.
+
+**Comportamiento:**
+- ✅ Si `identity_type_id == 1`: La opción "Asignaciones" aparece en el menú
+- ❌ Si `identity_type_id != 1`: La opción "Asignaciones" está completamente oculta
+
+**Archivo:** `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py` - función `internal_menu()`
+
 ### Borrado lógico de usuarios (IMPORTANTE)
 
 El sistema implementa **borrado LÓGICO** de usuarios, no borrado físico. Esto significa:

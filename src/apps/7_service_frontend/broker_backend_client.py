@@ -88,6 +88,7 @@ class BrokerBackendClient:
         path: str,
         payload: dict[str, Any] | list[Any] | None = None,
         extra_headers: dict[str, str] | None = None,
+        timeout: float = 10.0,
     ) -> Any:
         """Ejecuta una petición HTTP y valida la respuesta.
 
@@ -96,6 +97,7 @@ class BrokerBackendClient:
             path: Ruta del endpoint
             payload: Cuerpo de la petición (opcional)
             extra_headers: Headers adicionales (opcional)
+            timeout: Timeout en segundos (por defecto 10.0)
 
         Returns:
             Respuesta deserializada como JSON
@@ -108,7 +110,7 @@ class BrokerBackendClient:
 
         try:
             response = self._client.request(
-                method, url, json=payload, headers=headers, timeout=10.0
+                method, url, json=payload, headers=headers, timeout=timeout
             )
         except httpx.RequestError as exc:
             raise BrokerBackendCommunicationError(
@@ -411,6 +413,42 @@ class BrokerBackendClient:
         data = self._request(
             "GET", f"/training/permissions?identity_type_id={identity_type_id}"
         )
+        return dict(data or {})
+
+    # === Operaciones de Ollama ===
+
+    def ollama_health(self) -> dict[str, Any]:
+        """Verifica el estado de Ollama en el trainer."""
+        data = self._request("GET", "/training/ollama/health", timeout=1800.0)
+        return dict(data or {})
+
+    def ollama_list_models(self) -> dict[str, Any]:
+        """Lista modelos disponibles en Ollama."""
+        data = self._request("GET", "/training/ollama/models", timeout=1800.0)
+        return dict(data or {})
+
+    def ollama_generate(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Genera texto con Ollama.
+
+        Args:
+            request: Configuración de generación (model, prompt, options)
+
+        Returns:
+            Respuesta de Ollama con el texto generado
+        """
+        data = self._request("POST", "/training/ollama/generate", payload=request, timeout=1800.0)
+        return dict(data or {})
+
+    def ollama_chat(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Chat con Ollama.
+
+        Args:
+            request: Configuración del chat (model, messages, options)
+
+        Returns:
+            Respuesta de Ollama con el mensaje generado
+        """
+        data = self._request("POST", "/training/ollama/chat", payload=request, timeout=1800.0)
         return dict(data or {})
 
     # ========================================================================

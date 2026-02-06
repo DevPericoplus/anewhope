@@ -108,11 +108,19 @@ class TrainerBackendClient:
         url = f"{self._base_url}{path}"
         headers = self._build_headers(extra_headers)
 
+        print(f"[DEBUG TRAINER CLIENT] Requesting {method} {url}")
+        print(f"[DEBUG TRAINER CLIENT] Payload: {payload}")
+        print(f"[DEBUG TRAINER CLIENT] Headers: {headers}")
+
         try:
             response = self._client.request(
-                method, url, json=payload, headers=headers, timeout=30.0
+                method, url, json=payload, headers=headers, timeout=1800.0
             )
+            print(f"[DEBUG TRAINER CLIENT] Response status: {response.status_code}")
+            print(f"[DEBUG TRAINER CLIENT] Response content length: {len(response.content) if response.content else 0}")
         except httpx.RequestError as exc:
+            print(f"[ERROR TRAINER CLIENT] RequestError: {exc}")
+            print(f"[ERROR TRAINER CLIENT] URL was: {url}")
             raise TrainerBackendCommunicationError(
                 "No se pudo contactar con el backend IA (trainer)"
             ) from exc
@@ -143,6 +151,24 @@ class TrainerBackendClient:
         """Verifica el estado del servicio trainer."""
 
         return self._request("GET", "/trainer/health")
+
+    # === Operaciones de Ollama ===
+
+    def ollama_health(self) -> dict[str, Any]:
+        """Verifica el estado de Ollama en el trainer."""
+        return self._request("GET", "/trainer/ollama/health")
+
+    def ollama_list_models(self) -> dict[str, Any]:
+        """Lista modelos disponibles en Ollama."""
+        return self._request("GET", "/trainer/ollama/models")
+
+    def ollama_generate(self, request: dict) -> dict[str, Any]:
+        """Genera texto con Ollama."""
+        return self._request("POST", "/trainer/ollama/generate", payload=request)
+
+    def ollama_chat(self, request: dict) -> dict[str, Any]:
+        """Chat con Ollama."""
+        return self._request("POST", "/trainer/ollama/chat", payload=request)
 
     # === Operaciones de Versión ===
 
