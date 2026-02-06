@@ -1802,7 +1802,7 @@ def fmanagement_list_for_explorador(
     """
     # Generar nombres de carpetas si no se proveen
     if not org_folder:
-        org_folder = f"ORG{str(org_id).zfill(4)}"
+        org_folder = f"ORG{str(org_id).zfill(5)}"
     if not prj_folder:
         prj_folder = f"PRJ{str(project_id).zfill(5)}"
 
@@ -1938,7 +1938,7 @@ def fmanagement_list_all_project_versions(
     """
     # Generar nombres de carpetas si no se proveen
     if not org_folder:
-        org_folder = f"ORG{str(org_id).zfill(4)}"
+        org_folder = f"ORG{str(org_id).zfill(5)}"
     if not prj_folder:
         prj_folder = f"PRJ{str(project_id).zfill(5)}"
 

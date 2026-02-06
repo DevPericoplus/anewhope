@@ -3361,7 +3361,7 @@ class BackendCoreRouter:
         )
 
         # Obtener carpetas formateadas
-        org_folder = f"ORG{org_id:04d}"
+        org_folder = f"ORG{org_id:05d}"
         prj_folder = f"PRJ{project_id:05d}"
 
         version_id = None

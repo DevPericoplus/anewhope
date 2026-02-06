@@ -1391,7 +1391,7 @@ class ExploradorState(rx.State):
             logger.info(f"Cargando todas las versiones del proyecto: org={self.id_organizacion}, prj={self.id_proyecto}")
 
             # Generar nombres de carpetas
-            org_folder = f"ORG{str(self.id_organizacion).zfill(4)}"
+            org_folder = f"ORG{str(self.id_organizacion).zfill(5)}"
             prj_folder = f"PRJ{str(self.id_proyecto).zfill(5)}"
 
             # Llamar al adaptador que carga todas las versiones

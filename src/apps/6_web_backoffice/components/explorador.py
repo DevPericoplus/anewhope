@@ -259,12 +259,12 @@ class ExploradorState(SharedSessionState):
                Backoffice → Middleware → Broker → Backend Core → fmanagement (contenido)
 
         Construye los nombres de carpetas según convención:
-        - org_folder: "ORG{organization_id:04d}"  (ej: "ORG0001")
+        - org_folder: "ORG{organization_id:05d}"  (ej: "ORG00001")
         - prj_folder: "PRJ{id_proyecto:05d}"      (ej: "PRJ00001")
         """
         try:
             # Construir nombres de carpetas
-            org_folder = f"ORG{str(self.organization_id).zfill(4)}"
+            org_folder = f"ORG{str(self.organization_id).zfill(5)}"
             prj_folder = f"PRJ{str(self.id_proyecto).zfill(5)}"
 
             logger.info(
@@ -897,7 +897,7 @@ class ExploradorState(SharedSessionState):
         logger.info("Ejecutando acción: %s sobre %s", accion, item.name)
 
         # Construir parámetros base para fmanagement
-        org_folder = f"ORG{str(self.organization_id).zfill(4)}"
+        org_folder = f"ORG{str(self.organization_id).zfill(5)}"
         prj_folder = f"PRJ{str(self.id_proyecto).zfill(5)}"
         version_folder = self.id_version
 
