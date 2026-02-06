@@ -45,6 +45,7 @@ from low_panel_pages.show_md import show_md  # noqa: F401 - Importado para regis
 from web_frontend.shared_state import SharedSessionState
 from components.explorador import explorador_panel, ExploradorState
 from components.seguimiento import seguimiento_panel, SeguimientoState
+from components.informes import informes_panel, InformesState
 
 # Importar logger de actividad usando importlib (el directorio tiene número)
 _activity_logger_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "reflex_shared" / "activity_logger.py"
@@ -2072,6 +2073,7 @@ def sidebar_menu(is_logged_in: bool) -> rx.Component:
             "tecnologias",
             "proyecciones",
             "seguimiento",
+            "informes",
             "flujos",
             "descargas",
         ],
@@ -3564,6 +3566,7 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             ("tecnologias", "Tecnologias"),
             ("proyecciones", "Proyecciones"),
             ("seguimiento", "Seguimiento"),
+            ("informes", "Informes"),
             ("flujos", "Flujos"),
             ("descargas", "Descargas"),
             "Organizacion",
@@ -3585,6 +3588,7 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             ("tecnologias", technologies_text),
             ("proyecciones", projections_text),
             ("seguimiento", ""),  # Sin contenido markdown para seguimiento
+            ("informes", ""),  # Sin contenido markdown para informes
             ("flujos", flows_text),
             ("descargas", downloads_text),
             presentation_text,
@@ -3600,7 +3604,12 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
     )
     
     return rx.vstack(
-        rx.heading(heading_text, size="8", color=COLORS["foreground"]),
+        # No mostrar heading para informes (lo incluye el propio componente)
+        rx.cond(
+            active_item != "informes",
+            rx.heading(heading_text, size="8", color=COLORS["foreground"], margin_bottom="0.5em"),
+            rx.box(height="0"),
+        ),
         rx.cond(
             rx.cond(is_logged_in, False, active_item == "inicio"),
             rx.box(
@@ -3620,38 +3629,42 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             rx.box(height="0"),
         ),
         # Contenido: markdown para todas las secciones (públicas e internas)
-        rx.markdown(
-            content_text,
-            component_map={
-                "h1": lambda text: rx.heading(text, size="6", color=COLORS["foreground"], margin_bottom="0.5em"),
-                "h2": lambda text: rx.heading(text, size="5", color=COLORS["primary"], margin_top="1em", margin_bottom="0.5em"),
-                "h3": lambda text: rx.heading(text, size="5", color=COLORS["foreground"], margin_top="0.8em", margin_bottom="0.4em"),
-                "p": lambda text: rx.text(text, color=COLORS["muted_foreground"], font_size="1.15em", line_height="1.6", margin_bottom="0.6em"),
-                "li": lambda text: rx.list_item(rx.text(text, color=COLORS["muted_foreground"], font_size="1.15em", line_height="1.5")),
-                "strong": lambda text: rx.text(text, font_weight="bold", color=COLORS["foreground"], as_="span"),
-                "em": lambda text: rx.text(text, font_style="italic", as_="span"),
-                "blockquote": lambda text: rx.box(
-                    rx.text(text, color=COLORS["primary"], font_style="italic", font_size="1.2em"),
-                    border_left=f"4px solid {COLORS['primary']}",
-                    padding_left="1.2em",
-                    margin_y="1.2em",
-                    background_color=f"{COLORS['primary']}10",
-                    padding="1em",
-                    border_radius="0.3em",
-                ),
-                "table": lambda children: rx.box(
-                    children,
-                    width="100%",
-                    overflow_x="auto",
-                    margin_y="1.2em",
-                ),
-                "th": lambda text: rx.table.column_header_cell(
-                    rx.text(text, font_weight="bold", color=COLORS["foreground"], font_size="1.1em"),
-                ),
-                "td": lambda text: rx.table.cell(
-                    rx.text(text, color=COLORS["muted_foreground"], font_size="1.05em"),
-                ),
-            },
+        rx.cond(
+            content_text != "",
+            rx.markdown(
+                content_text,
+                component_map={
+                    "h1": lambda text: rx.heading(text, size="6", color=COLORS["foreground"], margin_bottom="0.5em"),
+                    "h2": lambda text: rx.heading(text, size="5", color=COLORS["primary"], margin_top="1em", margin_bottom="0.5em"),
+                    "h3": lambda text: rx.heading(text, size="5", color=COLORS["foreground"], margin_top="0.8em", margin_bottom="0.4em"),
+                    "p": lambda text: rx.text(text, color=COLORS["muted_foreground"], font_size="1.15em", line_height="1.6", margin_bottom="0.6em"),
+                    "li": lambda text: rx.list_item(rx.text(text, color=COLORS["muted_foreground"], font_size="1.15em", line_height="1.5")),
+                    "strong": lambda text: rx.text(text, font_weight="bold", color=COLORS["foreground"], as_="span"),
+                    "em": lambda text: rx.text(text, font_style="italic", as_="span"),
+                    "blockquote": lambda text: rx.box(
+                        rx.text(text, color=COLORS["primary"], font_style="italic", font_size="1.2em"),
+                        border_left=f"4px solid {COLORS['primary']}",
+                        padding_left="1.2em",
+                        margin_y="1.2em",
+                        background_color=f"{COLORS['primary']}10",
+                        padding="1em",
+                        border_radius="0.3em",
+                    ),
+                    "table": lambda children: rx.box(
+                        children,
+                        width="100%",
+                        overflow_x="auto",
+                        margin_y="1.2em",
+                    ),
+                    "th": lambda text: rx.table.column_header_cell(
+                        rx.text(text, font_weight="bold", color=COLORS["foreground"], font_size="1.1em"),
+                    ),
+                    "td": lambda text: rx.table.cell(
+                        rx.text(text, color=COLORS["muted_foreground"], font_size="1.05em"),
+                    ),
+                },
+            ),
+            rx.box(height="0"),
         ),
         rx.cond(
             rx.cond(is_logged_in, active_item == "flujos", False),
@@ -3685,6 +3698,12 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
         rx.cond(
             rx.cond(is_logged_in, active_item == "seguimiento", False),
             seguimiento_panel(),
+            rx.box(height="0"),
+        ),
+        # Panel de informes: visible solo en menú "informes"
+        rx.cond(
+            rx.cond(is_logged_in, active_item == "informes", False),
+            informes_panel(),
             rx.box(height="0"),
         ),
         # Paneles de métricas: visibles solo en menú "inicio"
@@ -3980,6 +3999,7 @@ def dashboard_tabs() -> rx.Component:
         spacing="0",
         width="100%",
         background_color=COLORS["background"],
+        padding="0",
     )
 
 

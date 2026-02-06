@@ -12,7 +12,7 @@ def get_folder_by_id_organization(id_organization: int) -> str:
 def get_folder_by_id_project(id_project: int) -> str:
     """Devuelve el identificador de carpeta para un proyecto."""
 
-    return f"PRJ{id_project:04d}"
+    return f"PRJ{id_project:05d}"
 
 
 def get_folder_by_id_version(id_version: int) -> str:
