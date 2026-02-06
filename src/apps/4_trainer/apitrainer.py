@@ -242,15 +242,38 @@ def get_router_trainer(
 # === Aplicación FastAPI ===
 
 
+# Cargar módulo de Ollama una sola vez y reutilizarlo
+_ollama_module_path = Path(__file__).resolve().parent / "apitrainer_ollama.py"
+_ollama_module = _load_trainer_module("apitrainer_ollama", _ollama_module_path)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Gestiona el ciclo de vida de la aplicación."""
 
     _configure_logging()
+
+    # Inicializar adaptador de Ollama
+    try:
+        import os
+        ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+        _ollama_module.init_ollama_adapter(host=ollama_host)
+        logging.info(f"Adaptador de Ollama inicializado con host: {ollama_host}")
+    except Exception as e:
+        logging.warning(f"No se pudo inicializar Ollama (puede no estar instalado): {e}")
+
     yield
 
 
 app = FastAPI(title="Backend IA (Trainer)", lifespan=lifespan)
+
+
+# Registrar endpoints de Ollama usando el mismo módulo
+try:
+    _ollama_module.register_ollama_routes(app)
+    logging.info("Endpoints de Ollama registrados correctamente")
+except Exception as e:
+    logging.warning(f"No se pudieron registrar endpoints de Ollama: {e}")
 
 
 # === Endpoints ===

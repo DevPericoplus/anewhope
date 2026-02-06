@@ -8,69 +8,96 @@ incluyendo chat, generación de texto, embeddings y gestión de modelos.
 from __future__ import annotations
 
 import logging
+import os
+import sys
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, Header, HTTPException, status
 
-# Importar DTOs de la capa de aplicación compartida
+# Configurar rutas para imports
+_current_dir = Path(__file__).resolve().parent
+_src_dir = _current_dir.parents[1]  # Llegar a src/
+_shared_app_dir = _src_dir / "2_shared_application"
+
+# Agregar src/ al PYTHONPATH para que Python reconozca 2_shared_application como paquete
+if str(_src_dir) not in sys.path:
+    sys.path.insert(0, str(_src_dir))
+
+# Usar importlib.util para cargar módulos con estructura de paquete
 import importlib.util
-import sys
-from pathlib import Path
+from types import ModuleType
 
 
-def _load_shared_module(module_name: str, relative_path: str) -> any:
-    """Carga un módulo compartido dinámicamente."""
-    module_path = Path(__file__).resolve().parents[2] / relative_path
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
+def _load_package_module(module_name: str, file_path: Path, is_package: bool = False) -> ModuleType:
+    """Carga un módulo o paquete desde una ruta absoluta con soporte para relative imports."""
+    spec = importlib.util.spec_from_file_location(
+        module_name,
+        file_path,
+        submodule_search_locations=[str(file_path.parent)] if is_package else None
+    )
     if spec is None or spec.loader is None:
-        raise ImportError(f"No se pudo cargar {module_name} desde {module_path}")
+        raise ImportError(f"No se pudo cargar {module_name} desde {file_path}")
+
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
+
+    if is_package:
+        module.__path__ = [str(file_path.parent)]
+
     spec.loader.exec_module(module)
     return module
 
 
-# Cargar DTOs de Ollama
-_ollama_dtos = _load_shared_module(
-    "ollama_dtos_trainer",
-    "2_shared_application/dtos/ollama_dtos.py"
-)
+# Crear la estructura de paquetes para que los relative imports funcionen
+# 1. Cargar 2_shared_application como paquete raíz
+_shared_init = _shared_app_dir / "__init__.py"
+_shared_pkg = _load_package_module("2_shared_application", _shared_init, is_package=True)
 
-# Cargar adaptador de Ollama
-_ollama_adapter_module = _load_shared_module(
-    "ollama_adapter_trainer",
-    "2_shared_application/adapters/ollama_adapter.py"
-)
+# 2. Cargar dtos como subpaquete
+_dtos_init = _shared_app_dir / "dtos" / "__init__.py"
+_dtos_pkg = _load_package_module("2_shared_application.dtos", _dtos_init, is_package=True)
 
-# Importar clases necesarias
-ChatRequestDto = _ollama_dtos.ChatRequestDto
-ChatResponseDto = _ollama_dtos.ChatResponseDto
-GenerateRequestDto = _ollama_dtos.GenerateRequestDto
-GenerateResponseDto = _ollama_dtos.GenerateResponseDto
-EmbedRequestDto = _ollama_dtos.EmbedRequestDto
-EmbedResponseDto = _ollama_dtos.EmbedResponseDto
-ModelListResponseDto = _ollama_dtos.ModelListResponseDto
-ModelShowRequestDto = _ollama_dtos.ModelShowRequestDto
-ModelInfoDto = _ollama_dtos.ModelInfoDto
-PullModelRequestDto = _ollama_dtos.PullModelRequestDto
-PullModelResponseDto = _ollama_dtos.PullModelResponseDto
-DeleteModelRequestDto = _ollama_dtos.DeleteModelRequestDto
-DeleteModelResponseDto = _ollama_dtos.DeleteModelResponseDto
-CopyModelRequestDto = _ollama_dtos.CopyModelRequestDto
-CopyModelResponseDto = _ollama_dtos.CopyModelResponseDto
-CreateModelRequestDto = _ollama_dtos.CreateModelRequestDto
-CreateModelResponseDto = _ollama_dtos.CreateModelResponseDto
-RunningModelsResponseDto = _ollama_dtos.RunningModelsResponseDto
-VersionResponseDto = _ollama_dtos.VersionResponseDto
+# 3. Cargar ollama_dtos dentro del paquete dtos
+_dtos_path = _shared_app_dir / "dtos" / "ollama_dtos.py"
+_dtos_module = _load_package_module("2_shared_application.dtos.ollama_dtos", _dtos_path)
 
-OllamaAdapter = _ollama_adapter_module.OllamaAdapter
-OllamaError = _ollama_adapter_module.OllamaError
+# 4. Cargar adapters como subpaquete
+_adapters_init = _shared_app_dir / "adapters" / "__init__.py"
+_adapters_pkg = _load_package_module("2_shared_application.adapters", _adapters_init, is_package=True)
+
+# 5. Cargar ollama_adapter (ahora puede hacer from ..dtos.ollama_dtos import)
+_adapter_path = _shared_app_dir / "adapters" / "ollama_adapter.py"
+_adapter_module = _load_package_module("2_shared_application.adapters.ollama_adapter", _adapter_path)
+
+# Extraer las clases que necesitamos
+ChatRequestDto = _dtos_module.ChatRequestDto
+ChatResponseDto = _dtos_module.ChatResponseDto
+GenerateRequestDto = _dtos_module.GenerateRequestDto
+GenerateResponseDto = _dtos_module.GenerateResponseDto
+EmbedRequestDto = _dtos_module.EmbedRequestDto
+EmbedResponseDto = _dtos_module.EmbedResponseDto
+ModelListResponseDto = _dtos_module.ModelListResponseDto
+ModelShowRequestDto = _dtos_module.ModelShowRequestDto
+ModelInfoDto = _dtos_module.ModelInfoDto
+PullModelRequestDto = _dtos_module.PullModelRequestDto
+PullModelResponseDto = _dtos_module.PullModelResponseDto
+DeleteModelRequestDto = _dtos_module.DeleteModelRequestDto
+DeleteModelResponseDto = _dtos_module.DeleteModelResponseDto
+CopyModelRequestDto = _dtos_module.CopyModelRequestDto
+CopyModelResponseDto = _dtos_module.CopyModelResponseDto
+CreateModelRequestDto = _dtos_module.CreateModelRequestDto
+CreateModelResponseDto = _dtos_module.CreateModelResponseDto
+RunningModelsResponseDto = _dtos_module.RunningModelsResponseDto
+VersionResponseDto = _dtos_module.VersionResponseDto
+
+OllamaAdapter = _adapter_module.OllamaAdapter
+OllamaError = _adapter_module.OllamaError
 
 
 logger = logging.getLogger(__name__)
 
 # Instancia global del adaptador de Ollama
-# Se inicializa al arrancar la aplicación
 _ollama_adapter: OllamaAdapter | None = None
 
 
@@ -121,11 +148,10 @@ def register_ollama_routes(app: FastAPI) -> None:
     # ========================================================================
 
     @app.get("/trainer/ollama/health")
-    def ollama_health_check(
-        adapter: OllamaAdapter = Annotated[OllamaAdapter, lambda: get_ollama_adapter()]
-    ) -> dict:
+    def ollama_health_check() -> dict:
         """Verifica el estado de Ollama."""
         try:
+            adapter = get_ollama_adapter()
             is_healthy = adapter.health_check()
             return {
                 "status": "healthy" if is_healthy else "unhealthy",
@@ -161,16 +187,7 @@ def register_ollama_routes(app: FastAPI) -> None:
         request: ChatRequestDto,
         x_client_app: Annotated[str | None, Header()] = None,
     ) -> ChatResponseDto:
-        """
-        Genera una respuesta de chat usando un modelo de Ollama.
-
-        Args:
-            request: Configuración del chat (modelo y mensajes)
-            x_client_app: Aplicación cliente (para trazabilidad)
-
-        Returns:
-            Respuesta del modelo con el mensaje generado
-        """
+        """Genera una respuesta de chat usando un modelo de Ollama."""
         try:
             adapter = get_ollama_adapter()
             logger.info(f"Chat request from {x_client_app}: model={request.model}")
@@ -191,16 +208,7 @@ def register_ollama_routes(app: FastAPI) -> None:
         request: GenerateRequestDto,
         x_client_app: Annotated[str | None, Header()] = None,
     ) -> GenerateResponseDto:
-        """
-        Genera texto a partir de un prompt usando un modelo de Ollama.
-
-        Args:
-            request: Configuración de generación (modelo y prompt)
-            x_client_app: Aplicación cliente (para trazabilidad)
-
-        Returns:
-            Texto generado por el modelo
-        """
+        """Genera texto a partir de un prompt usando un modelo de Ollama."""
         try:
             adapter = get_ollama_adapter()
             logger.info(f"Generate request from {x_client_app}: model={request.model}")
@@ -221,16 +229,7 @@ def register_ollama_routes(app: FastAPI) -> None:
         request: EmbedRequestDto,
         x_client_app: Annotated[str | None, Header()] = None,
     ) -> EmbedResponseDto:
-        """
-        Genera embeddings para texto(s) usando un modelo de Ollama.
-
-        Args:
-            request: Configuración de embeddings (modelo y texto)
-            x_client_app: Aplicación cliente (para trazabilidad)
-
-        Returns:
-            Vector(es) de embeddings
-        """
+        """Genera embeddings para texto(s) usando un modelo de Ollama."""
         try:
             adapter = get_ollama_adapter()
             logger.info(f"Embed request from {x_client_app}: model={request.model}")
@@ -250,15 +249,7 @@ def register_ollama_routes(app: FastAPI) -> None:
     def list_models(
         x_client_app: Annotated[str | None, Header()] = None,
     ) -> ModelListResponseDto:
-        """
-        Lista todos los modelos de Ollama disponibles localmente.
-
-        Args:
-            x_client_app: Aplicación cliente (para trazabilidad)
-
-        Returns:
-            Lista de modelos con sus metadatos
-        """
+        """Lista todos los modelos de Ollama disponibles localmente."""
         try:
             adapter = get_ollama_adapter()
             logger.info(f"List models request from {x_client_app}")
@@ -275,16 +266,7 @@ def register_ollama_routes(app: FastAPI) -> None:
         request: ModelShowRequestDto,
         x_client_app: Annotated[str | None, Header()] = None,
     ) -> ModelInfoDto:
-        """
-        Obtiene información detallada de un modelo de Ollama.
-
-        Args:
-            request: Nombre del modelo
-            x_client_app: Aplicación cliente (para trazabilidad)
-
-        Returns:
-            Información completa del modelo (Modelfile, parámetros, etc.)
-        """
+        """Obtiene información detallada de un modelo de Ollama."""
         try:
             adapter = get_ollama_adapter()
             logger.info(f"Show model request from {x_client_app}: {request.name}")
@@ -301,16 +283,7 @@ def register_ollama_routes(app: FastAPI) -> None:
         request: PullModelRequestDto,
         x_client_app: Annotated[str | None, Header()] = None,
     ) -> PullModelResponseDto:
-        """
-        Descarga un modelo de Ollama desde el registro.
-
-        Args:
-            request: Nombre del modelo a descargar
-            x_client_app: Aplicación cliente (para trazabilidad)
-
-        Returns:
-            Estado de la descarga
-        """
+        """Descarga un modelo de Ollama desde el registro."""
         try:
             adapter = get_ollama_adapter()
             logger.info(f"Pull model request from {x_client_app}: {request.name}")
@@ -327,16 +300,7 @@ def register_ollama_routes(app: FastAPI) -> None:
         model_name: str,
         x_client_app: Annotated[str | None, Header()] = None,
     ) -> DeleteModelResponseDto:
-        """
-        Elimina un modelo de Ollama del almacenamiento local.
-
-        Args:
-            model_name: Nombre del modelo a eliminar
-            x_client_app: Aplicación cliente (para trazabilidad)
-
-        Returns:
-            Confirmación de eliminación
-        """
+        """Elimina un modelo de Ollama del almacenamiento local."""
         try:
             adapter = get_ollama_adapter()
             logger.info(f"Delete model request from {x_client_app}: {model_name}")
@@ -354,16 +318,7 @@ def register_ollama_routes(app: FastAPI) -> None:
         request: CopyModelRequestDto,
         x_client_app: Annotated[str | None, Header()] = None,
     ) -> CopyModelResponseDto:
-        """
-        Copia un modelo de Ollama con un nuevo nombre.
-
-        Args:
-            request: Modelo origen y destino
-            x_client_app: Aplicación cliente (para trazabilidad)
-
-        Returns:
-            Confirmación de copia
-        """
+        """Copia un modelo de Ollama con un nuevo nombre."""
         try:
             adapter = get_ollama_adapter()
             logger.info(f"Copy model request from {x_client_app}: {request.source} -> {request.destination}")
@@ -380,16 +335,7 @@ def register_ollama_routes(app: FastAPI) -> None:
         request: CreateModelRequestDto,
         x_client_app: Annotated[str | None, Header()] = None,
     ) -> CreateModelResponseDto:
-        """
-        Crea un modelo personalizado de Ollama desde un Modelfile.
-
-        Args:
-            request: Nombre y contenido del Modelfile
-            x_client_app: Aplicación cliente (para trazabilidad)
-
-        Returns:
-            Estado de la creación
-        """
+        """Crea un modelo personalizado de Ollama desde un Modelfile."""
         try:
             adapter = get_ollama_adapter()
             logger.info(f"Create model request from {x_client_app}: {request.name}")
@@ -409,15 +355,7 @@ def register_ollama_routes(app: FastAPI) -> None:
     def list_running_models(
         x_client_app: Annotated[str | None, Header()] = None,
     ) -> RunningModelsResponseDto:
-        """
-        Lista los modelos de Ollama actualmente cargados en memoria.
-
-        Args:
-            x_client_app: Aplicación cliente (para trazabilidad)
-
-        Returns:
-            Lista de modelos en ejecución con uso de recursos (VRAM)
-        """
+        """Lista los modelos de Ollama actualmente cargados en memoria."""
         try:
             adapter = get_ollama_adapter()
             logger.info(f"List running models request from {x_client_app}")

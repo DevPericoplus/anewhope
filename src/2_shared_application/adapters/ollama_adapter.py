@@ -260,6 +260,22 @@ class OllamaAdapter:
     # Gestión de Modelos
     # ========================================================================
 
+    def _convert_details_to_dict(self, details: Any) -> dict[str, Any]:
+        """Convierte details a diccionario si no lo es ya."""
+        if isinstance(details, dict):
+            return details
+        elif hasattr(details, 'model_dump'):
+            # Pydantic v2
+            return details.model_dump()
+        elif hasattr(details, 'dict'):
+            # Pydantic v1
+            return details.dict()
+        elif hasattr(details, '__dict__'):
+            # Objeto estándar de Python
+            return vars(details)
+        else:
+            return {}
+
     def list_models(self) -> ModelListResponseDto:
         """Lista todos los modelos disponibles."""
         try:
@@ -275,7 +291,7 @@ class OllamaAdapter:
                     size=m.get("size", 0),
                     digest=m.get("digest", ""),
                     modified_at=m.get("modified_at"),
-                    details=m.get("details", {}),
+                    details=self._convert_details_to_dict(m.get("details", {})),
                 )
                 for m in models_data
             ]
@@ -304,7 +320,7 @@ class OllamaAdapter:
                     size=m.get("size", 0),
                     digest=m.get("digest", ""),
                     modified_at=m.get("modified_at"),
-                    details=m.get("details", {}),
+                    details=self._convert_details_to_dict(m.get("details", {})),
                 )
                 for m in models_data
             ]
@@ -329,8 +345,8 @@ class OllamaAdapter:
                 modelfile=response.get("modelfile", ""),
                 parameters=response.get("parameters", ""),
                 template=response.get("template", ""),
-                details=response.get("details", {}),
-                model_info=response.get("model_info", {}),
+                details=self._convert_details_to_dict(response.get("details", {})),
+                model_info=self._convert_details_to_dict(response.get("model_info", {})),
             )
 
         except ResponseError as e:
@@ -351,8 +367,8 @@ class OllamaAdapter:
                 modelfile=response.get("modelfile", ""),
                 parameters=response.get("parameters", ""),
                 template=response.get("template", ""),
-                details=response.get("details", {}),
-                model_info=response.get("model_info", {}),
+                details=self._convert_details_to_dict(response.get("details", {})),
+                model_info=self._convert_details_to_dict(response.get("model_info", {})),
             )
 
         except ResponseError as e:
