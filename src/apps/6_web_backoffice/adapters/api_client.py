@@ -2278,9 +2278,16 @@ def create_project_assignment(
     if session_token:
         headers["X-Session-Token"] = session_token
 
+    payload = {
+        "user_id": user_id,
+        "organization_id": organization_id,
+        "project_id": project_id,
+        "role_id": role_id,
+    }
     response = _request_middleware(
         "POST",
-        f"/assignments/projects?user_id={user_id}&organization_id={organization_id}&project_id={project_id}&role_id={role_id}",
+        "/assignments/projects",
+        payload=payload,
         headers=headers,
     )
     return response if isinstance(response, dict) else {}

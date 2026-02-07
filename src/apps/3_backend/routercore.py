@@ -3912,7 +3912,7 @@ class BackendCoreRouter:
                     INNER JOIN myllm_core_db.organizations o
                         ON pr.id_organizacion = o.organization_id
                     INNER JOIN proyectos p
-                        ON pr.id_proyecto = p.id_proyecto
+                        ON pr.id_proyecto = p.id
                     INNER JOIN proyectos_roles_base prb
                         ON pr.id_rol = prb.id
                     WHERE pr.id_proyecto = :project_id

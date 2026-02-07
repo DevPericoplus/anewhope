@@ -1610,10 +1610,15 @@ class State(SharedSessionState):
 
     def set_selected_org_for_project_from_str(self, val: str):
         """Converts string to int for selected_org_for_project."""
+        print(f"[DEBUG ASSIGNMENTS] *** set_selected_org_for_project_from_str LLAMADO con val={val}")
         self.selected_org_for_project = int(val) if val else 0
+        print(f"[DEBUG ASSIGNMENTS] *** selected_org_for_project={self.selected_org_for_project}")
         # Cargar proyectos de esta organización
         if self.selected_org_for_project > 0:
+            print(f"[DEBUG ASSIGNMENTS] *** Llamando a load_projects_for_org({self.selected_org_for_project})")
             self.load_projects_for_org(self.selected_org_for_project)
+        else:
+            print(f"[DEBUG ASSIGNMENTS] *** NO se llama a load_projects_for_org porque selected_org_for_project={self.selected_org_for_project}")
 
     def set_selected_project_assign_from_str(self, val: str):
         """Converts string to int for selected_project_assign."""
@@ -1684,6 +1689,8 @@ class State(SharedSessionState):
         """Loads projects for a specific organization."""
         from adapters.api_client import get_organization_projects
 
+        print(f"[DEBUG ASSIGNMENTS] load_projects_for_org: org_id={organization_id}")
+
         try:
             projects = get_organization_projects(
                 organization_id=organization_id,
@@ -1691,6 +1698,11 @@ class State(SharedSessionState):
                 session_token=self.session_token,
                 include_deleted=False,  # Solo proyectos activos
             )
+
+            print(f"[DEBUG ASSIGNMENTS] API retornó {len(projects)} proyectos")
+            if projects:
+                print(f"[DEBUG ASSIGNMENTS] Primer proyecto: {projects[0]}")
+
             # Filtrar y formatear proyectos
             self.assignments_projects = [
                 {
@@ -1702,8 +1714,15 @@ class State(SharedSessionState):
                 for p in projects
                 if p.get("active", True) and p.get("existe", True)
             ]
+
+            print(f"[DEBUG ASSIGNMENTS] Proyectos filtrados: {len(self.assignments_projects)}")
+            if self.assignments_projects:
+                print(f"[DEBUG ASSIGNMENTS] Primer proyecto filtrado: {self.assignments_projects[0]}")
+
         except Exception as e:
-            print(f"[ERROR] load_projects_for_org: {e}")
+            print(f"[ERROR] load_projects_for_org: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
             self.assignments_projects = []
 
         # Load project roles catalog (hardcoded for now)
@@ -3382,7 +3401,7 @@ def asignaciones_panel() -> rx.Component:
         rx.heading(
             "Gestor de Asignaciones",
             size="6",
-            color=COLORS["foreground"],
+            color=COLORS["primary"],  # Cambiado a naranja
             margin_bottom="0.5em",
         ),
         rx.text(
@@ -3396,13 +3415,13 @@ def asignaciones_panel() -> rx.Component:
         rx.button(
             rx.hstack(
                 rx.icon("refresh-cw", size=16),
-                rx.text("Cargar Datos"),
+                rx.text("Cargar Datos", font_weight="bold"),
                 spacing="2",
             ),
             on_click=State.load_assignments_data,
             size="2",
             background_color=COLORS["primary"],
-            color="white",
+            color="black",  # Cambiado a negro
             margin_bottom="1em",
         ),
 
@@ -3418,7 +3437,7 @@ def asignaciones_panel() -> rx.Component:
                 ),
                 color=rx.cond(
                     State.assignments_active_tab == "organizaciones",
-                    "white",
+                    "black",  # Cambiado a negro
                     COLORS["foreground"],
                 ),
                 border=f"1px solid {COLORS['border']}",
@@ -3438,7 +3457,7 @@ def asignaciones_panel() -> rx.Component:
                 ),
                 color=rx.cond(
                     State.assignments_active_tab == "proyectos",
-                    "white",
+                    "black",  # Cambiado a negro
                     COLORS["foreground"],
                 ),
                 border=f"1px solid {COLORS['border']}",
@@ -3468,15 +3487,15 @@ def asignaciones_panel() -> rx.Component:
 
 def _org_assignments_tab() -> rx.Component:
     """Organization assignments tab content."""
-    return rx.vstack(
-        # Form
+    return rx.hstack(
+        # Left column: Form
         rx.box(
             rx.vstack(
                 rx.text(
                     "Asignar Usuario a Organización",
                     font_weight="bold",
                     color=COLORS["primary"],
-                    font_size="1.1em",
+                    font_size="1.7em",  # Aumentado a 1.7em para mayor visibilidad
                 ),
 
                 # User selector
@@ -3547,7 +3566,8 @@ def _org_assignments_tab() -> rx.Component:
                         "Asignar",
                         on_click=State.create_org_assignment,
                         background_color=COLORS["primary"],
-                        color="white",
+                        color="black",  # Cambiado a negro
+                        font_weight="bold",  # Agregado negrita
                         size="2",
                     ),
                     rx.button(
@@ -3555,6 +3575,8 @@ def _org_assignments_tab() -> rx.Component:
                         on_click=State.load_org_assignments,
                         variant="outline",
                         size="2",
+                        font_weight="bold",
+                        color="white",  # Cambiado a blanco para más contraste
                     ),
                     spacing="2",
                     margin_top="1em",
@@ -3588,20 +3610,22 @@ def _org_assignments_tab() -> rx.Component:
             background_color=COLORS["card"],
             border_radius="0.5em",
             border=f"1px solid {COLORS['border']}",
+            width="38%",  # Reducido de 48% a 38%
+            flex_shrink="0",
         ),
 
-        # Assignments table
-        rx.cond(
-            State.org_assignments_list.length() > 0,
-            rx.box(
-                rx.vstack(
-                    rx.text(
-                        "Asignaciones Actuales",
-                        font_weight="bold",
-                        color=COLORS["primary"],
-                        font_size="1.1em",
-                    ),
+        # Right column: Assignments table
+        rx.box(
+            rx.vstack(
+                rx.text(
+                    "Asignaciones Actuales",
+                    font_weight="bold",
+                    color=COLORS["primary"],
+                    font_size="1.7em",  # Aumentado a 1.7em para mayor visibilidad
+                ),
 
+                rx.cond(
+                    State.org_assignments_list.length() > 0,
                     rx.table.root(
                         rx.table.header(
                             rx.table.row(
@@ -3637,6 +3661,8 @@ def _org_assignments_tab() -> rx.Component:
                                                 on_click=State.toggle_org_assignment(assignment["id"]),
                                                 size="1",
                                                 variant="soft",
+                                                color="white",  # Cambiado a blanco para más contraste
+                                                font_weight="bold",
                                             ),
                                             rx.button(
                                                 "Eliminar",
@@ -3644,6 +3670,8 @@ def _org_assignments_tab() -> rx.Component:
                                                 color_scheme="red",
                                                 size="1",
                                                 variant="soft",
+                                                color="white",  # Cambiado a blanco para más contraste
+                                                font_weight="bold",
                                             ),
                                             spacing="1",
                                         ),
@@ -3654,33 +3682,42 @@ def _org_assignments_tab() -> rx.Component:
                         size="2",
                         variant="surface",
                     ),
-
-                    spacing="3",
+                    rx.text(
+                        "No hay asignaciones para mostrar. Selecciona una organización y haz clic en 'Ver Asignaciones'.",
+                        color=COLORS["muted_foreground"],
+                        font_style="italic",
+                        text_align="center",
+                        padding="2em",
+                    ),
                 ),
-                padding="1.5em",
-                background_color=COLORS["card"],
-                border_radius="0.5em",
-                border=f"1px solid {COLORS['border']}",
-                margin_top="2em",
+
+                spacing="3",
             ),
+            padding="1.5em",
+            background_color=COLORS["card"],
+            border_radius="0.5em",
+            border=f"1px solid {COLORS['border']}",
+            width="58%",  # Aumentado de 48% a 58%
+            flex_shrink="0",
         ),
 
         spacing="4",
         width="100%",
+        align_items="flex-start",
     )
 
 
 def _project_assignments_tab() -> rx.Component:
     """Project assignments tab content."""
-    return rx.vstack(
-        # Form
+    return rx.hstack(  # Cambiado de vstack a hstack para layout horizontal
+        # Left column: Form
         rx.box(
             rx.vstack(
                 rx.text(
                     "Asignar Usuario a Proyecto",
                     font_weight="bold",
                     color=COLORS["primary"],
-                    font_size="1.1em",
+                    font_size="1.7em",  # Aumentado de 1.1em a 1.7em
                 ),
 
                 # User selector
@@ -3793,7 +3830,8 @@ def _project_assignments_tab() -> rx.Component:
                         "Asignar",
                         on_click=State.create_project_assignment,
                         background_color=COLORS["primary"],
-                        color="white",
+                        color="black",  # Cambiado a negro
+                        font_weight="bold",  # Agregado negrita
                         size="2",
                     ),
                     rx.button(
@@ -3801,6 +3839,8 @@ def _project_assignments_tab() -> rx.Component:
                         on_click=State.load_project_assignments,
                         variant="outline",
                         size="2",
+                        font_weight="bold",  # Agregado negrita
+                        color="white",  # Agregado color blanco
                     ),
                     spacing="2",
                     margin_top="1em",
@@ -3834,19 +3874,22 @@ def _project_assignments_tab() -> rx.Component:
             background_color=COLORS["card"],
             border_radius="0.5em",
             border=f"1px solid {COLORS['border']}",
+            width="38%",  # Ancho del panel izquierdo
+            flex_shrink="0",
         ),
 
-        # Assignments table
-        rx.cond(
-            State.project_assignments_list.length() > 0,
-            rx.box(
-                rx.vstack(
-                    rx.text(
-                        "Asignaciones Actuales",
-                        font_weight="bold",
-                        color=COLORS["primary"],
-                        font_size="1.1em",
-                    ),
+        # Right column: Assignments table
+        rx.box(
+            rx.vstack(
+                rx.text(
+                    "Asignaciones Actuales",
+                    font_weight="bold",
+                    color=COLORS["primary"],
+                    font_size="1.7em",  # Aumentado de 1.1em a 1.7em
+                ),
+
+                rx.cond(
+                    State.project_assignments_list.length() > 0,
 
                     rx.table.root(
                         rx.table.header(
@@ -3883,6 +3926,8 @@ def _project_assignments_tab() -> rx.Component:
                                                 on_click=State.toggle_project_assignment(assignment["id"]),
                                                 size="1",
                                                 variant="soft",
+                                                color="white",  # Agregado color blanco
+                                                font_weight="bold",  # Agregado negrita
                                             ),
                                             rx.button(
                                                 "Eliminar",
@@ -3890,6 +3935,8 @@ def _project_assignments_tab() -> rx.Component:
                                                 color_scheme="red",
                                                 size="1",
                                                 variant="soft",
+                                                color="white",  # Agregado color blanco
+                                                font_weight="bold",  # Agregado negrita
                                             ),
                                             spacing="1",
                                         ),
@@ -3900,19 +3947,28 @@ def _project_assignments_tab() -> rx.Component:
                         size="2",
                         variant="surface",
                     ),
-
-                    spacing="3",
+                    rx.text(
+                        "No hay asignaciones para mostrar. Selecciona un proyecto y haz clic en 'Ver Asignaciones'.",
+                        color=COLORS["muted_foreground"],
+                        font_style="italic",
+                        text_align="center",
+                        padding="2em",
+                    ),
                 ),
-                padding="1.5em",
-                background_color=COLORS["card"],
-                border_radius="0.5em",
-                border=f"1px solid {COLORS['border']}",
-                margin_top="2em",
+
+                spacing="3",
             ),
+            padding="1.5em",
+            background_color=COLORS["card"],
+            border_radius="0.5em",
+            border=f"1px solid {COLORS['border']}",
+            width="58%",  # Ancho del panel derecho
+            flex_shrink="0",
         ),
 
         spacing="4",
         width="100%",
+        align_items="flex-start",  # Alinear desde arriba
     )
 
 

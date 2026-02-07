@@ -2839,17 +2839,18 @@ def get_project_assignments_endpoint(
 
 @app.post("/assignments/projects", tags=["assignments"])
 def create_project_assignment_endpoint(
-    user_id: int,
-    organization_id: int,
-    project_id: int,
-    role_id: int,
+    payload: dict[str, int],
     identity_type_id: int,
     router: BrokerBackendRouter = Depends(get_router_broker),
 ) -> dict[str, Any]:
     """Creates project assignment (with prerequisite validation)."""
     try:
         return router.create_project_assignment(
-            user_id, organization_id, project_id, role_id, identity_type_id
+            payload["user_id"],
+            payload["organization_id"],
+            payload["project_id"],
+            payload["role_id"],
+            identity_type_id
         )
     except BrokerBusinessError as exc:
         raise HTTPException(

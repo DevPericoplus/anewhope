@@ -975,9 +975,16 @@ class BrokerBackendClient:
         identity_type_id: int,
     ) -> dict[str, Any]:
         """Creates project assignment."""
+        payload = {
+            "user_id": user_id,
+            "organization_id": organization_id,
+            "project_id": project_id,
+            "role_id": role_id,
+        }
         data = self._request(
             "POST",
-            f"/assignments/projects?user_id={user_id}&organization_id={organization_id}&project_id={project_id}&role_id={role_id}&identity_type_id={identity_type_id}",
+            f"/assignments/projects?identity_type_id={identity_type_id}",
+            payload=payload,
         )
         return dict(data or {})
 
