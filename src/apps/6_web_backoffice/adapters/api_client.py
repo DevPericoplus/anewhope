@@ -2472,3 +2472,155 @@ def toggle_prompt(
         headers=headers,
     )
     return response if isinstance(response, dict) else {}
+
+
+# ============================================================================
+# PROJECT VERSION STATES - Estado de Proyectos
+# ============================================================================
+
+
+def get_project_version_state_by_id(
+    state_id: int,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Obtiene estado de versión por ID."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "GET",
+        f"/project-version-states/{state_id}",
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
+def update_proposal_phase(
+    state_id: int,
+    aceptacion_cliente: bool,
+    aceptacion_interna: bool,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Actualiza fase de propuesta (aceptaciones)."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    payload = {
+        "aceptacion_cliente": aceptacion_cliente,
+        "aceptacion_interna": aceptacion_interna,
+    }
+    response = _request_middleware(
+        "PATCH",
+        f"/project-version-states/{state_id}/proposal",
+        payload=payload,
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
+def update_training_phase(
+    state_id: int,
+    completado: bool,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Actualiza fase de entrenamiento."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    payload = {"completado": completado}
+    response = _request_middleware(
+        "PATCH",
+        f"/project-version-states/{state_id}/training",
+        payload=payload,
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
+def update_evaluation_phase(
+    state_id: int,
+    evaluacion: bool,
+    reentrenamiento: bool,
+    optimizacion: bool,
+    calidad_aprobada: bool,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Actualiza fase de evaluación."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    payload = {
+        "evaluacion": evaluacion,
+        "reentrenamiento": reentrenamiento,
+        "optimizacion": optimizacion,
+        "calidad_aprobada": calidad_aprobada,
+    }
+    response = _request_middleware(
+        "PATCH",
+        f"/project-version-states/{state_id}/evaluation",
+        payload=payload,
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
+def update_generation_phase(
+    state_id: int,
+    generacion_completada: bool,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Actualiza fase de generación."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    payload = {"generacion_completada": generacion_completada}
+    response = _request_middleware(
+        "PATCH",
+        f"/project-version-states/{state_id}/generation",
+        payload=payload,
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
+def update_notification_phase(
+    state_id: int,
+    notificacion_enviada: bool,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Actualiza fase de notificación."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    payload = {"notificacion_enviada": notificacion_enviada}
+    response = _request_middleware(
+        "PATCH",
+        f"/project-version-states/{state_id}/notification",
+        payload=payload,
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}

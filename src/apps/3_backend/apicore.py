@@ -413,6 +413,47 @@ def get_router_core(
     )
 
 
+# ============================================================================
+# PROJECT VERSION STATE DTOs - Estado de versiones de proyectos (DDD)
+# ============================================================================
+
+
+class UpdateProposalPhaseDto(BaseModel):
+    """DTO para actualizar fase de propuesta."""
+
+    aceptacion_cliente: bool
+    aceptacion_interna: bool
+
+
+class UpdateTrainingPhaseDto(BaseModel):
+    """DTO para actualizar fase de entrenamiento."""
+
+    completado: bool
+
+
+class UpdateEvaluationPhaseDto(BaseModel):
+    """DTO para actualizar fase de evaluación."""
+
+    evaluacion: bool
+    reentrenamiento: bool
+    optimizacion: bool
+    calidad_aprobada: bool
+
+
+class UpdateGenerationPhaseDto(BaseModel):
+    """DTO para actualizar fase de generación."""
+
+    solicitada: bool
+    completada: bool
+    ruta_fichero: str | None = None
+
+
+class UpdateNotificationPhaseDto(BaseModel):
+    """DTO para actualizar fase de notificación."""
+
+    enviada: bool
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Gestiona el ciclo de vida de la aplicación."""
@@ -2874,6 +2915,242 @@ def toggle_prompt_endpoint(
             active=payload.active,
             user_id=user_id,
             identity_type_id=identity_type_id,
+        )
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# PROJECT VERSION STATE - Estado de versiones de proyectos (DDD)
+# ============================================================================
+
+
+@app.get("/project-version-states/{state_id}", tags=["project-version-states"])
+def get_project_version_state_by_id_endpoint(
+    state_id: int,
+    user_id: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Obtiene estado de versión por ID."""
+    try:
+        result = router.get_project_version_state_by_id(
+            state_id, user_id, identity_type_id
+        )
+        if result is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Estado no encontrado",
+            )
+        return result
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get(
+    "/project-version-states/version/{organization_id}/{project_id}/{version_id}",
+    tags=["project-version-states"],
+)
+def get_project_version_state_by_version_endpoint(
+    organization_id: int,
+    project_id: int,
+    version_id: int,
+    user_id: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Obtiene estado de una versión específica."""
+    try:
+        result = router.get_project_version_state_by_version(
+            organization_id, project_id, version_id, user_id, identity_type_id
+        )
+        if result is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Estado no encontrado",
+            )
+        return result
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/project-version-states", tags=["project-version-states"])
+def list_project_version_states_endpoint(
+    user_id: int,
+    identity_type_id: int,
+    organization_id: int | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> list[dict[str, Any]]:
+    """Lista estados según asignaciones del usuario."""
+    try:
+        return router.list_project_version_states_by_user(
+            user_id, identity_type_id, organization_id, limit, offset
+        )
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/project-version-states/{state_id}/proposal",
+    tags=["project-version-states"],
+)
+def update_proposal_phase_endpoint(
+    state_id: int,
+    payload: UpdateProposalPhaseDto,
+    user_id: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Actualiza fase de propuesta (aceptaciones)."""
+    try:
+        return router.update_proposal_phase(
+            state_id,
+            payload.aceptacion_cliente,
+            payload.aceptacion_interna,
+            user_id,
+            identity_type_id,
+        )
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/project-version-states/{state_id}/training",
+    tags=["project-version-states"],
+)
+def update_training_phase_endpoint(
+    state_id: int,
+    payload: UpdateTrainingPhaseDto,
+    user_id: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Actualiza fase de entrenamiento."""
+    try:
+        return router.update_training_phase(
+            state_id, payload.completado, user_id, identity_type_id
+        )
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/project-version-states/{state_id}/evaluation",
+    tags=["project-version-states"],
+)
+def update_evaluation_phase_endpoint(
+    state_id: int,
+    payload: UpdateEvaluationPhaseDto,
+    user_id: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Actualiza fase de evaluación/reentrenamiento."""
+    try:
+        return router.update_evaluation_phase(
+            state_id,
+            payload.evaluacion,
+            payload.reentrenamiento,
+            payload.optimizacion,
+            payload.calidad_aprobada,
+            user_id,
+            identity_type_id,
+        )
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/project-version-states/{state_id}/generation",
+    tags=["project-version-states"],
+)
+def update_generation_phase_endpoint(
+    state_id: int,
+    payload: UpdateGenerationPhaseDto,
+    user_id: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Actualiza fase de generación LLM."""
+    try:
+        return router.update_generation_phase(
+            state_id,
+            payload.solicitada,
+            payload.completada,
+            payload.ruta_fichero,
+            user_id,
+            identity_type_id,
+        )
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/project-version-states/{state_id}/notification",
+    tags=["project-version-states"],
+)
+def update_notification_phase_endpoint(
+    state_id: int,
+    payload: UpdateNotificationPhaseDto,
+    user_id: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Actualiza fase de notificación."""
+    try:
+        return router.update_notification_phase(
+            state_id, payload.enviada, user_id, identity_type_id
         )
     except BackendCorePermissionError as exc:
         raise HTTPException(

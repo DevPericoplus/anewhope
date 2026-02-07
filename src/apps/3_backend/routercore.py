@@ -4436,3 +4436,653 @@ class BackendCoreRouter:
                 "updated": True,
                 "message": f"Prompt {action} exitosamente",
             }
+
+    # ========================================================================
+    # PROJECT VERSION STATE - Estado de versiones de proyectos (DDD)
+    # ========================================================================
+
+    def get_project_version_state_by_id(
+        self,
+        state_id: int,
+        requesting_user_id: int,
+        requesting_user_identity_type: int,
+    ) -> dict[str, Any] | None:
+        """Obtiene estado de versión por ID con validación de permisos.
+
+        Args:
+            state_id: ID del estado en estado_version
+            requesting_user_id: ID del usuario solicitante
+            requesting_user_identity_type: Tipo de identidad del solicitante
+
+        Returns:
+            Diccionario con datos del estado o None si no existe
+
+        Raises:
+            BackendCorePermissionError: Si no tiene permisos
+        """
+        from sqlalchemy import create_engine
+
+        # Inicializar repositorio y servicio
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+        engine = create_engine(dsn)
+
+        # Importar dinámicamente
+        from src.shared_application.adapters.mariadb_project_version_state_repository import (
+            MariaDBProjectVersionStateRepository,
+        )
+        from src.shared_application.services.project_version_state_service import (
+            ProjectVersionStateService,
+            PermissionDeniedError,
+        )
+
+        repository = MariaDBProjectVersionStateRepository(engine)
+        service = ProjectVersionStateService(repository, engine)
+
+        try:
+            state = service.get_state_by_id(
+                state_id,
+                requesting_user_id,
+                requesting_user_identity_type,
+            )
+
+            if state is None:
+                return None
+
+            return self._project_version_state_to_dict(state)
+
+        except PermissionDeniedError as exc:
+            raise BackendCorePermissionError(
+                "project_version_state_read",
+                requesting_user_identity_type,
+            ) from exc
+
+    def get_project_version_state_by_version(
+        self,
+        organization_id: int,
+        project_id: int,
+        version_id: int,
+        requesting_user_id: int,
+        requesting_user_identity_type: int,
+    ) -> dict[str, Any] | None:
+        """Obtiene estado de una versión específica.
+
+        Args:
+            organization_id: ID de la organización
+            project_id: ID del proyecto
+            version_id: ID de la versión
+            requesting_user_id: ID del usuario solicitante
+            requesting_user_identity_type: Tipo de identidad del solicitante
+
+        Returns:
+            Diccionario con datos del estado o None si no existe
+        """
+        from sqlalchemy import create_engine
+        from src.shared_application.adapters.mariadb_project_version_state_repository import (
+            MariaDBProjectVersionStateRepository,
+        )
+        from src.shared_application.services.project_version_state_service import (
+            ProjectVersionStateService,
+            PermissionDeniedError,
+        )
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+        engine = create_engine(dsn)
+
+        repository = MariaDBProjectVersionStateRepository(engine)
+        service = ProjectVersionStateService(repository, engine)
+
+        try:
+            state = service.get_state_by_version(
+                organization_id,
+                project_id,
+                version_id,
+                requesting_user_id,
+                requesting_user_identity_type,
+            )
+
+            if state is None:
+                return None
+
+            return self._project_version_state_to_dict(state)
+
+        except PermissionDeniedError as exc:
+            raise BackendCorePermissionError(
+                "project_version_state_read",
+                requesting_user_identity_type,
+            ) from exc
+
+    def list_project_version_states_by_user(
+        self,
+        requesting_user_id: int,
+        requesting_user_identity_type: int,
+        organization_id: int | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Lista estados según asignaciones del usuario.
+
+        Args:
+            requesting_user_id: ID del usuario solicitante
+            requesting_user_identity_type: Tipo de identidad del solicitante
+            organization_id: Filtrar por organización (opcional)
+            limit: Número máximo de resultados
+            offset: Número de resultados a saltar
+
+        Returns:
+            Lista de estados visibles para el usuario
+        """
+        from sqlalchemy import create_engine
+        from src.shared_application.adapters.mariadb_project_version_state_repository import (
+            MariaDBProjectVersionStateRepository,
+        )
+        from src.shared_application.services.project_version_state_service import (
+            ProjectVersionStateService,
+        )
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+        engine = create_engine(dsn)
+
+        repository = MariaDBProjectVersionStateRepository(engine)
+        service = ProjectVersionStateService(repository, engine)
+
+        states = service.list_states_by_user(
+            requesting_user_id,
+            requesting_user_identity_type,
+            organization_id,
+            limit,
+            offset,
+        )
+
+        return [self._project_version_state_to_dict(state) for state in states]
+
+    def update_proposal_phase(
+        self,
+        state_id: int,
+        aceptacion_cliente: bool,
+        aceptacion_interna: bool,
+        requesting_user_id: int,
+        requesting_user_identity_type: int,
+    ) -> dict[str, Any]:
+        """Actualiza fase de propuesta (aceptaciones).
+
+        Args:
+            state_id: ID del estado
+            aceptacion_cliente: Estado de aceptación del cliente
+            aceptacion_interna: Estado de aceptación interna
+            requesting_user_id: ID del usuario solicitante
+            requesting_user_identity_type: Tipo de identidad del solicitante
+
+        Returns:
+            Diccionario con resultado de la operación
+        """
+        from sqlalchemy import create_engine
+        from src.shared_application.adapters.mariadb_project_version_state_repository import (
+            MariaDBProjectVersionStateRepository,
+        )
+        from src.shared_application.services.project_version_state_service import (
+            ProjectVersionStateService,
+            PermissionDeniedError,
+            NotFoundError,
+        )
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+        engine = create_engine(dsn)
+
+        repository = MariaDBProjectVersionStateRepository(engine)
+        service = ProjectVersionStateService(repository, engine)
+
+        try:
+            # Determinar método según qué cambió
+            state = repository.get_by_id(state_id)
+            if state is None:
+                raise BackendCoreBusinessError("Estado no encontrado")
+
+            # Aplicar cambios según valores
+            if aceptacion_cliente and not state.proposal.aceptacion_cliente:
+                updated_state = service.approve_proposal_by_client(
+                    state_id,
+                    requesting_user_id,
+                    requesting_user_identity_type,
+                )
+            elif not aceptacion_cliente and state.proposal.aceptacion_cliente:
+                updated_state = service.revoke_client_approval(
+                    state_id,
+                    requesting_user_id,
+                    requesting_user_identity_type,
+                )
+            elif aceptacion_interna and not state.proposal.aceptacion_interna:
+                updated_state = service.approve_proposal_by_internal(
+                    state_id,
+                    requesting_user_id,
+                    requesting_user_identity_type,
+                )
+            elif not aceptacion_interna and state.proposal.aceptacion_interna:
+                updated_state = service.revoke_internal_approval(
+                    state_id,
+                    requesting_user_id,
+                    requesting_user_identity_type,
+                )
+            else:
+                # Sin cambios
+                updated_state = state
+
+            self._logger.info(
+                "[PROJECT_VERSION_STATE] Updated proposal phase: state_id=%s user=%s",
+                state_id,
+                requesting_user_id,
+            )
+
+            return {
+                "success": True,
+                "state": self._project_version_state_to_dict(updated_state),
+            }
+
+        except PermissionDeniedError as exc:
+            raise BackendCorePermissionError(
+                "project_version_state_update",
+                requesting_user_identity_type,
+            ) from exc
+        except NotFoundError as exc:
+            raise BackendCoreBusinessError(str(exc)) from exc
+
+    def update_training_phase(
+        self,
+        state_id: int,
+        completado: bool,
+        requesting_user_id: int,
+        requesting_user_identity_type: int,
+    ) -> dict[str, Any]:
+        """Actualiza fase de entrenamiento.
+
+        Args:
+            state_id: ID del estado
+            completado: Si el entrenamiento está completado
+            requesting_user_id: ID del usuario solicitante
+            requesting_user_identity_type: Tipo de identidad del solicitante
+
+        Returns:
+            Diccionario con resultado de la operación
+        """
+        from sqlalchemy import create_engine
+        from src.shared_application.adapters.mariadb_project_version_state_repository import (
+            MariaDBProjectVersionStateRepository,
+        )
+        from src.shared_application.services.project_version_state_service import (
+            ProjectVersionStateService,
+            PermissionDeniedError,
+            NotFoundError,
+        )
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+        engine = create_engine(dsn)
+
+        repository = MariaDBProjectVersionStateRepository(engine)
+        service = ProjectVersionStateService(repository, engine)
+
+        try:
+            if completado:
+                updated_state = service.complete_training(
+                    state_id,
+                    requesting_user_id,
+                    requesting_user_identity_type,
+                )
+            else:
+                # Desmarcar completado (actualización directa)
+                success = repository.update_training_phase(
+                    state_id,
+                    completado=False,
+                    updated_by=requesting_user_id,
+                )
+                if not success:
+                    raise BackendCoreBusinessError("No se pudo actualizar")
+
+                updated_state = repository.get_by_id(state_id)
+
+            self._logger.info(
+                "[PROJECT_VERSION_STATE] Updated training phase: state_id=%s completed=%s user=%s",
+                state_id,
+                completado,
+                requesting_user_id,
+            )
+
+            return {
+                "success": True,
+                "state": self._project_version_state_to_dict(updated_state) if updated_state else None,
+            }
+
+        except PermissionDeniedError as exc:
+            raise BackendCorePermissionError(
+                "project_version_state_update",
+                requesting_user_identity_type,
+            ) from exc
+        except NotFoundError as exc:
+            raise BackendCoreBusinessError(str(exc)) from exc
+
+    def update_evaluation_phase(
+        self,
+        state_id: int,
+        evaluacion: bool,
+        reentrenamiento: bool,
+        optimizacion: bool,
+        calidad_aprobada: bool,
+        requesting_user_id: int,
+        requesting_user_identity_type: int,
+    ) -> dict[str, Any]:
+        """Actualiza fase de evaluación/reentrenamiento.
+
+        Args:
+            state_id: ID del estado
+            evaluacion: Si está en evaluación
+            reentrenamiento: Si está en reentrenamiento
+            optimizacion: Si está en optimización
+            calidad_aprobada: Si pasó control de calidad
+            requesting_user_id: ID del usuario solicitante
+            requesting_user_identity_type: Tipo de identidad del solicitante
+
+        Returns:
+            Diccionario con resultado de la operación
+        """
+        from sqlalchemy import create_engine
+        from src.shared_application.adapters.mariadb_project_version_state_repository import (
+            MariaDBProjectVersionStateRepository,
+        )
+        from src.shared_application.services.project_version_state_service import (
+            ProjectVersionStateService,
+            PermissionDeniedError,
+        )
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+        engine = create_engine(dsn)
+
+        repository = MariaDBProjectVersionStateRepository(engine)
+        service = ProjectVersionStateService(repository, engine)
+
+        try:
+            if calidad_aprobada:
+                # Usar método del servicio para aprobación
+                updated_state = service.approve_quality(
+                    state_id,
+                    requesting_user_id,
+                    requesting_user_identity_type,
+                )
+            else:
+                # Actualizar flags del bucle
+                updated_state = service.update_evaluation_flags(
+                    state_id,
+                    evaluacion,
+                    reentrenamiento,
+                    optimizacion,
+                    requesting_user_id,
+                    requesting_user_identity_type,
+                )
+
+            self._logger.info(
+                "[PROJECT_VERSION_STATE] Updated evaluation phase: state_id=%s user=%s",
+                state_id,
+                requesting_user_id,
+            )
+
+            return {
+                "success": True,
+                "state": self._project_version_state_to_dict(updated_state),
+            }
+
+        except PermissionDeniedError as exc:
+            raise BackendCorePermissionError(
+                "project_version_state_update",
+                requesting_user_identity_type,
+            ) from exc
+
+    def update_generation_phase(
+        self,
+        state_id: int,
+        solicitada: bool,
+        completada: bool,
+        ruta_fichero: str | None,
+        requesting_user_id: int,
+        requesting_user_identity_type: int,
+    ) -> dict[str, Any]:
+        """Actualiza fase de generación LLM.
+
+        Args:
+            state_id: ID del estado
+            solicitada: Si la generación fue solicitada
+            completada: Si la generación está completada
+            ruta_fichero: Ruta del fichero generado (required if completada=True)
+            requesting_user_id: ID del usuario solicitante
+            requesting_user_identity_type: Tipo de identidad del solicitante
+
+        Returns:
+            Diccionario con resultado de la operación
+        """
+        from sqlalchemy import create_engine
+        from src.shared_application.adapters.mariadb_project_version_state_repository import (
+            MariaDBProjectVersionStateRepository,
+        )
+        from src.shared_application.services.project_version_state_service import (
+            ProjectVersionStateService,
+            PermissionDeniedError,
+        )
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+        engine = create_engine(dsn)
+
+        repository = MariaDBProjectVersionStateRepository(engine)
+        service = ProjectVersionStateService(repository, engine)
+
+        try:
+            state = repository.get_by_id(state_id)
+            if state is None:
+                raise BackendCoreBusinessError("Estado no encontrado")
+
+            if solicitada and not state.generation.solicitada:
+                # Solicitar generación
+                updated_state = service.request_generation(
+                    state_id,
+                    requesting_user_id,
+                    requesting_user_identity_type,
+                )
+            elif completada and not state.generation.completada:
+                # Completar generación
+                if not ruta_fichero:
+                    raise BackendCoreBusinessError(
+                        "Se requiere ruta_fichero para completar generación"
+                    )
+                updated_state = service.complete_generation(
+                    state_id,
+                    ruta_fichero,
+                    requesting_user_id,
+                    requesting_user_identity_type,
+                )
+            else:
+                # Actualización directa
+                success = repository.update_generation_phase(
+                    state_id,
+                    solicitada,
+                    completada,
+                    ruta_fichero,
+                    requesting_user_id,
+                )
+                if not success:
+                    raise BackendCoreBusinessError("No se pudo actualizar")
+                updated_state = repository.get_by_id(state_id)
+
+            self._logger.info(
+                "[PROJECT_VERSION_STATE] Updated generation phase: state_id=%s user=%s",
+                state_id,
+                requesting_user_id,
+            )
+
+            return {
+                "success": True,
+                "state": self._project_version_state_to_dict(updated_state) if updated_state else None,
+            }
+
+        except PermissionDeniedError as exc:
+            raise BackendCorePermissionError(
+                "project_version_state_update",
+                requesting_user_identity_type,
+            ) from exc
+
+    def update_notification_phase(
+        self,
+        state_id: int,
+        enviada: bool,
+        requesting_user_id: int,
+        requesting_user_identity_type: int,
+    ) -> dict[str, Any]:
+        """Actualiza fase de notificación.
+
+        Args:
+            state_id: ID del estado
+            enviada: Si la notificación fue enviada
+            requesting_user_id: ID del usuario solicitante
+            requesting_user_identity_type: Tipo de identidad del solicitante
+
+        Returns:
+            Diccionario con resultado de la operación
+        """
+        from sqlalchemy import create_engine
+        from src.shared_application.adapters.mariadb_project_version_state_repository import (
+            MariaDBProjectVersionStateRepository,
+        )
+        from src.shared_application.services.project_version_state_service import (
+            ProjectVersionStateService,
+            PermissionDeniedError,
+        )
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+        engine = create_engine(dsn)
+
+        repository = MariaDBProjectVersionStateRepository(engine)
+        service = ProjectVersionStateService(repository, engine)
+
+        try:
+            if enviada:
+                updated_state = service.send_notification(
+                    state_id,
+                    requesting_user_id,
+                    requesting_user_identity_type,
+                )
+            else:
+                # Desmarcar notificación (actualización directa)
+                success = repository.update_notification_phase(
+                    state_id,
+                    enviada=False,
+                    updated_by=requesting_user_id,
+                )
+                if not success:
+                    raise BackendCoreBusinessError("No se pudo actualizar")
+                updated_state = repository.get_by_id(state_id)
+
+            self._logger.info(
+                "[PROJECT_VERSION_STATE] Updated notification phase: state_id=%s sent=%s user=%s",
+                state_id,
+                enviada,
+                requesting_user_id,
+            )
+
+            return {
+                "success": True,
+                "state": self._project_version_state_to_dict(updated_state) if updated_state else None,
+            }
+
+        except PermissionDeniedError as exc:
+            raise BackendCorePermissionError(
+                "project_version_state_update",
+                requesting_user_identity_type,
+            ) from exc
+
+    def _project_version_state_to_dict(self, state: Any) -> dict[str, Any]:
+        """Convierte entidad ProjectVersionState a diccionario serializable.
+
+        Args:
+            state: Entidad ProjectVersionState
+
+        Returns:
+            Diccionario con todos los campos
+        """
+        return {
+            "id": state.id,
+            "organization_id": state.organization_id,
+            "project_id": state.project_id,
+            "version_id": state.version_id,
+            "state": state.state.value,
+            "state_internal": state.state_internal.value,
+            "state_internal_display": state.state_internal.display_name,
+            "protected": state.protected,
+            "size": state.size,
+            # Fase 1: Propuesta
+            "proposal": {
+                "propuesta_cliente": state.proposal.propuesta_cliente,
+                "revision_interna": state.proposal.revision_interna,
+                "propuesta_mejoras": state.proposal.propuesta_mejoras,
+                "aceptacion_cliente": state.proposal.aceptacion_cliente,
+                "aceptacion_interna": state.proposal.aceptacion_interna,
+                "is_approved": state.proposal.is_approved,
+            },
+            # Fase 2: Entrenamiento
+            "training": {
+                "solicitado": state.training.solicitado,
+                "completado": state.training.completado,
+                "fecha_completado": (
+                    state.training.fecha_completado.isoformat()
+                    if state.training.fecha_completado
+                    else None
+                ),
+                "is_completed": state.training.is_completed,
+            },
+            # Fase 3: Evaluación
+            "evaluation": {
+                "evaluacion_en_curso": state.evaluation.evaluacion_en_curso,
+                "reentrenamiento_en_curso": state.evaluation.reentrenamiento_en_curso,
+                "optimizacion_en_curso": state.evaluation.optimizacion_en_curso,
+                "calidad_aprobada": state.evaluation.calidad_aprobada,
+                "is_approved": state.evaluation.is_approved,
+            },
+            # Fase 4: Generación
+            "generation": {
+                "solicitada": state.generation.solicitada,
+                "completada": state.generation.completada,
+                "fecha_completado": (
+                    state.generation.fecha_completado.isoformat()
+                    if state.generation.fecha_completado
+                    else None
+                ),
+                "ruta_fichero": state.generation.ruta_fichero,
+                "is_completed": state.generation.is_completed,
+            },
+            # Fase 5: Notificación
+            "notification": {
+                "enviada": state.notification.enviada,
+                "fecha_envio": (
+                    state.notification.fecha_envio.isoformat()
+                    if state.notification.fecha_envio
+                    else None
+                ),
+                "is_sent": state.notification.is_sent,
+            },
+            # Metadatos y progreso
+            "progress_percentage": state.progress_percentage,
+            "current_phase_number": state.current_phase_number,
+            "is_completed": state.is_completed,
+            "created_at": state.created_at.isoformat(),
+            "updated_at": state.updated_at.isoformat(),
+            "updated_by": state.updated_by,
+        }

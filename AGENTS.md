@@ -4318,3 +4318,942 @@ Para arquitectura DDD detallada, ver README.md sección "Arquitectura DDD para G
 
 **Siempre consultar con el equipo antes de modificar el sistema de sesiones.**
 
+---
+
+## 24. Estado de Proyectos - Domain-Driven Design Architecture
+
+**DESCRIPCIÓN**: El sistema "Estado de Proyectos" es una implementación DDD completa que gestiona el ciclo de vida de versiones de modelos LLM a través de 5 fases interconectadas con validaciones automáticas a nivel de base de datos.
+
+### 24.1. Arquitectura General DDD
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Domain Layer (1_shared_domain)          │
+│  - Entities: ProjectVersionState (Aggregate Root)           │
+│  - Value Objects: ProposalPhase, TrainingPhase, etc.        │
+│  - Enums: ExplorerState, StateInternal                      │
+│  - Business Logic: Métodos de transición de estado          │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                  Application Layer (2_shared_application)    │
+│  - Service: ProjectVersionStateService                       │
+│  - Repository Protocol: ProjectVersionStateRepository        │
+│  - DTOs: UpdateProposalPhaseDto, PhaseDetailsDto, etc.      │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│              Infrastructure Layer (2_shared_application)     │
+│  - Adapter: MariaDBProjectVersionStateRepository             │
+│  - Database: estado_version table (24 nuevos campos)        │
+│  - Triggers: 6 triggers automáticos (sincronización, etc.)  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 24.2. Ciclo de Vida de 5 Fases
+
+Cada versión de modelo LLM pasa por 5 fases obligatorias:
+
+| Fase | Campos DB | Estados Internos | Transiciones |
+|------|-----------|------------------|--------------|
+| **1. Propuesta** | `final_c`, `final_i` | `propuesta_cliente`, `revision_interna`, `propuesta_aprobada` | Cliente/Interno aprueban |
+| **2. Entrenamiento** | `entrenamiento_inicial_solicitado`, `entrenamiento_inicial_completado` | `entrenamiento_inicial`, `entrenamiento_completado` | Trigger auto → Trainer completa |
+| **3. Evaluación** | `control_calidad_aprobado` | `control_calidad` | Editor/SuperAdmin aprueba |
+| **4. Generación** | `generacion_llm_solicitada`, `generacion_llm_completada` | `generacion_llm`, `generacion_completada` | Trigger auto → Trainer completa |
+| **5. Notificación** | `notificacion_descarga_enviada` | `notificacion_descarga` | Backend Core envía email |
+
+**Regla #1**: Las fases DEBEN ejecutarse en orden secuencial - no se puede saltar de Propuesta a Evaluación.
+
+**Regla #2**: `state_internal` se actualiza AUTOMÁTICAMENTE mediante triggers (ver 24.6).
+
+### 24.3. Entidades y Value Objects (Domain Layer)
+
+#### 24.3.1. Aggregate Root: ProjectVersionState
+
+**Ubicación**: `/src/1_shared_domain/entities/project_version_state.py`
+
+```python
+@dataclass
+class ProjectVersionState:
+    """Aggregate Root - Gestiona todo el ciclo de vida de una versión."""
+    id: int
+    organization_id: int
+    project_id: int
+    version_id: int
+    state: ExplorerState  # Estado explorer (visible en UI)
+    state_internal: StateInternal  # Estado interno (15 opciones)
+
+    # Value Objects para cada fase
+    proposal: ProposalPhase
+    training: TrainingPhase
+    evaluation: EvaluationPhase
+    generation: GenerationPhase
+    notification: NotificationPhase
+
+    updated_by: int | None = None
+    updated_at: datetime | None = None
+```
+
+**Regla #3**: `ProjectVersionState` es el ÚNICO punto de entrada para modificar el estado de una versión.
+
+**Regla #4**: Toda la lógica de negocio está en los métodos del Aggregate Root o Value Objects.
+
+#### 24.3.2. Value Objects (Inmutables)
+
+**ProposalPhase** (`@dataclass(frozen=True)`):
+```python
+@dataclass(frozen=True)
+class ProposalPhase:
+    propuesta_cliente: bool = True
+    revision_interna: bool = False
+
+    def approve_by_client(self, user_id: int) -> ProposalPhase:
+        """Retorna NUEVO objeto con propuesta_cliente=True."""
+        return ProposalPhase(
+            propuesta_cliente=True,
+            revision_interna=self.revision_interna,
+        )
+
+    def approve_by_internal(self, user_id: int) -> ProposalPhase:
+        """Retorna NUEVO objeto con revision_interna=True."""
+        return ProposalPhase(
+            propuesta_cliente=self.propuesta_cliente,
+            revision_interna=True,
+        )
+```
+
+**Regla #5**: Los Value Objects son **inmutables** (`frozen=True`).
+
+**Regla #6**: Los métodos de Value Objects SIEMPRE retornan un NUEVO objeto (no modifican `self`).
+
+**Regla #7**: Los métodos de transición reciben `user_id` para auditoría.
+
+**TrainingPhase**, **EvaluationPhase**, **GenerationPhase**, **NotificationPhase**:
+- Misma estructura inmutable
+- Métodos específicos para cada fase (`request_training()`, `complete_training()`, etc.)
+- Campos booleanos que mapean a columnas DB
+
+### 24.4. Application Service
+
+**Ubicación**: `/src/2_shared_application/services/project_version_state_service.py`
+
+```python
+class ProjectVersionStateService:
+    """Servicio de aplicación - orquesta entidades y repositorio."""
+
+    def __init__(self, repository: ProjectVersionStateRepository):
+        self._repository = repository
+
+    def approve_proposal_by_client(
+        self,
+        state_id: int,
+        user_id: int,
+        identity_type_id: int,
+    ) -> ProjectVersionState:
+        """Aprueba propuesta por cliente (validando permisos)."""
+        # 1. Validar permisos
+        if identity_type_id not in (1, 2, 3):  # SuperAdmin, Admin, Editor
+            raise PermissionError("Sin permisos para aprobar propuesta")
+
+        # 2. Obtener entidad
+        state = self._repository.get_by_id(state_id)
+        if not state:
+            raise ValueError("Estado no encontrado")
+
+        # 3. Delegar lógica de negocio a la entidad
+        updated_proposal = state.proposal.approve_by_client(user_id)
+        state.proposal = updated_proposal
+        state.updated_by = user_id
+        state.updated_at = datetime.now(timezone.utc)
+
+        # 4. Persistir
+        return self._repository.save(state)
+```
+
+**Regla #8**: El Service SOLO orquesta - NO contiene lógica de negocio.
+
+**Regla #9**: El Service valida permisos ANTES de delegar a la entidad.
+
+**Regla #10**: El Service usa el Repository para persistencia (nunca SQL directo).
+
+### 24.5. Repository Pattern
+
+#### 24.5.1. Protocol (Interfaz)
+
+**Ubicación**: `/src/2_shared_application/interfaces/project_version_state_repository.py`
+
+```python
+from typing import Protocol
+
+class ProjectVersionStateRepository(Protocol):
+    """Interfaz del repositorio - permite múltiples implementaciones."""
+
+    def get_by_id(self, state_id: int) -> ProjectVersionState | None:
+        """Obtiene estado por ID."""
+        ...
+
+    def save(self, state: ProjectVersionState) -> ProjectVersionState:
+        """Guarda estado (INSERT o UPDATE)."""
+        ...
+
+    def list_by_project(self, project_id: int) -> list[ProjectVersionState]:
+        """Lista estados por proyecto."""
+        ...
+```
+
+**Regla #11**: NUNCA acceder directamente a la base de datos desde el Service.
+
+**Regla #12**: El Repository abstrae la persistencia - permite cambiar de MariaDB a PostgreSQL sin tocar el Service.
+
+#### 24.5.2. Implementación MariaDB
+
+**Ubicación**: `/src/2_shared_application/adapters/mariadb_project_version_state_repository.py`
+
+```python
+class MariaDBProjectVersionStateRepository:
+    """Implementación del Repository para MariaDB."""
+
+    def __init__(self, engine: Engine):
+        self._engine = engine
+
+    def get_by_id(self, state_id: int) -> ProjectVersionState | None:
+        """Convierte row SQL a entidad de dominio."""
+        with self._engine.connect() as conn:
+            result = conn.execute(text("""
+                SELECT * FROM estado_version WHERE id = :id
+            """), {"id": state_id})
+            row = result.fetchone()
+
+            if not row:
+                return None
+
+            return self._row_to_entity(row)
+
+    def _row_to_entity(self, row) -> ProjectVersionState:
+        """Construye Value Objects desde row SQL."""
+        proposal = ProposalPhase(
+            propuesta_cliente=bool(row.final_c),
+            revision_interna=bool(row.final_i),
+        )
+        training = TrainingPhase(
+            entrenamiento_solicitado=bool(row.entrenamiento_inicial_solicitado),
+            entrenamiento_completado=bool(row.entrenamiento_inicial_completado),
+        )
+        # ... construir otros Value Objects
+
+        return ProjectVersionState(
+            id=row.id,
+            proposal=proposal,
+            training=training,
+            # ...
+        )
+```
+
+**Regla #13**: `_row_to_entity()` DEBE construir todos los Value Objects correctamente.
+
+**Regla #14**: `save()` DEBE actualizar TODOS los campos de las 5 fases.
+
+### 24.6. Database Triggers (Automatización Crítica)
+
+**Ubicación**: `/infrastructure/database/migrations/009_estado_triggers.sql`
+
+El sistema tiene 6 triggers automáticos que DEBEN entenderse:
+
+#### 24.6.1. Trigger de Auto-Entrenamiento
+
+```sql
+CREATE TRIGGER trg_estado_version_auto_entrenamiento
+BEFORE UPDATE ON estado_version
+FOR EACH ROW
+BEGIN
+    -- Si ambas aprobaciones están activadas, solicitar entrenamiento
+    IF NEW.final_c = 1 AND NEW.final_i = 1 THEN
+        SET NEW.entrenamiento_inicial_solicitado = 1;
+    END IF;
+
+    -- Si alguna aprobación se revoca, cancelar entrenamiento
+    IF NEW.final_c = 0 OR NEW.final_i = 0 THEN
+        SET NEW.entrenamiento_inicial_solicitado = 0;
+        SET NEW.entrenamiento_inicial_completado = 0;
+    END IF;
+END
+```
+
+**Regla #15**: NO intentar activar `entrenamiento_inicial_solicitado` manualmente - el trigger lo hace.
+
+**Regla #16**: Revocar `final_c` o `final_i` RESETEA automáticamente el entrenamiento.
+
+#### 24.6.2. Trigger de Auto-Generación
+
+```sql
+CREATE TRIGGER trg_estado_version_auto_generacion
+BEFORE UPDATE ON estado_version
+FOR EACH ROW
+BEGIN
+    -- Si control de calidad aprobado, solicitar generación
+    IF NEW.control_calidad_aprobado = 1 THEN
+        SET NEW.generacion_llm_solicitada = 1;
+    END IF;
+
+    -- Si se revoca control de calidad, cancelar generación
+    IF NEW.control_calidad_aprobado = 0 THEN
+        SET NEW.generacion_llm_solicitada = 0;
+        SET NEW.generacion_llm_completada = 0;
+    END IF;
+END
+```
+
+**Regla #17**: La generación LLM se dispara AUTOMÁTICAMENTE al aprobar control de calidad.
+
+#### 24.6.3. Trigger de Sincronización estado_internal
+
+```sql
+CREATE TRIGGER trg_estado_version_sync_state_internal
+BEFORE UPDATE ON estado_version
+FOR EACH ROW
+BEGIN
+    DECLARE new_state_internal VARCHAR(50);
+
+    -- Lógica de prioridad (de más específico a más general)
+    IF NEW.notificacion_descarga_enviada = 1 THEN
+        SET new_state_internal = 'notificacion_descarga';
+    ELSEIF NEW.generacion_llm_completada = 1 THEN
+        SET new_state_internal = 'generacion_completada';
+    ELSEIF NEW.generacion_llm_solicitada = 1 THEN
+        SET new_state_internal = 'generacion_llm';
+    -- ... más condiciones
+    ELSEIF NEW.final_c = 1 AND NEW.final_i = 0 THEN
+        SET new_state_internal = 'revision_interna';
+    ELSE
+        SET new_state_internal = 'propuesta_cliente';
+    END IF;
+
+    SET NEW.state_internal = new_state_internal;
+END
+```
+
+**Regla #18**: `state_internal` se calcula AUTOMÁTICAMENTE - NUNCA modificarlo manualmente.
+
+**Regla #19**: La prioridad va de fases finales a iniciales (notificación > generación > evaluación > entrenamiento > propuesta).
+
+#### 24.6.4. Trigger de Updated At
+
+```sql
+CREATE TRIGGER trg_estado_version_updated_at
+BEFORE UPDATE ON estado_version
+FOR EACH ROW
+BEGIN
+    SET NEW.updated_at = NOW();
+END
+```
+
+**Regla #20**: `updated_at` se actualiza AUTOMÁTICAMENTE en cada UPDATE.
+
+#### 24.6.5. Trigger de Sincronización con estado (legacy)
+
+```sql
+CREATE TRIGGER trg_estado_version_sync_estado
+AFTER UPDATE ON estado_version
+FOR EACH ROW
+BEGIN
+    UPDATE estado
+    SET
+        estado_propuesta = IF(NEW.final_c = 1 AND NEW.final_i = 1, TRUE, FALSE),
+        estado_entrenamiento = IF(NEW.entrenamiento_inicial_completado = 1, TRUE, FALSE),
+        estado_control_calidad = IF(NEW.control_calidad_aprobado = 1, TRUE, FALSE),
+        estado_generacion_llm = IF(NEW.generacion_llm_completada = 1, TRUE, FALSE),
+        estado_notificacion_descarga = IF(NEW.notificacion_descarga_enviada = 1, TRUE, FALSE)
+    WHERE id_proyecto = NEW.id_proyecto AND id_version = NEW.id_version;
+END
+```
+
+**Regla #21**: La tabla `estado` (legacy) se sincroniza AUTOMÁTICAMENTE desde `estado_version`.
+
+**Regla #22**: NO escribir directamente a `estado` - usar `estado_version` como fuente de verdad.
+
+### 24.7. API Endpoints (Backend Core)
+
+**Ubicación**: `/src/apps/3_backend/apicore.py`
+
+#### 24.7.1. Estructura de Endpoints
+
+```python
+# GET - Obtener estado completo
+@app.get("/project-version-states/{state_id}")
+def get_state_endpoint(
+    state_id: int,
+    user_id: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Retorna estado completo con las 5 fases."""
+    return router.get_project_version_state(state_id, user_id, identity_type_id)
+
+
+# PATCH - Actualizar fase de propuesta
+@app.patch("/project-version-states/{state_id}/proposal")
+def update_proposal_phase_endpoint(
+    state_id: int,
+    payload: UpdateProposalPhaseDto,
+    user_id: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Actualiza aprobaciones de cliente e interna."""
+    return router.update_proposal_phase(
+        state_id=state_id,
+        aceptacion_cliente=payload.aceptacion_cliente,
+        aceptacion_interna=payload.aceptacion_interna,
+        user_id=user_id,
+        identity_type_id=identity_type_id,
+    )
+
+
+# PATCH - Actualizar fase de evaluación
+@app.patch("/project-version-states/{state_id}/evaluation")
+def update_evaluation_phase_endpoint(
+    state_id: int,
+    payload: UpdateEvaluationPhaseDto,
+    user_id: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Actualiza control de calidad."""
+    return router.update_evaluation_phase(...)
+```
+
+**Regla #23**: Cada fase tiene su propio endpoint PATCH (`/proposal`, `/training`, `/evaluation`, `/generation`, `/notification`).
+
+**Regla #24**: Los endpoints reciben `user_id` e `identity_type_id` para auditoría y permisos.
+
+#### 24.7.2. DTOs de Request
+
+**Ubicación**: `/src/apps/3_backend/apicore.py` (al inicio del archivo)
+
+```python
+class UpdateProposalPhaseDto(BaseModel):
+    """DTO para actualizar fase de propuesta."""
+    aceptacion_cliente: bool
+    aceptacion_interna: bool
+
+
+class UpdateEvaluationPhaseDto(BaseModel):
+    """DTO para actualizar fase de evaluación."""
+    control_calidad_aprobado: bool
+
+
+# ... otros DTOs para Training, Generation, Notification
+```
+
+**Regla #25**: Los DTOs usan Pydantic v2 para validación automática.
+
+**Regla #26**: Los nombres de campos en DTOs deben ser descriptivos (no abreviaturas).
+
+### 24.8. Propagación a través de Capas
+
+```
+Backoffice UI → Middleware → Broker → Backend Core
+     (Reflex)      (apife.py)  (apibe.py)  (apicore.py)
+```
+
+#### 24.8.1. Middleware Layer
+
+**Archivos**:
+- `/src/apps/7_service_frontend/routermiddleware.py`: Métodos del router
+- `/src/apps/7_service_frontend/broker_backend_client.py`: Cliente HTTP al Broker
+- `/src/apps/7_service_frontend/apife.py`: Endpoints FastAPI
+
+**Patrón**: Propagación transparente de headers (`Authorization`, `X-Session-Token`).
+
+```python
+# En routermiddleware.py
+def update_proposal_phase(
+    self,
+    state_id: int,
+    aceptacion_cliente: bool,
+    aceptacion_interna: bool,
+) -> dict[str, Any]:
+    """Delega al broker."""
+    return self._broker_client.update_proposal_phase(
+        state_id, aceptacion_cliente, aceptacion_interna
+    )
+```
+
+**Regla #27**: Middleware NO valida permisos - solo propaga headers al Broker.
+
+#### 24.8.2. Broker Layer
+
+**Archivos**:
+- `/src/apps/8_service_backend/routerbroker.py`: Métodos del router
+- `/src/apps/8_service_backend/interfacetocore.py`: Cliente HTTP al Backend Core
+- `/src/apps/8_service_backend/apibe.py`: Endpoints FastAPI
+
+**Patrón**: Igual que Middleware - propagación transparente.
+
+**Regla #28**: Broker NO valida permisos - confía en Backend Core.
+
+#### 24.8.3. Backend Core (Validación de Permisos)
+
+**Archivo**: `/src/apps/3_backend/routercore.py`
+
+```python
+def update_proposal_phase(
+    self,
+    state_id: int,
+    aceptacion_cliente: bool,
+    aceptacion_interna: bool,
+    user_id: int,
+    identity_type_id: int,
+) -> dict[str, Any]:
+    """Actualiza fase de propuesta (con validación de permisos)."""
+    # 1. Validar permisos
+    if identity_type_id not in (1, 2, 3):  # SuperAdmin, Admin, Editor
+        raise BackendCorePermissionError(
+            "Sin permisos para aprobar propuesta",
+            identity_type_id,
+        )
+
+    # 2. Usar Service para aplicar cambios
+    service = ProjectVersionStateService(self._repository)
+    updated_state = service.approve_proposal_by_client(
+        state_id, user_id, identity_type_id
+    )
+
+    # 3. Convertir entidad a dict para respuesta
+    return self._state_to_dict(updated_state)
+```
+
+**Regla #29**: Backend Core es el ÚNICO lugar donde se validan permisos.
+
+**Regla #30**: Backend Core usa el Service DDD (no SQL directo).
+
+### 24.9. Backoffice UI (Reflex)
+
+**Ubicación**: `/src/apps/6_web_backoffice/pages/estado_proyectos.py`
+
+#### 24.9.1. State Class
+
+```python
+class EstadoProyectosState(rx.State):
+    """Estado de Reflex para gestión de estado de proyectos."""
+
+    # Contexto del usuario
+    user_id: int
+    organization_id: int
+    identity_type_id: int
+
+    # Selección
+    selected_org_id: int
+    selected_project_id: int
+    selected_version_id: int
+
+    # Estado actual
+    current_state: dict[str, Any]
+
+    @rx.var
+    def can_edit(self) -> bool:
+        """Computed property - puede editar si es SuperAdmin/Admin/Editor."""
+        if self.identity_type_id == 1:  # SuperAdmin
+            return True
+        if self.identity_type_id in (4, 5):  # Auditor, Lector
+            return False
+        return True  # Admin, Editor
+
+    def toggle_field(self, field_name: str):
+        """Alterna valor de un campo booleano."""
+        from adapters.api_client import update_proposal_phase
+
+        current_value = self.current_state.get(field_name, False)
+
+        # Determinar qué fase actualizar
+        if field_name in ("final_c", "final_i"):
+            # Actualizar fase de propuesta
+            result = update_proposal_phase(
+                state_id=self.current_state["id"],
+                aceptacion_cliente=(field_name == "final_c" and not current_value),
+                aceptacion_interna=(field_name == "final_i" and not current_value),
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+        # ... manejar otras fases
+
+        # Recargar estado
+        self.load_current_state()
+```
+
+**Regla #31**: La UI usa `computed properties` (@rx.var) para permisos.
+
+**Regla #32**: Los cambios se hacen vía API client (NUNCA SQL directo desde Reflex).
+
+#### 24.9.2. UI Components
+
+```python
+def proposal_phase_card(state: EstadoProyectosState) -> rx.Component:
+    """Card para la fase de propuesta."""
+    return rx.box(
+        rx.heading("Fase 1: Propuesta", size="5"),
+
+        # Aprobación del cliente
+        rx.hstack(
+            rx.switch(
+                checked=state.current_state["final_c"],
+                on_change=lambda: state.toggle_field("final_c"),
+                disabled=~state.can_edit,  # Deshabilitado si no puede editar
+            ),
+            rx.text("Aprobación del Cliente"),
+        ),
+
+        # Revisión interna
+        rx.hstack(
+            rx.switch(
+                checked=state.current_state["final_i"],
+                on_change=lambda: state.toggle_field("final_i"),
+                disabled=~state.can_edit,
+            ),
+            rx.text("Revisión Interna"),
+        ),
+
+        # Indicador de estado interno
+        rx.badge(
+            state.current_state["state_internal"],
+            color_scheme=_get_color_for_state(state.current_state["state_internal"]),
+        ),
+
+        padding="1em",
+        border=f"1px solid {COLORS['border']}",
+        border_radius="0.5em",
+    )
+```
+
+**Regla #33**: Los switches deben estar deshabilitados (`disabled`) si el usuario no tiene permisos.
+
+**Regla #34**: Mostrar `state_internal` con badges de colores para visualización.
+
+### 24.10. Control de Permisos
+
+| Rol | identity_type_id | Puede aprobar propuesta | Puede aprobar control calidad | Puede ver estados |
+|-----|------------------|------------------------|-------------------------------|-------------------|
+| **SuperAdmin** | 1 | ✅ | ✅ | ✅ |
+| **Admin** | 2 | ✅ | ✅ | ✅ |
+| **Editor** | 3 | ✅ | ✅ | ✅ |
+| **Auditor** | 4 | ❌ | ❌ | ✅ (solo lectura) |
+| **Lector** | 5 | ❌ | ❌ | ✅ (solo lectura) |
+
+**Regla #35**: Validar permisos en Backend Core ANTES de aplicar cambios.
+
+**Regla #36**: Usar `BackendCorePermissionError` para errores de permisos.
+
+### 24.11. Testing Guidelines
+
+#### 24.11.1. Tests de Domain Layer
+
+```python
+# tests/domain/test_project_version_state.py
+
+def test_proposal_phase_approve_by_client():
+    """Test Value Object inmutable."""
+    phase = ProposalPhase(propuesta_cliente=False, revision_interna=False)
+
+    # Aprobar por cliente retorna NUEVO objeto
+    approved = phase.approve_by_client(user_id=1)
+
+    assert approved.propuesta_cliente is True
+    assert approved.revision_interna is False
+
+    # Original NO se modifica (inmutabilidad)
+    assert phase.propuesta_cliente is False
+```
+
+**Regla #37**: Tests de Value Objects verifican inmutabilidad.
+
+#### 24.11.2. Tests de Application Service
+
+```python
+# tests/application/test_project_version_state_service.py
+
+def test_approve_proposal_validates_permissions():
+    """Test que Service valida permisos."""
+    mock_repo = Mock(spec=ProjectVersionStateRepository)
+    service = ProjectVersionStateService(mock_repo)
+
+    with pytest.raises(PermissionError):
+        service.approve_proposal_by_client(
+            state_id=1,
+            user_id=10,
+            identity_type_id=5,  # Lector - sin permisos
+        )
+```
+
+**Regla #38**: Tests de Service usan mocks del Repository (no base de datos real).
+
+#### 24.11.3. Tests de Repository
+
+```python
+# tests/infrastructure/test_mariadb_repository.py
+
+def test_row_to_entity_conversion():
+    """Test conversión de row SQL a entidad."""
+    mock_row = Mock(
+        id=1,
+        final_c=1,
+        final_i=0,
+        entrenamiento_inicial_solicitado=1,
+        # ... todos los campos
+    )
+
+    repo = MariaDBProjectVersionStateRepository(engine)
+    entity = repo._row_to_entity(mock_row)
+
+    assert isinstance(entity, ProjectVersionState)
+    assert entity.proposal.propuesta_cliente is True
+    assert entity.proposal.revision_interna is False
+```
+
+**Regla #39**: Tests de Repository verifican conversión row ↔ entity.
+
+### 24.12. Migrations y Database Schema
+
+#### 24.12.1. Extensión de estado_version
+
+**Archivo**: `/infrastructure/database/migrations/008_estado_version_extension.sql`
+
+**Campos añadidos** (24 nuevos):
+
+```sql
+ALTER TABLE estado_version
+-- Control de estado interno
+ADD COLUMN IF NOT EXISTS state_internal VARCHAR(50) DEFAULT 'propuesta_cliente',
+
+-- Fase 1: Propuesta
+ADD COLUMN IF NOT EXISTS final_c TINYINT(1) DEFAULT 0,
+ADD COLUMN IF NOT EXISTS final_i TINYINT(1) DEFAULT 0,
+
+-- Fase 2: Entrenamiento
+ADD COLUMN IF NOT EXISTS entrenamiento_inicial_solicitado TINYINT(1) DEFAULT 0,
+ADD COLUMN IF NOT EXISTS entrenamiento_inicial_completado TINYINT(1) DEFAULT 0,
+
+-- Fase 3: Evaluación
+ADD COLUMN IF NOT EXISTS control_calidad_aprobado TINYINT(1) DEFAULT 0,
+
+-- Fase 4: Generación LLM
+ADD COLUMN IF NOT EXISTS generacion_llm_solicitada TINYINT(1) DEFAULT 0,
+ADD COLUMN IF NOT EXISTS generacion_llm_completada TINYINT(1) DEFAULT 0,
+
+-- Fase 5: Notificación
+ADD COLUMN IF NOT EXISTS notificacion_descarga_enviada TINYINT(1) DEFAULT 0,
+
+-- Auditoría
+ADD COLUMN IF NOT EXISTS updated_by INT NULL,
+ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NULL,
+
+-- Campos adicionales para tracking
+ADD COLUMN IF NOT EXISTS fecha_entrenamiento_inicio TIMESTAMP NULL,
+ADD COLUMN IF NOT EXISTS fecha_entrenamiento_fin TIMESTAMP NULL,
+ADD COLUMN IF NOT EXISTS fecha_control_calidad TIMESTAMP NULL,
+ADD COLUMN IF NOT EXISTS fecha_generacion_inicio TIMESTAMP NULL,
+ADD COLUMN IF NOT EXISTS fecha_generacion_fin TIMESTAMP NULL,
+ADD COLUMN IF NOT EXISTS fecha_notificacion TIMESTAMP NULL,
+ADD COLUMN IF NOT EXISTS url_descarga VARCHAR(512) NULL,
+ADD COLUMN IF NOT EXISTS tamano_modelo_mb DECIMAL(10,2) NULL,
+ADD COLUMN IF NOT EXISTS metricas_calidad JSON NULL,
+ADD COLUMN IF NOT EXISTS logs_entrenamiento TEXT NULL,
+ADD COLUMN IF NOT EXISTS notas_internas TEXT NULL;
+```
+
+**Regla #40**: NO eliminar estos campos - son parte integral del sistema.
+
+**Regla #41**: Los campos `fecha_*` se actualizan desde Backend IA (Trainer) cuando completa tareas.
+
+#### 24.12.2. Triggers
+
+**Archivo**: `/infrastructure/database/migrations/009_estado_triggers.sql`
+
+**Triggers creados** (6):
+1. `trg_estado_version_auto_entrenamiento` - Dispara entrenamiento al aprobar propuesta
+2. `trg_estado_version_auto_generacion` - Dispara generación al aprobar control calidad
+3. `trg_estado_version_sync_state_internal` - Sincroniza state_internal automáticamente
+4. `trg_estado_version_updated_at` - Actualiza updated_at en cada UPDATE
+5. `trg_estado_version_sync_estado` - Sincroniza con tabla estado (legacy)
+6. `trg_estado_version_validate_transitions` - Valida transiciones de estado (opcional)
+
+**Regla #42**: NO modificar triggers sin entender el impacto en TODA la cadena de estados.
+
+**Regla #43**: Al hacer debugging, revisar triggers ANTES de buscar errores en código Python.
+
+### 24.13. Data Flow Completo
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│ 1. Usuario aprueba propuesta en Backoffice (toggle switch)    │
+└────────────────────────────────────────────────────────────────┘
+                             ↓
+┌────────────────────────────────────────────────────────────────┐
+│ 2. API call: PATCH /project-version-states/{id}/proposal      │
+│    Middleware → Broker → Backend Core                         │
+└────────────────────────────────────────────────────────────────┘
+                             ↓
+┌────────────────────────────────────────────────────────────────┐
+│ 3. Backend Core valida permisos (identity_type_id)            │
+└────────────────────────────────────────────────────────────────┘
+                             ↓
+┌────────────────────────────────────────────────────────────────┐
+│ 4. Service llama a entidad: state.proposal.approve_by_client()│
+└────────────────────────────────────────────────────────────────┘
+                             ↓
+┌────────────────────────────────────────────────────────────────┐
+│ 5. Repository persiste: UPDATE estado_version SET final_c=1   │
+└────────────────────────────────────────────────────────────────┘
+                             ↓
+┌────────────────────────────────────────────────────────────────┐
+│ 6. TRIGGER detecta: final_c=1 AND final_i=1                   │
+│    → SET entrenamiento_inicial_solicitado=1                   │
+└────────────────────────────────────────────────────────────────┘
+                             ↓
+┌────────────────────────────────────────────────────────────────┐
+│ 7. TRIGGER sincroniza: state_internal='entrenamiento_inicial' │
+└────────────────────────────────────────────────────────────────┘
+                             ↓
+┌────────────────────────────────────────────────────────────────┐
+│ 8. TRIGGER actualiza: updated_at=NOW()                        │
+└────────────────────────────────────────────────────────────────┘
+                             ↓
+┌────────────────────────────────────────────────────────────────┐
+│ 9. TRIGGER sincroniza tabla estado (legacy) automáticamente   │
+└────────────────────────────────────────────────────────────────┘
+                             ↓
+┌────────────────────────────────────────────────────────────────┐
+│ 10. Backend IA (Trainer) detecta entrenamiento_solicitado=1   │
+│     (polling cada 5 minutos)                                   │
+└────────────────────────────────────────────────────────────────┘
+                             ↓
+┌────────────────────────────────────────────────────────────────┐
+│ 11. Trainer ejecuta entrenamiento y actualiza:                │
+│     UPDATE estado_version SET                                  │
+│         entrenamiento_inicial_completado=1,                    │
+│         fecha_entrenamiento_fin=NOW(),                         │
+│         logs_entrenamiento='...'                               │
+└────────────────────────────────────────────────────────────────┘
+```
+
+**Regla #44**: Entender el flujo completo ANTES de modificar cualquier parte.
+
+### 24.14. Archivos Críticos del Sistema
+
+| Archivo | Líneas | Propósito | Capa |
+|---------|--------|-----------|------|
+| `src/1_shared_domain/entities/project_version_state.py` | ~850 | Entidades y Value Objects | Domain |
+| `src/2_shared_application/services/project_version_state_service.py` | ~400 | Application Service | Application |
+| `src/2_shared_application/adapters/mariadb_project_version_state_repository.py` | ~670 | Repository MariaDB | Infrastructure |
+| `src/apps/3_backend/apicore.py` | ~300 (nuevas líneas) | API endpoints | API |
+| `src/apps/6_web_backoffice/pages/estado_proyectos.py` | ~850 | Backoffice UI | UI |
+| `infrastructure/database/migrations/008_estado_version_extension.sql` | ~150 | Schema extension | Database |
+| `infrastructure/database/migrations/009_estado_triggers.sql` | ~350 | Database triggers | Database |
+
+**Regla #45**: Consultar SIEMPRE estos archivos antes de modificar el sistema Estado de Proyectos.
+
+### 24.15. Common Pitfalls (Errores Comunes)
+
+#### 24.15.1. Modificar state_internal manualmente
+
+```python
+# ❌ INCORRECTO
+UPDATE estado_version SET state_internal = 'generacion_llm' WHERE id = 1;
+
+# ✅ CORRECTO
+# state_internal se actualiza AUTOMÁTICAMENTE mediante trigger
+# Solo actualizar los campos de las fases (final_c, control_calidad_aprobado, etc.)
+UPDATE estado_version SET control_calidad_aprobado = 1 WHERE id = 1;
+```
+
+#### 24.15.2. Saltar validación de permisos
+
+```python
+# ❌ INCORRECTO - SQL directo desde UI
+def toggle_field(self, field_name: str):
+    execute_sql(f"UPDATE estado_version SET {field_name} = 1 WHERE id = ...")
+
+# ✅ CORRECTO - Usar API con permisos
+def toggle_field(self, field_name: str):
+    api_client.update_proposal_phase(
+        state_id=...,
+        access_token=self.access_token,  # Headers con permisos
+        session_token=self.session_token,
+    )
+```
+
+#### 24.15.3. Mutar Value Objects
+
+```python
+# ❌ INCORRECTO - Intentar mutar objeto frozen
+phase = ProposalPhase(propuesta_cliente=False, revision_interna=False)
+phase.propuesta_cliente = True  # ERROR: dataclass is frozen
+
+# ✅ CORRECTO - Crear nuevo objeto
+phase = ProposalPhase(propuesta_cliente=False, revision_interna=False)
+updated_phase = phase.approve_by_client(user_id=1)  # Retorna NUEVO objeto
+```
+
+#### 24.15.4. Olvidar triggers al hacer cambios
+
+```python
+# ❌ INCORRECTO - Esperar que entrenamiento se active manualmente
+UPDATE estado_version SET entrenamiento_inicial_solicitado = 1;
+
+# ✅ CORRECTO - Activar aprobaciones y dejar que trigger lo haga
+UPDATE estado_version SET final_c = 1, final_i = 1;
+# Trigger automáticamente: entrenamiento_inicial_solicitado = 1
+```
+
+### 24.16. Debugging Checklist
+
+Cuando debuggear problemas con Estado de Proyectos:
+
+1. [ ] Verificar que los triggers están creados: `SHOW TRIGGERS FROM myllm_projects_db;`
+2. [ ] Revisar logs de Backend Core: `/data/backend_core/logs/`
+3. [ ] Verificar permisos del usuario: `SELECT identity_type_id FROM users WHERE user_id = ?`
+4. [ ] Inspeccionar `state_internal` vs campos de fases (deben ser coherentes)
+5. [ ] Revisar `updated_by` y `updated_at` para auditoría
+6. [ ] Verificar sincronización con tabla `estado`: `SELECT * FROM estado WHERE id_proyecto = ?`
+7. [ ] Revisar que Repository convierte correctamente row → entity
+8. [ ] Verificar que Value Objects son inmutables (frozen=True)
+9. [ ] Comprobar que Service valida permisos ANTES de delegar a entidad
+10. [ ] Revisar que UI desactiva switches si usuario no tiene permisos
+
+### 24.17. Documentación Relacionada
+
+- **README.md** - Sección "Estado de Proyectos (Project Status Management)" con:
+  - Arquitectura DDD detallada
+  - Diagramas de flujo de las 5 fases
+  - Esquema de base de datos
+  - API endpoints completos
+  - Permisos por rol
+  - Descripción de UI
+  - Data flow diagrams
+
+- **Database Migrations**:
+  - `008_estado_version_extension.sql` - Extensión de schema
+  - `009_estado_triggers.sql` - Triggers automáticos
+
+- **Tests** (pendiente de implementación):
+  - `tests/domain/test_project_version_state.py`
+  - `tests/application/test_project_version_state_service.py`
+  - `tests/infrastructure/test_mariadb_repository.py`
+
+---
+
+**⚠️ ADVERTENCIA CRÍTICA**: El sistema Estado de Proyectos gestiona el ciclo de vida completo de generación de modelos LLM. Modificaciones incorrectas pueden:
+- Disparar entrenamientos no solicitados (costosos en recursos GPU)
+- Corromper el estado de versiones en producción
+- Romper sincronización entre `estado_version` y `estado` (legacy)
+- Causar inconsistencias en triggers automáticos
+- Bloquear workflows de clientes
+
+**Regla #46 (OBLIGATORIA)**: NUNCA modificar triggers, schema o Value Objects sin:
+1. Entender el flujo completo de las 5 fases
+2. Revisar impacto en sincronización con tabla `estado`
+3. Consultar documentación en README.md
+4. Crear tests que validen el cambio
+5. Obtener aprobación del equipo
+
+**Para modificaciones mayores, consultar primero la documentación completa en README.md sección "Estado de Proyectos".**
+

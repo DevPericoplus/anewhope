@@ -1,4 +1,20 @@
-"""Contenido del panel de Flujos."""
+"""Contenido del panel de Flujos.
+
+Este módulo muestra el diagrama de workflow de versiones de proyectos,
+visualizando las 5 fases del ciclo de vida de generación de modelos LLM.
+
+Refactoring DDD (Task #28):
+- Consulta tabla estado_version (en lugar de estado)
+- Usa campos extendidos de la migración 008
+- Mantiene compatibilidad visual con UI existente
+- Los triggers de sincronización (migración 009) mantienen ambas tablas actualizadas
+
+Flujo de datos:
+1. Usuario selecciona proyecto y versión
+2. _refresh_estado() consulta estado_version
+3. Mapea campos a actual_workflow_state (12 booleanos)
+4. UI renderiza animación de workflow basada en estados
+"""
 
 from pathlib import Path
 from typing import Any, AsyncGenerator
@@ -264,8 +280,22 @@ class FlujosState(rx.State):
             self.selected_version_id = 0
 
     def _refresh_estado(self) -> None:
-        """Actualiza el estado final desde la tabla estado."""
+        """Actualiza el estado final desde la tabla estado_version (DDD refactoring).
 
+        Mapeo de campos:
+        - propuesta_cliente: Siempre 1 (true)
+        - revision_interna: revision_interna
+        - propuesta_mejoras: propuesta_mejoras
+        - aceptacion_cliente: final_c
+        - aceptacion_interna: final_i
+        - entrenamiento_inicial: entrenamiento_inicial_completado
+        - evaluacion_entrenamiento: evaluacion_entrenamiento
+        - reentrenamiento: reentrenamiento
+        - optimizacion: optimizacion
+        - aprobacion_calidad: control_calidad_aprobado
+        - generacion_llm: generacion_llm_completada
+        - notificacion_descarga: notificacion_descarga_enviada
+        """
         if (
             self.organization_id <= 0
             or self.selected_project_id <= 0
@@ -273,11 +303,20 @@ class FlujosState(rx.State):
         ):
             return
         rows = _run_mysql_query(
-            "SELECT propuesta_cliente, revision_interna, propuesta_mejoras, "
-            "aceptacion_cliente, aceptacion_interna, entrenamiento_inicial, "
-            "evaluacion_entrenamiento, reentrenamiento, optimizacion, "
-            "aprobacion_calidad, generacion_llm, notificacion_descarga "
-            "FROM estado "
+            "SELECT "
+            "1 as propuesta_cliente, "
+            "revision_interna, "
+            "propuesta_mejoras, "
+            "final_c as aceptacion_cliente, "
+            "final_i as aceptacion_interna, "
+            "entrenamiento_inicial_completado as entrenamiento_inicial, "
+            "evaluacion_entrenamiento, "
+            "reentrenamiento, "
+            "optimizacion, "
+            "control_calidad_aprobado as aprobacion_calidad, "
+            "generacion_llm_completada as generacion_llm, "
+            "notificacion_descarga_enviada as notificacion_descarga "
+            "FROM estado_version "
             f"WHERE id_organizacion = {int(self.organization_id)} "
             f"AND id_proyecto = {int(self.selected_project_id)} "
             f"AND id_version = {int(self.selected_version_id)} "

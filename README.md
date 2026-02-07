@@ -4668,6 +4668,591 @@ pytest -v src/apps/7_service_frontend/tests/test_versiones_middleware.py
 
 ---
 
+## Estado de Proyectos - Gestión del Ciclo de Vida (DDD)
+
+El sistema de Estado de Proyectos gestiona el ciclo de vida completo de versiones de proyectos, desde la propuesta inicial hasta la notificación de descarga del modelo LLM generado. Implementa una arquitectura **Domain-Driven Design (DDD)** con separación clara entre dominio, aplicación e infraestructura.
+
+### Arquitectura DDD
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   DOMAIN LAYER (1_shared_domain)                │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │  ProjectVersionState (Aggregate Root)                     │ │
+│  │  ├─ ProposalPhase (Value Object)                          │ │
+│  │  ├─ TrainingPhase (Value Object)                          │ │
+│  │  ├─ EvaluationPhase (Value Object)                        │ │
+│  │  ├─ GenerationPhase (Value Object)                        │ │
+│  │  └─ NotificationPhase (Value Object)                      │ │
+│  │                                                            │ │
+│  │  Enumerations:                                            │ │
+│  │  ├─ StateInternal (15 estados del workflow)              │ │
+│  │  └─ ExplorerState (para componente explorador)           │ │
+│  └───────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                             ↓
+┌─────────────────────────────────────────────────────────────────┐
+│              APPLICATION LAYER (2_shared_application)           │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │  ProjectVersionStateRepository (Protocol)                 │ │
+│  │  └─ Contrato para persistencia                            │ │
+│  │                                                            │ │
+│  │  ProjectVersionStateService                               │ │
+│  │  ├─ Validación de permisos                                │ │
+│  │  ├─ Coordinación de casos de uso                          │ │
+│  │  └─ Delegación a entidades de dominio                     │ │
+│  └───────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                             ↓
+┌─────────────────────────────────────────────────────────────────┐
+│            INFRASTRUCTURE LAYER (Adapters)                      │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │  MariaDBProjectVersionStateRepository                     │ │
+│  │  └─ Implementación con SQLAlchemy + MariaDB               │ │
+│  └───────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 5 Fases del Ciclo de Vida
+
+El sistema modela el flujo completo de generación de modelos LLM a través de 5 fases secuenciales con bucles internos:
+
+#### **Fase 1: Propuesta y Revisión**
+Bucle colaborativo entre cliente e interno para consensuar la propuesta.
+
+**Estados**:
+- `propuesta_cliente` - Cliente propone/solicita (estado inicial)
+- `revision_interna` - Revisión interna en curso
+- `propuesta_mejoras` - Propuesta de mejoras generada
+- `aceptacion_cliente` - Cliente acepta (final_c)
+- `aceptacion_interna` - Interno acepta (final_i)
+
+**Salida del bucle**: Doble aceptación (final_c=1 AND final_i=1)
+
+#### **Fase 2: Entrenamiento Inicial**
+Entrenamiento del modelo base con los datasets aprobados.
+
+**Estados**:
+- `entrenamiento_inicial` - Entrenamiento en curso
+- `entrenamiento_inicial_completado` - Entrenamiento finalizado
+
+**Trigger automático**: Se activa cuando final_c=1 AND final_i=1
+**Campos**: `entrenamiento_inicial_solicitado`, `entrenamiento_inicial_completado`, `entrenamiento_inicial_fecha`
+
+#### **Fase 3: Evaluación y Reentrenamiento**
+Bucle de evaluación, reentrenamiento y optimización hasta aprobar calidad.
+
+**Estados**:
+- `evaluacion_entrenamiento` - Evaluación en curso
+- `reentrenamiento` - Reentrenamiento en curso
+- `optimizacion` - Optimización en curso
+- `aprobacion_calidad` - Control de calidad aprobado
+
+**Salida del bucle**: `control_calidad_aprobado=1`
+
+#### **Fase 4: Generación del Modelo LLM**
+Generación del fichero del modelo listo para descarga.
+
+**Estados**:
+- `generacion_llm` - Generación en curso
+- `generacion_llm_completada` - Modelo generado
+
+**Prerequisito**: `control_calidad_aprobado=1`
+**Campos**: `generacion_llm_solicitada`, `generacion_llm_completada`, `generacion_llm_fecha`, `ruta_fichero_modelo`
+
+#### **Fase 5: Notificación de Descarga**
+Notificación al cliente de que el modelo está listo.
+
+**Estados**:
+- `notificacion_descarga` - Notificación enviada
+
+**Prerequisito**: `generacion_llm_completada=1`
+**Campos**: `notificacion_descarga_enviada`, `notificacion_descarga_fecha`
+
+### Base de Datos
+
+#### Tabla Principal: `estado_version`
+
+Base de datos: `myllm_projects_db`
+
+**Campos clave**:
+```sql
+-- Identificación
+id INT PRIMARY KEY AUTO_INCREMENT
+id_organizacion INT
+id_proyecto INT
+id_version INT
+
+-- Estados
+state VARCHAR(50)              -- Para explorador (stable/unstable/deprecated)
+state_internal VARCHAR(50)     -- Para backoffice (15 estados del workflow)
+
+-- Fase 1: Propuesta/Revisión
+final_c TINYINT(1)             -- Aceptación cliente
+final_i TINYINT(1)             -- Aceptación interna
+revision_interna TINYINT(1)
+propuesta_mejoras TINYINT(1)
+
+-- Fase 2: Entrenamiento
+entrenamiento_inicial_solicitado TINYINT(1)
+entrenamiento_inicial_completado TINYINT(1)
+entrenamiento_inicial_fecha DATETIME
+
+-- Fase 3: Evaluación
+evaluacion_entrenamiento TINYINT(1)
+reentrenamiento TINYINT(1)
+optimizacion TINYINT(1)
+control_calidad_aprobado TINYINT(1)
+
+-- Fase 4: Generación
+generacion_llm_solicitada TINYINT(1)
+generacion_llm_completada TINYINT(1)
+generacion_llm_fecha DATETIME
+ruta_fichero_modelo VARCHAR(500)
+
+-- Fase 5: Notificación
+notificacion_descarga_enviada TINYINT(1)
+notificacion_descarga_fecha DATETIME
+
+-- Metadatos
+protected TINYINT(1)
+size INT
+created_at DATETIME
+updated_at DATETIME
+updated_by INT                 -- ID del usuario que hizo el cambio
+```
+
+**Índices**:
+- `idx_state_internal` - Búsquedas por estado
+- `idx_fase_entrenamiento` - Búsquedas por fase
+- `idx_control_calidad` - Búsquedas por calidad
+- `idx_generacion_llm` - Búsquedas por generación
+- `idx_updated_by` - Búsquedas por usuario
+
+**Vista**: `view_estado_version_completo` - Join con `proyectos` para nombres legibles
+
+#### Sincronización con tabla `estado`
+
+El sistema mantiene sincronización bidireccional con la tabla legacy `estado` mediante triggers:
+
+```sql
+-- Trigger 1: Crear registro en estado al insertar en estado_version
+CREATE TRIGGER trg_estado_version_after_insert
+
+-- Trigger 2: Sincronizar cambios de estado_version a estado
+CREATE TRIGGER trg_estado_version_after_update
+
+-- Trigger 3: Automatizar transición a entrenamiento
+CREATE TRIGGER trg_estado_version_auto_entrenamiento
+-- Lógica: Si final_c=1 AND final_i=1 → entrenamiento_inicial_solicitado=1
+
+-- Trigger 4: Actualizar state_internal automáticamente
+CREATE TRIGGER trg_estado_version_auto_state_internal
+-- Lógica: Actualiza según fase más avanzada activa
+
+-- Trigger 5: Validar transiciones y actualizar fechas
+CREATE TRIGGER trg_estado_version_validacion_transiciones
+-- Validaciones:
+--   - No permitir generación sin calidad aprobada
+--   - No permitir notificación sin generación completada
+--   - Actualizar fechas automáticamente
+```
+
+### API Endpoints
+
+Los endpoints están disponibles en 3 capas (Backend Core → Broker → Middleware):
+
+#### **Consultas**
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/project-version-states/{state_id}` | Obtiene estado por ID |
+| GET | `/project-version-states/version/{org_id}/{project_id}/{version_id}` | Obtiene estado de versión específica |
+| GET | `/project-version-states?user_id={uid}&identity_type_id={tid}&organization_id={oid}&limit={l}&offset={o}` | Lista estados por asignaciones |
+
+**Query Parameters**:
+- `user_id` (requerido): ID del usuario solicitante
+- `identity_type_id` (requerido): Tipo de identidad (1=SuperAdmin, 2=Admin, etc.)
+- `organization_id` (opcional): Filtrar por organización
+- `limit` (opcional): Número máximo de resultados (default: 100)
+- `offset` (opcional): Offset para paginación (default: 0)
+
+#### **Actualizaciones por Fase**
+
+| Método | Endpoint | Payload | Descripción |
+|--------|----------|---------|-------------|
+| PATCH | `/project-version-states/{state_id}/proposal` | `{"aceptacion_cliente": bool, "aceptacion_interna": bool}` | Actualiza Fase 1 |
+| PATCH | `/project-version-states/{state_id}/training` | `{"completado": bool}` | Actualiza Fase 2 |
+| PATCH | `/project-version-states/{state_id}/evaluation` | `{"evaluacion": bool, "reentrenamiento": bool, "optimizacion": bool, "calidad_aprobada": bool}` | Actualiza Fase 3 |
+| PATCH | `/project-version-states/{state_id}/generation` | `{"solicitada": bool, "completada": bool, "ruta_fichero": "string"}` | Actualiza Fase 4 |
+| PATCH | `/project-version-states/{state_id}/notification` | `{"enviada": bool}` | Actualiza Fase 5 |
+
+**Respuestas**:
+- `200 OK`: Operación exitosa
+  ```json
+  {
+    "success": true,
+    "state": {
+      "id": 42,
+      "organization_id": 2,
+      "project_id": 15,
+      "version_id": 3,
+      "state_internal": "entrenamiento_inicial",
+      "state_internal_display": "Entrenamiento Inicial",
+      "progress_percentage": 40.0,
+      "current_phase_number": 2,
+      "proposal": { "is_approved": true, ... },
+      "training": { "completado": false, ... },
+      ...
+    }
+  }
+  ```
+- `403 Forbidden`: Sin permisos (rol Auditor/Lector o sin asignación)
+- `404 Not Found`: Estado no encontrado
+- `400 Bad Request`: Error de validación de negocio
+
+### Control de Permisos
+
+El sistema implementa **Security by Design** con validación en múltiples niveles:
+
+#### **Permisos de Lectura**
+- ✅ **SuperAdmin** (identity_type_id=1): Ve todos los estados
+- ✅ **Admin/Editor/Auditor/Lector** (2/3/5/4): Solo estados de organizaciones/proyectos asignados
+- ❌ **Sin asignación**: No puede ver ningún estado
+
+#### **Permisos de Escritura**
+- ✅ **SuperAdmin** (identity_type_id=1): Puede editar todos los estados
+- ✅ **Admin** (identity_type_id=2): Puede editar estados de organizaciones/proyectos asignados
+- ✅ **Editor** (identity_type_id=3): Puede editar estados de proyectos asignados
+- ❌ **Auditor** (identity_type_id=5): **Solo lectura**
+- ❌ **Lector** (identity_type_id=4): **Solo lectura**
+
+**Validación en capas**:
+1. **Backend Core**: `ProjectVersionStateService` valida permisos antes de cada operación
+2. **Base de datos**: Queries filtran por `asignaciones_organizaciones_internas` y `proyectos_roles`
+3. **Triggers**: Validan transiciones según reglas de negocio
+
+### Interfaz de Usuario (Backoffice)
+
+#### Página "Estado de Proyectos"
+Ubicación: `/src/apps/6_web_backoffice/pages/estado_proyectos.py`
+
+**Características**:
+- ✅ Selectores jerárquicos: Organización → Proyecto → Versión
+- ✅ Vista resumida: Estado actual + progreso en %
+- ✅ 5 tarjetas colapsables (una por fase)
+- ✅ Switches para editar flags booleanos
+- ✅ Deshabilitación automática para roles Auditor/Lector
+- ✅ Mensajes de error/éxito con dismiss
+- ✅ Actualización en tiempo real (triggers actualizan state_internal)
+
+**Tarjetas por Fase**:
+1. **Fase 1**: Switches para `revision_interna`, `propuesta_mejoras`, `final_c`, `final_i`
+2. **Fase 2**: Indicador de "Solicitado" (automático) + switch para `completado`
+3. **Fase 3**: Switches para `evaluacion`, `reentrenamiento`, `optimizacion`, `calidad_aprobada`
+4. **Fase 4**: Switches para `solicitada`, `completada` + display de `ruta_fichero`
+5. **Fase 5**: Switch para `enviada` + display de `fecha_envio`
+
+#### Página "Flujos" (Refactorizada)
+Ubicación: `/src/apps/6_web_backoffice/pages/flujos.py`
+
+**Cambios DDD**:
+- ✅ Migrada de tabla `estado` → `estado_version`
+- ✅ Usa campos extendidos (final_c, final_i, entrenamiento_inicial_completado, etc.)
+- ✅ Mantiene compatibilidad visual (misma animación)
+- ✅ Sincronización automática con `estado` mediante triggers
+
+**Mapeo de campos**:
+```python
+# Antes (tabla estado)          # Después (tabla estado_version)
+propuesta_cliente                1 (hardcoded)
+aceptacion_cliente               final_c
+aceptacion_interna               final_i
+entrenamiento_inicial            entrenamiento_inicial_completado
+aprobacion_calidad               control_calidad_aprobado
+generacion_llm                   generacion_llm_completada
+notificacion_descarga            notificacion_descarga_enviada
+```
+
+### Flujo de Datos Completo
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  1. Usuario Backoffice (Reflex) - estado_proyectos.py           │
+│     → Selecciona versión y hace click en switch                  │
+└────────────────────┬─────────────────────────────────────────────┘
+                     │ (Actualmente: SQL directo con _run_mysql_update)
+                     │ (Futuro: HTTP request a Middleware)
+                     ↓
+┌──────────────────────────────────────────────────────────────────┐
+│  2. Middleware API (apife.py) - Puerto 8007                      │
+│     → GET/PATCH /project-version-states/...                      │
+│     → Extrae SessionContext (user_id, identity_type_id)          │
+└────────────────────┬─────────────────────────────────────────────┘
+                     │ HTTP (BrokerBackendClient)
+                     ↓
+┌──────────────────────────────────────────────────────────────────┐
+│  3. Broker API (apibe.py) - Puerto 8001                          │
+│     → GET/PATCH /project-version-states/...                      │
+│     → Propaga user_id, identity_type_id como query params        │
+└────────────────────┬─────────────────────────────────────────────┘
+                     │ HTTP (InterfaceToCore)
+                     ↓
+┌──────────────────────────────────────────────────────────────────┐
+│  4. Backend Core API (apicore.py) - Puerto 8000                  │
+│     → GET/PATCH /project-version-states/...                      │
+│     → BackendCoreRouter.get/update_...(state_id, user_id, ...)  │
+└────────────────────┬─────────────────────────────────────────────┘
+                     │
+                     ↓
+┌──────────────────────────────────────────────────────────────────┐
+│  5. Application Service (DDD)                                    │
+│     → ProjectVersionStateService                                 │
+│     → Valida permisos (SuperAdmin o asignación activa)           │
+│     → Delega lógica de negocio a ProjectVersionState            │
+└────────────────────┬─────────────────────────────────────────────┘
+                     │
+                     ↓
+┌──────────────────────────────────────────────────────────────────┐
+│  6. Domain Entity (DDD)                                          │
+│     → ProjectVersionState.approve_quality(user_id)               │
+│     → Validaciones de invariantes (ej: no generar sin calidad)   │
+│     → Construye nuevo estado con Value Objects inmutables        │
+└────────────────────┬─────────────────────────────────────────────┘
+                     │
+                     ↓
+┌──────────────────────────────────────────────────────────────────┐
+│  7. Repository (Infrastructure)                                  │
+│     → MariaDBProjectVersionStateRepository                       │
+│     → UPDATE estado_version SET ... WHERE id = ?                 │
+│     → Convierte entidad → SQL row                                │
+└────────────────────┬─────────────────────────────────────────────┘
+                     │ SQL (SQLAlchemy)
+                     ↓
+┌──────────────────────────────────────────────────────────────────┐
+│  8. MariaDB (myllm_projects_db)                                  │
+│     → Ejecuta UPDATE en estado_version                           │
+│     → Triggers actualizan automáticamente:                       │
+│       - state_internal (según fase activa)                       │
+│       - Fechas (completado, generado, enviado)                   │
+│       - Tabla estado (sincronización)                            │
+│     → Triggers validan transiciones:                             │
+│       - No generación sin calidad                                │
+│       - No notificación sin generación                           │
+└────────────────────┬─────────────────────────────────────────────┘
+                     │
+                     ↓
+┌──────────────────────────────────────────────────────────────────┐
+│  9. Response propagado de vuelta por todas las capas             │
+│     → JSON con estado completo actualizado                       │
+│     → UI se actualiza reactivamente con nuevos valores           │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Archivos del Sistema
+
+#### **Domain Layer** (1_shared_domain)
+- `entities/project_version_state.py` (~850 líneas)
+  - `ProjectVersionState` - Aggregate root
+  - `ProposalPhase`, `TrainingPhase`, `EvaluationPhase`, `GenerationPhase`, `NotificationPhase` - Value Objects
+  - `StateInternal`, `ExplorerState` - Enumeraciones
+  - `ProjectVersionStateError` - Excepciones de dominio
+
+#### **Application Layer** (2_shared_application)
+- `interfaces/project_version_state_repository.py` (~150 líneas)
+  - `ProjectVersionStateRepository` - Protocol/Contrato
+- `services/project_version_state_service.py` (~400 líneas)
+  - `ProjectVersionStateService` - Coordinador de casos de uso
+  - Validación de permisos
+  - Delegación a dominio
+- `adapters/mariadb_project_version_state_repository.py` (~670 líneas)
+  - `MariaDBProjectVersionStateRepository` - Implementación con SQLAlchemy
+
+#### **Backend Core**
+- `src/apps/3_backend/routercore.py` (+~600 líneas)
+  - 8 métodos para gestión de estados
+  - Conversión entidad → dict serializable
+- `src/apps/3_backend/apicore.py` (+~300 líneas)
+  - 5 DTOs (UpdateProposalPhaseDto, etc.)
+  - 8 endpoints FastAPI
+
+#### **Broker**
+- `src/apps/8_service_backend/interfacetocore.py` (+~140 líneas)
+  - 8 métodos HTTP client
+- `src/apps/8_service_backend/routerbroker.py` (+~150 líneas)
+  - 8 métodos pass-through
+- `src/apps/8_service_backend/apibe.py` (+~200 líneas)
+  - 8 endpoints FastAPI
+
+#### **Middleware**
+- `src/apps/7_service_frontend/broker_backend_client.py` (+~140 líneas)
+  - 8 métodos HTTP client
+- `src/apps/7_service_frontend/routermiddleware.py` (pendiente)
+  - 8 métodos con SessionContext
+- `src/apps/7_service_frontend/apife.py` (pendiente)
+  - 8 endpoints FastAPI
+
+#### **Backoffice**
+- `src/apps/6_web_backoffice/pages/estado_proyectos.py` (~850 líneas)
+  - Página completa de gestión
+  - EstadoProyectosState (Reflex State)
+  - 5 tarjetas de fases con switches
+- `src/apps/6_web_backoffice/pages/flujos.py` (refactorizada)
+  - Migrada a estado_version
+  - Mantiene compatibilidad visual
+
+#### **Base de Datos**
+- `infrastructure/database/migrations/008_estado_version_extension.sql`
+  - Extensión de tabla estado_version
+  - 24 campos nuevos
+  - Índices y vista
+- `infrastructure/database/migrations/009_estado_triggers.sql`
+  - 6 triggers de sincronización y automatización
+
+### Testing
+
+#### **Unit Tests**
+- `tests/test_project_version_state_entity.py` - Tests de entidades de dominio
+- `tests/test_project_version_state_service.py` - Tests de servicio de aplicación
+- `tests/test_mariadb_repository.py` - Tests de repositorio
+
+#### **Integration Tests**
+- `tests/test_estado_proyectos_flow.py` - Test de flujo completo
+- `tests/test_backend_core_endpoints.py` - Tests de endpoints
+
+### Migraciones de Base de Datos
+
+#### Aplicar migraciones:
+```bash
+# Migración 008: Extensión de estado_version
+mysql -u root -p < infrastructure/database/migrations/008_estado_version_extension.sql
+
+# Migración 009: Triggers
+mysql -u root -p < infrastructure/database/migrations/009_estado_triggers.sql
+```
+
+#### Verificar aplicación:
+```sql
+USE myllm_projects_db;
+
+-- Ver columnas agregadas
+DESCRIBE estado_version;
+
+-- Ver triggers creados
+SHOW TRIGGERS LIKE 'estado_version';
+
+-- Ver vista creada
+DESCRIBE view_estado_version_completo;
+```
+
+### Ejemplo de Uso
+
+#### **1. Obtener estado de una versión**
+```bash
+curl -X GET "http://localhost:8000/project-version-states/version/2/15/3?user_id=5&identity_type_id=2"
+```
+
+**Response**:
+```json
+{
+  "id": 42,
+  "organization_id": 2,
+  "project_id": 15,
+  "version_id": 3,
+  "state": "stable",
+  "state_internal": "entrenamiento_inicial",
+  "state_internal_display": "Entrenamiento Inicial",
+  "progress_percentage": 40.0,
+  "current_phase_number": 2,
+  "is_completed": false,
+  "proposal": {
+    "propuesta_cliente": true,
+    "revision_interna": false,
+    "propuesta_mejoras": false,
+    "aceptacion_cliente": true,
+    "aceptacion_interna": true,
+    "is_approved": true
+  },
+  "training": {
+    "solicitado": true,
+    "completado": false,
+    "fecha_completado": null,
+    "is_completed": false
+  },
+  "evaluation": {
+    "evaluacion_en_curso": false,
+    "reentrenamiento_en_curso": false,
+    "optimizacion_en_curso": false,
+    "calidad_aprobada": false,
+    "is_approved": false
+  },
+  "generation": {
+    "solicitada": false,
+    "completada": false,
+    "fecha_completado": null,
+    "ruta_fichero": null,
+    "is_completed": false
+  },
+  "notification": {
+    "enviada": false,
+    "fecha_envio": null,
+    "is_sent": false
+  },
+  "created_at": "2026-02-06T10:30:00Z",
+  "updated_at": "2026-02-07T14:22:00Z",
+  "updated_by": 5
+}
+```
+
+#### **2. Aprobar propuesta (doble aceptación)**
+```bash
+curl -X PATCH "http://localhost:8000/project-version-states/42/proposal?user_id=5&identity_type_id=2" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "aceptacion_cliente": true,
+    "aceptacion_interna": true
+  }'
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "state": {
+    "id": 42,
+    "state_internal": "entrenamiento_inicial",
+    "proposal": {
+      "aceptacion_cliente": true,
+      "aceptacion_interna": true,
+      "is_approved": true
+    },
+    "training": {
+      "solicitado": true,
+      "completado": false
+    }
+  }
+}
+```
+
+**Efectos automáticos** (triggers):
+- ✅ `entrenamiento_inicial_solicitado` se pone a `1`
+- ✅ `state_internal` cambia a `"entrenamiento_inicial"`
+- ✅ Tabla `estado` se sincroniza automáticamente
+
+#### **3. Completar entrenamiento**
+```bash
+curl -X PATCH "http://localhost:8000/project-version-states/42/training?user_id=5&identity_type_id=2" \
+  -H "Content-Type: application/json" \
+  -d '{"completado": true}'
+```
+
+**Efectos automáticos** (triggers):
+- ✅ `entrenamiento_inicial_fecha` se pone a NOW()
+- ✅ `state_internal` cambia a `"entrenamiento_inicial_completado"`
+- ✅ `progress_percentage` sube a 40%
+
+---
+
 ## Jerarquía de Trabajo y Roles de Proyecto
 
 El sistema implementa una jerarquía de trabajo que determina la visibilidad y acceso de los usuarios.

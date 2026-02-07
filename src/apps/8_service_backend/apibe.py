@@ -2994,3 +2994,187 @@ def toggle_prompt_endpoint(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
+
+
+# ============================================================================
+# PROJECT VERSION STATE - Estado de versiones de proyectos (DDD)
+# ============================================================================
+
+
+@app.get("/project-version-states/{state_id}", tags=["project-version-states"])
+def get_project_version_state_by_id_endpoint(
+    state_id: int,
+    user_id: int,
+    identity_type_id: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Gets project version state by ID."""
+    try:
+        return router.get_project_version_state_by_id(
+            state_id, user_id, identity_type_id
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get(
+    "/project-version-states/version/{organization_id}/{project_id}/{version_id}",
+    tags=["project-version-states"],
+)
+def get_project_version_state_by_version_endpoint(
+    organization_id: int,
+    project_id: int,
+    version_id: int,
+    user_id: int,
+    identity_type_id: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Gets project version state by version."""
+    try:
+        return router.get_project_version_state_by_version(
+            organization_id, project_id, version_id, user_id, identity_type_id
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/project-version-states", tags=["project-version-states"])
+def list_project_version_states_endpoint(
+    user_id: int,
+    identity_type_id: int,
+    organization_id: int | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> list[dict[str, Any]]:
+    """Lists project version states by user assignments."""
+    try:
+        return router.list_project_version_states(
+            user_id, identity_type_id, organization_id, limit, offset
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/project-version-states/{state_id}/proposal",
+    tags=["project-version-states"],
+)
+def update_proposal_phase_endpoint(
+    state_id: int,
+    payload: dict,
+    user_id: int,
+    identity_type_id: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Updates proposal phase."""
+    try:
+        return router.update_proposal_phase(
+            state_id, payload, user_id, identity_type_id
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/project-version-states/{state_id}/training",
+    tags=["project-version-states"],
+)
+def update_training_phase_endpoint(
+    state_id: int,
+    payload: dict,
+    user_id: int,
+    identity_type_id: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Updates training phase."""
+    try:
+        return router.update_training_phase(
+            state_id, payload, user_id, identity_type_id
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/project-version-states/{state_id}/evaluation",
+    tags=["project-version-states"],
+)
+def update_evaluation_phase_endpoint(
+    state_id: int,
+    payload: dict,
+    user_id: int,
+    identity_type_id: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Updates evaluation phase."""
+    try:
+        return router.update_evaluation_phase(
+            state_id, payload, user_id, identity_type_id
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/project-version-states/{state_id}/generation",
+    tags=["project-version-states"],
+)
+def update_generation_phase_endpoint(
+    state_id: int,
+    payload: dict,
+    user_id: int,
+    identity_type_id: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Updates generation phase."""
+    try:
+        return router.update_generation_phase(
+            state_id, payload, user_id, identity_type_id
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/project-version-states/{state_id}/notification",
+    tags=["project-version-states"],
+)
+def update_notification_phase_endpoint(
+    state_id: int,
+    payload: dict,
+    user_id: int,
+    identity_type_id: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Updates notification phase."""
+    try:
+        return router.update_notification_phase(
+            state_id, payload, user_id, identity_type_id
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc

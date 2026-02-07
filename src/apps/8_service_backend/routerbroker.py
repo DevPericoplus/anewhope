@@ -1306,3 +1306,144 @@ class BrokerBackendRouter:
             raise BrokerBusinessError(
                 f"Error al cambiar estado del prompt {id_prompt}: {str(exc)}"
             ) from exc
+
+    # ========================================================================
+    # PROJECT VERSION STATE - Estado de versiones de proyectos (DDD)
+    # ========================================================================
+
+    def get_project_version_state_by_id(
+        self,
+        state_id: int,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Gets project version state by ID."""
+        try:
+            return self._core_client.get_project_version_state_by_id(
+                state_id, user_id, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error al obtener estado {state_id}: {str(exc)}"
+            ) from exc
+
+    def get_project_version_state_by_version(
+        self,
+        organization_id: int,
+        project_id: int,
+        version_id: int,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Gets project version state by version."""
+        try:
+            return self._core_client.get_project_version_state_by_version(
+                organization_id, project_id, version_id, user_id, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error al obtener estado de versión: {str(exc)}"
+            ) from exc
+
+    def list_project_version_states(
+        self,
+        user_id: int,
+        identity_type_id: int,
+        organization_id: int | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Lists project version states by user assignments."""
+        try:
+            return self._core_client.list_project_version_states(
+                user_id, identity_type_id, organization_id, limit, offset
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error al listar estados: {str(exc)}"
+            ) from exc
+
+    def update_proposal_phase(
+        self,
+        state_id: int,
+        payload: dict,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates proposal phase."""
+        try:
+            return self._core_client.update_proposal_phase(
+                state_id, payload, user_id, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error al actualizar fase de propuesta: {str(exc)}"
+            ) from exc
+
+    def update_training_phase(
+        self,
+        state_id: int,
+        payload: dict,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates training phase."""
+        try:
+            return self._core_client.update_training_phase(
+                state_id, payload, user_id, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error al actualizar fase de entrenamiento: {str(exc)}"
+            ) from exc
+
+    def update_evaluation_phase(
+        self,
+        state_id: int,
+        payload: dict,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates evaluation phase."""
+        try:
+            return self._core_client.update_evaluation_phase(
+                state_id, payload, user_id, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error al actualizar fase de evaluación: {str(exc)}"
+            ) from exc
+
+    def update_generation_phase(
+        self,
+        state_id: int,
+        payload: dict,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates generation phase."""
+        try:
+            return self._core_client.update_generation_phase(
+                state_id, payload, user_id, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error al actualizar fase de generación: {str(exc)}"
+            ) from exc
+
+    def update_notification_phase(
+        self,
+        state_id: int,
+        payload: dict,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates notification phase."""
+        try:
+            return self._core_client.update_notification_phase(
+                state_id, payload, user_id, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error al actualizar fase de notificación: {str(exc)}"
+            ) from exc

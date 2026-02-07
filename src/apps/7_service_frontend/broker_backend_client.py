@@ -1088,3 +1088,126 @@ class BrokerBackendClient:
             payload=payload,
         )
         return dict(data or {})
+
+    # ========================================================================
+    # PROJECT VERSION STATE - Estado de versiones de proyectos (DDD)
+    # ========================================================================
+
+    def get_project_version_state_by_id(
+        self,
+        state_id: int,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Gets project version state by ID."""
+        data = self._request(
+            "GET",
+            f"/project-version-states/{state_id}?user_id={user_id}&identity_type_id={identity_type_id}",
+        )
+        return dict(data or {})
+
+    def get_project_version_state_by_version(
+        self,
+        organization_id: int,
+        project_id: int,
+        version_id: int,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Gets project version state by version."""
+        data = self._request(
+            "GET",
+            f"/project-version-states/version/{organization_id}/{project_id}/{version_id}?user_id={user_id}&identity_type_id={identity_type_id}",
+        )
+        return dict(data or {})
+
+    def list_project_version_states(
+        self,
+        user_id: int,
+        identity_type_id: int,
+        organization_id: int | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Lists project version states by user assignments."""
+        params = f"user_id={user_id}&identity_type_id={identity_type_id}&limit={limit}&offset={offset}"
+        if organization_id is not None:
+            params += f"&organization_id={organization_id}"
+
+        data = self._request("GET", f"/project-version-states?{params}")
+        return list(data or [])
+
+    def update_proposal_phase(
+        self,
+        state_id: int,
+        payload: dict,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates proposal phase."""
+        data = self._request(
+            "PATCH",
+            f"/project-version-states/{state_id}/proposal?user_id={user_id}&identity_type_id={identity_type_id}",
+            payload=payload,
+        )
+        return dict(data or {})
+
+    def update_training_phase(
+        self,
+        state_id: int,
+        payload: dict,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates training phase."""
+        data = self._request(
+            "PATCH",
+            f"/project-version-states/{state_id}/training?user_id={user_id}&identity_type_id={identity_type_id}",
+            payload=payload,
+        )
+        return dict(data or {})
+
+    def update_evaluation_phase(
+        self,
+        state_id: int,
+        payload: dict,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates evaluation phase."""
+        data = self._request(
+            "PATCH",
+            f"/project-version-states/{state_id}/evaluation?user_id={user_id}&identity_type_id={identity_type_id}",
+            payload=payload,
+        )
+        return dict(data or {})
+
+    def update_generation_phase(
+        self,
+        state_id: int,
+        payload: dict,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates generation phase."""
+        data = self._request(
+            "PATCH",
+            f"/project-version-states/{state_id}/generation?user_id={user_id}&identity_type_id={identity_type_id}",
+            payload=payload,
+        )
+        return dict(data or {})
+
+    def update_notification_phase(
+        self,
+        state_id: int,
+        payload: dict,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates notification phase."""
+        data = self._request(
+            "PATCH",
+            f"/project-version-states/{state_id}/notification?user_id={user_id}&identity_type_id={identity_type_id}",
+            payload=payload,
+        )
+        return dict(data or {})

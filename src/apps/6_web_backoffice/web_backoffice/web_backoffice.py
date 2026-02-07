@@ -43,6 +43,7 @@ from pages.flujos import FlujosState, flujos_diagram, load_flujos_content
 from pages.organizacion import load_organizacion_content
 from pages.proyecciones import load_proyecciones_content
 from pages.tecnologias import load_tecnologias_content
+from pages.estado_proyectos import estado_proyectos_panel, EstadoProyectosState
 from low_panel_pages.show_md import show_md  # noqa: F401 - Importado para registrar la ruta
 from web_backoffice.shared_state import SharedSessionState
 from components.explorador import explorador_panel, ExploradorState
@@ -4382,7 +4383,7 @@ def internal_panel(active_item: str) -> rx.Component:
     content = rx.match(
         active_item,
         ("asignaciones", asignaciones_panel()),
-        ("estado_proyectos", rx.text("Panel de seguimiento del estado de proyectos.", color=COLORS["muted_foreground"])),
+        ("estado_proyectos", estado_proyectos_panel()),
         ("analisis_documentacion", rx.text("Panel de análisis de documentación.", color=COLORS["muted_foreground"])),
         ("entrenamientos", rx.text("Panel de gestión de entrenamientos de modelos.", color=COLORS["muted_foreground"])),
         ("analisis_resultados", rx.text("Panel de análisis de resultados de entrenamiento.", color=COLORS["muted_foreground"])),
