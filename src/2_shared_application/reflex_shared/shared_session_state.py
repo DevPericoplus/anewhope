@@ -170,6 +170,9 @@ class SharedSessionState(rx.State):
         self.login_time = datetime.now().isoformat()
         self.last_activity = datetime.now().isoformat()
         self.current_app = "frontend"
+
+        # Guardar tokens en Redis para sincronización con backoffice
+        self._save_tokens_to_redis()
     
     def _load_permissions(self, permissions: dict):
         """
@@ -274,6 +277,146 @@ class SharedSessionState(rx.State):
         self.last_activity = ""
         self.current_app = "frontend"
     
+    def _get_redis_config(self) -> dict:
+        """
+        Obtiene la configuración de Redis desde env_settings.py
+        (misma configuración que usa Reflex en rxconfig.py)
+        """
+        try:
+            import sys
+            import importlib.util
+            from pathlib import Path
+
+            # Cargar env_settings dinámicamente
+            env_settings_path = Path(__file__).resolve().parent.parent / "config" / "env_settings.py"
+            spec = importlib.util.spec_from_file_location("env_settings_redis", env_settings_path)
+            env_settings = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(env_settings)
+
+            # Leer configuración (misma lógica que rxconfig.py)
+            return {
+                "host": env_settings.get_env_value("redis_host", "localhost"),
+                "port": int(env_settings.get_env_value("redis_port", "6379")),
+                "password": env_settings.get_protected_value("redis_password", None),
+                "db": int(env_settings.get_env_value("redis_db", "0")),
+            }
+        except Exception as e:
+            print(f"[REDIS CONFIG] Error al cargar configuración: {e}, usando defaults")
+            return {
+                "host": "localhost",
+                "port": 6379,
+                "password": None,
+                "db": 0,
+            }
+
+    def _save_tokens_to_redis(self):
+        """
+        Guarda los tokens actualizados en Redis para sincronización entre apps.
+
+        Clave: session_tokens:{session_id}
+        TTL: 45 minutos (igual que session_token)
+        """
+        if not self.session_id:
+            return
+
+        try:
+            import redis
+            import json
+
+            # Obtener configuración de Redis
+            redis_config = self._get_redis_config()
+
+            # Conectar a Redis
+            r = redis.Redis(
+                host=redis_config["host"],
+                port=redis_config["port"],
+                password=redis_config["password"],
+                db=redis_config["db"],
+                decode_responses=True
+            )
+
+            # Preparar datos de tokens
+            tokens_data = {
+                "access_token": self.access_token,
+                "session_token": self.session_token,
+                "access_expires_at": self.access_token_expires_at,
+                "session_expires_at": self.session_token_expires_at,
+                "updated_at": datetime.now().isoformat(),
+                "user_id": self.user_id,
+                "organization_id": self.organization_id,
+            }
+
+            # Guardar en Redis con TTL de 45 minutos (2700 segundos)
+            redis_key = f"session_tokens:{self.session_id}"
+            r.setex(redis_key, 2700, json.dumps(tokens_data))
+
+            print(f"[REDIS SYNC] Tokens guardados en Redis: {redis_key}")
+
+        except Exception as e:
+            # No fallar si Redis no está disponible, solo log
+            print(f"[REDIS SYNC] Error al guardar tokens en Redis: {e}")
+
+    def _load_tokens_from_redis(self) -> bool:
+        """
+        Carga tokens desde Redis si hay una versión más reciente.
+
+        Returns:
+            True si se cargaron tokens más recientes, False si no
+        """
+        if not self.session_id:
+            return False
+
+        try:
+            import redis
+            import json
+            from datetime import datetime as dt
+
+            # Obtener configuración de Redis
+            redis_config = self._get_redis_config()
+
+            # Conectar a Redis
+            r = redis.Redis(
+                host=redis_config["host"],
+                port=redis_config["port"],
+                password=redis_config["password"],
+                db=redis_config["db"],
+                decode_responses=True
+            )
+
+            # Leer tokens de Redis
+            redis_key = f"session_tokens:{self.session_id}"
+            tokens_json = r.get(redis_key)
+
+            if not tokens_json:
+                return False
+
+            tokens_data = json.loads(tokens_json)
+
+            # Comparar timestamps para ver si hay tokens más recientes
+            redis_updated_at = tokens_data.get("updated_at", "")
+            current_updated_at = self.last_activity
+
+            # CASO 1: Si no tenemos last_activity local (primera carga), siempre cargar desde Redis
+            # CASO 2: Si los tokens de Redis son más recientes, actualizarlos
+            should_update = not current_updated_at or (redis_updated_at > current_updated_at)
+
+            if should_update:
+                self.access_token = tokens_data["access_token"]
+                self.session_token = tokens_data["session_token"]
+                self.access_token_expires_at = tokens_data["access_expires_at"]
+                self.session_token_expires_at = tokens_data["session_expires_at"]
+                self.last_activity = redis_updated_at
+
+                reason = "primera carga" if not current_updated_at else "tokens más recientes"
+                print(f"[REDIS SYNC] Tokens actualizados desde Redis ({reason}): {redis_key}")
+                return True
+
+            return False
+
+        except Exception as e:
+            print(f"[REDIS SYNC] Error al cargar tokens desde Redis: {e}")
+            return False
+
     def update_tokens(
         self,
         access_token: str,
@@ -283,10 +426,13 @@ class SharedSessionState(rx.State):
     ):
         """
         Actualiza los tokens tras una renovación automática.
-        
+
         Este método se llama cuando el access_token está próximo a expirar
         y se renueva usando el session_token.
-        
+
+        IMPORTANTE: Guarda los tokens actualizados en Redis para sincronización
+        entre frontend y backoffice.
+
         Args:
             access_token: Nuevo token JWT de acceso
             session_token: Nuevo token JWT de sesión
@@ -298,6 +444,9 @@ class SharedSessionState(rx.State):
         self.access_token_expires_at = access_expires_at
         self.session_token_expires_at = session_expires_at
         self.last_activity = datetime.now().isoformat()
+
+        # Guardar tokens actualizados en Redis para sincronización entre apps
+        self._save_tokens_to_redis()
     
     def _reset_permissions(self):
         """Resetea todos los permisos a False."""
@@ -360,45 +509,51 @@ class SharedSessionState(rx.State):
     def go_to_backoffice(self):
         """
         Marca que el usuario está navegando al backoffice.
-        Actualiza current_app y last_activity.
-        Pasa los tokens como parámetros para sincronizar la sesión.
+
+        SEGURIDAD MEJORADA: Solo pasa session_id en URL (no tokens completos).
+        Los tokens se cargarán desde Redis en el backoffice.
         """
         self.current_app = "backoffice"
         self.last_activity = datetime.now().isoformat()
-        # Pasar tokens en la URL para que el backoffice pueda cargar la sesión
+
+        # Guardar tokens actualizados en Redis antes de cambiar de app
+        self._save_tokens_to_redis()
+
+        # Pasar SOLO session_id en URL (seguro)
         import urllib.parse
         params = urllib.parse.urlencode({
-            "access_token": self.access_token,
-            "session_token": self.session_token,
+            "session_id": self.session_id,
             "user_id": str(self.user_id),
             "org_id": str(self.organization_id),
         })
+
+        print(f"[APP SWITCH] Redirigiendo a backoffice con session_id={self.session_id}")
         return rx.redirect(f"https://tfmmyllm.ai:8443?{params}")
-    
+
     def go_to_frontend(self):
         """
         Marca que el usuario está regresando al frontend.
-        Actualiza current_app y last_activity.
-        Pasa los tokens como parámetros para restaurar la sesión en el frontend.
+
+        SEGURIDAD MEJORADA: Solo pasa session_id en URL (no tokens completos).
+        Los tokens se cargarán desde Redis en el frontend.
         """
         self.current_app = "frontend"
         self.last_activity = datetime.now().isoformat()
-        
-        # Debug: verificar que tenemos tokens
-        print(f"[DEBUG] go_to_frontend: access_token={bool(self.access_token)}, session_token={bool(self.session_token)}, user_id={self.user_id}")
-        
-        # Pasar tokens en la URL para que el frontend pueda restaurar la sesión
+
+        # Guardar tokens actualizados en Redis antes de cambiar de app
+        self._save_tokens_to_redis()
+
+        # Pasar SOLO session_id en URL (seguro)
         import urllib.parse
         params = urllib.parse.urlencode({
-            "access_token": self.access_token,
-            "session_token": self.session_token,
+            "session_id": self.session_id,
             "user_id": str(self.user_id),
             "org_id": str(self.organization_id),
         })
-        
+
         redirect_url = f"https://tfmmyllm.ai?{params}"
-        print(f"[DEBUG] Redirecting to: {redirect_url[:100]}...")
-        
+        print(f"[APP SWITCH] Redirigiendo a frontend con session_id={self.session_id}")
+
         return rx.redirect(redirect_url)
     
     def logout(self):
@@ -443,6 +598,35 @@ class SharedSessionState(rx.State):
         """
         return self.user_email if self.is_logged_in else ""
     
+    def check_token_expiration(self) -> dict[str, any]:
+        """
+        Verifica si los tokens están próximos a expirar.
+
+        Returns:
+            Diccionario con:
+            - needs_renewal: bool, True si access_token expira en menos de 3 min
+            - seconds_until_access_expires: int, segundos restantes del access_token
+            - seconds_until_session_expires: int, segundos restantes del session_token
+            - session_expired: bool, True si session_token ya expiró
+        """
+        import time
+
+        now = int(time.time())
+
+        # Calcular segundos restantes
+        seconds_until_access_expires = max(0, self.access_token_expires_at - now)
+        seconds_until_session_expires = max(0, self.session_token_expires_at - now)
+
+        # Umbral de renovación: 3 minutos (180 segundos)
+        RENEWAL_THRESHOLD = 180
+
+        return {
+            "needs_renewal": seconds_until_access_expires < RENEWAL_THRESHOLD and seconds_until_access_expires > 0,
+            "seconds_until_access_expires": seconds_until_access_expires,
+            "seconds_until_session_expires": seconds_until_session_expires,
+            "session_expired": seconds_until_session_expires <= 0,
+        }
+
     def update_activity(self):
         """
         Actualiza el timestamp de última actividad.

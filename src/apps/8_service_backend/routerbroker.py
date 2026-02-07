@@ -1220,3 +1220,89 @@ class BrokerBackendRouter:
             raise BrokerBusinessError(
                 "No se pudo eliminar asignación de proyecto"
             ) from exc
+
+    # ========================================================================
+    # Métodos de Prompts
+    # ========================================================================
+
+    def get_prompts(
+        self,
+        category: str,
+        identity_type_id: int,
+    ) -> list[dict[str, Any]]:
+        """Gets all prompts for a category."""
+        try:
+            return self._core_client.get_prompts(category, identity_type_id)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error al obtener prompts de categoría {category}: {str(exc)}"
+            ) from exc
+
+    def get_prompt(
+        self,
+        category: str,
+        id_prompt: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Gets a specific prompt by ID."""
+        try:
+            return self._core_client.get_prompt(
+                category, id_prompt, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error al obtener prompt {id_prompt}: {str(exc)}"
+            ) from exc
+
+    def create_prompt(
+        self,
+        category: str,
+        payload: dict,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Creates a new prompt."""
+        try:
+            return self._core_client.create_prompt(
+                category, payload, user_id, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error al crear prompt: {str(exc)}"
+            ) from exc
+
+    def update_prompt(
+        self,
+        category: str,
+        id_prompt: int,
+        payload: dict,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates an existing prompt."""
+        try:
+            return self._core_client.update_prompt(
+                category, id_prompt, payload, user_id, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error al actualizar prompt {id_prompt}: {str(exc)}"
+            ) from exc
+
+    def toggle_prompt(
+        self,
+        category: str,
+        id_prompt: int,
+        payload: dict,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Toggles prompt active status."""
+        try:
+            return self._core_client.toggle_prompt(
+                category, id_prompt, payload, user_id, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error al cambiar estado del prompt {id_prompt}: {str(exc)}"
+            ) from exc

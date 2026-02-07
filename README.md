@@ -3599,6 +3599,166 @@ se rechazan tokens antiguos, evitando reutilización si son filtrados.
 Directiva **security by default**: cualquier token emitido queda invalidado tras logout; si el usuario
 quiere acceder de nuevo, debe autenticarse con credenciales y OTP para generar una nueva sesión válida.
 
+#### Renovación automática de tokens y sincronización Redis
+
+**Problema resuelto**: El sistema experimentaba expiración de tokens durante el uso activo, obligando al usuario a re-autenticarse frecuentemente. Además, al alternar entre frontend (puerto 8005) y backoffice (puerto 8006), las sesiones no se sincronizaban correctamente, perdiendo el estado de autenticación.
+
+**Solución implementada** (2026-02-06):
+
+##### 1. Background loop de renovación automática
+Ambas aplicaciones (frontend y backoffice) ejecutan un loop en background que:
+- **Frecuencia**: Verifica tokens cada 2 minutos (120 segundos)
+- **Umbral de renovación**: Renueva access_token si expira en menos de 3 minutos (180 segundos)
+- **Sincronización Redis**: Antes de renovar, verifica si hay tokens más recientes en Redis (escritos por la otra app)
+- **Failsafe**: Si session_token expira (TTL 45 min), cierra sesión automáticamente
+
+Implementación en `SharedSessionState.check_token_expiration()`:
+```python
+def check_token_expiration(self) -> dict[str, any]:
+    """Verifica si los tokens están próximos a expirar."""
+    now = int(time.time())
+    seconds_until_access_expires = max(0, self.access_token_expires_at - now)
+    seconds_until_session_expires = max(0, self.session_token_expires_at - now)
+    RENEWAL_THRESHOLD = 180  # 3 minutes
+    return {
+        "needs_renewal": seconds_until_access_expires < RENEWAL_THRESHOLD and seconds_until_access_expires > 0,
+        "seconds_until_access_expires": seconds_until_access_expires,
+        "seconds_until_session_expires": seconds_until_session_expires,
+        "session_expired": seconds_until_session_expires <= 0,
+    }
+```
+
+Loop de renovación en `auto_renew_tokens_loop()`:
+```python
+@rx.event(background=True)
+async def auto_renew_tokens_loop(self):
+    """Loop en background que verifica y renueva tokens automáticamente cada 2 minutos."""
+    while True:
+        async with self:
+            # PASO 1: Sincronizar con Redis (tokens más recientes de la otra app)
+            tokens_updated_from_redis = self._load_tokens_from_redis()
+
+            # PASO 2: Verificar estado de los tokens
+            check_result = self.check_token_expiration()
+
+            # PASO 3: Cerrar sesión si session_token expiró
+            if check_result["session_expired"]:
+                self.clear_session()
+                break
+
+            # PASO 4: Renovar si access_token está próximo a expirar
+            if check_result["needs_renewal"]:
+                success = self.ensure_tokens_valid()
+                if not success:
+                    break
+
+        await asyncio.sleep(120)  # Check every 2 minutes
+```
+
+##### 2. Sincronización de tokens via Redis
+Los tokens renovados se propagan automáticamente entre frontend y backoffice usando Redis DB 0:
+
+**Estructura en Redis**:
+- **Key**: `session_tokens:{session_id}`
+- **TTL**: 2700 segundos (45 minutos, igual que session_token)
+- **Payload** (JSON):
+  ```json
+  {
+    "access_token": "eyJ...",
+    "session_token": "eyJ...",
+    "access_expires_at": 1707234567,
+    "session_expires_at": 1707236367,
+    "updated_at": "2026-02-06T10:30:15",
+    "user_id": 123,
+    "organization_id": 45
+  }
+  ```
+
+**Flujo de sincronización**:
+1. App A renueva tokens → guarda en Redis con `_save_tokens_to_redis()`
+2. App B verifica tokens cada 2 min → detecta `updated_at` más reciente en Redis
+3. App B carga tokens desde Redis con `_load_tokens_from_redis()` → actualiza state local
+4. Ambas apps mantienen tokens sincronizados sin re-autenticación
+
+Métodos implementados en `SharedSessionState`:
+```python
+def _save_tokens_to_redis(self):
+    """Guarda los tokens actualizados en Redis para sincronización entre apps."""
+    if not self.session_id:
+        return
+    redis_key = f"session_tokens:{self.session_id}"
+    r.setex(redis_key, 2700, json.dumps(tokens_data))
+
+def _load_tokens_from_redis(self) -> bool:
+    """Carga tokens desde Redis si hay una versión más reciente."""
+    redis_key = f"session_tokens:{self.session_id}"
+    data = json.loads(r.get(redis_key))
+    # Compara updated_at y actualiza tokens si son más recientes
+    return True  # if updated
+```
+
+##### 3. Seguridad mejorada en alternancia entre apps
+**Problema anterior**: Los tokens completos (access_token + session_token) se pasaban en la URL al alternar entre apps, exponiéndolos en el historial del navegador.
+
+**Solución**: Solo se pasa `session_id` en la URL; los tokens se recuperan desde Redis.
+
+**Métodos modificados**:
+- `SharedSessionState.go_to_frontend()`: URL query params = `?session_id=...&user_id=...&org_id=...`
+- `SharedSessionState.go_to_backoffice()`: URL query params = `?session_id=...&user_id=...&org_id=...`
+- `State.on_page_load()` (frontend): Lee `session_id` y carga tokens con `_load_tokens_from_redis()`
+- `State.on_page_load()` (backoffice): Lee `session_id` y carga tokens con `_load_tokens_from_redis()`
+
+**Modos soportados**:
+1. **Modo seguro** (recomendado): Solo `session_id` en URL → tokens desde Redis
+2. **Modo legacy**: `access_token` + `session_token` en URL → compatibilidad con código antiguo
+
+Ejemplo de implementación en `on_page_load()`:
+```python
+def on_page_load(self):
+    params = self.router.page.params
+    session_id = params.get("session_id", "")  # Modo seguro
+    access_token = params.get("access_token", "")  # Legacy
+    session_token = params.get("session_token", "")  # Legacy
+
+    # PRIORIDAD 1: Modo seguro (session_id → Redis)
+    if session_id:
+        self.session_id = session_id
+        tokens_loaded = self._load_tokens_from_redis()
+        if tokens_loaded:
+            self.is_logged_in = True
+            return self.auto_renew_tokens_loop()  # Iniciar loop
+
+    # PRIORIDAD 2: Modo legacy (tokens directos)
+    elif access_token and session_token:
+        self.access_token = access_token
+        self.session_token = session_token
+        self.is_logged_in = True
+        return self.auto_renew_tokens_loop()  # Iniciar loop
+```
+
+##### 4. Logging y auditoría
+Todos los eventos de renovación y sincronización se registran en:
+- **Consola del servidor**: Logs con prefijo `[TOKEN AUTO-RENEW]`, `[REDIS SYNC]`
+- **activity.log** (backoffice): Operaciones de sesión con `activity_log.log_session_activity()`
+
+Ejemplos de logs:
+```
+[REDIS SYNC] Tokens guardados en Redis: session_tokens:abc123
+[TOKEN AUTO-RENEW] Access token expira en 120s, renovando...
+[TOKEN AUTO-RENEW] Tokens renovados exitosamente
+[TOKEN AUTO-RENEW] Tokens sincronizados desde Redis
+[TOKEN AUTO-RENEW] Session token expirado, cerrando sesión
+```
+
+##### 5. Tiempos de expiración
+- **access_token**: 15 minutos (900 segundos)
+- **session_token**: 45 minutos (2700 segundos)
+- **Redis TTL**: 45 minutos (sincronizado con session_token)
+- **Check interval**: 2 minutos (120 segundos)
+- **Renewal threshold**: 3 minutos (180 segundos antes de expiración)
+
+**Resultado**: El usuario puede trabajar indefinidamente mientras esté activo, con renovación silenciosa cada ~12 minutos. Al alternar entre frontend y backoffice, la sesión se mantiene sincronizada vía Redis sin pérdida de estado.
+
 #### Entidades compartidas de sesión
 
 Para reutilizar la lógica de sesión y permisos entre aplicaciones, se añaden entidades
@@ -6386,3 +6546,428 @@ def limpiar_conversaciones_huerfanas(engine_projects, engine_core):
 - [ ] API REST para integraciones externas
 - [ ] Cache de permisos en Redis
 - [ ] Job automático de limpieza de huérfanos
+
+---
+
+## Gestión de Prompts (Prompt Management)
+
+### Descripción General
+
+El sistema de **Gestión de Prompts** es una biblioteca centralizada para administrar prompts de IA que serán utilizados en la integración con Ollama. Esta funcionalidad permite a los SuperAdministradores crear, editar, habilitar/deshabilitar y organizar prompts en cuatro categorías fundamentales.
+
+### Propósito y Casos de Uso
+
+**Objetivo Principal:** Crear un repositorio centralizado de prompts que permita:
+- Normalizar la comunicación con modelos de IA (Ollama)
+- Combinar prompts de diferentes categorías para construir consultas completas
+- Facilitar la reutilización y mantenimiento de prompts
+- Aplicar versionado y auditoría de cambios
+
+**Caso de Uso - Integración con Ollama:**
+
+Cuando un usuario interno (trainer) necesita generar una respuesta de IA, el sistema combina prompts de cada categoría para crear una consulta normalizada:
+
+```
+[Prompt Identidad] + [Prompt Contexto] + [Prompt Solicitud] + [Prompt Modalidad]
+```
+
+**Ejemplo práctico:**
+```
+Identidad: "Eres un asistente experto en análisis de datos de proyectos educativos..."
+Contexto: "Trabajas para una organización que gestiona proyectos de formación profesional..."
+Solicitud: "Analiza los KPIs del proyecto y proporciona recomendaciones..."
+Modalidad: "Responde en formato JSON estructurado con secciones: análisis, conclusiones, recomendaciones..."
+```
+
+### Las 4 Categorías de Prompts
+
+#### 1. **Identidades** (`prompts_identidades`)
+Define el rol, personalidad y expertise del asistente de IA.
+
+**Ejemplos:**
+- "Asistente de análisis de proyectos"
+- "Experto en formación profesional"
+- "Auditor de cumplimiento normativo"
+- "Consultor estratégico educativo"
+
+#### 2. **Contexto** (`prompts_contexto`)
+Proporciona contexto del dominio, reglas de negocio y restricciones.
+
+**Ejemplos:**
+- "Contexto organizacional: gestión de proyectos de formación"
+- "Normativa aplicable: regulaciones educativas españolas"
+- "Restricciones: confidencialidad de datos personales"
+- "Estructura organizativa: multi-tenant con roles jerárquicos"
+
+#### 3. **Solicitudes** (`prompts_solicitudes`)
+Define tipos de tareas o peticiones que el usuario puede hacer.
+
+**Ejemplos:**
+- "Análisis de rendimiento de proyecto"
+- "Generación de informe ejecutivo"
+- "Detección de anomalías en KPIs"
+- "Recomendaciones de mejora continua"
+
+#### 4. **Modalidad** (`prompts_modalidad`)
+Especifica el formato y estilo de la respuesta esperada.
+
+**Ejemplos:**
+- "Respuesta en formato JSON estructurado"
+- "Informe narrativo con bullet points"
+- "Tabla comparativa con métricas"
+- "Dashboard ejecutivo con visualizaciones sugeridas"
+
+### Arquitectura de Base de Datos
+
+**Base de datos:** `myllm_projects_db`
+
+**Tablas creadas:**
+- `prompts_identidades`
+- `prompts_contexto`
+- `prompts_solicitudes`
+- `prompts_modalidad`
+
+**Esquema común (todas las tablas):**
+
+```sql
+CREATE TABLE prompts_identidades (
+    id_prompt INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL UNIQUE,
+    description TEXT,
+    prompt MEDIUMTEXT NOT NULL,
+    active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_by INT,
+    updated_by INT,
+    INDEX idx_active (active),
+    INDEX idx_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+**Campos clave:**
+- `id_prompt`: Identificador único
+- `name`: Nombre único del prompt (validado en aplicación)
+- `description`: Descripción breve opcional
+- `prompt`: Contenido del prompt (MEDIUMTEXT, ~16MB, preserva saltos de línea)
+- `active`: Habilitado/deshabilitado (eliminación lógica)
+- `created_by` / `updated_by`: Auditoría automática de cambios
+- `created_at` / `updated_at`: Timestamps automáticos
+
+### Seguridad y Permisos
+
+**Acceso:** Exclusivo para **SuperAdmin** (`identity_type_id = 1`)
+
+**Validaciones de seguridad:**
+- Todos los endpoints verifican `identity_type_id = 1`
+- Respuesta HTTP 403 Forbidden si no es SuperAdmin
+- Auditoría automática con `created_by` / `updated_by`
+- Logs de actividad en `/src/apps/6_web_backoffice/logs/activity.log`
+
+### Operaciones CRUD
+
+#### 1. **Listar Prompts**
+```python
+from adapters.api_client import get_prompts
+
+prompts = get_prompts(
+    category="identidades",  # o "contexto", "solicitudes", "modalidad"
+    access_token=access_token,
+    session_token=session_token
+)
+```
+
+#### 2. **Obtener Prompt Específico**
+```python
+from adapters.api_client import get_prompt
+
+prompt = get_prompt(
+    category="identidades",
+    id_prompt=1,
+    access_token=access_token,
+    session_token=session_token
+)
+```
+
+#### 3. **Crear Prompt**
+```python
+from adapters.api_client import create_prompt
+
+result = create_prompt(
+    category="identidades",
+    payload={
+        "name": "Asistente de Análisis",
+        "description": "Experto en análisis de proyectos educativos",
+        "prompt": "Eres un asistente especializado en..."
+    },
+    access_token=access_token,
+    session_token=session_token
+)
+```
+
+**Validaciones:**
+- Nombre único por categoría (rechaza duplicados)
+- Campos obligatorios: `name`, `prompt`
+- Auto-asigna `created_by` con `user_id` del SuperAdmin
+
+#### 4. **Actualizar Prompt**
+```python
+from adapters.api_client import update_prompt
+
+result = update_prompt(
+    category="identidades",
+    id_prompt=1,
+    payload={
+        "name": "Asistente de Análisis v2",
+        "description": "Versión mejorada...",
+        "prompt": "Eres un asistente avanzado..."
+    },
+    access_token=access_token,
+    session_token=session_token
+)
+```
+
+**Validaciones:**
+- Verifica unicidad del nuevo nombre
+- Auto-actualiza `updated_by` y `updated_at`
+- Preserva `created_by` original
+
+#### 5. **Habilitar/Deshabilitar Prompt**
+```python
+from adapters.api_client import toggle_prompt
+
+result = toggle_prompt(
+    category="identidades",
+    id_prompt=1,
+    active=False,  # Deshabilitar
+    access_token=access_token,
+    session_token=session_token
+)
+```
+
+**Nota:** No existe eliminación física. Use `active=False` para ocultar prompts.
+
+### Interfaz de Usuario (Backoffice)
+
+**Ubicación:** Panel "Asignaciones" → Pestaña "Gestión de Prompts"
+
+**Componentes UI:**
+
+1. **Selector de Categoría**
+   - Dropdown con 4 opciones: Identidades, Contexto, Solicitudes, Modalidad
+   - Carga automática de prompts al cambiar categoría
+
+2. **Formulario de Edición**
+   - Campo: Nombre del prompt (obligatorio)
+   - Campo: Descripción breve (opcional, textarea 2 filas)
+   - Campo: Contenido del prompt (obligatorio, textarea 10 filas)
+   - Botones: Crear/Actualizar (negro, bold), Cancelar (blanco, bold)
+
+3. **Lista de Prompts**
+   - Tabla con columnas: Nombre, Descripción, Estado (Activo/Inactivo)
+   - Acciones por fila:
+     - Botón "Editar": Carga prompt en formulario
+     - Botón "Habilitar/Deshabilitar": Toggle de estado activo
+
+**Flujo de trabajo:**
+1. SuperAdmin selecciona categoría
+2. Crea nuevo prompt o edita existente
+3. Guarda cambios (auditoría automática)
+4. Puede deshabilitar prompts obsoletos sin borrarlos
+
+### Arquitectura Técnica
+
+**Flujo de peticiones:**
+```
+Backoffice UI (Reflex)
+    ↓ HTTP + Auth headers
+Middleware (apife.py)
+    ↓ Propaga headers + identidad
+Broker (apibe.py)
+    ↓ Propaga parámetros
+Backend Core (apicore.py)
+    ↓ Validación + SQL dinámico
+MariaDB (myllm_projects_db)
+```
+
+**Archivos clave:**
+
+1. **DTOs:**
+   - `/src/2_shared_application/dtos/prompts_dtos.py`
+   - Clases: `PromptDto`, `CreatePromptDto`, `UpdatePromptDto`, `TogglePromptDto`
+
+2. **Backend Core:**
+   - `/src/apps/3_backend/routercore.py` (líneas 4106+)
+   - Métodos: `_get_prompt_table()`, `get_prompts()`, `create_prompt()`, `update_prompt()`, `toggle_prompt()`
+
+3. **Backend API:**
+   - `/src/apps/3_backend/apicore.py` (líneas 2730+)
+   - Endpoints REST: `GET`, `POST`, `PUT`, `PATCH`
+
+4. **Broker:**
+   - `/src/apps/8_service_backend/apibe.py`
+   - `/src/apps/8_service_backend/routerbroker.py`
+   - `/src/apps/8_service_backend/interfacetocore.py`
+
+5. **Middleware:**
+   - `/src/apps/7_service_frontend/apife.py`
+   - `/src/apps/7_service_frontend/routermiddleware.py`
+   - `/src/apps/7_service_frontend/broker_backend_client.py`
+
+6. **Backoffice:**
+   - `/src/apps/6_web_backoffice/adapters/api_client.py` (líneas 2317+)
+   - `/src/apps/6_web_backoffice/web_backoffice/web_backoffice.py`
+     - State: líneas 188+ (variables de estado)
+     - Handlers: líneas 1950+ (eventos)
+     - UI: línea 4118+ (componente `_prompts_management_tab()`)
+
+### Instalación (DDL)
+
+**Crear tablas en MariaDB:**
+
+```bash
+# Conectar a MariaDB
+/usr/local/opt/mariadb@10.6/bin/mariadb -u myllm_admin -p'Us3r@dminP@ss'
+
+# Ejecutar DDL para cada tabla
+USE myllm_projects_db;
+
+CREATE TABLE prompts_identidades (
+    id_prompt INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL UNIQUE,
+    description TEXT,
+    prompt MEDIUMTEXT NOT NULL,
+    active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_by INT,
+    updated_by INT,
+    INDEX idx_active (active),
+    INDEX idx_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Repetir para: prompts_contexto, prompts_solicitudes, prompts_modalidad
+```
+
+**Verificar instalación:**
+```bash
+/usr/local/opt/mariadb@10.6/bin/mariadb -u myllm_admin -p'Us3r@dminP@ss' \
+    myllm_projects_db -e "SHOW TABLES LIKE 'prompts_%';"
+```
+
+### Logging y Auditoría
+
+**Logs de actividad:** `/src/apps/6_web_backoffice/logs/activity.log`
+
+**Formato de logs:**
+```
+2026-02-07 10:30:15 | INFO | backoffice | PROMPT_CREATE | category=identidades id=1 user=1
+2026-02-07 10:35:20 | INFO | backoffice | PROMPT_UPDATE | category=contexto id=5 user=1
+2026-02-07 10:40:10 | INFO | backoffice | PROMPT_TOGGLE | category=solicitudes id=3 active=False user=1
+```
+
+**Auditoría de cambios:**
+- `created_by`: ID del SuperAdmin que creó el prompt
+- `created_at`: Timestamp de creación
+- `updated_by`: ID del SuperAdmin que realizó última modificación
+- `updated_at`: Timestamp de última actualización (auto-actualizado por MariaDB)
+
+### Integración Futura con Ollama
+
+**Patrón de combinación de prompts:**
+
+```python
+def build_ollama_query(
+    identity_id: int,
+    context_id: int,
+    request_id: int,
+    modality_id: int,
+    user_input: str
+) -> str:
+    """Construye consulta normalizada para Ollama."""
+
+    # Obtener prompts activos
+    identity = get_prompt("identidades", identity_id)
+    context = get_prompt("contexto", context_id)
+    request = get_prompt("solicitudes", request_id)
+    modality = get_prompt("modalidad", modality_id)
+
+    # Validar que todos estén activos
+    if not all([p["active"] for p in [identity, context, request, modality]]):
+        raise ValueError("Todos los prompts deben estar activos")
+
+    # Construir consulta normalizada
+    full_query = f"""
+{identity["prompt"]}
+
+{context["prompt"]}
+
+{request["prompt"]}
+
+Entrada del usuario: {user_input}
+
+{modality["prompt"]}
+"""
+    return full_query
+
+
+# Ejemplo de uso
+query = build_ollama_query(
+    identity_id=1,  # "Asistente de análisis"
+    context_id=2,   # "Contexto organizacional"
+    request_id=3,   # "Análisis de KPIs"
+    modality_id=4,  # "Formato JSON"
+    user_input="¿Cómo está el rendimiento del proyecto X?"
+)
+
+# Enviar a Ollama
+response = ollama_client.generate(query)
+```
+
+### Resolución de Problemas
+
+**Problema:** Error 403 Forbidden al crear prompt
+
+**Causa:** Usuario no es SuperAdmin
+
+**Solución:** Verificar que `identity_type_id == 1` en la sesión del usuario
+
+---
+
+**Problema:** Error de nombre duplicado al crear prompt
+
+**Causa:** Ya existe un prompt con ese nombre en la categoría
+
+**Solución:** Usar nombre único o editar el prompt existente
+
+---
+
+**Problema:** Prompts deshabilitados aparecen en selectores
+
+**Causa:** Filtro `active=TRUE` no aplicado en consulta
+
+**Solución:**
+```sql
+SELECT * FROM prompts_identidades WHERE active = TRUE ORDER BY name;
+```
+
+---
+
+**Problema:** Saltos de línea desaparecen en prompts
+
+**Causa:** Campo TEXT en lugar de MEDIUMTEXT
+
+**Solución:** Usar MEDIUMTEXT y preservar `\n` en aplicación
+
+### Mejoras Futuras
+
+- [ ] Versionado de prompts (histórico de cambios)
+- [ ] Plantillas de prompts predefinidas por categoría
+- [ ] Previsualización en tiempo real del prompt combinado
+- [ ] Etiquetas/tags para clasificar prompts
+- [ ] Búsqueda full-text en contenido de prompts
+- [ ] Importar/exportar prompts en JSON
+- [ ] Duplicar prompt existente como base
+- [ ] Estadísticas de uso de prompts (más utilizados)
+- [ ] Validación de sintaxis de prompts (linting)
+- [ ] Combinaciones predefinidas (presets) de prompts por caso de uso

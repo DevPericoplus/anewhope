@@ -2332,3 +2332,131 @@ def delete_project_assignment(
         headers=headers,
     )
     return response if isinstance(response, dict) else {}
+
+
+# ============================================================================
+# PROMPTS MANAGEMENT - Gestión de Prompts (SuperAdmin)
+# ============================================================================
+
+def get_prompts(
+    category: str,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Gets all prompts for a category."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "GET",
+        f"/prompts/{category}",
+        headers=headers,
+    )
+    return response if isinstance(response, list) else []
+
+
+def get_prompt(
+    category: str,
+    id_prompt: int,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Gets a specific prompt by ID."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "GET",
+        f"/prompts/{category}/{id_prompt}",
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
+def create_prompt(
+    category: str,
+    name: str,
+    description: str | None,
+    prompt: str,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Creates a new prompt."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    payload = {
+        "name": name,
+        "description": description,
+        "prompt": prompt,
+    }
+    response = _request_middleware(
+        "POST",
+        f"/prompts/{category}",
+        payload=payload,
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
+def update_prompt(
+    category: str,
+    id_prompt: int,
+    name: str,
+    description: str | None,
+    prompt: str,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Updates an existing prompt."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    payload = {
+        "name": name,
+        "description": description,
+        "prompt": prompt,
+    }
+    response = _request_middleware(
+        "PUT",
+        f"/prompts/{category}/{id_prompt}",
+        payload=payload,
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
+def toggle_prompt(
+    category: str,
+    id_prompt: int,
+    active: bool,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Toggles prompt active status."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    payload = {"active": active}
+    response = _request_middleware(
+        "PATCH",
+        f"/prompts/{category}/{id_prompt}/toggle",
+        payload=payload,
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}

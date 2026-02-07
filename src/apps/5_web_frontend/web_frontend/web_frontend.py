@@ -1508,23 +1508,25 @@ class State(SharedSessionState):
         Si el usuario viene del backoffice con parámetros de sesión en la URL,
         restaura la sesión automáticamente.
         """
-        # Leer tokens de query params (pasados desde el backoffice)
+        # Leer parámetros de query (pasados desde el backoffice)
         params = self.router.page.params
-        access_token = params.get("access_token", "")
-        session_token = params.get("session_token", "")
+        session_id = params.get("session_id", "")  # NUEVO: modo seguro
+        access_token = params.get("access_token", "")  # Legacy
+        session_token = params.get("session_token", "")  # Legacy
         user_id = params.get("user_id", "")
         org_id = params.get("org_id", "")
-        
+
         # Debug
-        print(f"[DEBUG] on_page_load: access_token={bool(access_token)}, session_token={bool(session_token)}, user_id={user_id}")
+        print(f"[DEBUG] on_page_load: session_id={bool(session_id)}, access_token={bool(access_token)}, session_token={bool(session_token)}, user_id={user_id}")
         print(f"[DEBUG] on_page_load: is_logged_in={self.is_logged_in}, current params count={len(params)}")
-        
-        # Si vienen tokens en la URL, SIEMPRE restaurar sesión
-        # (el usuario puede venir del backoffice con tokens válidos)
-        if access_token and session_token:
-            print(f"[DEBUG] Tokens encontrados en URL, restaurando sesión...")
+
+        # PRIORIDAD 1: Modo seguro (solo session_id en URL, tokens desde Redis)
+        # PRIORIDAD 2: Modo legacy (tokens completos en URL)
+        if session_id or (access_token and session_token):
+            mode = "SECURE (session_id)" if session_id else "LEGACY (tokens in URL)"
+            print(f"[DEBUG] Session data found in URL ({mode}), restoring session...")
             return self.restore_session_from_url(
-                access_token, session_token, user_id, org_id
+                access_token, session_token, user_id, org_id, session_id
             )
         
         print(f"[DEBUG] No tokens in URL, is_logged_in={self.is_logged_in}")
@@ -1547,21 +1549,45 @@ class State(SharedSessionState):
                 return FlujosState.initialize_from_session(organization_id)
     
     def restore_session_from_url(
-        self, access_token: str, session_token: str, user_id: str, org_id: str
+        self, access_token: str = "", session_token: str = "", user_id: str = "", org_id: str = "", session_id: str = ""
     ):
         """
         Restaura la sesión del usuario desde los parámetros de URL.
         Se usa cuando el usuario viene del backoffice.
-        
+
+        NUEVO: Soporta dos modos:
+        1. Modo legacy: access_token + session_token en URL (menos seguro)
+        2. Modo seguro: solo session_id en URL, tokens se cargan desde Redis
+
         Args:
-            access_token: Token JWT de acceso
-            session_token: Token de sesión
+            access_token: Token JWT de acceso (opcional si viene session_id)
+            session_token: Token de sesión (opcional si viene session_id)
             user_id: ID del usuario
             org_id: ID de la organización
-        
+            session_id: ID de sesión para cargar tokens desde Redis (modo seguro)
+
         Returns:
             None si la sesión se restauró correctamente
         """
+        # MODO SEGURO: Si viene session_id, cargar tokens desde Redis
+        if session_id and not access_token:
+            self.session_id = session_id
+            self.user_id = int(user_id) if user_id else 0
+            self.organization_id = int(org_id) if org_id else 0
+
+            # Cargar tokens desde Redis
+            tokens_loaded = self._load_tokens_from_redis()
+
+            if tokens_loaded:
+                print(f"[SESSION RESTORE] Tokens cargados desde Redis para session_id={session_id}")
+                access_token = self.access_token
+                session_token = self.session_token
+            else:
+                print(f"[SESSION RESTORE] No se pudieron cargar tokens desde Redis para session_id={session_id}")
+                self.login_error = "No se pudo restaurar la sesión. Por favor, inicie sesión nuevamente."
+                return None
+
+        # Validar que tenemos tokens (ya sea del modo legacy o del Redis)
         if not access_token or not session_token:
             return None
         
@@ -1613,7 +1639,10 @@ class State(SharedSessionState):
             self.load_org_projects()
             self.load_project_assignments()
             self.load_project_roles_base()
-                
+
+            # Iniciar loop de renovación automática de tokens en background
+            return State.auto_renew_tokens_loop
+
         except Exception as exc:
             # Si falla, el usuario verá el formulario de login
             self.login_error = f"Error al restaurar sesión: {str(exc)}"
@@ -1735,15 +1764,18 @@ class State(SharedSessionState):
         self.otp_request_message = ""
         self.user_active_menu = "organizacion"
         self.user_permissions = permissions_list  # basic_permissions para UI
-        
+
         # Log de login exitoso
         activity_log.log_user_login(self.user_username, success=True, user_id=user_id)
-        
+
         # Cargar datos de la página de organización (menú por defecto)
         self.load_org_users()
         self.load_org_projects()
         self.load_project_assignments()
         self.load_project_roles_base()
+
+        # Iniciar loop de renovación automática de tokens en background
+        return State.auto_renew_tokens_loop
     
     def user_logout(self):
         """Handle user portal logout."""
@@ -1828,6 +1860,58 @@ class State(SharedSessionState):
             )
         
         return True
+
+    @rx.event(background=True)
+    async def auto_renew_tokens_loop(self):
+        """
+        Loop en background que verifica y renueva tokens automáticamente cada 2 minutos.
+
+        Este método se ejecuta continuamente mientras el usuario está logueado,
+        verificando si los tokens están próximos a expirar y renovándolos automáticamente.
+        """
+        import asyncio
+        import time
+
+        while True:
+            async with self:
+                # Solo ejecutar si el usuario está logueado
+                if not self.is_logged_in or not self.access_token or not self.session_token:
+                    break
+
+                # PASO 1: Verificar si hay tokens más recientes en Redis (sincronización entre apps)
+                tokens_updated_from_redis = self._load_tokens_from_redis()
+                if tokens_updated_from_redis:
+                    print("[TOKEN AUTO-RENEW] Tokens sincronizados desde Redis (renovados por otra app)")
+
+                # PASO 2: Verificar estado de los tokens
+                check_result = self.check_token_expiration()
+
+                # Si el session_token expiró, detener el loop y forzar logout
+                if check_result["session_expired"]:
+                    print("[TOKEN AUTO-RENEW] Session token expirado, cerrando sesión")
+                    self.login_error = "Su sesión ha expirado. Por favor, inicie sesión nuevamente."
+                    self.clear_session()
+                    break
+
+                # PASO 3: Si el access_token necesita renovación, intentar renovar
+                if check_result["needs_renewal"]:
+                    seconds_left = check_result["seconds_until_access_expires"]
+                    print(f"[TOKEN AUTO-RENEW] Access token expira en {seconds_left}s, renovando...")
+
+                    # Llamar a ensure_tokens_valid que maneja la renovación
+                    success = self.ensure_tokens_valid()
+
+                    if success:
+                        print("[TOKEN AUTO-RENEW] Tokens renovados exitosamente")
+                    else:
+                        print("[TOKEN AUTO-RENEW] Error al renovar tokens, deteniendo loop")
+                        break
+                else:
+                    seconds_left = check_result["seconds_until_access_expires"]
+                    print(f"[TOKEN AUTO-RENEW] Tokens válidos (expira en {seconds_left}s)")
+
+            # Esperar 2 minutos antes de la próxima verificación
+            await asyncio.sleep(120)
 
     def request_login_otp(self):
         """Solicita el código OTP para el login.

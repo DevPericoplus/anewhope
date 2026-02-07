@@ -789,3 +789,79 @@ class CoreBackendClient:
             f"/assignments/projects/{assignment_id}?identity_type_id={identity_type_id}",
         )
         return dict(data or {})
+
+    # ========================================================================
+    # Métodos de Prompts
+    # ========================================================================
+
+    def get_prompts(
+        self,
+        category: str,
+        identity_type_id: int,
+    ) -> list[dict[str, Any]]:
+        """Gets all prompts for a category."""
+        data = self._request(
+            "GET",
+            f"/prompts/{category}?identity_type_id={identity_type_id}",
+        )
+        return list(data or [])
+
+    def get_prompt(
+        self,
+        category: str,
+        id_prompt: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Gets a specific prompt by ID."""
+        data = self._request(
+            "GET",
+            f"/prompts/{category}/{id_prompt}?identity_type_id={identity_type_id}",
+        )
+        return dict(data or {})
+
+    def create_prompt(
+        self,
+        category: str,
+        payload: dict,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Creates a new prompt."""
+        data = self._request(
+            "POST",
+            f"/prompts/{category}?identity_type_id={identity_type_id}&user_id={user_id}",
+            payload=payload,
+        )
+        return dict(data or {})
+
+    def update_prompt(
+        self,
+        category: str,
+        id_prompt: int,
+        payload: dict,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates an existing prompt."""
+        data = self._request(
+            "PUT",
+            f"/prompts/{category}/{id_prompt}?identity_type_id={identity_type_id}&user_id={user_id}",
+            payload=payload,
+        )
+        return dict(data or {})
+
+    def toggle_prompt(
+        self,
+        category: str,
+        id_prompt: int,
+        payload: dict,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Toggles prompt active status."""
+        data = self._request(
+            "PATCH",
+            f"/prompts/{category}/{id_prompt}/toggle?identity_type_id={identity_type_id}&user_id={user_id}",
+            payload=payload,
+        )
+        return dict(data or {})

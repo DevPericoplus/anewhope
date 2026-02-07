@@ -2894,3 +2894,103 @@ def delete_project_assignment_endpoint(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
+
+
+# ============================================================================
+# Endpoints de Prompts
+# ============================================================================
+
+
+@app.get("/prompts/{category}", tags=["prompts"])
+def get_prompts_endpoint(
+    category: str,
+    identity_type_id: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> list[dict[str, Any]]:
+    """Gets all prompts for a category."""
+    try:
+        return router.get_prompts(category, identity_type_id)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/prompts/{category}/{id_prompt}", tags=["prompts"])
+def get_prompt_endpoint(
+    category: str,
+    id_prompt: int,
+    identity_type_id: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Gets a specific prompt by ID."""
+    try:
+        return router.get_prompt(category, id_prompt, identity_type_id)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/prompts/{category}", tags=["prompts"])
+def create_prompt_endpoint(
+    category: str,
+    payload: dict,
+    identity_type_id: int,
+    user_id: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Creates a new prompt."""
+    try:
+        return router.create_prompt(
+            category, payload, user_id, identity_type_id
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.put("/prompts/{category}/{id_prompt}", tags=["prompts"])
+def update_prompt_endpoint(
+    category: str,
+    id_prompt: int,
+    payload: dict,
+    identity_type_id: int,
+    user_id: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Updates an existing prompt."""
+    try:
+        return router.update_prompt(
+            category, id_prompt, payload, user_id, identity_type_id
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/prompts/{category}/{id_prompt}/toggle", tags=["prompts"])
+def toggle_prompt_endpoint(
+    category: str,
+    id_prompt: int,
+    payload: dict,
+    identity_type_id: int,
+    user_id: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Toggles prompt active status."""
+    try:
+        return router.toggle_prompt(
+            category, id_prompt, payload, user_id, identity_type_id
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc

@@ -52,6 +52,16 @@ CreateProjectAssignmentDto = _assignments_dtos.CreateProjectAssignmentDto
 UpdateAssignmentDto = _assignments_dtos.UpdateAssignmentDto
 PrerequisiteValidationDto = _assignments_dtos.PrerequisiteValidationDto
 
+# Cargar prompts DTOs
+_prompts_dtos_path = Path(__file__).resolve().parents[2] / "2_shared_application" / "dtos" / "prompts_dtos.py"
+_prompts_dtos = _load_backend_module("prompts_dtos_backend", _prompts_dtos_path)
+
+PromptDto = _prompts_dtos.PromptDto
+CreatePromptDto = _prompts_dtos.CreatePromptDto
+UpdatePromptDto = _prompts_dtos.UpdatePromptDto
+TogglePromptDto = _prompts_dtos.TogglePromptDto
+PromptListItemDto = _prompts_dtos.PromptListItemDto
+
 # Cargar fmanagement_client
 _infra_path = Path(__file__).resolve().parent / "4_infrastructure"
 _fmanagement_path = _infra_path / "web" / "fmanagement_client.py"
@@ -2700,6 +2710,169 @@ def delete_project_assignment_endpoint(
     try:
         return router.delete_project_assignment(
             assignment_id=assignment_id,
+            identity_type_id=identity_type_id,
+        )
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# PROMPTS MANAGEMENT - Gestión de Prompts (SuperAdmin only)
+# ============================================================================
+
+
+@app.get("/prompts/{category}", response_model=list[PromptDto], tags=["prompts"])
+def get_prompts_endpoint(
+    category: str,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> list[PromptDto]:
+    """Gets all prompts from a category.
+    
+    Args:
+        category: One of 'identidades', 'contexto', 'solicitudes', 'modalidad'
+        identity_type_id: User's identity type (from session)
+        
+    Returns:
+        List of prompts
+        
+    Security:
+        Only SuperAdmin (identity_type_id=1) can access
+    """
+    try:
+        prompts = router.get_prompts(category, identity_type_id)
+        return [PromptDto(**p) for p in prompts]
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/prompts/{category}/{id_prompt}", response_model=PromptDto, tags=["prompts"])
+def get_prompt_endpoint(
+    category: str,
+    id_prompt: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> PromptDto:
+    """Gets a specific prompt by ID."""
+    try:
+        prompt = router.get_prompt(category, id_prompt, identity_type_id)
+        return PromptDto(**prompt)
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/prompts/{category}", tags=["prompts"])
+def create_prompt_endpoint(
+    category: str,
+    payload: CreatePromptDto,
+    user_id: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Creates a new prompt.
+    
+    Args:
+        category: Prompt category
+        payload: Prompt data (name, description, prompt text)
+        user_id: User ID (for audit)
+        identity_type_id: User's identity type
+        
+    Returns:
+        Success response with new prompt ID
+    """
+    try:
+        return router.create_prompt(
+            category=category,
+            name=payload.name,
+            description=payload.description,
+            prompt=payload.prompt,
+            user_id=user_id,
+            identity_type_id=identity_type_id,
+        )
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.put("/prompts/{category}/{id_prompt}", tags=["prompts"])
+def update_prompt_endpoint(
+    category: str,
+    id_prompt: int,
+    payload: UpdatePromptDto,
+    user_id: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Updates an existing prompt."""
+    try:
+        return router.update_prompt(
+            category=category,
+            id_prompt=id_prompt,
+            name=payload.name,
+            description=payload.description,
+            prompt=payload.prompt,
+            user_id=user_id,
+            identity_type_id=identity_type_id,
+        )
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/prompts/{category}/{id_prompt}/toggle", tags=["prompts"])
+def toggle_prompt_endpoint(
+    category: str,
+    id_prompt: int,
+    payload: TogglePromptDto,
+    user_id: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Toggles prompt active status (enable/disable)."""
+    try:
+        return router.toggle_prompt(
+            category=category,
+            id_prompt=id_prompt,
+            active=payload.active,
+            user_id=user_id,
             identity_type_id=identity_type_id,
         )
     except BackendCorePermissionError as exc:

@@ -3075,3 +3075,94 @@ def delete_project_assignment_endpoint(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
+
+
+# ============================================================================
+# Endpoints de Prompts
+# ============================================================================
+
+
+@app.get("/prompts/{category}", tags=["prompts"])
+def get_prompts_endpoint(
+    category: str,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> list[dict[str, Any]]:
+    """Gets all prompts for a category."""
+    try:
+        return router.get_prompts(category, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/prompts/{category}/{id_prompt}", tags=["prompts"])
+def get_prompt_endpoint(
+    category: str,
+    id_prompt: int,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Gets a specific prompt by ID."""
+    try:
+        return router.get_prompt(category, id_prompt, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/prompts/{category}", tags=["prompts"])
+def create_prompt_endpoint(
+    category: str,
+    payload: dict,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Creates a new prompt."""
+    try:
+        return router.create_prompt(category, payload, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.put("/prompts/{category}/{id_prompt}", tags=["prompts"])
+def update_prompt_endpoint(
+    category: str,
+    id_prompt: int,
+    payload: dict,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Updates an existing prompt."""
+    try:
+        return router.update_prompt(category, id_prompt, payload, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/prompts/{category}/{id_prompt}/toggle", tags=["prompts"])
+def toggle_prompt_endpoint(
+    category: str,
+    id_prompt: int,
+    payload: dict,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Toggles prompt active status."""
+    try:
+        return router.toggle_prompt(category, id_prompt, payload, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc

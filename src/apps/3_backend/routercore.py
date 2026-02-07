@@ -4103,3 +4103,336 @@ class BackendCoreRouter:
                 "deleted": True,
                 "message": "Asignación eliminada permanentemente",
             }
+
+    # ========================================================================
+    # PROMPTS MANAGEMENT - Gestión de Prompts (SuperAdmin only)
+    # ========================================================================
+
+    def _get_prompt_table(self, category: str) -> str:
+        """Gets the table name for a prompt category.
+        
+        Args:
+            category: One of 'identidades', 'contexto', 'solicitudes', 'modalidad'
+            
+        Returns:
+            Table name
+            
+        Raises:
+            BackendCoreBusinessError: If category is invalid
+        """
+        valid_categories = {
+            "identidades": "prompts_identidades",
+            "contexto": "prompts_contexto",
+            "solicitudes": "prompts_solicitudes",
+            "modalidad": "prompts_modalidad",
+        }
+        
+        table = valid_categories.get(category)
+        if not table:
+            raise BackendCoreBusinessError(
+                f"Categoría inválida: {category}. Debe ser una de: {', '.join(valid_categories.keys())}"
+            )
+        
+        return table
+
+    def get_prompts(
+        self, category: str, identity_type_id: int
+    ) -> list[dict[str, Any]]:
+        """Gets all prompts from a category.
+        
+        Security: Only SuperAdmin (identity_type_id=1) can access.
+        
+        Args:
+            category: Prompt category
+            identity_type_id: User's identity type
+            
+        Returns:
+            List of prompts with all fields
+        """
+        if identity_type_id != 1:
+            raise BackendCorePermissionError("prompts_read", identity_type_id)
+
+        from sqlalchemy import create_engine, text
+
+        table = self._get_prompt_table(category)
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            result = conn.execute(
+                text(f"""
+                    SELECT 
+                        id_prompt, name, description, prompt, active,
+                        created_at, updated_at, created_by, updated_by
+                    FROM {table}
+                    ORDER BY active DESC, name ASC
+                """)
+            )
+            return [
+                {
+                    "id_prompt": row.id_prompt,
+                    "name": row.name,
+                    "description": row.description,
+                    "prompt": row.prompt,
+                    "active": bool(row.active),
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                    "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                    "created_by": row.created_by,
+                    "updated_by": row.updated_by,
+                }
+                for row in result
+            ]
+
+    def get_prompt(
+        self, category: str, id_prompt: int, identity_type_id: int
+    ) -> dict[str, Any]:
+        """Gets a specific prompt by ID.
+        
+        Security: Only SuperAdmin can access.
+        """
+        if identity_type_id != 1:
+            raise BackendCorePermissionError("prompts_read", identity_type_id)
+
+        from sqlalchemy import create_engine, text
+
+        table = self._get_prompt_table(category)
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            result = conn.execute(
+                text(f"""
+                    SELECT 
+                        id_prompt, name, description, prompt, active,
+                        created_at, updated_at, created_by, updated_by
+                    FROM {table}
+                    WHERE id_prompt = :id_prompt
+                """),
+                {"id_prompt": id_prompt},
+            ).fetchone()
+
+            if not result:
+                raise BackendCoreBusinessError(f"Prompt no encontrado: {id_prompt}")
+
+            return {
+                "id_prompt": result.id_prompt,
+                "name": result.name,
+                "description": result.description,
+                "prompt": result.prompt,
+                "active": bool(result.active),
+                "created_at": result.created_at.isoformat() if result.created_at else None,
+                "updated_at": result.updated_at.isoformat() if result.updated_at else None,
+                "created_by": result.created_by,
+                "updated_by": result.updated_by,
+            }
+
+    def create_prompt(
+        self,
+        category: str,
+        name: str,
+        description: str | None,
+        prompt: str,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Creates a new prompt.
+        
+        Security: Only SuperAdmin can create.
+        Validation: Name must be unique within category.
+        Audit: Automatically sets created_by.
+        """
+        if identity_type_id != 1:
+            raise BackendCorePermissionError("prompts_create", identity_type_id)
+
+        from sqlalchemy import create_engine, text
+
+        table = self._get_prompt_table(category)
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            # Check for duplicate name
+            existing = conn.execute(
+                text(f"SELECT id_prompt FROM {table} WHERE name = :name"),
+                {"name": name},
+            ).fetchone()
+
+            if existing:
+                raise BackendCoreBusinessError(
+                    f"Ya existe un prompt con el nombre '{name}' en la categoría {category}"
+                )
+
+            # Insert new prompt
+            result = conn.execute(
+                text(f"""
+                    INSERT INTO {table}
+                    (name, description, prompt, active, created_by)
+                    VALUES (:name, :description, :prompt, TRUE, :created_by)
+                """),
+                {
+                    "name": name,
+                    "description": description,
+                    "prompt": prompt,
+                    "created_by": user_id,
+                },
+            )
+            conn.commit()
+
+            prompt_id = result.lastrowid
+
+            self._logger.info(
+                "[PROMPTS] Created prompt: category=%s id=%s name=%s user=%s",
+                category, prompt_id, name, user_id,
+            )
+
+            return {
+                "success": True,
+                "id_prompt": prompt_id,
+                "message": f"Prompt '{name}' creado exitosamente",
+            }
+
+    def update_prompt(
+        self,
+        category: str,
+        id_prompt: int,
+        name: str,
+        description: str | None,
+        prompt: str,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates an existing prompt.
+        
+        Security: Only SuperAdmin can update.
+        Validation: Name must be unique within category (excluding current prompt).
+        Audit: Automatically sets updated_by and updated_at.
+        """
+        if identity_type_id != 1:
+            raise BackendCorePermissionError("prompts_update", identity_type_id)
+
+        from sqlalchemy import create_engine, text
+
+        table = self._get_prompt_table(category)
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            # Check if prompt exists
+            existing_prompt = conn.execute(
+                text(f"SELECT id_prompt FROM {table} WHERE id_prompt = :id_prompt"),
+                {"id_prompt": id_prompt},
+            ).fetchone()
+
+            if not existing_prompt:
+                raise BackendCoreBusinessError(f"Prompt no encontrado: {id_prompt}")
+
+            # Check for duplicate name (excluding current prompt)
+            duplicate = conn.execute(
+                text(f"""
+                    SELECT id_prompt FROM {table}
+                    WHERE name = :name AND id_prompt != :id_prompt
+                """),
+                {"name": name, "id_prompt": id_prompt},
+            ).fetchone()
+
+            if duplicate:
+                raise BackendCoreBusinessError(
+                    f"Ya existe otro prompt con el nombre '{name}' en la categoría {category}"
+                )
+
+            # Update prompt
+            result = conn.execute(
+                text(f"""
+                    UPDATE {table}
+                    SET name = :name,
+                        description = :description,
+                        prompt = :prompt,
+                        updated_by = :updated_by
+                    WHERE id_prompt = :id_prompt
+                """),
+                {
+                    "name": name,
+                    "description": description,
+                    "prompt": prompt,
+                    "updated_by": user_id,
+                    "id_prompt": id_prompt,
+                },
+            )
+            conn.commit()
+
+            if result.rowcount == 0:
+                raise BackendCoreBusinessError("Error al actualizar el prompt")
+
+            self._logger.info(
+                "[PROMPTS] Updated prompt: category=%s id=%s name=%s user=%s",
+                category, id_prompt, name, user_id,
+            )
+
+            return {
+                "success": True,
+                "updated": True,
+                "message": f"Prompt '{name}' actualizado exitosamente",
+            }
+
+    def toggle_prompt(
+        self,
+        category: str,
+        id_prompt: int,
+        active: bool,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Toggles prompt active status (enable/disable).
+        
+        Security: Only SuperAdmin can toggle.
+        Audit: Automatically sets updated_by and updated_at.
+        """
+        if identity_type_id != 1:
+            raise BackendCorePermissionError("prompts_update", identity_type_id)
+
+        from sqlalchemy import create_engine, text
+
+        table = self._get_prompt_table(category)
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            result = conn.execute(
+                text(f"""
+                    UPDATE {table}
+                    SET active = :active,
+                        updated_by = :updated_by
+                    WHERE id_prompt = :id_prompt
+                """),
+                {
+                    "active": 1 if active else 0,
+                    "updated_by": user_id,
+                    "id_prompt": id_prompt,
+                },
+            )
+            conn.commit()
+
+            if result.rowcount == 0:
+                raise BackendCoreBusinessError("Prompt no encontrado")
+
+            action = "habilitado" if active else "deshabilitado"
+            self._logger.info(
+                "[PROMPTS] Toggled prompt: category=%s id=%s action=%s user=%s",
+                category, id_prompt, action, user_id,
+            )
+
+            return {
+                "success": True,
+                "updated": True,
+                "message": f"Prompt {action} exitosamente",
+            }

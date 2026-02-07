@@ -3253,3 +3253,404 @@ def create_user(user_data: dict) -> User:
 
 Use this matrix as the single source of truth when routing tasks in Cursor.
 
+---
+
+## Prompt Family Recognition Rules
+
+### Overview
+
+The system uses a **four-category prompt library** to normalize AI interactions with Ollama. Agents must recognize and correctly classify prompts into these families when creating, editing, or combining prompts for AI queries.
+
+### The 4 Prompt Families
+
+#### 1. **Identidades** (Identities)
+
+**Purpose:** Define the AI assistant's role, personality, expertise, and behavioral traits.
+
+**Recognition Keywords:**
+- "Eres", "Actúas como", "Tu rol es", "Tu misión es"
+- "Asistente", "Experto", "Especialista", "Consultor", "Auditor"
+- "Personalidad", "Tono", "Estilo de comunicación"
+- "Experiencia en", "Conocimientos en", "Habilidades"
+
+**Examples:**
+
+```
+✅ Identity Prompt:
+"Eres un asistente experto en análisis de datos de proyectos educativos con más de 10 años de experiencia. Tu tono es profesional pero cercano, y siempre buscas proporcionar insights accionables basados en datos objetivos."
+
+✅ Identity Prompt:
+"Actúas como un auditor de cumplimiento normativo especializado en regulaciones educativas españolas. Tu misión es garantizar que todas las recomendaciones se alineen con la normativa vigente."
+
+❌ Not Identity:
+"El proyecto tiene 50 participantes" (this is context, not identity)
+```
+
+**Anti-patterns:**
+- Including data or statistics about projects (belongs to Context)
+- Describing output format requirements (belongs to Modality)
+- Listing specific tasks to perform (belongs to Solicitudes)
+
+---
+
+#### 2. **Contexto** (Context)
+
+**Purpose:** Provide domain-specific context, business rules, constraints, and operational environment.
+
+**Recognition Keywords:**
+- "Contexto", "Entorno", "Dominio", "Ámbito"
+- "Organización", "Proyecto", "Normativa", "Regulación"
+- "Restricciones", "Políticas", "Procedimientos", "Estándares"
+- "Estructura organizativa", "Roles", "Permisos"
+- "Datos relevantes", "KPIs", "Métricas"
+
+**Examples:**
+
+```
+✅ Context Prompt:
+"Trabajas en una organización multi-tenant que gestiona proyectos de formación profesional. Cada proyecto tiene roles jerárquicos: SuperAdmin, OrgAdmin, Trainer, Lector. Los datos personales deben tratarse con estricta confidencialidad según GDPR."
+
+✅ Context Prompt:
+"El proyecto actual tiene 3 fases: inicial (50 horas), desarrollo (200 horas) y cierre (30 horas). Los KPIs clave son: tasa de asistencia (objetivo >85%), satisfacción (objetivo >4.2/5) y tasa de finalización (objetivo >90%)."
+
+❌ Not Context:
+"Genera un informe ejecutivo" (this is a request, not context)
+```
+
+**Anti-patterns:**
+- Including instructions about what to do (belongs to Solicitudes)
+- Defining the AI's role (belongs to Identidades)
+- Specifying response format (belongs to Modality)
+
+---
+
+#### 3. **Solicitudes** (Requests)
+
+**Purpose:** Define specific tasks, requests, or operations the user can ask the AI to perform.
+
+**Recognition Keywords:**
+- "Analiza", "Genera", "Crea", "Produce", "Elabora"
+- "Identifica", "Detecta", "Encuentra", "Busca"
+- "Compara", "Evalúa", "Calcula", "Estima"
+- "Recomienda", "Sugiere", "Propone", "Aconseja"
+- "Informe", "Reporte", "Dashboard", "Resumen"
+
+**Examples:**
+
+```
+✅ Request Prompt:
+"Analiza el rendimiento del proyecto comparando los KPIs actuales con los objetivos establecidos. Identifica desviaciones significativas (>10%) y proporciona recomendaciones accionables para corregir el rumbo."
+
+✅ Request Prompt:
+"Genera un informe ejecutivo que resuma el estado del proyecto, incluyendo: progreso general, riesgos identificados, hitos alcanzados y próximos pasos críticos."
+
+❌ Not Request:
+"Responde en formato JSON" (this is modality, not a request)
+```
+
+**Anti-patterns:**
+- Describing how the response should be formatted (belongs to Modality)
+- Providing background information (belongs to Context)
+- Defining who the AI is (belongs to Identidades)
+
+---
+
+#### 4. **Modalidad** (Modality)
+
+**Purpose:** Specify the format, style, structure, and presentation of the AI's response.
+
+**Recognition Keywords:**
+- "Formato", "Estructura", "Plantilla", "Layout"
+- "JSON", "Markdown", "HTML", "Tabla", "Lista", "Bullet points"
+- "Secciones", "Párrafos", "Títulos", "Subtítulos"
+- "Longitud", "Brevedad", "Detalle", "Nivel de profundidad"
+- "Visualización", "Gráficos sugeridos", "Dashboard"
+- "Idioma", "Estilo de escritura", "Tono formal/informal"
+
+**Examples:**
+
+```
+✅ Modality Prompt:
+"Responde en formato JSON estructurado con las siguientes claves:
+{
+  'análisis': string,
+  'conclusiones': array de strings,
+  'recomendaciones': array de objetos con {prioridad, acción, impacto}
+}
+Máximo 500 palabras por sección."
+
+✅ Modality Prompt:
+"Presenta tu respuesta como un informe narrativo con bullet points. Estructura:
+1. Resumen Ejecutivo (máximo 3 párrafos)
+2. Análisis Detallado (5-7 bullet points)
+3. Conclusiones (lista numerada)
+4. Próximos Pasos (tabla con columnas: Acción, Responsable, Fecha)
+Usa un tono profesional pero accesible."
+
+❌ Not Modality:
+"Analiza los KPIs del proyecto" (this is a request, not format specification)
+```
+
+**Anti-patterns:**
+- Including task instructions (belongs to Solicitudes)
+- Describing the AI's expertise (belongs to Identidades)
+- Providing data or constraints (belongs to Context)
+
+---
+
+### Combining Prompts: The Full Query Pattern
+
+When building a complete Ollama query, agents must combine prompts from all 4 families in this order:
+
+```
+[Identidad] + [Contexto] + [Solicitud] + [Entrada del Usuario] + [Modalidad]
+```
+
+**Example of Complete Query:**
+
+```python
+# Identity
+identity_prompt = "Eres un asistente experto en análisis de proyectos educativos."
+
+# Context
+context_prompt = "Trabajas en una organización que gestiona proyectos de formación. Los KPIs clave son: asistencia (>85%), satisfacción (>4.2/5), finalización (>90%)."
+
+# Request
+request_prompt = "Analiza el rendimiento del proyecto comparando KPIs actuales con objetivos. Identifica desviaciones >10% y proporciona recomendaciones."
+
+# User Input
+user_input = "¿Cómo está el rendimiento del proyecto X en el Q4?"
+
+# Modality
+modality_prompt = "Responde en formato JSON con claves: {análisis, desviaciones, recomendaciones}. Máximo 500 palabras."
+
+# Combined Query
+full_query = f"""
+{identity_prompt}
+
+{context_prompt}
+
+{request_prompt}
+
+Entrada del usuario: {user_input}
+
+{modality_prompt}
+"""
+```
+
+**Result sent to Ollama:**
+```
+Eres un asistente experto en análisis de proyectos educativos.
+
+Trabajas en una organización que gestiona proyectos de formación. Los KPIs clave son: asistencia (>85%), satisfacción (>4.2/5), finalización (>90%).
+
+Analiza el rendimiento del proyecto comparando KPIs actuales con objetivos. Identifica desviaciones >10% y proporciona recomendaciones.
+
+Entrada del usuario: ¿Cómo está el rendimiento del proyecto X en el Q4?
+
+Responde en formato JSON con claves: {análisis, desviaciones, recomendaciones}. Máximo 500 palabras.
+```
+
+---
+
+### Classification Decision Tree
+
+When an agent needs to classify a new prompt, use this decision tree:
+
+```
+1. Does it define WHO the AI is or its expertise?
+   ├─ YES → **Identidades**
+   └─ NO → Continue
+
+2. Does it provide background information, constraints, or business rules?
+   ├─ YES → **Contexto**
+   └─ NO → Continue
+
+3. Does it ask the AI to DO something or perform a task?
+   ├─ YES → **Solicitudes**
+   └─ NO → Continue
+
+4. Does it specify HOW the response should be formatted or structured?
+   ├─ YES → **Modalidad**
+   └─ NO → Ambiguous - Request clarification
+```
+
+---
+
+### Common Misclassification Pitfalls
+
+| Prompt Fragment | ❌ Wrong Category | ✅ Correct Category | Explanation |
+|----------------|------------------|-------------------|-------------|
+| "Eres experto y debes generar un informe" | Identidades | **Split:** Identity + Request | Contains both role and task - must separate |
+| "El proyecto tiene KPIs: analízalos" | Contexto | **Split:** Context + Request | Contains both data and instruction |
+| "Responde como un auditor en formato JSON" | Modalidad | **Split:** Identity + Modality | Contains both role and format |
+| "Genera un informe ejecutivo bien estructurado" | Solicitudes | **Split:** Request + Modality | Contains both task and format expectation |
+
+**Rule:** If a prompt mixes multiple intents, agents should **suggest splitting** into multiple prompts (one per category).
+
+---
+
+### Validation Rules for Agents
+
+When creating or editing prompts, agents must:
+
+1. **Verify Category Fit:**
+   - Run the prompt through the decision tree
+   - Ensure it fits cleanly into ONE category
+   - If ambiguous, flag for user review
+
+2. **Check for Cross-Contamination:**
+   - Identity prompts should NOT contain tasks
+   - Context prompts should NOT contain format instructions
+   - Request prompts should NOT define the AI's role
+   - Modality prompts should NOT include business data
+
+3. **Ensure Active Status:**
+   - Only active prompts (`active=TRUE`) should be used in queries
+   - Warn if trying to combine a disabled prompt
+
+4. **Validate Uniqueness:**
+   - Prompt names must be unique within their category
+   - Suggest alternative names if duplicates detected
+
+5. **Preserve Hierarchy:**
+   - Always combine prompts in order: Identity → Context → Request → Modality
+   - Never skip a category (use empty string if category not needed)
+
+---
+
+### Example Recognition Exercises
+
+**Exercise 1:**
+```
+"Eres un consultor estratégico especializado en educación profesional con experiencia en análisis de métricas de rendimiento."
+```
+**Category:** Identidades
+**Reason:** Defines role, expertise, and domain knowledge
+
+---
+
+**Exercise 2:**
+```
+"La organización gestiona proyectos multi-tenant con roles SuperAdmin, OrgAdmin, Trainer. Datos GDPR-compliant."
+```
+**Category:** Contexto
+**Reason:** Describes organizational structure and constraints
+
+---
+
+**Exercise 3:**
+```
+"Detecta anomalías en los KPIs de asistencia y satisfacción. Proporciona alertas tempranas si la desviación supera el 15%."
+```
+**Category:** Solicitudes
+**Reason:** Defines specific task (detect anomalies) and criteria
+
+---
+
+**Exercise 4:**
+```
+"Responde en tabla markdown con columnas: KPI, Valor Actual, Objetivo, Desviación (%), Estado (OK/Alerta/Crítico)."
+```
+**Category:** Modalidad
+**Reason:** Specifies exact output format and structure
+
+---
+
+### Agent Responsibilities
+
+#### When Creating Prompts:
+1. Ask user which category they're targeting
+2. Validate prompt content matches category intent
+3. Suggest refinements if cross-contamination detected
+4. Ensure name is unique within category
+5. Default `active=TRUE` for new prompts
+
+#### When Editing Prompts:
+1. Preserve original category
+2. Alert if edits introduce cross-contamination
+3. Update `updated_by` and `updated_at` automatically
+4. Maintain audit trail
+
+#### When Combining Prompts:
+1. Verify all 4 categories are covered (or explicitly state which are omitted)
+2. Check all selected prompts are active
+3. Combine in correct order: Identity → Context → Request → Modality
+4. Insert user input between Request and Modality
+5. Log combined query for debugging
+
+---
+
+### Database Mapping
+
+| Category | Table Name | Primary Key |
+|----------|-----------|-------------|
+| Identidades | `prompts_identidades` | `id_prompt` |
+| Contexto | `prompts_contexto` | `id_prompt` |
+| Solicitudes | `prompts_solicitudes` | `id_prompt` |
+| Modalidad | `prompts_modalidad` | `id_prompt` |
+
+All tables share the same schema:
+- `id_prompt` (INT, AUTO_INCREMENT, PK)
+- `name` (VARCHAR(255), UNIQUE per table)
+- `description` (TEXT, optional)
+- `prompt` (MEDIUMTEXT, required)
+- `active` (BOOLEAN, default TRUE)
+- `created_at`, `updated_at`, `created_by`, `updated_by` (audit fields)
+
+---
+
+### Integration with Ollama (Future)
+
+When the Ollama integration is implemented, agents will:
+
+1. **Receive user query** with category IDs:
+   ```python
+   query_params = {
+       "identity_id": 1,
+       "context_id": 2,
+       "request_id": 3,
+       "modality_id": 4,
+       "user_input": "¿Cómo está el proyecto X?"
+   }
+   ```
+
+2. **Fetch active prompts** from database:
+   ```python
+   identity = get_prompt("identidades", 1)
+   context = get_prompt("contexto", 2)
+   request = get_prompt("solicitudes", 3)
+   modality = get_prompt("modalidad", 4)
+   ```
+
+3. **Validate all prompts are active:**
+   ```python
+   if not all(p["active"] for p in [identity, context, request, modality]):
+       raise ValueError("All prompts must be active")
+   ```
+
+4. **Build normalized query:**
+   ```python
+   full_query = f"{identity['prompt']}\n\n{context['prompt']}\n\n{request['prompt']}\n\nEntrada: {user_input}\n\n{modality['prompt']}"
+   ```
+
+5. **Send to Ollama** and return response
+
+---
+
+### Summary of Recognition Rules
+
+| If the prompt... | Then classify as... |
+|-----------------|-------------------|
+| Defines AI's role, personality, or expertise | **Identidades** |
+| Provides background, constraints, or business rules | **Contexto** |
+| Instructs AI to perform a specific task | **Solicitudes** |
+| Specifies response format or structure | **Modalidad** |
+| Contains elements from multiple categories | **Split into separate prompts** |
+
+**Golden Rule:** One prompt = One category. If a prompt tries to do multiple things, it should be split into multiple prompts (one per category).
+
+---
+
+Use these rules consistently when working with the Gestión de Prompts feature to ensure proper categorization and effective AI query construction.
+

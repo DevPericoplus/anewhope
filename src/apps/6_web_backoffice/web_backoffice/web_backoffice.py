@@ -187,6 +187,17 @@ class State(SharedSessionState):
     project_assignment_success: str = ""
     prerequisite_validation_error: str = ""
 
+    # Prompts management (SuperAdmin only)
+    prompts_category: str = "identidades"  # identidades, contexto, solicitudes, modalidad
+    prompts_list: list[dict] = []
+    selected_prompt_id: int = 0
+    form_mode: str = "create"  # "create" or "edit"
+    form_name: str = ""
+    form_description: str = ""
+    form_prompt: str = ""
+    form_error: str = ""
+    form_success: str = ""
+
     # Nota: Los siguientes campos ya vienen de SharedSessionState:
     # - is_logged_in, access_token, session_token, user_id, organization_id
     # - user_name, user_email, user_mobile, identity_type_id
@@ -353,12 +364,12 @@ class State(SharedSessionState):
             self.is_logged_in = True
             self.current_app = "backoffice"
             self.update_activity()
-            
+
             # Verificar que tiene acceso al backoffice
             if not self.can_access_backoffice:
                 self.login_error = "No tiene permisos para acceder al backoffice"
                 return self.go_to_frontend()
-            
+
             return None
             
         except Exception as exc:
@@ -1400,23 +1411,52 @@ class State(SharedSessionState):
         3. Verifica acceso al backoffice
         4. Inicializa componentes según el menú activo
         """
-        # Leer tokens de query params (pasados desde el frontend)
+        # Leer parámetros de query (pasados desde el frontend)
         params = self.router.page.params
-        access_token = params.get("access_token", "")
-        session_token = params.get("session_token", "")
+        session_id = params.get("session_id", "")  # NUEVO: modo seguro
+        access_token = params.get("access_token", "")  # Legacy
+        session_token = params.get("session_token", "")  # Legacy
         user_id = params.get("user_id", "")
         org_id = params.get("org_id", "")
-        
-        # Si vienen tokens en la URL, cargarlos primero
-        if access_token and session_token:
+
+        # PRIORIDAD 1: Modo seguro (solo session_id en URL, tokens desde Redis)
+        if session_id:
+            self.session_id = session_id
+            self.user_id = int(user_id) if user_id else 0
+            self.organization_id = int(org_id) if org_id else 0
+
+            # Cargar tokens desde Redis
+            tokens_loaded = self._load_tokens_from_redis()
+            if tokens_loaded:
+                self.is_logged_in = True
+                activity_log.log_session_activity(
+                    self.user_id,
+                    f"session restored from Redis (SECURE MODE) | session_id={session_id} | org_id={self.organization_id}"
+                )
+            else:
+                activity_log.warning(f"Failed to load tokens from Redis | session_id={session_id}")
+                return rx.redirect("/")
+
+        # PRIORIDAD 2: Modo legacy (tokens completos en URL)
+        elif access_token and session_token:
             self.access_token = access_token
             self.session_token = session_token
             self.user_id = int(user_id) if user_id else 0
             self.organization_id = int(org_id) if org_id else 0
             self.is_logged_in = True
+
+            # IMPORTANTE: Extraer timestamps de expiración desde los JWTs
+            self.access_token_expires_at = self._extract_exp_from_token(access_token)
+            self.session_token_expires_at = self._extract_exp_from_token(session_token)
+            self.session_id = session_token  # Usar session_token como session_id
+            self.last_activity = datetime.now().isoformat()
+
+            # Guardar tokens en Redis para sincronización
+            self._save_tokens_to_redis()
+
             activity_log.log_session_activity(
-                self.user_id, 
-                f"session loaded from URL | org_id={self.organization_id}"
+                self.user_id,
+                f"session loaded from URL (LEGACY MODE) | org_id={self.organization_id}"
             )
         
         # Cargar permisos (obligatorio)
@@ -1427,7 +1467,7 @@ class State(SharedSessionState):
             return permission_result
         
         activity_log.log_session_activity(self.user_id, "permissions loaded successfully")
-        
+
         # Continuar con la lógica de inicialización de componentes según menú activo
         if self.user_active_menu == "organizacion":
             # Cargar usuarios, proyectos y tickets de la organización
@@ -1441,6 +1481,9 @@ class State(SharedSessionState):
                 if organization_id > 0:
                     self.organization_id = organization_id
             return FlujosState.initialize_from_session(organization_id)
+
+        # Iniciar loop de renovación automática de tokens en background
+        return State.auto_renew_tokens_loop
 
     def _extract_org_id_from_token(self, token: str) -> int:
         """Extrae organization_id desde el payload del JWT."""
@@ -1467,6 +1510,19 @@ class State(SharedSessionState):
             padded = payload + "=" * (-len(payload) % 4)
             data = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
             return int(data.get("identity_type_id", 0))
+        except Exception:
+            return 0
+
+    def _extract_exp_from_token(self, token: str) -> int:
+        """Extrae timestamp de expiración (exp) desde el payload del JWT."""
+        try:
+            parts = token.split(".")
+            if len(parts) < 2:
+                return 0
+            payload = parts[1]
+            padded = payload + "=" * (-len(payload) % 4)
+            data = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+            return int(data.get("exp", 0))
         except Exception:
             return 0
     
@@ -1568,6 +1624,58 @@ class State(SharedSessionState):
             )
         
         return True
+
+    @rx.event(background=True)
+    async def auto_renew_tokens_loop(self):
+        """
+        Loop en background que verifica y renueva tokens automáticamente cada 2 minutos.
+
+        Este método se ejecuta continuamente mientras el usuario está logueado,
+        verificando si los tokens están próximos a expirar y renovándolos automáticamente.
+        """
+        import asyncio
+        import time
+
+        while True:
+            async with self:
+                # Solo ejecutar si el usuario está logueado
+                if not self.is_logged_in or not self.session_token or not self.session_token:
+                    break
+
+                # PASO 1: Verificar si hay tokens más recientes en Redis (sincronización entre apps)
+                tokens_updated_from_redis = self._load_tokens_from_redis()
+                if tokens_updated_from_redis:
+                    print("[TOKEN AUTO-RENEW BACKOFFICE] Tokens sincronizados desde Redis (renovados por otra app)")
+
+                # PASO 2: Verificar estado de los tokens
+                check_result = self.check_token_expiration()
+
+                # Si el session_token expiró, detener el loop y forzar logout
+                if check_result["session_expired"]:
+                    print("[TOKEN AUTO-RENEW BACKOFFICE] Session token expirado, cerrando sesión")
+                    self.login_error = "Su sesión ha expirado. Por favor, inicie sesión nuevamente."
+                    self.clear_session()
+                    break
+
+                # PASO 3: Si el access_token necesita renovación, intentar renovar
+                if check_result["needs_renewal"]:
+                    seconds_left = check_result["seconds_until_access_expires"]
+                    print(f"[TOKEN AUTO-RENEW BACKOFFICE] Access token expira en {seconds_left}s, renovando...")
+
+                    # Llamar a ensure_tokens_valid que maneja la renovación
+                    success = self.ensure_tokens_valid()
+
+                    if success:
+                        print("[TOKEN AUTO-RENEW BACKOFFICE] Tokens renovados exitosamente")
+                    else:
+                        print("[TOKEN AUTO-RENEW BACKOFFICE] Error al renovar tokens, deteniendo loop")
+                        break
+                else:
+                    seconds_left = check_result["seconds_until_access_expires"]
+                    print(f"[TOKEN AUTO-RENEW BACKOFFICE] Tokens válidos (expira en {seconds_left}s)")
+
+            # Esperar 2 minutos antes de la próxima verificación
+            await asyncio.sleep(120)
 
     def request_login_otp(self):
         """Solicita el código OTP para el login."""
@@ -1937,6 +2045,114 @@ class State(SharedSessionState):
                 self.project_assignment_success = "Asignación eliminada"
         except Exception as e:
             self.project_assignment_error = str(e)
+
+    # ========================================================================
+    # PROMPTS MANAGEMENT - Gestión de Prompts (SuperAdmin only)
+    # ========================================================================
+
+    def set_prompts_category(self, category: str):
+        """Changes active prompts category."""
+        self.prompts_category = category
+        self.load_prompts()
+        self.clear_prompts_form()
+
+    def load_prompts(self):
+        """Loads prompts for the selected category."""
+        from adapters.api_client import get_prompts
+
+        try:
+            prompts = get_prompts(
+                category=self.prompts_category,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            self.prompts_list = prompts
+            self.form_error = ""
+        except Exception as e:
+            self.form_error = f"Error al cargar prompts: {str(e)}"
+            self.prompts_list = []
+
+    def select_prompt(self, id_prompt: int):
+        """Selects a prompt for editing."""
+        prompt = next((p for p in self.prompts_list if p.get("id_prompt") == id_prompt), None)
+        if prompt:
+            self.selected_prompt_id = id_prompt
+            self.form_mode = "edit"
+            self.form_name = prompt.get("name", "")
+            self.form_description = prompt.get("description", "")
+            self.form_prompt = prompt.get("prompt", "")
+            self.form_error = ""
+            self.form_success = ""
+
+    def clear_prompts_form(self):
+        """Clears the prompts form."""
+        self.selected_prompt_id = 0
+        self.form_mode = "create"
+        self.form_name = ""
+        self.form_description = ""
+        self.form_prompt = ""
+        self.form_error = ""
+        self.form_success = ""
+
+    @rx.event(background=True)
+    async def save_prompt(self):
+        """Creates or updates a prompt."""
+        from adapters.api_client import create_prompt, update_prompt
+
+        async with self:
+            self.form_error = ""
+            self.form_success = ""
+
+        try:
+            if self.form_mode == "create":
+                result = create_prompt(
+                    category=self.prompts_category,
+                    name=self.form_name,
+                    description=self.form_description if self.form_description else None,
+                    prompt=self.form_prompt,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+            else:  # edit
+                result = update_prompt(
+                    category=self.prompts_category,
+                    id_prompt=self.selected_prompt_id,
+                    name=self.form_name,
+                    description=self.form_description if self.form_description else None,
+                    prompt=self.form_prompt,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+
+            async with self:
+                if result.get("success"):
+                    self.form_success = result.get("message", "Guardado exitosamente")
+                    self.load_prompts()
+                    self.clear_prompts_form()
+                else:
+                    self.form_error = result.get("detail", "Error al guardar")
+        except Exception as e:
+            async with self:
+                self.form_error = str(e)
+
+    def toggle_prompt_status(self, id_prompt: int, current_active: bool):
+        """Toggles prompt active status."""
+        from adapters.api_client import toggle_prompt
+
+        try:
+            result = toggle_prompt(
+                category=self.prompts_category,
+                id_prompt=id_prompt,
+                active=not current_active,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if result.get("success"):
+                self.load_prompts()
+                self.form_success = result.get("message", "Estado actualizado")
+        except Exception as e:
+            self.form_error = str(e)
 
 
 def load_presentation_content() -> str:
@@ -3394,6 +3610,148 @@ def asistente_panel() -> rx.Component:
     )
 
 
+def _prompts_management_tab() -> rx.Component:
+    """Prompts management tab content (SuperAdmin only)."""
+    return rx.vstack(
+        # Category selector
+        rx.text("Categoría de Prompts", font_weight="bold", color=COLORS["primary"], font_size="1.7em"),
+        rx.select.root(
+            rx.select.trigger(placeholder="Selecciona categoría..."),
+            rx.select.content(
+                rx.select.item("Identidades", value="identidades"),
+                rx.select.item("Contexto", value="contexto"),
+                rx.select.item("Solicitudes", value="solicitudes"),
+                rx.select.item("Modalidad", value="modalidad"),
+            ),
+            value=State.prompts_category,
+            on_change=State.set_prompts_category,
+            size="2",
+            width="300px",
+        ),
+
+        # Horizontal layout: Form on left (38%), List on right (58%)
+        rx.hstack(
+            # Form panel (left side)
+            rx.box(
+                rx.vstack(
+                    rx.text(
+                        rx.cond(State.form_mode == "create", "Crear Nuevo Prompt", "Editar Prompt"),
+                        font_weight="bold", color=COLORS["primary"], font_size="1.5em",
+                    ),
+                    rx.text("Nombre", color=COLORS["primary"], font_weight="bold", font_size="1.1em"),
+                    rx.input(
+                        placeholder="Nombre único del prompt...",
+                        value=State.form_name,
+                        on_change=State.set_form_name,
+                        width="100%",
+                    ),
+                    rx.text("Descripción", color=COLORS["primary"], font_weight="bold", font_size="1.1em", margin_top="0.5em"),
+                    rx.text_area(
+                        placeholder="Descripción breve...",
+                        value=State.form_description,
+                        on_change=State.set_form_description,
+                        width="100%",
+                        rows="2",
+                    ),
+                    rx.text("Prompt", color=COLORS["primary"], font_weight="bold", font_size="1.1em", margin_top="0.5em"),
+                    rx.text_area(
+                        placeholder="Contenido del prompt...",
+                        value=State.form_prompt,
+                        on_change=State.set_form_prompt,
+                        width="100%",
+                        rows="10",
+                    ),
+                    rx.hstack(
+                        rx.button(
+                            rx.cond(State.form_mode == "create", "Crear", "Actualizar"),
+                            on_click=State.save_prompt,
+                            background_color=COLORS["primary"],
+                            color="black",
+                            font_weight="bold",
+                        ),
+                        rx.button(
+                            "Cancelar",
+                            on_click=State.clear_prompts_form,
+                            variant="outline",
+                            color="white",
+                            font_weight="bold",
+                        ),
+                        spacing="2",
+                        margin_top="1em",
+                    ),
+                    rx.cond(State.form_error != "", rx.callout(State.form_error, icon="alert-circle", color_scheme="red")),
+                    rx.cond(State.form_success != "", rx.callout(State.form_success, icon="check-circle", color_scheme="green")),
+                    spacing="2",
+                ),
+                padding="1.5em",
+                background_color=COLORS["card"],
+                border_radius="0.5em",
+                border=f"1px solid {COLORS['border']}",
+                width="38%",
+            ),
+
+            # Prompts list panel (right side)
+            rx.box(
+                rx.vstack(
+                    rx.text("Prompts Guardados", font_weight="bold", color=COLORS["primary"], font_size="1.5em"),
+                    rx.cond(
+                        State.prompts_list.length() > 0,
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell(rx.text("Nombre", color=COLORS["primary"], font_weight="bold")),
+                                    rx.table.column_header_cell(rx.text("Descripción", color=COLORS["primary"], font_weight="bold")),
+                                    rx.table.column_header_cell(rx.text("Estado", color=COLORS["primary"], font_weight="bold")),
+                                    rx.table.column_header_cell(rx.text("Acciones", color=COLORS["primary"], font_weight="bold")),
+                                ),
+                            ),
+                            rx.table.body(
+                                rx.foreach(
+                                    State.prompts_list,
+                                    lambda p: rx.table.row(
+                                        rx.table.cell(p["name"]),
+                                        rx.table.cell(p.get("description", "-")),
+                                        rx.table.cell(
+                                            rx.cond(p["active"], rx.badge("Activo", color_scheme="green"), rx.badge("Inactivo", color_scheme="gray")),
+                                        ),
+                                        rx.table.cell(
+                                            rx.hstack(
+                                                rx.button("Editar", on_click=lambda: State.select_prompt(p["id_prompt"]), size="1", color="white", font_weight="bold"),
+                                                rx.button(
+                                                    rx.cond(p["active"], "Deshabilitar", "Habilitar"),
+                                                    on_click=lambda: State.toggle_prompt_status(p["id_prompt"], p["active"]),
+                                                    size="1",
+                                                    color="white",
+                                                    font_weight="bold",
+                                                ),
+                                                spacing="1",
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                        rx.text("No hay prompts. Crea uno nuevo.", color=COLORS["muted_foreground"], font_style="italic"),
+                    ),
+                    spacing="2",
+                ),
+                padding="1.5em",
+                background_color=COLORS["card"],
+                border_radius="0.5em",
+                border=f"1px solid {COLORS['border']}",
+                width="58%",
+            ),
+
+            spacing="4",
+            width="100%",
+            align_items="flex-start",
+        ),
+
+        spacing="3",
+        width="100%",
+    )
+
+
 def asignaciones_panel() -> rx.Component:
     """Panel de Gestor de Asignaciones (SuperAdmin only)."""
     return rx.vstack(
@@ -3467,6 +3825,26 @@ def asignaciones_panel() -> rx.Component:
                 _hover={"opacity": "0.8"},
                 font_weight="bold",
             ),
+            rx.button(
+                "Gestión de Prompts",
+                on_click=lambda: State.set_assignments_tab("prompts"),
+                background_color=rx.cond(
+                    State.assignments_active_tab == "prompts",
+                    COLORS["primary"],
+                    "transparent",
+                ),
+                color=rx.cond(
+                    State.assignments_active_tab == "prompts",
+                    "black",
+                    COLORS["foreground"],
+                ),
+                border=f"1px solid {COLORS['border']}",
+                padding="0.75em 1.5em",
+                border_radius="0.5em",
+                cursor="pointer",
+                _hover={"opacity": "0.8"},
+                font_weight="bold",
+            ),
             spacing="2",
             padding="1em",
             border_bottom=f"1px solid {COLORS['border']}",
@@ -3477,7 +3855,11 @@ def asignaciones_panel() -> rx.Component:
         rx.cond(
             State.assignments_active_tab == "organizaciones",
             _org_assignments_tab(),
-            _project_assignments_tab(),
+            rx.cond(
+                State.assignments_active_tab == "proyectos",
+                _project_assignments_tab(),
+                _prompts_management_tab(),
+            ),
         ),
 
         spacing="4",

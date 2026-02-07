@@ -4075,3 +4075,91 @@ class RouterMiddleware:
             )
         except BrokerBackendCommunicationError as exc:
             raise BusinessRuleError("No se pudo eliminar asignación de proyecto") from exc
+
+    # ========================================================================
+    # Métodos de Prompts
+    # ========================================================================
+
+    def get_prompts(
+        self,
+        category: str,
+        session: SessionContext,
+    ) -> list[dict[str, Any]]:
+        """Gets all prompts for a category."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.get_prompts(
+                category, session.identity_type_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo obtener prompts de categoría {category}"
+            ) from exc
+
+    def get_prompt(
+        self,
+        category: str,
+        id_prompt: int,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Gets a specific prompt by ID."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.get_prompt(
+                category, id_prompt, session.identity_type_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo obtener prompt {id_prompt}"
+            ) from exc
+
+    def create_prompt(
+        self,
+        category: str,
+        payload: dict,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Creates a new prompt."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.create_prompt(
+                category, payload, session.user_id, session.identity_type_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("No se pudo crear prompt") from exc
+
+    def update_prompt(
+        self,
+        category: str,
+        id_prompt: int,
+        payload: dict,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Updates an existing prompt."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.update_prompt(
+                category, id_prompt, payload, session.user_id, session.identity_type_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo actualizar prompt {id_prompt}"
+            ) from exc
+
+    def toggle_prompt(
+        self,
+        category: str,
+        id_prompt: int,
+        payload: dict,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Toggles prompt active status."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.toggle_prompt(
+                category, id_prompt, payload, session.user_id, session.identity_type_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo cambiar estado del prompt {id_prompt}"
+            ) from exc
