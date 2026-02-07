@@ -528,7 +528,7 @@ class EstadoProyectosState(rx.State):
     # Event handlers - Actualización de estado
     # ========================================================================
 
-    def toggle_field(self, field_name: str) -> None:
+    async def toggle_field(self, field_name: str) -> None:
         """Alterna el valor de un campo booleano usando la API."""
         if not self.can_edit:
             self.error_message = "No tienes permisos para editar estados"
@@ -544,10 +544,15 @@ class EstadoProyectosState(rx.State):
             return
 
         # Obtener tokens de sesión
-        from web_backoffice.web_backoffice import State as BackofficeState
+        from web_backoffice.shared_state import SharedSessionState
 
-        access_token = BackofficeState.access_token
-        session_token = BackofficeState.session_token
+        session_state = await self.get_state(SharedSessionState)
+        if not session_state:
+            self.error_message = "No se pudo obtener sesión"
+            return
+
+        access_token = session_state.access_token
+        session_token = session_state.session_token
 
         try:
             # Mapeo de campos a fases y funciones API
@@ -839,7 +844,7 @@ def _estado_summary_card() -> rx.Component:
         border_radius="8px",
         border="1px solid #334155",
         width="100%",
-        max_width="1400px",
+        max_width="1800px",
     )
 
 
@@ -896,7 +901,7 @@ def _fase_1_card() -> rx.Component:
         border_radius="8px",
         border="1px solid #334155",
         width="100%",
-        max_width="1400px",
+        max_width="1800px",
     )
 
 
@@ -942,7 +947,7 @@ def _fase_2_card() -> rx.Component:
         border_radius="8px",
         border="1px solid #334155",
         width="100%",
-        max_width="1400px",
+        max_width="1800px",
     )
 
 
@@ -968,7 +973,7 @@ def _fase_3_card() -> rx.Component:
         border_radius="8px",
         border="1px solid #334155",
         width="100%",
-        max_width="1400px",
+        max_width="1800px",
     )
 
 
@@ -1003,7 +1008,7 @@ def _fase_4_card() -> rx.Component:
         border_radius="8px",
         border="1px solid #334155",
         width="100%",
-        max_width="1400px",
+        max_width="1800px",
     )
 
 
@@ -1032,7 +1037,7 @@ def _fase_5_card() -> rx.Component:
         border_radius="8px",
         border="1px solid #334155",
         width="100%",
-        max_width="1400px",
+        max_width="1800px",
     )
 
 
