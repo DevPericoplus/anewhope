@@ -149,8 +149,25 @@ def _build_hierarchy_from_flat_list(items: list[dict[str, Any]]) -> list[dict[st
     for item in sorted_items:
         path = item.get("path") or ""
         name = item.get("name") or ""
-        is_folder = item.get("type", "file") == "folder"
+
+        # Detectar si es carpeta de forma robusta
+        # Soportar: "type": "folder", "type": "directory", "type": "dir", "is_dir": true
+        item_type = item.get("type")
+        if item_type:
+            item_type = str(item_type).lower()
+        else:
+            item_type = "file"
+
+        is_folder = (
+            item_type in ("folder", "directory", "dir") or
+            item.get("is_dir", False) or
+            item.get("is_directory", False)
+        )
+
         size = item.get("size", 0) or 0
+        # Si size es None, convertir a 0
+        if size is None:
+            size = 0
 
         # Crear nodo
         node = {
@@ -240,7 +257,7 @@ def convert_multiple_versions_to_explorador(
             continue
 
         # Procesar items de esta versión
-        # Los items ya vienen en formato jerárquico desde fmanagement
+        # Los items ya vienen en formato jerárquico desde fmanagement (con is_dir e items anidados)
         fmanagement_items = fmanagement_response.get("items", [])
         print(f"DEBUG adaptador: version {version_name} tiene {len(fmanagement_items)} items de fmanagement")
         if fmanagement_items:

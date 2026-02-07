@@ -5257,3 +5257,507 @@ Cuando debuggear problemas con Estado de Proyectos:
 
 **Para modificaciones mayores, consultar primero la documentación completa en README.md sección "Estado de Proyectos".**
 
+---
+
+## 25. Gestión de Estados de Versiones en Explorador
+
+**DESCRIPCIÓN**: El sistema de gestión de estados de versiones controla el ciclo de vida de las versiones en el explorador con flujos diferenciados para clientes (frontend) y usuarios internos (backoffice). Implementa "Security by Design" con estados terminales y protección automática.
+
+### 25.1. Estados Disponibles
+
+| Estado | Vista Frontend | Vista Backoffice | Campos DB | Descripción |
+|--------|---------------|------------------|-----------|-------------|
+| **Abierta** | (Abierta) - Verde | (Abierta) - Verde | `state="Abierta"`, `protected=false`, `final_c=false`, `final_i=false` | Versión en desarrollo activo. Cliente y equipo pueden modificar. |
+| **Bloqueada** | (Bloqueada) - Naranja | (Bloqueada) - Naranja | `state="Bloqueada"`, `protected=true`, `final_c=false`, `final_i=false` | Versión temporalmente bloqueada. Solo lectura. |
+| **Entrenar** | (Entrenamiento solicitado) - Azul | (Entrenamiento solicitado) - Azul | `state="Entrenar"`, `protected=true`, `final_c=true`, `final_i=false` | Cliente solicita entrenamiento. Terminal para cliente. |
+| **Final** | (Final) - Rojo | (Final) - Rojo | `state="Final"`, `protected=true`, `final_c=true`, `final_i=true` | Versión confirmada por backoffice. Trigger automático activa entrenamiento. |
+
+### 25.2. Flujos de Estado
+
+#### 25.2.1. Frontend (Cliente)
+
+```
+Abierta ⟷ Bloqueada → Entrenar (TERMINAL)
+    ↑                     ↓
+    └─── (Solo Backoffice puede cambiar)
+```
+
+**Reglas:**
+- Cliente puede cambiar entre "Abierta" y "Bloqueada" libremente
+- Cliente puede solicitar "Entrenar" desde cualquier estado
+- Una vez en "Entrenar", el cliente NO puede cambiar el estado
+- Para cambios posteriores, debe contactar por notificaciones o tickets
+
+#### 25.2.2. Backoffice (Usuario Interno)
+
+```
+Abierta ⟷ Bloqueada ⟷ Entrenar ⟷ Final
+    ↑                              ↓
+    └────────────────────────────────┘
+(Puede cambiar entre TODOS los estados)
+```
+
+**Reglas:**
+- Backoffice puede cambiar entre cualquier estado
+- Permite deshacer estados terminales del cliente
+- Responsable de confirmar versiones con estado "Final"
+
+### 25.3. Registro Automático en Tabla `cambios`
+
+**Ubicación**: `src/apps/3_backend/routercore.py:update_version_state()`
+
+Todos los cambios de estado se registran automáticamente en la tabla `cambios`:
+
+```python
+# Mapeo de estados a registros
+state_mapping = {
+    "Abierta": {
+        "tipo": "Abrir",
+        "descripcion": "Versión v001 del proyecto 'Proyecto X' abierta para edición"
+    },
+    "Bloqueada": {
+        "tipo": "Bloquear",
+        "descripcion": "Versión v001 del proyecto 'Proyecto X' bloqueada temporalmente"
+    },
+    "Entrenar": {
+        "tipo": "Entrenar",
+        "descripcion": "El cliente solicita entrenamiento para versión v001 del proyecto 'Proyecto X'"
+    },
+    "Final": {
+        "tipo": "Finalizar",
+        "descripcion": "Versión v001 del proyecto 'Proyecto X' lista para entrenar"
+    }
+}
+```
+
+**Beneficios**:
+- Trazabilidad completa de cambios de estado
+- Visible en componente Calendario (frontend y backoffice)
+- Incluye nombre de proyecto y versión para contexto
+- Auditoría automática sin código adicional
+
+### 25.4. Protección Automática (Security by Design)
+
+Cuando `protected=true` (estados Bloqueada, Entrenar, Final):
+
+**En Explorador:**
+1. Todos los descendientes de la versión se marcan como `is_blocked=true`
+2. Menús contextuales desaparecen en elementos bloqueados
+3. Opacidad reducida (`opacity: 0.5`) para feedback visual
+4. Solo lectura en todos los archivos y carpetas
+
+**Excepción:**
+- La carpeta de versión MISMA no se bloquea
+- Permite acceso al menú contextual para cambiar estado
+- Solo aplica a contenido dentro de la versión
+
+### 25.5. Trigger Automático de Entrenamiento
+
+**Ubicación**: `infrastructure/database/migrations/009_estado_triggers.sql`
+
+```sql
+CREATE TRIGGER trg_estado_version_auto_entrenamiento
+AFTER UPDATE ON version_states
+FOR EACH ROW
+BEGIN
+    IF NEW.final_c = 1 AND NEW.final_i = 1 THEN
+        SET NEW.entrenamiento_inicial_solicitado = 1;
+    END IF;
+END;
+```
+
+**Funcionamiento:**
+- Se activa cuando `final_c=1 AND final_i=1` (estado "Final")
+- Automáticamente actualiza `entrenamiento_inicial_solicitado=1`
+- Sistema de entrenamiento detecta versiones con esta flag
+- Inicia proceso de fine-tuning del modelo LLM
+
+### 25.6. Implementación en Frontend
+
+**Archivo**: `src/apps/5_web_frontend/components/explorador.py`
+
+#### 25.6.1. Labels de Estado
+
+```python
+state_labels = {
+    "Abierta": ("(Abierta)", "#228B22"),  # Verde bosque
+    "Bloqueada": ("(Bloqueada)", "#FF8C00"),  # Naranja oscuro
+    "Entrenar": ("(Entrenamiento solicitado)", "#00008B"),  # Azul oscuro
+    "Final": ("(Final)", "#8B0000"),  # Rojo oscuro
+}
+```
+
+#### 25.6.2. Métodos de Cambio de Estado
+
+```python
+# Línea 546
+def abrir_version(self, item: FolderItem):
+    """Cambia estado a Abierta (protected=False)."""
+    update_version_state(
+        project_id=self.id_proyecto,
+        version_id=version_id,
+        state="Abierta",
+        protected=False,
+        updated_by_user_id=self.user_id
+    )
+
+# Línea 589
+def bloquear_version(self, item: FolderItem):
+    """Cambia estado a Bloqueada (protected=True)."""
+    update_version_state(
+        project_id=self.id_proyecto,
+        version_id=version_id,
+        state="Bloqueada",
+        protected=True,
+        updated_by_user_id=self.user_id
+    )
+
+# Línea 631 (NUEVO)
+def entrenar_version(self, item: FolderItem):
+    """Cambia estado a Entrenar (protected=True, final_c=True).
+
+    Estado terminal para el cliente. Solo backoffice puede cambiar.
+    """
+    update_version_state(
+        project_id=self.id_proyecto,
+        version_id=version_id,
+        state="Entrenar",
+        protected=True,
+        final_c=True,
+        updated_by_user_id=self.user_id
+    )
+```
+
+#### 25.6.3. Menú Contextual Condicional
+
+```python
+# Línea 1757
+# SECCIÓN VERSIÓN: Abrir / Bloquear / Entrenar
+# REGLA: Ocultar opciones cuando estado = "Entrenar" o "Final"
+rx.cond(
+    item.depth == 1,
+    rx.fragment(
+        # Abrir - Solo si NO está en Entrenar/Final
+        rx.cond(
+            ~item.version_state_label.contains("Entrenamiento") &
+            ~item.version_state_label.contains("Final"),
+            rx.context_menu.item(
+                rx.hstack(rx.icon(tag="folder-open"), rx.text("Abrir")),
+                on_click=lambda: ExploradorState.abrir_version(item)
+            )
+        ),
+        # Bloquear - Solo si NO está en Entrenar/Final
+        rx.cond(
+            ~item.version_state_label.contains("Entrenamiento") &
+            ~item.version_state_label.contains("Final"),
+            rx.context_menu.item(
+                rx.hstack(rx.icon(tag="lock"), rx.text("Bloquear")),
+                on_click=lambda: ExploradorState.bloquear_version(item)
+            )
+        ),
+        # Entrenar - Solo si NO está en Entrenar/Final
+        rx.cond(
+            ~item.version_state_label.contains("Entrenamiento") &
+            ~item.version_state_label.contains("Final"),
+            rx.context_menu.item(
+                rx.hstack(rx.icon(tag="graduation-cap"), rx.text("Entrenar")),
+                on_click=lambda: ExploradorState.entrenar_version(item)
+            )
+        )
+    )
+)
+```
+
+### 25.7. Implementación en Backoffice
+
+**Archivo**: `src/apps/6_web_backoffice/components/explorador.py`
+
+#### 25.7.1. Estados Disponibles
+
+```python
+# Línea 152
+@rx.var
+def available_status_options(self) -> list[str]:
+    """Backoffice: Abierta, Bloqueada, Entrenar, Final."""
+    return ["Abierta", "Bloqueada", "Entrenar", "Final"]
+```
+
+#### 25.7.2. Métodos Adicionales
+
+```python
+# Línea 603 (RENOMBRADO de proteger_version)
+def entrenar_version(self, item_or_id):
+    """Cambia estado a Entrenar."""
+    update_version_state(
+        project_id=self.id_proyecto,
+        version_id=int(version_key.replace("v", "")),
+        state="Entrenar",
+        protected=True,
+        final_c=True
+    )
+
+# Línea 645
+def finalizar_version(self, item_or_id):
+    """Cambia estado a Final (protected=True, final_c=True, final_i=True).
+
+    DISPARA TRIGGER: entrenamiento_inicial_solicitado=1
+    """
+    update_version_state(
+        project_id=self.id_proyecto,
+        version_id=int(version_key.replace("v", "")),
+        state="Final",
+        protected=True,
+        final_c=True,
+        final_i=True  # SOLO backoffice puede activar
+    )
+```
+
+#### 25.7.3. Menú Contextual (Todas las opciones visibles)
+
+```python
+# Línea 1450
+rx.context_menu.item(
+    rx.hstack(rx.icon(tag="folder-open"), rx.text("Abrir")),
+    on_click=lambda id=item_id: ExploradorState.abrir_version(id)
+),
+rx.context_menu.item(
+    rx.hstack(rx.icon(tag="lock"), rx.text("Bloquear")),
+    on_click=lambda id=item_id: ExploradorState.bloquear_version(id)
+),
+rx.context_menu.item(
+    rx.hstack(rx.icon(tag="graduation-cap"), rx.text("Entrenar")),
+    on_click=lambda id=item_id: ExploradorState.entrenar_version(id)
+),
+rx.context_menu.item(
+    rx.hstack(rx.icon(tag="check-circle"), rx.text("Finalizar")),
+    on_click=lambda id=item_id: ExploradorState.finalizar_version(id)
+)
+```
+
+### 25.8. API Backend Core
+
+**Archivo**: `src/apps/3_backend/routercore.py`
+
+#### 25.8.1. Método de Actualización
+
+```python
+# Línea 2852
+def update_version_state(
+    self,
+    project_id: int,
+    version_id: int,
+    org_id: int,
+    update_data: dict[str, Any],
+) -> dict[str, Any]:
+    """Actualiza estado de versión y registra cambio."""
+
+    # 1. Construir UPDATE dinámico
+    update_fields = []
+    if "state" in update_data:
+        update_fields.append("state = :state")
+    if "protected" in update_data:
+        update_fields.append("protected = :protected")
+    if "final_c" in update_data:
+        update_fields.append("final_c = :final_c")
+    if "final_i" in update_data:
+        update_fields.append("final_i = :final_i")
+
+    # 2. Ejecutar UPDATE
+    conn.execute(text(f"UPDATE version_states SET {', '.join(update_fields)}..."))
+
+    # 3. Registrar en tabla cambios (AUTOMÁTICO)
+    if "state" in update_data:
+        state_mapping = {
+            "Abierta": ("Abrir", "Versión v{version:03d} del proyecto '{project}' abierta para edición"),
+            "Bloqueada": ("Bloquear", "Versión v{version:03d} del proyecto '{project}' bloqueada"),
+            "Entrenar": ("Entrenar", "Cliente solicita entrenamiento para v{version:03d}..."),
+            "Final": ("Finalizar", "Versión v{version:03d} del proyecto '{project}' lista para entrenar")
+        }
+        tipo, descripcion = state_mapping[update_data["state"]]
+        conn.execute(text("""
+            INSERT INTO cambios (id_organizacion, id_proyecto, id_version, fecha_cambio, tipo_cambio, descripcion)
+            VALUES (:org_id, :project_id, :version_db_id, CURDATE(), :tipo, :descripcion)
+        """))
+
+    return self.get_version_state(project_id, version_id, org_id)
+```
+
+### 25.9. Reglas de Negocio
+
+**Regla #46**: Estados terminales para el cliente
+
+- Cliente NO puede cambiar estado desde "Entrenar" o "Final"
+- Debe contactar a backoffice por:
+  - Sistema de notificaciones (componente existente)
+  - Tickets de soporte (botón "Solicitud de soporte" en Organizacion)
+- Backoffice puede revertir cualquier estado
+
+**Regla #47**: Registro automático de cambios
+
+- TODOS los cambios de estado se registran en tabla `cambios`
+- Descripción incluye proyecto y versión para contexto
+- Visible en Calendario para cliente y backoffice
+- Auditoría completa sin código adicional del desarrollador
+
+**Regla #48**: Trigger de entrenamiento
+
+- Se activa SOLO cuando `final_c=1 AND final_i=1`
+- `final_i` SOLO puede ser activado por backoffice
+- Cliente activa `final_c` con estado "Entrenar"
+- Backoffice confirma con `final_i` en estado "Final"
+
+**Regla #49**: Protección automática
+
+- Cuando `protected=true`, versión es solo lectura
+- Contenido recursivo bloqueado (archivos y carpetas)
+- Carpeta de versión misma NO bloqueada (permite menú)
+- Feedback visual: opacidad 0.5, sin menús contextuales
+
+**Regla #50**: Compatibilidad con estado "Protegida"
+
+- Estado "Protegida" DEPRECADO pero mantenido
+- Alias de "Entrenar" para compatibilidad
+- Código nuevo debe usar "Entrenar"
+- Base de datos acepta ambos nombres
+
+### 25.10. Testing
+
+#### 25.10.1. Tests Unitarios
+
+```python
+# tests/frontend/test_explorador_estados.py
+
+def test_entrenar_version_updates_state():
+    """Verifica que entrenar_version actualiza correctamente."""
+    state = ExploradorState()
+    item = FolderItem(name="v001", depth=1)
+
+    state.entrenar_version(item)
+
+    assert state.version_states["v001"]["state"] == "Entrenar"
+    assert state.version_states["v001"]["protected"] is True
+    assert state.version_states["v001"]["final_c"] is True
+```
+
+#### 25.10.2. Tests de Integración
+
+```python
+# tests/integration/test_version_state_flow.py
+
+def test_full_client_flow():
+    """Test flujo completo: Abierta → Entrenar → Backoffice Finaliza."""
+    # 1. Cliente: Abrir versión
+    response = client.patch("/version-state", json={"state": "Abierta"})
+    assert response.json()["state"]["protected"] is False
+
+    # 2. Cliente: Solicitar entrenamiento
+    response = client.patch("/version-state", json={"state": "Entrenar"})
+    assert response.json()["state"]["final_c"] is True
+
+    # 3. Backoffice: Finalizar
+    response = admin_client.patch("/version-state", json={"state": "Final"})
+    assert response.json()["state"]["final_i"] is True
+
+    # 4. Verificar trigger ejecutado
+    db_state = query_db("SELECT entrenamiento_inicial_solicitado FROM version_states...")
+    assert db_state["entrenamiento_inicial_solicitado"] is True
+
+    # 5. Verificar registro en cambios
+    cambios = query_db("SELECT * FROM cambios WHERE tipo_cambio='Finalizar'...")
+    assert len(cambios) == 1
+    assert "lista para entrenar" in cambios[0]["descripcion"]
+```
+
+### 25.11. Archivos Críticos
+
+| Archivo | Líneas | Propósito |
+|---------|--------|-----------|
+| `src/apps/5_web_frontend/components/explorador.py` | 631-686 | Método `entrenar_version()` frontend |
+| `src/apps/6_web_backoffice/components/explorador.py` | 603-655 | Métodos `entrenar_version()` y `finalizar_version()` |
+| `src/apps/3_backend/routercore.py` | 2852-3050 | Método `update_version_state()` con registro automático |
+| `infrastructure/database/migrations/009_estado_triggers.sql` | 50-75 | Trigger `trg_estado_version_auto_entrenamiento` |
+| `README.md` | 2535-2580 | Documentación de estados de versiones |
+
+### 25.12. Debugging Checklist
+
+Cuando depurar problemas con estados de versiones:
+
+1. [ ] Verificar que estado se refleja en DB: `SELECT state, protected, final_c, final_i FROM version_states WHERE id_proyecto=X AND id_version=Y`
+2. [ ] Verificar trigger activo: `SHOW TRIGGERS FROM myllm_projects_db LIKE 'trg_estado_version_auto_entrenamiento'`
+3. [ ] Verificar registro en cambios: `SELECT * FROM cambios WHERE id_proyecto=X AND id_version=Y ORDER BY fecha_cambio DESC`
+4. [ ] Revisar logs backend: `grep "Actualizando estado versión" /data/backend_core/logs/`
+5. [ ] Verificar permisos usuario: `identity_type_id` en sesión
+6. [ ] Comprobar menú contextual renderizado: Inspeccionar condiciones `rx.cond()` en navegador
+
+### 25.13. Common Pitfalls
+
+**❌ INCORRECTO**:
+```python
+# Activar final_i desde frontend (PROHIBIDO)
+update_version_state(state="Final", final_i=True)  # Frontend NO puede
+```
+
+**✅ CORRECTO**:
+```python
+# Frontend solo puede activar final_c
+update_version_state(state="Entrenar", final_c=True)
+
+# Solo Backoffice puede activar final_i
+update_version_state(state="Final", final_c=True, final_i=True)  # Solo backoffice
+```
+
+---
+
+**❌ INCORRECTO**:
+```python
+# Cambiar estado sin registrar en cambios
+UPDATE version_states SET state='Entrenar' WHERE id=1;
+```
+
+**✅ CORRECTO**:
+```python
+# Usar método que registra automáticamente
+router.update_version_state(project_id, version_id, org_id, {"state": "Entrenar"})
+```
+
+---
+
+**❌ INCORRECTO**:
+```python
+# Mostrar siempre todas las opciones en frontend
+rx.context_menu.item("Entrenar", on_click=entrenar)  # Sin condición
+```
+
+**✅ CORRECTO**:
+```python
+# Ocultar opciones en estados terminales
+rx.cond(
+    ~item.version_state_label.contains("Entrenamiento") &
+    ~item.version_state_label.contains("Final"),
+    rx.context_menu.item("Entrenar", on_click=entrenar)
+)
+```
+
+### 25.14. Documentación Relacionada
+
+- **README.md**: Sección "Estados de Versiones" (línea 2535) - Tabla de estados y flujos
+- **AGENTS.md**: Sección 24 "Estado de Proyectos" - Sistema DDD relacionado
+- **Migraciones DB**:
+  - `008_estado_version_extension.sql` - Schema de version_states
+  - `009_estado_triggers.sql` - Triggers automáticos
+
+---
+
+**⚠️ ADVERTENCIA**: Los estados de versiones controlan el acceso al sistema de entrenamiento de modelos LLM. Cambios incorrectos pueden:
+- Bloquear acceso del cliente a versiones en producción
+- Disparar entrenamientos costosos no autorizados
+- Romper auditoría de cambios en calendario
+- Corromper sincronización de estados entre tablas
+
+**Antes de modificar**:
+1. Revisar tabla de estados y transiciones permitidas
+2. Verificar que registro en `cambios` funciona correctamente
+3. Comprobar que trigger de entrenamiento no se dispara prematuramente
+4. Validar permisos frontend vs backoffice
+5. Crear tests que cubran el nuevo caso
+

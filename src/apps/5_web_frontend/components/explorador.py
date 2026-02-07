@@ -442,8 +442,9 @@ class ExploradorState(rx.State):
         state_labels = {
             "Abierta": ("(Abierta)", "#228B22"),  # Verde bosque
             "Bloqueada": ("(Bloqueada)", "#FF8C00"),  # Naranja oscuro
-            "Protegida": ("(Entrenamiento Solicitado)", "#00008B"),  # Azul oscuro
-            "Final": ("(Versión Final)", "#8B0000"),  # Rojo oscuro
+            "Protegida": ("(Entrenamiento solicitado)", "#00008B"),  # Azul oscuro - DEPRECADO mantener compatibilidad
+            "Entrenar": ("(Entrenamiento solicitado)", "#00008B"),  # Azul oscuro - NUEVO estado principal
+            "Final": ("(Final)", "#8B0000"),  # Rojo oscuro
         }
         
         for item in self.items:
@@ -625,6 +626,58 @@ class ExploradorState(rx.State):
 
         except Exception as e:
             logger.error(f"Excepción al bloquear versión: {e}")
+            return rx.toast.error(f"Error al guardar cambios")
+
+    def entrenar_version(self, item: FolderItem):
+        """Cambia el estado de una versión a 'Entrenar' (protected=True, final_c=True) y persiste en BD.
+
+        Este es el estado final del flujo del cliente:
+        - El cliente solicita que la versión entre en entrenamiento
+        - Se protege la versión (solo lectura)
+        - Se marca final_c=True para indicar que el cliente ha finalizado su parte
+        - El estado es terminal para el cliente (no puede cambiarlo)
+        - Solo el backoffice puede cambiar el estado después de esto
+        """
+        version_key = item.name  # ej: "v001"
+
+        # Extraer version_id numérico del version_key
+        try:
+            version_id = int(version_key.lstrip('v'))
+        except ValueError:
+            logger.error(f"No se pudo extraer version_id de {version_key}")
+            return rx.toast.error(f"Error: formato de versión inválido")
+
+        # Actualizar en memoria
+        if version_key in self.version_states:
+            self.version_states[version_key]["state"] = "Entrenar"
+            self.version_states[version_key]["protected"] = True
+            self.version_states[version_key]["final_c"] = True
+            logger.info(f"Versión {version_key} cambiada a Entrenar en memoria")
+
+        # Persistir en base de datos
+        try:
+            response = update_version_state(
+                project_id=self.id_proyecto,
+                version_id=version_id,
+                state="Entrenar",
+                protected=True,
+                final_c=True,
+                updated_by_user_id=self.user_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if response.get("success"):
+                logger.info(f"Versión {version_key} persistida como Entrenar en BD")
+                self.interpretacion_estados()
+                return rx.toast.success(f"Entrenamiento solicitado para versión {version_key}")
+            else:
+                error_msg = response.get("mensaje", "Error desconocido")
+                logger.error(f"Error al persistir estado: {error_msg}")
+                return rx.toast.error(f"Error al guardar: {error_msg}")
+
+        except Exception as e:
+            logger.error(f"Excepción al solicitar entrenamiento: {e}")
             return rx.toast.error(f"Error al guardar cambios")
 
     def iniciar_subida_archivo(self, item: FolderItem):
@@ -1701,19 +1754,40 @@ def render_item_with_context_menu(item: FolderItem):
                 as_child=True,
             ),
             rx.context_menu.content(
-                # SECCIÓN VERSIÓN: Abrir / Bloquear (solo para depth == 1)
+                # SECCIÓN VERSIÓN: Abrir / Bloquear / Entrenar (solo para depth == 1)
+                # REGLA: Ocultar opciones cuando is_final_c=True (cliente solicitó entrenamiento)
                 rx.cond(
                     item.depth == 1,
                     rx.fragment(
-                        rx.context_menu.item(
-                            rx.hstack(rx.icon(tag="folder-open", size=16), rx.text("Abrir"), spacing="2"),
-                            on_click=lambda: ExploradorState.abrir_version(item),
+                        # Abrir - Solo si NO ha solicitado entrenamiento (final_c=False)
+                        rx.cond(
+                            ~item.is_final_c,
+                            rx.context_menu.item(
+                                rx.hstack(rx.icon(tag="folder-open", size=16), rx.text("Abrir"), spacing="2"),
+                                on_click=lambda: ExploradorState.abrir_version(item),
+                            ),
                         ),
-                        rx.context_menu.item(
-                            rx.hstack(rx.icon(tag="lock", size=16), rx.text("Bloquear"), spacing="2"),
-                            on_click=lambda: ExploradorState.bloquear_version(item),
+                        # Bloquear - Solo si NO ha solicitado entrenamiento (final_c=False)
+                        rx.cond(
+                            ~item.is_final_c,
+                            rx.context_menu.item(
+                                rx.hstack(rx.icon(tag="lock", size=16), rx.text("Bloquear"), spacing="2"),
+                                on_click=lambda: ExploradorState.bloquear_version(item),
+                            ),
                         ),
-                        rx.context_menu.separator(),
+                        # Entrenar - Solo si NO ha solicitado entrenamiento (final_c=False)
+                        rx.cond(
+                            ~item.is_final_c,
+                            rx.context_menu.item(
+                                rx.hstack(rx.icon(tag="graduation-cap", size=16), rx.text("Entrenar"), spacing="2"),
+                                on_click=lambda: ExploradorState.entrenar_version(item),
+                            ),
+                        ),
+                        # Separador - Solo si hay opciones visibles
+                        rx.cond(
+                            ~item.is_final_c,
+                            rx.context_menu.separator(),
+                        ),
                     )
                 ),
                 # SECCIÓN ESTÁNDAR CARPETA

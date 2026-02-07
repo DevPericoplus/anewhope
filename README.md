@@ -2532,9 +2532,49 @@ CREATE TABLE versiones (
 );
 ```
 
-**version_states**: Guarda el estado de cada versión (Abierta, Bloqueada, Protegida, Final).
+**version_states**: Guarda el estado de cada versión con gestión de ciclo de vida completo.
 
-**version_events**: Auditoría de eventos (VERSION_CREADA, VERSION_BLOQUEADA, etc.).
+#### Estados de Versiones
+
+El sistema gestiona 4 estados de versiones con flujos diferenciados para cliente y backoffice:
+
+| Estado | Descripción | Campos DB | Reversible | Visible en |
+|--------|-------------|-----------|------------|------------|
+| **Abierta** | Versión en desarrollo activo | `state="Abierta"`, `protected=false`, `final_c=false`, `final_i=false` | Sí | Frontend + Backoffice |
+| **Bloqueada** | Versión temporalmente bloqueada | `state="Bloqueada"`, `protected=true`, `final_c=false`, `final_i=false` | Sí | Frontend + Backoffice |
+| **Entrenar** | Cliente solicita entrenamiento | `state="Entrenar"`, `protected=true`, `final_c=true`, `final_i=false` | Solo Backoffice | Frontend (terminal) + Backoffice |
+| **Final** | Versión lista para entrenamiento | `state="Final"`, `protected=true`, `final_c=true`, `final_i=true` | Solo Backoffice | Frontend + Backoffice |
+
+**Flujo de Estados - Frontend (Cliente):**
+```
+Abierta ⟷ Bloqueada → Entrenar (TERMINAL)
+                       ↓
+                   (Solo Backoffice puede cambiar)
+```
+
+**Flujo de Estados - Backoffice (Usuario Interno):**
+```
+Abierta ⟷ Bloqueada ⟷ Entrenar ⟷ Final
+(Puede cambiar entre TODOS los estados)
+```
+
+**Trigger Automático:**
+Cuando una versión alcanza el estado "Final" (`final_c=1 AND final_i=1`), el trigger `trg_estado_version_auto_entrenamiento` activa automáticamente:
+```sql
+entrenamiento_inicial_solicitado = true
+```
+Esto añade la versión a la cola de entrenamiento del sistema.
+
+**Registro de Cambios:**
+Todos los cambios de estado se registran automáticamente en la tabla `cambios` con formato:
+```
+tipo_cambio: "Entrenar" | "Finalizar" | "Abrir" | "Bloquear"
+descripcion: "Versión v001 del proyecto 'Mi Proyecto' [acción]"
+fecha_cambio: CURDATE()
+```
+Estos registros son visibles en el componente Calendario para clientes y backoffice.
+
+**version_events**: Auditoría de eventos técnicos (VERSION_CREADA, VERSION_CLONADA, etc.).
 
 #### Testing
 

@@ -2944,6 +2944,92 @@ class BackendCoreRouter:
                 "[backend-core] Estado actualizado correctamente"
             )
 
+            # Registrar cambio en tabla cambios con información de proyecto y versión
+            if "state" in update_data:
+                new_state = update_data["state"]
+
+                # Obtener nombre del proyecto
+                project_name_query = text("""
+                    SELECT nombre FROM proyectos
+                    WHERE id_proyecto = :project_id AND id_organizacion = :org_id
+                """)
+                project_result = conn.execute(
+                    project_name_query,
+                    {"project_id": project_id, "org_id": org_id}
+                ).fetchone()
+                project_name = project_result[0] if project_result else f"Proyecto {project_id}"
+
+                # Mapear estados a tipos y descripciones
+                state_mapping = {
+                    "Abierta": {
+                        "tipo": "Abrir",
+                        "descripcion": f"Versión v{version_id:03d} del proyecto '{project_name}' abierta para edición"
+                    },
+                    "Bloqueada": {
+                        "tipo": "Bloquear",
+                        "descripcion": f"Versión v{version_id:03d} del proyecto '{project_name}' bloqueada temporalmente"
+                    },
+                    "Entrenar": {
+                        "tipo": "Entrenar",
+                        "descripcion": f"El cliente solicita entrenamiento para versión v{version_id:03d} del proyecto '{project_name}'"
+                    },
+                    "Final": {
+                        "tipo": "Finalizar",
+                        "descripcion": f"Versión v{version_id:03d} del proyecto '{project_name}' lista para entrenar"
+                    }
+                }
+
+                cambio_info = state_mapping.get(new_state, {
+                    "tipo": "Cambio de Estado",
+                    "descripcion": f"Estado de versión v{version_id:03d} del proyecto '{project_name}' cambiado a {new_state}"
+                })
+
+                # Obtener id de la versión en tabla versiones (no el número de versión)
+                version_db_id_query = text("""
+                    SELECT id FROM versiones
+                    WHERE id_proyecto = :project_id
+                      AND id_version = :version_id
+                      AND id_organizacion = :org_id
+                """)
+                version_db_result = conn.execute(
+                    version_db_id_query,
+                    {"project_id": project_id, "version_id": version_id, "org_id": org_id}
+                ).fetchone()
+                version_db_id = version_db_result[0] if version_db_result else None
+
+                if version_db_id:
+                    # Insertar registro en tabla cambios
+                    insert_cambio_query = text("""
+                        INSERT INTO cambios (
+                            id_organizacion, id_proyecto, id_version,
+                            fecha_cambio, tipo_cambio, descripcion
+                        ) VALUES (
+                            :org_id, :project_id, :version_db_id,
+                            CURDATE(),
+                            :tipo_cambio,
+                            :descripcion
+                        )
+                    """)
+                    conn.execute(insert_cambio_query, {
+                        "org_id": org_id,
+                        "project_id": project_id,
+                        "version_db_id": version_db_id,
+                        "tipo_cambio": cambio_info["tipo"],
+                        "descripcion": cambio_info["descripcion"]
+                    })
+                    conn.commit()
+
+                    self._logger.info(
+                        "[backend-core] Cambio registrado: tipo=%s proyecto=%s versión=%s",
+                        cambio_info["tipo"],
+                        project_name,
+                        f"v{version_id:03d}"
+                    )
+                else:
+                    self._logger.warning(
+                        "[backend-core] No se encontró version_db_id para registrar cambio"
+                    )
+
         # Retornar el estado actualizado
         return self.get_version_state(project_id, version_id, org_id)
 

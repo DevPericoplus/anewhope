@@ -152,9 +152,10 @@ class ExploradorState(SharedSessionState):
     def available_status_options(self) -> list[str]:
         """Opciones de estado disponibles en Backoffice.
 
-        Backoffice: Abierta, Bloqueada, Protegida, Final.
+        Backoffice: Abierta, Bloqueada, Entrenar, Final.
+        Nota: "Protegida" deprecado, usar "Entrenar".
         """
-        return ["Abierta", "Bloqueada", "Protegida", "Final"]
+        return ["Abierta", "Bloqueada", "Entrenar", "Final"]
 
     @rx.var
     def can_change_state(self) -> bool:
@@ -599,8 +600,12 @@ class ExploradorState(SharedSessionState):
             logger.exception("Error bloqueando versión: %s", e)
             return rx.toast.error(f"Error al bloquear versión: {str(e)}")
 
-    def proteger_version(self, item_or_id):
-        """Cambia el estado de una versión a 'Protegida' (protected=True, final_c=True)."""
+    def entrenar_version(self, item_or_id):
+        """Cambia el estado de una versión a 'Entrenar' (protected=True, final_c=True).
+
+        Este método reemplaza a proteger_version() con la nueva nomenclatura.
+        Estado "Entrenar" indica que el cliente ha solicitado entrenamiento.
+        """
         # Obtener el item si es un ID
         if isinstance(item_or_id, str):
             item = next((i for i in self.items if i.id == item_or_id), None)
@@ -617,7 +622,7 @@ class ExploradorState(SharedSessionState):
             result = update_version_state(
                 project_id=self.id_proyecto,
                 version_id=int(version_key.replace("v", "")),
-                state="Protegida",
+                state="Entrenar",
                 protected=True,
                 final_c=True,
                 access_token=self.access_token,
@@ -627,19 +632,26 @@ class ExploradorState(SharedSessionState):
             if result.get("success"):
                 # Actualizar estado local
                 if version_key in self.version_states:
-                    self.version_states[version_key]["state"] = "Protegida"
+                    self.version_states[version_key]["state"] = "Entrenar"
                     self.version_states[version_key]["protected"] = True
                     self.version_states[version_key]["final_c"] = True
 
                 self.interpretacion_estados()
                 yield
-                return rx.toast.success(f"Versión {version_key} protegida")
+                return rx.toast.success(f"Entrenamiento solicitado para versión {version_key}")
             else:
                 return rx.toast.error(f"Error: {result.get('message', 'Error desconocido')}")
 
         except Exception as e:
-            logger.exception("Error protegiendo versión: %s", e)
-            return rx.toast.error(f"Error al proteger versión: {str(e)}")
+            logger.exception("Error solicitando entrenamiento: %s", e)
+            return rx.toast.error(f"Error al solicitar entrenamiento: {str(e)}")
+
+    def proteger_version(self, item_or_id):
+        """DEPRECADO: Usar entrenar_version() en su lugar.
+
+        Mantenido por compatibilidad con código legacy.
+        """
+        return self.entrenar_version(item_or_id)
 
     def finalizar_version(self, item_or_id):
         """Cambia el estado de una versión a 'Final' (protected=True, final_c=True, final_i=True)."""
@@ -1445,8 +1457,8 @@ def create_folder_menu_items(item_obj: FolderItem):
                     on_click=lambda id=item_id: ExploradorState.bloquear_version(id),
                 ),
                 rx.context_menu.item(
-                    rx.hstack(rx.icon(tag="shield", size=16), rx.text("Proteger"), spacing="2"),
-                    on_click=lambda id=item_id: ExploradorState.proteger_version(id),
+                    rx.hstack(rx.icon(tag="graduation-cap", size=16), rx.text("Entrenar"), spacing="2"),
+                    on_click=lambda id=item_id: ExploradorState.entrenar_version(id),
                 ),
                 rx.context_menu.item(
                     rx.hstack(rx.icon(tag="check-circle", size=16), rx.text("Finalizar"), spacing="2"),
