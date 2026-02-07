@@ -31,6 +31,7 @@ _router_path = Path(__file__).resolve().parent / "routercore.py"
 _routercore = _load_backend_module("routercore_backend", _router_path)
 
 BackendCoreBusinessError = _routercore.BackendCoreBusinessError
+BackendCorePermissionError = _routercore.BackendCorePermissionError
 BackendCoreRouter = _routercore.BackendCoreRouter
 BasicPermissionDto = _routercore.BasicPermissionDto
 JsonMockStorageAdapter = _routercore.JsonMockStorageAdapter
@@ -38,6 +39,18 @@ ManageRoleByOrgDto = _routercore.ManageRoleByOrgDto
 OrganizationDto = _routercore.OrganizationDto
 RoleDto = _routercore.RoleDto
 UserDto = _routercore.UserDto
+
+# Cargar assignments DTOs
+_assignments_dtos_path = Path(__file__).resolve().parents[2] / "2_shared_application" / "dtos" / "assignments_dtos.py"
+_assignments_dtos = _load_backend_module("assignments_dtos_backend", _assignments_dtos_path)
+
+InternalUserDto = _assignments_dtos.InternalUserDto
+OrganizationAssignmentDto = _assignments_dtos.OrganizationAssignmentDto
+ProjectAssignmentDto = _assignments_dtos.ProjectAssignmentDto
+CreateOrgAssignmentDto = _assignments_dtos.CreateOrgAssignmentDto
+CreateProjectAssignmentDto = _assignments_dtos.CreateProjectAssignmentDto
+UpdateAssignmentDto = _assignments_dtos.UpdateAssignmentDto
+PrerequisiteValidationDto = _assignments_dtos.PrerequisiteValidationDto
 
 # Cargar fmanagement_client
 _infra_path = Path(__file__).resolve().parent / "4_infrastructure"
@@ -2445,3 +2458,257 @@ def fmanagement_operation(
         return FmanagementOperationResponse(**result)
     except BackendCoreBusinessError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ============================================================================
+# ASSIGNMENTS - Gestor de asignaciones (SuperAdmin only)
+# ============================================================================
+
+@app.get("/assignments/internal-users", response_model=list[InternalUserDto])
+def get_internal_users_endpoint(
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> list[InternalUserDto]:
+    """Gets internal users for assignment selectors."""
+    try:
+        users = router.get_internal_users()
+        return [InternalUserDto(**user) for user in users]
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get(
+    "/assignments/organizations/{organization_id}",
+    response_model=list[OrganizationAssignmentDto],
+)
+def get_organization_assignments_endpoint(
+    organization_id: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> list[OrganizationAssignmentDto]:
+    """Gets organization assignments."""
+    try:
+        assignments = router.get_organization_assignments(
+            organization_id, identity_type_id
+        )
+        return [OrganizationAssignmentDto(**a) for a in assignments]
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        import traceback
+        error_detail = f"{type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}"
+        print(f"[ERROR] get_organization_assignments: {error_detail}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error: {type(exc).__name__}: {str(exc)}",
+        ) from exc
+
+
+@app.post("/assignments/organizations")
+def create_organization_assignment_endpoint(
+    payload: CreateOrgAssignmentDto,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Creates organization assignment."""
+    try:
+        return router.create_organization_assignment(
+            user_id=payload.user_id,
+            organization_id=payload.organization_id,
+            role_id=payload.role_id,
+            identity_type_id=identity_type_id,
+        )
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/assignments/organizations/{assignment_id}")
+def update_organization_assignment_endpoint(
+    assignment_id: int,
+    payload: UpdateAssignmentDto,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Updates organization assignment active status."""
+    try:
+        return router.update_organization_assignment(
+            assignment_id=assignment_id,
+            active=payload.active,
+            identity_type_id=identity_type_id,
+        )
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.delete("/assignments/organizations/{assignment_id}")
+def delete_organization_assignment_endpoint(
+    assignment_id: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Deletes organization assignment permanently."""
+    try:
+        return router.delete_organization_assignment(
+            assignment_id=assignment_id,
+            identity_type_id=identity_type_id,
+        )
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get(
+    "/assignments/validate-org-prerequisite",
+    response_model=PrerequisiteValidationDto,
+)
+def validate_org_prerequisite_endpoint(
+    user_id: int,
+    organization_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> PrerequisiteValidationDto:
+    """Validates if user has active org role (prerequisite)."""
+    try:
+        result = router.validate_org_prerequisite(user_id, organization_id)
+        return PrerequisiteValidationDto(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get(
+    "/assignments/projects/{project_id}",
+    response_model=list[ProjectAssignmentDto],
+)
+def get_project_assignments_endpoint(
+    project_id: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> list[ProjectAssignmentDto]:
+    """Gets project assignments."""
+    try:
+        assignments = router.get_project_assignments(
+            project_id, identity_type_id
+        )
+        return [ProjectAssignmentDto(**a) for a in assignments]
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/assignments/projects")
+def create_project_assignment_endpoint(
+    payload: CreateProjectAssignmentDto,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Creates project assignment (with prerequisite validation)."""
+    try:
+        return router.create_project_assignment(
+            user_id=payload.user_id,
+            organization_id=payload.organization_id,
+            project_id=payload.project_id,
+            role_id=payload.role_id,
+            identity_type_id=identity_type_id,
+        )
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/assignments/projects/{assignment_id}")
+def update_project_assignment_endpoint(
+    assignment_id: int,
+    payload: UpdateAssignmentDto,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Updates project assignment active status."""
+    try:
+        return router.update_project_assignment(
+            assignment_id=assignment_id,
+            active=payload.active,
+            identity_type_id=identity_type_id,
+        )
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.delete("/assignments/projects/{assignment_id}")
+def delete_project_assignment_endpoint(
+    assignment_id: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Deletes project assignment permanently."""
+    try:
+        return router.delete_project_assignment(
+            assignment_id=assignment_id,
+            identity_type_id=identity_type_id,
+        )
+    except BackendCorePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc

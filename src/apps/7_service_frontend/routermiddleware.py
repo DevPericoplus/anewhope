@@ -3917,3 +3917,161 @@ class RouterMiddleware:
             return self._broker_client.fmanagement_transfer(request_data)
         except BrokerBackendCommunicationError as exc:
             raise BusinessRuleError(f"Error transfiriendo versión: {exc}") from exc
+
+    # ========================================================================
+    # ASSIGNMENTS MANAGER - Gestor de asignaciones
+    # ========================================================================
+
+    def list_organizations(self, session: SessionContext) -> list[dict[str, Any]]:
+        """Lista todas las organizaciones."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.list_organizations()
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("No se pudo obtener organizaciones") from exc
+
+    def list_roles(self, session: SessionContext) -> list[dict[str, Any]]:
+        """Lista todos los roles."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.list_roles()
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("No se pudo obtener roles") from exc
+
+    def get_internal_users(self, session: SessionContext) -> list[dict[str, Any]]:
+        """Gets internal users."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.get_internal_users()
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("No se pudo obtener usuarios internos") from exc
+
+    def get_organization_assignments(
+        self, organization_id: int, session: SessionContext
+    ) -> list[dict[str, Any]]:
+        """Gets organization assignments."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.get_organization_assignments(
+                organization_id, session.identity_type_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("No se pudo obtener asignaciones") from exc
+
+    def create_organization_assignment(
+        self,
+        user_id: int,
+        organization_id: int,
+        role_id: int,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Creates organization assignment."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.create_organization_assignment(
+                user_id, organization_id, role_id, session.identity_type_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("No se pudo crear asignación") from exc
+
+    def update_organization_assignment(
+        self,
+        assignment_id: int,
+        active: bool,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Updates organization assignment."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.update_organization_assignment(
+                assignment_id, active, session.identity_type_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("No se pudo actualizar asignación") from exc
+
+    def delete_organization_assignment(
+        self,
+        assignment_id: int,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Deletes organization assignment."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.delete_organization_assignment(
+                assignment_id, session.identity_type_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("No se pudo eliminar asignación") from exc
+
+    def validate_org_prerequisite(
+        self,
+        user_id: int,
+        organization_id: int,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Validates org prerequisite."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.validate_org_prerequisite(
+                user_id, organization_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("No se pudo validar prerequisito") from exc
+
+    def get_project_assignments(
+        self, project_id: int, session: SessionContext
+    ) -> list[dict[str, Any]]:
+        """Gets project assignments."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.get_project_assignments(
+                project_id, session.identity_type_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("No se pudo obtener asignaciones de proyecto") from exc
+
+    def create_project_assignment(
+        self,
+        user_id: int,
+        organization_id: int,
+        project_id: int,
+        role_id: int,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Creates project assignment."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.create_project_assignment(
+                user_id, organization_id, project_id, role_id, session.identity_type_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("No se pudo crear asignación de proyecto") from exc
+
+    def update_project_assignment(
+        self,
+        assignment_id: int,
+        active: bool,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Updates project assignment."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.update_project_assignment(
+                assignment_id, active, session.identity_type_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("No se pudo actualizar asignación de proyecto") from exc
+
+    def delete_project_assignment(
+        self,
+        assignment_id: int,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Deletes project assignment."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.delete_project_assignment(
+                assignment_id, session.identity_type_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError("No se pudo eliminar asignación de proyecto") from exc

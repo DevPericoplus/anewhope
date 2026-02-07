@@ -1,0 +1,139 @@
+worker_processes  auto;
+
+events {
+    worker_connections  1024;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+    sendfile      on;
+    keepalive_timeout 65;
+
+    # ============================================================================
+    # CONFIGURACIÓN RECOMENDADA PARA DEV/PRE/PRO
+    # ============================================================================
+    # NOTA: Este archivo debe ser generado dinámicamente según el entorno activo
+    # usando las variables de env.yaml (public_name, private_name)
+    #
+    # Entorno DEV:    public_name=house.loc
+    # Entorno PRE:    public_name=getmyllm.com
+    # Entorno PRO:    public_name=getmyllm.com
+    # ============================================================================
+
+    # Configuración SSL recomendada (si SSL está habilitado)
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # Servidor HTTP (puerto 80)
+    # En producción debería redirigir a HTTPS
+    server {
+        listen 80;
+        server_name {{ PUBLIC_NAME }} *.{{ PUBLIC_NAME }};  # Leer de env.yaml
+
+        # TODO: En pre/pro, descomentar para forzar HTTPS
+        # return 301 https://$host$request_uri;
+
+        # Frontend principal
+        location / {
+            proxy_pass http://web_frontend:8005;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # WebSocket support (CRÍTICO para Reflex)
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_read_timeout 86400;
+        }
+
+        # WebSocket endpoint de Reflex (frontend)
+        location /_event {
+            proxy_pass http://web_frontend:8005;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # WebSocket support
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_read_timeout 86400;
+        }
+
+        # API endpoint de Reflex (frontend)
+        location /api {
+            proxy_pass http://web_frontend:8005;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # Backoffice
+        location /backoffice/ {
+            proxy_pass http://web_backoffice:8006/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # WebSocket support
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_read_timeout 86400;
+        }
+
+        # WebSocket endpoint de Reflex (backoffice)
+        location /backoffice/_event {
+            proxy_pass http://web_backoffice:8006/_event;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # WebSocket support
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_read_timeout 86400;
+        }
+
+        # API endpoint de Reflex (backoffice)
+        location /backoffice/api {
+            proxy_pass http://web_backoffice:8006/api;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+
+    # ============================================================================
+    # Servidor HTTPS (puerto 443) - SOLO PARA PRE/PRO
+    # ============================================================================
+    # Descomentar y configurar cuando se tengan certificados SSL válidos
+    #
+    # server {
+    #     listen 443 ssl;
+    #     server_name {{ PUBLIC_NAME }} *.{{ PUBLIC_NAME }};
+    #
+    #     # Certificados SSL (obtener de Let's Encrypt o similar)
+    #     ssl_certificate /etc/nginx/ssl/{{ PUBLIC_NAME }}.crt;
+    #     ssl_certificate_key /etc/nginx/ssl/{{ PUBLIC_NAME }}.key;
+    #
+    #     # Configuración idéntica a la del bloque HTTP de arriba
+    #     location / {
+    #         proxy_pass http://web_frontend:8005;
+    #         # ... (misma config)
+    #     }
+    #     # ... (resto de locations)
+    # }
+}

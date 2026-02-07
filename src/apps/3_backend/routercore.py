@@ -3561,3 +3561,545 @@ class BackendCoreRouter:
                 "version_folder": None,
                 "fmanagement_result": None,
             }
+
+    # ========================================================================
+    # ASSIGNMENTS MANAGER - Gestor de asignaciones (SuperAdmin only)
+    # ========================================================================
+
+    def _build_dsn(self, settings: dict, database: str) -> str:
+        """Builds MariaDB DSN from settings."""
+        from urllib.parse import quote_plus
+
+        host = settings.get("host", "localhost")
+        port = settings.get("port", 3306)
+        user = settings.get("writer_user", "")
+        password = quote_plus(settings.get("writer_password", ""))
+
+        return f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
+
+    def get_internal_users(self) -> list[dict[str, Any]]:
+        """Gets internal users (training_create=true) for assignment selectors.
+
+        Returns list of users with training permissions who can be assigned
+        to organizations and projects.
+        """
+        from sqlalchemy import create_engine, text
+
+        settings = load_mariadb_settings()
+        database = settings.get("core_database", "myllm_core_db")
+        dsn = self._build_dsn(settings, database)
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT u.user_id, u.user_name, u.user_email
+                    FROM users u
+                    INNER JOIN low_level_permissions llp
+                        ON u.identity_type_id = llp.id_permissions
+                    WHERE llp.training_create = TRUE
+                      AND u.active = TRUE
+                    ORDER BY u.user_name
+                """)
+            )
+            return [
+                {
+                    "user_id": row.user_id,
+                    "user_name": row.user_name,
+                    "user_email": row.user_email,
+                }
+                for row in result
+            ]
+
+    def get_organization_assignments(
+        self, organization_id: int, identity_type_id: int
+    ) -> list[dict[str, Any]]:
+        """Gets all assignments for an organization with user/role names.
+
+        Security: Only SuperAdmin (identity_type_id=1) can access.
+        """
+        if identity_type_id != 1:
+            raise BackendCorePermissionError(
+                "assignments_read", identity_type_id
+            )
+
+        from sqlalchemy import create_engine, text
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT
+                        aoi.id,
+                        aoi.id_usuario_interno,
+                        u.user_name,
+                        aoi.id_organizacion,
+                        o.organization_name,
+                        aoi.id_rol,
+                        COALESCE(r.identity_type_name, 'Unknown') as role_name,
+                        aoi.activo
+                    FROM asignaciones_organizaciones_internas aoi
+                    INNER JOIN myllm_core_db.users u
+                        ON aoi.id_usuario_interno = u.user_id
+                    INNER JOIN myllm_core_db.organizations o
+                        ON aoi.id_organizacion = o.organization_id
+                    INNER JOIN myllm_core_db.roles r
+                        ON aoi.id_rol = r.identity_type_id
+                    WHERE aoi.id_organizacion = :org_id
+                    ORDER BY u.user_name, r.identity_type_name
+                """),
+                {"org_id": organization_id},
+            )
+            return [
+                {
+                    "id": row.id,
+                    "user_id": row.id_usuario_interno,
+                    "user_name": row.user_name,
+                    "organization_id": row.id_organizacion,
+                    "organization_name": row.organization_name,
+                    "role_id": row.id_rol,
+                    "role_name": row.role_name,
+                    "active": bool(row.activo),
+                }
+                for row in result
+            ]
+
+    def create_organization_assignment(
+        self,
+        user_id: int,
+        organization_id: int,
+        role_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Creates organization assignment for internal user.
+
+        Security: Only SuperAdmin can create assignments.
+        Validation: Prevents duplicates.
+        """
+        if identity_type_id != 1:
+            raise BackendCorePermissionError(
+                "assignments_create", identity_type_id
+            )
+
+        from sqlalchemy import create_engine, text
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            # Check for duplicate
+            existing = conn.execute(
+                text("""
+                    SELECT id FROM asignaciones_organizaciones_internas
+                    WHERE id_usuario_interno = :user_id
+                      AND id_organizacion = :org_id
+                """),
+                {"user_id": user_id, "org_id": organization_id},
+            ).fetchone()
+
+            if existing:
+                raise BackendCoreBusinessError(
+                    "El usuario ya tiene una asignación a esta organización"
+                )
+
+            # Insert (asignado_por is set to identity_type_id for now)
+            result = conn.execute(
+                text("""
+                    INSERT INTO asignaciones_organizaciones_internas
+                    (id_usuario_interno, id_organizacion, id_rol, activo, asignado_por)
+                    VALUES (:user_id, :org_id, :role_id, 1, :assigned_by)
+                """),
+                {
+                    "user_id": user_id,
+                    "org_id": organization_id,
+                    "role_id": role_id,
+                    "assigned_by": identity_type_id,
+                },
+            )
+            conn.commit()
+
+            assignment_id = result.lastrowid
+
+            self._logger.info(
+                "[ASSIGNMENTS] Created org assignment: id=%s user=%s org=%s role=%s",
+                assignment_id, user_id, organization_id, role_id,
+            )
+
+            return {
+                "success": True,
+                "assignment_id": assignment_id,
+                "message": "Asignación creada exitosamente",
+            }
+
+    def update_organization_assignment(
+        self,
+        assignment_id: int,
+        active: bool,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates active status of organization assignment (logical deletion).
+
+        Security: Only SuperAdmin can update.
+        """
+        if identity_type_id != 1:
+            raise BackendCorePermissionError(
+                "assignments_update", identity_type_id
+            )
+
+        from sqlalchemy import create_engine, text
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("""
+                    UPDATE asignaciones_organizaciones_internas
+                    SET activo = :active
+                    WHERE id = :assignment_id
+                """),
+                {"active": 1 if active else 0, "assignment_id": assignment_id},
+            )
+            conn.commit()
+
+            if result.rowcount == 0:
+                raise BackendCoreBusinessError("Asignación no encontrada")
+
+            action = "habilitada" if active else "deshabilitada"
+            self._logger.info(
+                "[ASSIGNMENTS] Org assignment %s: id=%s", action, assignment_id
+            )
+
+            return {
+                "success": True,
+                "updated": True,
+                "message": f"Asignación {action}",
+            }
+
+    def delete_organization_assignment(
+        self,
+        assignment_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Permanently deletes organization assignment (physical deletion).
+
+        Security: Only SuperAdmin can delete.
+        Warning: This is irreversible.
+        """
+        if identity_type_id != 1:
+            raise BackendCorePermissionError(
+                "assignments_delete", identity_type_id
+            )
+
+        from sqlalchemy import create_engine, text
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("""
+                    DELETE FROM asignaciones_organizaciones_internas
+                    WHERE id = :assignment_id
+                """),
+                {"assignment_id": assignment_id},
+            )
+            conn.commit()
+
+            if result.rowcount == 0:
+                raise BackendCoreBusinessError("Asignación no encontrada")
+
+            self._logger.warning(
+                "[ASSIGNMENTS] Deleted org assignment: id=%s", assignment_id
+            )
+
+            return {
+                "success": True,
+                "deleted": True,
+                "message": "Asignación eliminada permanentemente",
+            }
+
+    def validate_org_prerequisite(
+        self,
+        user_id: int,
+        organization_id: int,
+    ) -> dict[str, Any]:
+        """Validates if user has active org role (prerequisite for project assignment).
+
+        Returns validation result with details.
+        """
+        from sqlalchemy import create_engine, text
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT id, id_rol
+                    FROM asignaciones_organizaciones_internas
+                    WHERE id_usuario_interno = :user_id
+                      AND id_organizacion = :org_id
+                      AND activo = 1
+                    LIMIT 1
+                """),
+                {"user_id": user_id, "org_id": organization_id},
+            ).fetchone()
+
+            if result:
+                return {
+                    "valid": True,
+                    "message": "Usuario tiene rol activo en la organización",
+                    "has_org_role": True,
+                    "org_role_id": result.id_rol,
+                }
+            else:
+                return {
+                    "valid": False,
+                    "message": "Usuario no tiene rol activo en la organización",
+                    "has_org_role": False,
+                    "org_role_id": None,
+                }
+
+    def get_project_assignments(
+        self, project_id: int, identity_type_id: int
+    ) -> list[dict[str, Any]]:
+        """Gets all assignments for a project with user/role names.
+
+        Security: Only SuperAdmin (identity_type_id=1) can access.
+        """
+        if identity_type_id != 1:
+            raise BackendCorePermissionError(
+                "assignments_read", identity_type_id
+            )
+
+        from sqlalchemy import create_engine, text
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT
+                        pr.id,
+                        pr.id_usuario,
+                        u.user_name,
+                        pr.id_organizacion,
+                        o.organization_name,
+                        pr.id_proyecto,
+                        p.nombre as project_name,
+                        pr.id_rol,
+                        prb.nombre_rol as role_name,
+                        pr.active
+                    FROM proyectos_roles pr
+                    INNER JOIN myllm_core_db.users u
+                        ON pr.id_usuario = u.user_id
+                    INNER JOIN myllm_core_db.organizations o
+                        ON pr.id_organizacion = o.organization_id
+                    INNER JOIN proyectos p
+                        ON pr.id_proyecto = p.id_proyecto
+                    INNER JOIN proyectos_roles_base prb
+                        ON pr.id_rol = prb.id
+                    WHERE pr.id_proyecto = :project_id
+                    ORDER BY u.user_name, prb.nombre_rol
+                """),
+                {"project_id": project_id},
+            )
+            return [
+                {
+                    "id": row.id,
+                    "user_id": row.id_usuario,
+                    "user_name": row.user_name,
+                    "organization_id": row.id_organizacion,
+                    "organization_name": row.organization_name,
+                    "project_id": row.id_proyecto,
+                    "project_name": row.project_name,
+                    "role_id": row.id_rol,
+                    "role_name": row.role_name,
+                    "active": bool(row.active),
+                }
+                for row in result
+            ]
+
+    def create_project_assignment(
+        self,
+        user_id: int,
+        organization_id: int,
+        project_id: int,
+        role_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Creates project assignment for internal user.
+
+        Security: Only SuperAdmin can create.
+        Validation: Requires active org role (prerequisite).
+        """
+        if identity_type_id != 1:
+            raise BackendCorePermissionError(
+                "assignments_create", identity_type_id
+            )
+
+        # Validate prerequisite
+        prerequisite = self.validate_org_prerequisite(user_id, organization_id)
+        if not prerequisite["has_org_role"]:
+            raise BackendCoreBusinessError(
+                "El usuario debe tener un rol activo en la organización antes de asignarlo a proyectos"
+            )
+
+        from sqlalchemy import create_engine, text
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            # Check for duplicate
+            existing = conn.execute(
+                text("""
+                    SELECT id FROM proyectos_roles
+                    WHERE id_usuario = :user_id
+                      AND id_proyecto = :project_id
+                """),
+                {"user_id": user_id, "project_id": project_id},
+            ).fetchone()
+
+            if existing:
+                raise BackendCoreBusinessError(
+                    "El usuario ya tiene una asignación a este proyecto"
+                )
+
+            # Insert
+            result = conn.execute(
+                text("""
+                    INSERT INTO proyectos_roles
+                    (id_usuario, id_organizacion, id_proyecto, id_rol, active)
+                    VALUES (:user_id, :org_id, :project_id, :role_id, TRUE)
+                """),
+                {
+                    "user_id": user_id,
+                    "org_id": organization_id,
+                    "project_id": project_id,
+                    "role_id": role_id,
+                },
+            )
+            conn.commit()
+
+            assignment_id = result.lastrowid
+
+            self._logger.info(
+                "[ASSIGNMENTS] Created project assignment: id=%s user=%s project=%s role=%s",
+                assignment_id, user_id, project_id, role_id,
+            )
+
+            return {
+                "success": True,
+                "assignment_id": assignment_id,
+                "message": "Asignación de proyecto creada exitosamente",
+            }
+
+    def update_project_assignment(
+        self,
+        assignment_id: int,
+        active: bool,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates active status of project assignment.
+
+        Security: Only SuperAdmin can update.
+        """
+        if identity_type_id != 1:
+            raise BackendCorePermissionError(
+                "assignments_update", identity_type_id
+            )
+
+        from sqlalchemy import create_engine, text
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("""
+                    UPDATE proyectos_roles
+                    SET active = :active
+                    WHERE id = :assignment_id
+                """),
+                {"active": 1 if active else 0, "assignment_id": assignment_id},
+            )
+            conn.commit()
+
+            if result.rowcount == 0:
+                raise BackendCoreBusinessError("Asignación no encontrada")
+
+            action = "habilitada" if active else "deshabilitada"
+            self._logger.info(
+                "[ASSIGNMENTS] Project assignment %s: id=%s", action, assignment_id
+            )
+
+            return {
+                "success": True,
+                "updated": True,
+                "message": f"Asignación {action}",
+            }
+
+    def delete_project_assignment(
+        self,
+        assignment_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Permanently deletes project assignment.
+
+        Security: Only SuperAdmin can delete.
+        """
+        if identity_type_id != 1:
+            raise BackendCorePermissionError(
+                "assignments_delete", identity_type_id
+            )
+
+        from sqlalchemy import create_engine, text
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("""
+                    DELETE FROM proyectos_roles
+                    WHERE id = :assignment_id
+                """),
+                {"assignment_id": assignment_id},
+            )
+            conn.commit()
+
+            if result.rowcount == 0:
+                raise BackendCoreBusinessError("Asignación no encontrada")
+
+            self._logger.warning(
+                "[ASSIGNMENTS] Deleted project assignment: id=%s", assignment_id
+            )
+
+            return {
+                "success": True,
+                "deleted": True,
+                "message": "Asignación eliminada permanentemente",
+            }

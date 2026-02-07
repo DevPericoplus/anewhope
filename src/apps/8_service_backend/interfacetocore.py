@@ -275,6 +275,16 @@ class CoreBackendClient:
             "GET", f"/permissions?identity_type_id={identity_type_id}"
         )
 
+    def list_organizations(self) -> list[dict[str, Any]]:
+        """Lista todas las organizaciones."""
+        data = self._request("GET", "/organizations")
+        return list(data or [])
+
+    def list_roles(self) -> list[dict[str, Any]]:
+        """Lista todos los roles."""
+        data = self._request("GET", "/roles")
+        return list(data or [])
+
     def process_data(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Envía datos a backend core para procesamiento."""
 
@@ -642,3 +652,140 @@ class CoreBackendClient:
             self._session_token = headers["X-Session-Token"]
         if headers.get("X-Client-App"):
             self._client_app = headers["X-Client-App"]
+
+    # ========================================================================
+    # ASSIGNMENTS MANAGER - Gestor de asignaciones
+    # ========================================================================
+
+    def get_internal_users(self) -> list[dict[str, Any]]:
+        """Gets internal users."""
+        data = self._request("GET", "/assignments/internal-users")
+        return list(data or [])
+
+    def get_organization_assignments(
+        self, organization_id: int, identity_type_id: int
+    ) -> list[dict[str, Any]]:
+        """Gets organization assignments."""
+        data = self._request(
+            "GET",
+            f"/assignments/organizations/{organization_id}?identity_type_id={identity_type_id}",
+        )
+        return list(data or [])
+
+    def create_organization_assignment(
+        self,
+        user_id: int,
+        organization_id: int,
+        role_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Creates organization assignment."""
+        payload = {
+            "user_id": user_id,
+            "organization_id": organization_id,
+            "role_id": role_id,
+        }
+        data = self._request(
+            "POST",
+            f"/assignments/organizations?identity_type_id={identity_type_id}",
+            payload=payload,
+        )
+        return dict(data or {})
+
+    def update_organization_assignment(
+        self,
+        assignment_id: int,
+        active: bool,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates organization assignment."""
+        payload = {"active": active}
+        data = self._request(
+            "PATCH",
+            f"/assignments/organizations/{assignment_id}?identity_type_id={identity_type_id}",
+            payload=payload,
+        )
+        return dict(data or {})
+
+    def delete_organization_assignment(
+        self,
+        assignment_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Deletes organization assignment."""
+        data = self._request(
+            "DELETE",
+            f"/assignments/organizations/{assignment_id}?identity_type_id={identity_type_id}",
+        )
+        return dict(data or {})
+
+    def validate_org_prerequisite(
+        self,
+        user_id: int,
+        organization_id: int,
+    ) -> dict[str, Any]:
+        """Validates org prerequisite."""
+        data = self._request(
+            "GET",
+            f"/assignments/validate-org-prerequisite?user_id={user_id}&organization_id={organization_id}",
+        )
+        return dict(data or {})
+
+    def get_project_assignments(
+        self, project_id: int, identity_type_id: int
+    ) -> list[dict[str, Any]]:
+        """Gets project assignments."""
+        data = self._request(
+            "GET",
+            f"/assignments/projects/{project_id}?identity_type_id={identity_type_id}",
+        )
+        return list(data or [])
+
+    def create_project_assignment(
+        self,
+        user_id: int,
+        organization_id: int,
+        project_id: int,
+        role_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Creates project assignment."""
+        payload = {
+            "user_id": user_id,
+            "organization_id": organization_id,
+            "project_id": project_id,
+            "role_id": role_id,
+        }
+        data = self._request(
+            "POST",
+            f"/assignments/projects?identity_type_id={identity_type_id}",
+            payload=payload,
+        )
+        return dict(data or {})
+
+    def update_project_assignment(
+        self,
+        assignment_id: int,
+        active: bool,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates project assignment."""
+        payload = {"active": active}
+        data = self._request(
+            "PATCH",
+            f"/assignments/projects/{assignment_id}?identity_type_id={identity_type_id}",
+            payload=payload,
+        )
+        return dict(data or {})
+
+    def delete_project_assignment(
+        self,
+        assignment_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Deletes project assignment."""
+        data = self._request(
+            "DELETE",
+            f"/assignments/projects/{assignment_id}?identity_type_id={identity_type_id}",
+        )
+        return dict(data or {})

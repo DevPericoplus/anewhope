@@ -1051,3 +1051,172 @@ class BrokerBackendRouter:
             return self._core_client.fmanagement_download(request_data)
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(f"Error descargando archivo: {exc}") from exc
+
+    # ========================================================================
+    # ASSIGNMENTS MANAGER - Gestor de asignaciones
+    # ========================================================================
+
+    def list_organizations(self) -> list[dict[str, Any]]:
+        """Lista todas las organizaciones."""
+        try:
+            return self._core_client.list_organizations()
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo obtener organizaciones"
+            ) from exc
+
+    def list_roles(self) -> list[dict[str, Any]]:
+        """Lista todos los roles."""
+        try:
+            return self._core_client.list_roles()
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo obtener roles"
+            ) from exc
+
+    def get_internal_users(self) -> list[dict[str, Any]]:
+        """Gets internal users from core."""
+        try:
+            return self._core_client.get_internal_users()
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo obtener usuarios internos"
+            ) from exc
+
+    def get_organization_assignments(
+        self, organization_id: int, identity_type_id: int
+    ) -> list[dict[str, Any]]:
+        """Gets organization assignments from core."""
+        try:
+            return self._core_client.get_organization_assignments(
+                organization_id, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo obtener asignaciones"
+            ) from exc
+
+    def create_organization_assignment(
+        self,
+        user_id: int,
+        organization_id: int,
+        role_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Creates organization assignment."""
+        try:
+            return self._core_client.create_organization_assignment(
+                user_id, organization_id, role_id, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error al crear asignación: {str(exc)}"
+            ) from exc
+
+    def update_organization_assignment(
+        self,
+        assignment_id: int,
+        active: bool,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates organization assignment."""
+        try:
+            return self._core_client.update_organization_assignment(
+                assignment_id, active, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo actualizar asignación"
+            ) from exc
+
+    def delete_organization_assignment(
+        self,
+        assignment_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Deletes organization assignment."""
+        try:
+            return self._core_client.delete_organization_assignment(
+                assignment_id, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo eliminar asignación"
+            ) from exc
+
+    def validate_org_prerequisite(
+        self,
+        user_id: int,
+        organization_id: int,
+    ) -> dict[str, Any]:
+        """Validates org prerequisite."""
+        try:
+            return self._core_client.validate_org_prerequisite(
+                user_id, organization_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo validar prerequisito"
+            ) from exc
+
+    def get_project_assignments(
+        self, project_id: int, identity_type_id: int
+    ) -> list[dict[str, Any]]:
+        """Gets project assignments from core."""
+        try:
+            return self._core_client.get_project_assignments(
+                project_id, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo obtener asignaciones de proyecto"
+            ) from exc
+
+    def create_project_assignment(
+        self,
+        user_id: int,
+        organization_id: int,
+        project_id: int,
+        role_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Creates project assignment."""
+        try:
+            return self._core_client.create_project_assignment(
+                user_id, organization_id, project_id, role_id, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo crear asignación de proyecto"
+            ) from exc
+
+    def update_project_assignment(
+        self,
+        assignment_id: int,
+        active: bool,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Updates project assignment."""
+        try:
+            return self._core_client.update_project_assignment(
+                assignment_id, active, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo actualizar asignación de proyecto"
+            ) from exc
+
+    def delete_project_assignment(
+        self,
+        assignment_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Deletes project assignment."""
+        try:
+            return self._core_client.delete_project_assignment(
+                assignment_id, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo eliminar asignación de proyecto"
+            ) from exc

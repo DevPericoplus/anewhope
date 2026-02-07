@@ -84,6 +84,59 @@ El proyecto soporta configuración personalizada por entorno usando cuatro nivel
 - **Dominio público (`getmyllm.com`):** Utilizado solo por nginx para exponer el frontend al exterior.
 - **Dominio interno (`anewhope.aws`):** Utilizado para la comunicación entre servicios dentro de AWS.
 
+### Arquitectura de dominios y Vite allowedHosts
+
+Cada entorno utiliza diferentes dominios para acceder a las aplicaciones web. Esta configuración es crítica para el funcionamiento correcto de Vite (servidor de desarrollo de Reflex) que valida el host de las peticiones HTTP entrantes.
+
+**Variables de dominio en `env.yaml`:**
+
+- **`public_name`**: Dominio público que el usuario escribe en el navegador
+- **`private_name`**: Dominio interno usado para comunicación entre servicios (opcional, puede ser igual a public_name)
+
+**Flujo de acceso por entorno:**
+
+| Entorno | public_name | Flujo de acceso del navegador |
+|---------|-------------|-------------------------------|
+| macbook | tfmmyllm.ai | `http://tfmmyllm.ai:8005` → localhost:8005 (directo) |
+| dev | house.loc | `http://anewhope.house.local` → nginx → `frontend.house.loc:8005` |
+| pre | getmyllm.com | `https://www.getmyllm.com` → nginx → `frontend.anewhope.aws:8005` |
+| pro | getmyllm.com | `https://www.getmyllm.com` → nginx → `frontend.anewhope.aws:8005` |
+
+**Configuración de Vite:**
+
+Las aplicaciones Reflex (frontend y backoffice) utilizan Vite como servidor de desarrollo. Por defecto, Vite solo acepta conexiones desde `localhost`. Para permitir acceso desde dominios personalizados, se debe configurar `allowedHosts` en `vite.config.js`.
+
+**Scripts de parche automático:**
+
+Los scripts `patch_vite_config.py` en cada aplicación web leen el `public_name` del archivo `env.yaml` del entorno activo y configuran automáticamente los hosts permitidos:
+
+```javascript
+// Ejemplo de configuración generada en vite.config.js
+server: {
+  port: process.env.PORT,
+  allowedHosts: ['tfmmyllm.ai', '.tfmmyllm.ai', 'localhost'],
+  hmr: true,
+  // ...
+}
+```
+
+**Cuándo ejecutar el parche:**
+
+- Después de `reflex init` (regenera vite.config.js)
+- Al cambiar de entorno (cambia el public_name)
+- Si aparece el error: `Vite Error: Blocked request. This host ("xxx") is not allowed`
+
+**Ejecución manual:**
+
+```bash
+# Desde la raíz del proyecto
+cd src/apps/5_web_frontend && python patch_vite_config.py
+cd src/apps/6_web_backoffice && python patch_vite_config.py
+
+# O usar el script global clear_caches.sh que aplica el parche automáticamente
+./clear_caches.sh
+```
+
 ### Variables de aplicaciones en servidores
 
 Cada archivo `env.yaml` define las variables de host y puerto para cada aplicación. Esto permite
@@ -1729,6 +1782,204 @@ rx.cond(
 - ❌ Si `identity_type_id != 1`: La opción "Asignaciones" está completamente oculta
 
 **Archivo:** `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py` - función `internal_menu()`
+
+#### Sistema de Asignaciones Jerárquicas (Organizaciones y Proyectos)
+
+El módulo de **Asignaciones** del backoffice permite gestionar permisos de usuarios internos a dos niveles: organización y proyecto. Este sistema es crítico para el control de acceso y solo está disponible para SuperAdministradores (`identity_type_id == 1`).
+
+##### Estructura Jerárquica de Permisos
+
+El sistema implementa una jerarquía de permisos en dos niveles:
+
+```
+Nivel 1: ORGANIZACIÓN (prerequisito obligatorio)
+    ↓
+Nivel 2: PROYECTOS (opcional, requiere rol en organización)
+```
+
+**Regla fundamental:** Un usuario DEBE tener un rol activo en una organización ANTES de poder asignarle roles en proyectos de esa organización.
+
+##### Bases de Datos y Tablas Involucradas
+
+**Base de datos: `myllm_core_db`**
+- `users`: Usuarios del sistema
+- `organizations`: Organizaciones del sistema
+- `low_level_permissions`: Permisos de bajo nivel (relación 1:1 con `users.identity_type_id`)
+
+**Base de datos: `myllm_projects_db`**
+- `proyectos`: Proyectos del sistema
+- `proyectos_roles_base`: Catálogo de roles disponibles para proyectos
+- `proyectos_roles`: Asignaciones de usuarios a proyectos con roles específicos
+- `asignaciones_organizaciones_internas`: Asignaciones de usuarios internos a organizaciones
+
+##### Estructura de las Tablas de Asignaciones
+
+**Tabla `asignaciones_organizaciones_internas` (myllm_projects_db)**:
+```sql
+CREATE TABLE asignaciones_organizaciones_internas (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    id_usuario INT NOT NULL,          -- FK a myllm_core_db.users.user_id
+    id_organizacion INT NOT NULL,     -- FK a myllm_core_db.organizations.organization_id
+    id_rol INT NOT NULL,              -- FK a catálogo de roles de organización
+    active BOOLEAN DEFAULT TRUE,      -- Habilitar/deshabilitar sin borrar
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
+**Tabla `proyectos_roles` (myllm_projects_db)**:
+```sql
+CREATE TABLE proyectos_roles (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    id_usuario INT NOT NULL,          -- FK a myllm_core_db.users.user_id
+    id_organizacion INT NOT NULL,     -- FK a myllm_core_db.organizations.organization_id
+    id_proyecto INT NOT NULL,         -- FK a proyectos.id_proyecto
+    id_rol INT NOT NULL,              -- FK a proyectos_roles_base.id
+    active BOOLEAN DEFAULT TRUE,      -- Habilitar/deshabilitar sin borrar
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
+##### Usuarios Internos
+
+Los usuarios que pueden recibir asignaciones se filtran por el permiso de bajo nivel `training_create`:
+
+```sql
+SELECT u.user_id, u.user_name, u.user_email
+FROM users u
+INNER JOIN low_level_permissions llp ON u.identity_type_id = llp.id_permissions
+WHERE llp.training_create = TRUE;
+```
+
+Estos usuarios son considerados "usuarios internos" con capacidad de participar en entrenamientos y gestión de proyectos.
+
+##### Interfaz de Usuario (Tabs)
+
+La página de Asignaciones se divide en dos tabs:
+
+**Tab 1: Roles por Organización**
+- Selectores:
+  - Usuario (filtrado por `training_create = true`)
+  - Organización
+  - Rol de Organización
+- Botones:
+  - **Asignar**: Crea registro en `asignaciones_organizaciones_internas` con `active=true`
+  - **Desasignar**: Elimina registro de `asignaciones_organizaciones_internas` (DELETE)
+  - **Habilitar**: Actualiza `active=true`
+  - **Deshabilitar**: Actualiza `active=false`
+- Visor: Tabla con asignaciones actuales mostrando:
+  - Nombre de usuario
+  - Nombre de organización
+  - Nombre de rol
+  - Estado (Activo/Inactivo)
+
+**Tab 2: Roles por Proyecto**
+- **Prerequisito**: El usuario debe tener al menos un rol activo en la organización
+- Selectores:
+  - Usuario (filtrado por `training_create = true`)
+  - Organización
+  - Proyecto (solo proyectos de la organización seleccionada)
+  - Rol de Proyecto (de `proyectos_roles_base`)
+- Botones:
+  - **Asignar**: Crea registro en `proyectos_roles` con `active=true`
+  - **Desasignar**: Elimina registro de `proyectos_roles` (DELETE)
+  - **Habilitar**: Actualiza `active=true`
+  - **Deshabilitar**: Actualiza `active=false`
+- Visor: Tabla con asignaciones actuales mostrando:
+  - Nombre de usuario
+  - Nombre de organización
+  - Nombre de proyecto
+  - Nombre de rol
+  - Estado (Activo/Inactivo)
+
+##### Operaciones CRUD
+
+**Nivel Organización** (`asignaciones_organizaciones_internas`):
+- `CREATE`: `POST /organizations/assignments` - Asignar usuario a organización
+- `READ`: `GET /organizations/{org_id}/assignments` - Ver asignaciones de una organización
+- `UPDATE`: `PATCH /organizations/assignments/{id}` - Habilitar/deshabilitar asignación
+- `DELETE`: `DELETE /organizations/assignments/{id}` - Eliminar asignación
+
+**Nivel Proyecto** (`proyectos_roles`):
+- `CREATE`: `POST /projects/assignments` - Asignar usuario a proyecto
+- `READ`: `GET /projects/{project_id}/assignments` - Ver asignaciones de un proyecto
+- `UPDATE`: `PATCH /projects/assignments/{id}` - Habilitar/deshabilitar asignación
+- `DELETE`: `DELETE /projects/assignments/{id}` - Eliminar asignación
+
+##### Flujo de Datos
+
+```
+Backoffice UI (SuperAdmin)
+       │
+       ▼
+    Middleware (apife.py)
+       │
+       ▼
+    Broker (routerbroker.py)
+       │
+       ▼
+    Backend Core (routercore.py)
+       │
+       ▼
+    MariaDB (myllm_projects_db)
+```
+
+##### Casos de Uso
+
+**Caso 1: Asignar usuario a organización**
+1. SuperAdmin selecciona usuario interno
+2. Selecciona organización
+3. Selecciona rol de organización
+4. Clic en "Asignar"
+5. Sistema crea registro en `asignaciones_organizaciones_internas`
+
+**Caso 2: Asignar usuario a proyecto específico**
+1. SuperAdmin selecciona usuario interno (que ya tiene rol en org)
+2. Selecciona organización
+3. Selecciona proyecto de esa organización
+4. Selecciona rol de proyecto
+5. Clic en "Asignar"
+6. Sistema crea registro en `proyectos_roles`
+
+**Caso 3: Deshabilitar acceso temporal**
+- Usar botón "Deshabilitar" para marcar `active=false`
+- Mantiene el registro histórico
+- Se puede reactivar con "Habilitar"
+
+**Caso 4: Eliminar asignación permanentemente**
+- Usar botón "Desasignar" para DELETE del registro
+- No se puede recuperar, debe crearse de nuevo
+
+##### Validaciones del Sistema
+
+1. **No duplicados**: No se permite asignar el mismo usuario + organización + rol dos veces
+2. **Prerequisito de organización**: No se puede asignar a proyecto sin rol en organización
+3. **Solo usuarios internos**: Solo usuarios con `training_create=true` son asignables
+4. **Solo SuperAdmin**: Solo `identity_type_id == 1` puede acceder al módulo
+5. **Conversión de IDs a nombres**: Los visores muestran nombres legibles, no IDs numéricos
+
+##### Archivos Relacionados
+
+**Backend Core:**
+- `src/apps/3_backend/3_adapters/controllers/assignments_controller.py`
+- `src/apps/3_backend/2_application/services/assignments_service.py`
+- `src/apps/3_backend/4_infrastructure/persistence/assignments_repository.py`
+
+**Broker:**
+- `src/apps/8_service_backend/routerbroker.py` - Routing de asignaciones
+
+**Middleware:**
+- `src/apps/7_service_frontend/apife.py` - Endpoints de asignaciones
+- `src/apps/7_service_frontend/routermiddleware.py` - Lógica de middleware
+
+**Backoffice:**
+- `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py` - UI del módulo
+- `src/apps/6_web_backoffice/adapters/api_client.py` - Cliente HTTP
+
+**Shared:**
+- `src/2_shared_application/dtos/assignments_dtos.py` - DTOs compartidos
+- `src/1_shared_domain/entities/assignment.py` - Entidades de dominio (si aplica)
 
 ### Borrado lógico de usuarios (IMPORTANTE)
 

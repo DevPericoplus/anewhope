@@ -221,7 +221,18 @@ def _request_middleware(
             # Intentar parsear el error como JSON para extraer el mensaje
             try:
                 error_data = json.loads(error_payload)
-                error_message = error_data.get("detail", "Error desconocido")
+                detail = error_data.get("detail", "Error desconocido")
+
+                # Si detail es un array de errores de validación de Pydantic, convertirlo a string
+                if isinstance(detail, list) and len(detail) > 0:
+                    if isinstance(detail[0], dict) and "msg" in detail[0]:
+                        # Es un error de validación de Pydantic
+                        error_messages = [f"{err.get('loc', [''])[0]}: {err.get('msg', '')}" for err in detail]
+                        error_message = "Errores de validación: " + "; ".join(error_messages)
+                    else:
+                        error_message = str(detail)
+                else:
+                    error_message = str(detail) if not isinstance(detail, str) else detail
             except json.JSONDecodeError:
                 error_message = error_payload
             return {"error": True, "detail": error_message, "status_code": exc.code}
@@ -2071,3 +2082,246 @@ def chat_with_ollama(
     except Exception as exc:
         print(f"Error chatting with Ollama: {exc}")
         return {"message": {"content": ""}, "error": str(exc)}
+
+
+# ============================================================================
+# ASSIGNMENTS MANAGER - Gestor de asignaciones (SuperAdmin)
+# ============================================================================
+
+def get_all_organizations(
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Gets all organizations."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware("GET", "/assignments/organizations", headers=headers)
+    return response if isinstance(response, list) else []
+
+
+def get_internal_users(
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Gets internal users for assignment selectors."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware("GET", "/assignments/internal-users", headers=headers)
+    return response if isinstance(response, list) else []
+
+
+def get_roles(
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Gets roles for assignment selectors."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware("GET", "/assignments/roles", headers=headers)
+    return response if isinstance(response, list) else []
+
+
+def get_organization_assignments(
+    organization_id: int,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Gets assignments for an organization."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "GET",
+        f"/assignments/organizations/{organization_id}",
+        headers=headers,
+    )
+    return response if isinstance(response, list) else []
+
+
+def create_organization_assignment(
+    user_id: int,
+    organization_id: int,
+    role_id: int,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Creates organization assignment."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    payload = {
+        "user_id": user_id,
+        "organization_id": organization_id,
+        "role_id": role_id,
+    }
+    response = _request_middleware(
+        "POST",
+        "/assignments/organizations",
+        payload=payload,
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
+def update_organization_assignment(
+    assignment_id: int,
+    active: bool,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Updates organization assignment active status."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "PATCH",
+        f"/assignments/organizations/{assignment_id}?active={active}",
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
+def delete_organization_assignment(
+    assignment_id: int,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Deletes organization assignment permanently."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "DELETE",
+        f"/assignments/organizations/{assignment_id}",
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
+def validate_org_prerequisite(
+    user_id: int,
+    organization_id: int,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Validates if user has active org role."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "GET",
+        f"/assignments/validate-org-prerequisite?user_id={user_id}&organization_id={organization_id}",
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
+def get_project_assignments(
+    project_id: int,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Gets assignments for a project."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "GET",
+        f"/assignments/projects/{project_id}",
+        headers=headers,
+    )
+    return response if isinstance(response, list) else []
+
+
+def create_project_assignment(
+    user_id: int,
+    organization_id: int,
+    project_id: int,
+    role_id: int,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Creates project assignment."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "POST",
+        f"/assignments/projects?user_id={user_id}&organization_id={organization_id}&project_id={project_id}&role_id={role_id}",
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
+def update_project_assignment(
+    assignment_id: int,
+    active: bool,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Updates project assignment active status."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "PATCH",
+        f"/assignments/projects/{assignment_id}?active={active}",
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
+def delete_project_assignment(
+    assignment_id: int,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Deletes project assignment permanently."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "DELETE",
+        f"/assignments/projects/{assignment_id}",
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}

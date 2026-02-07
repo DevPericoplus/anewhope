@@ -2866,3 +2866,211 @@ def ollama_chat_proxy(
     except Exception as exc:
         logger.error(f"Error en proxy ollama chat: {exc}")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ============================================================================
+# ASSIGNMENTS - Gestor de asignaciones (SuperAdmin only)
+# ============================================================================
+
+@app.get("/assignments/organizations", tags=["assignments"])
+def list_organizations_endpoint(
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> list[dict[str, Any]]:
+    """Lista todas las organizaciones para assignments."""
+    try:
+        return router.list_organizations(session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/assignments/internal-users", tags=["assignments"])
+def get_internal_users_endpoint(
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> list[dict[str, Any]]:
+    """Gets internal users."""
+    try:
+        return router.get_internal_users(session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/assignments/roles", tags=["assignments"])
+def get_roles_for_assignments_endpoint(
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> list[dict[str, Any]]:
+    """Gets roles for assignments."""
+    try:
+        return router.list_roles(session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/assignments/organizations/{organization_id}", tags=["assignments"])
+def get_organization_assignments_endpoint(
+    organization_id: int,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> list[dict[str, Any]]:
+    """Gets organization assignments."""
+    try:
+        return router.get_organization_assignments(organization_id, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/assignments/organizations", tags=["assignments"])
+def create_organization_assignment_endpoint(
+    payload: dict[str, int],
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Creates organization assignment."""
+    try:
+        return router.create_organization_assignment(
+            payload["user_id"],
+            payload["organization_id"],
+            payload["role_id"],
+            session
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/assignments/organizations/{assignment_id}", tags=["assignments"])
+def update_organization_assignment_endpoint(
+    assignment_id: int,
+    active: bool,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Updates organization assignment active status."""
+    try:
+        return router.update_organization_assignment(
+            assignment_id, active, session
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.delete("/assignments/organizations/{assignment_id}", tags=["assignments"])
+def delete_organization_assignment_endpoint(
+    assignment_id: int,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Deletes organization assignment permanently."""
+    try:
+        return router.delete_organization_assignment(assignment_id, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/assignments/validate-org-prerequisite", tags=["assignments"])
+def validate_org_prerequisite_endpoint(
+    user_id: int,
+    organization_id: int,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Validates if user has active org role (prerequisite)."""
+    try:
+        return router.validate_org_prerequisite(user_id, organization_id, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/assignments/projects/{project_id}", tags=["assignments"])
+def get_project_assignments_endpoint(
+    project_id: int,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> list[dict[str, Any]]:
+    """Gets project assignments."""
+    try:
+        return router.get_project_assignments(project_id, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/assignments/projects", tags=["assignments"])
+def create_project_assignment_endpoint(
+    user_id: int,
+    organization_id: int,
+    project_id: int,
+    role_id: int,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Creates project assignment (with prerequisite validation)."""
+    try:
+        return router.create_project_assignment(
+            user_id, organization_id, project_id, role_id, session
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/assignments/projects/{assignment_id}", tags=["assignments"])
+def update_project_assignment_endpoint(
+    assignment_id: int,
+    active: bool,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Updates project assignment active status."""
+    try:
+        return router.update_project_assignment(assignment_id, active, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.delete("/assignments/projects/{assignment_id}", tags=["assignments"])
+def delete_project_assignment_endpoint(
+    assignment_id: int,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Deletes project assignment permanently."""
+    try:
+        return router.delete_project_assignment(assignment_id, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc

@@ -1844,6 +1844,337 @@ Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
 
 4. **Migración:** `infrastructure/database/migrations/005_proyectos_roles_base_table.sql`
 
+### Sistema de Asignaciones Jerárquicas (CRÍTICO)
+
+**REGLA FUNDAMENTAL:** El sistema implementa asignaciones de usuarios internos a dos niveles: organización y proyecto. La asignación a organización es **PREREQUISITO OBLIGATORIO** para cualquier asignación a proyectos.
+
+#### Estructura jerárquica (OBLIGATORIO)
+
+```
+Nivel 1: ORGANIZACIÓN (prerequisito)
+    ├─ Tabla: asignaciones_organizaciones_internas
+    ├─ Campos: id_usuario, id_organizacion, id_rol, active
+    └─ DEBE EXISTIR para poder asignar a proyectos
+        ↓
+Nivel 2: PROYECTOS (opcional, depende de Nivel 1)
+    ├─ Tabla: proyectos_roles
+    ├─ Campos: id_usuario, id_organizacion, id_proyecto, id_rol, active
+    └─ SOLO si usuario tiene rol activo en organización
+```
+
+#### Reglas de validación (OBLIGATORIO implementar)
+
+1. **Prerequisito de organización:**
+   ```python
+   # ANTES de asignar a proyecto, validar:
+   SELECT COUNT(*) FROM asignaciones_organizaciones_internas
+   WHERE id_usuario = :user_id
+     AND id_organizacion = :org_id
+     AND active = TRUE
+   # Si COUNT = 0 → RECHAZAR asignación a proyecto
+   ```
+
+2. **Usuarios internos únicamente:**
+   ```sql
+   -- Solo usuarios con permiso training_create pueden ser asignados
+   SELECT u.user_id, u.user_name
+   FROM users u
+   INNER JOIN low_level_permissions llp ON u.identity_type_id = llp.id_permissions
+   WHERE llp.training_create = TRUE
+   ```
+
+3. **No duplicados:**
+   ```sql
+   -- Para organizaciones:
+   UNIQUE KEY (id_usuario, id_organizacion, id_rol)
+
+   -- Para proyectos:
+   UNIQUE KEY (id_usuario, id_organizacion, id_proyecto, id_rol)
+   ```
+
+4. **Conversión de IDs a nombres en UI:**
+   ```python
+   # OBLIGATORIO: Los visores DEBEN mostrar nombres, NO IDs
+   # Hacer JOIN con:
+   # - users (user_name)
+   # - organizations (organization_name)
+   # - proyectos (project_name)
+   # - roles_base (role_name)
+   ```
+
+#### Operaciones CRUD (endpoints obligatorios)
+
+**Nivel Organización:**
+```
+GET    /internal-users              # Usuarios con training_create=true
+GET    /organizations/roles         # Catálogo de roles de organización
+GET    /organizations/{org_id}/assignments  # Ver asignaciones actuales
+POST   /organizations/assignments   # Asignar: INSERT con active=true
+PATCH  /organizations/assignments/{id}  # Habilitar/deshabilitar: UPDATE active
+DELETE /organizations/assignments/{id}  # Desasignar: DELETE físico
+```
+
+**Nivel Proyecto:**
+```
+GET    /projects/roles              # Catálogo de roles (proyectos_roles_base)
+GET    /organizations/{org_id}/projects  # Proyectos de una organización
+GET    /projects/{proj_id}/assignments   # Ver asignaciones actuales
+POST   /projects/assignments        # Asignar: INSERT con active=true
+PATCH  /projects/assignments/{id}   # Habilitar/deshabilitar: UPDATE active
+DELETE /projects/assignments/{id}   # Desasignar: DELETE físico
+```
+
+#### Flujo arquitectónico (OBLIGATORIO seguir)
+
+```
+Backoffice (SuperAdmin ONLY)
+    ↓ Authorization + X-Session-Token
+Middleware (apife.py, routermiddleware.py)
+    ↓ Validar identity_type_id == 1
+Broker (routerbroker.py)
+    ↓ Routing
+Backend Core (routercore.py, assignments_service.py)
+    ↓ Validaciones + Business Logic
+MariaDB (myllm_projects_db)
+    - asignaciones_organizaciones_internas
+    - proyectos_roles
+```
+
+#### Estructura de UI (tabs obligatorios)
+
+**Tab 1: Roles por Organización**
+- Selectores:
+  - Usuario (filtrado: `training_create=true`)
+  - Organización
+  - Rol de Organización
+- Botones:
+  - **Asignar**: `POST /organizations/assignments`
+  - **Desasignar**: `DELETE /organizations/assignments/{id}`
+  - **Habilitar**: `PATCH .../{id}` con `{active: true}`
+  - **Deshabilitar**: `PATCH .../{id}` con `{active: false}`
+- Visor: Tabla mostrando asignaciones con nombres legibles
+
+**Tab 2: Roles por Proyecto**
+- **PREREQUISITO UI**: Deshabilitar tab si usuario no tiene rol en org
+- Selectores:
+  - Usuario (filtrado: `training_create=true`)
+  - Organización
+  - Proyecto (solo de org seleccionada)
+  - Rol de Proyecto
+- Botones: Igual estructura que Tab 1
+- Visor: Tabla mostrando asignaciones con nombres legibles
+
+#### DTOs requeridos (crear en 2_shared_application/dtos/)
+
+```python
+# assignments_dtos.py
+
+class InternalUserDto(BaseModel):
+    user_id: int
+    user_name: str
+    user_email: str
+
+class OrganizationAssignmentDto(BaseModel):
+    id: int
+    user_id: int
+    user_name: str
+    organization_id: int
+    organization_name: str
+    role_id: int
+    role_name: str
+    active: bool
+
+class ProjectAssignmentDto(BaseModel):
+    id: int
+    user_id: int
+    user_name: str
+    organization_id: int
+    organization_name: str
+    project_id: int
+    project_name: str
+    role_id: int
+    role_name: str
+    active: bool
+
+class CreateOrgAssignmentDto(BaseModel):
+    user_id: int
+    organization_id: int
+    role_id: int
+
+class CreateProjectAssignmentDto(BaseModel):
+    user_id: int
+    organization_id: int
+    project_id: int
+    role_id: int
+```
+
+#### Validación de permisos (Security by Design)
+
+```python
+# OBLIGATORIO en TODOS los endpoints de asignaciones:
+
+@app.post("/organizations/assignments")
+async def create_org_assignment(
+    request: CreateOrgAssignmentDto,
+    session: SessionContext = Depends(get_session_context),
+):
+    # VALIDACIÓN CRÍTICA: Solo SuperAdmin
+    if session.identity_type_id != 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo SuperAdmin puede gestionar asignaciones",
+        )
+    # ... resto de lógica
+```
+
+#### Archivos a implementar (checklist)
+
+**Backend Core:**
+- [ ] `src/apps/3_backend/3_adapters/controllers/assignments_controller.py`
+- [ ] `src/apps/3_backend/2_application/services/assignments_service.py`
+- [ ] `src/apps/3_backend/4_infrastructure/persistence/assignments_repository.py`
+- [ ] `src/apps/3_backend/apibe.py` - Registrar endpoints
+
+**Broker:**
+- [ ] `src/apps/8_service_backend/routerbroker.py` - Routing de asignaciones
+- [ ] `src/apps/8_service_backend/interfacetocore.py` - Cliente HTTP a core
+
+**Middleware:**
+- [ ] `src/apps/7_service_frontend/apife.py` - Endpoints
+- [ ] `src/apps/7_service_frontend/routermiddleware.py` - Lógica de middleware
+- [ ] `src/apps/7_service_frontend/interfacetobackend.py` - Cliente HTTP a broker
+
+**Backoffice:**
+- [ ] `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py` - UI con tabs
+- [ ] `src/apps/6_web_backoffice/adapters/api_client.py` - Cliente HTTP
+
+**Shared:**
+- [ ] `src/2_shared_application/dtos/assignments_dtos.py` - DTOs compartidos
+
+#### Casos de uso obligatorios
+
+**Caso 1: Asignar usuario a organización**
+1. SuperAdmin selecciona usuario interno
+2. Selecciona organización
+3. Selecciona rol
+4. Sistema valida: no duplicado
+5. Sistema crea registro con `active=true`
+
+**Caso 2: Asignar usuario a proyecto (con validación)**
+1. SuperAdmin selecciona usuario
+2. Selecciona organización
+3. **Sistema valida**: ¿usuario tiene rol activo en org?
+4. Si NO → Mostrar error y BLOQUEAR asignación
+5. Si SÍ → Permitir seleccionar proyecto y rol
+6. Sistema crea registro con `active=true`
+
+**Caso 3: Deshabilitar acceso temporal (borrado lógico)**
+1. SuperAdmin clic en "Deshabilitar"
+2. Sistema actualiza `active=false`
+3. Usuario pierde acceso PERO registro se mantiene
+4. Se puede reactivar con "Habilitar"
+
+**Caso 4: Eliminar asignación permanente (borrado físico)**
+1. SuperAdmin clic en "Desasignar"
+2. Sistema elimina registro (DELETE)
+3. NO se puede recuperar, debe crearse de nuevo
+
+#### Reglas de seguridad (CRÍTICO)
+
+1. **Solo SuperAdmin**: `identity_type_id == 1` puede acceder al módulo
+2. **Auditoría**: Registrar en logs TODAS las operaciones de asignaciones
+3. **Validación doble**:
+   - UI: Deshabilitar controles según prerequisitos
+   - API: Validar prerequisitos en backend
+4. **Transacciones**: Usar transacciones SQL para mantener consistencia
+
+#### Consultas SQL de ejemplo
+
+**Obtener usuarios internos:**
+```sql
+SELECT u.user_id, u.user_name, u.user_email
+FROM myllm_core_db.users u
+INNER JOIN myllm_core_db.low_level_permissions llp
+    ON u.identity_type_id = llp.id_permissions
+WHERE llp.training_create = TRUE
+ORDER BY u.user_name;
+```
+
+**Validar prerequisito de organización:**
+```sql
+SELECT COUNT(*) as has_org_role
+FROM asignaciones_organizaciones_internas
+WHERE id_usuario = :user_id
+  AND id_organizacion = :org_id
+  AND active = TRUE;
+```
+
+**Obtener asignaciones de organización (con nombres):**
+```sql
+SELECT
+    aoi.id,
+    aoi.id_usuario,
+    u.user_name,
+    aoi.id_organizacion,
+    o.organization_name,
+    aoi.id_rol,
+    r.nombre_rol as role_name,
+    aoi.active
+FROM asignaciones_organizaciones_internas aoi
+INNER JOIN myllm_core_db.users u ON aoi.id_usuario = u.user_id
+INNER JOIN myllm_core_db.organizations o ON aoi.id_organizacion = o.organization_id
+INNER JOIN roles_organizacion_base r ON aoi.id_rol = r.id
+WHERE aoi.id_organizacion = :org_id
+ORDER BY u.user_name, r.nombre_rol;
+```
+
+**Obtener asignaciones de proyecto (con nombres):**
+```sql
+SELECT
+    pr.id,
+    pr.id_usuario,
+    u.user_name,
+    pr.id_organizacion,
+    o.organization_name,
+    pr.id_proyecto,
+    p.nombre as project_name,
+    pr.id_rol,
+    prb.nombre_rol as role_name,
+    pr.active
+FROM proyectos_roles pr
+INNER JOIN myllm_core_db.users u ON pr.id_usuario = u.user_id
+INNER JOIN myllm_core_db.organizations o ON pr.id_organizacion = o.organization_id
+INNER JOIN proyectos p ON pr.id_proyecto = p.id_proyecto
+INNER JOIN proyectos_roles_base prb ON pr.id_rol = prb.id
+WHERE pr.id_proyecto = :project_id
+ORDER BY u.user_name, prb.nombre_rol;
+```
+
+#### Migración de base de datos (si es necesaria)
+
+```sql
+-- Verificar que existen las tablas
+-- Si no existen, crear con esta estructura:
+
+CREATE TABLE IF NOT EXISTS asignaciones_organizaciones_internas (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    id_usuario INT NOT NULL,
+    id_organizacion INT NOT NULL,
+    id_rol INT NOT NULL,
+    active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_user_org_role (id_usuario, id_organizacion, id_rol),
+    INDEX idx_usuario (id_usuario),
+    INDEX idx_organizacion (id_organizacion),
+    INDEX idx_active (active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Verificar proyectos_roles tiene los campos necesarios
+ALTER TABLE proyectos_roles
+ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE AFTER id_rol;
+```
+
 ### Roles y Permisos por Defecto
 
 El sistema define roles con permisos predefinidos. Usa `low_level_permissions.json` como referencia única.

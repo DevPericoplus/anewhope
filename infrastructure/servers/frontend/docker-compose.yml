@@ -43,6 +43,12 @@ services:
       - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Certificados SSL (montar según el entorno)
+      # DEV: Certificados autofirmados
+      # PRE/PRO: Certificados Let's Encrypt
+      - /etc/nginx/ssl:/etc/nginx/ssl:ro
+      # Solo para PRE/PRO con Let's Encrypt (comentar en DEV)
+      # - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       redis:
         condition: service_healthy

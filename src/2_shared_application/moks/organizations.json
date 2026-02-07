@@ -1,11 +1,92 @@
 [
   {
     "organization_id": 1,
-    "organization_name": "Demo Org",
-    "organization_email": "demo@org.com",
-    "organization_tlf": "",
-    "organization_address": "",
-    "organization_country": "",
-    "organization_state": ""
+    "organization_name": "myllm",
+    "organization_email": "global@myllm.ai",
+    "organization_tlf": "+34639775978",
+    "organization_address": "1 AI Plaza, San Francisco, CA 94105",
+    "organization_country": "United States",
+    "organization_state": "California"
+  },
+  {
+    "organization_id": 2,
+    "organization_name": "Globex",
+    "organization_email": "info@globex.com",
+    "organization_tlf": "+34639775978",
+    "organization_address": "100 Tower Bridge, London, SE1 2UP",
+    "organization_country": "España",
+    "organization_state": "Barcelona"
+  },
+  {
+    "organization_id": 3,
+    "organization_name": "Nascar",
+    "organization_email": "admin@nascar.com",
+    "organization_tlf": "+34639775978",
+    "organization_address": "Calle Innovación 10, 28043 Madrid",
+    "organization_country": "España",
+    "organization_state": "Madrid"
+  },
+  {
+    "organization_id": 4,
+    "organization_name": "Menthol",
+    "organization_email": "admin@menthol.com",
+    "organization_tlf": "+34639775978",
+    "organization_address": "calle huertas 16",
+    "organization_country": "España",
+    "organization_state": "Madrid"
+  },
+  {
+    "organization_id": 5,
+    "organization_name": "Pleox",
+    "organization_email": "admin@pleox.com",
+    "organization_tlf": "+34639775978",
+    "organization_address": "Calle velazquez 33",
+    "organization_country": "España",
+    "organization_state": "Madrid"
+  },
+  {
+    "organization_id": 6,
+    "organization_name": "myllm_experimental",
+    "organization_email": "experimental@myllm.ia",
+    "organization_tlf": "+34639775978",
+    "organization_address": "c/ base 19",
+    "organization_country": "España",
+    "organization_state": "Madrid"
+  },
+  {
+    "organization_id": 7,
+    "organization_name": "myllm_alternative",
+    "organization_email": "alternative@myllm.ai",
+    "organization_tlf": "+34639775978",
+    "organization_address": "calle segunda base 18",
+    "organization_country": "España",
+    "organization_state": "vigo"
+  },
+  {
+    "organization_id": 8,
+    "organization_name": "myllm_another",
+    "organization_email": "another@myllm.ai",
+    "organization_tlf": "+34639775978",
+    "organization_address": "c alle uno",
+    "organization_country": "españa",
+    "organization_state": "sevilla"
+  },
+  {
+    "organization_id": 9,
+    "organization_name": "cuatro",
+    "organization_email": "ifo@cuatro.es",
+    "organization_tlf": "+34639775978",
+    "organization_address": "calle no se",
+    "organization_country": "España",
+    "organization_state": "Sevilla"
+  },
+  {
+    "organization_id": 10,
+    "organization_name": "local",
+    "organization_email": "admin@local.loc",
+    "organization_tlf": "+34639775978",
+    "organization_address": "calle aguas 34",
+    "organization_country": "España",
+    "organization_state": "Bilbao"
   }
 ]

@@ -265,9 +265,12 @@ class JsonMockStorageAdapter:
         _logger.info("JSON actualizado correctamente")
 
     def load_organizations(self) -> list[OrganizationDto]:
-        """Carga organizaciones desde JSON."""
+        """Carga organizaciones desde JSON o MariaDB según storage_mode."""
 
-        records = _load_json_list(self._organizations_path)
+        if _should_read_users_from_db():  # Usa la misma lógica: db_only
+            records = _load_organizations_from_mariadb()
+        else:
+            records = _load_json_list(self._organizations_path)
         return [OrganizationDto.model_validate(record) for record in records]
 
     def store_organizations(self, organizations: list[OrganizationDto]) -> None:
@@ -278,15 +281,12 @@ class JsonMockStorageAdapter:
         )
 
     def load_roles(self) -> list[RoleDto]:
-        """Carga roles desde JSON o MariaDB si JSON está vacío."""
+        """Carga roles desde JSON o MariaDB según storage_mode."""
 
-        records = _load_json_list(self._roles_path)
-        # Si JSON está vacío, intentar cargar desde MariaDB
-        if not records:
-            try:
-                records = _load_roles_from_mariadb()
-            except StorageAdapterError:
-                pass  # Si falla MariaDB, devolver lista vacía
+        if _should_read_users_from_db():  # Usa la misma lógica: db_only
+            records = _load_roles_from_mariadb()
+        else:
+            records = _load_json_list(self._roles_path)
         return [RoleDto.model_validate(record) for record in records]
 
     def store_roles(self, roles: list[RoleDto]) -> None:
@@ -311,15 +311,12 @@ class JsonMockStorageAdapter:
         )
 
     def load_low_level_permissions(self) -> list[LowLevelPermissionDto]:
-        """Carga permisos de bajo nivel desde JSON o MariaDB si JSON está vacío."""
+        """Carga permisos de bajo nivel desde JSON o MariaDB según storage_mode."""
 
-        records = _load_json_list(self._low_level_permissions_path)
-        # Si JSON está vacío, intentar cargar desde MariaDB
-        if not records:
-            try:
-                records = _load_low_level_permissions_from_mariadb()
-            except StorageAdapterError:
-                pass  # Si falla MariaDB, devolver lista vacía
+        if _should_read_users_from_db():  # Usa la misma lógica: db_only
+            records = _load_low_level_permissions_from_mariadb()
+        else:
+            records = _load_json_list(self._low_level_permissions_path)
         return [LowLevelPermissionDto.model_validate(record) for record in records]
 
     def store_low_level_permissions(
@@ -567,6 +564,60 @@ def _load_roles_from_mariadb() -> list[dict[str, Any]]:
             "identity_type_rol": row[2] or "",
             "identity_type_group_permissions": [perm_id] if perm_id else [],
         })
+    return records
+
+
+def _load_organizations_from_mariadb() -> list[dict[str, Any]]:
+    """Carga organizaciones desde MariaDB."""
+
+    settings = load_mariadb_settings()
+    cli_path = settings["cli_path"]
+    db_name = settings["core_database"]
+    db_user = settings["reader_user"]
+    db_password = settings["reader_password"]
+    if not cli_path or not db_user:
+        raise StorageAdapterError("Faltan credenciales de lectura para MariaDB")
+
+    query = (
+        "SELECT organization_id, organization_name, organization_email, "
+        "organization_tlf, organization_address, organization_country, "
+        "organization_state, active "
+        "FROM organizations ORDER BY organization_id"
+    )
+    cmd = [
+        cli_path,
+        "-u",
+        db_user,
+        f"-p{db_password}",
+        "--database",
+        db_name,
+        "-N",
+        "-B",
+        "-e",
+        query,
+    ]
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        raise StorageAdapterError(
+            f"No se pudo leer organizations desde MariaDB: {exc}"
+        ) from exc
+    records: list[dict[str, Any]] = []
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        row = line.split("\t")
+        if len(row) >= 8:
+            records.append({
+                "organization_id": int(row[0]) if row[0] else 0,
+                "organization_name": row[1] or "",
+                "organization_email": row[2] or "",
+                "organization_tlf": row[3] if row[3] and row[3] != "NULL" else "",
+                "organization_address": row[4] if row[4] and row[4] != "NULL" else "",
+                "organization_country": row[5] if row[5] and row[5] != "NULL" else "",
+                "organization_state": row[6] if row[6] and row[6] != "NULL" else "",
+                "active": bool(int(row[7])) if row[7] else False,
+            })
     return records
 
 

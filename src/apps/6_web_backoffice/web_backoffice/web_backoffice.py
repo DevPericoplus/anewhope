@@ -160,7 +160,33 @@ class State(SharedSessionState):
     proyecciones_error: str = ""
     proyecciones_success: str = ""
     is_loading_versions: bool = False
-    
+
+    # Estado para Gestor de Asignaciones (SuperAdmin only)
+    assignments_active_tab: str = "organizaciones"  # "organizaciones" or "proyectos"
+    assignments_internal_users: list[dict] = []
+    assignments_organizations: list[dict] = []
+    assignments_projects: list[dict] = []
+    assignments_org_roles: list[dict] = []  # Role catalog for organizations
+    assignments_project_roles: list[dict] = []  # From proyectos_roles_base
+
+    # Organization assignment form
+    selected_user_org: int = 0
+    selected_organization_assign: int = 0
+    selected_org_role: int = 0
+    org_assignments_list: list[dict] = []
+    org_assignment_error: str = ""
+    org_assignment_success: str = ""
+
+    # Project assignment form
+    selected_user_project: int = 0
+    selected_org_for_project: int = 0
+    selected_project_assign: int = 0
+    selected_project_role: int = 0
+    project_assignments_list: list[dict] = []
+    project_assignment_error: str = ""
+    project_assignment_success: str = ""
+    prerequisite_validation_error: str = ""
+
     # Nota: Los siguientes campos ya vienen de SharedSessionState:
     # - is_logged_in, access_token, session_token, user_id, organization_id
     # - user_name, user_email, user_mobile, identity_type_id
@@ -209,7 +235,55 @@ class State(SharedSessionState):
             if p.get("id") == self.selected_tech_project_id:
                 return p.get("name", p.get("nombre", ""))
         return ""
-    
+
+    @rx.var
+    def can_manage_assignments(self) -> bool:
+        """Only SuperAdmin can access assignments manager."""
+        return self.identity_type_id == 1
+
+    @rx.var
+    def internal_users_for_select(self) -> list[str]:
+        """User names for selector."""
+        return [u.get("user_name", "") for u in self.assignments_internal_users]
+
+    @rx.var
+    def organizations_for_select(self) -> list[str]:
+        """Organization names for selector."""
+        return [o.get("organization_name", "") for o in self.assignments_organizations]
+
+    @rx.var
+    def projects_filtered_by_org(self) -> list[dict]:
+        """Projects filtered by selected organization (already filtered by load_projects_for_org)."""
+        return self.assignments_projects
+
+    @rx.var
+    def projects_for_select(self) -> list[str]:
+        """Project names for selector."""
+        return [p.get("nombre", "") for p in self.assignments_projects]
+
+    @rx.var
+    def filtered_org_roles(self) -> list[dict]:
+        """Filtered organization roles (exclude SuperAdmin and internal roles).
+
+        Shows only roles with identity_type_id between 2 and 5:
+        - Excludes: identity_type_id = 1 (SuperAdmin)
+        - Excludes: identity_type_id >= 6 (Internal roles)
+        """
+        return [
+            r for r in self.assignments_org_roles
+            if 1 < r.get("identity_type_id", 0) < 6
+        ]
+
+    @rx.var
+    def org_roles_for_select(self) -> list[str]:
+        """Organization role names for selector."""
+        return [r.get("identity_type_name", "") for r in self.assignments_org_roles]
+
+    @rx.var
+    def project_roles_for_select(self) -> list[str]:
+        """Project role names for selector."""
+        return [r.get("nombre_rol", "") for r in self.assignments_project_roles]
+
     def check_backoffice_access(self):
         """
         Verifica que el usuario tiene acceso al backoffice.
@@ -344,6 +418,10 @@ class State(SharedSessionState):
             self.check_ollama_health()
             self.load_ollama_models()
             print("[DEBUG] Asistente data loading complete")
+        if menu == "asignaciones":
+            print("[DEBUG] Loading Asignaciones data...")
+            self.load_assignments_data()
+            print("[DEBUG] Asignaciones data loading complete")
 
     # ========== Página Asistente (Ollama) ==========
 
@@ -1508,6 +1586,338 @@ class State(SharedSessionState):
     def set_user_tab(self, tab: str):
         """Set active tab for user dashboard."""
         self.user_active_tab = tab
+
+    # ========================================================================
+    # ASSIGNMENTS MANAGER - Gestor de asignaciones (SuperAdmin only)
+    # ========================================================================
+
+    # Setters para conversión de string a int (requerido por Reflex)
+    def set_selected_user_org_from_str(self, val: str):
+        """Converts string to int for selected_user_org."""
+        self.selected_user_org = int(val) if val else 0
+
+    def set_selected_organization_assign_from_str(self, val: str):
+        """Converts string to int for selected_organization_assign."""
+        self.selected_organization_assign = int(val) if val else 0
+
+    def set_selected_org_role_from_str(self, val: str):
+        """Converts string to int for selected_org_role."""
+        self.selected_org_role = int(val) if val else 0
+
+    def set_selected_user_project_from_str(self, val: str):
+        """Converts string to int for selected_user_project."""
+        self.selected_user_project = int(val) if val else 0
+
+    def set_selected_org_for_project_from_str(self, val: str):
+        """Converts string to int for selected_org_for_project."""
+        self.selected_org_for_project = int(val) if val else 0
+        # Cargar proyectos de esta organización
+        if self.selected_org_for_project > 0:
+            self.load_projects_for_org(self.selected_org_for_project)
+
+    def set_selected_project_assign_from_str(self, val: str):
+        """Converts string to int for selected_project_assign."""
+        self.selected_project_assign = int(val) if val else 0
+
+    def set_selected_project_role_from_str(self, val: str):
+        """Converts string to int for selected_project_role."""
+        self.selected_project_role = int(val) if val else 0
+
+    def load_assignments_data(self):
+        """Loads all data for assignments manager."""
+        from adapters.api_client import get_internal_users, get_all_organizations, get_roles
+
+        print("[DEBUG] load_assignments_data: Iniciando carga de datos...")
+
+        # Load internal users
+        try:
+            print("[DEBUG] load_assignments_data: Cargando usuarios internos...")
+            users = get_internal_users(
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            self.assignments_internal_users = users
+            print(f"[DEBUG] load_assignments_data: Usuarios internos cargados: {len(users)}")
+        except Exception as e:
+            print(f"[ERROR] load_internal_users: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            self.assignments_internal_users = []
+
+        # Load organizations
+        try:
+            print("[DEBUG] load_assignments_data: Cargando organizaciones...")
+            orgs = get_all_organizations(
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            self.assignments_organizations = orgs
+            print(f"[DEBUG] load_assignments_data: Organizaciones cargadas: {len(orgs)}")
+            if len(orgs) > 0:
+                print(f"[DEBUG] load_assignments_data: Primera organización: {orgs[0]}")
+        except Exception as e:
+            print(f"[ERROR] load_organizations: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            self.assignments_organizations = []
+
+        # Load roles
+        try:
+            print("[DEBUG] load_assignments_data: Cargando roles...")
+            roles = get_roles(
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            self.assignments_org_roles = roles
+            print(f"[DEBUG] load_assignments_data: Roles cargados: {len(roles)}")
+            if len(roles) > 0:
+                print(f"[DEBUG] load_assignments_data: Primer rol: {roles[0]}")
+        except Exception as e:
+            print(f"[ERROR] load_roles: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            self.assignments_org_roles = []
+
+        print(f"[DEBUG] load_assignments_data: Carga completada. Users={len(self.assignments_internal_users)}, Orgs={len(self.assignments_organizations)}, Roles={len(self.assignments_org_roles)}")
+
+    def load_projects_for_org(self, organization_id: int):
+        """Loads projects for a specific organization."""
+        from adapters.api_client import get_organization_projects
+
+        try:
+            projects = get_organization_projects(
+                organization_id=organization_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+                include_deleted=False,  # Solo proyectos activos
+            )
+            # Filtrar y formatear proyectos
+            self.assignments_projects = [
+                {
+                    "id_proyecto": p.get("id", 0),
+                    "nombre": p.get("name", p.get("nombre", "Sin nombre")),
+                    "id_organizacion": organization_id,
+                    "active": p.get("active", True),
+                }
+                for p in projects
+                if p.get("active", True) and p.get("existe", True)
+            ]
+        except Exception as e:
+            print(f"[ERROR] load_projects_for_org: {e}")
+            self.assignments_projects = []
+
+        # Load project roles catalog (hardcoded for now)
+        # TODO: Add API to fetch proyectos_roles_base
+        self.assignments_project_roles = [
+            {"id": 3, "nombre_rol": "Editor"},
+            {"id": 4, "nombre_rol": "Lector"},
+            {"id": 5, "nombre_rol": "Auditor"},
+        ]
+
+        # Note: Org roles are now loaded in load_assignments_data() via get_roles() API
+
+    def set_assignments_tab(self, tab: str):
+        """Changes active tab."""
+        self.assignments_active_tab = tab
+        if tab == "organizaciones":
+            self.load_org_assignments()
+        elif tab == "proyectos":
+            self.load_project_assignments()
+
+    def load_org_assignments(self):
+        """Loads organization assignments for selected org."""
+        if self.selected_organization_assign <= 0:
+            self.org_assignments_list = []
+            return
+
+        from adapters.api_client import get_organization_assignments
+
+        try:
+            assignments = get_organization_assignments(
+                organization_id=self.selected_organization_assign,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            self.org_assignments_list = assignments
+        except Exception as e:
+            print(f"[ERROR] load_org_assignments: {e}")
+            self.org_assignment_error = str(e)
+            self.org_assignments_list = []
+
+    @rx.event(background=True)
+    async def create_org_assignment(self):
+        """Creates organization assignment."""
+        from adapters.api_client import create_organization_assignment
+
+        async with self:
+            self.org_assignment_error = ""
+            self.org_assignment_success = ""
+
+        try:
+            print(f"[DEBUG] Creating assignment: user={self.selected_user_org}, org={self.selected_organization_assign}, role={self.selected_org_role}")
+            result = create_organization_assignment(
+                user_id=self.selected_user_org,
+                organization_id=self.selected_organization_assign,
+                role_id=self.selected_org_role,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            print(f"[DEBUG] Assignment result: {result}")
+            print(f"[DEBUG] Result type: {type(result)}")
+
+            async with self:
+                if result.get("success"):
+                    self.org_assignment_success = result.get("message", "Creado")
+                    self.load_org_assignments()
+                else:
+                    error_detail = result.get("detail", "Error")
+                    print(f"[DEBUG] Error detail: {error_detail}, type: {type(error_detail)}")
+                    # Asegurar que el error sea una string
+                    self.org_assignment_error = str(error_detail) if not isinstance(error_detail, str) else error_detail
+        except Exception as e:
+            print(f"[DEBUG] Exception in create_org_assignment: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            async with self:
+                self.org_assignment_error = str(e)
+
+    def toggle_org_assignment(self, assignment_id: int):
+        """Toggles organization assignment active status."""
+        from adapters.api_client import update_organization_assignment
+
+        # Find current active status
+        current_active = True
+        for assignment in self.org_assignments_list:
+            if assignment.get("id") == assignment_id:
+                current_active = assignment.get("active", True)
+                break
+
+        try:
+            result = update_organization_assignment(
+                assignment_id=assignment_id,
+                active=not current_active,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if result.get("success"):
+                self.load_org_assignments()
+                self.org_assignment_success = result.get("message", "Actualizado")
+        except Exception as e:
+            self.org_assignment_error = str(e)
+
+    def delete_org_assignment(self, assignment_id: int):
+        """Deletes organization assignment permanently."""
+        from adapters.api_client import delete_organization_assignment
+
+        try:
+            result = delete_organization_assignment(
+                assignment_id=assignment_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if result.get("success"):
+                self.load_org_assignments()
+                self.org_assignment_success = "Asignación eliminada"
+        except Exception as e:
+            self.org_assignment_error = str(e)
+
+    def load_project_assignments(self):
+        """Loads project assignments for selected project."""
+        if self.selected_project_assign <= 0:
+            self.project_assignments_list = []
+            return
+
+        from adapters.api_client import get_project_assignments
+
+        try:
+            assignments = get_project_assignments(
+                project_id=self.selected_project_assign,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            self.project_assignments_list = assignments
+        except Exception as e:
+            print(f"[ERROR] load_project_assignments: {e}")
+            self.project_assignment_error = str(e)
+            self.project_assignments_list = []
+
+    @rx.event(background=True)
+    async def create_project_assignment(self):
+        """Creates project assignment with prerequisite validation."""
+        from adapters.api_client import create_project_assignment
+
+        async with self:
+            self.project_assignment_error = ""
+            self.project_assignment_success = ""
+            self.prerequisite_validation_error = ""
+
+        try:
+            result = create_project_assignment(
+                user_id=self.selected_user_project,
+                organization_id=self.selected_org_for_project,
+                project_id=self.selected_project_assign,
+                role_id=self.selected_project_role,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            async with self:
+                if result.get("success"):
+                    self.project_assignment_success = result.get("message", "Creado")
+                    self.load_project_assignments()
+                else:
+                    error_msg = result.get("detail", "Error")
+                    if "organización" in error_msg.lower():
+                        self.prerequisite_validation_error = error_msg
+                    else:
+                        self.project_assignment_error = error_msg
+        except Exception as e:
+            async with self:
+                self.project_assignment_error = str(e)
+
+    def toggle_project_assignment(self, assignment_id: int):
+        """Toggles project assignment active status."""
+        from adapters.api_client import update_project_assignment
+
+        # Find current active status
+        current_active = True
+        for assignment in self.project_assignments_list:
+            if assignment.get("id") == assignment_id:
+                current_active = assignment.get("active", True)
+                break
+
+        try:
+            result = update_project_assignment(
+                assignment_id=assignment_id,
+                active=not current_active,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if result.get("success"):
+                self.load_project_assignments()
+                self.project_assignment_success = result.get("message", "Actualizado")
+        except Exception as e:
+            self.project_assignment_error = str(e)
+
+    def delete_project_assignment(self, assignment_id: int):
+        """Deletes project assignment permanently."""
+        from adapters.api_client import delete_project_assignment
+
+        try:
+            result = delete_project_assignment(
+                assignment_id=assignment_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if result.get("success"):
+                self.load_project_assignments()
+                self.project_assignment_success = "Asignación eliminada"
+        except Exception as e:
+            self.project_assignment_error = str(e)
 
 
 def load_presentation_content() -> str:
@@ -2965,6 +3375,547 @@ def asistente_panel() -> rx.Component:
     )
 
 
+def asignaciones_panel() -> rx.Component:
+    """Panel de Gestor de Asignaciones (SuperAdmin only)."""
+    return rx.vstack(
+        # Header
+        rx.heading(
+            "Gestor de Asignaciones",
+            size="6",
+            color=COLORS["foreground"],
+            margin_bottom="0.5em",
+        ),
+        rx.text(
+            "Gestión de asignaciones de usuarios internos a organizaciones y proyectos",
+            color=COLORS["muted_foreground"],
+            font_size="0.9em",
+            margin_bottom="1em",
+        ),
+
+        # Botón para cargar datos
+        rx.button(
+            rx.hstack(
+                rx.icon("refresh-cw", size=16),
+                rx.text("Cargar Datos"),
+                spacing="2",
+            ),
+            on_click=State.load_assignments_data,
+            size="2",
+            background_color=COLORS["primary"],
+            color="white",
+            margin_bottom="1em",
+        ),
+
+        # Custom Tabs
+        rx.hstack(
+            rx.button(
+                "Roles por Organización",
+                on_click=lambda: State.set_assignments_tab("organizaciones"),
+                background_color=rx.cond(
+                    State.assignments_active_tab == "organizaciones",
+                    COLORS["primary"],
+                    "transparent",
+                ),
+                color=rx.cond(
+                    State.assignments_active_tab == "organizaciones",
+                    "white",
+                    COLORS["foreground"],
+                ),
+                border=f"1px solid {COLORS['border']}",
+                padding="0.75em 1.5em",
+                border_radius="0.5em",
+                cursor="pointer",
+                _hover={"opacity": "0.8"},
+                font_weight="bold",
+            ),
+            rx.button(
+                "Roles por Proyecto",
+                on_click=lambda: State.set_assignments_tab("proyectos"),
+                background_color=rx.cond(
+                    State.assignments_active_tab == "proyectos",
+                    COLORS["primary"],
+                    "transparent",
+                ),
+                color=rx.cond(
+                    State.assignments_active_tab == "proyectos",
+                    "white",
+                    COLORS["foreground"],
+                ),
+                border=f"1px solid {COLORS['border']}",
+                padding="0.75em 1.5em",
+                border_radius="0.5em",
+                cursor="pointer",
+                _hover={"opacity": "0.8"},
+                font_weight="bold",
+            ),
+            spacing="2",
+            padding="1em",
+            border_bottom=f"1px solid {COLORS['border']}",
+            width="100%",
+        ),
+
+        # Tab Content
+        rx.cond(
+            State.assignments_active_tab == "organizaciones",
+            _org_assignments_tab(),
+            _project_assignments_tab(),
+        ),
+
+        spacing="4",
+        width="100%",
+    )
+
+
+def _org_assignments_tab() -> rx.Component:
+    """Organization assignments tab content."""
+    return rx.vstack(
+        # Form
+        rx.box(
+            rx.vstack(
+                rx.text(
+                    "Asignar Usuario a Organización",
+                    font_weight="bold",
+                    color=COLORS["primary"],
+                    font_size="1.1em",
+                ),
+
+                # User selector
+                rx.text("Usuario Interno", color=COLORS["foreground"], font_size="0.9em"),
+                rx.cond(
+                    State.assignments_internal_users.length() > 0,
+                    rx.select.root(
+                        rx.select.trigger(placeholder="Selecciona usuario..."),
+                        rx.select.content(
+                            rx.foreach(
+                                State.assignments_internal_users,
+                                lambda user: rx.select.item(
+                                    user["user_name"],
+                                    value=user["user_id"].to_string(),
+                                ),
+                            ),
+                        ),
+                        on_change=State.set_selected_user_org_from_str,
+                        size="2",
+                        width="100%",
+                    ),
+                    rx.text("No hay usuarios internos cargados", color=COLORS["muted_foreground"], font_style="italic"),
+                ),
+
+                # Organization selector
+                rx.text("Organización", color=COLORS["foreground"], font_size="0.9em", margin_top="0.5em"),
+                rx.cond(
+                    State.assignments_organizations.length() > 0,
+                    rx.select.root(
+                        rx.select.trigger(placeholder="Selecciona organización..."),
+                        rx.select.content(
+                            rx.foreach(
+                                State.assignments_organizations,
+                                lambda org: rx.select.item(
+                                    org["organization_name"],
+                                    value=org["organization_id"].to_string(),
+                                ),
+                            ),
+                        ),
+                        on_change=State.set_selected_organization_assign_from_str,
+                        size="2",
+                        width="100%",
+                    ),
+                    rx.text("No hay organizaciones cargadas", color=COLORS["muted_foreground"], font_style="italic"),
+                ),
+
+                # Role selector (filtered: only roles 2-5)
+                rx.text("Rol", color=COLORS["foreground"], font_size="0.9em", margin_top="0.5em"),
+                rx.select.root(
+                    rx.select.trigger(placeholder="Selecciona rol..."),
+                    rx.select.content(
+                        rx.foreach(
+                            State.filtered_org_roles,
+                            lambda role: rx.select.item(
+                                role["identity_type_name"],
+                                value=role["identity_type_id"].to_string(),
+                            ),
+                        ),
+                    ),
+                    on_change=State.set_selected_org_role_from_str,
+                    size="2",
+                    width="100%",
+                ),
+
+                # Action buttons
+                rx.hstack(
+                    rx.button(
+                        "Asignar",
+                        on_click=State.create_org_assignment,
+                        background_color=COLORS["primary"],
+                        color="white",
+                        size="2",
+                    ),
+                    rx.button(
+                        "Ver Asignaciones",
+                        on_click=State.load_org_assignments,
+                        variant="outline",
+                        size="2",
+                    ),
+                    spacing="2",
+                    margin_top="1em",
+                ),
+
+                # Messages
+                rx.cond(
+                    State.org_assignment_error != "",
+                    rx.callout(
+                        State.org_assignment_error,
+                        icon="alert-circle",
+                        color_scheme="red",
+                        size="1",
+                        margin_top="0.5em",
+                    ),
+                ),
+                rx.cond(
+                    State.org_assignment_success != "",
+                    rx.callout(
+                        State.org_assignment_success,
+                        icon="check-circle",
+                        color_scheme="green",
+                        size="1",
+                        margin_top="0.5em",
+                    ),
+                ),
+
+                spacing="3",
+            ),
+            padding="1.5em",
+            background_color=COLORS["card"],
+            border_radius="0.5em",
+            border=f"1px solid {COLORS['border']}",
+        ),
+
+        # Assignments table
+        rx.cond(
+            State.org_assignments_list.length() > 0,
+            rx.box(
+                rx.vstack(
+                    rx.text(
+                        "Asignaciones Actuales",
+                        font_weight="bold",
+                        color=COLORS["primary"],
+                        font_size="1.1em",
+                    ),
+
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                rx.table.column_header_cell("Usuario"),
+                                rx.table.column_header_cell("Organización"),
+                                rx.table.column_header_cell("Rol"),
+                                rx.table.column_header_cell("Estado"),
+                                rx.table.column_header_cell("Acciones"),
+                            ),
+                        ),
+                        rx.table.body(
+                            rx.foreach(
+                                State.org_assignments_list,
+                                lambda assignment: rx.table.row(
+                                    rx.table.cell(assignment["user_name"]),
+                                    rx.table.cell(assignment["organization_name"]),
+                                    rx.table.cell(assignment["role_name"]),
+                                    rx.table.cell(
+                                        rx.cond(
+                                            assignment["active"],
+                                            rx.badge("Activo", color_scheme="green"),
+                                            rx.badge("Inactivo", color_scheme="gray"),
+                                        ),
+                                    ),
+                                    rx.table.cell(
+                                        rx.hstack(
+                                            rx.button(
+                                                rx.cond(
+                                                    assignment["active"],
+                                                    "Deshabilitar",
+                                                    "Habilitar",
+                                                ),
+                                                on_click=State.toggle_org_assignment(assignment["id"]),
+                                                size="1",
+                                                variant="soft",
+                                            ),
+                                            rx.button(
+                                                "Eliminar",
+                                                on_click=State.delete_org_assignment(assignment["id"]),
+                                                color_scheme="red",
+                                                size="1",
+                                                variant="soft",
+                                            ),
+                                            spacing="1",
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                        size="2",
+                        variant="surface",
+                    ),
+
+                    spacing="3",
+                ),
+                padding="1.5em",
+                background_color=COLORS["card"],
+                border_radius="0.5em",
+                border=f"1px solid {COLORS['border']}",
+                margin_top="2em",
+            ),
+        ),
+
+        spacing="4",
+        width="100%",
+    )
+
+
+def _project_assignments_tab() -> rx.Component:
+    """Project assignments tab content."""
+    return rx.vstack(
+        # Form
+        rx.box(
+            rx.vstack(
+                rx.text(
+                    "Asignar Usuario a Proyecto",
+                    font_weight="bold",
+                    color=COLORS["primary"],
+                    font_size="1.1em",
+                ),
+
+                # User selector
+                rx.text("Usuario Interno", color=COLORS["foreground"], font_size="0.9em"),
+                rx.cond(
+                    State.assignments_internal_users.length() > 0,
+                    rx.select.root(
+                        rx.select.trigger(placeholder="Selecciona usuario..."),
+                        rx.select.content(
+                            rx.foreach(
+                                State.assignments_internal_users,
+                                lambda user: rx.select.item(
+                                    user["user_name"],
+                                    value=user["user_id"].to_string(),
+                                ),
+                            ),
+                        ),
+                        on_change=State.set_selected_user_project_from_str,
+                        size="2",
+                        width="100%",
+                    ),
+                    rx.text("No hay usuarios internos cargados", color=COLORS["muted_foreground"], font_style="italic"),
+                ),
+
+                # Organization selector for project
+                rx.text("Organización", color=COLORS["foreground"], font_size="0.9em", margin_top="0.5em"),
+                rx.cond(
+                    State.assignments_organizations.length() > 0,
+                    rx.select.root(
+                        rx.select.trigger(placeholder="Selecciona organización..."),
+                        rx.select.content(
+                            rx.foreach(
+                                State.assignments_organizations,
+                                lambda org: rx.select.item(
+                                    org["organization_name"],
+                                    value=org["organization_id"].to_string(),
+                                ),
+                            ),
+                        ),
+                        on_change=State.set_selected_org_for_project_from_str,
+                        size="2",
+                        width="100%",
+                    ),
+                    rx.text("No hay organizaciones cargadas", color=COLORS["muted_foreground"], font_style="italic"),
+                ),
+
+                # Project selector (filtered by organization)
+                rx.text("Proyecto", color=COLORS["foreground"], font_size="0.9em", margin_top="0.5em"),
+                rx.cond(
+                    State.assignments_projects.length() > 0,
+                    rx.select.root(
+                        rx.select.trigger(placeholder="Selecciona proyecto..."),
+                        rx.select.content(
+                            rx.foreach(
+                                State.assignments_projects,
+                                lambda proj: rx.select.item(
+                                    proj["nombre"],
+                                    value=proj["id_proyecto"].to_string(),
+                                ),
+                            ),
+                        ),
+                        on_change=State.set_selected_project_assign_from_str,
+                        size="2",
+                        width="100%",
+                    ),
+                    rx.text(
+                        rx.cond(
+                            State.selected_org_for_project > 0,
+                            "No hay proyectos en esta organización",
+                            "Selecciona una organización primero"
+                        ),
+                        color=COLORS["muted_foreground"],
+                        font_style="italic"
+                    ),
+                ),
+
+                # Role selector
+                rx.text("Rol en Proyecto", color=COLORS["foreground"], font_size="0.9em", margin_top="0.5em"),
+                rx.select.root(
+                    rx.select.trigger(placeholder="Selecciona rol..."),
+                    rx.select.content(
+                        rx.foreach(
+                            State.assignments_project_roles,
+                            lambda role: rx.select.item(
+                                role["nombre_rol"],
+                                value=role["id"].to_string(),
+                            ),
+                        ),
+                    ),
+                    on_change=State.set_selected_project_role_from_str,
+                    size="2",
+                    width="100%",
+                ),
+
+                # Prerequisite warning
+                rx.cond(
+                    State.prerequisite_validation_error != "",
+                    rx.callout(
+                        State.prerequisite_validation_error,
+                        icon="alert-triangle",
+                        color_scheme="orange",
+                        size="1",
+                        margin_top="0.5em",
+                    ),
+                ),
+
+                # Action buttons
+                rx.hstack(
+                    rx.button(
+                        "Asignar",
+                        on_click=State.create_project_assignment,
+                        background_color=COLORS["primary"],
+                        color="white",
+                        size="2",
+                    ),
+                    rx.button(
+                        "Ver Asignaciones",
+                        on_click=State.load_project_assignments,
+                        variant="outline",
+                        size="2",
+                    ),
+                    spacing="2",
+                    margin_top="1em",
+                ),
+
+                # Messages
+                rx.cond(
+                    State.project_assignment_error != "",
+                    rx.callout(
+                        State.project_assignment_error,
+                        icon="alert-circle",
+                        color_scheme="red",
+                        size="1",
+                        margin_top="0.5em",
+                    ),
+                ),
+                rx.cond(
+                    State.project_assignment_success != "",
+                    rx.callout(
+                        State.project_assignment_success,
+                        icon="check-circle",
+                        color_scheme="green",
+                        size="1",
+                        margin_top="0.5em",
+                    ),
+                ),
+
+                spacing="3",
+            ),
+            padding="1.5em",
+            background_color=COLORS["card"],
+            border_radius="0.5em",
+            border=f"1px solid {COLORS['border']}",
+        ),
+
+        # Assignments table
+        rx.cond(
+            State.project_assignments_list.length() > 0,
+            rx.box(
+                rx.vstack(
+                    rx.text(
+                        "Asignaciones Actuales",
+                        font_weight="bold",
+                        color=COLORS["primary"],
+                        font_size="1.1em",
+                    ),
+
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                rx.table.column_header_cell("Usuario"),
+                                rx.table.column_header_cell("Proyecto"),
+                                rx.table.column_header_cell("Rol"),
+                                rx.table.column_header_cell("Estado"),
+                                rx.table.column_header_cell("Acciones"),
+                            ),
+                        ),
+                        rx.table.body(
+                            rx.foreach(
+                                State.project_assignments_list,
+                                lambda assignment: rx.table.row(
+                                    rx.table.cell(assignment["user_name"]),
+                                    rx.table.cell(assignment["project_name"]),
+                                    rx.table.cell(assignment["role_name"]),
+                                    rx.table.cell(
+                                        rx.cond(
+                                            assignment["active"],
+                                            rx.badge("Activo", color_scheme="green"),
+                                            rx.badge("Inactivo", color_scheme="gray"),
+                                        ),
+                                    ),
+                                    rx.table.cell(
+                                        rx.hstack(
+                                            rx.button(
+                                                rx.cond(
+                                                    assignment["active"],
+                                                    "Deshabilitar",
+                                                    "Habilitar",
+                                                ),
+                                                on_click=State.toggle_project_assignment(assignment["id"]),
+                                                size="1",
+                                                variant="soft",
+                                            ),
+                                            rx.button(
+                                                "Eliminar",
+                                                on_click=State.delete_project_assignment(assignment["id"]),
+                                                color_scheme="red",
+                                                size="1",
+                                                variant="soft",
+                                            ),
+                                            spacing="1",
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                        size="2",
+                        variant="surface",
+                    ),
+
+                    spacing="3",
+                ),
+                padding="1.5em",
+                background_color=COLORS["card"],
+                border_radius="0.5em",
+                border=f"1px solid {COLORS['border']}",
+                margin_top="2em",
+            ),
+        ),
+
+        spacing="4",
+        width="100%",
+    )
+
+
 def internal_panel(active_item: str) -> rx.Component:
     """Panel for internal tools menu items."""
     heading_text = rx.match(
@@ -2982,7 +3933,7 @@ def internal_panel(active_item: str) -> rx.Component:
     # Contenido para cada sección
     content = rx.match(
         active_item,
-        ("asignaciones", rx.text("Panel de asignaciones de recursos y tareas.", color=COLORS["muted_foreground"])),
+        ("asignaciones", asignaciones_panel()),
         ("estado_proyectos", rx.text("Panel de seguimiento del estado de proyectos.", color=COLORS["muted_foreground"])),
         ("analisis_documentacion", rx.text("Panel de análisis de documentación.", color=COLORS["muted_foreground"])),
         ("entrenamientos", rx.text("Panel de gestión de entrenamientos de modelos.", color=COLORS["muted_foreground"])),
@@ -2992,9 +3943,9 @@ def internal_panel(active_item: str) -> rx.Component:
         rx.text("Selecciona una opción del menú Internal.", color=COLORS["muted_foreground"]),
     )
 
-    # Para asistente, mostrar sin el box contenedor extra
+    # Para asistente y asignaciones, mostrar sin el box contenedor extra
     return rx.cond(
-        active_item == "asistente",
+        (active_item == "asistente") | (active_item == "asignaciones"),
         rx.vstack(
             rx.heading(heading_text, size="8", color=COLORS["primary"], margin_bottom="0.5em"),
             content,
