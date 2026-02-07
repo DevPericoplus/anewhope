@@ -3654,3 +3654,667 @@ When the Ollama integration is implemented, agents will:
 
 Use these rules consistently when working with the Gestión de Prompts feature to ensure proper categorization and effective AI query construction.
 
+## 23. Gestión de Sesiones y JWT - Reglas Críticas
+
+**ADVERTENCIA**: El sistema de gestión de sesiones y tokens JWT es CRÍTICO para la seguridad y estabilidad del sistema. Las siguientes reglas DEBEN respetarse SIEMPRE.
+
+### 23.1. Arquitectura de Sesiones
+
+```
+Frontend/Backoffice → Middleware → Broker → Backend Core/IA
+     (cliente)      (validación)  (proxy)    (confían)
+```
+
+**Responsabilidades por capa**:
+
+| Capa | Responsabilidad | ¿Valida tokens? |
+|------|----------------|----------------|
+| **Frontend/Backoffice** | Renovación automática, sincronización Redis | ❌ No |
+| **Middleware** | Validación JWT, gestión de sesiones | ✅ Sí |
+| **Broker** | Propagación transparente de headers | ❌ No |
+| **Backend Core/IA** | Lógica de negocio | ❌ No (confía en middleware) |
+
+### 23.2. Reglas OBLIGATORIAS de Tokens JWT
+
+#### 23.2.1. Estructura de Tokens
+
+```python
+# ✅ CORRECTO: Tokens con todos los campos requeridos
+access_payload = {
+    "user_id": int,
+    "organization_id": int,
+    "identity_type_id": int,
+    "iat": int,           # Issued At (timestamp Unix)
+    "exp": int,           # Expiration (timestamp Unix)
+    "jti": str,           # JWT ID (UUID único para ESTE token)
+    "session_id": str,    # Session ID (estable durante toda la sesión)
+}
+
+session_payload = {
+    # ... mismos campos con jti DIFERENTE
+}
+```
+
+**Regla #1**: `jti` DEBE ser único para cada token generado (usar `uuid.uuid4()`)
+
+**Regla #2**: `session_id` DEBE mantenerse constante durante toda la sesión
+
+**Regla #3**: Cada renovación genera NUEVOS `jti`, pero mantiene el mismo `session_id`
+
+#### 23.2.2. TTLs Obligatorios
+
+| Token | TTL | Uso |
+|-------|-----|-----|
+| **access_token** | 15 minutos (900 seg) | Autenticación de peticiones |
+| **session_token** | 45 minutos (2700 seg) | Renovación de access_token |
+
+**Regla #4**: NUNCA cambiar estos TTLs sin revisar el impacto en el loop de renovación
+
+#### 23.2.3. Renovación de Tokens
+
+```python
+# ✅ CORRECTO: Flujo de renovación en middleware
+def refresh_tokens(self, session_token: str, ...) -> TokenPair:
+    # 1. Validar token antiguo
+    session_payload = _decode_jwt(session_token, ...)
+    old_jti = session_payload.get("jti")
+    session_id = session_payload.get("session_id")
+
+    # 2. Buscar sesión por JTI ANTIGUO
+    session_record = find_by_jti(old_jti, session_id)
+
+    # 3. Generar NUEVOS tokens (con nuevos JTIs)
+    tokens = self.issue_tokens(..., session_id=session_id)  # Reutiliza session_id
+
+    # 4. ❌ NO GUARDAR sessions.json aquí
+    # issue_tokens() ya lo guarda internamente con los JTIs nuevos
+
+    return tokens
+
+
+# ❌ INCORRECTO: Guardar sessions.json después de issue_tokens()
+def refresh_tokens_WRONG(self, session_token: str, ...) -> TokenPair:
+    sessions_data = load_sessions()  # V1 con JTIs antiguos
+    tokens = self.issue_tokens(...)  # Genera JTIs nuevos y guarda (V2)
+    store_sessions(sessions_data)    # ⚠️ SOBRESCRIBE V2 con V1 antigua
+    return tokens
+```
+
+**Regla #5**: NUNCA guardar `sessions.json` después de llamar a `issue_tokens()` - causa race condition
+
+**Regla #6**: `issue_tokens()` DEBE ser la única función que guarde `sessions.json` durante renovaciones
+
+### 23.3. Gestión de Sesiones en sessions.json
+
+**Ubicación**: `/Users/administrator/develop/anewhope/src/2_shared_application/moks/sessions.json`
+
+**Estructura**:
+```json
+{
+  "sessions": [
+    {
+      "session_id": "uuid-estable",
+      "user_id": 1,
+      "tokens": {
+        "access_token_jti": "jti-actual-access",
+        "session_token_jti": "jti-actual-session"
+      },
+      "status": "active",  # active | inactive | revoked | expired
+      "expires_at": "2026-02-07T14:30:00Z",
+      "created_at": "2026-02-07T14:00:00Z",
+      "last_activity": "2026-02-07T14:15:00Z"
+    }
+  ]
+}
+```
+
+**Regla #7**: Al renovar tokens, `_upsert_session_record()` DEBE actualizar los JTIs manteniendo el mismo `session_id`
+
+**Regla #8**: La validación de tokens (`_find_session_record()`) busca por coincidencia EXACTA de JTIs
+
+### 23.4. Renovación Automática en Cliente
+
+**Frontend y Backoffice** ejecutan un loop en background que:
+
+```python
+@rx.event(background=True)
+async def auto_renew_tokens_loop(self):
+    while True:
+        async with self:
+            # 1. Sincronizar con Redis (tokens renovados por otra app)
+            self._load_tokens_from_redis()
+
+            # 2. Verificar expiración
+            check_result = self.check_token_expiration()
+
+            # 3. Renovar si es necesario
+            if check_result["needs_renewal"]:
+                success = self.ensure_tokens_valid()
+                if not success:
+                    # ✅ CORRECTO: Distinguir errores fatales de temporales
+                    if "expirado" in self.login_error.lower():
+                        self.clear_session()  # Error FATAL
+                        break
+                    else:
+                        self.login_error = ""  # Error TEMPORAL, continuar
+
+        await asyncio.sleep(120)  # Check cada 2 minutos
+```
+
+**Regla #9**: El loop de renovación DEBE ejecutarse cada 2 minutos (120 segundos)
+
+**Regla #10**: Umbral de renovación: 3 minutos (180 segundos) antes de expiración
+
+**Regla #11**: Si la renovación falla pero el token AÚN es válido, NO cerrar sesión
+
+**Regla #12**: Solo cerrar sesión si el `session_token` realmente expiró (no por errores temporales)
+
+### 23.5. Sincronización Redis entre Apps
+
+**Clave**: `session_tokens:{session_id}`
+
+**TTL**: 2700 segundos (45 minutos, igual que session_token)
+
+**Payload**:
+```json
+{
+  "access_token": "eyJ...",
+  "session_token": "eyJ...",
+  "access_expires_at": 1707234567,
+  "session_expires_at": 1707236367,
+  "updated_at": "2026-02-07T10:30:15",  # ISO timestamp
+  "user_id": 123,
+  "organization_id": 45
+}
+```
+
+**Regla #13**: `_save_tokens_to_redis()` DEBE llamarse después de cada renovación
+
+**Regla #14**: `_load_tokens_from_redis()` DEBE comparar timestamps `updated_at` y actualizar solo si son más recientes
+
+**Regla #15**: Si `last_activity` está vacío (primera carga), SIEMPRE cargar desde Redis
+
+### 23.6. Propagación de Headers en Broker
+
+```python
+# ✅ CORRECTO: Propagación transparente
+def set_security_context(self, authorization=None, session_token=None):
+    self._authorization = authorization
+    self._session_token = session_token
+
+    # Propagar a backends
+    self._core_client.set_security_context(authorization, session_token)
+    self._trainer_client.set_security_context(authorization, session_token)
+```
+
+**Regla #16**: El broker NUNCA valida tokens, solo los propaga
+
+**Regla #17**: Los backends (core, IA) confían en que el middleware ya validó
+
+### 23.7. Logging Obligatorio
+
+**En middleware**:
+```python
+# En refresh_tokens():
+self._logger.info(
+    "Renovación: session_id=%s user_id=%s old_jti=%s",
+    session_id, user_id, old_jti
+)
+
+# En issue_tokens():
+self._logger.info(
+    "Generando tokens: session_id=%s access_jti=%s session_jti=%s",
+    session_id, access_jti, session_jti
+)
+
+# En _validate_tokens() (fallo):
+self._logger.error(
+    "Sesión no encontrada: session_id=%s access_jti=%s session_jti=%s",
+    session_id, access_jti, session_jti
+)
+```
+
+**Regla #18**: TODO evento de sesión (login, refresh, validate, logout) DEBE loguearse con `session_id` y `jti`
+
+**Regla #19**: Errores de validación DEBEN loguear las sesiones registradas (primeras 5) para debugging
+
+### 23.8. Casos de Uso Críticos
+
+#### 23.8.1. Entrenamientos Largos de Modelos LLM
+
+**Problema**: Entrenamiento puede durar horas, tokens expiran cada 15 min
+
+**Solución**:
+- ✅ Loop de renovación continúa en background
+- ✅ Tokens se renuevan automáticamente cada ~12 minutos
+- ✅ Si el middleware falla, el cliente NO se expulsa inmediatamente
+- ✅ El usuario puede seguir trabajando con los tokens actuales
+
+**Regla #20**: NUNCA bloquear el loop de renovación durante operaciones largas
+
+#### 23.8.2. Alternancia entre Frontend y Backoffice
+
+**Problema**: Usuario cambia entre apps, pierde sesión
+
+**Solución**:
+- ✅ Tokens se guardan en Redis al cambiar de app
+- ✅ La app destino carga tokens desde Redis (no desde URL)
+- ✅ Solo se pasa `session_id` en URL (seguro)
+
+**Regla #21**: Al alternar apps, llamar `_save_tokens_to_redis()` ANTES del redirect
+
+**Regla #22**: En `on_page_load()`, si viene `session_id`, cargar tokens desde Redis
+
+### 23.9. Checklist de Modificaciones
+
+Antes de modificar código de sesiones/tokens, verificar:
+
+- [ ] ¿Se mantiene el `session_id` estable durante toda la sesión?
+- [ ] ¿Se generan nuevos `jti` únicos para cada token?
+- [ ] ¿Se llama a `_save_tokens_to_redis()` después de renovar?
+- [ ] ¿NO se guarda `sessions.json` después de `issue_tokens()`?
+- [ ] ¿Se loguean todos los eventos de sesión?
+- [ ] ¿Se manejan errores temporales sin expulsar al usuario?
+- [ ] ¿El loop de renovación no se bloquea?
+- [ ] ¿Se respetan los TTLs de 15/45 minutos?
+
+### 23.10. Tests Obligatorios
+
+Cualquier cambio en sesiones/tokens DEBE incluir tests para:
+
+1. ✅ Renovación única exitosa
+2. ✅ Renovaciones consecutivas (3+) exitosas
+3. ✅ Validación con JTIs renovados
+4. ✅ Sincronización Redis entre apps
+5. ✅ Manejo de errores temporales vs fatales
+6. ✅ Expiración de tokens (access y session)
+7. ✅ Race conditions en `sessions.json`
+
+**Comando**: `pytest src/apps/7_service_frontend/tests/test_session_management.py -v`
+
+### 23.11. Referencias
+
+**Documentación completa**: Ver README.md sección "Corrección de race condition en renovación de tokens"
+
+**Archivos críticos**:
+- Middleware: `src/apps/7_service_frontend/routermiddleware.py`
+- Shared state: `src/2_shared_application/reflex_shared/shared_session_state.py`
+- API clients: `src/apps/*/adapters/api_client.py`
+
+### 23.12. Arquitectura DDD para Sesiones y JWT
+
+**NUEVA REGLA CRÍTICA**: A partir de ahora, TODA gestión de sesiones y JWT DEBE usar los servicios DDD centralizados.
+
+#### 23.12.1. Servicios DDD Obligatorios
+
+**Ubicaciones**:
+- **Domain Layer**: `src/1_shared_domain/entities/session.py`
+- **Application Layer**: `src/2_shared_application/services/`
+  - `jwt_service.py` - Generación y validación de tokens
+  - `session_service.py` - Orquestación de sesiones
+- **Repository**: `src/2_shared_application/interfaces/session_repository.py`
+
+#### 23.12.2. Value Objects Inmutables
+
+```python
+# ✅ CORRECTO: Usar Value Objects del dominio
+from src.shared_domain.entities.session import (
+    Jti,           # Value Object con validación UUID
+    JwtPayload,    # Value Object inmutable (frozen=True)
+    TokenPair,     # Value Object inmutable (frozen=True)
+    TokenType,     # Enum: ACCESS, SESSION
+    JwtAlgorithm,  # Enum: HS256, HS384, etc.
+)
+
+# Generar JTI único
+jti = Jti(str(uuid.uuid4()))  # Valida UUID en construcción
+
+# Crear payload (inmutable)
+payload = JwtPayload(
+    session_id="abc-123",
+    user_id=5,
+    organization_id=2,
+    identity_type_id=1,
+    jti=jti.value,
+    iat=int(time.time()),
+    exp=int(time.time()) + 900,
+    token_type=TokenType.ACCESS,
+)
+
+# ❌ NO SE PUEDE modificar después de creado
+payload.user_id = 10  # ERROR: FrozenInstanceError
+```
+
+**Regla #23**: NUNCA crear payloads JWT manualmente. Usar `JwtPayload` con validación automática.
+
+**Regla #24**: NUNCA modificar Value Objects después de su creación (son inmutables por diseño).
+
+#### 23.12.3. JwtService - Servicio de Tokens
+
+```python
+# ✅ CORRECTO: Usar JwtService para operaciones de tokens
+from src.shared_application.services.jwt_service import (
+    JwtService,
+    JwtSettings,
+    TokenExpiredError,
+    TokenValidationError,
+)
+
+# Inicializar servicio (una vez al arrancar middleware)
+jwt_settings = JwtSettings(
+    access_secret=env_settings.jwt_access_secret,
+    session_secret=env_settings.jwt_session_secret,
+    access_ttl_seconds=900,   # 15 min
+    session_ttl_seconds=2700, # 45 min
+    algorithm=JwtAlgorithm.HS256,
+)
+jwt_service = JwtService(jwt_settings)
+
+# Generar par de tokens
+token_pair = jwt_service.create_token_pair(
+    session_id="abc-123",
+    user_id=5,
+    organization_id=2,
+    identity_type_id=1,
+)
+# Retorna TokenPair inmutable con ambos tokens y metadatos
+
+# Validar access token
+try:
+    payload = jwt_service.validate_access_token(access_token)
+    # payload es JwtPayload validado
+except TokenExpiredError:
+    # Token expiró
+except TokenValidationError:
+    # Token inválido (firma, formato, etc.)
+
+# Extraer JTI sin validar (para blacklist check)
+jti = jwt_service.extract_jti_without_validation(token)
+```
+
+**Regla #25**: NUNCA llamar directamente a `jwt.encode()` o `jwt.decode()`. Usar siempre `JwtService`.
+
+**Regla #26**: SIEMPRE capturar excepciones específicas (`TokenExpiredError`, `TokenValidationError`).
+
+#### 23.12.4. SessionService - Orquestación de Sesiones
+
+```python
+# ✅ CORRECTO: Usar SessionService para lógica de negocio
+from src.shared_application.services.session_service import (
+    SessionService,
+    CreateSessionRequest,
+    SessionResponse,
+    SessionNotFoundError,
+    SessionExpiredError,
+    InvalidTokenError,
+)
+
+# Inicializar servicio (inyección de dependencias)
+session_service = SessionService(
+    jwt_service=jwt_service,
+    session_repository=json_session_repository,  # Adaptador
+)
+
+# FLUJO 1: Crear nueva sesión (login)
+request = CreateSessionRequest(
+    user_id=5,
+    organization_id=2,
+    identity_type_id=1,
+    ip_address="192.168.1.1",
+    user_agent="Mozilla/5.0...",
+)
+
+response = session_service.create_session(request)
+# response.session: Entidad Session
+# response.token_pair: TokenPair con ambos tokens
+
+# FLUJO 2: Renovar access token
+try:
+    new_token_pair = session_service.refresh_access_token(
+        session_token=old_session_token
+    )
+    # new_token_pair tiene nuevos JTIs
+except SessionExpiredError:
+    # Sesión expiró en BD
+except InvalidTokenError:
+    # Token inválido o JTI no coincide
+
+# FLUJO 3: Obtener contexto para permisos
+try:
+    context = session_service.get_session_context(access_token)
+    # context es UserSessionContext con user_id, org_id, etc.
+except SessionExpiredError:
+    # Sesión no activa
+except InvalidTokenError:
+    # Token inválido
+
+# FLUJO 4: Logout (invalidar sesión)
+success = session_service.invalidate_session(
+    session_id="abc-123",
+    reason="logout",  # "logout", "expired", "revoked"
+)
+
+# FLUJO 5: Logout global (cambio de contraseña)
+count = session_service.invalidate_all_user_sessions(
+    user_id=5,
+    reason="password_change",
+)
+```
+
+**Regla #27**: NUNCA duplicar lógica de `create_session()` o `refresh_access_token()`. Usar `SessionService`.
+
+**Regla #28**: SIEMPRE pasar `CreateSessionRequest` (no argumentos sueltos).
+
+**Regla #29**: SIEMPRE capturar excepciones específicas del servicio.
+
+#### 23.12.5. SessionRepository - Contrato de Persistencia
+
+```python
+# ✅ CORRECTO: Implementar SessionRepository como Protocol
+from src.shared_application.interfaces.session_repository import SessionRepository
+from src.shared_domain.entities.session import Session, SessionStatus
+
+class JsonSessionRepository:
+    """Implementación JSON del SessionRepository."""
+
+    def get_by_session_id(self, session_id: str) -> Session | None:
+        # Leer sessions.json
+        # Convertir a entidad Session
+        return session
+
+    def save(self, session: Session) -> Session:
+        # Guardar sessions.json
+        # Retornar sesión guardada
+        return session
+
+    def update_status(
+        self, session_id: str, status: SessionStatus, updated_at: datetime | None
+    ) -> bool:
+        # Actualizar estado de sesión
+        return True
+
+    def update_activity(self, session_id: str, last_activity: datetime) -> bool:
+        # Actualizar última actividad
+        return True
+
+    def list_by_user_id(self, user_id: int) -> tuple[Session, ...]:
+        # Listar sesiones del usuario
+        return tuple(sessions)
+```
+
+**Regla #30**: NUNCA acceder directamente a `sessions.json`. Usar `SessionRepository`.
+
+**Regla #31**: TODA implementación de `SessionRepository` DEBE implementar TODOS los métodos del Protocol.
+
+**Regla #32**: `SessionRepository.save()` DEBE ser atómico (evitar race conditions).
+
+#### 23.12.6. Refactorización del Middleware
+
+**ANTES (Manual):**
+```python
+# ❌ NO HACER: Lógica manual de tokens
+def issue_tokens(self, user_id, org_id, identity_type_id):
+    session_id = str(uuid.uuid4())
+    now = int(time.time())
+
+    access_jti = str(uuid.uuid4())
+    access_token = jwt.encode({
+        "user_id": user_id,
+        "jti": access_jti,
+        "exp": now + 900,
+        # ... más campos manualmente
+    }, secret, algorithm="HS256")
+
+    # ... código duplicado para session_token
+    # ... guardar manualmente en sessions.json
+```
+
+**DESPUÉS (DDD):**
+```python
+# ✅ HACER: Delegar a SessionService
+def __init__(self):
+    # Inicializar servicios DDD una vez
+    jwt_settings = JwtSettings(...)
+    self._jwt_service = JwtService(jwt_settings)
+    self._session_repository = JsonSessionRepository()
+    self._session_service = SessionService(
+        self._jwt_service,
+        self._session_repository,
+    )
+
+def issue_tokens(self, user_id, org_id, identity_type_id):
+    # Delegar toda la lógica a SessionService
+    request = CreateSessionRequest(
+        user_id=user_id,
+        organization_id=org_id,
+        identity_type_id=identity_type_id,
+    )
+
+    response = self._session_service.create_session(request)
+
+    return {
+        "access_token": response.token_pair.access_token,
+        "session_token": response.token_pair.session_token,
+        "access_expires_at": response.token_pair.access_expires_at,
+        "session_expires_at": response.token_pair.session_expires_at,
+        "session_id": response.session.session_id,
+    }
+
+def refresh_tokens(self, session_token):
+    # Delegar a SessionService
+    try:
+        token_pair = self._session_service.refresh_access_token(session_token)
+
+        return {
+            "access_token": token_pair.access_token,
+            "session_token": token_pair.session_token,
+            # ... metadatos
+        }
+    except SessionExpiredError as exc:
+        raise MiddlewareAuthError(f"Sesión expirada: {exc}")
+    except InvalidTokenError as exc:
+        raise MiddlewareAuthError(f"Token inválido: {exc}")
+```
+
+**Regla #33**: Al refactorizar, ELIMINAR toda lógica manual de JWT del middleware.
+
+**Regla #34**: Al refactorizar, NO cambiar interfaces públicas del middleware (solo internals).
+
+#### 23.12.7. Beneficios de la Arquitectura DDD
+
+**Eliminación de Race Conditions:**
+- `SessionRepository.save()` es atómico
+- No más lecturas/escritas manuales de JSON
+- Un solo punto de persistencia
+
+**Eliminación de Código Duplicado:**
+- `issue_tokens()` y `refresh_tokens()` comparten `JwtService.create_token_pair()`
+- Validaciones centralizadas en `JwtPayload.__post_init__`
+
+**Mejor Testabilidad:**
+```python
+def test_create_session():
+    # Mock de dependencias
+    mock_jwt_service = Mock(spec=JwtService)
+    mock_repository = Mock(spec=SessionRepository)
+
+    session_service = SessionService(mock_jwt_service, mock_repository)
+
+    # Test aislado sin filesystem
+    request = CreateSessionRequest(...)
+    response = session_service.create_session(request)
+
+    assert response.token_pair.access_token
+    mock_jwt_service.create_token_pair.assert_called_once()
+```
+
+**Inmutabilidad Garantizada:**
+- `JwtPayload` y `TokenPair` son `frozen=True`
+- No hay forma de corromper el estado después de creación
+- Validaciones en construcción (no en uso)
+
+**Excepciones Específicas:**
+- `TokenExpiredError` vs `TokenValidationError` vs `SessionExpiredError`
+- Stack traces claros y debuggables
+- Manejo de errores preciso
+
+#### 23.12.8. Checklist de Migración a DDD
+
+Antes de refactorizar código legacy a DDD:
+
+- [ ] ¿Se importan Value Objects del dominio (`Jti`, `JwtPayload`, `TokenPair`)?
+- [ ] ¿Se usa `JwtService` en lugar de `jwt.encode()`/`jwt.decode()`?
+- [ ] ¿Se usa `SessionService` para toda lógica de sesiones?
+- [ ] ¿Se implementa `SessionRepository` como adaptador?
+- [ ] ¿Se inyectan dependencias en constructor (no variables globales)?
+- [ ] ¿Se capturan excepciones específicas de los servicios?
+- [ ] ¿Se eliminan manipulaciones directas de `sessions.json`?
+- [ ] ¿Se mantienen las interfaces públicas existentes?
+- [ ] ¿Se agregan tests con mocks?
+
+#### 23.12.9. Archivos DDD
+
+**Domain Layer:**
+- `src/1_shared_domain/entities/session.py`
+  - Value Objects: `Jti`, `JwtPayload`, `TokenPair`
+  - Entidad: `Session`
+  - Enums: `TokenType`, `JwtAlgorithm`, `SessionStatus`
+
+**Application Layer:**
+- `src/2_shared_application/services/jwt_service.py`
+  - Servicio: `JwtService`
+  - Config: `JwtSettings`
+  - Excepciones: `JwtServiceError`, `TokenValidationError`, `TokenExpiredError`
+
+- `src/2_shared_application/services/session_service.py`
+  - Servicio: `SessionService`
+  - DTOs: `CreateSessionRequest`, `SessionResponse`
+  - Excepciones: `SessionServiceError`, `SessionNotFoundError`, `SessionExpiredError`, `InvalidTokenError`
+
+- `src/2_shared_application/interfaces/session_repository.py`
+  - Protocol: `SessionRepository`
+
+**Regla #35**: SIEMPRE consultar estos archivos antes de modificar lógica de sesiones/JWT.
+
+**Regla #36**: NUNCA duplicar lógica que ya existe en los servicios DDD.
+
+#### 23.12.10. Documentación Completa
+
+Para arquitectura DDD detallada, ver README.md sección "Arquitectura DDD para Gestión de Sesiones y JWT":
+
+- Estructura de capas completa
+- Diagramas de flujo (create_session, refresh_tokens, get_context)
+- Ejemplos de uso
+- Patrones aplicados (Value Object, Service Layer, Repository, DI)
+- Principios SOLID
+
+---
+
+**⚠️ ADVERTENCIA FINAL**: Modificaciones incorrectas en este sistema pueden causar:
+- Expulsión masiva de usuarios
+- Pérdida de trabajo en operaciones largas
+- Vulnerabilidades de seguridad
+- Corrupción de `sessions.json`
+
+**Siempre consultar con el equipo antes de modificar el sistema de sesiones.**
+

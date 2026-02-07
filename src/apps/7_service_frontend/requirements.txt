@@ -4,3 +4,4 @@ cryptography==46.0.3
 pytest==9.0.2
 uvicorn==0.40.0
 python-multipart
+PyJWT==2.9.0

@@ -34,6 +34,10 @@ except ImportError:  # pragma: no cover - soporte para ejecuciones fuera de paqu
     )
     from interfacetobackend import InterfaceToBackend
 
+# Importar servicios DDD (Domain-Driven Design) usando importlib
+# Los directorios numerados (1_shared_domain, 2_shared_application) no pueden
+# importarse directamente en Python, por lo que usamos carga dinámica
+
 
 def _load_dto_module(module_name: str, filename: str) -> Any:
     """Carga un módulo de DTOs desde el paquete compartido."""
@@ -79,6 +83,55 @@ RoleDto = _security_dtos.RoleDto
 BasicPermissionDto = _security_dtos.BasicPermissionDto
 LowLevelPermissionDto = _security_dtos.LowLevelPermissionDto
 ManageRoleByOrgDto = _security_dtos.ManageRoleByOrgDto
+
+
+# ============================================================================
+# Cargar módulos DDD (Domain-Driven Design) dinámicamente
+# ============================================================================
+
+def _load_ddd_module(module_name: str, relative_path: str) -> Any:
+    """Carga un módulo DDD desde la estructura numerada."""
+    module_path = Path(__file__).resolve().parents[3] / relative_path
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"No se pudo cargar el módulo DDD: {relative_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+# Cargar servicios DDD
+_jwt_service_module = _load_ddd_module(
+    "ddd_jwt_service", "src/2_shared_application/services/jwt_service.py"
+)
+_session_service_module = _load_ddd_module(
+    "ddd_session_service", "src/2_shared_application/services/session_service.py"
+)
+_json_session_repository_module = _load_ddd_module(
+    "ddd_json_session_repository",
+    "src/2_shared_application/adapters/json_session_repository.py",
+)
+_session_entities_module = _load_ddd_module(
+    "ddd_session_entities", "src/1_shared_domain/entities/session.py"
+)
+
+# Extraer clases de los módulos cargados
+JwtService = _jwt_service_module.JwtService
+DddJwtSettings = _jwt_service_module.JwtSettings
+DddTokenExpiredError = _jwt_service_module.TokenExpiredError
+DddTokenValidationError = _jwt_service_module.TokenValidationError
+
+SessionService = _session_service_module.SessionService
+CreateSessionRequest = _session_service_module.CreateSessionRequest
+DddSessionExpiredError = _session_service_module.SessionExpiredError
+DddInvalidTokenError = _session_service_module.InvalidTokenError
+
+JsonSessionRepository = _json_session_repository_module.JsonSessionRepository
+
+JwtAlgorithm = _session_entities_module.JwtAlgorithm
+TokenType = _session_entities_module.TokenType
+UserSessionContext = _session_entities_module.UserSessionContext
 
 
 @dataclass(frozen=True)
@@ -414,6 +467,31 @@ class RouterMiddleware:
             base_url=self._get_broker_base_url()
         )
 
+        # Inicializar servicios DDD para gestión de sesiones y JWT
+        self._logger.info("[DDD] Inicializando servicios de sesión y JWT")
+
+        # 1. Configurar JwtService
+        ddd_jwt_settings = DddJwtSettings(
+            access_secret=jwt_settings.access_secret,
+            session_secret=jwt_settings.session_secret,
+            access_ttl_seconds=jwt_settings.access_ttl_seconds,
+            session_ttl_seconds=jwt_settings.session_ttl_seconds,
+            algorithm=JwtAlgorithm(jwt_settings.algorithm),
+        )
+        self._jwt_service = JwtService(ddd_jwt_settings)
+
+        # 2. Configurar SessionRepository (adaptador JSON)
+        sessions_file_path = self._get_sessions_file_path()
+        self._session_repository = JsonSessionRepository(sessions_file_path)
+
+        # 3. Configurar SessionService (orquestador)
+        self._session_service = SessionService(
+            jwt_service=self._jwt_service,
+            session_repository=self._session_repository,
+        )
+
+        self._logger.info("[DDD] Servicios DDD inicializados correctamente")
+
     def _get_storage_mode(self) -> StorageMode:
         """Obtiene el modo de almacenamiento configurado.
         
@@ -706,92 +784,97 @@ class RouterMiddleware:
             )
 
     def _validate_tokens(self, access_token: str, session_token: str) -> SessionContext:
-        """Valida la presencia y vigencia de los tokens JWT."""
+        """Valida la presencia y vigencia de los tokens JWT.
 
-        access_payload = _decode_jwt(
-            access_token, self._jwt_settings.access_secret, self._jwt_settings.algorithm
-        )
-        session_payload = _decode_jwt(
-            session_token, self._jwt_settings.session_secret, self._jwt_settings.algorithm
-        )
-        self._validate_token_ttl(
-            access_payload, self._jwt_settings.access_ttl_seconds, "acceso"
-        )
-        self._validate_token_ttl(
-            session_payload, self._jwt_settings.session_ttl_seconds, "sesión"
-        )
-        for label, payload in (
-            ("acceso", access_payload),
-            ("sesión", session_payload),
-        ):
-            if (
-                "user_id" not in payload
-                or "organization_id" not in payload
-                or "identity_type_id" not in payload
-                or "jti" not in payload
-                or "session_id" not in payload
-            ):
-                raise TokenValidationError(
-                    "El token de "
-                    f"{label} no incluye user_id, organization_id, identity_type_id, jti o session_id"
-                )
+        REFACTORIZADO: Ahora usa SessionService.get_session_context() (DDD).
+        Mantiene validación adicional de session_token para compatibilidad.
+        """
+
+        self._logger.info("[DDD] Validando tokens (access + session)")
 
         try:
-            access_user_id = int(access_payload["user_id"])
-            access_org_id = int(access_payload["organization_id"])
-            access_identity_type_id = int(access_payload["identity_type_id"])
-            session_user_id = int(session_payload["user_id"])
-            session_org_id = int(session_payload["organization_id"])
-            session_identity_type_id = int(session_payload["identity_type_id"])
-        except (TypeError, ValueError) as exc:
-            raise TokenValidationError(
-                "Los identificadores del token no son válidos"
-            ) from exc
+            # 1. Validar access_token y obtener contexto usando SessionService
+            user_session_context = self._session_service.get_session_context(access_token)
 
-        if (
-            access_user_id != session_user_id
-            or access_org_id != session_org_id
-            or access_identity_type_id != session_identity_type_id
-        ):
-            raise TokenValidationError("Los tokens no corresponden a la misma sesión")
-        if access_payload["session_id"] != session_payload["session_id"]:
-            raise TokenValidationError("Los tokens no corresponden a la misma sesión")
+            self._logger.info(
+                "[DDD] Access token válido: user_id=%s session_id=%s",
+                user_session_context.user_id,
+                user_session_context.session_id,
+            )
 
-        sessions_path = self._get_sessions_file_path()
-        sessions_data = self._load_sessions_data(sessions_path)
-        session_record = self._find_session_record(
-            sessions_data,
-            access_payload["jti"],
-            session_payload["jti"],
-            access_user_id,
-            access_payload["session_id"],
-        )
-        if session_record is None:
-            raise TokenValidationError("La sesión no está registrada")
+            # 2. Validar session_token con JwtService (para asegurar coherencia)
+            try:
+                session_payload = self._jwt_service.validate_session_token(session_token)
 
-        status = session_record.get("status", "inactive")
-        if status != "active":
-            raise TokenValidationError("La sesión no está activa")
+                # Verificar que session_token corresponda a la misma sesión
+                if session_payload.session_id != user_session_context.session_id:
+                    raise TokenValidationError(
+                        "Los tokens no corresponden a la misma sesión"
+                    )
 
-        expires_at = session_record.get("expires_at")
-        if expires_at:
-            if _utc_now() >= _parse_iso_utc(expires_at):
-                session_record["status"] = "expired"
-                self._store_sessions_data(sessions_path, sessions_data)
-                raise TokenExpiredError("La sesión ha expirado")
+                if session_payload.user_id != user_session_context.user_id:
+                    raise TokenValidationError(
+                        "Los tokens no corresponden al mismo usuario"
+                    )
 
-        session_record["last_activity"] = _to_iso_utc(_utc_now())
-        self._store_sessions_data(sessions_path, sessions_data)
+                self._logger.info(
+                    "[DDD] Session token válido: session_id=%s",
+                    session_payload.session_id,
+                )
 
-        return SessionContext(
-            user_id=access_user_id,
-            organization_id=access_org_id,
-            identity_type_id=access_identity_type_id,
-            access_payload=access_payload,
-            session_payload=session_payload,
-            access_token=access_token,
-            session_token=session_token,
-        )
+            except DddTokenExpiredError as exc:
+                self._logger.warning("[DDD] Session token expirado: %s", exc)
+                raise TokenExpiredError(f"Token de sesión expirado: {exc}") from exc
+
+            except DddTokenValidationError as exc:
+                self._logger.warning("[DDD] Session token inválido: %s", exc)
+                raise TokenValidationError(f"Token de sesión inválido: {exc}") from exc
+
+            # 3. Actualizar última actividad en la sesión
+            self._session_repository.update_activity(
+                session_id=user_session_context.session_id,
+                last_activity=datetime.now(timezone.utc),
+            )
+
+            # 4. Obtener access_payload para SessionContext legacy
+            # (necesario para compatibilidad con código existente)
+            access_payload = self._jwt_service.decode_without_validation(access_token)
+            session_payload_dict = self._jwt_service.decode_without_validation(session_token)
+
+            # 5. Retornar SessionContext (formato legacy)
+            return SessionContext(
+                user_id=user_session_context.user_id,
+                organization_id=user_session_context.organization_id,
+                identity_type_id=user_session_context.identity_type_id,
+                access_payload=access_payload,
+                session_payload=session_payload_dict,
+                access_token=access_token,
+                session_token=session_token,
+            )
+
+        except DddSessionExpiredError as exc:
+            self._logger.warning("[DDD] Sesión expirada: %s", exc)
+            raise TokenExpiredError(str(exc)) from exc
+
+        except DddInvalidTokenError as exc:
+            self._logger.warning("[DDD] Token inválido: %s", exc)
+            raise TokenValidationError(str(exc)) from exc
+
+        except DddTokenExpiredError as exc:
+            self._logger.warning("[DDD] Token expirado: %s", exc)
+            raise TokenExpiredError(str(exc)) from exc
+
+        except DddTokenValidationError as exc:
+            self._logger.warning("[DDD] Error de validación de token: %s", exc)
+            raise TokenValidationError(str(exc)) from exc
+
+        except (TokenValidationError, TokenExpiredError):
+            # Re-raise legacy exceptions (ya manejadas arriba)
+            raise
+
+        except Exception as exc:
+            self._logger.error("[DDD] Error inesperado al validar tokens: %s", exc, exc_info=True)
+            raise BusinessRuleError(f"No se pudo validar tokens: {exc}") from exc
 
     def validate_session(self, access_token: str, session_token: str) -> SessionContext:
         """Valida la sesión y retorna el contexto."""
@@ -807,67 +890,62 @@ class RouterMiddleware:
         ip_address: str = "",
         user_agent: str = "",
     ) -> TokenPair:
-        """Genera los tokens de acceso y sesión."""
+        """Genera los tokens de acceso y sesión.
 
-        now = int(time.time())
-        access_exp = now + self._jwt_settings.access_ttl_seconds
-        session_exp = now + self._jwt_settings.session_ttl_seconds
-        access_jti = str(uuid.uuid4())
-        session_jti = str(uuid.uuid4())
-        session_id = session_id or str(uuid.uuid4())
-        access_payload = {
-            "user_id": user_id,
-            "organization_id": organization_id,
-            "identity_type_id": identity_type_id,
-            "iat": now,
-            "exp": access_exp,
-            "jti": access_jti,
-            "session_id": session_id,
-        }
-        session_payload = {
-            "user_id": user_id,
-            "organization_id": organization_id,
-            "identity_type_id": identity_type_id,
-            "iat": now,
-            "exp": session_exp,
-            "jti": session_jti,
-            "session_id": session_id,
-        }
-        access_token = _encode_jwt(
-            access_payload, self._jwt_settings.access_secret, self._jwt_settings.algorithm
+        REFACTORIZADO: Ahora usa SessionService (DDD) para toda la lógica.
+        Mantiene la misma interfaz pública para compatibilidad.
+
+        NOTA: Si se proporciona session_id, se ignora (solo para compatibilidad).
+        Para renovar tokens de una sesión existente, use refresh_tokens() en su lugar.
+        """
+
+        if session_id:
+            self._logger.warning(
+                "[DDD] issue_tokens() llamado con session_id=%s. "
+                "Este parámetro se ignora. Para renovar tokens use refresh_tokens()",
+                session_id
+            )
+
+        self._logger.info(
+            "[DDD] Creando nueva sesión: user_id=%s org_id=%s identity_type_id=%s",
+            user_id, organization_id, identity_type_id
         )
-        session_token = _encode_jwt(
-            session_payload,
-            self._jwt_settings.session_secret,
-            self._jwt_settings.algorithm,
-        )
-        sessions_path = self._get_sessions_file_path()
-        sessions_data = self._load_sessions_data(sessions_path)
-        self._upsert_session_record(
-            sessions_data,
-            session_id=session_id,
+
+        # Crear request DTO
+        request = CreateSessionRequest(
             user_id=user_id,
             organization_id=organization_id,
             identity_type_id=identity_type_id,
-            access_jti=access_jti,
-            session_jti=session_jti,
-            expires_at=_to_iso_utc(
-                datetime.fromtimestamp(session_exp, tz=timezone.utc)
-            ),
             ip_address=ip_address,
             user_agent=user_agent,
         )
-        self._store_sessions_data(sessions_path, sessions_data)
-        return TokenPair(
-            user_id=user_id,
-            organization_id=organization_id,
-            identity_type_id=identity_type_id,
-            access_token=access_token,
-            session_token=session_token,
-            access_expires_at=access_exp,
-            session_expires_at=session_exp,
-            session_id=session_id,
-        )
+
+        try:
+            # Delegar a SessionService para crear nueva sesión
+            response = self._session_service.create_session(request)
+
+            self._logger.info(
+                "[DDD] Tokens generados: session_id=%s access_jti=%s session_jti=%s",
+                response.session.session_id,
+                response.session.tokens.access_token_jti[:16],
+                response.session.tokens.session_token_jti[:16],
+            )
+
+            # Retornar TokenPair (legacy format)
+            return TokenPair(
+                user_id=response.session.user_id,
+                organization_id=response.session.organization_id,
+                identity_type_id=response.session.identity_type_id,
+                access_token=response.token_pair.access_token,
+                session_token=response.token_pair.session_token,
+                access_expires_at=response.token_pair.access_expires_at,
+                session_expires_at=response.token_pair.session_expires_at,
+                session_id=response.session.session_id,
+            )
+
+        except Exception as exc:
+            self._logger.error("[DDD] Error al crear sesión: %s", exc, exc_info=True)
+            raise BusinessRuleError(f"No se pudo generar tokens: {exc}") from exc
 
     def generate_file_operation_token(
         self,
@@ -1539,68 +1617,54 @@ class RouterMiddleware:
     def refresh_tokens(
         self, session_token: str, ip_address: str = "", user_agent: str = ""
     ) -> TokenPair:
-        """Renueva los tokens de la sesión vigente."""
+        """Renueva los tokens de la sesión vigente.
 
-        session_payload = _decode_jwt(
-            session_token, self._jwt_settings.session_secret, self._jwt_settings.algorithm
-        )
-        self._validate_token_ttl(
-            session_payload, self._jwt_settings.session_ttl_seconds, "sesión"
-        )
-        if (
-            "user_id" not in session_payload
-            or "organization_id" not in session_payload
-            or "identity_type_id" not in session_payload
-        ):
-            raise TokenValidationError(
-                "El token de sesión no incluye user_id, organization_id e identity_type_id"
-            )
+        REFACTORIZADO: Ahora usa SessionService.refresh_access_token() (DDD).
+        Mantiene la misma interfaz pública para compatibilidad.
+        """
+
+        self._logger.info("[DDD] Renovando tokens con session_token")
+
         try:
-            user_id = int(session_payload["user_id"])
-            organization_id = int(session_payload["organization_id"])
-            identity_type_id = int(session_payload["identity_type_id"])
-        except (TypeError, ValueError) as exc:
-            raise TokenValidationError(
-                "Los identificadores del token no son válidos"
-            ) from exc
+            # Delegar a SessionService
+            ddd_token_pair = self._session_service.refresh_access_token(session_token)
 
-        session_jti = session_payload.get("jti")
-        session_id = session_payload.get("session_id")
-        if session_jti is None or session_id is None:
-            raise TokenValidationError(
-                "El token de sesión no incluye jti o session_id"
+            self._logger.info(
+                "[DDD] Tokens renovados: session_id=%s",
+                ddd_token_pair.session_id,
             )
 
-        sessions_path = self._get_sessions_file_path()
-        sessions_data = self._load_sessions_data(sessions_path)
-        session_record = None
-        for session in sessions_data.get("sessions", []):
-            tokens = session.get("tokens", {})
-            if (
-                tokens.get("session_token_jti") == session_jti
-                and session.get("user_id") == user_id
-                and session.get("session_id") == session_id
-            ):
-                session_record = session
-                break
-        if session_record is None:
-            raise TokenValidationError("La sesión no está registrada")
-        if session_record.get("status") != "active":
-            raise TokenValidationError("La sesión no está activa")
+            # Convertir DDD TokenPair a TokenPair legacy
+            return TokenPair(
+                user_id=ddd_token_pair.user_id,
+                organization_id=ddd_token_pair.organization_id,
+                identity_type_id=ddd_token_pair.identity_type_id,
+                access_token=ddd_token_pair.access_token,
+                session_token=ddd_token_pair.session_token,
+                access_expires_at=ddd_token_pair.access_expires_at,
+                session_expires_at=ddd_token_pair.session_expires_at,
+                session_id=ddd_token_pair.session_id,
+            )
 
-        self._logger.info(
-            "Renovación de tokens user_id=%s org_id=%s", user_id, organization_id
-        )
-        tokens = self.issue_tokens(
-            user_id,
-            organization_id,
-            identity_type_id,
-            session_id=session_id,
-            ip_address=ip_address,
-            user_agent=user_agent,
-        )
-        self._store_sessions_data(sessions_path, sessions_data)
-        return tokens
+        except DddSessionExpiredError as exc:
+            self._logger.warning("[DDD] Sesión expirada: %s", exc)
+            raise TokenExpiredError(str(exc)) from exc
+
+        except DddInvalidTokenError as exc:
+            self._logger.warning("[DDD] Token inválido: %s", exc)
+            raise TokenValidationError(str(exc)) from exc
+
+        except DddTokenExpiredError as exc:
+            self._logger.warning("[DDD] Token expirado: %s", exc)
+            raise TokenExpiredError(str(exc)) from exc
+
+        except DddTokenValidationError as exc:
+            self._logger.warning("[DDD] Error de validación de token: %s", exc)
+            raise TokenValidationError(str(exc)) from exc
+
+        except Exception as exc:
+            self._logger.error("[DDD] Error inesperado al renovar tokens: %s", exc, exc_info=True)
+            raise BusinessRuleError(f"No se pudo renovar tokens: {exc}") from exc
 
     def logout_session(
         self,

@@ -336,7 +336,7 @@ def ensure_valid_tokens(
     # Intentar renovar usando el session_token
     try:
         response = refresh_tokens(session_token)
-        
+
         if response.get("access_token") and response.get("session_token"):
             result["renewed"] = True
             result["access_token"] = response["access_token"]
@@ -345,10 +345,22 @@ def ensure_valid_tokens(
             result["session_expires_at"] = response.get("session_expires_at", 0)
             logger.info("Tokens renovados automáticamente")
         else:
-            result["error"] = "No se pudieron renovar los tokens"
-            logger.warning("Renovación de tokens fallida: respuesta incompleta")
+            # Si el middleware rechaza la renovación, mantener tokens actuales
+            # y extender threshold para intentar de nuevo más tarde
+            error_detail = response.get("detail", "respuesta incompleta")
+            result["error"] = ""  # No marcar como error fatal aún
+            result["retry_later"] = True  # Flag para retry
+            logger.warning(f"Renovación de tokens rechazada: {error_detail}")
     except Exception as e:
-        result["error"] = f"Error al renovar tokens: {e}"
+        # Errores de red u otros problemas técnicos
+        error_str = str(e)
+        if "401" in error_str and "no está registrada" in error_str.lower():
+            # Sesión expirada en el middleware - necesita re-login
+            result["error"] = "Su sesión ha expirado en el servidor. Por favor, recargue la página para iniciar sesión nuevamente."
+        else:
+            # Otros errores - intentar de nuevo
+            result["error"] = ""
+            result["retry_later"] = True
         logger.error(f"Error al renovar tokens: {e}")
     
     return result

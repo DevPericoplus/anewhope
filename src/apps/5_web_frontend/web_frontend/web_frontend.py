@@ -1904,8 +1904,18 @@ class State(SharedSessionState):
                     if success:
                         print("[TOKEN AUTO-RENEW] Tokens renovados exitosamente")
                     else:
-                        print("[TOKEN AUTO-RENEW] Error al renovar tokens, deteniendo loop")
-                        break
+                        # Si la renovación falla, verificar si es un error fatal
+                        if self.login_error and "expirado" in self.login_error.lower():
+                            # Sesión realmente expirada - detener loop
+                            print("[TOKEN AUTO-RENEW] Sesión expirada, deteniendo loop")
+                            self.clear_session()
+                            break
+                        else:
+                            # Error temporal o sesión no registrada - continuar con tokens actuales
+                            # El usuario podrá seguir trabajando hasta que expiren realmente
+                            print("[TOKEN AUTO-RENEW] Renovación falló, continuando con tokens actuales")
+                            # Limpiar error para no confundir al usuario
+                            self.login_error = ""
                 else:
                     seconds_left = check_result["seconds_until_access_expires"]
                     print(f"[TOKEN AUTO-RENEW] Tokens válidos (expira en {seconds_left}s)")
