@@ -4,7 +4,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 # Configurar sys.path ANTES de cualquier import local
 # para que los módulos puedan encontrar adapters, components, etc.

@@ -6094,6 +6094,207 @@ jwt_session_expiration_seconds: 2700 # 45 minutos
 
 Ver: **ADR-008: Renovación Automática de Tokens JWT** para detalles técnicos de la decisión de diseño.
 
+## Acceso Remoto a Fmanagement
+
+### Problema: Acceso desde Dispositivos en la Red
+
+Cuando usuarios acceden a la aplicación desde dispositivos diferentes al servidor (Windows, tablets, etc.), la **subida y descarga de archivos** requiere que el navegador pueda conectarse directamente a fmanagement.
+
+**Contexto técnico:**
+- El navegador ejecuta JavaScript que hace `fetch()` directamente a fmanagement
+- No pasa por nginx ni por el middleware
+- Si la URL usa `localhost`, el navegador intenta conectarse a su propio localhost (no al servidor)
+
+### Solución Implementada
+
+#### 1. Variable `public_ip` en env.yaml
+
+Se agregó la variable `public_ip` para cada entorno que define la IP accesible desde la red:
+
+```yaml
+# infrastructure/environments/macbook/env.yaml
+public_name: tfmmyllm.ai
+private_name: localhost
+public_ip: 192.168.0.39  # IP del servidor en la red local
+```
+
+#### 2. Configuración de fmanagement_base_url
+
+La URL de fmanagement **debe usar la IP pública** (no localhost) para permitir acceso desde otros dispositivos:
+
+```yaml
+# CORRECTO - Accesible desde cualquier dispositivo en la red
+fmanagement_base_url: http://192.168.0.39:1666
+
+# INCORRECTO - Solo funciona desde el propio servidor
+fmanagement_base_url: http://localhost:1666
+```
+
+**Razón:** El middleware devuelve esta URL al frontend, que la usa en JavaScript del navegador. Si el navegador está en Windows y la URL es `localhost:1666`, intentará conectarse al Windows (donde no hay nada escuchando).
+
+#### 3. Flujo de Conexión Directa
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  FLUJO DE SUBIDA DE ARCHIVOS CON ACCESO REMOTO                    │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  1. Usuario en Windows accede a: https://tfmmyllm.ai               │
+│     (Nginx redirige a Frontend en el servidor)                     │
+│                                                                     │
+│  2. Usuario selecciona "Subir archivo"                             │
+│     Frontend → Middleware → Solicita token de subida               │
+│                                                                     │
+│  3. Middleware responde con:                                       │
+│     {                                                              │
+│       "token": "eyJhbG...",                                        │
+│       "fmanagement_url": "http://192.168.0.39:1666"  ← IP PÚBLICA │
+│     }                                                              │
+│                                                                     │
+│  4. JavaScript en el navegador hace:                               │
+│     fetch('http://192.168.0.39:1666/upload', {                    │
+│       method: 'POST',                                              │
+│       headers: { 'Authorization': 'Bearer eyJhbG...' },            │
+│       body: formData                                               │
+│     })                                                             │
+│                                                                     │
+│  5. El navegador del Windows se conecta DIRECTAMENTE al servidor   │
+│     192.168.0.39:1666 (puerto de fmanagement)                      │
+│                                                                     │
+│  6. fmanagement valida token y guarda el archivo                   │
+│                                                                     │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+### Consideraciones de Seguridad
+
+#### Mixed Content (HTTP vs HTTPS)
+
+**Problema:** Los navegadores modernos bloquean peticiones HTTP desde páginas HTTPS (Mixed Content Policy).
+
+**Escenarios:**
+
+| Aplicación | Fmanagement | Estado |
+|------------|-------------|--------|
+| `http://tfmmyllm.ai` | `http://192.168.0.39:1666` | ✅ Funciona |
+| `https://tfmmyllm.ai` | `http://192.168.0.39:1666` | ❌ Bloqueado |
+| `https://tfmmyllm.ai` | `https://192.168.0.39:1666` | ✅ Funciona |
+
+**Solución para producción:**
+1. Configurar certificado SSL para fmanagement
+2. Actualizar `fmanagement_base_url` a usar HTTPS
+3. O usar proxy inverso a través de nginx (ver opción alternativa)
+
+#### CORS (Cross-Origin Resource Sharing)
+
+Fmanagement ya tiene configurado CORS para permitir peticiones desde cualquier origen:
+
+```go
+// En fmanagement/main.go
+router.Use(cors.New(cors.Config{
+    AllowOrigins:     []string{"*"},
+    AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+    AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+    AllowCredentials: true,
+}))
+```
+
+**Verificación en logs:**
+```
+[GIN] 2026/02/08 - 20:58:42 | 204 | OPTIONS "/upload"        ← Preflight CORS
+[GIN] 2026/02/08 - 20:58:42 | 200 | POST    "/upload"        ← Upload real
+```
+
+### Configuración por Entorno
+
+Cada entorno debe definir su `public_ip` según su infraestructura:
+
+| Entorno | public_ip | Descripción |
+|---------|-----------|-------------|
+| `macbook` | `192.168.0.39` | IP del MacBook en la red local |
+| `dev` | `192.168.1.100` | IP del servidor dev en VirtualBox |
+| `pre` | `<AWS_PUBLIC_IP>` | IP elástica de AWS o dominio con SSL |
+| `pro` | `<AWS_PUBLIC_IP>` | IP elástica de AWS o dominio con SSL |
+
+**Para pre/pro:** Considerar usar un dominio específico para fmanagement (ej: `files.getmyllm.com`) con certificado SSL válido.
+
+### Opción Alternativa: Proxy a través de Nginx
+
+Para evitar exponer fmanagement directamente, se puede configurar nginx como proxy:
+
+```nginx
+# Agregar en nginx.conf
+location /fmanagement/ {
+    proxy_pass http://fmanagement:1666/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    client_max_body_size 100M;  # Permitir archivos grandes
+}
+```
+
+**Ventajas:**
+- Todo el tráfico pasa por HTTPS (si nginx usa SSL)
+- No exponer puerto 1666 externamente
+- Centralización de logs y seguridad
+
+**Desventajas:**
+- Mayor latencia para archivos grandes
+- Más complejidad en la configuración
+- Requiere modificar `fmanagement_base_url` y el código del frontend
+
+### Troubleshooting
+
+#### Error: "failed to fetch" al subir archivos
+
+**Síntomas:**
+- La consola del navegador muestra: `Failed to load resource: net::ERR_CONNECTION_REFUSED`
+- Logs de fmanagement no muestran ninguna petición POST
+
+**Diagnóstico:**
+1. Verificar que `fmanagement_base_url` en env.yaml usa la IP pública (no localhost)
+2. Verificar que todos los servicios se reiniciaron después del cambio de configuración:
+   - Middleware (puerto 8007) - **CRÍTICO**
+   - Broker (puerto 8008)
+   - Backend Core (puerto 8003)
+   - Frontend (puerto 8005)
+   - Backoffice (puerto 8006)
+
+**Cómo verificar la configuración actual:**
+```bash
+# Ver qué URL está usando el middleware
+curl -H "Authorization: Bearer <token>" \
+  http://localhost:8007/files/generate-token \
+  -X POST -d '{"project_id":1,"version_id":1,"operation":"upload"}'
+
+# Respuesta debe incluir:
+# "fmanagement_url": "http://192.168.0.39:1666"  ← IP PÚBLICA, NO LOCALHOST
+```
+
+**Cómo monitorear logs de fmanagement:**
+```bash
+tail -f ~/develop/fmanagement/fmanagement.log
+
+# Petición exitosa debe mostrar:
+# [GIN] ... | 192.168.0.17 | POST "/upload"
+#            ^^^^^^^^^^^^^ IP del cliente (Windows/tablet/etc)
+```
+
+#### Error: Mixed Content bloqueado
+
+**Síntomas:**
+- Error en consola: `Mixed Content: The page at 'https://...' was loaded over HTTPS, but requested an insecure XMLHttpRequest endpoint 'http://...'`
+
+**Solución:**
+- Acceder a la aplicación vía HTTP en desarrollo: `http://tfmmyllm.ai`
+- O configurar SSL para fmanagement y usar HTTPS en ambos
+
+### Referencias
+
+- Variable `public_ip`: `infrastructure/environments/<entorno>/env.yaml`
+- Configuración fmanagement: `~/develop/fmanagement/env/<entorno>/.env`
+- Generación de tokens: `src/apps/7_service_frontend/apife.py:2746-2795`
+- Upload en frontend: `src/apps/5_web_frontend/components/explorador.py:905-1006`
+
 ## Estructura de almacenamiento (helpers)
 
 En `src/2_shared_application/storage_access_structure.py` se definen helpers
