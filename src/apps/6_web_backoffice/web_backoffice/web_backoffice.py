@@ -1877,6 +1877,13 @@ class State(SharedSessionState):
                 session_token=self.session_token,
             )
             self.org_assignments_list = assignments
+            # Log assignment list query
+            activity_log.log_assignment_list(
+                user_id=self.user_id,
+                assignment_type="organization",
+                filter_id=self.selected_organization_assign,
+                count=len(assignments),
+            )
         except Exception as e:
             print(f"[ERROR] load_org_assignments: {e}")
             self.org_assignment_error = str(e)
@@ -1906,6 +1913,16 @@ class State(SharedSessionState):
             async with self:
                 if result.get("success"):
                     self.org_assignment_success = result.get("message", "Creado")
+                    assignment_id = result.get("assignment_id", 0)
+                    # Log successful assignment creation
+                    activity_log.log_assignment_create(
+                        user_id=self.user_id,
+                        assignment_type="organization",
+                        assignment_id=assignment_id,
+                        target_user_id=self.selected_user_org,
+                        organization_id=self.selected_organization_assign,
+                        role_id=self.selected_org_role,
+                    )
                     self.load_org_assignments()
                 else:
                     error_detail = result.get("detail", "Error")
@@ -1939,6 +1956,13 @@ class State(SharedSessionState):
             )
 
             if result.get("success"):
+                # Log assignment update
+                activity_log.log_assignment_update(
+                    user_id=self.user_id,
+                    assignment_type="organization",
+                    assignment_id=assignment_id,
+                    changes={"active": not current_active},
+                )
                 self.load_org_assignments()
                 self.org_assignment_success = result.get("message", "Actualizado")
         except Exception as e:
@@ -1956,6 +1980,12 @@ class State(SharedSessionState):
             )
 
             if result.get("success"):
+                # Log assignment deletion
+                activity_log.log_assignment_delete(
+                    user_id=self.user_id,
+                    assignment_type="organization",
+                    assignment_id=assignment_id,
+                )
                 self.load_org_assignments()
                 self.org_assignment_success = "Asignación eliminada"
         except Exception as e:
@@ -1976,6 +2006,13 @@ class State(SharedSessionState):
                 session_token=self.session_token,
             )
             self.project_assignments_list = assignments
+            # Log project assignment list query
+            activity_log.log_assignment_list(
+                user_id=self.user_id,
+                assignment_type="project",
+                filter_id=self.selected_project_assign,
+                count=len(assignments),
+            )
         except Exception as e:
             print(f"[ERROR] load_project_assignments: {e}")
             self.project_assignment_error = str(e)
@@ -2004,6 +2041,17 @@ class State(SharedSessionState):
             async with self:
                 if result.get("success"):
                     self.project_assignment_success = result.get("message", "Creado")
+                    assignment_id = result.get("assignment_id", 0)
+                    # Log successful project assignment creation
+                    activity_log.log_assignment_create(
+                        user_id=self.user_id,
+                        assignment_type="project",
+                        assignment_id=assignment_id,
+                        target_user_id=self.selected_user_project,
+                        organization_id=self.selected_org_for_project,
+                        project_id=self.selected_project_assign,
+                        role_id=self.selected_project_role,
+                    )
                     self.load_project_assignments()
                 else:
                     error_msg = result.get("detail", "Error")
@@ -2035,6 +2083,13 @@ class State(SharedSessionState):
             )
 
             if result.get("success"):
+                # Log project assignment update
+                activity_log.log_assignment_update(
+                    user_id=self.user_id,
+                    assignment_type="project",
+                    assignment_id=assignment_id,
+                    changes={"active": not current_active},
+                )
                 self.load_project_assignments()
                 self.project_assignment_success = result.get("message", "Actualizado")
         except Exception as e:
@@ -2052,6 +2107,12 @@ class State(SharedSessionState):
             )
 
             if result.get("success"):
+                # Log project assignment deletion
+                activity_log.log_assignment_delete(
+                    user_id=self.user_id,
+                    assignment_type="project",
+                    assignment_id=assignment_id,
+                )
                 self.load_project_assignments()
                 self.project_assignment_success = "Asignación eliminada"
         except Exception as e:

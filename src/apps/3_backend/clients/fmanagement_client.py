@@ -260,13 +260,19 @@ class FmanagementClient:
         extfile: str,
         new_filename: str,
         identity_type_id: int,
+        new_extfile: str = "",
         iduser: int = 0,
         basepath: str = "default",
     ) -> dict[str, Any]:
         """Renombra un archivo.
-        
+
+        Permite cambiar tanto el nombre como la extensión del archivo.
+
         Endpoint: PATCH /fmo (operation=rename)
         """
+        # Si no se especifica new_extfile, usar la extensión original
+        actual_new_extfile = new_extfile if new_extfile else extfile
+
         params = {
             "iduser": iduser,
             "basepath": basepath,
@@ -277,6 +283,7 @@ class FmanagementClient:
             "filename": filename,
             "extfile": extfile,
             "new_filename": new_filename,
+            "new_extfile": actual_new_extfile,
             "identity_type_id": identity_type_id,
             "operation": "rename",
         }
@@ -519,4 +526,54 @@ class FmanagementClient:
             return self._handle_response(response)
         except Exception as e:
             self._logger.error(f"Error clonando versión: {e}")
+            return {"error": str(e)}
+
+    def get_properties(
+        self,
+        orgpath: str,
+        prjpath: str,
+        versionpath: str,
+        subfolders: str = "",
+        filename: str = "",
+        iduser: int = 0,
+        basepath: str = "default",
+    ) -> dict[str, Any]:
+        """Obtiene las propiedades de un archivo o carpeta usando el comando 'file'.
+
+        Endpoint: GET /properties
+
+        Args:
+            orgpath: Carpeta organización (ej: ORG00001)
+            prjpath: Carpeta proyecto (ej: PRJ00001)
+            versionpath: Carpeta versión (ej: v001)
+            subfolders: Subcarpetas relativas (ej: datos/modelos)
+            filename: Nombre del archivo con extensión. Si vacío, es una carpeta
+            iduser: ID del usuario
+            basepath: Ruta base (default usa configuración de fmanagement)
+
+        Returns:
+            Dict con:
+            - status: "success"
+            - path: Ruta completa del elemento
+            - name: Nombre del elemento
+            - is_dir: True si es carpeta
+            - size_bytes: Tamaño en bytes
+            - mode: Permisos (ej: -rw-r--r--)
+            - mod_time: Fecha de modificación (RFC3339)
+            - file_output: Output del comando 'file'
+        """
+        params = {
+            "orgpath": orgpath,
+            "prjpath": prjpath,
+            "versionpath": versionpath,
+            "subfolders": subfolders,
+            "filename": filename,
+        }
+
+        try:
+            with httpx.Client(base_url=self.base_url, timeout=self.timeout) as client:
+                response = client.get("/properties", params=params)
+            return self._handle_response(response)
+        except Exception as e:
+            self._logger.error(f"Error obteniendo propiedades: {e}")
             return {"error": str(e)}

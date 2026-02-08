@@ -21,8 +21,9 @@ REDIS_PASSWORD = env_settings.get_protected_value("redis_password", None)
 REDIS_DB = int(env_settings.get_env_value("redis_db", "0"))
 
 # Construir URL de Redis
+# Para Redis 6+ con ACL, usar formato: redis://username:password@host:port/db
 if REDIS_PASSWORD:
-    redis_url = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+    redis_url = f"redis://default:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 else:
     redis_url = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 

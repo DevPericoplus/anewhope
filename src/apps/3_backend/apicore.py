@@ -2468,7 +2468,7 @@ def fmanagement_operation(
     router: BackendCoreRouter = Depends(get_router_core),
 ) -> FmanagementOperationResponse:
     """Ejecuta una operación genérica en fmanagement.
-    
+
     Operaciones soportadas:
     - create_folder: Crea una carpeta
     - rename_folder: Renombra una carpeta
@@ -2478,7 +2478,8 @@ def fmanagement_operation(
     - delete_file: Elimina un archivo
     - download_file: Descarga un archivo
     - create_version: Crea una nueva versión
-    
+    - get_properties: Obtiene propiedades de un archivo/carpeta
+
     Args:
         request: Operación y parámetros
     """

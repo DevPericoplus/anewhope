@@ -22,7 +22,7 @@ from adapters.api_client import (
     fmanagement_get_properties,
 )
 
-# Configuración de Logging
+# Configuración de Logging (DEBE IR ANTES de importar permisos)
 log_dir = os.path.join(os.path.dirname(__file__), "logs")
 os.makedirs(log_dir, exist_ok=True)
 log_file = os.path.join(log_dir, "console.log")
@@ -36,6 +36,43 @@ if not logger.handlers:
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     handler.setFormatter(formatter)
     logger.addHandler(handler)
+
+# Importar adaptador de permisos y mapeo desde capa compartida
+try:
+    # Cargar adaptador de permisos
+    # Path: explorador.py -> components -> 5_web_frontend -> apps -> src
+    # parents[3] nos lleva a "src", luego accedemos a 2_shared_application
+    _perms_adapter_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "adapters" / "user_permissions_adapter.py"
+    _perms_spec = importlib.util.spec_from_file_location("user_permissions_adapter", _perms_adapter_path)
+    _perms_module = importlib.util.module_from_spec(_perms_spec)
+    sys.modules["user_permissions_adapter"] = _perms_module
+    _perms_spec.loader.exec_module(_perms_module)
+    get_user_permissions = _perms_module.get_user_permissions
+    get_user_identity_type_id = _perms_module.get_user_identity_type_id
+
+    # Cargar mapeo de permisos
+    _mapping_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "explorador_permissions_mapping.py"
+    _mapping_spec = importlib.util.spec_from_file_location("explorador_permissions_mapping", _mapping_path)
+    _mapping_module = importlib.util.module_from_spec(_mapping_spec)
+    sys.modules["explorador_permissions_mapping"] = _mapping_module
+    _mapping_spec.loader.exec_module(_mapping_module)
+    get_required_permission = _mapping_module.get_required_permission
+    is_action_allowed = _mapping_module.is_action_allowed
+
+    logger.info("Módulos de permisos cargados exitosamente")
+except Exception as e:
+    logger.error(f"Error al cargar módulos de permisos: {e}")
+    import traceback
+    traceback.print_exc()
+    # Fallback functions
+    def get_user_permissions(user_id, engine=None):
+        return {}
+    def get_user_identity_type_id(user_id, engine=None):
+        return None
+    def get_required_permission(action, item_type):
+        return None
+    def is_action_allowed(action, item_type, user_permissions):
+        return True
 
 
 def _load_storage_module():
@@ -71,7 +108,8 @@ class FolderItem(pydantic.BaseModel):
     has_children: bool = False
     is_visible: bool = True
     item_type: str = "folder" # "folder" or "file"
-    is_protected: bool = False # Level 0 and 1 are protected
+    is_protected: bool = False # Level 0 and 1 are protected (structural protection)
+    db_protected: bool = False # Database protected field from version_states (content protection)
     is_blocked: bool = False # Operational block (opacity 0.5)
     size_str: str = "" # Formatted size (e.g. "1.2 MB")
     metadata: dict = {} # Extra info
@@ -97,10 +135,15 @@ class ExploradorState(rx.State):
     # Perfil de Seguridad y Usuario
     user_id: int = 0
     user_name: str = "anonimo"
+    user_identity_type_id: int = 0  # Identity type del usuario (1=SuperAdmin, 2=OrgAdmin, etc.)
     user_id_organizacion: int = 1
     user_project_id: int = 1
     is_admin: bool = False
-    
+
+    # Tokens de sesión (necesarios para API calls)
+    access_token: str = ""
+    session_token: str = ""
+
     # Simulación de Identidad (Impersonation)
     is_internal_user: bool = False  # False = Cliente, True = Interno
 
@@ -112,14 +155,57 @@ class ExploradorState(rx.State):
         self.is_internal_user = val
         # Aquí podremos añadir lógica específica al cambiar de rol más adelante
         self.interpretacion_estados()
-    
-    # Matriz de Permisos
+
+    # Matriz de Permisos (todos los permisos de low_level_permissions)
     permisos: dict = {
-        "folder_create": False, "folder_delete": False, "folder_rename": False,
-        "folder_read": False, "folder_list": False,
-        "file_create": False, "file_read": False, "file_update": False,
-        "file_delete": False, "file_list": False,
-        "version_create": False
+        # Carpetas
+        "folder_create": False,
+        "folder_delete": False,
+        "folder_rename": False,
+        "folder_read": False,
+        "folder_list": False,
+        # Archivos
+        "file_create": False,
+        "file_read": False,
+        "file_update": False,
+        "file_delete": False,
+        "file_list": False,
+        # Proyectos
+        "project_create": False,
+        "project_read": False,
+        "project_update": False,
+        "project_delete": False,
+        "project_list": False,
+        # Versiones
+        "version_create": False,
+        "version_read": False,
+        "version_update": False,
+        "version_delete": False,
+        "version_list": False,
+        # Entrenamiento
+        "training_create": False,
+        "training_read": False,
+        "training_update": False,
+        "training_delete": False,
+        "training_start": False,
+        "training_stop": False,
+        # Parámetros
+        "parameters_create": False,
+        "parameters_read": False,
+        "parameters_update": False,
+        "parameters_delete": False,
+        # Notificaciones
+        "notifications_create": False,
+        "notifications_read": False,
+        "notifications_update": False,
+        "notifications_delete": False,
+        # Usuarios
+        "user_create": False,
+        "user_read": False,
+        "user_update": False,
+        "user_delete": False,
+        "user_enable": False,
+        "user_disable": False,
     }
 
     @rx.var
@@ -306,7 +392,17 @@ class ExploradorState(rx.State):
         print("✓ Permisos por defecto establecidos: todos los permisos habilitados")
 
     def _load_permissions_from_database(self):
-        """Consulta la base de datos para obtener permisos específicos del proyecto."""
+        """
+        Consulta la base de datos para obtener permisos del usuario.
+
+        Flujo:
+        1. Obtener identity_type_id desde users usando user_id
+        2. Obtener permisos desde low_level_permissions usando identity_type_id
+        3. Almacenar todos los permisos en memoria
+
+        Los permisos se cargan una vez al iniciar el explorador y se mantienen
+        en memoria durante toda la sesión.
+        """
         if not load_mariadb_settings:
             logger.warning("⚠ Función load_mariadb_settings no disponible")
             print("⚠ Función load_mariadb_settings no disponible")
@@ -326,104 +422,134 @@ class ExploradorState(rx.State):
                 self._set_default_permissions()
                 return
 
-            print(f"→ Consultando permisos en BD para user_id={self.user_id}, project_id={self.id_proyecto}, org_id={self.id_organizacion}")
+            logger.info(f"→ Cargando permisos para user_id={self.user_id}")
+            print(f"→ Consultando permisos en BD para user_id={self.user_id}")
             engine = create_engine(dsn)
 
             with engine.connect() as conn:
-                # 1. Consultar proyectos_roles para obtener id_rol del usuario en este proyecto
-                # Nota: proyectos_roles está en myllm_projects_db
-                query_role = text("""
-                    SELECT id_rol
-                    FROM myllm_projects_db.proyectos_roles
-                    WHERE id_usuario = :user_id
-                      AND id_proyecto = :project_id
-                      AND id_organizacion = :org_id
-                      AND active = 1
+                # 1. Obtener identity_type_id del usuario desde tabla users
+                query_identity = text("""
+                    SELECT identity_type_id
+                    FROM myllm_core_db.users
+                    WHERE user_id = :user_id
                     LIMIT 1
                 """)
 
-                result_role = conn.execute(
-                    query_role,
-                    {
-                        "user_id": self.user_id,
-                        "project_id": self.id_proyecto,
-                        "org_id": self.id_organizacion
-                    }
-                )
+                result_identity = conn.execute(query_identity, {"user_id": self.user_id})
+                row_identity = result_identity.fetchone()
 
-                row_role = result_role.fetchone()
-
-                if not row_role:
-                    logger.warning(
-                        f"⚠ No se encontró rol para user_id={self.user_id}, "
-                        f"project_id={self.id_proyecto}, org_id={self.id_organizacion}"
-                    )
-                    print(
-                        f"⚠ No hay asignación en proyectos_roles para user_id={self.user_id}, "
-                        f"project_id={self.id_proyecto} - usando permisos por defecto"
-                    )
-                    # Usar permisos por defecto en lugar de resetear a False
+                if not row_identity:
+                    logger.warning(f"⚠ No se encontró usuario con user_id={self.user_id}")
+                    print(f"⚠ Usuario no encontrado - usando permisos por defecto")
                     self._set_default_permissions()
                     return
 
-                id_rol = row_role[0]
-                logger.info(f"✓ Rol encontrado: id_rol={id_rol}")
-                print(f"✓ Rol encontrado: id_rol={id_rol}")
+                identity_type_id = row_identity[0]
+                self.user_identity_type_id = identity_type_id
+                logger.info(f"✓ Usuario encontrado: identity_type_id={identity_type_id}")
+                print(f"✓ Identity type: {identity_type_id}")
 
-                # 2. Consultar low_level_permissions usando el id_rol
-                # Nota: low_level_permissions está en myllm_core_db
+                # 2. Obtener TODOS los permisos desde low_level_permissions
                 query_perms = text("""
                     SELECT
                         folder_create, folder_delete, folder_rename, folder_read, folder_list,
                         file_create, file_read, file_update, file_delete, file_list,
-                        version_create
+                        project_create, project_read, project_update, project_delete, project_list,
+                        version_create, version_read, version_update, version_delete, version_list,
+                        training_create, training_read, training_update, training_delete,
+                        training_start, training_stop,
+                        parameters_create, parameters_read, parameters_update, parameters_delete,
+                        notifications_create, notifications_read, notifications_update, notifications_delete,
+                        user_create, user_read, user_update, user_delete, user_enable, user_disable
                     FROM myllm_core_db.low_level_permissions
-                    WHERE id_permissions = :id_rol
+                    WHERE id_permissions = :identity_type_id
                     LIMIT 1
                 """)
 
-                result_perms = conn.execute(query_perms, {"id_rol": id_rol})
+                result_perms = conn.execute(query_perms, {"identity_type_id": identity_type_id})
                 row_perms = result_perms.fetchone()
 
                 if not row_perms:
-                    logger.warning(f"⚠ No se encontraron permisos para id_rol={id_rol}")
-                    print(f"⚠ No hay permisos en low_level_permissions para id_rol={id_rol} - usando permisos por defecto")
-                    # Usar permisos por defecto en lugar de resetear a False
+                    logger.warning(f"⚠ No se encontraron permisos para identity_type_id={identity_type_id}")
+                    print(f"⚠ No hay permisos en low_level_permissions - usando permisos por defecto")
                     self._set_default_permissions()
                     return
 
-                # 3. Actualizar matriz de permisos con los valores de la BD
+                # 3. Actualizar matriz de permisos con TODOS los valores de la BD
                 self.permisos = {
+                    # Carpetas
                     "folder_create": bool(row_perms[0]),
                     "folder_delete": bool(row_perms[1]),
                     "folder_rename": bool(row_perms[2]),
                     "folder_read": bool(row_perms[3]),
                     "folder_list": bool(row_perms[4]),
+                    # Archivos
                     "file_create": bool(row_perms[5]),
                     "file_read": bool(row_perms[6]),
                     "file_update": bool(row_perms[7]),
                     "file_delete": bool(row_perms[8]),
                     "file_list": bool(row_perms[9]),
-                    "version_create": bool(row_perms[10]),
+                    # Proyectos
+                    "project_create": bool(row_perms[10]),
+                    "project_read": bool(row_perms[11]),
+                    "project_update": bool(row_perms[12]),
+                    "project_delete": bool(row_perms[13]),
+                    "project_list": bool(row_perms[14]),
+                    # Versiones
+                    "version_create": bool(row_perms[15]),
+                    "version_read": bool(row_perms[16]),
+                    "version_update": bool(row_perms[17]),
+                    "version_delete": bool(row_perms[18]),
+                    "version_list": bool(row_perms[19]),
+                    # Entrenamiento
+                    "training_create": bool(row_perms[20]),
+                    "training_read": bool(row_perms[21]),
+                    "training_update": bool(row_perms[22]),
+                    "training_delete": bool(row_perms[23]),
+                    "training_start": bool(row_perms[24]),
+                    "training_stop": bool(row_perms[25]),
+                    # Parámetros
+                    "parameters_create": bool(row_perms[26]),
+                    "parameters_read": bool(row_perms[27]),
+                    "parameters_update": bool(row_perms[28]),
+                    "parameters_delete": bool(row_perms[29]),
+                    # Notificaciones
+                    "notifications_create": bool(row_perms[30]),
+                    "notifications_read": bool(row_perms[31]),
+                    "notifications_update": bool(row_perms[32]),
+                    "notifications_delete": bool(row_perms[33]),
+                    # Usuarios
+                    "user_create": bool(row_perms[34]),
+                    "user_read": bool(row_perms[35]),
+                    "user_update": bool(row_perms[36]),
+                    "user_delete": bool(row_perms[37]),
+                    "user_enable": bool(row_perms[38]),
+                    "user_disable": bool(row_perms[39]),
                 }
 
-                # Determinar si es admin basado en version_create
-                self.is_admin = self.permisos.get("version_create", False)
+                # Determinar si es admin: Solo identity_type_id 1 o 2 pueden gestionar versiones
+                self.is_admin = identity_type_id in (1, 2)
 
                 logger.info(
-                    f"Permisos cargados desde BD para user_id={self.user_id}, "
-                    f"project_id={self.id_proyecto}, id_rol={id_rol}: {self.permisos}"
+                    f"✓ Permisos cargados para user_id={self.user_id}, "
+                    f"identity_type_id={identity_type_id}, is_admin={self.is_admin}"
                 )
+                logger.info(f"Permisos explorador: folder_create={self.permisos['folder_create']}, "
+                           f"file_create={self.permisos['file_create']}, "
+                           f"folder_delete={self.permisos['folder_delete']}")
+
                 print(
-                    f"✓ Permisos cargados: Rol={id_rol}, "
+                    f"✓ Permisos cargados: Identity={identity_type_id}, "
+                    f"Admin={self.is_admin}, "
                     f"folder_create={self.permisos['folder_create']}, "
-                    f"file_create={self.permisos['file_create']}, "
-                    f"is_admin={self.is_admin}"
+                    f"file_create={self.permisos['file_create']}"
                 )
 
         except Exception as e:
             logger.error(f"✗ Error consultando permisos en BD: {e}")
             print(f"✗ Error consultando permisos: {e}")
+            import traceback
+            traceback.print_exc()
             # En caso de error, usar permisos por defecto
             self._set_default_permissions()
 
@@ -452,19 +578,21 @@ class ExploradorState(rx.State):
                 # Es una carpeta de versión, verificamos su estado en version_states
                 version_key = item.name  # ej: "v001"
                 version_state_data = self.version_states.get(version_key, {})
-                
+
                 estado = version_state_data.get("state", "Abierta")
                 protected = version_state_data.get("protected", False)
                 final_c = version_state_data.get("final_c", False)
                 final_i = version_state_data.get("final_i", False)
-                
+
                 # Asignamos el label, color y flags
                 label, color = state_labels.get(estado, ("", ""))
                 item.version_state_label = label
                 item.version_state_color = color
                 item.is_final_c = final_c
                 item.is_final_i = final_i
-                
+                # CRÍTICO: Asignar el campo protected de la base de datos
+                item.db_protected = protected
+
                 es_bloqueada = protected or (estado != "Abierta")
 
                 if es_bloqueada:
@@ -490,16 +618,103 @@ class ExploradorState(rx.State):
     def acciones(self, accion: str, item: FolderItem):
         """
         Punto de entrada único para ejecutar acciones sobre ficheros/carpetas.
-        Valida las protecciones antes de proceder.
+
+        Validaciones en orden:
+        1. Permisos del usuario (desde low_level_permissions)
+        2. Restricciones de versión (solo identity_type_id 1 o 2)
+        3. Protección de contenido (db_protected)
+        4. Protección estructural (is_protected)
+
+        IMPORTANTE: Loggea TODAS las validaciones (éxito y fallo).
         """
-        # Excepciones a la protección: Acciones de administración de versiones
+        # ============================================================
+        # 1. VALIDAR PERMISOS DEL USUARIO
+        # ============================================================
+        required_permission = get_required_permission(accion, item.item_type)
+
+        if required_permission:
+            has_permission = self.permisos.get(required_permission, False)
+
+            if not has_permission:
+                logger.warning(
+                    f"[PERMISSION DENIED] user_id={self.user_id} "
+                    f"identity_type_id={self.user_identity_type_id} "
+                    f"accion={accion} permiso={required_permission} "
+                    f"item={item.name} type={item.item_type}"
+                )
+                return rx.toast.error("Operación no permitida")
+            else:
+                logger.info(
+                    f"[PERMISSION OK] user_id={self.user_id} "
+                    f"accion={accion} permiso={required_permission} item={item.name}"
+                )
+
+        # ============================================================
+        # 2. VALIDAR RESTRICCIONES DE VERSIÓN
+        # ============================================================
+        # Solo identity_type_id 1 (SuperAdmin) o 2 (OrgAdmin) pueden operar con versiones
+        version_operations = ["block_version", "unblock_version", "review_version",
+                             "abrir_version", "bloquear_version"]
+
+        if accion in version_operations:
+            if self.user_identity_type_id not in (1, 2):
+                logger.warning(
+                    f"[VERSION OPERATION DENIED] user_id={self.user_id} "
+                    f"identity_type_id={self.user_identity_type_id} "
+                    f"accion={accion} item={item.name}"
+                )
+                return rx.toast.error("Operación no permitida")
+            else:
+                logger.info(
+                    f"[VERSION OPERATION OK] user_id={self.user_id} "
+                    f"identity_type_id={self.user_identity_type_id} "
+                    f"accion={accion}"
+                )
+
+        # ============================================================
+        # 3. VALIDAR PROTECCIÓN DE CONTENIDO (db_protected)
+        # ============================================================
+        content_actions = ["create_folder", "upload_file"]
+
+        if accion in content_actions:
+            # Si el item es la versión misma (depth == 1), verificar directamente
+            if item.depth == 1:
+                if item.db_protected:
+                    logger.warning(
+                        f"[PROTECTED VERSION] accion={accion} "
+                        f"version={item.name} db_protected=True"
+                    )
+                    return rx.toast.error("Operación no permitida")
+
+            # Si el item está dentro de una versión (depth > 1), buscar la versión ancestro
+            elif item.depth > 1:
+                version_item = self._find_version_ancestor(item)
+                if version_item and version_item.db_protected:
+                    logger.warning(
+                        f"[PROTECTED VERSION] accion={accion} "
+                        f"version={version_item.name} db_protected=True"
+                    )
+                    return rx.toast.error("Operación no permitida")
+
+        # ============================================================
+        # 4. VALIDAR PROTECCIÓN ESTRUCTURAL (is_protected)
+        # ============================================================
         admin_actions = ["block_version", "unblock_version", "review_version"]
-        
-        if item.is_protected and accion not in admin_actions:
-            logger.warning(f"Acción '{accion}' denegada por protección en item '{item.name}'")
-            return rx.window_alert(f"Acción '{accion}' denegada: El elemento '{item.name}' está protegido.")
-        
-        logger.info(f"Ejecutando acción: {accion} sobre {item.name}")
+
+        if item.is_protected and accion not in admin_actions and accion not in content_actions:
+            logger.warning(
+                f"[STRUCTURAL PROTECTION] accion={accion} "
+                f"item={item.name} is_protected=True"
+            )
+            return rx.toast.error("Operación no permitida")
+
+        # ============================================================
+        # 5. EJECUTAR ACCIÓN (todas las validaciones pasadas)
+        # ============================================================
+        logger.info(
+            f"[ACTION ALLOWED] user_id={self.user_id} "
+            f"accion={accion} item={item.name} type={item.item_type}"
+        )
 
         # Acciones de carpetas
         if accion == "create_folder":
@@ -688,34 +903,40 @@ class ExploradorState(rx.State):
         3. Usa JavaScript para abrir file picker y subir directamente a fmanagement
         """
         try:
-            # Extraer project_id y version_id del ID del item
-            # Format: "0_1_v001_subfolder" -> project_id=1, version_id=1
-            parts = item.id.split("_")
-            if len(parts) < 3:
-                logger.error(f"ID de item inválido: {item.id}")
-                return rx.toast.error("Error: estructura de carpeta inválida")
+            # Usar valores del estado actual
+            project_id = self.id_proyecto
 
-            project_id = self.id_proyecto  # Usamos el proyecto actual
+            # Encontrar la versión ancestro (depth == 1)
+            version_item = self._find_version_ancestor(item)
+            if not version_item:
+                # Si no hay ancestro, quizás el item mismo es la versión (depth == 1)
+                if item.depth == 1:
+                    version_item = item
+                else:
+                    logger.error(f"No se encontró versión para item: {item.name} (depth={item.depth})")
+                    return rx.toast.error("Error: no se pudo identificar la versión")
 
             # Extraer version_id del nombre de la versión (ej: "v001" -> 1)
-            # Buscar la versión en el path del item
-            version_part = None
-            for part in parts:
-                if part.startswith("v") and part[1:].isdigit():
-                    version_part = part
+            version_name = version_item.name
+            if not version_name.startswith("v") or not version_name[1:].isdigit():
+                logger.error(f"Nombre de versión inválido: {version_name}")
+                return rx.toast.error("Error: formato de versión inválido")
+
+            version_id = int(version_name.lstrip('v'))
+
+            # Calcular relative_path desde la versión hasta el item actual
+            # Recorremos desde el item hacia arriba hasta llegar a la versión
+            path_parts = []
+            current = item
+            while current.parent_id != "" and current.depth > version_item.depth:
+                path_parts.insert(0, current.name)
+                # Buscar el padre
+                parent = next((p for p in self.items if p.id == current.parent_id), None)
+                if not parent or parent.id == version_item.id:
                     break
+                current = parent
 
-            if not version_part:
-                logger.error(f"No se encontró versión en item.id: {item.id}")
-                return rx.toast.error("Error: no se pudo identificar la versión")
-
-            version_id = int(version_part.lstrip('v'))
-
-            # Calcular relative_path (todo después de la versión)
-            # Ejemplo: si item.id = "0_1_v001_subfolder_images", relative_path = "subfolder/images"
-            version_idx = parts.index(version_part)
-            relative_parts = parts[version_idx + 1:]
-            relative_path = "/".join(relative_parts) if relative_parts else ""
+            relative_path = "/".join(path_parts) if path_parts else ""
 
             logger.info(f"Generando token de subida: project_id={project_id}, version_id={version_id}, path={relative_path}")
 
@@ -797,32 +1018,37 @@ class ExploradorState(rx.State):
                 logger.error(f"Item no es un archivo: {item.name}")
                 return rx.toast.error("Error: solo se pueden descargar archivos")
 
-            # Extraer project_id y version_id del ID del item
-            parts = item.id.split("_")
-            if len(parts) < 3:
-                logger.error(f"ID de item inválido: {item.id}")
-                return rx.toast.error("Error: estructura de archivo inválida")
-
+            # Usar valores del estado actual
             project_id = self.id_proyecto
 
-            # Extraer version_id del nombre de la versión
-            version_part = None
-            for part in parts:
-                if part.startswith("v") and part[1:].isdigit():
-                    version_part = part
-                    break
-
-            if not version_part:
-                logger.error(f"No se encontró versión en item.id: {item.id}")
+            # Encontrar la versión ancestro (depth == 1)
+            version_item = self._find_version_ancestor(item)
+            if not version_item:
+                logger.error(f"No se encontró versión para item: {item.name}")
                 return rx.toast.error("Error: no se pudo identificar la versión")
 
-            version_id = int(version_part.lstrip('v'))
+            # Extraer version_id del nombre de la versión
+            version_name = version_item.name
+            if not version_name.startswith("v") or not version_name[1:].isdigit():
+                logger.error(f"Nombre de versión inválido: {version_name}")
+                return rx.toast.error("Error: formato de versión inválido")
+
+            version_id = int(version_name.lstrip('v'))
 
             # Calcular relative_path (sin incluir el nombre del archivo)
-            version_idx = parts.index(version_part)
-            relative_parts = parts[version_idx + 1:-1]  # Excluir el último elemento (filename)
-            relative_path = "/".join(relative_parts) if relative_parts else ""
+            # Recorremos desde el padre del archivo hacia arriba hasta llegar a la versión
+            path_parts = []
+            if item.parent_id != "":
+                parent = next((p for p in self.items if p.id == item.parent_id), None)
+                current = parent
+                while current and current.parent_id != "" and current.depth > version_item.depth:
+                    path_parts.insert(0, current.name)
+                    parent = next((p for p in self.items if p.id == current.parent_id), None)
+                    if not parent or parent.id == version_item.id:
+                        break
+                    current = parent
 
+            relative_path = "/".join(path_parts) if path_parts else ""
             filename = item.name
 
             logger.info(f"Generando token de descarga: project_id={project_id}, version_id={version_id}, filename={filename}, path={relative_path}")
@@ -836,6 +1062,15 @@ class ExploradorState(rx.State):
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
+
+            # Verificar si hay tokens refrescados y actualizarlos
+            from adapters.api_client import get_refreshed_tokens, clear_refreshed_tokens
+            refreshed = get_refreshed_tokens()
+            if refreshed:
+                logger.info("[AUTO-REFRESH] Actualizando tokens en el estado después de auto-refresh")
+                self.access_token = refreshed.get("access_token", self.access_token)
+                self.session_token = refreshed.get("session_token", self.session_token)
+                clear_refreshed_tokens()
 
             if not response.get("success"):
                 error_msg = response.get("mensaje", "Error al generar token")
@@ -892,26 +1127,42 @@ class ExploradorState(rx.State):
             item = self.current_action_item
             folder_name = self.dialog_input_value.strip()
 
-            # Extraer información del item
-            parts = item.id.split("_")
             project_id = self.id_proyecto
 
-            # Buscar la versión
-            version_part = None
-            for part in parts:
-                if part.startswith("v") and part[1:].isdigit():
-                    version_part = part
-                    break
+            # Identificar la versión usando el método _find_version_ancestor
+            # Si el item es la versión misma (depth == 1)
+            if item.depth == 1:
+                version_item = item
+            # Si el item está dentro de una versión (depth > 1)
+            elif item.depth > 1:
+                version_item = self._find_version_ancestor(item)
+                if not version_item:
+                    return rx.toast.error("No se pudo identificar la versión ancestro")
+            else:
+                return rx.toast.error("No se puede crear carpeta en este nivel")
 
-            if not version_part:
-                return rx.toast.error("No se pudo identificar la versión")
+            # Extraer el número de versión del nombre (ej: "v001" -> 1)
+            version_name = version_item.name
+            if version_name.startswith("v") and version_name[1:].isdigit():
+                version_id = int(version_name.lstrip('v'))
+            else:
+                return rx.toast.error(f"Formato de versión inválido: {version_name}")
 
-            version_id = int(version_part.lstrip('v'))
-
-            # Calcular la ruta relativa
-            version_idx = parts.index(version_part)
-            relative_parts = parts[version_idx + 1:]
-            folder_path = "/".join(relative_parts) if relative_parts else ""
+            # Construir la ruta relativa desde la versión hasta el item actual
+            # Si estamos en la versión misma, la ruta es vacía
+            if item.depth == 1:
+                folder_path = ""
+            else:
+                # Construir la ruta navegando desde el item hacia arriba hasta la versión
+                path_parts = []
+                current = item
+                while current.depth > 1:
+                    path_parts.insert(0, current.name)
+                    parent = next((p for p in self.items if p.id == current.parent_id), None)
+                    if not parent:
+                        break
+                    current = parent
+                folder_path = "/".join(path_parts) if path_parts else ""
 
             logger.info(f"Creando carpeta: {folder_name} en {folder_path}")
 
@@ -932,11 +1183,9 @@ class ExploradorState(rx.State):
 
             if response.get("success") or response.get("status") == "success":
                 logger.info(f"Carpeta creada: {folder_name}")
-                # Recargar el proyecto para ver la nueva carpeta
-                return [
-                    rx.toast.success(f"Carpeta '{folder_name}' creada exitosamente"),
-                    rx.call_script("window.location.reload()"),
-                ]
+                # Recargar el explorador desde fmanagement (/fmo/list)
+                self.load_from_api()
+                return rx.toast.success(f"Carpeta '{folder_name}' creada exitosamente")
             else:
                 error_msg = response.get("mensaje") or response.get("error", "Error desconocido")
                 return rx.toast.error(f"Error: {error_msg}")
@@ -971,26 +1220,46 @@ class ExploradorState(rx.State):
                 self.cerrar_dialogo_renombrar()
                 return rx.toast.info("El nombre no ha cambiado")
 
-            # Extraer información del item
-            parts = item.id.split("_")
             project_id = self.id_proyecto
 
-            # Buscar la versión
-            version_part = None
-            for part in parts:
-                if part.startswith("v") and part[1:].isdigit():
-                    version_part = part
-                    break
+            # Identificar la versión usando el método _find_version_ancestor
+            # Si el item es la versión misma (depth == 1)
+            if item.depth == 1:
+                version_item = item
+            # Si el item está dentro de una versión (depth > 1)
+            elif item.depth > 1:
+                version_item = self._find_version_ancestor(item)
+                if not version_item:
+                    return rx.toast.error("No se pudo identificar la versión ancestro")
+            else:
+                return rx.toast.error("No se puede renombrar este elemento")
 
-            if not version_part:
-                return rx.toast.error("No se pudo identificar la versión")
+            # Extraer el número de versión del nombre (ej: "v001" -> 1)
+            version_name = version_item.name
+            if version_name.startswith("v") and version_name[1:].isdigit():
+                version_id = int(version_name.lstrip('v'))
+            else:
+                return rx.toast.error(f"Formato de versión inválido: {version_name}")
 
-            version_id = int(version_part.lstrip('v'))
-
-            # Calcular la ruta relativa (sin incluir el nombre del item)
-            version_idx = parts.index(version_part)
-            relative_parts = parts[version_idx + 1:-1]
-            folder_path = "/".join(relative_parts) if relative_parts else ""
+            # Construir la ruta relativa (sin incluir el nombre del item que se va a renombrar)
+            if item.depth == 1:
+                # No se debe permitir renombrar la versión misma
+                return rx.toast.error("No se puede renombrar la versión")
+            else:
+                # Construir la ruta navegando desde el item hacia arriba hasta la versión
+                path_parts = []
+                current = item
+                # Subir hasta el padre
+                parent = next((p for p in self.items if p.id == current.parent_id), None)
+                if parent and parent.depth > 1:
+                    # Continuar subiendo hasta llegar a la versión
+                    while parent.depth > 1:
+                        path_parts.insert(0, parent.name)
+                        grandparent = next((p for p in self.items if p.id == parent.parent_id), None)
+                        if not grandparent:
+                            break
+                        parent = grandparent
+                folder_path = "/".join(path_parts) if path_parts else ""
 
             logger.info(f"Renombrando {item.name} a {new_name}")
 
@@ -1026,10 +1295,9 @@ class ExploradorState(rx.State):
 
             if response.get("success") or response.get("message"):
                 logger.info(f"Renombrado exitoso: {item.name} -> {new_name}")
-                return [
-                    rx.toast.success(f"Renombrado a '{new_name}' exitosamente"),
-                    rx.call_script("window.location.reload()"),
-                ]
+                # Recargar el explorador desde fmanagement (/fmo/list)
+                self.load_from_api()
+                return rx.toast.success(f"Renombrado a '{new_name}' exitosamente")
             else:
                 error_msg = response.get("mensaje") or response.get("error", "Error desconocido")
                 return rx.toast.error(f"Error: {error_msg}")
@@ -1056,32 +1324,51 @@ class ExploradorState(rx.State):
 
         try:
             item = self.current_action_item
-
-            # Extraer información del item
-            parts = item.id.split("_")
             project_id = self.id_proyecto
 
-            # Buscar la versión
-            version_part = None
-            for part in parts:
-                if part.startswith("v") and part[1:].isdigit():
-                    version_part = part
-                    break
+            # Identificar la versión usando el método _find_version_ancestor
+            # Si el item es la versión misma (depth == 1)
+            if item.depth == 1:
+                version_item = item
+            # Si el item está dentro de una versión (depth > 1)
+            elif item.depth > 1:
+                version_item = self._find_version_ancestor(item)
+                if not version_item:
+                    return rx.toast.error("No se pudo identificar la versión ancestro")
+            else:
+                return rx.toast.error("No se puede eliminar este elemento")
 
-            if not version_part:
-                return rx.toast.error("No se pudo identificar la versión")
+            # Extraer el número de versión del nombre (ej: "v001" -> 1)
+            version_name = version_item.name
+            if version_name.startswith("v") and version_name[1:].isdigit():
+                version_id = int(version_name.lstrip('v'))
+            else:
+                return rx.toast.error(f"Formato de versión inválido: {version_name}")
 
-            version_id = int(version_part.lstrip('v'))
+            # Construir la ruta relativa (sin incluir el nombre del item que se va a eliminar)
+            if item.depth == 1:
+                # No se debe permitir eliminar la versión misma
+                return rx.toast.error("No se puede eliminar la versión directamente")
+            else:
+                # Construir la ruta navegando desde el item hacia arriba hasta la versión
+                path_parts = []
+                current = item
+                # Subir hasta el padre
+                parent = next((p for p in self.items if p.id == current.parent_id), None)
+                if parent and parent.depth > 1:
+                    # Continuar subiendo hasta llegar a la versión
+                    while parent.depth > 1:
+                        path_parts.insert(0, parent.name)
+                        grandparent = next((p for p in self.items if p.id == parent.parent_id), None)
+                        if not grandparent:
+                            break
+                        parent = grandparent
 
-            # Calcular la ruta relativa
-            version_idx = parts.index(version_part)
-            if item.item_type == "folder":
-                relative_parts = parts[version_idx + 1:-1]
-                folder_path = "/".join(relative_parts) if relative_parts else ""
-                folder_name = item.name
-            else:  # archivo
-                relative_parts = parts[version_idx + 1:-1]
-                file_path = "/".join(relative_parts) if relative_parts else ""
+                if item.item_type == "folder":
+                    folder_path = "/".join(path_parts) if path_parts else ""
+                    folder_name = item.name
+                else:  # archivo
+                    file_path = "/".join(path_parts) if path_parts else ""
 
             logger.info(f"Eliminando: {item.name}")
 
@@ -1115,10 +1402,9 @@ class ExploradorState(rx.State):
 
             if response.get("success") or response.get("status") == "success":
                 logger.info(f"Eliminado exitosamente: {item.name}")
-                return [
-                    rx.toast.success(f"'{item.name}' eliminado exitosamente"),
-                    rx.call_script("window.location.reload()"),
-                ]
+                # Recargar el explorador desde fmanagement (/fmo/list)
+                self.load_from_api()
+                return rx.toast.success(f"'{item.name}' eliminado exitosamente")
             else:
                 error_msg = response.get("mensaje") or response.get("error", "Error desconocido")
                 return rx.toast.error(f"Error: {error_msg}")
@@ -1149,34 +1435,54 @@ class ExploradorState(rx.State):
 
         try:
             item = self.current_action_item
-
-            # Extraer información del item
-            parts = item.id.split("_")
             project_id = self.id_proyecto
 
-            # Buscar la versión
-            version_part = None
-            for part in parts:
-                if part.startswith("v") and part[1:].isdigit():
-                    version_part = part
-                    break
+            # Identificar la versión usando el método _find_version_ancestor
+            # Si el item es la versión misma (depth == 1)
+            if item.depth == 1:
+                version_item = item
+            # Si el item está dentro de una versión (depth > 1)
+            elif item.depth > 1:
+                version_item = self._find_version_ancestor(item)
+                if not version_item:
+                    self.properties_info = "Error: No se pudo identificar la versión ancestro"
+                    return rx.toast.error("No se pudo identificar la versión ancestro")
+            else:
+                self.properties_info = "Error: Nivel inválido para obtener propiedades"
+                return rx.toast.error("No se pueden obtener propiedades de este elemento")
 
-            if not version_part:
-                self.properties_info = "Error: No se pudo identificar la versión"
-                return rx.toast.error("No se pudo identificar la versión")
+            # Extraer el número de versión del nombre (ej: "v001" -> 1)
+            version_name = version_item.name
+            if version_name.startswith("v") and version_name[1:].isdigit():
+                version_id = int(version_name.lstrip('v'))
+            else:
+                self.properties_info = f"Error: Formato de versión inválido: {version_name}"
+                return rx.toast.error(f"Formato de versión inválido: {version_name}")
 
-            version_id = int(version_part.lstrip('v'))
+            # Construir la ruta relativa
+            if item.depth == 1:
+                # Es la versión misma
+                item_path = ""
+                item_name = "" if item.item_type == "folder" else item.name
+            else:
+                # Construir la ruta navegando desde el item hacia arriba hasta la versión
+                path_parts = []
+                current = item
+                while current.depth > 1:
+                    if item.item_type == "folder":
+                        # Para carpetas, incluir el nombre de la carpeta en la ruta
+                        path_parts.insert(0, current.name)
+                    else:
+                        # Para archivos, no incluir el nombre del archivo en la ruta
+                        if current.id != item.id:
+                            path_parts.insert(0, current.name)
+                    parent = next((p for p in self.items if p.id == current.parent_id), None)
+                    if not parent or parent.depth <= 1:
+                        break
+                    current = parent
 
-            # Calcular la ruta relativa (sin incluir el nombre si es archivo)
-            version_idx = parts.index(version_part)
-            if item.item_type == "folder":
-                relative_parts = parts[version_idx + 1:]
-                item_path = "/".join(relative_parts) if relative_parts else ""
-                item_name = ""
-            else:  # archivo
-                relative_parts = parts[version_idx + 1:-1]
-                item_path = "/".join(relative_parts) if relative_parts else ""
-                item_name = item.name
+                item_path = "/".join(path_parts) if path_parts else ""
+                item_name = "" if item.item_type == "folder" else item.name
 
             logger.info(f"Obteniendo propiedades de: {item.name}")
 
@@ -1195,15 +1501,22 @@ class ExploradorState(rx.State):
             if response.get("success") or response.get("status") == "success":
                 # Formatear la información
                 data = response.get("data") or response
+
+                # Sanitizar el output del comando 'file' para remover la ruta interna
+                file_output = data.get('file_output', 'No disponible')
+                if file_output and ':' in file_output:
+                    # El comando 'file' retorna: /ruta/completa/archivo.txt: tipo
+                    # Extraemos solo la parte después de ':'
+                    file_output = file_output.split(':', 1)[1].strip()
+
                 info = f"═══ PROPIEDADES ═══\n\n"
                 info += f"Nombre: {data.get('name', item.name)}\n"
                 info += f"Tipo: {'Carpeta' if data.get('is_dir') else 'Archivo'}\n"
                 info += f"Tamaño: {self._format_size(data.get('size_bytes', 0))}\n"
                 info += f"Permisos: {data.get('mode', 'N/A')}\n"
-                info += f"Modificado: {data.get('mod_time', 'N/A')}\n"
-                info += f"Ruta: {data.get('path', item.id)}\n\n"
+                info += f"Modificado: {data.get('mod_time', 'N/A')}\n\n"
                 info += f"═══ INFORMACIÓN DEL SISTEMA ═══\n\n"
-                info += f"{data.get('file_output', 'No disponible')}\n"
+                info += f"{file_output}\n"
 
                 self.properties_info = info
                 return rx.toast.success("Propiedades cargadas")
@@ -1367,7 +1680,15 @@ class ExploradorState(rx.State):
             logger.error(f"Error cargando estados de versiones: {e}")
             print(f"Error cargando estados de versiones: {e}")
 
-    def reload_project_with_tokens(self, project_id: int, org_id: int, access_token: str, session_token: str):
+    def reload_project_with_tokens(
+        self,
+        project_id: int,
+        org_id: int,
+        access_token: str,
+        session_token: str,
+        user_id: int = 0,
+        identity_type_id: int = 0,
+    ):
         """Recarga el explorador con un nuevo proyecto.
 
         Args:
@@ -1375,6 +1696,8 @@ class ExploradorState(rx.State):
             org_id: ID de la organización
             access_token: Token de acceso
             session_token: Token de sesión
+            user_id: ID del usuario (requerido para operaciones CRUD)
+            identity_type_id: Tipo de identidad del usuario (requerido para permisos)
         """
         logger.info(f"Recargando explorador para proyecto {project_id}...")
 
@@ -1389,6 +1712,11 @@ class ExploradorState(rx.State):
         self.id_organizacion = org_id
         self.access_token = access_token
         self.session_token = session_token
+        self.user_id = user_id
+        self.user_identity_type_id = identity_type_id
+
+        logger.info(f"✓ Contexto de usuario: user_id={self.user_id}, identity_type_id={self.user_identity_type_id}")
+        print(f"✓ Contexto de usuario: user_id={self.user_id}, identity_type_id={self.user_identity_type_id}")
 
         # Recargar permisos para el nuevo proyecto
         self._load_permissions_from_database()
@@ -1400,11 +1728,24 @@ class ExploradorState(rx.State):
         else:
             logger.warning("Tokens no disponibles, no se puede cargar desde API")
 
-    def init_page(self, project_id: int = 0):
+    def init_page(
+        self,
+        project_id: int = 0,
+        user_id: int = 0,
+        identity_type_id: int = 0,
+        org_id: int = 0,
+        access_token: str = "",
+        session_token: str = "",
+    ):
         """Inicializa los datos al cargar la página.
 
         Args:
             project_id: ID del proyecto a cargar (con todas sus versiones)
+            user_id: ID del usuario (opcional, si no se pasa intenta obtenerlo del MainState)
+            identity_type_id: Tipo de identidad del usuario (opcional)
+            org_id: ID de la organización (opcional)
+            access_token: Token de acceso (opcional)
+            session_token: Token de sesión (opcional)
         """
         logger.info(f"Inicializando página Explorador para proyecto {project_id}...")
 
@@ -1412,8 +1753,21 @@ class ExploradorState(rx.State):
         if project_id > 0:
             self.id_proyecto = project_id
 
-        # Cargar perfil de seguridad primero para obtener tokens si existen
-        self.load_security_profile()
+        # Si se pasaron explícitamente user_id/identity_type_id, usarlos
+        if user_id > 0:
+            self.user_id = user_id
+            self.user_identity_type_id = identity_type_id
+            if org_id > 0:
+                self.id_organizacion = org_id
+            if access_token:
+                self.access_token = access_token
+            if session_token:
+                self.session_token = session_token
+            logger.info(f"✓ Contexto de usuario explícito: user_id={self.user_id}, identity_type_id={self.user_identity_type_id}")
+            print(f"✓ Contexto de usuario explícito: user_id={self.user_id}, identity_type_id={self.user_identity_type_id}")
+        else:
+            # Cargar perfil de seguridad para obtener datos del MainState
+            self.load_security_profile()
 
         # Intentar cargar desde API si tenemos tokens, sino usar JSON de demo
         if self.access_token and self.session_token and self.id_proyecto > 0:
@@ -1560,6 +1914,19 @@ class ExploradorState(rx.State):
                     item.is_visible = parent.is_visible and parent.is_expanded
                 else:
                     item.is_visible = False
+
+    def _find_version_ancestor(self, item: FolderItem) -> FolderItem | None:
+        """Encuentra la versión ancestro (depth == 1) de un item."""
+        # Buscar en la jerarquía hacia arriba hasta encontrar depth == 1
+        current_item = item
+        while current_item.parent_id != "":
+            parent = next((p for p in self.items if p.id == current_item.parent_id), None)
+            if not parent:
+                break
+            if parent.depth == 1:
+                return parent
+            current_item = parent
+        return None
 
 def render_item(item: FolderItem) -> rx.Component:
     """Renderiza una única fila del explorador."""
@@ -1949,6 +2316,144 @@ def render_context_menu():
         on_mouse_leave=ExploradorState.close_context_menu,
     )
 
+def create_folder_dialog() -> rx.Component:
+    """Diálogo para crear carpeta."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Crear nueva carpeta"),
+            rx.dialog.description(
+                "Ingresa el nombre de la nueva carpeta",
+                margin_bottom="1em",
+            ),
+            rx.vstack(
+                rx.input(
+                    placeholder="Nombre de la carpeta",
+                    value=ExploradorState.dialog_input_value,
+                    on_change=lambda val: ExploradorState.set_dialog_input_value(val),
+                    width="100%",
+                    auto_focus=True,
+                ),
+                rx.hstack(
+                    rx.button(
+                        "Cancelar",
+                        variant="soft",
+                        color_scheme="gray",
+                        on_click=ExploradorState.cerrar_dialogo_crear_carpeta,
+                    ),
+                    rx.button(
+                        "Crear",
+                        on_click=ExploradorState.ejecutar_crear_carpeta,
+                    ),
+                    spacing="3",
+                    justify="end",
+                    width="100%",
+                ),
+                spacing="4",
+                width="100%",
+            ),
+        ),
+        open=ExploradorState.show_create_folder_dialog,
+    )
+
+def rename_dialog() -> rx.Component:
+    """Diálogo para renombrar."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Renombrar"),
+            rx.dialog.description(
+                "Ingresa el nuevo nombre",
+                margin_bottom="1em",
+            ),
+            rx.vstack(
+                rx.input(
+                    placeholder="Nuevo nombre",
+                    value=ExploradorState.dialog_input_value,
+                    on_change=lambda val: ExploradorState.set_dialog_input_value(val),
+                    width="100%",
+                    auto_focus=True,
+                ),
+                rx.hstack(
+                    rx.button(
+                        "Cancelar",
+                        variant="soft",
+                        color_scheme="gray",
+                        on_click=ExploradorState.cerrar_dialogo_renombrar,
+                    ),
+                    rx.button(
+                        "Renombrar",
+                        on_click=ExploradorState.ejecutar_renombrar,
+                    ),
+                    spacing="3",
+                    justify="end",
+                    width="100%",
+                ),
+                spacing="4",
+                width="100%",
+            ),
+        ),
+        open=ExploradorState.show_rename_dialog,
+    )
+
+def delete_confirm_dialog() -> rx.Component:
+    """Diálogo de confirmación para eliminar."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Confirmar eliminación"),
+            rx.dialog.description(
+                "¿Estás seguro de que deseas eliminar este elemento? Esta acción no se puede deshacer.",
+                margin_bottom="1em",
+                color="red",
+            ),
+            rx.hstack(
+                rx.dialog.close(
+                    rx.button(
+                        "Cancelar",
+                        variant="soft",
+                        color_scheme="gray",
+                        on_click=ExploradorState.cerrar_dialogo_eliminar,
+                    ),
+                ),
+                rx.dialog.close(
+                    rx.button(
+                        "Eliminar",
+                        color_scheme="red",
+                        on_click=ExploradorState.ejecutar_eliminar,
+                    ),
+                ),
+                spacing="3",
+                justify="end",
+                width="100%",
+            ),
+        ),
+        open=ExploradorState.show_delete_confirm_dialog,
+    )
+
+def properties_dialog() -> rx.Component:
+    """Diálogo de propiedades."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Propiedades"),
+            rx.vstack(
+                rx.text(
+                    ExploradorState.properties_info,
+                    white_space="pre-wrap",
+                    font_family="monospace",
+                    font_size="14px",
+                ),
+                rx.dialog.close(
+                    rx.button(
+                        "Cerrar",
+                        on_click=ExploradorState.cerrar_dialogo_propiedades,
+                        width="100%",
+                    ),
+                ),
+                spacing="4",
+                width="100%",
+            ),
+        ),
+        open=ExploradorState.show_properties_dialog,
+    )
+
 def explorador_panel(state) -> rx.Component:
     """Panel del explorador adaptado para nuestra estructura.
 
@@ -2005,6 +2510,13 @@ def explorador_panel(state) -> rx.Component:
             padding="20px",
             align_items="start",
         ),
+
+        # Diálogos modales
+        create_folder_dialog(),
+        rename_dialog(),
+        delete_confirm_dialog(),
+        properties_dialog(),
+
         width="100%",
         on_mount=ExploradorState.init_page,
     )

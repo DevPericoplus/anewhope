@@ -246,6 +246,66 @@ class ActivityLogger:
         """Registra cierre de la aplicación."""
         self._log(logging.INFO, f"APPLICATION SHUTDOWN | {self.app_name}")
 
+    # ========================================
+    # Métodos específicos de asignaciones
+    # ========================================
+
+    def log_assignment_create(
+        self,
+        user_id: int,
+        assignment_type: str,
+        assignment_id: int,
+        target_user_id: Optional[int] = None,
+        organization_id: Optional[int] = None,
+        project_id: Optional[int] = None,
+        role_id: Optional[int] = None,
+    ) -> None:
+        """Registra creación de asignación."""
+        msg = f"ASSIGNMENT_CREATE | user={user_id} | type={assignment_type} | id={assignment_id}"
+        if target_user_id:
+            msg += f" | target_user={target_user_id}"
+        if organization_id:
+            msg += f" | org={organization_id}"
+        if project_id:
+            msg += f" | project={project_id}"
+        if role_id:
+            msg += f" | role={role_id}"
+        self._log(logging.INFO, msg)
+
+    def log_assignment_update(
+        self,
+        user_id: int,
+        assignment_type: str,
+        assignment_id: int,
+        changes: dict[str, Any],
+    ) -> None:
+        """Registra actualización de asignación."""
+        changes_str = ", ".join(f"{k}={v}" for k, v in changes.items())
+        msg = f"ASSIGNMENT_UPDATE | user={user_id} | type={assignment_type} | id={assignment_id} | changes=[{changes_str}]"
+        self._log(logging.INFO, msg)
+
+    def log_assignment_delete(
+        self,
+        user_id: int,
+        assignment_type: str,
+        assignment_id: int,
+    ) -> None:
+        """Registra eliminación de asignación."""
+        msg = f"ASSIGNMENT_DELETE | user={user_id} | type={assignment_type} | id={assignment_id}"
+        self._log(logging.WARNING, msg)
+
+    def log_assignment_list(
+        self,
+        user_id: int,
+        assignment_type: str,
+        filter_id: int,
+        count: int,
+    ) -> None:
+        """Registra consulta de lista de asignaciones."""
+        filter_type = "org" if assignment_type == "organization" else "project"
+        msg = f"ASSIGNMENT_LIST | user={user_id} | type={assignment_type} | {filter_type}={filter_id} | count={count}"
+        self._log(logging.INFO, msg)
+
 
 # ========================================
 # Instancias singleton para cada aplicación

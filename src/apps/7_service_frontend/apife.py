@@ -2658,11 +2658,12 @@ def fmanagement_operation_endpoint(
     session: Annotated[SessionContext, Depends(get_session_context)],
 ) -> FmanagementOperationResponse:
     """Ejecuta una operación genérica en fmanagement.
-    
+
     Operaciones soportadas:
     - create_folder, delete_folder, rename_folder
     - create_file, rename_file, delete_file, download_file
-    
+    - get_properties
+
     Flujo: Frontend → Middleware → Broker → Backend Core → fmanagement
     """
     _logger = logging.getLogger(__name__)

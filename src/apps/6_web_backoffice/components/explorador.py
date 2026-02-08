@@ -15,6 +15,9 @@ import reflex as rx
 import pydantic
 import logging
 from typing import Any
+import sys
+import importlib.util
+from pathlib import Path
 
 # Imports de la capa compartida
 from web_backoffice.shared_state import SharedSessionState
@@ -30,13 +33,44 @@ from adapters.api_client import (
     update_version_state,
 )
 
-
 # ============================================================================
-# Configuración de Logging
+# Configuración de Logging (DEBE IR ANTES de importar permisos)
 # ============================================================================
 
 logger = logging.getLogger("ExploradorBackoffice")
 logger.setLevel(logging.INFO)
+
+# ============================================================================
+# Importar sistema de permisos desde capa compartida
+# ============================================================================
+
+# Importar explorador_permissions_mapping.py desde 2_shared_application
+try:
+    # Path: explorador.py -> components -> 6_web_backoffice -> apps -> src
+    # parents[3] nos lleva a "src", luego accedemos a 2_shared_application
+    _mapping_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "explorador_permissions_mapping.py"
+    _mapping_spec = importlib.util.spec_from_file_location("explorador_permissions_mapping", _mapping_path)
+    _mapping_module = importlib.util.module_from_spec(_mapping_spec)
+    sys.modules["explorador_permissions_mapping"] = _mapping_module
+    _mapping_spec.loader.exec_module(_mapping_module)
+
+    # Importar funciones de mapeo
+    get_required_permission = _mapping_module.get_required_permission
+    is_action_allowed = _mapping_module.is_action_allowed
+    get_action_details = _mapping_module.get_action_details
+
+    logger.info("[PERMISSIONS] Módulo de mapeo de permisos cargado correctamente")
+except Exception as e:
+    logger.error(f"[PERMISSIONS] Error cargando módulo de mapeo: {e}")
+    import traceback
+    traceback.print_exc()
+    # Definir fallback si falla la carga
+    def get_required_permission(action: str, item_type: str) -> str | None:
+        return None
+    def is_action_allowed(action: str, item_type: str, user_permissions: dict) -> bool:
+        return True
+    def get_action_details(action: str, item_type: str) -> dict | None:
+        return None
 
 
 # ============================================================================
@@ -74,7 +108,8 @@ class FolderItem(pydantic.BaseModel):
     has_children: bool = False
     is_visible: bool = True
     item_type: str = "folder"  # "folder" or "file"
-    is_protected: bool = False  # Level 0 and 1 are protected
+    is_protected: bool = False  # Level 0 and 1 are protected (structural protection)
+    db_protected: bool = False  # Database protected field from version_states (content protection)
     is_blocked: bool = False  # Operational block (opacity 0.5)
     size_str: str = ""  # Formatted size (e.g. "1.2 MB")
     metadata: dict = {}  # Extra info
@@ -859,13 +894,17 @@ class ExploradorState(SharedSessionState):
         versiones (bloquear/desbloquear).
 
         Security by Design:
+        - Valida PERMISOS del usuario (low_level_permissions desde base de datos)
+        - Valida RESTRICCIONES DE VERSIÓN (solo identity_type_id 1 o 2)
+        - Valida protección de contenido (db_protected)
         - Valida protección estructural (niveles 0 y 1)
-        - Valida permisos del usuario (heredados de SharedSessionState)
         - Valida estado operativo (is_blocked)
+
+        IMPORTANTE: TODAS las validaciones se loggean (éxito y fallo).
 
         Args:
             accion: Nombre de la acción (delete, rename, upload_file, download,
-                    block_version, unblock_version)
+                    block_version, unblock_version, create_folder, properties)
             item_or_id: Item (FolderItem) o ID del item (str) sobre el que se ejecuta la acción
         """
         # Si es un string (item_id), buscar el item
@@ -881,32 +920,187 @@ class ExploradorState(SharedSessionState):
         else:
             item = item_or_id
 
+        # ====================================================================
+        # VALIDACIÓN 1: PERMISOS DEL USUARIO (low_level_permissions)
+        # ====================================================================
+
+        # Obtener el permiso requerido para esta acción
+        required_permission = get_required_permission(accion, item.item_type)
+
+        if required_permission:
+            # Obtener permisos del usuario desde SharedSessionState
+            user_permissions = self.get_all_permissions()
+            has_permission = user_permissions.get(required_permission, False)
+
+            if not has_permission:
+                logger.warning(
+                    "[PERMISSION DENIED] user_id=%s identity_type_id=%s "
+                    "accion=%s permiso=%s item=%s type=%s",
+                    self.user_id,
+                    self.identity_type_id,
+                    accion,
+                    required_permission,
+                    item.name,
+                    item.item_type,
+                )
+                return rx.toast.error(
+                    f"Operación no permitida: Requiere permiso '{required_permission}'"
+                )
+            else:
+                logger.info(
+                    "[PERMISSION GRANTED] user_id=%s identity_type_id=%s "
+                    "accion=%s permiso=%s item=%s type=%s",
+                    self.user_id,
+                    self.identity_type_id,
+                    accion,
+                    required_permission,
+                    item.name,
+                    item.item_type,
+                )
+
+        # ====================================================================
+        # VALIDACIÓN 2: RESTRICCIONES DE VERSIÓN (solo identity_type_id 1 o 2)
+        # ====================================================================
+
+        version_operations = [
+            "block_version",
+            "unblock_version",
+            "review_version",
+            "abrir_version",
+            "bloquear_version",
+            "entrenar_version",
+            "proteger_version",
+            "finalizar_version",
+        ]
+
+        if accion in version_operations:
+            if self.identity_type_id not in (1, 2):
+                logger.warning(
+                    "[VERSION OPERATION DENIED] user_id=%s identity_type_id=%s "
+                    "accion=%s item=%s - Solo SuperAdmin (1) u OrgAdmin (2) pueden gestionar versiones",
+                    self.user_id,
+                    self.identity_type_id,
+                    accion,
+                    item.name,
+                )
+                return rx.toast.error(
+                    "Operación no permitida: Solo administradores pueden gestionar versiones"
+                )
+            else:
+                logger.info(
+                    "[VERSION OPERATION ALLOWED] user_id=%s identity_type_id=%s "
+                    "accion=%s item=%s",
+                    self.user_id,
+                    self.identity_type_id,
+                    accion,
+                    item.name,
+                )
+
         # Excepciones a la protección: Acciones administrativas de versión
         admin_actions = ["block_version", "unblock_version", "review_version"]
 
-        # Validación 1: Protección estructural (Security by Design)
-        if item.is_protected and accion not in admin_actions:
+        # Acciones de contenido: crear carpetas/archivos dentro de una versión
+        content_actions = ["create_folder", "upload_file"]
+
+        # ====================================================================
+        # VALIDACIÓN 3: PROTECCIÓN DE CONTENIDO (db_protected)
+        # ====================================================================
+
+        if accion in content_actions:
+            # Si el item es la versión misma (depth == 1), verificar directamente
+            if item.depth == 1:
+                if item.db_protected:
+                    logger.warning(
+                        "[CONTENT PROTECTION] Acción '%s' denegada: versión '%s' protegida en BD "
+                        "(user_id=%s identity_type_id=%s)",
+                        accion,
+                        item.name,
+                        self.user_id,
+                        self.identity_type_id,
+                    )
+                    return rx.window_alert(
+                        f"Acción '{accion}' denegada: La versión '{item.name}' está protegida."
+                    )
+                else:
+                    logger.info(
+                        "[CONTENT PROTECTION] Acción '%s' permitida: versión '%s' NO protegida "
+                        "(user_id=%s)",
+                        accion,
+                        item.name,
+                        self.user_id,
+                    )
+
+            # Si el item está dentro de una versión (depth > 1), buscar la versión ancestro
+            elif item.depth > 1:
+                # Buscar la versión en la jerarquía (depth == 1)
+                version_item = self._find_version_ancestor(item)
+                if version_item and version_item.db_protected:
+                    logger.warning(
+                        "[CONTENT PROTECTION] Acción '%s' denegada: versión ancestro '%s' protegida en BD "
+                        "(user_id=%s item=%s)",
+                        accion,
+                        version_item.name,
+                        self.user_id,
+                        item.name,
+                    )
+                    return rx.window_alert(
+                        f"Acción '{accion}' denegada: La versión '{version_item.name}' está protegida."
+                    )
+                elif version_item:
+                    logger.info(
+                        "[CONTENT PROTECTION] Acción '%s' permitida: versión ancestro '%s' NO protegida "
+                        "(user_id=%s item=%s)",
+                        accion,
+                        version_item.name,
+                        self.user_id,
+                        item.name,
+                    )
+
+        # ====================================================================
+        # VALIDACIÓN 4: PROTECCIÓN ESTRUCTURAL (Security by Design)
+        # ====================================================================
+
+        if item.is_protected and accion not in admin_actions and accion not in content_actions:
             logger.warning(
-                "Acción '%s' denegada por protección estructural: item='%s'",
+                "[STRUCTURAL PROTECTION] Acción '%s' denegada: item='%s' depth=%s is_protected=True "
+                "(user_id=%s)",
                 accion,
                 item.name,
+                item.depth,
+                self.user_id,
             )
             return rx.window_alert(
                 f"Acción '{accion}' denegada: El elemento '{item.name}' está protegido."
             )
 
-        # Validación 2: Bloqueo operativo
+        # ====================================================================
+        # VALIDACIÓN 5: BLOQUEO OPERATIVO (is_blocked)
+        # ====================================================================
+
         if item.is_blocked and accion not in admin_actions:
             logger.warning(
-                "Acción '%s' denegada por bloqueo operativo: item='%s'",
+                "[OPERATIONAL BLOCK] Acción '%s' denegada: item='%s' is_blocked=True "
+                "(user_id=%s version_state=%s)",
                 accion,
                 item.name,
+                self.user_id,
+                getattr(item, "version_state_label", "N/A"),
             )
             return rx.window_alert(
                 f"Versión bloqueada: No se pueden realizar operaciones sobre '{item.name}'."
             )
 
-        logger.info("Ejecutando acción: %s sobre %s", accion, item.name)
+        # ====================================================================
+        # TODAS LAS VALIDACIONES PASARON - EJECUTAR ACCIÓN
+        # ====================================================================
+
+        logger.info(
+            "[ACTION ALLOWED] Ejecutando acción: %s sobre %s (user_id=%s identity_type_id=%s)",
+            accion,
+            item.name,
+            self.user_id,
+            self.identity_type_id,
+        )
 
         # Construir parámetros base para fmanagement
         org_folder = f"ORG{str(self.organization_id).zfill(5)}"
@@ -918,12 +1112,7 @@ class ExploradorState(SharedSessionState):
         # ====================================================================
 
         if accion == "delete":
-            # Validar permiso
-            if item.item_type == "folder" and not self.can_folder_delete:
-                return rx.window_alert("Sin permisos para eliminar carpetas")
-            if item.item_type == "file" and not self.can_file_delete:
-                return rx.window_alert("Sin permisos para eliminar archivos")
-
+            # Permisos ya validados arriba, proceder con la operación
             operation = "delete_folder" if item.item_type == "folder" else "delete_file"
             params = {
                 "org": org_folder,
@@ -931,6 +1120,16 @@ class ExploradorState(SharedSessionState):
                 "version": version_folder,
                 "path": item.name,
             }
+
+            logger.info(
+                "[DELETE] Eliminando %s: %s (user_id=%s org=%s prj=%s version=%s)",
+                item.item_type,
+                item.name,
+                self.user_id,
+                org_folder,
+                prj_folder,
+                version_folder,
+            )
 
             response = fmanagement_operation(
                 operation=operation,
@@ -940,12 +1139,21 @@ class ExploradorState(SharedSessionState):
             )
 
             if response.get("success"):
-                logger.info("Eliminado exitosamente: %s", item.name)
-                self.load_from_api()  # Recargar estructura
+                logger.info(
+                    "[DELETE SUCCESS] Eliminado exitosamente: %s (user_id=%s)",
+                    item.name,
+                    self.user_id,
+                )
+                self.load_from_api()  # Recargar estructura después de ACK exitoso
                 return rx.toast.success(f"Eliminado: {item.name}")
             else:
                 error_msg = response.get("message", "Error desconocido")
-                logger.error("Error eliminando: %s", error_msg)
+                logger.error(
+                    "[DELETE ERROR] Error eliminando %s: %s (user_id=%s)",
+                    item.name,
+                    error_msg,
+                    self.user_id,
+                )
                 return rx.toast.error(f"Error: {error_msg}")
 
         # ====================================================================
@@ -953,11 +1161,7 @@ class ExploradorState(SharedSessionState):
         # ====================================================================
 
         elif accion == "rename":
-            # Validar permiso
-            if item.item_type == "folder" and not self.can_folder_rename:
-                return rx.window_alert("Sin permisos para renombrar carpetas")
-            if item.item_type == "file" and not self.can_file_update:
-                return rx.window_alert("Sin permisos para renombrar archivos")
+            # Permisos ya validados arriba, proceder con la operación
 
             # TODO: Implementar diálogo para nuevo nombre
             # Por ahora, placeholder
@@ -972,6 +1176,14 @@ class ExploradorState(SharedSessionState):
                 "new_name": new_name,
             }
 
+            logger.info(
+                "[RENAME] Renombrando %s: %s → %s (user_id=%s)",
+                item.item_type,
+                item.name,
+                new_name,
+                self.user_id,
+            )
+
             response = fmanagement_operation(
                 operation=operation,
                 params=params,
@@ -980,12 +1192,22 @@ class ExploradorState(SharedSessionState):
             )
 
             if response.get("success"):
-                logger.info("Renombrado: %s → %s", item.name, new_name)
-                self.load_from_api()  # Recargar estructura
+                logger.info(
+                    "[RENAME SUCCESS] Renombrado: %s → %s (user_id=%s)",
+                    item.name,
+                    new_name,
+                    self.user_id,
+                )
+                self.load_from_api()  # Recargar estructura después de ACK exitoso
                 return rx.toast.success(f"Renombrado a: {new_name}")
             else:
                 error_msg = response.get("message", "Error desconocido")
-                logger.error("Error renombrando: %s", error_msg)
+                logger.error(
+                    "[RENAME ERROR] Error renombrando %s: %s (user_id=%s)",
+                    item.name,
+                    error_msg,
+                    self.user_id,
+                )
                 return rx.toast.error(f"Error: {error_msg}")
 
         # ====================================================================
@@ -993,9 +1215,13 @@ class ExploradorState(SharedSessionState):
         # ====================================================================
 
         elif accion == "upload_file":
-            # Validar permiso
-            if not self.can_file_create:
-                return rx.window_alert("Sin permisos para crear archivos")
+            # Permisos ya validados arriba, proceder con la operación
+
+            logger.info(
+                "[UPLOAD_FILE] Preparando subida de archivo a: %s (user_id=%s)",
+                item.name,
+                self.user_id,
+            )
 
             # TODO: Implementar diálogo de subida de archivo
             # Por ahora, placeholder
@@ -1008,9 +1234,7 @@ class ExploradorState(SharedSessionState):
         # ====================================================================
 
         elif accion == "download":
-            # Validar permiso
-            if not self.can_file_read:
-                return rx.window_alert("Sin permisos para descargar archivos")
+            # Permisos ya validados arriba, proceder con la operación
 
             params = {
                 "org": org_folder,
@@ -1018,6 +1242,12 @@ class ExploradorState(SharedSessionState):
                 "version": version_folder,
                 "file_path": item.name,
             }
+
+            logger.info(
+                "[DOWNLOAD] Descargando archivo: %s (user_id=%s)",
+                item.name,
+                self.user_id,
+            )
 
             response = fmanagement_operation(
                 operation="download_file",
@@ -1027,12 +1257,21 @@ class ExploradorState(SharedSessionState):
             )
 
             if response.get("success"):
-                logger.info("Descarga iniciada: %s", item.name)
+                logger.info(
+                    "[DOWNLOAD SUCCESS] Descarga iniciada: %s (user_id=%s)",
+                    item.name,
+                    self.user_id,
+                )
                 # TODO: Procesar data del archivo para descarga
                 return rx.toast.success(f"Descargando: {item.name}")
             else:
                 error_msg = response.get("message", "Error desconocido")
-                logger.error("Error descargando: %s", error_msg)
+                logger.error(
+                    "[DOWNLOAD ERROR] Error descargando %s: %s (user_id=%s)",
+                    item.name,
+                    error_msg,
+                    self.user_id,
+                )
                 return rx.toast.error(f"Error: {error_msg}")
 
         # ====================================================================
@@ -1040,11 +1279,15 @@ class ExploradorState(SharedSessionState):
         # ====================================================================
 
         elif accion == "block_version":
-            # Validar permiso (solo usuarios internos)
-            if not self.is_internal_user:
-                return rx.window_alert(
-                    "Solo usuarios internos pueden bloquear versiones"
-                )
+            # Permisos y restricciones ya validados arriba (solo identity_type_id 1 o 2)
+
+            logger.info(
+                "[BLOCK_VERSION] Bloqueando versión: %s (user_id=%s identity_type_id=%s project_id=%s)",
+                self.id_version,
+                self.user_id,
+                self.identity_type_id,
+                self.id_proyecto,
+            )
 
             response = update_version_state(
                 project_id=self.id_proyecto,
@@ -1057,21 +1300,33 @@ class ExploradorState(SharedSessionState):
             )
 
             if response.get("success"):
-                logger.info("Versión bloqueada: %s", self.id_version)
-                self.load_version_state_from_api()  # Recargar estado
+                logger.info(
+                    "[BLOCK_VERSION SUCCESS] Versión bloqueada: %s (user_id=%s)",
+                    self.id_version,
+                    self.user_id,
+                )
+                self.load_version_state_from_api()  # Recargar estado después de ACK exitoso
                 # self.interpretacion_estados()  # TODO: PASO 6.4d
                 return rx.toast.success("Versión bloqueada")
             else:
                 error_msg = response.get("message", "Error desconocido")
-                logger.error("Error bloqueando versión: %s", error_msg)
+                logger.error(
+                    "[BLOCK_VERSION ERROR] Error bloqueando versión %s: %s (user_id=%s)",
+                    self.id_version,
+                    error_msg,
+                    self.user_id,
+                )
                 return rx.toast.error(f"Error: {error_msg}")
 
         elif accion == "unblock_version":
-            # Validar permiso (solo usuarios internos)
-            if not self.is_internal_user:
-                return rx.window_alert(
-                    "Solo usuarios internos pueden desbloquear versiones"
-                )
+            # Permisos y restricciones ya validados arriba (solo identity_type_id 1 o 2)
+
+            logger.info(
+                "[UNBLOCK_VERSION] Desbloqueando versión: %s (user_id=%s identity_type_id=%s)",
+                self.id_version,
+                self.user_id,
+                self.identity_type_id,
+            )
 
             response = update_version_state(
                 project_id=self.id_proyecto,
@@ -1084,13 +1339,22 @@ class ExploradorState(SharedSessionState):
             )
 
             if response.get("success"):
-                logger.info("Versión desbloqueada: %s", self.id_version)
-                self.load_version_state_from_api()  # Recargar estado
+                logger.info(
+                    "[UNBLOCK_VERSION SUCCESS] Versión desbloqueada: %s (user_id=%s)",
+                    self.id_version,
+                    self.user_id,
+                )
+                self.load_version_state_from_api()  # Recargar estado después de ACK exitoso
                 # self.interpretacion_estados()  # TODO: PASO 6.4d
                 return rx.toast.success("Versión desbloqueada")
             else:
                 error_msg = response.get("message", "Error desconocido")
-                logger.error("Error desbloqueando versión: %s", error_msg)
+                logger.error(
+                    "[UNBLOCK_VERSION ERROR] Error desbloqueando versión %s: %s (user_id=%s)",
+                    self.id_version,
+                    error_msg,
+                    self.user_id,
+                )
                 return rx.toast.error(f"Error: {error_msg}")
 
         # ====================================================================
@@ -1143,6 +1407,8 @@ class ExploradorState(SharedSessionState):
                 item.version_state_color = color
                 item.is_final_c = final_c
                 item.is_final_i = final_i
+                # CRÍTICO: Asignar el campo protected de la base de datos
+                item.db_protected = protected
 
                 es_bloqueada = protected or (estado != "Abierta")
 
@@ -1220,6 +1486,19 @@ class ExploradorState(SharedSessionState):
                     item.is_visible = parent.is_visible and parent.is_expanded
                 else:
                     item.is_visible = False
+
+    def _find_version_ancestor(self, item: FolderItem) -> FolderItem | None:
+        """Encuentra la versión ancestro (depth == 1) de un item."""
+        # Buscar en la jerarquía hacia arriba hasta encontrar depth == 1
+        current_item = item
+        while current_item.parent_id != "":
+            parent = next((p for p in self.items if p.id == current_item.parent_id), None)
+            if not parent:
+                break
+            if parent.depth == 1:
+                return parent
+            current_item = parent
+        return None
 
     def _format_size(self, bytes_val):
         """Formatea bytes a la unidad más adecuada."""

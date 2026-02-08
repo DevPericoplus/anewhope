@@ -2953,7 +2953,7 @@ class BackendCoreRouter:
                 # Obtener nombre del proyecto
                 project_name_query = text("""
                     SELECT nombre FROM proyectos
-                    WHERE id_proyecto = :project_id AND id_organizacion = :org_id
+                    WHERE id = :project_id AND id_organizacion = :org_id
                 """)
                 project_result = conn.execute(
                     project_name_query,
@@ -3335,12 +3335,19 @@ class BackendCoreRouter:
             
             # Normalizar parámetros si vienen con nombres cortos
             params = params.copy()
+
+            # Log params ANTES de transformación
+            self._logger.info(f"[FMANAGEMENT] Params ANTES transformación: {params}")
+
             if "org" in params: params["orgpath"] = params.pop("org")
             if "prj" in params: params["prjpath"] = params.pop("prj")
             if "version" in params: params["versionpath"] = params.pop("version")
             if "user_id" in params: params["iduser"] = params.pop("user_id")
             if "id_user" in params: params["iduser"] = params.pop("id_user")
-            
+
+            # Log params DESPUÉS de transformación
+            self._logger.info(f"[FMANAGEMENT] Params DESPUÉS transformación: {params}")
+
             # Subfolders y Extensiones
             if "file_path" in params:
                 full_path = params.pop("file_path")
@@ -3350,6 +3357,9 @@ class BackendCoreRouter:
                     params["extfile"] = parts[1]
                 else:
                     params["filename"] = full_path
+
+            # Eliminar 'operation' de params ya que los métodos específicos no lo necesitan
+            params.pop("operation", None)
 
             # Mapear operación a método del cliente
             result = None
@@ -3369,6 +3379,8 @@ class BackendCoreRouter:
                 result = client.download_file(**params)
             elif operation == "create_version":
                 result = client.create_version(**params)
+            elif operation == "get_properties":
+                result = client.get_properties(**params)
             else:
                 # Operación no soportada
                 raise ValueError(f"Operación no soportada: {operation}")

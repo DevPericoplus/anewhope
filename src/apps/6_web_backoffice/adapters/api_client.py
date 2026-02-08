@@ -1,9 +1,11 @@
 """Adaptador para comunicación con la capa de dominio y middleware."""
 import importlib.util
 import json
+import jwt
 import logging
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -184,7 +186,7 @@ def save_organization_to_json(organization_data: dict[str, Any]) -> int | None:
 
 def _get_middleware_base_url() -> str:
     """Obtiene la URL base del middleware desde el entorno.
-    
+
     Prioridad:
     1. Variable de entorno MIDDLEWARE_BASE_URL
     2. Valor de env.yaml (middleware_base_url)
@@ -194,10 +196,69 @@ def _get_middleware_base_url() -> str:
     return _env_settings.get_env_value("MIDDLEWARE_BASE_URL", "http://localhost:8007").rstrip("/")
 
 
+# Variable global para almacenar tokens temporalmente durante el refresh
+_temp_tokens: dict[str, str] = {}
+
+
+def get_refreshed_tokens() -> dict[str, str]:
+    """Retorna los tokens refrescados si existen, sino retorna un dict vacío.
+
+    El componente de Reflex debe llamar esta función después de cada operación
+    para verificar si hay tokens actualizados que deben guardarse en el estado.
+
+    Returns:
+        Dict con 'access_token' y 'session_token' si hay tokens refrescados,
+        dict vacío si no hay tokens refrescados.
+    """
+    if _temp_tokens:
+        logger.info("[AUTO-REFRESH] Retornando tokens refrescados al componente")
+        return _temp_tokens.copy()
+    return {}
+
+
+def clear_refreshed_tokens():
+    """Limpia los tokens refrescados después de que el componente los haya guardado.
+
+    El componente debe llamar esta función después de actualizar su estado con
+    los tokens refrescados.
+    """
+    global _temp_tokens
+    if _temp_tokens:
+        logger.info("[AUTO-REFRESH] Limpiando tokens refrescados")
+        _temp_tokens.clear()
+
+
+def _refresh_access_token_internal(session_token: str) -> dict[str, Any] | None:
+    """Intenta refrescar el access token usando el session token.
+
+    Returns:
+        Dict con nuevos tokens si el refresh fue exitoso, None si falló
+    """
+    try:
+        url = f"{_get_middleware_base_url()}/refresh-token"
+        request_headers = {
+            "Content-Type": "application/json",
+            "X-Session-Token": session_token,
+            "X-Client-App": "backoffice",
+        }
+
+        request = urllib.request.Request(url, method="POST", headers=request_headers)
+        with urllib.request.urlopen(request, timeout=10) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            logger.info("[AUTO-REFRESH] Tokens renovados automáticamente")
+            return result
+    except Exception as exc:
+        logger.warning(f"[AUTO-REFRESH] Falló el refresh automático: {exc}")
+        return None
+
+
 def _request_middleware(
-    method: str, path: str, payload: dict[str, Any] | None = None, headers: dict[str, str] | None = None
+    method: str, path: str, payload: dict[str, Any] | None = None, headers: dict[str, str] | None = None, _retry_count: int = 0
 ) -> dict[str, Any]:
-    """Realiza una petición HTTP al middleware y retorna JSON."""
+    """Realiza una petición HTTP al middleware y retorna JSON.
+
+    Incluye lógica de refresh automático de tokens cuando expiran.
+    """
 
     url = f"{_get_middleware_base_url()}{path}"
     body = None
@@ -215,6 +276,39 @@ def _request_middleware(
         with urllib.request.urlopen(request, timeout=10) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
+        # Si es 401 (Unauthorized) y no es el endpoint de refresh, intentar renovar tokens
+        if exc.code == 401 and path != "/refresh-token" and _retry_count == 0:
+            # Extraer session_token de los headers
+            session_token = request_headers.get("X-Session-Token")
+
+            if session_token:
+                logger.info(f"[AUTO-REFRESH] Token expirado detectado, intentando renovar...")
+                new_tokens = _refresh_access_token_internal(session_token)
+
+                if new_tokens and not new_tokens.get("error"):
+                    # Actualizar tokens temporalmente para esta petición
+                    _temp_tokens["access_token"] = new_tokens.get("access_token", "")
+                    _temp_tokens["session_token"] = new_tokens.get("session_token", "")
+
+                    # Actualizar headers con nuevos tokens
+                    if "Authorization" in request_headers:
+                        request_headers["Authorization"] = f"Bearer {_temp_tokens['access_token']}"
+                    if "X-Session-Token" in request_headers:
+                        request_headers["X-Session-Token"] = _temp_tokens["session_token"]
+
+                    # Reintentar la petición original con nuevos tokens
+                    logger.info("[AUTO-REFRESH] Reintentando petición con nuevos tokens")
+                    return _request_middleware(method, path, payload, request_headers, _retry_count=1)
+                else:
+                    logger.warning("[AUTO-REFRESH] No se pudo renovar tokens, sesión expirada")
+                    return {
+                        "error": True,
+                        "detail": "Tu sesión ha expirado. Por favor, vuelve a iniciar sesión.",
+                        "status_code": 401,
+                        "session_expired": True
+                    }
+
+        # Si no es 401 o el retry ya se intentó, manejar el error normalmente
         try:
             error_payload = exc.read().decode("utf-8")
             logger.error(f"Error HTTP desde middleware: {exc.code} - {error_payload}")
@@ -235,6 +329,11 @@ def _request_middleware(
                     error_message = str(detail) if not isinstance(detail, str) else detail
             except json.JSONDecodeError:
                 error_message = error_payload
+
+            # Mejorar mensaje para 401
+            if exc.code == 401:
+                error_message = "Tu sesión ha expirado. Por favor, vuelve a iniciar sesión."
+
             return {"error": True, "detail": error_message, "status_code": exc.code}
         except Exception:
             logger.error(f"Error HTTP desde middleware: {exc.code}")
@@ -267,6 +366,56 @@ def refresh_tokens(session_token: str) -> dict[str, Any]:
     return _request_middleware(
         "POST", "/refresh-token", headers={"X-Session-Token": session_token}
     )
+
+
+def _build_auth_headers(access_token: str = "", session_token: str = "") -> dict[str, str]:
+    """Construye headers de autenticación para las peticiones.
+
+    Verifica proactivamente si el access token está próximo a expirar (menos de 2 minutos)
+    y si es así, lo refresca automáticamente antes de construir los headers.
+
+    Args:
+        access_token: Token JWT de acceso
+        session_token: Token de sesión
+
+    Returns:
+        Diccionario con headers de autenticación
+    """
+    # Usar tokens refrescados si existen (tienen prioridad)
+    actual_access = _temp_tokens.get("access_token") or access_token
+    actual_session = _temp_tokens.get("session_token") or session_token
+
+    # Verificar si el access token está próximo a expirar (menos de 2 minutos)
+    if actual_access and actual_session:
+        try:
+            # Decodificar sin verificar para leer la expiración
+            decoded = jwt.decode(actual_access, options={"verify_signature": False})
+            exp = decoded.get("exp", 0)
+            time_until_expiry = exp - time.time()
+
+            # Si expira en menos de 2 minutos, refrescar proactivamente
+            if time_until_expiry < 120:  # 2 minutos
+                logger.info(f"[AUTO-REFRESH] Token expira en {int(time_until_expiry)}s, refrescando proactivamente...")
+                new_tokens = _refresh_access_token_internal(actual_session)
+
+                if new_tokens and not new_tokens.get("error"):
+                    _temp_tokens["access_token"] = new_tokens.get("access_token", "")
+                    _temp_tokens["session_token"] = new_tokens.get("session_token", "")
+                    actual_access = _temp_tokens["access_token"]
+                    actual_session = _temp_tokens["session_token"]
+                    logger.info("[AUTO-REFRESH] Tokens refrescados proactivamente")
+                else:
+                    logger.warning("[AUTO-REFRESH] No se pudo refrescar tokens proactivamente")
+        except Exception as e:
+            # Si hay error al decodificar, continuar con el token original
+            logger.debug(f"[AUTO-REFRESH] No se pudo verificar expiración del token: {e}")
+
+    headers: dict[str, str] = {}
+    if actual_access:
+        headers["Authorization"] = f"Bearer {actual_access}"
+    if actual_session:
+        headers["X-Session-Token"] = actual_session
+    return headers
 
 
 # Umbral de renovación: 2 minutos antes de expirar

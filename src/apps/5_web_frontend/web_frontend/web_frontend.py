@@ -1273,7 +1273,9 @@ class State(SharedSessionState):
                     project_id=self.proyecciones_project_id,
                     org_id=self.organization_id,
                     access_token=self.access_token,
-                    session_token=self.session_token
+                    session_token=self.session_token,
+                    user_id=self.user_id,
+                    identity_type_id=self.identity_type_id,
                 )
 
         self.reset_proyecciones_state()
@@ -1376,7 +1378,12 @@ class State(SharedSessionState):
 
                 # Inicializar explorador con el proyecto (mostrará todas las versiones)
                 return ExploradorState.init_page(
-                    project_id=self.proyecciones_project_id
+                    project_id=self.proyecciones_project_id,
+                    user_id=self.user_id,
+                    identity_type_id=self.identity_type_id,
+                    org_id=self.organization_id,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
                 )
             else:
                 self.proyecciones_error = result.get("mensaje", "Error al crear versión")

@@ -5761,3 +5761,283 @@ rx.cond(
 4. Validar permisos frontend vs backoffice
 5. Crear tests que cubran el nuevo caso
 
+
+
+---
+
+## 26. Sistema de Permisos del Explorador
+
+### 26.1. Arquitectura del Sistema de Permisos
+
+El explorador de archivos implementa un sistema de permisos basado en **Security by Design** que:
+- Carga permisos desde MariaDB al iniciar (modo db_only)
+- Almacena permisos en memoria durante la sesión
+- Valida permisos en frontend Y backend
+- Muestra acciones deshabilitadas (no las oculta)
+- Loggea todas las validaciones en logs/activity.log
+
+### 26.2. Flujo de Carga de Permisos
+
+```
+1. Usuario inicia explorador con user_id (desde JWT/sesión)
+   ↓
+2. _load_permissions_from_database()
+   ↓
+3. SELECT identity_type_id FROM users WHERE user_id=X
+   ↓
+4. SELECT * FROM low_level_permissions WHERE id_permissions=identity_type_id
+   ↓
+5. Almacenar 40 permisos en State.permisos (diccionario en memoria)
+   ↓
+6. Permisos disponibles para toda la sesión
+```
+
+### 26.3. Tabla low_level_permissions (MariaDB myllm_core_db)
+
+**Estructura:**
+```sql
+CREATE TABLE low_level_permissions (
+    id_permissions INT PRIMARY KEY,  -- Mapea a users.identity_type_id
+    -- Carpetas (5 campos)
+    folder_create BOOLEAN,
+    folder_delete BOOLEAN,
+    folder_rename BOOLEAN,
+    folder_read BOOLEAN,
+    folder_list BOOLEAN,
+    -- Archivos (5 campos)
+    file_create BOOLEAN,
+    file_read BOOLEAN,
+    file_update BOOLEAN,
+    file_delete BOOLEAN,
+    file_list BOOLEAN,
+    -- Proyectos, versiones, training, parameters, notifications, users...
+    -- Total: 40 campos boolean
+);
+```
+
+**Roles importantes:**
+- `id_permissions=1`: SuperAdmin (todos TRUE)
+- `id_permissions=2`: OrgAdmin (casi todos)
+- `id_permissions=3`: Editor
+- `id_permissions=4`: Lector (solo read/list)
+
+### 26.4. Mapeo: Acciones → Permisos
+
+**Archivo:** `src/2_shared_application/explorador_permissions_mapping.py`
+
+| Acción del Menú | Tipo Item | Permiso Requerido | Notas |
+|-----------------|-----------|-------------------|-------|
+| Crear Carpeta | Carpeta | `folder_create` | Crea subcarpeta |
+| Subir Archivo | Carpeta | `file_create` | Upload a carpeta |
+| Renombrar | Carpeta | `folder_rename` | Renombrar carpeta |
+| Renombrar | Archivo | `file_update` | Renombrar archivo (es update porque ya existe) |
+| Eliminar | Carpeta | `folder_delete` | Eliminar carpeta |
+| Eliminar | Archivo | `file_delete` | Eliminar archivo |
+| Descargar | Carpeta | `folder_read` | Descargar como ZIP |
+| Descargar | Archivo | `file_read` | Descargar archivo |
+| Propiedades | Ambos | `folder_read` / `file_read` | Según tipo |
+
+### 26.5. Validación de Permisos en acciones()
+
+**CRÍTICO:** El método `acciones()` debe:
+
+1. **Validar permiso base** (del usuario)
+2. **Validar restricciones de versión** (solo identity_type_id 1 o 2)
+3. **Validar protección de contenido** (db_protected)
+4. **Loggear TODA validación** (éxito y fallo)
+5. **Retornar error común:** "Operación no permitida"
+
+```python
+def acciones(self, accion: str, item: FolderItem):
+    # 1. Obtener permiso requerido
+    required_permission = get_required_permission(accion, item.item_type)
+    
+    # 2. Validar permiso del usuario
+    if not self.permisos.get(required_permission, False):
+        logger.warning(
+            f"[PERMISSION DENIED] user_id={self.user_id} "
+            f"accion={accion} permiso={required_permission} item={item.name}"
+        )
+        return rx.toast.error("Operación no permitida")
+    
+    # 3. Validar restricciones especiales de versión
+    # Solo identity_type_id 1 o 2 pueden operar con versiones
+    if accion in ["block_version", "unblock_version", "review_version"]:
+        if self.user_identity_type_id not in (1, 2):
+            logger.warning(
+                f"[VERSION OPERATION DENIED] user_id={self.user_id} "
+                f"identity_type_id={self.user_identity_type_id} accion={accion}"
+            )
+            return rx.toast.error("Operación no permitida")
+    
+    # 4. Validar protección de contenido (db_protected)
+    if accion in ["create_folder", "upload_file"]:
+        version_item = self._find_version_ancestor(item)
+        if version_item and version_item.db_protected:
+            logger.warning(
+                f"[PROTECTED VERSION] accion={accion} version={version_item.name}"
+            )
+            return rx.toast.error("Operación no permitida")
+    
+    # 5. Loggear acción permitida
+    logger.info(
+        f"[ACTION ALLOWED] user_id={self.user_id} "
+        f"accion={accion} permiso={required_permission} item={item.name}"
+    )
+    
+    # 6. Ejecutar acción
+    if accion == "create_folder":
+        return self.abrir_dialogo_crear_carpeta(item)
+    # ...
+```
+
+### 26.6. Refrescar Explorador Después de Acciones
+
+**IMPORTANTE:** Después de CADA acción (crear, renombrar, eliminar):
+
+1. **Esperar ACK de fmanagement** (response.get("success"))
+2. **Si success=True:** Llamar `self.load_from_api()`
+3. **Si success=False:** Mostrar error, NO refrescar
+
+```python
+response = fmanagement_create_folder(...)
+
+if response.get("success") or response.get("status") == "success":
+    logger.info(f"Carpeta creada: {folder_name}")
+    # ✅ Refrescar desde fmanagement (/fmo/list)
+    self.load_from_api()
+    return rx.toast.success(f"Carpeta '{folder_name}' creada")
+else:
+    # ❌ Error, no refrescar
+    error_msg = response.get("mensaje", "Error desconocido")
+    return rx.toast.error(f"Error: {error_msg}")
+```
+
+**Razón:** El contenido del explorador SIEMPRE debe reflejar lo que fmanagement ve (`/fmo/list`).
+
+### 26.7. Logging de Validaciones
+
+**Archivo:** `logs/activity.log` (frontend y backoffice)
+
+**Formato:**
+```
+2026-02-08 10:30:15 | INFO | [ACTION ALLOWED] user_id=5 accion=create_folder permiso=folder_create item=v001
+2026-02-08 10:30:20 | WARNING | [PERMISSION DENIED] user_id=7 accion=delete permiso=folder_delete item=test
+2026-02-08 10:30:25 | WARNING | [VERSION OPERATION DENIED] user_id=8 identity_type_id=3 accion=block_version
+2026-02-08 10:30:30 | WARNING | [PROTECTED VERSION] accion=create_folder version=v002
+```
+
+**LOGGEAR TODO:**
+- ✅ Acciones permitidas (INFO)
+- ❌ Permisos denegados (WARNING)
+- ❌ Restricciones de versión (WARNING)
+- ❌ Versiones protegidas (WARNING)
+
+### 26.8. Restricción Especial: Operaciones con Versiones
+
+**REGLA CRÍTICA:** Solo `identity_type_id = 1 (SuperAdmin)` o `2 (OrgAdmin)` pueden:
+- Crear versiones (`version_create`)
+- Bloquear versiones (`block_version`)
+- Desbloquear versiones (`unblock_version`)
+- Eliminar versiones (`version_delete`)
+- Cambiar estado de versión
+
+**Validación:**
+```python
+if self.user_identity_type_id not in (1, 2):
+    return rx.toast.error("Operación no permitida")
+```
+
+### 26.9. UI: Mostrar Acciones Deshabilitadas
+
+**IMPORTANTE:** NO ocultar acciones sin permiso. Mostrarlas deshabilitadas (gris).
+
+```python
+# ❌ INCORRECTO: Ocultar acción
+rx.cond(
+    self.permisos.get("folder_create"),
+    rx.context_menu.item("Crear Carpeta", on_click=...)
+)
+
+# ✅ CORRECTO: Mostrar deshabilitada
+rx.context_menu.item(
+    "Crear Carpeta",
+    on_click=...,
+    disabled=~self.permisos.get("folder_create"),  # Gris si no tiene permiso
+)
+```
+
+**Razón:** Más elegante y el usuario ve qué funcionalidades existen (aunque no pueda usarlas).
+
+### 26.10. Archivos Críticos
+
+1. `src/2_shared_application/adapters/user_permissions_adapter.py`
+   - Obtiene permisos desde MariaDB
+   - Función: `get_user_permissions(user_id)`
+
+2. `src/2_shared_application/explorador_permissions_mapping.py`
+   - Mapeo acciones → permisos
+   - Funciones: `get_required_permission()`, `is_action_allowed()`
+
+3. `src/apps/5_web_frontend/components/explorador.py`
+   - State con permisos en memoria
+   - Método: `_load_permissions_from_database()`
+   - Método: `acciones()` con validación
+
+4. `src/apps/6_web_backoffice/components/explorador.py`
+   - Réplica idéntica del frontend
+
+### 26.11. Ejemplo Completo de Flujo
+
+```
+Usuario hace clic en "Crear Carpeta" en v001/docs
+  ↓
+acciones("create_folder", item)
+  ↓
+Validar: get_required_permission("create_folder", "folder") → "folder_create"
+  ↓
+Validar: self.permisos["folder_create"] == True? → ✅ Sí
+  ↓
+Validar: v001.db_protected == True? → ❌ No
+  ↓
+Loggear: [ACTION ALLOWED] user_id=5 accion=create_folder permiso=folder_create
+  ↓
+abrir_dialogo_crear_carpeta(item)
+  ↓
+Usuario ingresa nombre "test"
+  ↓
+ejecutar_crear_carpeta()
+  ↓
+fmanagement_create_folder(...) → {"success": true}
+  ↓
+load_from_api() → /fmo/list → Refrescar explorador
+  ↓
+rx.toast.success("Carpeta 'test' creada")
+```
+
+### 26.12. Errores Comunes
+
+❌ **NO usar permisos de proyectos_roles directamente**
+- Los permisos vienen de `users.identity_type_id`, NO de `proyectos_roles.id_rol`
+- Ambos mapean a `low_level_permissions.id_permissions`
+
+❌ **NO refrescar antes del ACK**
+```python
+# MAL
+fmanagement_create_folder(...)
+self.load_from_api()  # ❌ No espera respuesta
+```
+
+❌ **NO usar JSON en db_only**
+```python
+# MAL
+permissions = json.load("low_level_permisions.json")
+# BIEN
+permissions = get_user_permissions(user_id)  # Desde MariaDB
+```
+
+❌ **NO loggear solo errores**
+- Loggear TODAS las validaciones (éxito y fallo)
+
+---
+
