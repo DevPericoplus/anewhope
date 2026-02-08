@@ -345,7 +345,7 @@ def markdown_viewer() -> rx.Component:
                     margin_bottom="0.5em",
                     margin_top="0",
                     color="#2d3748",
-                    font_size="2.5em"
+                    font_size="3.2em"  # Aumentado de 2.5em a 3.2em
                 ),
                 "h2": lambda text: rx.heading(
                     text,
@@ -355,7 +355,7 @@ def markdown_viewer() -> rx.Component:
                     color="#15803d",
                     border_bottom="2px solid #15803d",
                     padding_bottom="0.2em",
-                    font_size="2em"
+                    font_size="2.6em"  # Aumentado de 2em a 2.6em
                 ),
                 "h3": lambda text: rx.heading(
                     text,
@@ -363,25 +363,25 @@ def markdown_viewer() -> rx.Component:
                     margin_top="0.8em",
                     margin_bottom="0.4em",
                     color="#4a5568",
-                    font_size="1.6em"
+                    font_size="2.1em"  # Aumentado de 1.6em a 2.1em
                 ),
                 "p": lambda text: rx.text(
                     text,
                     margin_bottom="0.8em",
-                    line_height="1.6",
+                    line_height="1.7",  # Aumentado de 1.6 a 1.7
                     color="#4a5568",
-                    font_size="1.3em"
+                    font_size="1.65em"  # Aumentado de 1.3em a 1.65em
                 ),
                 "li": lambda text: rx.list_item(
-                    rx.text(text, font_size="1.2em", color="#4a5568"),
-                    margin_bottom="0.2em"
+                    rx.text(text, font_size="1.6em", color="#4a5568"),  # Aumentado de 1.2em a 1.6em
+                    margin_bottom="0.3em"
                 ),
                 "strong": lambda text: rx.text(
                     text,
                     as_="span",
                     font_weight="bold",
                     color="#15803d",  # Verde oscuro para contraste
-                    font_size="1.1em"
+                    font_size="1.15em"  # Aumentado de 1.1em a 1.15em
                 ),
                 "table": lambda *children, **props: rx.table.root(
                     *children,
@@ -398,13 +398,13 @@ def markdown_viewer() -> rx.Component:
                     **props,
                     color="#2d3748",
                     font_weight="bold",
-                    font_size="1.2em"
+                    font_size="1.6em"  # Aumentado de 1.2em a 1.6em
                 ),
                 "td": lambda *children, **props: rx.table.cell(
                     *children,
                     **props,
                     color="#4a5568",
-                    font_size="1.15em"
+                    font_size="1.5em"  # Aumentado de 1.15em a 1.5em
                 ),
             }
         ),
