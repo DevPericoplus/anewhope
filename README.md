@@ -6004,6 +6004,96 @@ Todas estas acciones deben:
 3. Generar tokens JWT de corta duración para operaciones directas
 4. Registrar todas las operaciones en logs con trazabilidad completa
 
+## Autenticación y Gestión Automática de Tokens
+
+### Sistema de Tokens JWT
+
+El proyecto utiliza un sistema de autenticación basado en JWT con dos tipos de tokens:
+
+- **Access Token**: Token de corta duración (15 minutos) para autenticar requests HTTP
+- **Session Token**: Token de larga duración (45 minutos) para mantener la sesión del usuario
+
+### Renovación Automática de Tokens (Auto-Refresh)
+
+Para garantizar una experiencia de usuario sin interrupciones, se implementó un sistema de **renovación automática de tokens** que opera en dos niveles:
+
+#### 1. Renovación Proactiva (en cada request)
+
+Cuando el cliente realiza un request HTTP:
+- El `api_client.py` verifica si el access token expira en **menos de 2 minutos**
+- Si está próximo a expirar, automáticamente lo refresca **antes** de enviar el request
+- Esto previene errores 401 y asegura que los requests siempre usen tokens válidos
+
+```python
+# En api_client.py - _build_auth_headers()
+if time_until_expiry < 120:  # 2 minutos
+    logger.info("[AUTO-REFRESH] Token expira pronto, refrescando proactivamente...")
+    new_tokens = _refresh_access_token_internal(session_token)
+    # Actualizar tokens y continuar con el request
+```
+
+#### 2. Renovación en Background (timer cada 2 minutos)
+
+Para usuarios con sesiones inactivas, se ejecuta un **timer de background** que:
+- Se ejecuta cada **2 minutos** en segundo plano
+- Verifica si el access token expira en menos de 2 minutos
+- Renueva automáticamente los tokens sin intervención del usuario
+- Se ejecuta mientras el usuario está logueado, independientemente de su actividad
+
+```python
+# En web_frontend.py - State.auto_renew_tokens_loop()
+@rx.event(background=True)
+async def auto_renew_tokens_loop(self):
+    """Loop en background que verifica y renueva tokens cada 2 minutos."""
+    while True:
+        await asyncio.sleep(120)  # 2 minutos
+        if self.is_logged_in:
+            check_result = self.check_token_expiration()
+            if check_result["needs_renewal"]:
+                self.ensure_tokens_valid()  # Renovar automáticamente
+```
+
+### Flujo de Renovación Automática
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                   RENOVACIÓN AUTOMÁTICA DE TOKENS                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  1. RENOVACIÓN PROACTIVA (en cada HTTP request)                         │
+│     Usuario hace acción → api_client verifica expiración →              │
+│     Si expira en <2min → Refresca antes de enviar request               │
+│                                                                          │
+│  2. RENOVACIÓN EN BACKGROUND (timer cada 2 minutos)                     │
+│     Timer ejecuta cada 2min → Verifica expiración →                     │
+│     Si expira en <2min → Refresca automáticamente                       │
+│                                                                          │
+│  RESULTADO: Sesión activa hasta 45 minutos sin relogin                  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Beneficios
+
+✅ **Sin interrupciones**: El usuario puede trabajar sin pensar en expiraciones
+✅ **Sesiones largas**: Hasta 45 minutos de sesión continua sin relogin
+✅ **Proactivo**: Los tokens se renuevan antes de expirar, no después
+✅ **Resiliente**: Funciona tanto con actividad como con inactividad del usuario
+✅ **Seguro**: Los tokens de corta duración minimizan ventanas de exposición
+
+### Configuración de Tiempos
+
+Los tiempos de expiración se configuran en `/infrastructure/environments/<entorno>/env.yaml`:
+
+```yaml
+jwt_access_expiration_seconds: 900   # 15 minutos
+jwt_session_expiration_seconds: 2700 # 45 minutos
+```
+
+**Nota**: El timer de background verifica cada 2 minutos y renueva cuando quedan menos de 2 minutos. Para sesiones más largas, aumentar `jwt_session_expiration_seconds` (max recomendado: 60 minutos).
+
+Ver: **ADR-008: Renovación Automática de Tokens JWT** para detalles técnicos de la decisión de diseño.
+
 ## Estructura de almacenamiento (helpers)
 
 En `src/2_shared_application/storage_access_structure.py` se definen helpers

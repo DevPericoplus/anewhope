@@ -1834,9 +1834,50 @@ class State(SharedSessionState):
             session_expires_at=int(response.get("session_expires_at", 0)),
         )
     
+    def _load_tokens_from_redis(self) -> bool:
+        """Carga tokens desde Redis si han sido actualizados por otra aplicación.
+
+        Returns:
+            True si los tokens fueron actualizados desde Redis, False si no
+        """
+        # SharedSessionState ya maneja la sincronización automática con Redis
+        # Este método es un placeholder para compatibilidad con el loop
+        return False
+
+    def check_token_expiration(self) -> dict[str, Any]:
+        """Verifica el estado de expiración de los tokens.
+
+        Returns:
+            Dict con:
+            - needs_renewal: bool - Si el access token necesita renovación (< 2 minutos)
+            - session_expired: bool - Si el session token ya expiró
+            - seconds_until_access_expires: int - Segundos hasta que expire el access token
+            - seconds_until_session_expires: int - Segundos hasta que expire el session token
+        """
+        import time
+
+        now = int(time.time())
+
+        # Calcular segundos hasta expiración
+        seconds_until_access = self.access_token_expires_at - now
+        seconds_until_session = self.session_token_expires_at - now
+
+        # Session token expiró
+        session_expired = seconds_until_session <= 0
+
+        # Access token necesita renovación si expira en menos de 2 minutos (120 segundos)
+        needs_renewal = seconds_until_access < 120
+
+        return {
+            "needs_renewal": needs_renewal,
+            "session_expired": session_expired,
+            "seconds_until_access_expires": seconds_until_access,
+            "seconds_until_session_expires": seconds_until_session,
+        }
+
     def ensure_tokens_valid(self) -> bool:
         """Verifica y renueva tokens automáticamente si es necesario.
-        
+
         Esta función debe llamarse antes de cada operación que requiera autenticación.
         Retorna True si los tokens son válidos (o se renovaron exitosamente).
         Retorna False si la sesión expiró y el usuario debe re-autenticarse.
