@@ -1601,7 +1601,7 @@ def render_item(item: FolderItem) -> rx.Component:
                     rx.image(src="/txt_icon.png", width="24px", height="24px", object_fit="contain"),
                     rx.cond(
                         item.name.contains(".go"),
-                        rx.icon(tag="code-2", color="#00ADD8", size=24),
+                        rx.icon(tag="file-code-2", color="#00ADD8", size=24),
                         rx.cond(
                             item.name.contains(".md"),
                             rx.icon(tag="book-open", color="#000", size=24),

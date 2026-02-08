@@ -65,6 +65,21 @@ def _load_conversaciones_adapter():
     return adapter_module
 
 
+def _load_cambios_adapter():
+    """Carga el adapter de cambios usando importlib."""
+    adapter_path = (
+        Path(__file__).resolve().parents[3]
+        / "2_shared_application/adapters/cambios_adapter.py"
+    )
+    spec = importlib.util.spec_from_file_location("cambios_adapter", adapter_path)
+    if spec is None or spec.loader is None:
+        raise ImportError("No se pudo cargar el adaptador de cambios")
+
+    adapter_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(adapter_module)
+    return adapter_module
+
+
 # ============================================================================
 # CALENDARIO (desde template)
 # ============================================================================
@@ -75,6 +90,9 @@ class DayInfo(pydantic.BaseModel):
     has_event: bool = False
     is_today: bool = False
     events: list[dict] = []
+    event_color: str = "transparent"
+    tooltip_text: str = ""
+    is_mixed: bool = False
 
 
 # ============================================================================
@@ -106,6 +124,11 @@ class SeguimientoState(rx.State):
     selected_year: str = str(datetime.datetime.now().year)
     selected_month: str = month_names[datetime.datetime.now().month - 1]
     events_data: list[dict] = []
+
+    # Modal de eventos del calendario
+    modal_eventos_abierto: bool = False
+    modal_eventos_fecha: str = ""
+    modal_eventos_contenido: str = ""
 
     # === TICKETS ===
     tickets_list: list[dict] = []
@@ -250,16 +273,76 @@ class SeguimientoState(rx.State):
 
     # === MÉTODOS CALENDARIO ===
 
-    def load_events_data(self):
-        """Adapter to load events (placeholder)."""
-        self.events_data = []
+    async def load_events_data(self):
+        """Carga eventos del calendario desde la tabla cambios."""
+        print("[DEBUG CALENDARIO FRONTEND] load_events_data INICIADO")
+
+        # Obtener organización del usuario desde MainState
+        try:
+            from web_frontend.web_frontend import State as MainState
+            main_state = await self.get_state(MainState)
+            org_id = main_state.organization_id
+
+            if org_id == 0:
+                print("[DEBUG CALENDARIO FRONTEND] No hay organización en sesión")
+                self.events_data = []
+                return
+        except Exception as e:
+            print(f"[DEBUG CALENDARIO FRONTEND] Error obteniendo org_id: {e}")
+            self.events_data = []
+            return
+
+        engine = await self._get_db_engine()
+        if not engine:
+            print("[DEBUG CALENDARIO FRONTEND] No se pudo obtener engine")
+            self.events_data = []
+            return
+
+        try:
+            cambios_adapter = _load_cambios_adapter()
+
+            # Obtener mes y año seleccionados
+            mes = self._month_map.get(self.selected_month, datetime.datetime.now().month)
+            anio = int(self.selected_year)
+
+            # Determinar id_proyecto (None si no hay proyecto seleccionado)
+            id_proyecto = self.seguimiento_project_id if self.seguimiento_project_id > 0 else None
+
+            print(f"[DEBUG CALENDARIO FRONTEND] Consultando eventos para:")
+            print(f"[DEBUG CALENDARIO FRONTEND]   org_id={org_id}")
+            print(f"[DEBUG CALENDARIO FRONTEND]   mes={mes} ({self.selected_month})")
+            print(f"[DEBUG CALENDARIO FRONTEND]   año={anio}")
+            print(f"[DEBUG CALENDARIO FRONTEND]   proyecto_id={id_proyecto}")
+
+            # Obtener eventos agrupados por día
+            eventos = cambios_adapter.obtener_cambios_agrupados_por_dia(
+                engine=engine,
+                id_organizacion=org_id,
+                mes=mes,
+                anio=anio,
+                id_proyecto=id_proyecto
+            )
+
+            self.events_data = eventos
+            print(f"[DEBUG CALENDARIO FRONTEND] Eventos cargados: {len(eventos)} días con eventos")
+            for evento in eventos[:3]:  # Mostrar primeros 3
+                print(f"[DEBUG CALENDARIO FRONTEND]   - {evento['date']}: {evento['count']} evento(s), color={evento['color']}")
+
+        except Exception as e:
+            print(f"[ERROR CALENDARIO FRONTEND] Error al cargar eventos: {e}")
+            import traceback
+            traceback.print_exc()
+            self.events_data = []
 
     @rx.var
     def month_days_with_events(self) -> list[list[DayInfo]]:
-        """Returns a matrix of DayInfo objects for the selected month."""
+        """Returns a matrix of DayInfo objects for the selected month with events."""
         try:
             y = int(self.selected_year)
             m = self._month_map.get(self.selected_month, 1)
+
+            print(f"[DEBUG CALENDARIO FRONTEND] month_days_with_events calculando para {self.selected_month}/{y}")
+            print(f"[DEBUG CALENDARIO FRONTEND] events_data tiene {len(self.events_data)} días con eventos")
 
             now = datetime.datetime.now()
             today_day = now.day
@@ -268,6 +351,18 @@ class SeguimientoState(rx.State):
 
             cal = calendar.Calendar(firstweekday=0)
             raw_weeks = cal.monthdayscalendar(y, m)
+
+            # Crear diccionario de eventos por día
+            events_by_day = {}
+            for event in self.events_data:
+                # event['date'] es una cadena en formato ISO (YYYY-MM-DD)
+                event_date = datetime.datetime.fromisoformat(event['date'])
+                if event_date.year == y and event_date.month == m:
+                    day_num = event_date.day
+                    events_by_day[day_num] = event
+                    print(f"[DEBUG CALENDARIO FRONTEND] Evento agregado para día {day_num}: color={event['color']}")
+
+            print(f"[DEBUG CALENDARIO FRONTEND] events_by_day tiene {len(events_by_day)} días")
 
             processed_weeks = []
             for week in raw_weeks:
@@ -279,33 +374,87 @@ class SeguimientoState(rx.State):
 
                     is_today = (day == today_day and m == today_month and y == today_year)
 
-                    processed_week.append(DayInfo(
-                        day=day,
-                        border_color="transparent",
-                        has_event=False,
-                        is_today=is_today,
-                        events=[]
-                    ))
+                    # Verificar si hay eventos para este día
+                    event_info = events_by_day.get(day)
+                    if event_info:
+                        processed_week.append(DayInfo(
+                            day=day,
+                            border_color="transparent",
+                            has_event=True,
+                            is_today=is_today,
+                            events=[],
+                            event_color=event_info.get('color', 'transparent'),
+                            tooltip_text=event_info.get('tooltip', ''),
+                            is_mixed=event_info.get('has_mixed', False)
+                        ))
+                    else:
+                        processed_week.append(DayInfo(
+                            day=day,
+                            border_color="transparent",
+                            has_event=False,
+                            is_today=is_today,
+                            events=[],
+                            event_color="transparent",
+                            tooltip_text="",
+                            is_mixed=False
+                        ))
                 processed_weeks.append(processed_week)
 
             return processed_weeks
 
         except Exception as e:
             print(f"Error calculando días: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
     def set_year(self, year: str):
         self.selected_year = year
         self.current_year = int(year)
+        return SeguimientoState.load_events_data
 
     def set_month(self, month: str):
         self.selected_month = month
         self.current_month = self._month_map.get(month, 1)
+        return SeguimientoState.load_events_data
+
+    def abrir_modal_eventos(self, dia: int):
+        """Abre el modal con los eventos del día seleccionado."""
+        if dia == 0:
+            return
+
+        # Buscar evento en events_data para este día
+        y = int(self.selected_year)
+        m = self._month_map.get(self.selected_month, 1)
+
+        contenido = ""
+        evento_encontrado = False
+        for event in self.events_data:
+            event_date = datetime.datetime.fromisoformat(event['date'])
+            if event_date.year == y and event_date.month == m and event_date.day == dia:
+                contenido = event.get('tooltip', 'Sin información disponible')
+                evento_encontrado = True
+                break
+
+        # Solo abrir modal si hay eventos
+        if not evento_encontrado:
+            return
+
+        # Construir fecha formateada
+        self.modal_eventos_fecha = f"{dia} de {self.selected_month} de {self.selected_year}"
+        self.modal_eventos_contenido = contenido
+        self.modal_eventos_abierto = True
+
+    def cerrar_modal_eventos(self):
+        """Cierra el modal de eventos."""
+        self.modal_eventos_abierto = False
+        self.modal_eventos_fecha = ""
+        self.modal_eventos_contenido = ""
 
     # === MÉTODOS TICKETS ===
 
     async def set_seguimiento_project(self, project_name: str):
-        """Cambia el proyecto seleccionado y carga los tickets."""
+        """Cambia el proyecto seleccionado y carga tickets y eventos del calendario."""
         self.seguimiento_project_name = project_name
         engine = await self._get_db_engine()
         if not engine:
@@ -324,9 +473,13 @@ class SeguimientoState(rx.State):
                 if result:
                     self.seguimiento_project_id = result[0]
                     await self.load_tickets()
+                    # Recargar eventos del calendario con el proyecto seleccionado
+                    await self.load_events_data()
                 else:
                     self.seguimiento_project_id = 0
                     self.tickets_list = []
+                    # Recargar eventos (sin filtro de proyecto)
+                    await self.load_events_data()
 
         except Exception as e:
             print(f"Error al obtener project_id: {e}")
@@ -406,6 +559,9 @@ class SeguimientoState(rx.State):
 
             # Cargar conversación y mensajes
             await self.load_or_create_conversacion()
+
+            # Cargar eventos del calendario
+            await self.load_events_data()
 
         except Exception as e:
             print(f"Error al cargar proyectos: {e}")
@@ -560,7 +716,18 @@ def notificaciones_component() -> rx.Component:
 # ============================================================================
 
 def calendar_cell(day_info: DayInfo):
-    """Render a single day cell."""
+    """Render a single day cell with event colors."""
+    # Determinar color de fondo según prioridad: evento > today > default
+    bg_color = rx.cond(
+        day_info.has_event,
+        day_info.event_color,  # Color del evento si hay evento
+        rx.cond(
+            day_info.is_today,
+            "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",  # Morado si es hoy
+            "transparent"  # Transparente por defecto
+        )
+    )
+
     cell_visual = rx.center(
         rx.cond(
             day_info.day == 0,
@@ -575,13 +742,9 @@ def calendar_cell(day_info: DayInfo):
         width="28px",
         height="28px",
         border_radius="12px",
-        bg=rx.cond(
-            day_info.is_today,
-            "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-            "transparent"
-        ),
+        bg=bg_color,
         box_shadow=rx.cond(
-            day_info.is_today,
+            day_info.has_event | day_info.is_today,
             "0 4px 10px rgba(118, 75, 162, 0.4)",
             "none"
         ),
@@ -592,13 +755,88 @@ def calendar_cell(day_info: DayInfo):
             "transform": "scale(1.1)",
             "box_shadow": "0 4px 10px rgba(118, 75, 162, 0.4)"
         },
-        cursor="pointer"
+        cursor=rx.cond(day_info.has_event, "pointer", "default"),
+        title=day_info.tooltip_text,  # Tooltip con info del evento
+        on_click=SeguimientoState.abrir_modal_eventos(day_info.day)
     )
 
     return rx.center(
         cell_visual,
         width="36px",
         height="36px",
+    )
+
+
+def modal_eventos_calendario() -> rx.Component:
+    """Modal para mostrar eventos del día seleccionado."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Header del modal
+                rx.hstack(
+                    rx.heading(
+                        "Eventos del día",
+                        size="6",
+                        color=COLORS["primary"],
+                    ),
+                    rx.dialog.close(
+                        rx.icon("x", size=24, cursor="pointer"),
+                    ),
+                    justify="between",
+                    width="100%",
+                    margin_bottom="1em",
+                ),
+
+                # Fecha
+                rx.text(
+                    SeguimientoState.modal_eventos_fecha,
+                    font_weight="bold",
+                    font_size="1.2em",
+                    color=COLORS["foreground"],
+                    margin_bottom="1em",
+                ),
+
+                # Contenido de los eventos
+                rx.box(
+                    rx.text(
+                        SeguimientoState.modal_eventos_contenido,
+                        color=COLORS["muted_foreground"],
+                        font_size="1.1em",
+                        line_height="1.6",
+                        white_space="pre-wrap",  # Preservar saltos de línea
+                    ),
+                    width="100%",
+                    padding="1em",
+                    background_color=f"{COLORS['card']}80",
+                    border=f"1px solid {COLORS['border']}",
+                    border_radius="0.5em",
+                    max_height="400px",
+                    overflow_y="auto",
+                ),
+
+                # Botón cerrar
+                rx.dialog.close(
+                    rx.button(
+                        "Cerrar",
+                        size="3",
+                        background_color=COLORS["primary"],
+                        color=COLORS["background"],
+                        cursor="pointer",
+                        width="100%",
+                        margin_top="1em",
+                    ),
+                ),
+
+                spacing="3",
+                width="100%",
+            ),
+            max_width="600px",
+            background_color=COLORS["card"],
+            border=f"1px solid {COLORS['border']}",
+            padding="2em",
+        ),
+        open=SeguimientoState.modal_eventos_abierto,
+        on_open_change=SeguimientoState.cerrar_modal_eventos,
     )
 
 
@@ -891,9 +1129,12 @@ def seguimiento_panel() -> rx.Component:
                 align_items="flex-start",
             ),
 
-            # DERECHA: Calendario + Selector + Tickets
+            # DERECHA: Selector + Calendario + Tickets
             rx.vstack(
-                # Calendario (arriba)
+                # Selector de Proyecto (arriba)
+                selector_proyecto_component(),
+
+                # Calendario (medio)
                 rx.center(
                     calendario_component(),
                     width="100%",
@@ -902,9 +1143,6 @@ def seguimiento_panel() -> rx.Component:
                     border=f"1px solid {COLORS['border']}",
                     border_radius="0.5em",
                 ),
-
-                # Selector de Proyecto (medio)
-                selector_proyecto_component(),
 
                 # Tickets (abajo)
                 rx.box(
@@ -927,6 +1165,9 @@ def seguimiento_panel() -> rx.Component:
             align_items="stretch",
             height="calc(100vh - 120px)",
         ),
+
+        # Modal de eventos del calendario
+        modal_eventos_calendario(),
 
         width="100%",
         spacing="1",

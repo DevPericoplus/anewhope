@@ -2535,7 +2535,7 @@ def project_row(project: dict) -> rx.Component:
                 lambda: State.lock_project(project["id"]),
             ),
             user_action_button(
-                "unlock",
+                "lock-open",
                 "Desbloquear proyecto",
                 lambda: State.unlock_project(project["id"]),
             ),
@@ -3036,7 +3036,7 @@ def remove_user_from_project_modal() -> rx.Component:
                 ),
                 # Advertencia
                 rx.hstack(
-                    rx.icon("alert-triangle", size=16, color="orange"),
+                    rx.icon("triangle-alert", size=16, color="orange"),
                     rx.text(
                         "El usuario perderá acceso al proyecto seleccionado.",
                         color="orange",
@@ -3371,7 +3371,7 @@ def tecnologias_management_panel() -> rx.Component:
             State.proyecto_tecnologia_asignada.length() > 0,
             rx.box(
                 rx.hstack(
-                    rx.icon("check-circle", size=28, color=COLORS["primary"]),
+                    rx.icon("circle-check", size=28, color=COLORS["primary"]),
                     rx.text(
                         f"Tecnología asignada: ",
                         font_weight="bold",
@@ -3728,15 +3728,15 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             rx.markdown(
                 content_text,
                 component_map={
-                    "h1": lambda text: rx.heading(text, size="6", color=COLORS["foreground"], margin_bottom="0.5em"),
-                    "h2": lambda text: rx.heading(text, size="5", color=COLORS["primary"], margin_top="1em", margin_bottom="0.5em"),
+                    "h1": lambda text: rx.heading(text, size="7", color=COLORS["foreground"], margin_bottom="0.5em"),
+                    "h2": lambda text: rx.heading(text, size="6", color=COLORS["primary"], margin_top="1em", margin_bottom="0.5em"),
                     "h3": lambda text: rx.heading(text, size="5", color=COLORS["foreground"], margin_top="0.8em", margin_bottom="0.4em"),
-                    "p": lambda text: rx.text(text, color=COLORS["muted_foreground"], font_size="1.15em", line_height="1.6", margin_bottom="0.6em"),
-                    "li": lambda text: rx.list_item(rx.text(text, color=COLORS["muted_foreground"], font_size="1.15em", line_height="1.5")),
+                    "p": lambda text: rx.text(text, color=COLORS["muted_foreground"], font_size="1.3em", line_height="1.6", margin_bottom="0.6em"),
+                    "li": lambda text: rx.list_item(rx.text(text, color=COLORS["muted_foreground"], font_size="1.3em", line_height="1.5")),
                     "strong": lambda text: rx.text(text, font_weight="bold", color=COLORS["foreground"], as_="span"),
                     "em": lambda text: rx.text(text, font_style="italic", as_="span"),
                     "blockquote": lambda text: rx.box(
-                        rx.text(text, color=COLORS["primary"], font_style="italic", font_size="1.2em"),
+                        rx.text(text, color=COLORS["primary"], font_style="italic", font_size="1.35em"),
                         border_left=f"4px solid {COLORS['primary']}",
                         padding_left="1.2em",
                         margin_y="1.2em",
@@ -3751,10 +3751,10 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
                         margin_y="1.2em",
                     ),
                     "th": lambda text: rx.table.column_header_cell(
-                        rx.text(text, font_weight="bold", color=COLORS["foreground"], font_size="1.1em"),
+                        rx.text(text, font_weight="bold", color=COLORS["foreground"], font_size="1.25em"),
                     ),
                     "td": lambda text: rx.table.cell(
-                        rx.text(text, color=COLORS["muted_foreground"], font_size="1.05em"),
+                        rx.text(text, color=COLORS["muted_foreground"], font_size="1.2em"),
                     ),
                 },
             ),

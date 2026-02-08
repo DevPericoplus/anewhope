@@ -135,6 +135,11 @@ class SeguimientoState(rx.State):
     selected_month: str = month_names[datetime.datetime.now().month - 1]
     events_data: list[dict] = []
 
+    # Modal de eventos del calendario
+    modal_eventos_abierto: bool = False
+    modal_eventos_fecha: str = ""
+    modal_eventos_contenido: str = ""
+
     # Selectores para calendario (backoffice)
     organizaciones_calendario: list[dict] = []
     selected_org_calendario: int = 0
@@ -712,6 +717,39 @@ class SeguimientoState(rx.State):
         self.selected_month = month
         self.current_month = self._month_map.get(month, 1)
         return SeguimientoState.load_events_data
+
+    def abrir_modal_eventos(self, dia: int):
+        """Abre el modal con los eventos del día seleccionado."""
+        if dia == 0:
+            return
+
+        # Buscar evento en events_data para este día
+        y = int(self.selected_year)
+        m = self._month_map.get(self.selected_month, 1)
+
+        contenido = ""
+        evento_encontrado = False
+        for event in self.events_data:
+            event_date = datetime.datetime.fromisoformat(event['date'])
+            if event_date.year == y and event_date.month == m and event_date.day == dia:
+                contenido = event.get('tooltip', 'Sin información disponible')
+                evento_encontrado = True
+                break
+
+        # Solo abrir modal si hay eventos
+        if not evento_encontrado:
+            return
+
+        # Construir fecha formateada
+        self.modal_eventos_fecha = f"{dia} de {self.selected_month} de {self.selected_year}"
+        self.modal_eventos_contenido = contenido
+        self.modal_eventos_abierto = True
+
+    def cerrar_modal_eventos(self):
+        """Cierra el modal de eventos."""
+        self.modal_eventos_abierto = False
+        self.modal_eventos_fecha = ""
+        self.modal_eventos_contenido = ""
 
     # === MÉTODOS TICKETS ===
 
@@ -1526,7 +1564,8 @@ def calendar_cell(day_info: DayInfo):
             "transform": "scale(1.1)",
             "box_shadow": "0 4px 10px rgba(118, 75, 162, 0.4)"
         },
-        cursor="pointer"
+        cursor=rx.cond(day_info.has_event, "pointer", "default"),
+        on_click=SeguimientoState.abrir_modal_eventos(day_info.day)
     )
 
     # Usar rx.cond para determinar si mostrar tooltip o no
@@ -1540,6 +1579,79 @@ def calendar_cell(day_info: DayInfo):
         cell_visual,
         width="50px",
         height="50px",
+    )
+
+
+def modal_eventos_calendario() -> rx.Component:
+    """Modal para mostrar eventos del día seleccionado."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Header del modal
+                rx.hstack(
+                    rx.heading(
+                        "Eventos del día",
+                        size="6",
+                        color=COLORS["primary"],
+                    ),
+                    rx.dialog.close(
+                        rx.icon("x", size=24, cursor="pointer"),
+                    ),
+                    justify="between",
+                    width="100%",
+                    margin_bottom="1em",
+                ),
+
+                # Fecha
+                rx.text(
+                    SeguimientoState.modal_eventos_fecha,
+                    font_weight="bold",
+                    font_size="1.2em",
+                    color=COLORS["foreground"],
+                    margin_bottom="1em",
+                ),
+
+                # Contenido de los eventos
+                rx.box(
+                    rx.text(
+                        SeguimientoState.modal_eventos_contenido,
+                        color=COLORS["muted_foreground"],
+                        font_size="1.1em",
+                        line_height="1.6",
+                        white_space="pre-wrap",  # Preservar saltos de línea
+                    ),
+                    width="100%",
+                    padding="1em",
+                    background_color=f"{COLORS['card']}80",
+                    border=f"1px solid {COLORS['border']}",
+                    border_radius="0.5em",
+                    max_height="400px",
+                    overflow_y="auto",
+                ),
+
+                # Botón cerrar
+                rx.dialog.close(
+                    rx.button(
+                        "Cerrar",
+                        size="3",
+                        background_color=COLORS["primary"],
+                        color=COLORS["background"],
+                        cursor="pointer",
+                        width="100%",
+                        margin_top="1em",
+                    ),
+                ),
+
+                spacing="3",
+                width="100%",
+            ),
+            max_width="600px",
+            background_color=COLORS["card"],
+            border=f"1px solid {COLORS['border']}",
+            padding="2em",
+        ),
+        open=SeguimientoState.modal_eventos_abierto,
+        on_open_change=SeguimientoState.cerrar_modal_eventos,
     )
 
 
@@ -2074,6 +2186,9 @@ def seguimiento_panel() -> rx.Component:
 
         # Modal de soporte para tickets
         modal_ticket_soporte(),
+
+        # Modal de eventos del calendario
+        modal_eventos_calendario(),
 
         width="100%",
         spacing="1",
