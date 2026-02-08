@@ -473,7 +473,7 @@ def informes_panel() -> rx.Component:
     """Panel principal de Informes."""
     return rx.vstack(
         # Título
-        rx.heading("Informes", size="8", color=COLORS["foreground"], margin_top="0", margin_bottom="0.3em"),
+        rx.heading("Informes", size="8", color=COLORS["primary"], margin_top="0", margin_bottom="0.3em"),
 
         # Selectores en línea horizontal
         rx.hstack(

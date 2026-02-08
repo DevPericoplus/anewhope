@@ -3701,7 +3701,7 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
         # No mostrar heading para informes (lo incluye el propio componente)
         rx.cond(
             active_item != "informes",
-            rx.heading(heading_text, size="8", color=COLORS["foreground"], margin_bottom="0.5em"),
+            rx.heading(heading_text, size="8", color=COLORS["accent"], margin_bottom="0.5em"),
             rx.box(height="0"),
         ),
         rx.cond(
