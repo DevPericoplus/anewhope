@@ -3723,8 +3723,9 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             rx.box(height="0"),
         ),
         # Contenido: markdown para todas las secciones (públicas e internas)
+        # EXCEPTO para "informes" y "proyecciones" que tienen su propia estructura
         rx.cond(
-            content_text != "",
+            rx.cond(content_text != "", active_item != "proyecciones", False),
             rx.markdown(
                 content_text,
                 component_map={
@@ -3783,9 +3784,49 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             rx.box(height="0"),
         ),
         # Panel de gestión de proyecciones: visible solo en menú "proyecciones"
+        # Orden: 1) Panel de gestión, 2) Visor markdown
         rx.cond(
             rx.cond(is_logged_in, active_item == "proyecciones", False),
-            proyecciones_management_panel(),
+            rx.vstack(
+                # 1. Panel de gestión de versiones (primero)
+                proyecciones_management_panel(),
+                # 2. Visor de contenido markdown (después)
+                rx.markdown(
+                    projections_text,
+                    component_map={
+                        "h1": lambda text: rx.heading(text, size="7", color=COLORS["foreground"], margin_bottom="0.5em"),
+                        "h2": lambda text: rx.heading(text, size="6", color=COLORS["primary"], margin_top="1em", margin_bottom="0.5em"),
+                        "h3": lambda text: rx.heading(text, size="5", color=COLORS["foreground"], margin_top="0.8em", margin_bottom="0.4em"),
+                        "p": lambda text: rx.text(text, color=COLORS["muted_foreground"], font_size="1.3em", line_height="1.6", margin_bottom="0.6em"),
+                        "li": lambda text: rx.list_item(rx.text(text, color=COLORS["muted_foreground"], font_size="1.3em", line_height="1.5")),
+                        "strong": lambda text: rx.text(text, font_weight="bold", color=COLORS["foreground"], as_="span"),
+                        "em": lambda text: rx.text(text, font_style="italic", as_="span"),
+                        "blockquote": lambda text: rx.box(
+                            rx.text(text, color=COLORS["primary"], font_style="italic", font_size="1.35em"),
+                            border_left=f"4px solid {COLORS['primary']}",
+                            padding_left="1.2em",
+                            margin_y="1.2em",
+                            background_color=f"{COLORS['primary']}10",
+                            padding="1em",
+                            border_radius="0.3em",
+                        ),
+                        "table": lambda children: rx.box(
+                            children,
+                            width="100%",
+                            overflow_x="auto",
+                            margin_y="1.2em",
+                        ),
+                        "th": lambda text: rx.table.column_header_cell(
+                            rx.text(text, font_weight="bold", color=COLORS["foreground"], font_size="1.25em"),
+                        ),
+                        "td": lambda text: rx.table.cell(
+                            rx.text(text, color=COLORS["muted_foreground"], font_size="1.2em"),
+                        ),
+                    },
+                ),
+                width="100%",
+                spacing="4",
+            ),
             rx.box(height="0"),
         ),
         # Panel de seguimiento: visible solo en menú "seguimiento"
