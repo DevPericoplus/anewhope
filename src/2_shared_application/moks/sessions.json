@@ -6934,12 +6934,12 @@
       "organization_id": 1,
       "identity_type_id": 1,
       "tokens": {
-        "access_token_jti": "015c0bdd-c966-4a4c-b0d6-1c738441619d",
-        "session_token_jti": "135a2e3f-9d11-4ca1-b872-bcc6a79b8e83"
+        "access_token_jti": "6904c19c-8c7b-4c70-8743-18320f3f2636",
+        "session_token_jti": "e508e15c-1c42-4e08-9af7-cde2a8fc0ff5"
       },
       "status": "active",
       "created_at": "2026-02-08T09:52:51.268973Z",
-      "last_activity": "2026-02-08T09:57:02.417671Z",
+      "last_activity": "2026-02-08T10:26:44.843580Z",
       "expires_at": "2026-02-08T10:37:51Z",
       "ip_address": "127.0.0.1",
       "user_agent": "Python-urllib/3.13"

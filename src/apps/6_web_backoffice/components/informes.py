@@ -283,6 +283,12 @@ class InformesState(rx.State):
         try:
             informes_manager = _load_informes_manager()
 
+            # Debug: Mostrar IDs que se van a usar
+            print(f"[DEBUG INFORMES] Llamando list_markdown_files con:")
+            print(f"[DEBUG INFORMES]   org_id={self.selected_org_id}")
+            print(f"[DEBUG INFORMES]   project_id={self.selected_proyecto_id}")
+            print(f"[DEBUG INFORMES]   version_id={self.selected_version_id}")
+
             # Listar archivos en la carpeta de versión
             archivos = informes_manager.list_markdown_files(
                 org_id=self.selected_org_id,

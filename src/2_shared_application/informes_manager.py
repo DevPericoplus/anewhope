@@ -18,6 +18,14 @@ from typing import Optional
 logger = logging.getLogger("InformesManager")
 logger.setLevel(logging.DEBUG)
 
+# Añadir handler para consola si no existe
+if not logger.handlers:
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('[%(name)s] %(levelname)s: %(message)s')
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
 # Cache para almacenar valores leídos de configuración
 _config_cache: dict[str, str] = {}
 
@@ -107,16 +115,16 @@ def _read_env_yaml(key: str) -> Optional[str]:
 
 
 def get_backend_storage_path() -> str:
-    """Obtiene el path base de almacenamiento interno del backend IA.
+    """Obtiene el path base de almacenamiento interno del backend core.
 
     Returns:
-        Path expandido del directorio de storage interno
-        Ejemplo: /Users/administrator/data/anewhope/files/trainer_server/internal
+        Path expandido del directorio de storage interno (donde se sincronizan los informes)
+        Ejemplo: /Users/administrator/data/anewhope/files/backend_server/internal
     """
-    storage_path = _read_env_yaml("backend_ia_internal_storage")
+    storage_path = _read_env_yaml("backend_core_internal_storage")
 
     if not storage_path:
-        logger.error("No se encontró backend_ia_internal_storage en configuración")
+        logger.error("No se encontró backend_core_internal_storage en configuración")
         return ""
 
     # Expandir ~ a home directory

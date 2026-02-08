@@ -525,6 +525,50 @@ rsync_automatic_interval: 300  # 5 minutos
 - `persistence/` - Cada base de datos es independiente
 - `images/` - Las imágenes Docker son específicas de cada servidor
 
+### Flujo de Informes (Reports)
+
+Los informes generados durante el entrenamiento siguen un flujo específico de creación, sincronización y lectura:
+
+**1. Generación en Trainer Server:**
+```
+Ruta: {backend_ia_internal_storage}/ORG####/PRJ#####/v###/*.md
+Ejemplo macbook: ~/data/anewhope/files/trainer_server/internal/ORG0001/PRJ00001/v001/
+Ejemplo prod: /data/files/internal/ORG0001/PRJ00001/v001/
+```
+
+Los informes se generan como archivos markdown con formato de timestamp:
+- `2026_01_30_225100_tabla_de_resultados.md`
+- `2026_01_30_230500_metricas_de_entrenamiento.md`
+
+**2. Sincronización automática (rsync over SSH):**
+```bash
+# Trainer → Backend (cada 5 minutos)
+rsync -avz --delete \
+  {trainer_internal}/ORG####/PRJ#####/v###/ \
+  {backend_internal}/ORG####/PRJ#####/v###/
+```
+
+**3. Lectura por Visor de Informes:**
+```
+Ruta: {backend_core_internal_storage}/ORG####/PRJ#####/v###/*.md
+Ejemplo macbook: ~/data/anewhope/files/backend_server/internal/ORG0001/PRJ00001/v001/
+Ejemplo prod: /data/files/internal/ORG0001/PRJ00001/v001/
+```
+
+**Variables de configuración relevantes:**
+```yaml
+# Generación (Trainer)
+backend_ia_internal_storage: /data/files/internal
+
+# Lectura (Backend - Visor de Informes)
+backend_core_internal_storage: /data/files/internal
+```
+
+**Componente del visor:**
+- Frontend: `src/apps/5_web_frontend/components/informes.py`
+- Backoffice: `src/apps/6_web_backoffice/components/informes.py`
+- Gestor: `src/2_shared_application/informes_manager.py`
+
 ### Diferencias macbook vs producción
 
 | Aspecto | Macbook | Dev/Pre/Pro |
