@@ -250,3 +250,94 @@ def obtener_organizaciones_internas_usuario(engine: Engine, id_usuario: int) -> 
         import traceback
         traceback.print_exc()
         return []
+
+
+def registrar_cambio(
+    engine: Engine,
+    id_organizacion: int,
+    tipo_cambio: str,
+    descripcion: str,
+    id_usuario: int,
+    id_proyecto: Optional[int] = None,
+) -> bool:
+    """
+    Registra un cambio/evento en la tabla cambios.
+
+    Método compartido que puede ser utilizado desde cualquier parte de la aplicación
+    para registrar eventos en el sistema de seguimiento de cambios.
+
+    Utiliza el stored procedure sp_registrar_cambio_proyecto que internamente
+    determina el id_version basándose en el id_proyecto.
+
+    Args:
+        engine: SQLAlchemy engine para conexión a la BD
+        id_organizacion: ID de la organización (requerido)
+        tipo_cambio: Tipo de cambio/evento (ej: "Solicitud soporte proyecto",
+                     "Solicitud soporte organización", "Versión publicada", etc.)
+        descripcion: Descripción del cambio
+        id_usuario: ID del usuario que realiza el cambio
+        id_proyecto: ID del proyecto (opcional, puede ser None para cambios a nivel organización)
+
+    Returns:
+        True si el registro fue exitoso, False en caso contrario
+
+    Ejemplos:
+        >>> # Registrar ticket de soporte sin proyecto (a nivel organización)
+        >>> registrar_cambio(
+        ...     engine=db_engine,
+        ...     id_organizacion=1,
+        ...     tipo_cambio="Solicitud soporte organización",
+        ...     descripcion="Ticket #123: Consulta sobre facturación",
+        ...     id_usuario=5,
+        ...     id_proyecto=None
+        ... )
+
+        >>> # Registrar ticket de soporte con proyecto
+        >>> registrar_cambio(
+        ...     engine=db_engine,
+        ...     id_organizacion=1,
+        ...     tipo_cambio="Solicitud soporte proyecto",
+        ...     descripcion="Ticket #124: Error en deployment",
+        ...     id_usuario=5,
+        ...     id_proyecto=10
+        ... )
+
+        >>> # Registrar cambio de versión
+        >>> registrar_cambio(
+        ...     engine=db_engine,
+        ...     id_organizacion=1,
+        ...     tipo_cambio="Versión publicada",
+        ...     descripcion="Versión v003 publicada para producción",
+        ...     id_usuario=8,
+        ...     id_proyecto=10
+        ... )
+    """
+    query = text("""
+        CALL sp_registrar_cambio_proyecto(
+            :p_id_proyecto,
+            :p_id_organizacion,
+            :p_tipo_cambio,
+            :p_descripcion,
+            :p_id_usuario
+        )
+    """)
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(
+                query,
+                {
+                    "p_id_proyecto": id_proyecto,
+                    "p_id_organizacion": id_organizacion,
+                    "p_tipo_cambio": tipo_cambio,
+                    "p_descripcion": descripcion,
+                    "p_id_usuario": id_usuario,
+                },
+            )
+            conn.commit()
+            return True
+    except Exception as e:
+        print(f"Error registrando cambio: {e}")
+        import traceback
+        traceback.print_exc()
+        return False

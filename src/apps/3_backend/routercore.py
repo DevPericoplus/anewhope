@@ -2113,26 +2113,28 @@ class BackendCoreRouter:
                 },
             )
 
-            # Registrar cambio solo si hay proyecto asociado
-            if id_proyecto:
-                conn.execute(
-                    text("""
-                        CALL sp_registrar_cambio_proyecto(
-                            :p_id_proyecto,
-                            :p_id_organizacion,
-                            :p_tipo_cambio,
-                            :p_descripcion,
-                            :p_id_usuario
-                        )
-                    """),
-                    {
-                        "p_id_proyecto": id_proyecto,
-                        "p_id_organizacion": id_organizacion,
-                        "p_tipo_cambio": "Solicitud soporte proyecto",
-                        "p_descripcion": f"Ticket #{ticket_id}: {titulo[:50]}",
-                        "p_id_usuario": cliente_id,
-                    },
-                )
+            # Registrar cambio SIEMPRE (con o sin proyecto)
+            tipo_cambio = "Solicitud soporte proyecto" if id_proyecto else "Solicitud soporte organización"
+            descripcion = f"Ticket #{ticket_id}: {titulo[:50]}"
+
+            conn.execute(
+                text("""
+                    CALL sp_registrar_cambio_proyecto(
+                        :p_id_proyecto,
+                        :p_id_organizacion,
+                        :p_tipo_cambio,
+                        :p_descripcion,
+                        :p_id_usuario
+                    )
+                """),
+                {
+                    "p_id_proyecto": id_proyecto,  # Puede ser NULL
+                    "p_id_organizacion": id_organizacion,
+                    "p_tipo_cambio": tipo_cambio,
+                    "p_descripcion": descripcion,
+                    "p_id_usuario": cliente_id,
+                },
+            )
 
             conn.commit()
             return ticket_id
