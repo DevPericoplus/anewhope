@@ -27,6 +27,9 @@ if REDIS_PASSWORD:
 else:
     redis_url = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 
+# Leer lock_expiration desde env.yaml (por defecto 30s para operaciones con SMS/HTTP)
+REDIS_LOCK_EXPIRATION = int(env_settings.get_env_value("redis_lock_expiration", "30000"))
+
 config = rx.Config(
     app_name="web_frontend",
     db_url="sqlite:///reflex.db",
@@ -34,6 +37,9 @@ config = rx.Config(
     # Configuración de Redis para sesión compartida
     # Reflex 0.8.25 usa automáticamente Redis cuando se proporciona redis_url
     redis_url=redis_url,
+    
+    # Aumentar lock_expiration para operaciones largas (login OTP + SMS Infobip)
+    redis_lock_expiration=REDIS_LOCK_EXPIRATION,
     
     # Configuración de servidor
     env=rx.Env.PROD,

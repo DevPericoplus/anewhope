@@ -27,6 +27,9 @@ if REDIS_PASSWORD:
 else:
     redis_url = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 
+# Leer lock_expiration desde env.yaml (por defecto 30s para operaciones largas)
+REDIS_LOCK_EXPIRATION = int(env_settings.get_env_value("redis_lock_expiration", "30000"))
+
 config = rx.Config(
     app_name="web_backoffice",
     db_url="sqlite:///backoffice.db",
@@ -34,6 +37,9 @@ config = rx.Config(
     # Configuración de Redis para sesión compartida (MISMA que frontend)
     # Reflex detecta automáticamente Redis y lo usa como state manager
     redis_url=redis_url,
+    
+    # Aumentar lock_expiration para operaciones largas
+    redis_lock_expiration=REDIS_LOCK_EXPIRATION,
     
     # Configuración de servidor
     env=rx.Env.PROD,
