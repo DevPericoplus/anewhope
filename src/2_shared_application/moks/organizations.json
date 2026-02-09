@@ -10,7 +10,7 @@
   },
   {
     "organization_id": 2,
-    "organization_name": "Globex",
+    "organization_name": "ong",
     "organization_email": "info@globex.com",
     "organization_tlf": "+34639775978",
     "organization_address": "100 Tower Bridge, London, SE1 2UP",
@@ -19,7 +19,7 @@
   },
   {
     "organization_id": 3,
-    "organization_name": "Nascar",
+    "organization_name": "gubernamental",
     "organization_email": "admin@nascar.com",
     "organization_tlf": "+34639775978",
     "organization_address": "Calle Innovación 10, 28043 Madrid",
@@ -28,7 +28,7 @@
   },
   {
     "organization_id": 4,
-    "organization_name": "Menthol",
+    "organization_name": "asociacion",
     "organization_email": "admin@menthol.com",
     "organization_tlf": "+34639775978",
     "organization_address": "calle huertas 16",
@@ -37,7 +37,7 @@
   },
   {
     "organization_id": 5,
-    "organization_name": "Pleox",
+    "organization_name": "centro_investigacion",
     "organization_email": "admin@pleox.com",
     "organization_tlf": "+34639775978",
     "organization_address": "Calle velazquez 33",
@@ -55,7 +55,7 @@
   },
   {
     "organization_id": 7,
-    "organization_name": "myllm_alternative",
+    "organization_name": "Big_School",
     "organization_email": "alternative@myllm.ai",
     "organization_tlf": "+34639775978",
     "organization_address": "calle segunda base 18",
@@ -64,7 +64,7 @@
   },
   {
     "organization_id": 8,
-    "organization_name": "myllm_another",
+    "organization_name": "mouredev",
     "organization_email": "another@myllm.ai",
     "organization_tlf": "+34639775978",
     "organization_address": "c alle uno",
@@ -73,7 +73,7 @@
   },
   {
     "organization_id": 9,
-    "organization_name": "cuatro",
+    "organization_name": "universidad",
     "organization_email": "ifo@cuatro.es",
     "organization_tlf": "+34639775978",
     "organization_address": "calle no se",

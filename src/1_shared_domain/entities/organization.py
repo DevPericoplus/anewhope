@@ -1,11 +1,120 @@
-"""Funciones para gestión de organizaciones en el sistema."""
+"""Entidades de dominio y funciones para gestión de organizaciones."""
+
+from __future__ import annotations
+
 import json
 import logging
 import unicodedata
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Entidades de dominio
+# ============================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class Organization:
+    """Representa una organización en el sistema.
+
+    Es la unidad principal de agrupación de usuarios, proyectos y versiones.
+    Los usuarios internos (backoffice) acceden a organizaciones a través
+    de asignaciones en ``asignaciones_organizaciones_internas``.
+    """
+
+    organization_id: int
+    organization_name: str
+    active: bool = True
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "Organization":
+        """Crea una Organization desde un diccionario."""
+        return cls(
+            organization_id=int(data.get("organization_id", 0)),
+            organization_name=str(data.get("organization_name", "")),
+            active=bool(data.get("active", True)),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convierte la entidad a diccionario."""
+        return {
+            "organization_id": self.organization_id,
+            "organization_name": self.organization_name,
+            "active": self.active,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class OrganizationAccess:
+    """Value Object: acceso de un usuario interno a una organización.
+
+    Representa la relación entre un usuario interno y una organización
+    otorgada en la página de Asignaciones del backoffice.
+    """
+
+    organization_id: int
+    organization_name: str
+    role_id: int = 0
+    role_name: str = ""
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "OrganizationAccess":
+        """Crea un OrganizationAccess desde un diccionario."""
+        return cls(
+            organization_id=int(data.get("organization_id", 0)),
+            organization_name=str(data.get("organization_name", "")),
+            role_id=int(data.get("role_id", 0)),
+            role_name=str(data.get("role_name", "")),
+        )
+
+    def to_selector_dict(self) -> dict[str, Any]:
+        """Formato simplificado para selectores de UI (id + name)."""
+        return {
+            "id": self.organization_id,
+            "name": self.organization_name,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectAccess:
+    """Value Object: acceso de un usuario interno a un proyecto.
+
+    Representa la relación entre un usuario interno y un proyecto
+    otorgada en la página de Asignaciones del backoffice.
+    """
+
+    project_id: int
+    project_name: str
+    organization_id: int = 0
+    role_id: int = 0
+    role_name: str = ""
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "ProjectAccess":
+        """Crea un ProjectAccess desde un diccionario."""
+        return cls(
+            project_id=int(data.get("project_id", 0)),
+            project_name=str(data.get("project_name", "")),
+            organization_id=int(data.get("organization_id", 0)),
+            role_id=int(data.get("role_id", 0)),
+            role_name=str(data.get("role_name", "")),
+        )
+
+    def to_selector_dict(self) -> dict[str, Any]:
+        """Formato simplificado para selectores de UI (id + name)."""
+        return {
+            "id": self.project_id,
+            "name": self.project_name,
+        }
+
+
+# ============================================================================
+# Funciones legacy (mantenidas para compatibilidad con frontend)
+# ============================================================================
 
 
 def _normalize_text(text: str) -> str:

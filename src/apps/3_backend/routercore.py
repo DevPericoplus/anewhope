@@ -4004,7 +4004,7 @@ class BackendCoreRouter:
                         pr.id_proyecto,
                         p.nombre as project_name,
                         pr.id_rol,
-                        prb.nombre_rol as role_name,
+                        COALESCE(prb.nombre_rol, CONCAT('Rol ', pr.id_rol, ' (inválido)')) as role_name,
                         pr.active
                     FROM proyectos_roles pr
                     INNER JOIN myllm_core_db.users u
@@ -4013,10 +4013,10 @@ class BackendCoreRouter:
                         ON pr.id_organizacion = o.organization_id
                     INNER JOIN proyectos p
                         ON pr.id_proyecto = p.id
-                    INNER JOIN proyectos_roles_base prb
+                    LEFT JOIN proyectos_roles_base prb
                         ON pr.id_rol = prb.id
                     WHERE pr.id_proyecto = :project_id
-                    ORDER BY u.user_name, prb.nombre_rol
+                    ORDER BY u.user_name, COALESCE(prb.nombre_rol, '')
                 """),
                 {"project_id": project_id},
             )
@@ -4049,6 +4049,11 @@ class BackendCoreRouter:
         Security: Only SuperAdmin can create.
         Validation: Requires active org role (prerequisite).
         """
+        self._logger.info(
+            "[ASSIGNMENTS] create_project_assignment: user=%s org=%s project=%s role=%s identity=%s",
+            user_id, organization_id, project_id, role_id, identity_type_id,
+        )
+
         if identity_type_id != 1:
             raise BackendCorePermissionError(
                 "assignments_create", identity_type_id
@@ -4057,6 +4062,10 @@ class BackendCoreRouter:
         # Validate prerequisite
         prerequisite = self.validate_org_prerequisite(user_id, organization_id)
         if not prerequisite["has_org_role"]:
+            self._logger.warning(
+                "[ASSIGNMENTS] Prerequisite failed: user=%s has no active role in org=%s",
+                user_id, organization_id,
+            )
             raise BackendCoreBusinessError(
                 "El usuario debe tener un rol activo en la organización antes de asignarlo a proyectos"
             )
@@ -4072,16 +4081,30 @@ class BackendCoreRouter:
             # Check for duplicate
             existing = conn.execute(
                 text("""
-                    SELECT id FROM proyectos_roles
-                    WHERE id_usuario = :user_id
+                    SELECT pr.id, pr.id_rol, pr.active,
+                           COALESCE(prb.nombre_rol, CONCAT('Rol ', pr.id_rol)) as role_name,
+                           u.user_name
+                    FROM proyectos_roles pr
+                    LEFT JOIN proyectos_roles_base prb ON pr.id_rol = prb.id
+                    LEFT JOIN myllm_core_db.users u ON pr.id_usuario = u.user_id
+                    WHERE pr.id_usuario = :user_id
                       AND id_proyecto = :project_id
                 """),
                 {"user_id": user_id, "project_id": project_id},
             ).fetchone()
 
             if existing:
+                self._logger.warning(
+                    "[ASSIGNMENTS] Duplicate: user=%s (%s) already assigned to project=%s "
+                    "(id=%s, role=%s, active=%s)",
+                    user_id, existing.user_name, project_id,
+                    existing.id, existing.role_name, existing.active,
+                )
                 raise BackendCoreBusinessError(
-                    "El usuario ya tiene una asignación a este proyecto"
+                    f"El usuario '{existing.user_name}' ya tiene una asignación a este proyecto "
+                    f"(rol: {existing.role_name}, "
+                    f"{'activa' if existing.active else 'inactiva'}, "
+                    f"registro id={existing.id})"
                 )
 
             # Insert

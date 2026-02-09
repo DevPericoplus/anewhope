@@ -4109,7 +4109,7 @@ class RouterMiddleware:
                 user_id, organization_id, project_id, role_id, session.identity_type_id
             )
         except BrokerBackendCommunicationError as exc:
-            raise BusinessRuleError("No se pudo crear asignación de proyecto") from exc
+            raise BusinessRuleError(f"No se pudo crear asignación de proyecto: {exc}") from exc
 
     def update_project_assignment(
         self,

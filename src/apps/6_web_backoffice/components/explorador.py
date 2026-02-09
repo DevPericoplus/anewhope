@@ -28,6 +28,14 @@ from adapters.api_client import (
     fmanagement_list_for_explorador,
     fmanagement_list_all_project_versions,
     fmanagement_operation,
+    fmanagement_create_folder,
+    fmanagement_rename_folder,
+    fmanagement_rename_file,
+    fmanagement_delete_folder,
+    fmanagement_delete_file,
+    fmanagement_get_properties,
+    generate_file_upload_token,
+    generate_file_download_token,
     get_project_versions,
     get_version_state,
     update_version_state,
@@ -159,6 +167,15 @@ class ExploradorState(SharedSessionState):
     # Estructura: {"v001": {state, protected, size, final_c, final_i}, "v002": {...}}
     version_states: dict = {}  # {version_key: state_data}
 
+    # Variables para diálogos de acciones
+    show_create_folder_dialog: bool = False
+    show_rename_dialog: bool = False
+    show_delete_confirm_dialog: bool = False
+    show_properties_dialog: bool = False
+    current_action_item: dict = {}
+    dialog_input_value: str = ""
+    properties_info: str = ""
+
     # ========================================================================
     # Propiedades Computadas
     # ========================================================================
@@ -229,8 +246,8 @@ class ExploradorState(SharedSessionState):
         self.id_proyecto = project_id
 
         # Cargar datos desde APIs (todas las versiones del proyecto)
+        # load_from_api() ya llama internamente a interpretacion_estados()
         self.load_from_api()
-        self.interpretacion_estados()
 
         logger.info("Explorador inicializado correctamente")
         yield  # Actualizar UI
@@ -254,8 +271,8 @@ class ExploradorState(SharedSessionState):
         self.id_proyecto = project_id
 
         # Cargar datos desde APIs (todas las versiones)
+        # load_from_api() ya llama internamente a interpretacion_estados()
         self.load_from_api()
-        self.interpretacion_estados()
 
         logger.info("Explorador recargado correctamente")
         yield  # Actualizar UI
@@ -273,7 +290,7 @@ class ExploradorState(SharedSessionState):
 
         # Actualizar IDs y tokens
         self.id_proyecto = project_id
-        self.id_organizacion = org_id
+        self.organization_id = org_id
         self.access_token = access_token
         self.session_token = session_token
 
@@ -329,6 +346,9 @@ class ExploradorState(SharedSessionState):
 
                 # Cargar estados de versión desde la API
                 self.load_all_version_states()
+
+                # Aplicar lógica de estados visuales (protección, bloqueo, etiquetas)
+                self.interpretacion_estados()
 
                 logger.info(f"Explorador cargado: {len(self.items)} items, {len(self.version_states)} versiones")
             else:
@@ -1102,185 +1122,33 @@ class ExploradorState(SharedSessionState):
             self.identity_type_id,
         )
 
-        # Construir parámetros base para fmanagement
-        org_folder = f"ORG{str(self.organization_id).zfill(5)}"
-        prj_folder = f"PRJ{str(self.id_proyecto).zfill(5)}"
-        version_folder = self.id_version
-
         # ====================================================================
-        # OPERACIONES DE ELIMINACIÓN
+        # OPERACIONES CON DIÁLOGOS
         # ====================================================================
 
-        if accion == "delete":
-            # Permisos ya validados arriba, proceder con la operación
-            operation = "delete_folder" if item.item_type == "folder" else "delete_file"
-            params = {
-                "org": org_folder,
-                "prj": prj_folder,
-                "version": version_folder,
-                "path": item.name,
-            }
-
-            logger.info(
-                "[DELETE] Eliminando %s: %s (user_id=%s org=%s prj=%s version=%s)",
-                item.item_type,
-                item.name,
-                self.user_id,
-                org_folder,
-                prj_folder,
-                version_folder,
-            )
-
-            response = fmanagement_operation(
-                operation=operation,
-                params=params,
-                access_token=self.access_token,
-                session_token=self.session_token,
-            )
-
-            if response.get("success"):
-                logger.info(
-                    "[DELETE SUCCESS] Eliminado exitosamente: %s (user_id=%s)",
-                    item.name,
-                    self.user_id,
-                )
-                self.load_from_api()  # Recargar estructura después de ACK exitoso
-                return rx.toast.success(f"Eliminado: {item.name}")
-            else:
-                error_msg = response.get("message", "Error desconocido")
-                logger.error(
-                    "[DELETE ERROR] Error eliminando %s: %s (user_id=%s)",
-                    item.name,
-                    error_msg,
-                    self.user_id,
-                )
-                return rx.toast.error(f"Error: {error_msg}")
-
-        # ====================================================================
-        # OPERACIONES DE RENOMBRADO
-        # ====================================================================
+        if accion == "create_folder":
+            return self.abrir_dialogo_crear_carpeta(item)
 
         elif accion == "rename":
-            # Permisos ya validados arriba, proceder con la operación
+            return self.abrir_dialogo_renombrar(item)
 
-            # TODO: Implementar diálogo para nuevo nombre
-            # Por ahora, placeholder
-            new_name = f"{item.name}_renamed"
+        elif accion == "delete":
+            return self.abrir_dialogo_confirmar_eliminar(item)
 
-            operation = "rename_folder" if item.item_type == "folder" else "rename_file"
-            params = {
-                "org": org_folder,
-                "prj": prj_folder,
-                "version": version_folder,
-                "old_name": item.name,
-                "new_name": new_name,
-            }
-
-            logger.info(
-                "[RENAME] Renombrando %s: %s → %s (user_id=%s)",
-                item.item_type,
-                item.name,
-                new_name,
-                self.user_id,
-            )
-
-            response = fmanagement_operation(
-                operation=operation,
-                params=params,
-                access_token=self.access_token,
-                session_token=self.session_token,
-            )
-
-            if response.get("success"):
-                logger.info(
-                    "[RENAME SUCCESS] Renombrado: %s → %s (user_id=%s)",
-                    item.name,
-                    new_name,
-                    self.user_id,
-                )
-                self.load_from_api()  # Recargar estructura después de ACK exitoso
-                return rx.toast.success(f"Renombrado a: {new_name}")
-            else:
-                error_msg = response.get("message", "Error desconocido")
-                logger.error(
-                    "[RENAME ERROR] Error renombrando %s: %s (user_id=%s)",
-                    item.name,
-                    error_msg,
-                    self.user_id,
-                )
-                return rx.toast.error(f"Error: {error_msg}")
-
-        # ====================================================================
-        # OPERACIONES DE SUBIDA DE ARCHIVOS
-        # ====================================================================
+        elif accion == "properties":
+            return self.abrir_dialogo_propiedades(item)
 
         elif accion == "upload_file":
-            # Permisos ya validados arriba, proceder con la operación
-
-            logger.info(
-                "[UPLOAD_FILE] Preparando subida de archivo a: %s (user_id=%s)",
-                item.name,
-                self.user_id,
-            )
-
-            # TODO: Implementar diálogo de subida de archivo
-            # Por ahora, placeholder
-            return rx.window_alert(
-                f"Subida de archivo a '{item.name}' - UI pendiente (PASO 6.4d)"
-            )
-
-        # ====================================================================
-        # OPERACIONES DE DESCARGA
-        # ====================================================================
+            return self.iniciar_subida_archivo(item)
 
         elif accion == "download":
-            # Permisos ya validados arriba, proceder con la operación
-
-            params = {
-                "org": org_folder,
-                "prj": prj_folder,
-                "version": version_folder,
-                "file_path": item.name,
-            }
-
-            logger.info(
-                "[DOWNLOAD] Descargando archivo: %s (user_id=%s)",
-                item.name,
-                self.user_id,
-            )
-
-            response = fmanagement_operation(
-                operation="download_file",
-                params=params,
-                access_token=self.access_token,
-                session_token=self.session_token,
-            )
-
-            if response.get("success"):
-                logger.info(
-                    "[DOWNLOAD SUCCESS] Descarga iniciada: %s (user_id=%s)",
-                    item.name,
-                    self.user_id,
-                )
-                # TODO: Procesar data del archivo para descarga
-                return rx.toast.success(f"Descargando: {item.name}")
-            else:
-                error_msg = response.get("message", "Error desconocido")
-                logger.error(
-                    "[DOWNLOAD ERROR] Error descargando %s: %s (user_id=%s)",
-                    item.name,
-                    error_msg,
-                    self.user_id,
-                )
-                return rx.toast.error(f"Error: {error_msg}")
+            return self.iniciar_descarga_archivo(item)
 
         # ====================================================================
         # OPERACIONES ADMINISTRATIVAS DE VERSIÓN
         # ====================================================================
 
         elif accion == "block_version":
-            # Permisos y restricciones ya validados arriba (solo identity_type_id 1 o 2)
-
             logger.info(
                 "[BLOCK_VERSION] Bloqueando versión: %s (user_id=%s identity_type_id=%s project_id=%s)",
                 self.id_version,
@@ -1305,8 +1173,8 @@ class ExploradorState(SharedSessionState):
                     self.id_version,
                     self.user_id,
                 )
-                self.load_version_state_from_api()  # Recargar estado después de ACK exitoso
-                # self.interpretacion_estados()  # TODO: PASO 6.4d
+                self.load_version_state_from_api()
+                self.interpretacion_estados()
                 return rx.toast.success("Versión bloqueada")
             else:
                 error_msg = response.get("message", "Error desconocido")
@@ -1319,8 +1187,6 @@ class ExploradorState(SharedSessionState):
                 return rx.toast.error(f"Error: {error_msg}")
 
         elif accion == "unblock_version":
-            # Permisos y restricciones ya validados arriba (solo identity_type_id 1 o 2)
-
             logger.info(
                 "[UNBLOCK_VERSION] Desbloqueando versión: %s (user_id=%s identity_type_id=%s)",
                 self.id_version,
@@ -1344,8 +1210,8 @@ class ExploradorState(SharedSessionState):
                     self.id_version,
                     self.user_id,
                 )
-                self.load_version_state_from_api()  # Recargar estado después de ACK exitoso
-                # self.interpretacion_estados()  # TODO: PASO 6.4d
+                self.load_version_state_from_api()
+                self.interpretacion_estados()
                 return rx.toast.success("Versión desbloqueada")
             else:
                 error_msg = response.get("message", "Error desconocido")
@@ -1386,7 +1252,8 @@ class ExploradorState(SharedSessionState):
         state_labels = {
             "Abierta": ("(Abierta)", "#228B22"),  # Verde
             "Bloqueada": ("(Bloqueada)", "#FF8C00"),  # Naranja
-            "Protegida": ("(Entrenamiento Solicitado)", "#00008B"),  # Azul oscuro
+            "Entrenar": ("(Entrenamiento Solicitado)", "#00008B"),  # Azul oscuro
+            "Protegida": ("(Entrenamiento Solicitado)", "#00008B"),  # Azul oscuro (alias)
             "Final": ("(Versión Final)", "#8B0000"),  # Rojo oscuro
         }
 
@@ -1413,11 +1280,11 @@ class ExploradorState(SharedSessionState):
                 es_bloqueada = protected or (estado != "Abierta")
 
                 if es_bloqueada:
-                    # Bloquear esta versión y todos sus descendientes
+                    # NO bloquear la carpeta de versión misma (solo descendientes)
+                    # Esto permite que el menú contextual siga mostrándose en la versión
                     version_id = item.id
-                    item.is_blocked = True
 
-                    # Bloquear todos los hijos
+                    # Bloquear solo los hijos (no el propio item de versión)
                     for descendant in self.items:
                         if descendant.id.startswith(version_id + "_"):
                             descendant.is_blocked = True
@@ -1509,6 +1376,614 @@ class ExploradorState(SharedSessionState):
                 return f"{bytes_val:.2f} {unit}"
             bytes_val /= 1024.0
         return f"{bytes_val:.2f} PB"
+
+    # ========================================================================
+    # Métodos para diálogos y acciones de carpetas/archivos
+    # ========================================================================
+
+    def abrir_dialogo_crear_carpeta(self, item_or_id):
+        """Abre el diálogo para crear una nueva carpeta."""
+        if isinstance(item_or_id, str):
+            item = next((i for i in self.items if i.id == item_or_id), None)
+            if not item:
+                return rx.toast.error("Item no encontrado")
+        else:
+            item = item_or_id
+        self.current_action_item = item.dict() if hasattr(item, "dict") else dict(item)
+        self.dialog_input_value = ""
+        self.show_create_folder_dialog = True
+
+    def cerrar_dialogo_crear_carpeta(self):
+        """Cierra el diálogo de crear carpeta."""
+        self.show_create_folder_dialog = False
+        self.dialog_input_value = ""
+        self.current_action_item = {}
+
+    def ejecutar_crear_carpeta(self):
+        """Ejecuta la creación de carpeta."""
+        if not self.dialog_input_value or not self.current_action_item:
+            return rx.toast.error("Debe ingresar un nombre para la carpeta")
+
+        try:
+            item_data = self.current_action_item
+            item = FolderItem(**item_data)
+            folder_name = self.dialog_input_value.strip()
+
+            project_id = self.id_proyecto
+
+            # Identificar la versión
+            if item.depth == 1:
+                version_item = item
+            elif item.depth > 1:
+                version_item = self._find_version_ancestor(item)
+                if not version_item:
+                    return rx.toast.error("No se pudo identificar la versión ancestro")
+            else:
+                return rx.toast.error("No se puede crear carpeta en este nivel")
+
+            # Extraer el número de versión del nombre
+            version_name = version_item.name
+            if version_name.startswith("v") and version_name[1:].isdigit():
+                version_id = int(version_name.lstrip("v"))
+            else:
+                return rx.toast.error(f"Formato de versión inválido: {version_name}")
+
+            # Construir la ruta relativa
+            if item.depth == 1:
+                folder_path = ""
+            else:
+                path_parts = []
+                current = item
+                while current.depth > 1:
+                    path_parts.insert(0, current.name)
+                    parent = next((p for p in self.items if p.id == current.parent_id), None)
+                    if not parent:
+                        break
+                    current = parent
+                folder_path = "/".join(path_parts) if path_parts else ""
+
+            logger.info("Creando carpeta: %s en %s", folder_name, folder_path)
+
+            response = fmanagement_create_folder(
+                org_id=self.organization_id,
+                project_id=project_id,
+                version_id=version_id,
+                folder_path=folder_path,
+                folder_name=folder_name,
+                user_id=self.user_id,
+                identity_type_id=self.identity_type_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            self.cerrar_dialogo_crear_carpeta()
+
+            if response.get("success") or response.get("status") == "success":
+                logger.info("Carpeta creada: %s", folder_name)
+                self.load_from_api()
+                return rx.toast.success(f"Carpeta '{folder_name}' creada exitosamente")
+            else:
+                error_msg = response.get("mensaje") or response.get("error", "Error desconocido")
+                return rx.toast.error(f"Error: {error_msg}")
+
+        except Exception as e:
+            logger.error("Error en ejecutar_crear_carpeta: %s", e)
+            self.cerrar_dialogo_crear_carpeta()
+            return rx.toast.error(f"Error: {str(e)}")
+
+    def abrir_dialogo_renombrar(self, item_or_id):
+        """Abre el diálogo para renombrar."""
+        if isinstance(item_or_id, str):
+            item = next((i for i in self.items if i.id == item_or_id), None)
+            if not item:
+                return rx.toast.error("Item no encontrado")
+        else:
+            item = item_or_id
+        self.current_action_item = item.dict() if hasattr(item, "dict") else dict(item)
+        self.dialog_input_value = item.name
+        self.show_rename_dialog = True
+
+    def cerrar_dialogo_renombrar(self):
+        """Cierra el diálogo de renombrar."""
+        self.show_rename_dialog = False
+        self.dialog_input_value = ""
+        self.current_action_item = {}
+
+    def ejecutar_renombrar(self):
+        """Ejecuta el renombrado de carpeta o archivo."""
+        if not self.dialog_input_value or not self.current_action_item:
+            return rx.toast.error("Debe ingresar un nuevo nombre")
+
+        try:
+            item_data = self.current_action_item
+            item = FolderItem(**item_data)
+            new_name = self.dialog_input_value.strip()
+
+            if new_name == item.name:
+                self.cerrar_dialogo_renombrar()
+                return rx.toast.info("El nombre no ha cambiado")
+
+            project_id = self.id_proyecto
+
+            if item.depth == 1:
+                version_item = item
+            elif item.depth > 1:
+                version_item = self._find_version_ancestor(item)
+                if not version_item:
+                    return rx.toast.error("No se pudo identificar la versión ancestro")
+            else:
+                return rx.toast.error("No se puede renombrar este elemento")
+
+            version_name = version_item.name
+            if version_name.startswith("v") and version_name[1:].isdigit():
+                version_id = int(version_name.lstrip("v"))
+            else:
+                return rx.toast.error(f"Formato de versión inválido: {version_name}")
+
+            # No se debe permitir renombrar la versión misma
+            if item.depth == 1:
+                return rx.toast.error("No se puede renombrar la versión")
+            else:
+                path_parts = []
+                current = item
+                parent = next((p for p in self.items if p.id == current.parent_id), None)
+                if parent and parent.depth > 1:
+                    while parent.depth > 1:
+                        path_parts.insert(0, parent.name)
+                        grandparent = next((p for p in self.items if p.id == parent.parent_id), None)
+                        if not grandparent:
+                            break
+                        parent = grandparent
+                folder_path = "/".join(path_parts) if path_parts else ""
+
+            logger.info("Renombrando %s a %s", item.name, new_name)
+
+            if item.item_type == "folder":
+                response = fmanagement_rename_folder(
+                    org_id=self.organization_id,
+                    project_id=project_id,
+                    version_id=version_id,
+                    folder_path=folder_path,
+                    old_name=item.name,
+                    new_name=new_name,
+                    user_id=self.user_id,
+                    identity_type_id=self.identity_type_id,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+            else:
+                response = fmanagement_rename_file(
+                    org_id=self.organization_id,
+                    project_id=project_id,
+                    version_id=version_id,
+                    file_path=folder_path,
+                    old_filename=item.name,
+                    new_filename=new_name,
+                    user_id=self.user_id,
+                    identity_type_id=self.identity_type_id,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+
+            self.cerrar_dialogo_renombrar()
+
+            if response.get("success") or response.get("message"):
+                logger.info("Renombrado exitoso: %s -> %s", item.name, new_name)
+                self.load_from_api()
+                return rx.toast.success(f"Renombrado a '{new_name}' exitosamente")
+            else:
+                error_msg = response.get("mensaje") or response.get("error", "Error desconocido")
+                return rx.toast.error(f"Error: {error_msg}")
+
+        except Exception as e:
+            logger.error("Error en ejecutar_renombrar: %s", e)
+            self.cerrar_dialogo_renombrar()
+            return rx.toast.error(f"Error: {str(e)}")
+
+    def abrir_dialogo_confirmar_eliminar(self, item_or_id):
+        """Abre el diálogo de confirmación para eliminar."""
+        if isinstance(item_or_id, str):
+            item = next((i for i in self.items if i.id == item_or_id), None)
+            if not item:
+                return rx.toast.error("Item no encontrado")
+        else:
+            item = item_or_id
+        self.current_action_item = item.dict() if hasattr(item, "dict") else dict(item)
+        self.show_delete_confirm_dialog = True
+
+    def cerrar_dialogo_eliminar(self):
+        """Cierra el diálogo de eliminar."""
+        self.show_delete_confirm_dialog = False
+        self.current_action_item = {}
+
+    def ejecutar_eliminar(self):
+        """Ejecuta la eliminación de carpeta o archivo."""
+        if not self.current_action_item:
+            return rx.toast.error("No hay elemento seleccionado")
+
+        try:
+            item_data = self.current_action_item
+            item = FolderItem(**item_data)
+            project_id = self.id_proyecto
+
+            if item.depth == 1:
+                version_item = item
+            elif item.depth > 1:
+                version_item = self._find_version_ancestor(item)
+                if not version_item:
+                    return rx.toast.error("No se pudo identificar la versión ancestro")
+            else:
+                return rx.toast.error("No se puede eliminar este elemento")
+
+            version_name = version_item.name
+            if version_name.startswith("v") and version_name[1:].isdigit():
+                version_id = int(version_name.lstrip("v"))
+            else:
+                return rx.toast.error(f"Formato de versión inválido: {version_name}")
+
+            if item.depth == 1:
+                return rx.toast.error("No se puede eliminar la versión directamente")
+            else:
+                path_parts = []
+                current = item
+                parent = next((p for p in self.items if p.id == current.parent_id), None)
+                if parent and parent.depth > 1:
+                    while parent.depth > 1:
+                        path_parts.insert(0, parent.name)
+                        grandparent = next((p for p in self.items if p.id == parent.parent_id), None)
+                        if not grandparent:
+                            break
+                        parent = grandparent
+
+                if item.item_type == "folder":
+                    folder_path = "/".join(path_parts) if path_parts else ""
+                    folder_name = item.name
+                else:
+                    file_path = "/".join(path_parts) if path_parts else ""
+
+            logger.info("Eliminando: %s", item.name)
+
+            if item.item_type == "folder":
+                response = fmanagement_delete_folder(
+                    org_id=self.organization_id,
+                    project_id=project_id,
+                    version_id=version_id,
+                    folder_path=folder_path,
+                    folder_name=folder_name,
+                    user_id=self.user_id,
+                    identity_type_id=self.identity_type_id,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+            else:
+                response = fmanagement_delete_file(
+                    org_id=self.organization_id,
+                    project_id=project_id,
+                    version_id=version_id,
+                    file_path=file_path,
+                    filename=item.name,
+                    user_id=self.user_id,
+                    identity_type_id=self.identity_type_id,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+
+            self.cerrar_dialogo_eliminar()
+
+            if response.get("success") or response.get("status") == "success":
+                logger.info("Eliminado exitosamente: %s", item.name)
+                self.load_from_api()
+                return rx.toast.success(f"'{item.name}' eliminado exitosamente")
+            else:
+                error_msg = response.get("mensaje") or response.get("error", "Error desconocido")
+                return rx.toast.error(f"Error: {error_msg}")
+
+        except Exception as e:
+            logger.error("Error en ejecutar_eliminar: %s", e)
+            self.cerrar_dialogo_eliminar()
+            return rx.toast.error(f"Error: {str(e)}")
+
+    def abrir_dialogo_propiedades(self, item_or_id):
+        """Abre el diálogo de propiedades."""
+        if isinstance(item_or_id, str):
+            item = next((i for i in self.items if i.id == item_or_id), None)
+            if not item:
+                return rx.toast.error("Item no encontrado")
+        else:
+            item = item_or_id
+        self.current_action_item = item.dict() if hasattr(item, "dict") else dict(item)
+        self.properties_info = "Cargando propiedades..."
+        self.show_properties_dialog = True
+        return self.cargar_propiedades()
+
+    def cerrar_dialogo_propiedades(self):
+        """Cierra el diálogo de propiedades."""
+        self.show_properties_dialog = False
+        self.properties_info = ""
+        self.current_action_item = {}
+
+    def cargar_propiedades(self):
+        """Carga las propiedades del elemento usando el comando 'file' del SO."""
+        if not self.current_action_item:
+            return rx.toast.error("No hay elemento seleccionado")
+
+        try:
+            item_data = self.current_action_item
+            item = FolderItem(**item_data)
+            project_id = self.id_proyecto
+
+            if item.depth == 1:
+                version_item = item
+            elif item.depth > 1:
+                version_item = self._find_version_ancestor(item)
+                if not version_item:
+                    self.properties_info = "Error: No se pudo identificar la versión ancestro"
+                    return rx.toast.error("No se pudo identificar la versión ancestro")
+            else:
+                self.properties_info = "Error: Nivel inválido para obtener propiedades"
+                return rx.toast.error("No se pueden obtener propiedades de este elemento")
+
+            version_name = version_item.name
+            if version_name.startswith("v") and version_name[1:].isdigit():
+                version_id = int(version_name.lstrip("v"))
+            else:
+                self.properties_info = f"Error: Formato de versión inválido: {version_name}"
+                return rx.toast.error(f"Formato de versión inválido: {version_name}")
+
+            # Construir la ruta relativa
+            if item.depth == 1:
+                item_path = ""
+                item_name = "" if item.item_type == "folder" else item.name
+            else:
+                path_parts = []
+                current = item
+                while current.depth > 1:
+                    if item.item_type == "folder":
+                        path_parts.insert(0, current.name)
+                    else:
+                        if current.id != item.id:
+                            path_parts.insert(0, current.name)
+                    parent = next((p for p in self.items if p.id == current.parent_id), None)
+                    if not parent or parent.depth <= 1:
+                        break
+                    current = parent
+
+                item_path = "/".join(path_parts) if path_parts else ""
+                item_name = "" if item.item_type == "folder" else item.name
+
+            logger.info("Obteniendo propiedades de: %s", item.name)
+
+            response = fmanagement_get_properties(
+                org_id=self.organization_id,
+                project_id=project_id,
+                version_id=version_id,
+                item_path=item_path,
+                item_name=item_name,
+                is_folder=(item.item_type == "folder"),
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if response.get("success") or response.get("status") == "success":
+                data = response.get("data") or response
+
+                # Sanitizar el output del comando 'file'
+                file_output = data.get("file_output", "No disponible")
+                if file_output and ":" in file_output:
+                    file_output = file_output.split(":", 1)[1].strip()
+
+                info = "═══ PROPIEDADES ═══\n\n"
+                info += f"Nombre: {data.get('name', item.name)}\n"
+                info += f"Tipo: {'Carpeta' if data.get('is_dir') else 'Archivo'}\n"
+                info += f"Tamaño: {self._format_size(data.get('size_bytes', 0))}\n"
+                info += f"Permisos: {data.get('mode', 'N/A')}\n"
+                info += f"Modificado: {data.get('mod_time', 'N/A')}\n\n"
+                info += "═══ INFORMACIÓN DEL SISTEMA ═══\n\n"
+                info += f"{file_output}\n"
+
+                self.properties_info = info
+                return rx.toast.success("Propiedades cargadas")
+            else:
+                error_msg = response.get("mensaje") or response.get("error", "Error desconocido")
+                self.properties_info = f"Error al obtener propiedades: {error_msg}"
+                return rx.toast.error(f"Error: {error_msg}")
+
+        except Exception as e:
+            logger.error("Error en cargar_propiedades: %s", e)
+            self.properties_info = f"Error: {str(e)}"
+            return rx.toast.error(f"Error: {str(e)}")
+
+    def iniciar_subida_archivo(self, item_or_id):
+        """Inicia el proceso de subida de archivo."""
+        if isinstance(item_or_id, str):
+            item = next((i for i in self.items if i.id == item_or_id), None)
+            if not item:
+                return rx.toast.error("Item no encontrado")
+        else:
+            item = item_or_id
+
+        try:
+            project_id = self.id_proyecto
+
+            version_item = self._find_version_ancestor(item)
+            if not version_item:
+                if item.depth == 1:
+                    version_item = item
+                else:
+                    logger.error("No se encontró versión para item: %s (depth=%s)", item.name, item.depth)
+                    return rx.toast.error("Error: no se pudo identificar la versión")
+
+            version_name = version_item.name
+            if not version_name.startswith("v") or not version_name[1:].isdigit():
+                logger.error("Nombre de versión inválido: %s", version_name)
+                return rx.toast.error("Error: formato de versión inválido")
+
+            version_id = int(version_name.lstrip("v"))
+
+            # Calcular relative_path
+            path_parts = []
+            current = item
+            while current.parent_id != "" and current.depth > version_item.depth:
+                path_parts.insert(0, current.name)
+                parent = next((p for p in self.items if p.id == current.parent_id), None)
+                if not parent or parent.id == version_item.id:
+                    break
+                current = parent
+
+            relative_path = "/".join(path_parts) if path_parts else ""
+
+            logger.info(
+                "Generando token de subida: project_id=%s, version_id=%s, path=%s",
+                project_id, version_id, relative_path,
+            )
+
+            response = generate_file_upload_token(
+                project_id=project_id,
+                version_id=version_id,
+                relative_path=relative_path,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if not response.get("success"):
+                error_msg = response.get("mensaje", "Error al generar token")
+                logger.error("Error generando token: %s", error_msg)
+                return rx.toast.error(f"Error: {error_msg}")
+
+            token = response.get("token")
+            fmanagement_url = response.get("fmanagement_url")
+
+            if not token or not fmanagement_url:
+                logger.error("Respuesta incompleta del servidor")
+                return rx.toast.error("Error: respuesta incompleta del servidor")
+
+            upload_script = f"""
+            (function() {{
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.onchange = async (e) => {{
+                    const file = e.target.files[0];
+                    if (!file) return;
+
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    formData.append('relative_path', '{relative_path}');
+
+                    try {{
+                        const response = await fetch('{fmanagement_url}/upload', {{
+                            method: 'POST',
+                            headers: {{
+                                'Authorization': 'Bearer {token}'
+                            }},
+                            body: formData
+                        }});
+
+                        const result = await response.json();
+                        if (response.ok) {{
+                            alert('Archivo subido exitosamente: ' + file.name);
+                            window.location.reload();
+                        }} else {{
+                            alert('Error al subir archivo: ' + (result.error || 'Error desconocido'));
+                        }}
+                    }} catch (error) {{
+                        alert('Error al subir archivo: ' + error.message);
+                    }}
+                }};
+                input.click();
+            }})();
+            """
+
+            return rx.call_script(upload_script)
+
+        except Exception as e:
+            logger.error("Error en iniciar_subida_archivo: %s", e)
+            return rx.toast.error(f"Error: {str(e)}")
+
+    def iniciar_descarga_archivo(self, item_or_id):
+        """Inicia el proceso de descarga de archivo."""
+        if isinstance(item_or_id, str):
+            item = next((i for i in self.items if i.id == item_or_id), None)
+            if not item:
+                return rx.toast.error("Item no encontrado")
+        else:
+            item = item_or_id
+
+        try:
+            if item.item_type != "file":
+                logger.error("Item no es un archivo: %s", item.name)
+                return rx.toast.error("Error: solo se pueden descargar archivos")
+
+            project_id = self.id_proyecto
+
+            version_item = self._find_version_ancestor(item)
+            if not version_item:
+                logger.error("No se encontró versión para item: %s", item.name)
+                return rx.toast.error("Error: no se pudo identificar la versión")
+
+            version_name = version_item.name
+            if not version_name.startswith("v") or not version_name[1:].isdigit():
+                logger.error("Nombre de versión inválido: %s", version_name)
+                return rx.toast.error("Error: formato de versión inválido")
+
+            version_id = int(version_name.lstrip("v"))
+
+            # Calcular relative_path (sin incluir el nombre del archivo)
+            path_parts = []
+            if item.parent_id != "":
+                parent = next((p for p in self.items if p.id == item.parent_id), None)
+                current = parent
+                while current and current.parent_id != "" and current.depth > version_item.depth:
+                    path_parts.insert(0, current.name)
+                    parent = next((p for p in self.items if p.id == current.parent_id), None)
+                    if not parent or parent.id == version_item.id:
+                        break
+                    current = parent
+
+            relative_path = "/".join(path_parts) if path_parts else ""
+            filename = item.name
+
+            logger.info(
+                "Generando token de descarga: project_id=%s, version_id=%s, filename=%s, path=%s",
+                project_id, version_id, filename, relative_path,
+            )
+
+            response = generate_file_download_token(
+                project_id=project_id,
+                version_id=version_id,
+                filename=filename,
+                relative_path=relative_path,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if not response.get("success"):
+                error_msg = response.get("mensaje", "Error al generar token")
+                logger.error("Error generando token: %s", error_msg)
+                return rx.toast.error(f"Error: {error_msg}")
+
+            download_url = response.get("download_url")
+
+            if not download_url:
+                logger.error("Respuesta incompleta del servidor")
+                return rx.toast.error("Error: respuesta incompleta del servidor")
+
+            download_script = f"""
+            (function() {{
+                const link = document.createElement('a');
+                link.href = '{download_url}';
+                link.download = '{filename}';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }})();
+            """
+
+            logger.info("Iniciando descarga de %s", filename)
+            return rx.call_script(download_script)
+
+        except Exception as e:
+            logger.error("Error en iniciar_descarga_archivo: %s", e)
+            return rx.toast.error(f"Error: {str(e)}")
 
     def toggle_expand(self, item_id: str):
         """Colapsa/expande una carpeta."""
@@ -1687,16 +2162,42 @@ def render_item(item: FolderItem) -> rx.Component:
                 ),
             ),
         ),
-        # Nombre
-        rx.text(item.name, font_size="18px", font_weight=rx.cond(item.depth == 0, "bold", "normal")),
-        # Estado de versión
-        rx.text(item.version_state_label, color=item.version_state_color, font_size="17px", font_weight="bold"),
+        # Nombre del Directorio/Fichero
+        rx.text(
+            item.name,
+            font_family="Tahoma, sans-serif",
+            font_size="18px",
+            color=rx.cond(item.is_protected, "#555", "black"),
+            font_weight=rx.cond(item.depth == 0, "bold", "normal"),
+            margin_left="4px",
+            white_space="nowrap",
+        ),
+        # Indicador de estado para carpetas de versión
+        rx.cond(
+            (item.depth == 1) & (item.version_state_label != ""),
+            rx.text(
+                item.version_state_label,
+                color=item.version_state_color,
+                font_weight="bold",
+                font_size="17px",
+                margin_left="4px",
+            ),
+        ),
+        rx.spacer(),
         # Tamaño
-        rx.text(item.size_str, font_size="16px", color="#888"),
-        # Badges
+        rx.cond(
+            item.size_str != "",
+            rx.text(
+                item.size_str,
+                font_size="16px",
+                color="#888",
+                padding_right="8px",
+            ),
+        ),
+        # Indicadores: candado sutil para protegido, badge naranja para bloqueado
         rx.cond(
             item.is_protected,
-            rx.badge("Protegido", color_scheme="red", size="1"),
+            rx.icon(tag="lock", size=12, color="#aaa", margin_left="4px"),
             rx.fragment(),
         ),
         rx.cond(
@@ -1704,13 +2205,15 @@ def render_item(item: FolderItem) -> rx.Component:
             rx.badge("Bloqueado", color_scheme="orange", size="1"),
             rx.fragment(),
         ),
-        spacing="2",
-        padding="10px 12px",
-        bg=rx.cond(ExploradorState.selected_item_id == item.id, "#cfe8ff", "transparent"),
-        _hover={"background": "gray.100"},
-        cursor="pointer",
-        width="100%",
+        spacing="0",
         align_items="center",
+        padding_y="6px",
+        padding_x="8px",
+        bg=rx.cond(ExploradorState.selected_item_id == item.id, "#cfe8ff", "transparent"),
+        opacity=rx.cond(item.is_blocked, "0.5", "1.0"),
+        _hover={"bg": "#e5f3ff", "outline": "1px dotted #999"},
+        width="100%",
+        cursor="default",
         on_click=lambda: ExploradorState.select_item(item_id),
         ),
         rx.fragment()
@@ -1938,16 +2441,41 @@ def render_item_with_menu_button(item: FolderItem) -> rx.Component:
                 ),
             ),
         ),
-        # Nombre
-        rx.text(item.name, font_size="18px", font_weight=rx.cond(item.depth == 0, "bold", "normal")),
-        # Estado de versión
-        rx.text(item.version_state_label, color=item.version_state_color, font_size="17px", font_weight="bold"),
+        # Nombre del Directorio/Fichero
+        rx.text(
+            item.name,
+            font_family="Tahoma, sans-serif",
+            font_size="18px",
+            color=rx.cond(item.is_protected, "#555", "black"),
+            font_weight=rx.cond(item.depth == 0, "bold", "normal"),
+            margin_left="4px",
+            white_space="nowrap",
+        ),
+        # Indicador de estado para carpetas de versión
+        rx.cond(
+            (item.depth == 1) & (item.version_state_label != ""),
+            rx.text(
+                item.version_state_label,
+                color=item.version_state_color,
+                font_weight="bold",
+                font_size="17px",
+                margin_left="4px",
+            ),
+        ),
         # Tamaño
-        rx.text(item.size_str, font_size="16px", color="#888"),
-        # Badges
+        rx.cond(
+            item.size_str != "",
+            rx.text(
+                item.size_str,
+                font_size="16px",
+                color="#888",
+                padding_right="8px",
+            ),
+        ),
+        # Indicadores: candado sutil para protegido, badge naranja para bloqueado
         rx.cond(
             item.is_protected,
-            rx.badge("Protegido", color_scheme="red", size="1"),
+            rx.icon(tag="lock", size=12, color="#aaa", margin_left="4px"),
             rx.fragment(),
         ),
         rx.cond(
@@ -1978,13 +2506,15 @@ def render_item_with_menu_button(item: FolderItem) -> rx.Component:
             ),
             rx.fragment(),
         ),
-        spacing="2",
-        padding="10px 12px",
-        bg=rx.cond(ExploradorState.selected_item_id == item.id, "#cfe8ff", "transparent"),
-        _hover={"background": "gray.100"},
-        cursor="pointer",
-        width="100%",
+        spacing="0",
         align_items="center",
+        padding_y="6px",
+        padding_x="8px",
+        bg=rx.cond(ExploradorState.selected_item_id == item.id, "#cfe8ff", "transparent"),
+        opacity=rx.cond(item.is_blocked, "0.5", "1.0"),
+        _hover={"bg": "#e5f3ff", "outline": "1px dotted #999"},
+        width="100%",
+        cursor="default",
         on_click=lambda: ExploradorState.select_item(item_id),
     )
 
@@ -2031,6 +2561,160 @@ def render_item_with_context_menu(item: FolderItem) -> rx.Component:
             # RENDER SIMPLE (sin menú)
             render_item(item)
         )
+    )
+
+
+# ============================================================================
+# Componentes de Diálogo UI (adaptados al color scheme del backoffice)
+# ============================================================================
+
+
+def create_folder_dialog() -> rx.Component:
+    """Diálogo para crear carpeta."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Crear nueva carpeta"),
+            rx.dialog.description(
+                "Ingresa el nombre de la nueva carpeta",
+                margin_bottom="1em",
+            ),
+            rx.vstack(
+                rx.input(
+                    placeholder="Nombre de la carpeta",
+                    value=ExploradorState.dialog_input_value,
+                    on_change=lambda val: ExploradorState.set_dialog_input_value(val),
+                    width="100%",
+                    auto_focus=True,
+                ),
+                rx.hstack(
+                    rx.button(
+                        "Cancelar",
+                        variant="soft",
+                        color_scheme="gray",
+                        on_click=ExploradorState.cerrar_dialogo_crear_carpeta,
+                    ),
+                    rx.button(
+                        "Crear",
+                        color_scheme="orange",
+                        style={"font_weight": "bold", "color": "black"},
+                        on_click=ExploradorState.ejecutar_crear_carpeta,
+                    ),
+                    spacing="3",
+                    justify="end",
+                    width="100%",
+                ),
+                spacing="4",
+                width="100%",
+            ),
+        ),
+        open=ExploradorState.show_create_folder_dialog,
+    )
+
+
+def rename_dialog() -> rx.Component:
+    """Diálogo para renombrar."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Renombrar"),
+            rx.dialog.description(
+                "Ingresa el nuevo nombre",
+                margin_bottom="1em",
+            ),
+            rx.vstack(
+                rx.input(
+                    placeholder="Nuevo nombre",
+                    value=ExploradorState.dialog_input_value,
+                    on_change=lambda val: ExploradorState.set_dialog_input_value(val),
+                    width="100%",
+                    auto_focus=True,
+                ),
+                rx.hstack(
+                    rx.button(
+                        "Cancelar",
+                        variant="soft",
+                        color_scheme="gray",
+                        on_click=ExploradorState.cerrar_dialogo_renombrar,
+                    ),
+                    rx.button(
+                        "Renombrar",
+                        color_scheme="orange",
+                        style={"font_weight": "bold", "color": "black"},
+                        on_click=ExploradorState.ejecutar_renombrar,
+                    ),
+                    spacing="3",
+                    justify="end",
+                    width="100%",
+                ),
+                spacing="4",
+                width="100%",
+            ),
+        ),
+        open=ExploradorState.show_rename_dialog,
+    )
+
+
+def delete_confirm_dialog() -> rx.Component:
+    """Diálogo de confirmación para eliminar."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Confirmar eliminación"),
+            rx.dialog.description(
+                "¿Estás seguro de que deseas eliminar este elemento? Esta acción no se puede deshacer.",
+                margin_bottom="1em",
+                color="red",
+            ),
+            rx.hstack(
+                rx.dialog.close(
+                    rx.button(
+                        "Cancelar",
+                        variant="soft",
+                        color_scheme="gray",
+                        on_click=ExploradorState.cerrar_dialogo_eliminar,
+                    ),
+                ),
+                rx.dialog.close(
+                    rx.button(
+                        "Eliminar",
+                        color_scheme="red",
+                        style={"font_weight": "bold", "color": "black"},
+                        on_click=ExploradorState.ejecutar_eliminar,
+                    ),
+                ),
+                spacing="3",
+                justify="end",
+                width="100%",
+            ),
+        ),
+        open=ExploradorState.show_delete_confirm_dialog,
+    )
+
+
+def properties_dialog() -> rx.Component:
+    """Diálogo de propiedades."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Propiedades"),
+            rx.vstack(
+                rx.text(
+                    ExploradorState.properties_info,
+                    white_space="pre-wrap",
+                    font_family="monospace",
+                    font_size="14px",
+                ),
+                rx.dialog.close(
+                    rx.button(
+                        "Cerrar",
+                        color_scheme="orange",
+                        style={"font_weight": "bold", "color": "black"},
+                        on_click=ExploradorState.cerrar_dialogo_propiedades,
+                        width="100%",
+                    ),
+                ),
+                spacing="4",
+                width="100%",
+            ),
+        ),
+        open=ExploradorState.show_properties_dialog,
     )
 
 
@@ -2091,6 +2775,12 @@ def explorador_panel(state: ExploradorState) -> rx.Component:
                 overflow_y="auto",
                 box_shadow="inset 2px 2px 5px rgba(0,0,0,0.05)",
             ),
+
+            # Diálogos modales
+            create_folder_dialog(),
+            rename_dialog(),
+            delete_confirm_dialog(),
+            properties_dialog(),
 
             width="100%",
             padding="20px",

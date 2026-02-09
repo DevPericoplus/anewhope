@@ -47,6 +47,7 @@ from pages.estado_proyectos import estado_proyectos_panel, EstadoProyectosState
 from low_panel_pages.show_md import show_md  # noqa: F401 - Importado para registrar la ruta
 from web_backoffice.shared_state import SharedSessionState
 from components.explorador import explorador_panel, ExploradorState
+from components.org_selector import org_selector_bar, org_project_selector_bar
 from components.seguimiento import seguimiento_panel, SeguimientoState
 from components.informes import informes_panel, InformesState
 
@@ -68,6 +69,14 @@ _storage_spec.loader.exec_module(_storage_module)
 get_folder_by_id_organization = _storage_module.get_folder_by_id_organization
 get_folder_by_id_project = _storage_module.get_folder_by_id_project
 get_folder_by_id_version = _storage_module.get_folder_by_id_version
+
+# Importar org_selector_helpers usando importlib (el directorio tiene número)
+_org_selector_helpers_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "reflex_shared" / "org_selector_helpers.py"
+_org_helpers_spec = importlib.util.spec_from_file_location("org_selector_helpers", _org_selector_helpers_path)
+_org_helpers_module = importlib.util.module_from_spec(_org_helpers_spec)
+_org_helpers_spec.loader.exec_module(_org_helpers_module)
+load_organizations_for_selector = _org_helpers_module.load_organizations_for_selector
+find_org_id_by_name = _org_helpers_module.find_org_id_by_name
 
 COLORS = {
     "background": "#1a1a1a",
@@ -199,6 +208,11 @@ class State(SharedSessionState):
     form_error: str = ""
     form_success: str = ""
 
+    # Selector de organización para backoffice (filtrado por asignaciones)
+    # Usado por páginas: Organizacion, Tecnologias, Proyecciones
+    bo_organizations: list[dict] = []
+    bo_selected_org_id: int = 0
+
     # Nota: Los siguientes campos ya vienen de SharedSessionState:
     # - is_logged_in, access_token, session_token, user_id, organization_id
     # - user_name, user_email, user_mobile, identity_type_id
@@ -223,7 +237,61 @@ class State(SharedSessionState):
             return False
         # SuperAdmin, Admin de Org, o Agente Admin
         return self.identity_type_id in (1, 2, 10)
-    
+
+    # ========== Selector de organización para backoffice ==========
+
+    @rx.var
+    def bo_organization_names(self) -> list[str]:
+        """Nombres de organizaciones accesibles para el selector."""
+        return [org["name"] for org in self.bo_organizations]
+
+    @rx.var
+    def bo_selected_org_display(self) -> str:
+        """Nombre de la organización seleccionada en el selector."""
+        if self.bo_selected_org_id > 0:
+            for org in self.bo_organizations:
+                if org["id"] == self.bo_selected_org_id:
+                    return org["name"]
+        return ""
+
+    def bo_load_organizations(self) -> None:
+        """Carga las organizaciones accesibles por el usuario interno."""
+        orgs, default_id = load_organizations_for_selector(
+            user_id=self.user_id,
+            identity_type_id=self.identity_type_id,
+            session_org_id=self.organization_id,
+        )
+        self.bo_organizations = orgs
+        if self.bo_selected_org_id == 0 and default_id > 0:
+            self.bo_selected_org_id = default_id
+            self.organization_id = default_id
+
+    def bo_set_organization(self, org_name: str) -> None:
+        """Cambia la organización seleccionada y recarga datos de la página actual."""
+        new_id = find_org_id_by_name(self.bo_organizations, org_name)
+        if new_id <= 0:
+            return
+
+        self.bo_selected_org_id = new_id
+        self.organization_id = new_id
+
+        # Recargar datos según la página activa
+        current_menu = self.user_active_menu
+        if current_menu == "organizacion":
+            self.load_org_users()
+            self.load_org_projects()
+            self.load_org_tickets()
+        elif current_menu == "tecnologias":
+            self.load_org_projects()
+            self.load_tecnologias_asignadas()
+        elif current_menu == "proyecciones":
+            self.load_org_projects()
+            self.proyecciones_project_id = 0
+            self.proyecciones_project_name = ""
+            self.proyecciones_versions = []
+
+    # ========== Propiedades computadas de tecnologías ==========
+
     @rx.var
     def projects_for_tech_select(self) -> list[str]:
         """Lista de proyectos activos para el selector de tecnologías.
@@ -405,18 +473,26 @@ class State(SharedSessionState):
                 organization_id = self._extract_org_id_from_token(self.access_token)
                 if organization_id > 0:
                     self.organization_id = organization_id
-            return FlujosState.initialize_from_session(organization_id)
-        # if menu == "organizacion":
-        #     self.load_org_users()
-        #     self.load_org_projects()
-        #     self.load_org_tickets()
-        # if menu == "tecnologias":
-        #     self.load_org_projects()
-        #     self.load_tecnologias()
-        #     self.load_tecnologias_asignadas()
-        # if menu == "proyecciones":
-        #     self.load_org_projects()
-        #     self.reset_proyecciones_state()
+            return FlujosState.initialize_from_session(
+                organization_id,
+                user_id=self.user_id,
+                identity_type_id=self.identity_type_id,
+            )
+        if menu in ("organizacion", "tecnologias", "proyecciones"):
+            self.bo_load_organizations()
+            if menu == "organizacion":
+                self.load_org_users()
+                self.load_org_projects()
+                self.load_org_tickets()
+            elif menu == "tecnologias":
+                self.load_org_projects()
+                self.load_tecnologias()
+                self.load_tecnologias_asignadas()
+            elif menu == "proyecciones":
+                self.load_org_projects()
+                self.proyecciones_project_id = 0
+                self.proyecciones_project_name = ""
+                self.proyecciones_versions = []
 
     def set_internal_menu(self, menu: str):
         """Set active menu item for internal tools."""
@@ -1476,17 +1552,28 @@ class State(SharedSessionState):
 
         # Continuar con la lógica de inicialización de componentes según menú activo
         if self.user_active_menu == "organizacion":
-            # Cargar usuarios, proyectos y tickets de la organización
+            # Cargar selector de organizaciones y datos de la org seleccionada
+            self.bo_load_organizations()
             self.load_org_users()
             self.load_org_projects()
             self.load_org_tickets()
+        elif self.user_active_menu in ("tecnologias", "proyecciones"):
+            self.bo_load_organizations()
+            self.load_org_projects()
+            if self.user_active_menu == "tecnologias":
+                self.load_tecnologias()
+                self.load_tecnologias_asignadas()
         elif self.user_active_menu == "flujos":
             organization_id = self.organization_id
             if organization_id <= 0 and self.access_token:
                 organization_id = self._extract_org_id_from_token(self.access_token)
                 if organization_id > 0:
                     self.organization_id = organization_id
-            return FlujosState.initialize_from_session(organization_id)
+            return FlujosState.initialize_from_session(
+                organization_id,
+                user_id=self.user_id,
+                identity_type_id=self.identity_type_id,
+            )
 
         # Iniciar loop de renovación automática de tokens en background
         return State.auto_renew_tokens_loop
@@ -2034,6 +2121,13 @@ class State(SharedSessionState):
             self.prerequisite_validation_error = ""
 
         try:
+            print(
+                f"[DEBUG ASSIGNMENTS] create_project_assignment: "
+                f"user_id={self.selected_user_project} "
+                f"org_id={self.selected_org_for_project} "
+                f"project_id={self.selected_project_assign} "
+                f"role_id={self.selected_project_role}"
+            )
             result = create_project_assignment(
                 user_id=self.selected_user_project,
                 organization_id=self.selected_org_for_project,
@@ -3219,6 +3313,12 @@ def tickets_management_panel() -> rx.Component:
 def organization_management_panels() -> rx.Component:
     """Paneles de gestión de usuarios, proyectos y tickets para la sección Organización."""
     return rx.vstack(
+        # Selector de organización (filtrado por asignaciones)
+        org_selector_bar(
+            org_names=State.bo_organization_names,
+            selected_org_display=State.bo_selected_org_display,
+            on_org_change=State.bo_set_organization,
+        ),
         users_management_panel(),
         projects_management_panel(),
         tickets_management_panel(),
@@ -3403,6 +3503,12 @@ def tecnologias_management_panel() -> rx.Component:
             "Selecciona un proyecto y asigna o cambia la tecnología asociada.",
             color=COLORS["muted_foreground"],
             font_size="1.1em",
+        ),
+        # Selector de organización (filtrado por asignaciones)
+        org_selector_bar(
+            org_names=State.bo_organization_names,
+            selected_org_display=State.bo_selected_org_display,
+            on_org_change=State.bo_set_organization,
         ),
         # Selector de proyecto
         rx.hstack(
@@ -4736,7 +4842,7 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
 def proyecciones_management_panel() -> rx.Component:
     """Panel de gestión de versiones de proyecto (3 capas) - Versión avanzada backoffice."""
     return rx.vstack(
-        # ===== CAPA 1: Selector de proyecto =====
+        # ===== CAPA 1: Selector de organización y proyecto =====
         rx.vstack(
             rx.hstack(
                 rx.icon("folder-git-2", size=36, color=COLORS["primary"]),
@@ -4748,6 +4854,12 @@ def proyecciones_management_panel() -> rx.Component:
                 "Administra las versiones de los proyectos y sus contenidos (versión avanzada)",
                 color=COLORS["muted_foreground"],
                 font_size="1.1em",
+            ),
+            # Selector de organización (filtrado por asignaciones)
+            org_selector_bar(
+                org_names=State.bo_organization_names,
+                selected_org_display=State.bo_selected_org_display,
+                on_org_change=State.bo_set_organization,
             ),
             rx.hstack(
                 rx.text("Proyecto:", font_weight="bold", color=COLORS["foreground"], font_size="1.1em"),

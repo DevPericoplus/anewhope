@@ -6,8 +6,25 @@ import reflex as rx
 import importlib.util
 import re
 from pathlib import Path
-from sqlalchemy import create_engine
 from adapters.api_client import get_project_versions
+
+# Importar módulos de 2_shared_application usando importlib (directorio con número)
+_shared_app_dir = Path(__file__).resolve().parents[3] / "2_shared_application"
+
+_db_helper_spec = importlib.util.spec_from_file_location(
+    "db_query_helper", _shared_app_dir / "db_query_helper.py"
+)
+_db_helper_module = importlib.util.module_from_spec(_db_helper_spec)
+_db_helper_spec.loader.exec_module(_db_helper_module)
+get_projects_db_engine = _db_helper_module.get_projects_db_engine
+
+_org_helpers_spec = importlib.util.spec_from_file_location(
+    "org_selector_helpers", _shared_app_dir / "reflex_shared" / "org_selector_helpers.py"
+)
+_org_helpers_module = importlib.util.module_from_spec(_org_helpers_spec)
+_org_helpers_spec.loader.exec_module(_org_helpers_module)
+load_organizations_for_selector = _org_helpers_module.load_organizations_for_selector
+load_projects_for_selector = _org_helpers_module.load_projects_for_selector
 
 # Colores del tema
 COLORS = {
@@ -108,52 +125,50 @@ class InformesState(rx.State):
         return [a["display_name"] for a in self.archivos]
 
     async def _get_db_engine(self):
-        """Crea el engine de la base de datos para myllm_projects_db."""
-        try:
-            # Crear engine para myllm_projects_db
-            DB_USER = "myllm_admin"
-            DB_PASS = "Us3r%40dminP%40ss"  # URL-encoded
-            DB_HOST = "localhost"
-            engine = create_engine(f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}/myllm_projects_db")
-            return engine
-        except Exception as e:
-            print(f"[ERROR INFORMES] Error creando engine: {e}")
-            return None
+        """Crea el engine de la base de datos para myllm_projects_db (centralizado)."""
+        return get_projects_db_engine()
 
     async def load_organizaciones(self):
-        """Carga las organizaciones asignadas al usuario interno."""
+        """Carga las organizaciones asignadas al usuario interno.
+
+        Usa el servicio centralizado de acceso a organizaciones.
+        """
         print("[DEBUG INFORMES] load_organizaciones INICIADO")
-        engine = await self._get_db_engine()
-        if not engine:
-            print("[DEBUG INFORMES] No se pudo obtener engine")
-            return
 
         try:
             from web_backoffice.web_backoffice import State as MainState
-            cambios_adapter = _load_cambios_adapter()
 
             async with self:
                 main_state = await self.get_state(MainState)
                 user_id = main_state.user_id
+                identity_type_id = main_state.identity_type_id
+                session_org_id = main_state.organization_id
             print(f"[DEBUG INFORMES] user_id={user_id}")
 
-            # Obtener organizaciones asignadas al usuario interno
-            organizaciones = cambios_adapter.obtener_organizaciones_internas_usuario(
-                engine=engine,
-                id_usuario=user_id
+            # Usar servicio centralizado
+            orgs, default_id = load_organizations_for_selector(
+                user_id=user_id,
+                identity_type_id=identity_type_id,
+                session_org_id=session_org_id,
             )
 
+            # Convertir formato {id, name} a {id, nombre} para compatibilidad
+            organizaciones = [
+                {"id": org["id"], "nombre": org["name"]} for org in orgs
+            ]
+
             print(f"[DEBUG INFORMES] Organizaciones obtenidas: {len(organizaciones)}")
-            for org in organizaciones:
-                print(f"[DEBUG INFORMES]   - {org['nombre']} (ID: {org['id']})")
 
             async with self:
                 self.organizaciones = organizaciones
 
-                # Si hay organizaciones, seleccionar la primera
-                if organizaciones:
-                    self.selected_org_id = organizaciones[0]["id"]
-                    self.selected_org_nombre = organizaciones[0]["nombre"]
+                # Si hay organizaciones, seleccionar por defecto
+                if organizaciones and default_id > 0:
+                    self.selected_org_id = default_id
+                    for org in organizaciones:
+                        if org["id"] == default_id:
+                            self.selected_org_nombre = org["nombre"]
+                            break
                     print(f"[DEBUG INFORMES] Organización seleccionada: {self.selected_org_nombre}")
                 else:
                     print("[DEBUG INFORMES] No se encontraron organizaciones asignadas")
@@ -164,7 +179,10 @@ class InformesState(rx.State):
             traceback.print_exc()
 
     async def load_proyectos(self):
-        """Carga los proyectos de la organización seleccionada."""
+        """Carga los proyectos de la organización seleccionada.
+
+        Usa el servicio centralizado de acceso a proyectos.
+        """
         async with self:
             org_id = self.selected_org_id
 
@@ -173,22 +191,27 @@ class InformesState(rx.State):
                 self.proyectos = []
             return
 
-        engine = await self._get_db_engine()
-        if not engine:
-            return
-
         try:
-            cambios_adapter = _load_cambios_adapter()
+            from web_backoffice.web_backoffice import State as MainState
 
-            # Obtener proyectos de la organización
-            proyectos = cambios_adapter.obtener_proyectos_organizacion(
-                engine=engine,
-                id_organizacion=org_id
+            async with self:
+                main_state = await self.get_state(MainState)
+                user_id = main_state.user_id
+                identity_type_id = main_state.identity_type_id
+
+            # Usar servicio centralizado
+            projects, _ = load_projects_for_selector(
+                user_id=user_id,
+                identity_type_id=identity_type_id,
+                organization_id=org_id,
             )
 
+            # Convertir formato {id, name} a {id, nombre} para compatibilidad
+            proyectos = [
+                {"id": p["id"], "nombre": p["name"]} for p in projects
+            ]
+
             print(f"[DEBUG INFORMES] Proyectos obtenidos: {len(proyectos)}")
-            for p in proyectos:
-                print(f"[DEBUG INFORMES]   - {p['nombre']} (ID: {p['id']})")
 
             async with self:
                 self.proyectos = proyectos

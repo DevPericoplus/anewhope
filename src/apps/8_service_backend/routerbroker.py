@@ -1187,7 +1187,7 @@ class BrokerBackendRouter:
             )
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(
-                "No se pudo crear asignación de proyecto"
+                f"No se pudo crear asignación de proyecto: {exc}"
             ) from exc
 
     def update_project_assignment(

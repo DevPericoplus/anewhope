@@ -1,5 +1,10 @@
 """DTOs compartidos para transporte de datos entre capas."""
 
+from .organization_access_dtos import (
+    AccessibleOrganizationDto,
+    AccessibleProjectDto,
+    AccessibleVersionDto,
+)
 from .domain_dtos import (
     DatasetDto,
     IdentityGlobalDto,
@@ -26,6 +31,9 @@ from .security_dtos import (
 from .session_dtos import SessionDto, SessionTokenBindingDto, UserSessionContextDto
 
 __all__ = [
+    "AccessibleOrganizationDto",
+    "AccessibleProjectDto",
+    "AccessibleVersionDto",
     "BasicPermissionDto",
     "DatasetDto",
     "IdentityGlobalDto",
