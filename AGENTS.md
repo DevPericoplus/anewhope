@@ -2588,10 +2588,12 @@ rx.markdown(
 - Frontend: `src/apps/5_web_frontend/web_frontend/web_frontend.py` (función `info_panel()`)
 - Backoffice: `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py` (función `info_panel()`)
 
-## Estilos de botones en Reflex (OBLIGATORIO)
+## Estilos de botones en Reflex (OBLIGATORIO EN AMBAS APPS)
 
-**Regla fundamental:** Todos los botones en aplicaciones Reflex deben seguir un estilo consistente
-para mantener la coherencia visual en toda la aplicación.
+**Regla fundamental:** Todos los botones con fondo de color identidad (`color_scheme="green"` en
+frontend, `color_scheme="orange"` en backoffice) **DEBEN** tener el texto en **negro** y en
+**negrita**. Esto es obligatorio para garantizar la legibilidad sobre fondos coloreados.
+Un botón con fondo verde o naranja y texto blanco es **INACEPTABLE**.
 
 ### Estilo estándar de botones
 
@@ -2657,6 +2659,230 @@ rx.button(
 | Backoffice (8006) | `"orange"` | `color_scheme="orange"` | `color_scheme="gray"` |
 
 **Nota:** El `color_scheme` define el color de fondo del botón. El texto siempre debe ser negro (`color: "black"`).
+
+## Estilos visuales — Títulos, Labels y Selectores (OBLIGATORIO EN AMBAS APPS)
+
+**Regla fundamental:** Todas las páginas de **ambas aplicaciones** (frontend y backoffice)
+deben seguir un estilo visual uniforme para títulos de página, títulos de paneles, títulos
+de diálogos/modales, etiquetas de selectores y selectores. El color de identidad de cada
+aplicación debe usarse consistentemente en **TODOS** los `rx.heading` de la UI.
+
+**PROHIBIDO:** Usar `COLORS["foreground"]` (blanco), `"white"` o cualquier gris en títulos.
+
+| Aplicación | Color identidad | Variable | Hex |
+|------------|----------------|----------|-----|
+| **Frontend** (8005) | Verde | `COLORS["primary"]` | `#22c55e` |
+| **Backoffice** (8006) | Naranja | `COLORS["primary"]` | `#FF8C00` |
+
+### Títulos de página (fuera de paneles)
+
+Son los títulos principales que identifican la página actual (ej: "Gestión de Organización",
+"Estado de Proyectos", "Informes"). Aparecen en la parte superior del contenido.
+
+| Propiedad | Valor | Descripción |
+|-----------|-------|-------------|
+| Componente | `rx.heading` | Título de nivel página |
+| `size` | `"8"` | Tamaño grande para destacar |
+| `color` | `COLORS["primary"]` | Color identidad de la app |
+| `margin_bottom` | `"0.5em"` | Separación inferior |
+
+```python
+# ✅ CORRECTO - Título de página (ambas apps)
+rx.heading("Gestión de Organización", size="8", color=COLORS["primary"], margin_bottom="0.5em")
+
+# ❌ INCORRECTO - Blanco/gris en títulos
+rx.heading("Gestión de Organización", size="8", color=COLORS["foreground"])
+rx.heading("Gestión de Organización", size="8", color="white")
+```
+
+### Títulos de paneles (dentro de secciones/cards)
+
+Son los títulos de secciones dentro de una página (ej: "Gestión de Usuarios",
+"Gestión de Proyectos", "Gestión de Tickets", "Resumen General").
+También incluye títulos de diálogos/modales (ej: "Requisitos de Contraseña",
+"Error de Contraseña", "Crear Nueva Organización").
+
+| Propiedad | Valor | Descripción |
+|-----------|-------|-------------|
+| Componente | `rx.heading` | Título de sección/diálogo |
+| `size` | `"6"` | Tamaño estándar para paneles |
+| `color` | `COLORS["primary"]` | Color identidad de la app |
+
+```python
+# ✅ CORRECTO - Título de panel (ambas apps)
+rx.heading("Gestión de Usuarios", size="6", color=COLORS["primary"])
+
+# ✅ CORRECTO - Con icono
+rx.hstack(
+    rx.icon("users", size=28, color=COLORS["primary"]),
+    rx.heading("Gestión de Usuarios", size="6", color=COLORS["primary"]),
+    spacing="3",
+    align_items="center",
+)
+
+# ✅ CORRECTO - Título de diálogo/modal
+rx.heading("Requisitos de Contraseña", size="6", color=COLORS["primary"])
+
+# ❌ INCORRECTO - Usar blanco en lugar del color identidad
+rx.heading("Gestión de Usuarios", size="6", color=COLORS["foreground"])
+rx.heading("Requisitos de Contraseña", size="6", color="white")
+```
+
+### Etiquetas de selectores (labels)
+
+Son los textos que acompañan a los selectores (`rx.select`) indicando qué campo es
+(ej: "Organización", "Proyecto", "Versión", "Rol", "Usuario").
+
+| Propiedad | Valor | Descripción |
+|-----------|-------|-------------|
+| Componente | `rx.text` | Etiqueta del selector |
+| `font_size` | `"1.1em"` | Tamaño legible, consistente |
+| `color` | `COLORS["primary"]` (`#FF8C00`) | Naranja identidad backoffice |
+| `font_weight` | `"bold"` | Negrita para destacar |
+
+```python
+# ✅ CORRECTO - Etiqueta de selector
+rx.text("Organización", font_size="1.1em", color=COLORS["primary"], font_weight="bold")
+rx.text("Proyecto:", font_size="1.1em", color=COLORS["primary"], font_weight="bold")
+
+# ❌ INCORRECTO - Tamaño pequeño o color blanco
+rx.text("Organización", font_size="0.9em", color=COLORS["foreground"])
+rx.text("Organización", font_size="1em", color="#f97316", font_weight="600")
+```
+
+### Selectores (`rx.select`)
+
+| Propiedad | Valor | Descripción |
+|-----------|-------|-------------|
+| Componente | `rx.select` | Selector desplegable |
+| `size` | `"3"` | Tamaño medio estándar |
+| `width` | `"100%"` | Ancho completo dentro de su contenedor |
+| `background_color` | `COLORS["input"]` (`#3a3a3a`) | Fondo oscuro legible |
+| `color` | `COLORS["foreground"]` (`#f2f2f5`) | Texto claro sobre fondo oscuro |
+| `border_color` | `COLORS["border"]` (`#404040`) | Borde visible |
+
+**CRÍTICO:** El backoffice usa tema oscuro. Los selectores **DEBEN** tener `background_color`,
+`color` y `border_color` explícitos para garantizar que el texto seleccionado sea legible.
+Sin estos estilos, el contenido del selector puede ser ilegible sobre el fondo oscuro.
+
+```python
+# ✅ CORRECTO - Selector con estilo para tema oscuro
+rx.select(
+    items,
+    value=selected_value,
+    on_change=on_change_handler,
+    placeholder="Seleccione organización",
+    size="3",
+    width="100%",
+    background_color=COLORS["input"],
+    color=COLORS["foreground"],
+    border_color=COLORS["border"],
+)
+
+# ✅ CORRECTO - rx.select.root con estilo en trigger
+rx.select.root(
+    rx.select.trigger(
+        placeholder="Selecciona usuario...",
+        style={"backgroundColor": COLORS["input"], "color": COLORS["foreground"], "borderColor": COLORS["border"]},
+    ),
+    rx.select.content(...),
+    size="3",
+    width="100%",
+)
+
+# ❌ INCORRECTO - Selector sin colores explícitos (ilegible en tema oscuro)
+rx.select(
+    items,
+    value=selected_value,
+    on_change=on_change_handler,
+    size="3",
+    width="100%",
+)
+```
+
+### Constantes de estilo para componentes compartidos
+
+Los componentes reutilizables que no tienen acceso al diccionario `COLORS` deben usar
+directamente los valores hexadecimales:
+
+```python
+# En components/org_selector.py
+LABEL_COLOR = "#FF8C00"        # Alineado con COLORS["primary"]
+LABEL_FONT_SIZE = "1.1em"      # Tamaño legible
+LABEL_FONT_WEIGHT = "bold"     # Negrita
+SELECT_SIZE = "3"              # Tamaño medio estándar
+
+# Estilo estándar para selectores en fondo oscuro (garantiza legibilidad)
+SELECT_STYLE = {
+    "backgroundColor": "#3a3a3a",  # Alineado con COLORS["input"]
+    "color": "#f2f2f5",            # Alineado con COLORS["foreground"]
+    "borderColor": "#555",         # Borde visible
+}
+```
+
+### Diccionario COLORS obligatorio en componentes
+
+Todos los archivos de componentes del backoffice que definan un diccionario `COLORS` local
+**DEBEN** incluir la clave `"input"` para garantizar la legibilidad de los selectores:
+
+```python
+# ✅ CORRECTO - COLORS con clave "input"
+COLORS = {
+    "background": "#1a1a1a",
+    "card": "#2d2d2d",
+    "foreground": "#f2f2f5",
+    "primary": "#FF8C00",
+    "border": "#404040",
+    "input": "#3a3a3a",      # OBLIGATORIO para selectores
+    "muted_foreground": "#E0E0E0",
+}
+```
+
+### Headings en markdown (component_map)
+
+Los `component_map` de `rx.markdown()` deben usar `COLORS["primary"]` en TODOS los niveles
+de heading (h1, h2, h3). **PROHIBIDO** usar `COLORS["foreground"]` en headings de markdown.
+
+```python
+# ✅ CORRECTO - Todos los headings del markdown usan color identidad
+component_map={
+    "h1": lambda text: rx.heading(text, size="7", color=COLORS["primary"], ...),
+    "h2": lambda text: rx.heading(text, size="6", color=COLORS["primary"], ...),
+    "h3": lambda text: rx.heading(text, size="5", color=COLORS["primary"], ...),
+    # párrafos y listas SÍ pueden usar foreground/muted_foreground
+    "p": lambda text: rx.text(text, color=COLORS["muted_foreground"], ...),
+}
+
+# ❌ INCORRECTO - h1 y h3 en blanco, h2 en color identidad (inconsistente)
+component_map={
+    "h1": lambda text: rx.heading(text, size="7", color=COLORS["foreground"], ...),
+    "h2": lambda text: rx.heading(text, size="6", color=COLORS["primary"], ...),
+    "h3": lambda text: rx.heading(text, size="5", color=COLORS["foreground"], ...),
+}
+```
+
+### Resumen de jerarquía visual
+
+**Backoffice (naranja `#FF8C00`):**
+
+| Elemento | size/font_size | color | font_weight | bg/border |
+|----------|---------------|-------|-------------|-----------|
+| Título de página | `size="8"` | `COLORS["primary"]` | - | - |
+| Título de panel/diálogo | `size="6"` | `COLORS["primary"]` | - | - |
+| Subtítulo/sección | `size="5"` | `COLORS["primary"]` | - | - |
+| Etiqueta selector | `font_size="1.1em"` | `COLORS["primary"]` | `bold` | - |
+| Selector | `size="3"` | `COLORS["foreground"]` | - | bg: `COLORS["input"]`, border |
+
+**Frontend (verde `#22c55e`):**
+
+| Elemento | size/font_size | color | font_weight | bg/border |
+|----------|---------------|-------|-------------|-----------|
+| Título de página | `size="8"` | `COLORS["primary"]` / `COLORS["accent"]` | - | - |
+| Título de panel/diálogo | `size="6"`-`"7"` | `COLORS["primary"]` | - | - |
+| Subtítulo/sección | `size="5"` | `COLORS["primary"]` | - | - |
+| Selector | `size="3"` | `COLORS["foreground"]` | - | bg: `COLORS["input"]`, border |
+
+**Estas reglas aplican a TODAS las páginas de AMBAS aplicaciones sin excepción.**
 
 ## Regla de puertos (estándar)
 
