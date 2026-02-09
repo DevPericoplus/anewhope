@@ -5186,3 +5186,445 @@ class BackendCoreRouter:
             "updated_at": state.updated_at.isoformat(),
             "updated_by": state.updated_by,
         }
+
+    # ========================================================================
+    # Project Version State - Phase Updates
+    # ========================================================================
+
+    def update_proposal_phase(
+        self,
+        state_id: int,
+        aceptacion_cliente: bool,
+        aceptacion_interna: bool,
+        user_id: int,
+        identity_type_id: int,
+        revision_interna: bool | None = None,
+        propuesta_mejoras: bool | None = None,
+    ) -> dict[str, Any]:
+        """Actualiza fase de propuesta (aceptaciones cliente e interna).
+
+        Args:
+            state_id: ID del estado de versión
+            aceptacion_cliente: Flag de aceptación del cliente
+            aceptacion_interna: Flag de aceptación interna
+            identity_type_id: Tipo de identidad del usuario
+            user_id: ID del usuario que realiza la actualización
+            revision_interna: Flag de revisión interna (opcional)
+            propuesta_mejoras: Flag de propuesta de mejoras (opcional)
+
+        Returns:
+            Dict con success y mensaje
+        """
+        # Verificar permisos (solo SuperAdmin o con asignación)
+        if identity_type_id not in (1, 2, 3):
+            raise BackendCorePermissionError(
+                "project_version_state_update", identity_type_id
+            )
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        from sqlalchemy import create_engine, text
+        from datetime import datetime
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            # Determinar state y protected según las reglas del constraint
+            # chk_state_protected: combinaciones válidas:
+            #   Abierta    → protected=0, final_c=0, final_i=0
+            #   Bloqueada  → protected=1, final_c=0, final_i=0
+            #   Protegida  → protected=1, final_c=1, final_i=0
+            #   Final      → protected=1, final_c=1, final_i=1
+            # NOTA: final_i=1 sin final_c=1 no está permitido por el constraint.
+            # Si se intenta, se rechaza con error de negocio claro.
+            if aceptacion_cliente and aceptacion_interna:
+                state = 'Final'
+                protected = True
+            elif aceptacion_cliente and not aceptacion_interna:
+                state = 'Protegida'
+                protected = True
+            elif not aceptacion_cliente and aceptacion_interna:
+                raise BackendCoreBusinessError(
+                    "La aceptación interna requiere la aceptación del cliente primero"
+                )
+            else:
+                state = 'Abierta'
+                protected = False
+
+            # Construir query dinámicamente según campos presentes
+            set_clauses = [
+                "final_c = :final_c",
+                "final_i = :final_i",
+                "state = :state",
+                "protected = :protected",
+                "updated_at = :updated_at",
+                "updated_by = :updated_by",
+            ]
+            params = {
+                "final_c": 1 if aceptacion_cliente else 0,
+                "final_i": 1 if aceptacion_interna else 0,
+                "state": state,
+                "protected": 1 if protected else 0,
+                "updated_at": datetime.now(),
+                "updated_by": user_id,
+                "state_id": state_id,
+            }
+
+            if revision_interna is not None:
+                set_clauses.append("revision_interna = :revision_interna")
+                params["revision_interna"] = 1 if revision_interna else 0
+
+            if propuesta_mejoras is not None:
+                set_clauses.append("propuesta_mejoras = :propuesta_mejoras")
+                params["propuesta_mejoras"] = 1 if propuesta_mejoras else 0
+
+            query = text(f"""
+                UPDATE estado_version
+                SET {", ".join(set_clauses)}
+                WHERE id = :state_id
+            """)
+
+            result = conn.execute(query, params)
+            conn.commit()
+
+            if result.rowcount == 0:
+                raise BackendCoreBusinessError("Estado de versión no encontrado")
+
+            self._logger.info(
+                "[ESTADO_VERSION] Fase propuesta actualizada: state_id=%s final_c=%s final_i=%s",
+                state_id, aceptacion_cliente, aceptacion_interna
+            )
+
+            return {
+                "success": True,
+                "message": "Fase de propuesta actualizada correctamente",
+            }
+
+    def update_training_phase(
+        self,
+        state_id: int,
+        completado: bool,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Actualiza fase de entrenamiento inicial.
+
+        Args:
+            state_id: ID del estado de versión
+            completado: Flag de entrenamiento completado
+            identity_type_id: Tipo de identidad del usuario
+            user_id: ID del usuario que realiza la actualización
+
+        Returns:
+            Dict con success y mensaje
+        """
+        if identity_type_id not in (1, 2, 3):
+            raise BackendCorePermissionError(
+                "project_version_state_update", identity_type_id
+            )
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        from sqlalchemy import create_engine, text
+        from datetime import datetime
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            # Si se marca como completado, actualizar también la fecha
+            if completado:
+                query = text("""
+                    UPDATE estado_version
+                    SET entrenamiento_inicial_completado = 1,
+                        entrenamiento_inicial_fecha = :fecha,
+                        updated_at = :updated_at,
+                        updated_by = :updated_by
+                    WHERE id = :state_id
+                """)
+                params = {
+                    "fecha": datetime.now(),
+                    "updated_at": datetime.now(),
+                    "updated_by": user_id,
+                    "state_id": state_id,
+                }
+            else:
+                query = text("""
+                    UPDATE estado_version
+                    SET entrenamiento_inicial_completado = 0,
+                        entrenamiento_inicial_fecha = NULL,
+                        updated_at = :updated_at,
+                        updated_by = :updated_by
+                    WHERE id = :state_id
+                """)
+                params = {
+                    "updated_at": datetime.now(),
+                    "updated_by": user_id,
+                    "state_id": state_id,
+                }
+
+            result = conn.execute(query, params)
+            conn.commit()
+
+            if result.rowcount == 0:
+                raise BackendCoreBusinessError("Estado de versión no encontrado")
+
+            self._logger.info(
+                "[ESTADO_VERSION] Fase entrenamiento actualizada: state_id=%s completado=%s",
+                state_id, completado
+            )
+
+            return {
+                "success": True,
+                "message": "Fase de entrenamiento actualizada correctamente",
+            }
+
+    def update_evaluation_phase(
+        self,
+        state_id: int,
+        evaluacion: bool,
+        reentrenamiento: bool,
+        optimizacion: bool,
+        calidad_aprobada: bool,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Actualiza fase de evaluación y reentrenamiento.
+
+        Args:
+            state_id: ID del estado de versión
+            evaluacion: Flag de evaluación en curso
+            reentrenamiento: Flag de reentrenamiento en curso
+            optimizacion: Flag de optimización en curso
+            calidad_aprobada: Flag de calidad aprobada
+            identity_type_id: Tipo de identidad del usuario
+            user_id: ID del usuario que realiza la actualización
+
+        Returns:
+            Dict con success y mensaje
+        """
+        if identity_type_id not in (1, 2, 3):
+            raise BackendCorePermissionError(
+                "project_version_state_update", identity_type_id
+            )
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        from sqlalchemy import create_engine, text
+        from datetime import datetime
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            query = text("""
+                UPDATE estado_version
+                SET evaluacion_entrenamiento = :evaluacion,
+                    reentrenamiento = :reentrenamiento,
+                    optimizacion = :optimizacion,
+                    control_calidad_aprobado = :calidad_aprobada,
+                    updated_at = :updated_at,
+                    updated_by = :updated_by
+                WHERE id = :state_id
+            """)
+
+            result = conn.execute(
+                query,
+                {
+                    "evaluacion": 1 if evaluacion else 0,
+                    "reentrenamiento": 1 if reentrenamiento else 0,
+                    "optimizacion": 1 if optimizacion else 0,
+                    "calidad_aprobada": 1 if calidad_aprobada else 0,
+                    "updated_at": datetime.now(),
+                    "updated_by": user_id,
+                    "state_id": state_id,
+                },
+            )
+            conn.commit()
+
+            if result.rowcount == 0:
+                raise BackendCoreBusinessError("Estado de versión no encontrado")
+
+            self._logger.info(
+                "[ESTADO_VERSION] Fase evaluación actualizada: state_id=%s",
+                state_id
+            )
+
+            return {
+                "success": True,
+                "message": "Fase de evaluación actualizada correctamente",
+            }
+
+    def update_generation_phase(
+        self,
+        state_id: int,
+        generacion_completada: bool | None = None,
+        user_id: int = 0,
+        identity_type_id: int = 0,
+        generacion_solicitada: bool | None = None,
+    ) -> dict[str, Any]:
+        """Actualiza fase de generación del modelo LLM.
+
+        Args:
+            state_id: ID del estado de versión
+            generacion_completada: Flag de generación completada (opcional)
+            identity_type_id: Tipo de identidad del usuario
+            user_id: ID del usuario que realiza la actualización
+            generacion_solicitada: Flag de generación solicitada (opcional)
+
+        Returns:
+            Dict con success y mensaje
+        """
+        if identity_type_id not in (1, 2, 3):
+            raise BackendCorePermissionError(
+                "project_version_state_update", identity_type_id
+            )
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        from sqlalchemy import create_engine, text
+        from datetime import datetime
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            # Construir query dinámicamente
+            set_clauses = []
+            params = {
+                "updated_at": datetime.now(),
+                "updated_by": user_id,
+                "state_id": state_id,
+            }
+
+            # Actualizar generacion_completada si se proporciona
+            if generacion_completada is not None:
+                set_clauses.append("generacion_llm_completada = :generacion_completada")
+                params["generacion_completada"] = 1 if generacion_completada else 0
+
+                # Si se marca como completada, actualizar también la fecha
+                if generacion_completada:
+                    set_clauses.append("generacion_llm_fecha = :fecha")
+                    params["fecha"] = datetime.now()
+                else:
+                    set_clauses.append("generacion_llm_fecha = NULL")
+
+            # Actualizar generacion_solicitada si se proporciona
+            if generacion_solicitada is not None:
+                set_clauses.append("generacion_llm_solicitada = :generacion_solicitada")
+                params["generacion_solicitada"] = 1 if generacion_solicitada else 0
+
+            set_clauses.extend(["updated_at = :updated_at", "updated_by = :updated_by"])
+
+            query = text(f"""
+                UPDATE estado_version
+                SET {", ".join(set_clauses)}
+                WHERE id = :state_id
+            """)
+
+            result = conn.execute(query, params)
+            conn.commit()
+
+            if result.rowcount == 0:
+                raise BackendCoreBusinessError("Estado de versión no encontrado")
+
+            self._logger.info(
+                "[ESTADO_VERSION] Fase generación actualizada: state_id=%s completada=%s",
+                state_id, generacion_completada
+            )
+
+            return {
+                "success": True,
+                "message": "Fase de generación actualizada correctamente",
+            }
+
+    def update_notification_phase(
+        self,
+        state_id: int,
+        notificacion_enviada: bool,
+        user_id: int,
+        identity_type_id: int,
+    ) -> dict[str, Any]:
+        """Actualiza fase de notificación de descarga.
+
+        Args:
+            state_id: ID del estado de versión
+            notificacion_enviada: Flag de notificación enviada
+            identity_type_id: Tipo de identidad del usuario
+            user_id: ID del usuario que realiza la actualización
+
+        Returns:
+            Dict con success y mensaje
+        """
+        if identity_type_id not in (1, 2, 3):
+            raise BackendCorePermissionError(
+                "project_version_state_update", identity_type_id
+            )
+
+        settings = load_mariadb_settings()
+        database = settings.get("projects_database", "myllm_projects_db")
+        dsn = self._build_dsn(settings, database)
+
+        from sqlalchemy import create_engine, text
+        from datetime import datetime
+
+        engine = create_engine(dsn)
+        with engine.connect() as conn:
+            # Si se marca como enviada, actualizar también la fecha
+            if notificacion_enviada:
+                query = text("""
+                    UPDATE estado_version
+                    SET notificacion_descarga_enviada = 1,
+                        notificacion_descarga_fecha = :fecha,
+                        updated_at = :updated_at,
+                        updated_by = :updated_by
+                    WHERE id = :state_id
+                """)
+                params = {
+                    "fecha": datetime.now(),
+                    "updated_at": datetime.now(),
+                    "updated_by": user_id,
+                    "state_id": state_id,
+                }
+            else:
+                query = text("""
+                    UPDATE estado_version
+                    SET notificacion_descarga_enviada = 0,
+                        notificacion_descarga_fecha = NULL,
+                        updated_at = :updated_at,
+                        updated_by = :updated_by
+                    WHERE id = :state_id
+                """)
+                params = {
+                    "updated_at": datetime.now(),
+                    "updated_by": user_id,
+                    "state_id": state_id,
+                }
+
+            result = conn.execute(query, params)
+            conn.commit()
+
+            if result.rowcount == 0:
+                raise BackendCoreBusinessError("Estado de versión no encontrado")
+
+            self._logger.info(
+                "[ESTADO_VERSION] Fase notificación actualizada: state_id=%s enviada=%s",
+                state_id, notificacion_enviada
+            )
+
+            return {
+                "success": True,
+                "message": "Fase de notificación actualizada correctamente",
+            }
+
+    def _build_dsn(self, settings: dict, database: str) -> str:
+        """Construye DSN para SQLAlchemy."""
+        from urllib.parse import quote_plus
+
+        host = settings.get("host", "localhost")
+        port = settings.get("port", 3306)
+        user = settings.get("writer_user", "")
+        password = quote_plus(settings.get("writer_password", ""))
+
+        return f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"

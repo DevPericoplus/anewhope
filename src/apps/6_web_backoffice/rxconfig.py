@@ -22,7 +22,8 @@ REDIS_DB = int(env_settings.get_env_value("redis_db", "0"))  # ⚠️ DEBE SER L
 
 # Construir URL de Redis
 if REDIS_PASSWORD:
-    redis_url = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+    # Incluir usuario "default" explícitamente para compatibilidad con Redis ACL
+    redis_url = f"redis://default:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 else:
     redis_url = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 

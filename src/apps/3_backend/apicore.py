@@ -423,6 +423,8 @@ class UpdateProposalPhaseDto(BaseModel):
 
     aceptacion_cliente: bool
     aceptacion_interna: bool
+    revision_interna: bool | None = None
+    propuesta_mejoras: bool | None = None
 
 
 class UpdateTrainingPhaseDto(BaseModel):
@@ -434,24 +436,24 @@ class UpdateTrainingPhaseDto(BaseModel):
 class UpdateEvaluationPhaseDto(BaseModel):
     """DTO para actualizar fase de evaluación."""
 
-    evaluacion: bool
+    evaluacion: bool | None = None  # Alias de evaluacion_entrenamiento (deprecated)
     reentrenamiento: bool
     optimizacion: bool
     calidad_aprobada: bool
+    evaluacion_entrenamiento: bool | None = None
 
 
 class UpdateGenerationPhaseDto(BaseModel):
     """DTO para actualizar fase de generación."""
 
-    solicitada: bool
-    completada: bool
-    ruta_fichero: str | None = None
+    generacion_completada: bool | None = None
+    generacion_solicitada: bool | None = None
 
 
 class UpdateNotificationPhaseDto(BaseModel):
     """DTO para actualizar fase de notificación."""
 
-    enviada: bool
+    notificacion_enviada: bool
 
 
 @asynccontextmanager
@@ -3029,6 +3031,8 @@ def update_proposal_phase_endpoint(
             payload.aceptacion_interna,
             user_id,
             identity_type_id,
+            revision_interna=payload.revision_interna,
+            propuesta_mejoras=payload.propuesta_mejoras,
         )
     except BackendCorePermissionError as exc:
         raise HTTPException(
@@ -3083,9 +3087,14 @@ def update_evaluation_phase_endpoint(
 ) -> dict[str, Any]:
     """Actualiza fase de evaluación/reentrenamiento."""
     try:
+        # Usar evaluacion_entrenamiento si está presente, sino evaluacion (compatibilidad)
+        evaluacion_value = payload.evaluacion_entrenamiento if payload.evaluacion_entrenamiento is not None else payload.evaluacion
+        if evaluacion_value is None:
+            evaluacion_value = False
+
         return router.update_evaluation_phase(
             state_id,
-            payload.evaluacion,
+            evaluacion_value,
             payload.reentrenamiento,
             payload.optimizacion,
             payload.calidad_aprobada,
@@ -3119,11 +3128,10 @@ def update_generation_phase_endpoint(
     try:
         return router.update_generation_phase(
             state_id,
-            payload.solicitada,
-            payload.completada,
-            payload.ruta_fichero,
-            user_id,
-            identity_type_id,
+            generacion_completada=payload.generacion_completada,
+            user_id=user_id,
+            identity_type_id=identity_type_id,
+            generacion_solicitada=payload.generacion_solicitada,
         )
     except BackendCorePermissionError as exc:
         raise HTTPException(
@@ -3151,7 +3159,7 @@ def update_notification_phase_endpoint(
     """Actualiza fase de notificación."""
     try:
         return router.update_notification_phase(
-            state_id, payload.enviada, user_id, identity_type_id
+            state_id, payload.notificacion_enviada, user_id, identity_type_id
         )
     except BackendCorePermissionError as exc:
         raise HTTPException(

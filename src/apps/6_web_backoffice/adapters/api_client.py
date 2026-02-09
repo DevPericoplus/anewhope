@@ -2654,6 +2654,8 @@ def update_proposal_phase(
     aceptacion_interna: bool,
     access_token: str | None = None,
     session_token: str | None = None,
+    revision_interna: bool | None = None,
+    propuesta_mejoras: bool | None = None,
 ) -> dict[str, Any]:
     """Actualiza fase de propuesta (aceptaciones)."""
     headers = {}
@@ -2666,6 +2668,12 @@ def update_proposal_phase(
         "aceptacion_cliente": aceptacion_cliente,
         "aceptacion_interna": aceptacion_interna,
     }
+
+    if revision_interna is not None:
+        payload["revision_interna"] = revision_interna
+    if propuesta_mejoras is not None:
+        payload["propuesta_mejoras"] = propuesta_mejoras
+
     response = _request_middleware(
         "PATCH",
         f"/project-version-states/{state_id}/proposal",
@@ -2706,6 +2714,7 @@ def update_evaluation_phase(
     calidad_aprobada: bool,
     access_token: str | None = None,
     session_token: str | None = None,
+    evaluacion_entrenamiento: bool | None = None,
 ) -> dict[str, Any]:
     """Actualiza fase de evaluación."""
     headers = {}
@@ -2720,6 +2729,10 @@ def update_evaluation_phase(
         "optimizacion": optimizacion,
         "calidad_aprobada": calidad_aprobada,
     }
+
+    if evaluacion_entrenamiento is not None:
+        payload["evaluacion_entrenamiento"] = evaluacion_entrenamiento
+
     response = _request_middleware(
         "PATCH",
         f"/project-version-states/{state_id}/evaluation",
@@ -2731,9 +2744,10 @@ def update_evaluation_phase(
 
 def update_generation_phase(
     state_id: int,
-    generacion_completada: bool,
+    generacion_completada: bool | None = None,
     access_token: str | None = None,
     session_token: str | None = None,
+    generacion_solicitada: bool | None = None,
 ) -> dict[str, Any]:
     """Actualiza fase de generación."""
     headers = {}
@@ -2742,7 +2756,14 @@ def update_generation_phase(
     if session_token:
         headers["X-Session-Token"] = session_token
 
-    payload = {"generacion_completada": generacion_completada}
+    payload = {}
+
+    if generacion_completada is not None:
+        payload["generacion_completada"] = generacion_completada
+
+    if generacion_solicitada is not None:
+        payload["generacion_solicitada"] = generacion_solicitada
+
     response = _request_middleware(
         "PATCH",
         f"/project-version-states/{state_id}/generation",

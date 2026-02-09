@@ -1140,11 +1140,23 @@ class BrokerBackendClient:
     def update_proposal_phase(
         self,
         state_id: int,
-        payload: dict,
+        aceptacion_cliente: bool,
+        aceptacion_interna: bool,
         user_id: int,
         identity_type_id: int,
+        revision_interna: bool | None = None,
+        propuesta_mejoras: bool | None = None,
     ) -> dict[str, Any]:
         """Updates proposal phase."""
+        payload = {
+            "aceptacion_cliente": aceptacion_cliente,
+            "aceptacion_interna": aceptacion_interna,
+        }
+        if revision_interna is not None:
+            payload["revision_interna"] = revision_interna
+        if propuesta_mejoras is not None:
+            payload["propuesta_mejoras"] = propuesta_mejoras
+
         data = self._request(
             "PATCH",
             f"/project-version-states/{state_id}/proposal?user_id={user_id}&identity_type_id={identity_type_id}",
@@ -1155,11 +1167,12 @@ class BrokerBackendClient:
     def update_training_phase(
         self,
         state_id: int,
-        payload: dict,
+        completado: bool,
         user_id: int,
         identity_type_id: int,
     ) -> dict[str, Any]:
         """Updates training phase."""
+        payload = {"completado": completado}
         data = self._request(
             "PATCH",
             f"/project-version-states/{state_id}/training?user_id={user_id}&identity_type_id={identity_type_id}",
@@ -1170,11 +1183,20 @@ class BrokerBackendClient:
     def update_evaluation_phase(
         self,
         state_id: int,
-        payload: dict,
+        evaluacion: bool,
+        reentrenamiento: bool,
+        optimizacion: bool,
+        calidad_aprobada: bool,
         user_id: int,
         identity_type_id: int,
     ) -> dict[str, Any]:
         """Updates evaluation phase."""
+        payload = {
+            "evaluacion": evaluacion,
+            "reentrenamiento": reentrenamiento,
+            "optimizacion": optimizacion,
+            "calidad_aprobada": calidad_aprobada,
+        }
         data = self._request(
             "PATCH",
             f"/project-version-states/{state_id}/evaluation?user_id={user_id}&identity_type_id={identity_type_id}",
@@ -1185,11 +1207,18 @@ class BrokerBackendClient:
     def update_generation_phase(
         self,
         state_id: int,
-        payload: dict,
-        user_id: int,
-        identity_type_id: int,
+        generacion_completada: bool | None = None,
+        user_id: int = 0,
+        identity_type_id: int = 0,
+        generacion_solicitada: bool | None = None,
     ) -> dict[str, Any]:
         """Updates generation phase."""
+        payload = {}
+        if generacion_completada is not None:
+            payload["generacion_completada"] = generacion_completada
+        if generacion_solicitada is not None:
+            payload["generacion_solicitada"] = generacion_solicitada
+
         data = self._request(
             "PATCH",
             f"/project-version-states/{state_id}/generation?user_id={user_id}&identity_type_id={identity_type_id}",
@@ -1200,11 +1229,12 @@ class BrokerBackendClient:
     def update_notification_phase(
         self,
         state_id: int,
-        payload: dict,
+        notificacion_enviada: bool,
         user_id: int,
         identity_type_id: int,
     ) -> dict[str, Any]:
         """Updates notification phase."""
+        payload = {"notificacion_enviada": notificacion_enviada}
         data = self._request(
             "PATCH",
             f"/project-version-states/{state_id}/notification?user_id={user_id}&identity_type_id={identity_type_id}",

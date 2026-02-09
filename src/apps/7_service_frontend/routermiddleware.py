@@ -4227,3 +4227,114 @@ class RouterMiddleware:
             raise BusinessRuleError(
                 f"No se pudo cambiar estado del prompt {id_prompt}"
             ) from exc
+
+    # ========================================================================
+    # Project Version State - Phase Updates
+    # ========================================================================
+
+    def update_proposal_phase(
+        self,
+        state_id: int,
+        payload: Any,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Updates proposal phase."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.update_proposal_phase(
+                state_id,
+                payload.aceptacion_cliente,
+                payload.aceptacion_interna,
+                session.user_id,
+                session.identity_type_id,
+                revision_interna=getattr(payload, 'revision_interna', None),
+                propuesta_mejoras=getattr(payload, 'propuesta_mejoras', None),
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo actualizar fase de propuesta: {state_id}"
+            ) from exc
+
+    def update_training_phase(
+        self,
+        state_id: int,
+        payload: Any,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Updates training phase."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.update_training_phase(
+                state_id,
+                payload.completado,
+                session.user_id,
+                session.identity_type_id,
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo actualizar fase de entrenamiento: {state_id}"
+            ) from exc
+
+    def update_evaluation_phase(
+        self,
+        state_id: int,
+        payload: Any,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Updates evaluation phase."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.update_evaluation_phase(
+                state_id,
+                payload.evaluacion,
+                payload.reentrenamiento,
+                payload.optimizacion,
+                payload.calidad_aprobada,
+                session.user_id,
+                session.identity_type_id,
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo actualizar fase de evaluación: {state_id}"
+            ) from exc
+
+    def update_generation_phase(
+        self,
+        state_id: int,
+        payload: Any,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Updates generation phase."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.update_generation_phase(
+                state_id,
+                getattr(payload, 'generacion_completada', None),
+                session.user_id,
+                session.identity_type_id,
+                generacion_solicitada=getattr(payload, 'generacion_solicitada', None),
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo actualizar fase de generación: {state_id}"
+            ) from exc
+
+    def update_notification_phase(
+        self,
+        state_id: int,
+        payload: Any,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Updates notification phase."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.update_notification_phase(
+                state_id,
+                payload.notificacion_enviada,
+                session.user_id,
+                session.identity_type_id,
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo actualizar fase de notificación: {state_id}"
+            ) from exc

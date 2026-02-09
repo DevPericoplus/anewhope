@@ -18,7 +18,7 @@ Arquitectura DDD:
 """
 
 from pathlib import Path
-from typing import Any, AsyncGenerator
+from typing import Any
 
 import importlib.util
 import logging
@@ -191,7 +191,7 @@ class EstadoProyectosState(rx.State):
     # Inicialización
     # ========================================================================
 
-    async def initialize_from_session(
+    def initialize_from_session(
         self,
         user_id: int,
         organization_id: int,
@@ -199,21 +199,18 @@ class EstadoProyectosState(rx.State):
     ) -> None:
         """Inicializa la página desde la sesión del usuario.
 
-        DEPRECATED: Use on_page_load instead.
-
         Args:
             user_id: ID del usuario autenticado
             organization_id: ID de organización del usuario
             identity_type_id: Tipo de identidad (1=SuperAdmin, 2=Admin, etc.)
         """
-        async with self:
-            self.user_id = user_id
-            self.organization_id = organization_id
-            self.identity_type_id = identity_type_id
+        self.user_id = user_id
+        self.organization_id = organization_id
+        self.identity_type_id = identity_type_id
 
-        await self._load_organizations()
-        await self._load_projects()
-        await self._load_versions()
+        self._load_organizations()
+        self._load_projects()
+        self._load_versions()
 
     # ========================================================================
     # Propiedades computadas
@@ -259,24 +256,6 @@ class EstadoProyectosState(rx.State):
     def selected_version_display(self) -> str:
         """Versión seleccionada para mostrar."""
         return str(self.selected_version_id) if self.selected_version_id > 0 else ""
-
-    @rx.var
-    def selected_org_display(self) -> str:
-        """Organización seleccionada para mostrar."""
-        if self.selected_org_id > 0:
-            for org in self.organizations:
-                if org["id"] == self.selected_org_id:
-                    return org["name"]
-        return ""
-
-    @rx.var
-    def selected_project_display(self) -> str:
-        """Proyecto seleccionado para mostrar."""
-        if self.selected_project_id > 0:
-            for proj in self.projects:
-                if proj["id"] == self.selected_project_id:
-                    return proj["name"]
-        return ""
 
     @rx.var
     def progress_percentage(self) -> float:
@@ -335,15 +314,9 @@ class EstadoProyectosState(rx.State):
     # Carga de datos
     # ========================================================================
 
-    async def _load_organizations(self) -> None:
+    def _load_organizations(self) -> None:
         """Carga organizaciones según permisos del usuario."""
-        async with self:
-            is_super_admin = self.is_super_admin
-            user_id = self.user_id
-            organization_id = self.organization_id
-            selected_org_id = self.selected_org_id
-
-        if is_super_admin:
+        if self.is_super_admin:
             # SuperAdmin ve todas las organizaciones
             rows = _run_mysql_query(
                 "SELECT organization_id, organization_name "
@@ -357,28 +330,23 @@ class EstadoProyectosState(rx.State):
                 "FROM myllm_core_db.organizations o "
                 "INNER JOIN asignaciones_organizaciones_internas aoi "
                 "ON o.organization_id = aoi.id_organizacion "
-                f"WHERE aoi.id_usuario = {user_id} "
+                f"WHERE aoi.id_usuario = {self.user_id} "
                 "AND aoi.active = 1 "
                 "ORDER BY o.organization_name"
             )
 
-        organizations = [
+        self.organizations = [
             {"id": int(row[0]), "name": row[1]} for row in rows if len(row) >= 2
         ]
 
         # Seleccionar organización por defecto
-        if organizations:
-            if selected_org_id == 0:
+        if self.organizations:
+            if self.selected_org_id == 0:
                 # Preferir organización del usuario
-                if organization_id > 0:
-                    selected_org_id = organization_id
+                if self.organization_id > 0:
+                    self.selected_org_id = self.organization_id
                 else:
-                    selected_org_id = organizations[0]["id"]
-
-        async with self:
-            self.organizations = organizations
-            if selected_org_id > 0:
-                self.selected_org_id = selected_org_id
+                    self.selected_org_id = self.organizations[0]["id"]
 
     async def _load_projects(self) -> None:
         """Carga proyectos de la organización seleccionada."""
@@ -461,8 +429,10 @@ class EstadoProyectosState(rx.State):
 
         async with self:
             self.versions = versions
-            # Seleccionar primera versión por defecto
-            if self.versions and self.selected_version_id == 0:
+
+        # Seleccionar primera versión por defecto
+        if self.versions:
+            if self.selected_version_id == 0:
                 self.selected_version_id = self.versions[0]["version_id"]
 
     async def _load_current_state(self) -> None:
@@ -539,7 +509,7 @@ class EstadoProyectosState(rx.State):
     # ========================================================================
 
     @rx.event(background=True)
-    async def set_organization(self, org_name: str) -> AsyncGenerator[None, None]:
+    async def set_organization(self, org_name: str) -> None:
         """Cambia la organización seleccionada."""
         async with self:
             org_id = 0
@@ -552,22 +522,18 @@ class EstadoProyectosState(rx.State):
             self.selected_project_id = 0
             self.selected_version_id = 0
             self.current_state = {}
-        yield
 
-        await self._load_projects()
-        yield
-        await self._load_versions()
-        yield
+        self._load_projects()
+        self._load_versions()
 
         async with self:
             version_id = self.selected_version_id
 
         if version_id > 0:
             await self._load_current_state()
-            yield
 
     @rx.event(background=True)
-    async def set_project(self, project_name: str) -> AsyncGenerator[None, None]:
+    async def set_project(self, project_name: str) -> None:
         """Cambia el proyecto seleccionado."""
         async with self:
             project_id = 0
@@ -579,10 +545,8 @@ class EstadoProyectosState(rx.State):
             self.selected_project_id = project_id
             self.selected_version_id = 0
             self.current_state = {}
-        yield
 
-        await self._load_versions()
-        yield
+        self._load_versions()
 
         async with self:
             version_id = self.selected_version_id
@@ -591,7 +555,7 @@ class EstadoProyectosState(rx.State):
             await self._load_current_state()
 
     @rx.event(background=True)
-    async def set_version(self, version_str: str) -> AsyncGenerator[None, None]:
+    async def set_version(self, version_str: str) -> None:
         """Cambia la versión seleccionada."""
         try:
             version_id = int(version_str)
@@ -600,187 +564,15 @@ class EstadoProyectosState(rx.State):
 
         async with self:
             self.selected_version_id = version_id
-        yield
 
         await self._load_current_state()
-        yield
 
     # ========================================================================
-    # Event handlers - Toggle con feedback visual inmediato
-    # ========================================================================
-    # Cada handler es un único background event que:
-    # 1. Actualiza current_state y hace yield (feedback visual inmediato)
-    # 2. Llama a la API con el valor explícito (no depende del snapshot)
-    # 3. Recarga desde BD para recoger cambios de triggers
-    # Sin encadenamiento de eventos (evita problemas de propagación de estado).
-
-    @rx.event(background=True)
-    async def toggle_revision_interna(
-        self, value: bool
-    ) -> AsyncGenerator[None, None]:
-        """Toggle revision_interna con feedback visual inmediato."""
-        # 1. Feedback visual inmediato
-        async with self:
-            self.current_state = {**self.current_state, "revision_interna": value}
-        yield
-
-        # 2. Persistir en BD
-        await self._persist_proposal_field("revision_interna", value)
-        yield
-
-    @rx.event(background=True)
-    async def toggle_propuesta_mejoras(
-        self, value: bool
-    ) -> AsyncGenerator[None, None]:
-        """Toggle propuesta_mejoras con feedback visual inmediato."""
-        async with self:
-            self.current_state = {**self.current_state, "propuesta_mejoras": value}
-        yield
-
-        await self._persist_proposal_field("propuesta_mejoras", value)
-        yield
-
-    @rx.event(background=True)
-    async def toggle_generacion_solicitada(
-        self, value: bool
-    ) -> AsyncGenerator[None, None]:
-        """Toggle generacion_llm_solicitada con feedback visual inmediato."""
-        async with self:
-            self.current_state = {
-                **self.current_state,
-                "generacion_llm_solicitada": value,
-            }
-        yield
-
-        await self._persist_generation_field(value)
-        yield
-
-    async def _persist_proposal_field(
-        self, field_name: str, new_value: bool
-    ) -> None:
-        """Persiste un campo de fase propuesta en BD (método interno, no event handler).
-
-        Lee current_state para los campos no modificados y usa new_value
-        para el campo que se acaba de cambiar.
-        """
-        async with self:
-            can_edit = self.can_edit
-            current_state = self.current_state.copy()
-
-        if not can_edit or not current_state:
-            return
-
-        state_id = current_state.get("id")
-        if not state_id:
-            return
-
-        from web_backoffice.shared_state import SharedSessionState
-
-        async with self:
-            session_state = await self.get_state(SharedSessionState)
-
-        if not session_state:
-            return
-
-        access_token = session_state.access_token
-        session_token = session_state.session_token
-
-        # Construir valores: usar new_value para el campo modificado,
-        # current_state para los demás
-        field_values = {
-            "final_c": current_state.get("final_c", False),
-            "final_i": current_state.get("final_i", False),
-            "revision_interna": current_state.get("revision_interna", False),
-            "propuesta_mejoras": current_state.get("propuesta_mejoras", False),
-        }
-        field_values[field_name] = new_value
-
-        try:
-            from adapters.api_client import update_proposal_phase
-
-            result = update_proposal_phase(
-                state_id=state_id,
-                aceptacion_cliente=field_values["final_c"],
-                aceptacion_interna=field_values["final_i"],
-                access_token=access_token,
-                session_token=session_token,
-                revision_interna=field_values["revision_interna"],
-                propuesta_mejoras=field_values["propuesta_mejoras"],
-            )
-
-            if result.get("success"):
-                async with self:
-                    self.success_message = f"Campo {field_name} actualizado"
-                await self._load_current_state()
-            else:
-                detail = result.get("detail", "Error desconocido")
-                async with self:
-                    self.error_message = f"Error al actualizar: {detail}"
-                await self._load_current_state()
-
-        except Exception as e:
-            logger.error(
-                "Exception al persistir %s: %s", field_name, e
-            )
-            async with self:
-                self.error_message = f"Error: {str(e)}"
-            await self._load_current_state()
-
-    async def _persist_generation_field(self, new_value: bool) -> None:
-        """Persiste generacion_llm_solicitada en BD (método interno)."""
-        async with self:
-            can_edit = self.can_edit
-            current_state = self.current_state.copy()
-
-        if not can_edit or not current_state:
-            return
-
-        state_id = current_state.get("id")
-        if not state_id:
-            return
-
-        from web_backoffice.shared_state import SharedSessionState
-
-        async with self:
-            session_state = await self.get_state(SharedSessionState)
-
-        if not session_state:
-            return
-
-        access_token = session_state.access_token
-        session_token = session_state.session_token
-
-        try:
-            from adapters.api_client import update_generation_phase
-
-            result = update_generation_phase(
-                state_id=state_id,
-                access_token=access_token,
-                session_token=session_token,
-                generacion_solicitada=new_value,
-            )
-
-            if result.get("success"):
-                async with self:
-                    self.success_message = "Generación solicitada actualizada"
-                await self._load_current_state()
-            else:
-                detail = result.get("detail", "Error desconocido")
-                async with self:
-                    self.error_message = f"Error al actualizar: {detail}"
-                await self._load_current_state()
-
-        except Exception as e:
-            async with self:
-                self.error_message = f"Error: {str(e)}"
-            await self._load_current_state()
-
-    # ========================================================================
-    # Event handlers - Toggle genérico con inversión (legacy)
+    # Event handlers - Actualización de estado
     # ========================================================================
 
     @rx.event(background=True)
-    async def toggle_field(self, field_name: str) -> AsyncGenerator[None, None]:
+    async def toggle_field(self, field_name: str) -> None:
         """Alterna el valor de un campo booleano usando la API."""
         async with self:
             can_edit = self.can_edit
@@ -818,24 +610,18 @@ class EstadoProyectosState(rx.State):
 
         try:
             # Mapeo de campos a fases y funciones API
-            if field_name in ("final_c", "final_i", "revision_interna", "propuesta_mejoras"):
+            if field_name in ("final_c", "final_i"):
                 # Fase de propuesta
                 from adapters.api_client import update_proposal_phase
 
                 final_c = current_state.get("final_c", False)
                 final_i = current_state.get("final_i", False)
-                revision_interna = current_state.get("revision_interna", False)
-                propuesta_mejoras = current_state.get("propuesta_mejoras", False)
 
                 # Alternar el campo específico
                 if field_name == "final_c":
                     final_c = not final_c
-                elif field_name == "final_i":
+                else:
                     final_i = not final_i
-                elif field_name == "revision_interna":
-                    revision_interna = not revision_interna
-                elif field_name == "propuesta_mejoras":
-                    propuesta_mejoras = not propuesta_mejoras
 
                 result = update_proposal_phase(
                     state_id=state_id,
@@ -843,8 +629,6 @@ class EstadoProyectosState(rx.State):
                     aceptacion_interna=final_i,
                     access_token=access_token,
                     session_token=session_token,
-                    revision_interna=revision_interna,
-                    propuesta_mejoras=propuesta_mejoras,
                 )
 
             elif field_name == "entrenamiento_inicial_completado":
@@ -860,7 +644,7 @@ class EstadoProyectosState(rx.State):
                 )
 
             elif field_name in (
-                "evaluacion_entrenamiento",
+                "evaluacion",
                 "reentrenamiento",
                 "optimizacion",
                 "control_calidad_aprobado",
@@ -868,15 +652,16 @@ class EstadoProyectosState(rx.State):
                 # Fase de evaluación
                 from adapters.api_client import update_evaluation_phase
 
-                # Leer valores actuales de current_state
-                evaluacion_entrenamiento = current_state.get("evaluacion_entrenamiento", False)
+                evaluacion = current_state.get("evaluacion", False)
                 reentrenamiento = current_state.get("reentrenamiento", False)
                 optimizacion = current_state.get("optimizacion", False)
-                calidad_aprobada = current_state.get("control_calidad_aprobado", False)
+                calidad_aprobada = current_state.get(
+                    "control_calidad_aprobado", False
+                )
 
                 # Alternar el campo específico
-                if field_name == "evaluacion_entrenamiento":
-                    evaluacion_entrenamiento = not evaluacion_entrenamiento
+                if field_name == "evaluacion":
+                    evaluacion = not evaluacion
                 elif field_name == "reentrenamiento":
                     reentrenamiento = not reentrenamiento
                 elif field_name == "optimizacion":
@@ -884,10 +669,9 @@ class EstadoProyectosState(rx.State):
                 elif field_name == "control_calidad_aprobado":
                     calidad_aprobada = not calidad_aprobada
 
-                # Pasar evaluacion_entrenamiento como "evaluacion" para compatibilidad con el endpoint
                 result = update_evaluation_phase(
                     state_id=state_id,
-                    evaluacion=evaluacion_entrenamiento,
+                    evaluacion=evaluacion,
                     reentrenamiento=reentrenamiento,
                     optimizacion=optimizacion,
                     calidad_aprobada=calidad_aprobada,
@@ -895,29 +679,17 @@ class EstadoProyectosState(rx.State):
                     session_token=session_token,
                 )
 
-            elif field_name in ("generacion_llm_completada", "generacion_llm_solicitada"):
+            elif field_name == "generacion_llm_completada":
                 # Fase de generación
                 from adapters.api_client import update_generation_phase
 
-                # Leer solo el campo que vamos a cambiar
                 current_value = current_state.get(field_name, False)
-                new_value = not current_value
-
-                # Pasar solo el campo que cambió
-                if field_name == "generacion_llm_completada":
-                    result = update_generation_phase(
-                        state_id=state_id,
-                        generacion_completada=new_value,
-                        access_token=access_token,
-                        session_token=session_token,
-                    )
-                else:  # generacion_llm_solicitada
-                    result = update_generation_phase(
-                        state_id=state_id,
-                        access_token=access_token,
-                        session_token=session_token,
-                        generacion_solicitada=new_value,
-                    )
+                result = update_generation_phase(
+                    state_id=state_id,
+                    generacion_completada=not current_value,
+                    access_token=access_token,
+                    session_token=session_token,
+                )
 
             elif field_name == "notificacion_descarga_enviada":
                 # Fase de notificación
@@ -940,20 +712,15 @@ class EstadoProyectosState(rx.State):
             if result.get("success"):
                 async with self:
                     self.success_message = f"Campo {field_name} actualizado correctamente"
-                yield  # Propagar mensaje de éxito
-
                 await self._load_current_state()  # Recargar para ver cambios de triggers
-                yield  # Propagar estado actualizado a la UI
             else:
                 detail = result.get("detail", "Error desconocido")
                 async with self:
                     self.error_message = f"Error al actualizar: {detail}"
-                yield  # Propagar mensaje de error
 
         except Exception as e:
             async with self:
                 self.error_message = f"Error en la actualización: {str(e)}"
-            yield  # Propagar mensaje de error
 
     def clear_messages(self) -> None:
         """Limpia mensajes de error/éxito."""
@@ -961,7 +728,7 @@ class EstadoProyectosState(rx.State):
         self.success_message = ""
 
     @rx.event(background=True)
-    async def on_page_load(self) -> AsyncGenerator[None, None]:
+    async def on_page_load(self) -> None:
         """Se ejecuta cuando se carga la página."""
         # Obtener datos de sesión desde SharedSessionState
         from web_backoffice.shared_state import SharedSessionState
@@ -975,20 +742,6 @@ class EstadoProyectosState(rx.State):
                 self.user_id = session_state.user_id
                 self.organization_id = session_state.organization_id
                 self.identity_type_id = session_state.identity_type_id
-            yield
-
-            # Cargar datos iniciales
-            await self._load_organizations()
-            yield
-
-            await self._load_projects()
-            yield
-
-            await self._load_versions()
-            yield
-
-            await self._load_current_state()
-            yield
 
 
 # ============================================================================
@@ -1019,7 +772,6 @@ def estado_proyectos_panel() -> rx.Component:
                 rx.text("Organización", font_size="1em", color="#f97316", font_weight="600"),
                 rx.select(
                     EstadoProyectosState.organization_names,
-                    value=EstadoProyectosState.selected_org_display,
                     on_change=EstadoProyectosState.set_organization,
                     placeholder="Seleccione organización",
                     width="100%",
@@ -1032,7 +784,6 @@ def estado_proyectos_panel() -> rx.Component:
                 rx.text("Proyecto", font_size="1em", color="#f97316", font_weight="600"),
                 rx.select(
                     EstadoProyectosState.project_names,
-                    value=EstadoProyectosState.selected_project_display,
                     on_change=EstadoProyectosState.set_project,
                     placeholder="Seleccione proyecto",
                     width="100%",
@@ -1103,7 +854,7 @@ def estado_proyectos_panel() -> rx.Component:
         spacing="3",
         width="100%",
         padding="2em",
-        on_mount=EstadoProyectosState.on_page_load,
+        # on_mount=EstadoProyectosState.on_page_load,  # Deshabilitado temporalmente para evitar bloqueos
     )
 
 
@@ -1163,32 +914,11 @@ def _fase_1_card() -> rx.Component:
         rx.vstack(
             rx.heading("Fase 1: Propuesta y Revisión", size="5", color="#f97316"),
             rx.divider(),
-            rx.hstack(
-                rx.badge(
-                    "Revisión Interna",
-                    background="#f97316",
-                    color="#000000",
-                    font_weight="bold",
-                    size="3",
-                ),
-                rx.switch(
-                    checked=EstadoProyectosState.current_state["revision_interna"],
-                    on_change=EstadoProyectosState.toggle_revision_interna,
-                    disabled=~EstadoProyectosState.can_edit,
-                ),
-                rx.badge(
-                    "Propuesta de Mejoras",
-                    background="#f97316",
-                    color="#000000",
-                    font_weight="bold",
-                    size="3",
-                ),
-                rx.switch(
-                    checked=EstadoProyectosState.current_state["propuesta_mejoras"],
-                    on_change=EstadoProyectosState.toggle_propuesta_mejoras,
-                    disabled=~EstadoProyectosState.can_edit,
-                ),
-                spacing="4",
+            rx.grid(
+                _toggle_field("revision_interna", "Revisión Interna", "🔍"),
+                _toggle_field("propuesta_mejoras", "Propuesta de Mejoras", "⚙️"),
+                columns="2",
+                spacing="3",
                 width="100%",
             ),
             rx.divider(),
@@ -1307,22 +1037,7 @@ def _fase_4_card() -> rx.Component:
         rx.vstack(
             rx.heading("Fase 4: Generación del Modelo LLM", size="5", color="#f97316"),
             rx.divider(),
-            rx.hstack(
-                rx.badge(
-                    "Generación Solicitada",
-                    background="#f97316",
-                    color="#000000",
-                    font_weight="bold",
-                    size="3",
-                ),
-                rx.switch(
-                    checked=EstadoProyectosState.current_state["generacion_llm_solicitada"],
-                    on_change=EstadoProyectosState.toggle_generacion_solicitada,
-                    disabled=~EstadoProyectosState.can_edit,
-                ),
-                spacing="4",
-                width="100%",
-            ),
+            _toggle_field("generacion_llm_solicitada", "Generación Solicitada", "🤖"),
             _toggle_field("generacion_llm_completada", "Generación Completada", "✅"),
             rx.cond(
                 EstadoProyectosState.current_state.get("generacion_llm_fecha") != None,

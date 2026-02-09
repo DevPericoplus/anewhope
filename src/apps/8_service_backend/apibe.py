@@ -3079,7 +3079,13 @@ def update_proposal_phase_endpoint(
     """Updates proposal phase."""
     try:
         return router.update_proposal_phase(
-            state_id, payload, user_id, identity_type_id
+            state_id,
+            payload.get("aceptacion_cliente", False),
+            payload.get("aceptacion_interna", False),
+            user_id,
+            identity_type_id,
+            revision_interna=payload.get("revision_interna"),
+            propuesta_mejoras=payload.get("propuesta_mejoras"),
         )
     except BrokerBusinessError as exc:
         raise HTTPException(
@@ -3102,7 +3108,10 @@ def update_training_phase_endpoint(
     """Updates training phase."""
     try:
         return router.update_training_phase(
-            state_id, payload, user_id, identity_type_id
+            state_id,
+            payload.get("completado", False),
+            user_id,
+            identity_type_id,
         )
     except BrokerBusinessError as exc:
         raise HTTPException(
@@ -3125,7 +3134,13 @@ def update_evaluation_phase_endpoint(
     """Updates evaluation phase."""
     try:
         return router.update_evaluation_phase(
-            state_id, payload, user_id, identity_type_id
+            state_id,
+            payload.get("evaluacion", False),
+            payload.get("reentrenamiento", False),
+            payload.get("optimizacion", False),
+            payload.get("calidad_aprobada", False),
+            user_id,
+            identity_type_id,
         )
     except BrokerBusinessError as exc:
         raise HTTPException(
@@ -3148,7 +3163,10 @@ def update_generation_phase_endpoint(
     """Updates generation phase."""
     try:
         return router.update_generation_phase(
-            state_id, payload, user_id, identity_type_id
+            state_id,
+            payload.get("generacion_completada", False),
+            user_id,
+            identity_type_id,
         )
     except BrokerBusinessError as exc:
         raise HTTPException(
@@ -3171,7 +3189,10 @@ def update_notification_phase_endpoint(
     """Updates notification phase."""
     try:
         return router.update_notification_phase(
-            state_id, payload, user_id, identity_type_id
+            state_id,
+            payload.get("notificacion_enviada", False),
+            user_id,
+            identity_type_id,
         )
     except BrokerBusinessError as exc:
         raise HTTPException(

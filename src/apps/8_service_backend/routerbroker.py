@@ -1366,14 +1366,23 @@ class BrokerBackendRouter:
     def update_proposal_phase(
         self,
         state_id: int,
-        payload: dict,
+        aceptacion_cliente: bool,
+        aceptacion_interna: bool,
         user_id: int,
         identity_type_id: int,
+        revision_interna: bool | None = None,
+        propuesta_mejoras: bool | None = None,
     ) -> dict[str, Any]:
         """Updates proposal phase."""
         try:
             return self._core_client.update_proposal_phase(
-                state_id, payload, user_id, identity_type_id
+                state_id,
+                aceptacion_cliente,
+                aceptacion_interna,
+                user_id,
+                identity_type_id,
+                revision_interna=revision_interna,
+                propuesta_mejoras=propuesta_mejoras,
             )
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(
@@ -1383,14 +1392,14 @@ class BrokerBackendRouter:
     def update_training_phase(
         self,
         state_id: int,
-        payload: dict,
+        completado: bool,
         user_id: int,
         identity_type_id: int,
     ) -> dict[str, Any]:
         """Updates training phase."""
         try:
             return self._core_client.update_training_phase(
-                state_id, payload, user_id, identity_type_id
+                state_id, completado, user_id, identity_type_id
             )
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(
@@ -1400,14 +1409,17 @@ class BrokerBackendRouter:
     def update_evaluation_phase(
         self,
         state_id: int,
-        payload: dict,
+        evaluacion: bool,
+        reentrenamiento: bool,
+        optimizacion: bool,
+        calidad_aprobada: bool,
         user_id: int,
         identity_type_id: int,
     ) -> dict[str, Any]:
         """Updates evaluation phase."""
         try:
             return self._core_client.update_evaluation_phase(
-                state_id, payload, user_id, identity_type_id
+                state_id, evaluacion, reentrenamiento, optimizacion, calidad_aprobada, user_id, identity_type_id
             )
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(
@@ -1417,14 +1429,14 @@ class BrokerBackendRouter:
     def update_generation_phase(
         self,
         state_id: int,
-        payload: dict,
+        generacion_completada: bool,
         user_id: int,
         identity_type_id: int,
     ) -> dict[str, Any]:
         """Updates generation phase."""
         try:
             return self._core_client.update_generation_phase(
-                state_id, payload, user_id, identity_type_id
+                state_id, generacion_completada, user_id, identity_type_id
             )
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(
@@ -1434,14 +1446,14 @@ class BrokerBackendRouter:
     def update_notification_phase(
         self,
         state_id: int,
-        payload: dict,
+        notificacion_enviada: bool,
         user_id: int,
         identity_type_id: int,
     ) -> dict[str, Any]:
         """Updates notification phase."""
         try:
             return self._core_client.update_notification_phase(
-                state_id, payload, user_id, identity_type_id
+                state_id, notificacion_enviada, user_id, identity_type_id
             )
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(

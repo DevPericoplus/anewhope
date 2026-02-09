@@ -132,8 +132,9 @@ class InformesState(rx.State):
             from web_backoffice.web_backoffice import State as MainState
             cambios_adapter = _load_cambios_adapter()
 
-            main_state = await self.get_state(MainState)
-            user_id = main_state.user_id
+            async with self:
+                main_state = await self.get_state(MainState)
+                user_id = main_state.user_id
             print(f"[DEBUG INFORMES] user_id={user_id}")
 
             # Obtener organizaciones asignadas al usuario interno
@@ -146,15 +147,16 @@ class InformesState(rx.State):
             for org in organizaciones:
                 print(f"[DEBUG INFORMES]   - {org['nombre']} (ID: {org['id']})")
 
-            self.organizaciones = organizaciones
+            async with self:
+                self.organizaciones = organizaciones
 
-            # Si hay organizaciones, seleccionar la primera
-            if organizaciones:
-                self.selected_org_id = organizaciones[0]["id"]
-                self.selected_org_nombre = organizaciones[0]["nombre"]
-                print(f"[DEBUG INFORMES] Organización seleccionada: {self.selected_org_nombre}")
-            else:
-                print("[DEBUG INFORMES] No se encontraron organizaciones asignadas")
+                # Si hay organizaciones, seleccionar la primera
+                if organizaciones:
+                    self.selected_org_id = organizaciones[0]["id"]
+                    self.selected_org_nombre = organizaciones[0]["nombre"]
+                    print(f"[DEBUG INFORMES] Organización seleccionada: {self.selected_org_nombre}")
+                else:
+                    print("[DEBUG INFORMES] No se encontraron organizaciones asignadas")
 
         except Exception as e:
             print(f"[ERROR INFORMES] Error al cargar organizaciones: {e}")
@@ -163,8 +165,12 @@ class InformesState(rx.State):
 
     async def load_proyectos(self):
         """Carga los proyectos de la organización seleccionada."""
-        if self.selected_org_id == 0:
-            self.proyectos = []
+        async with self:
+            org_id = self.selected_org_id
+
+        if org_id == 0:
+            async with self:
+                self.proyectos = []
             return
 
         engine = await self._get_db_engine()
@@ -177,49 +183,60 @@ class InformesState(rx.State):
             # Obtener proyectos de la organización
             proyectos = cambios_adapter.obtener_proyectos_organizacion(
                 engine=engine,
-                id_organizacion=self.selected_org_id
+                id_organizacion=org_id
             )
 
             print(f"[DEBUG INFORMES] Proyectos obtenidos: {len(proyectos)}")
             for p in proyectos:
                 print(f"[DEBUG INFORMES]   - {p['nombre']} (ID: {p['id']})")
 
-            self.proyectos = proyectos
-            # Resetear selección de proyecto
-            self.selected_proyecto_id = 0
-            self.selected_proyecto_nombre = "Todos"
+            async with self:
+                self.proyectos = proyectos
+                # Resetear selección de proyecto
+                self.selected_proyecto_id = 0
+                self.selected_proyecto_nombre = "Todos"
 
         except Exception as e:
             print(f"[ERROR INFORMES] Error al cargar proyectos: {e}")
             import traceback
             traceback.print_exc()
 
-    def set_organizacion(self, org_nombre: str):
+    @rx.event(background=True)
+    async def set_organizacion(self, org_nombre: str):
         """Cambia la organización seleccionada."""
-        self.selected_org_nombre = org_nombre
-        # Buscar el ID de la organización por nombre
-        for org in self.organizaciones:
-            if org["nombre"] == org_nombre:
-                self.selected_org_id = org["id"]
-                break
-        return InformesState.load_proyectos
+        async with self:
+            self.selected_org_nombre = org_nombre
+            # Buscar el ID de la organización por nombre
+            for org in self.organizaciones:
+                if org["nombre"] == org_nombre:
+                    self.selected_org_id = org["id"]
+                    break
+
+        await self.load_proyectos()
 
     async def load_versiones(self):
         """Carga las versiones del proyecto seleccionado."""
-        if self.selected_proyecto_id == 0:
-            self.versiones = []
+        async with self:
+            proyecto_id = self.selected_proyecto_id
+
+        if proyecto_id == 0:
+            async with self:
+                self.versiones = []
             return
 
         try:
             # Obtener tokens de sesión del MainState
             from web_backoffice.web_backoffice import State as MainState
-            main_state = await self.get_state(MainState)
+            async with self:
+                main_state = await self.get_state(MainState)
+                access_token = main_state.access_token
+                session_token = main_state.session_token
 
             # Llamar a la API para obtener versiones
             response = get_project_versions(
-                project_id=self.selected_proyecto_id,
-                access_token=main_state.access_token,
-                session_token=main_state.session_token,
+                project_id=proyecto_id,
+                access_token=access_token,
+                session_token=session_token,
             )
 
             # Procesar respuesta
@@ -236,48 +253,61 @@ class InformesState(rx.State):
             for v in versiones:
                 print(f"[DEBUG INFORMES]   - {v['folder_name']} (ID: {v['id']})")
 
-            self.versiones = versiones
-            # Resetear selección de versión
-            self.selected_version_id = 0
-            self.selected_version_nombre = "Todas"
+            async with self:
+                self.versiones = versiones
+                # Resetear selección de versión
+                self.selected_version_id = 0
+                self.selected_version_nombre = "Todas"
 
         except Exception as e:
             print(f"[ERROR INFORMES] Error al cargar versiones: {e}")
             import traceback
             traceback.print_exc()
 
-    def set_proyecto(self, proyecto_nombre: str):
+    @rx.event(background=True)
+    async def set_proyecto(self, proyecto_nombre: str):
         """Cambia el proyecto seleccionado."""
-        self.selected_proyecto_nombre = proyecto_nombre
-        if proyecto_nombre == "Todos":
-            self.selected_proyecto_id = 0
-        else:
-            # Buscar el ID del proyecto por nombre
-            for p in self.proyectos:
-                if p["nombre"] == proyecto_nombre:
-                    self.selected_proyecto_id = p["id"]
-                    break
-        return InformesState.load_versiones
+        async with self:
+            self.selected_proyecto_nombre = proyecto_nombre
+            if proyecto_nombre == "Todos":
+                self.selected_proyecto_id = 0
+            else:
+                # Buscar el ID del proyecto por nombre
+                for p in self.proyectos:
+                    if p["nombre"] == proyecto_nombre:
+                        self.selected_proyecto_id = p["id"]
+                        break
 
-    def set_version(self, version_nombre: str):
+        await self.load_versiones()
+
+    @rx.event(background=True)
+    async def set_version(self, version_nombre: str):
         """Cambia la versión seleccionada."""
-        self.selected_version_nombre = version_nombre
-        if version_nombre == "Todas":
-            self.selected_version_id = 0
-        else:
-            # Buscar el ID por folder_name
-            for v in self.versiones:
-                if v["folder_name"] == version_nombre:
-                    self.selected_version_id = v["id"]
-                    break
-        return InformesState.load_archivos
+        async with self:
+            self.selected_version_nombre = version_nombre
+            if version_nombre == "Todas":
+                self.selected_version_id = 0
+            else:
+                # Buscar el ID por folder_name
+                for v in self.versiones:
+                    if v["folder_name"] == version_nombre:
+                        self.selected_version_id = v["id"]
+                        break
+
+        await self.load_archivos()
 
     async def load_archivos(self):
         """Carga los archivos markdown de la versión seleccionada."""
-        if self.selected_version_id == 0:
-            self.archivos = []
-            self.selected_archivo_nombre = ""
-            self.markdown_content = ""
+        async with self:
+            version_id = self.selected_version_id
+            org_id = self.selected_org_id
+            project_id = self.selected_proyecto_id
+
+        if version_id == 0:
+            async with self:
+                self.archivos = []
+                self.selected_archivo_nombre = ""
+                self.markdown_content = ""
             return
 
         try:
@@ -285,42 +315,48 @@ class InformesState(rx.State):
 
             # Debug: Mostrar IDs que se van a usar
             print(f"[DEBUG INFORMES] Llamando list_markdown_files con:")
-            print(f"[DEBUG INFORMES]   org_id={self.selected_org_id}")
-            print(f"[DEBUG INFORMES]   project_id={self.selected_proyecto_id}")
-            print(f"[DEBUG INFORMES]   version_id={self.selected_version_id}")
+            print(f"[DEBUG INFORMES]   org_id={org_id}")
+            print(f"[DEBUG INFORMES]   project_id={project_id}")
+            print(f"[DEBUG INFORMES]   version_id={version_id}")
 
             # Listar archivos en la carpeta de versión
             archivos = informes_manager.list_markdown_files(
-                org_id=self.selected_org_id,
-                project_id=self.selected_proyecto_id,
-                version_id=self.selected_version_id
+                org_id=org_id,
+                project_id=project_id,
+                version_id=version_id
             )
 
             print(f"[DEBUG INFORMES] Archivos obtenidos: {len(archivos)}")
             for a in archivos:
                 print(f"[DEBUG INFORMES]   - {a['display_name']}")
 
-            self.archivos = archivos
+            async with self:
+                self.archivos = archivos
 
-            # Si hay archivos, seleccionar el primero automáticamente
+                # Si hay archivos, seleccionar el primero automáticamente
+                if archivos:
+                    self.selected_archivo_nombre = archivos[0]["display_name"]
+                else:
+                    self.selected_archivo_nombre = ""
+                    self.markdown_content = ""
+
             if archivos:
-                self.selected_archivo_nombre = archivos[0]["display_name"]
                 await self.load_markdown_content()
-            else:
-                self.selected_archivo_nombre = ""
-                self.markdown_content = ""
 
         except Exception as e:
             print(f"[ERROR INFORMES] Error al cargar archivos: {e}")
             import traceback
             traceback.print_exc()
 
+    @rx.event(background=True)
     async def set_archivo(self, archivo_nombre: str):
         """Cambia el archivo seleccionado y carga su contenido."""
         if archivo_nombre == "Sin informes disponibles":
             return
 
-        self.selected_archivo_nombre = archivo_nombre
+        async with self:
+            self.selected_archivo_nombre = archivo_nombre
+
         await self.load_markdown_content()
 
     def _enrich_content_with_emojis(self, content: str) -> str:
@@ -349,26 +385,36 @@ class InformesState(rx.State):
 
     async def load_markdown_content(self):
         """Carga el contenido markdown del archivo seleccionado."""
-        if not self.selected_archivo_nombre:
-            self.markdown_content = ""
+        async with self:
+            archivo_nombre = self.selected_archivo_nombre
+            org_id = self.selected_org_id
+            project_id = self.selected_proyecto_id
+            version_id = self.selected_version_id
+
+        if not archivo_nombre:
+            async with self:
+                self.markdown_content = ""
             return
 
         try:
             informes_manager = _load_informes_manager()
 
             content = informes_manager.get_markdown_content_by_name(
-                org_id=self.selected_org_id,
-                project_id=self.selected_proyecto_id,
-                version_id=self.selected_version_id,
-                display_name=self.selected_archivo_nombre
+                org_id=org_id,
+                project_id=project_id,
+                version_id=version_id,
+                display_name=archivo_nombre
             )
 
             if content:
                 # Enriquecer con emojis
-                self.markdown_content = self._enrich_content_with_emojis(content)
+                enriched = self._enrich_content_with_emojis(content)
+                async with self:
+                    self.markdown_content = enriched
                 print(f"[DEBUG INFORMES] Contenido cargado: {len(content)} caracteres")
             else:
-                self.markdown_content = ""
+                async with self:
+                    self.markdown_content = ""
                 print("[ERROR INFORMES] No se pudo cargar el contenido")
 
         except Exception as e:
@@ -376,12 +422,21 @@ class InformesState(rx.State):
             import traceback
             traceback.print_exc()
 
+    @rx.event(background=True)
     async def on_mount_informes(self):
         """Se ejecuta cuando se monta el componente."""
         await self.load_organizaciones()
-        if self.selected_org_id > 0:
+
+        async with self:
+            org_id = self.selected_org_id
+
+        if org_id > 0:
             await self.load_proyectos()
-            if self.selected_proyecto_id > 0:
+
+            async with self:
+                proyecto_id = self.selected_proyecto_id
+
+            if proyecto_id > 0:
                 await self.load_versiones()
 
 

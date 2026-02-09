@@ -944,19 +944,25 @@ def calendario_component():
 
 def ticket_row(ticket: dict) -> rx.Component:
     """Fila que muestra un ticket."""
-    estado_colors = {
-        "abierto": "blue",
-        "en_espera": "amber",  # Mejorado de yellow a amber para mejor contraste
-        "resuelto": "green",
-        "cerrado": "gray",
+    # Colores oscuros personalizados para estados
+    estado_styles = {
+        "abierto": {"background": "#1e40af", "color": "#ffffff"},  # Azul oscuro
+        "en_espera": {"background": "#d97706", "color": "#ffffff"},  # Ámbar oscuro
+        "resuelto": {"background": "#15803d", "color": "#ffffff"},  # Verde oscuro
+        "cerrado": {"background": "#52525b", "color": "#ffffff"},  # Gris oscuro
     }
 
-    prioridad_colors = {
-        "baja": "gray",
-        "media": "cyan",  # Mejorado de blue a cyan para mejor contraste
-        "alta": "orange",
-        "urgente": "red",
+    # Colores oscuros personalizados para prioridades
+    prioridad_styles = {
+        "baja": {"background": "#52525b", "color": "#ffffff"},  # Gris oscuro
+        "media": {"background": "#0891b2", "color": "#ffffff"},  # Cyan oscuro
+        "alta": {"background": "#ea580c", "color": "#ffffff"},  # Naranja oscuro
+        "urgente": {"background": "#dc2626", "color": "#ffffff"},  # Rojo oscuro
     }
+
+    # Obtener estilos según estado y prioridad
+    estado_style = estado_styles.get(ticket["estado"], {"background": "#52525b", "color": "#ffffff"})
+    prioridad_style = prioridad_styles.get(ticket["prioridad"], {"background": "#52525b", "color": "#ffffff"})
 
     return rx.box(
         rx.hstack(
@@ -970,21 +976,31 @@ def ticket_row(ticket: dict) -> rx.Component:
                 text_overflow="ellipsis",
                 white_space="nowrap",
             ),
-            # Badge de estado (mejorado para mejor visibilidad)
-            rx.badge(
-                ticket["estado"],
-                color_scheme=estado_colors.get(ticket["estado"], "gray"),
-                variant="solid",  # Cambiado de soft a solid para mejor contraste
-                size="2",
-                style={"fontSize": "14px", "padding": "6px 12px", "fontWeight": "600"},
+            # Badge de estado con colores oscuros personalizados
+            rx.box(
+                rx.text(
+                    ticket["estado"],
+                    color=estado_style["color"],
+                    font_weight="600",
+                    font_size="14px",
+                ),
+                background_color=estado_style["background"],
+                padding="6px 12px",
+                border_radius="6px",
+                display="inline-block",
             ),
-            # Badge de prioridad (mejorado para mejor visibilidad)
-            rx.badge(
-                ticket["prioridad"],
-                color_scheme=prioridad_colors.get(ticket["prioridad"], "gray"),
-                variant="solid",  # Cambiado de outline a solid para mejor contraste
-                size="2",
-                style={"fontSize": "14px", "padding": "6px 12px", "fontWeight": "600"},
+            # Badge de prioridad con colores oscuros personalizados
+            rx.box(
+                rx.text(
+                    ticket["prioridad"],
+                    color=prioridad_style["color"],
+                    font_weight="600",
+                    font_size="14px",
+                ),
+                background_color=prioridad_style["background"],
+                padding="6px 12px",
+                border_radius="6px",
+                display="inline-block",
             ),
             spacing="3",
             align="center",

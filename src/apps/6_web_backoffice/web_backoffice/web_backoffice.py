@@ -380,7 +380,8 @@ class State(SharedSessionState):
     def set_user_menu(self, menu: str):
         """Set active menu item for user portal."""
         self.user_active_menu = menu
-        
+        self.internal_active_menu = ""  # Desactivar menú interno cuando se activa menú principal
+
         # Asegurar que identity_type_id y organization_id están disponibles desde el token
         if self.access_token:
             if self.identity_type_id <= 0:
@@ -391,10 +392,13 @@ class State(SharedSessionState):
                 extracted_org = self._extract_org_id_from_token(self.access_token)
                 if extracted_org > 0:
                     self.organization_id = extracted_org
-        
+
         # Log de navegación
         if self.is_logged_in and self.user_id > 0:
             activity_log.log_navigation(self.user_id, menu)
+
+        # NOTA: Cargas de datos comentadas temporalmente para evitar bloqueos
+        # Las páginas deben cargar sus propios datos cuando se renderizan
         if menu == "flujos":
             organization_id = self.organization_id
             if organization_id <= 0 and self.access_token:
@@ -402,17 +406,17 @@ class State(SharedSessionState):
                 if organization_id > 0:
                     self.organization_id = organization_id
             return FlujosState.initialize_from_session(organization_id)
-        if menu == "organizacion":
-            self.load_org_users()
-            self.load_org_projects()
-            self.load_org_tickets()
-        if menu == "tecnologias":
-            self.load_org_projects()  # Para el selector de proyectos
-            self.load_tecnologias()
-            self.load_tecnologias_asignadas()  # Cargar proyectos con sus asignaciones
-        if menu == "proyecciones":
-            self.load_org_projects()  # Para el selector de proyectos
-            self.reset_proyecciones_state()  # Limpiar estado anterior
+        # if menu == "organizacion":
+        #     self.load_org_users()
+        #     self.load_org_projects()
+        #     self.load_org_tickets()
+        # if menu == "tecnologias":
+        #     self.load_org_projects()
+        #     self.load_tecnologias()
+        #     self.load_tecnologias_asignadas()
+        # if menu == "proyecciones":
+        #     self.load_org_projects()
+        #     self.reset_proyecciones_state()
 
     def set_internal_menu(self, menu: str):
         """Set active menu item for internal tools."""
@@ -424,16 +428,17 @@ class State(SharedSessionState):
         if self.is_logged_in and self.user_id > 0:
             activity_log.log_navigation(self.user_id, f"internal:{menu}")
 
-        # Cargar datos específicos según el menú interno
-        if menu == "asistente":
-            print("[DEBUG] Loading Asistente data...")
-            self.check_ollama_health()
-            self.load_ollama_models()
-            print("[DEBUG] Asistente data loading complete")
-        if menu == "asignaciones":
-            print("[DEBUG] Loading Asignaciones data...")
-            self.load_assignments_data()
-            print("[DEBUG] Asignaciones data loading complete")
+        # NOTA: Cargas de datos comentadas temporalmente para evitar bloqueos
+        # Las páginas deben cargar sus propios datos cuando se renderizan
+        # if menu == "asistente":
+        #     print("[DEBUG] Loading Asistente data...")
+        #     self.check_ollama_health()
+        #     self.load_ollama_models()
+        #     print("[DEBUG] Asistente data loading complete")
+        # if menu == "asignaciones":
+        #     print("[DEBUG] Loading Asignaciones data...")
+        #     self.load_assignments_data()
+        #     print("[DEBUG] Asignaciones data loading complete")
 
     # ========== Página Asistente (Ollama) ==========
 
@@ -2414,12 +2419,12 @@ def sidebar_menu(is_logged_in: bool) -> rx.Component:
                         item.title(),
                         on_click=lambda _, i=item: State.set_user_menu(i),
                         background_color=rx.cond(
-                            State.user_active_menu == item,
+                            (State.user_active_menu == item) & (State.internal_active_menu == ""),
                             COLORS["primary"],
                             "transparent"
                         ),
                         color=rx.cond(
-                            State.user_active_menu == item,
+                            (State.user_active_menu == item) & (State.internal_active_menu == ""),
                             COLORS["background"],
                             COLORS["foreground"]
                         ),
@@ -4440,17 +4445,35 @@ def internal_panel(active_item: str) -> rx.Component:
         "Internal Tools",
     )
 
-    # Contenido para cada sección
-    content = rx.match(
-        active_item,
-        ("asignaciones", asignaciones_panel()),
-        ("estado_proyectos", estado_proyectos_panel()),
-        ("analisis_documentacion", rx.text("Panel de análisis de documentación.", color=COLORS["muted_foreground"])),
-        ("entrenamientos", rx.text("Panel de gestión de entrenamientos de modelos.", color=COLORS["muted_foreground"])),
-        ("analisis_resultados", rx.text("Panel de análisis de resultados de entrenamiento.", color=COLORS["muted_foreground"])),
-        ("crear_llm", rx.text("Panel de creación y configuración de LLMs.", color=COLORS["muted_foreground"])),
-        ("asistente", asistente_panel()),
-        rx.text("Selecciona una opción del menú Internal.", color=COLORS["muted_foreground"]),
+    # Contenido para cada sección (usando rx.cond para lazy loading)
+    content = rx.cond(
+        active_item == "asignaciones",
+        asignaciones_panel(),
+        rx.cond(
+            active_item == "estado_proyectos",
+            estado_proyectos_panel(),
+            rx.cond(
+                active_item == "analisis_documentacion",
+                rx.text("Panel de análisis de documentación.", color=COLORS["muted_foreground"]),
+                rx.cond(
+                    active_item == "entrenamientos",
+                    rx.text("Panel de gestión de entrenamientos de modelos.", color=COLORS["muted_foreground"]),
+                    rx.cond(
+                        active_item == "analisis_resultados",
+                        rx.text("Panel de análisis de resultados de entrenamiento.", color=COLORS["muted_foreground"]),
+                        rx.cond(
+                            active_item == "crear_llm",
+                            rx.text("Panel de creación y configuración de LLMs.", color=COLORS["muted_foreground"]),
+                            rx.cond(
+                                active_item == "asistente",
+                                asistente_panel(),
+                                rx.text("Selecciona una opción del menú Internal.", color=COLORS["muted_foreground"]),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
     )
 
     # Para asistente y asignaciones, mostrar sin el box contenedor extra

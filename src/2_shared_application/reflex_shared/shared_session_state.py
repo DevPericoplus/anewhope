@@ -326,14 +326,18 @@ class SharedSessionState(rx.State):
             # Obtener configuración de Redis
             redis_config = self._get_redis_config()
 
-            # Conectar a Redis
-            r = redis.Redis(
-                host=redis_config["host"],
-                port=redis_config["port"],
-                password=redis_config["password"],
-                db=redis_config["db"],
-                decode_responses=True
-            )
+            # Conectar a Redis (con username para Redis 6+ ACL)
+            redis_params = {
+                "host": redis_config["host"],
+                "port": redis_config["port"],
+                "db": redis_config["db"],
+                "decode_responses": True
+            }
+            if redis_config["password"]:
+                redis_params["username"] = "default"
+                redis_params["password"] = redis_config["password"]
+
+            r = redis.Redis(**redis_params)
 
             # Preparar datos de tokens
             tokens_data = {
@@ -374,14 +378,18 @@ class SharedSessionState(rx.State):
             # Obtener configuración de Redis
             redis_config = self._get_redis_config()
 
-            # Conectar a Redis
-            r = redis.Redis(
-                host=redis_config["host"],
-                port=redis_config["port"],
-                password=redis_config["password"],
-                db=redis_config["db"],
-                decode_responses=True
-            )
+            # Conectar a Redis (con username para Redis 6+ ACL)
+            redis_params = {
+                "host": redis_config["host"],
+                "port": redis_config["port"],
+                "db": redis_config["db"],
+                "decode_responses": True
+            }
+            if redis_config["password"]:
+                redis_params["username"] = "default"
+                redis_params["password"] = redis_config["password"]
+
+            r = redis.Redis(**redis_params)
 
             # Leer tokens de Redis
             redis_key = f"session_tokens:{self.session_id}"

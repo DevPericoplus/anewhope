@@ -176,19 +176,25 @@ class FlujosState(rx.State):
         "notificacion_descarga",
     ]
 
+    @rx.event(background=True)
     async def play_startup_flow(self) -> AsyncGenerator[None, None]:
         """Ejecuta la animación secuencial al cargar el diagrama."""
 
-        self.display_state = dict.fromkeys(
-            self.actual_workflow_state.keys(), False
-        )
+        async with self:
+            self.display_state = dict.fromkeys(
+                self.actual_workflow_state.keys(), False
+            )
         yield
+
         for key in self.workflow_sequence:
             await asyncio.sleep(0.5)
-            self.display_state[key] = True
+            async with self:
+                self.display_state[key] = True
             yield
+
         await asyncio.sleep(1)
-        self.display_state = self.actual_workflow_state
+        async with self:
+            self.display_state = self.actual_workflow_state
         yield
 
     def toggle_key(self, key: str) -> None:

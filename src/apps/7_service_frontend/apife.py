@@ -3151,6 +3151,132 @@ def update_prompt_endpoint(
         ) from exc
 
 
+# ============================================================================
+# PROJECT VERSION STATES - Phase Updates
+# ============================================================================
+
+class UpdateProposalPhaseDto(BaseModel):
+    """DTO for updating proposal phase."""
+    aceptacion_cliente: bool
+    aceptacion_interna: bool
+    revision_interna: bool | None = None
+    propuesta_mejoras: bool | None = None
+
+
+class UpdateTrainingPhaseDto(BaseModel):
+    """DTO for updating training phase."""
+    completado: bool
+
+
+class UpdateEvaluationPhaseDto(BaseModel):
+    """DTO for updating evaluation phase."""
+    evaluacion: bool | None = None
+    reentrenamiento: bool
+    optimizacion: bool
+    calidad_aprobada: bool
+    evaluacion_entrenamiento: bool | None = None
+
+
+class UpdateGenerationPhaseDto(BaseModel):
+    """DTO for updating generation phase."""
+    generacion_completada: bool | None = None
+    generacion_solicitada: bool | None = None
+
+
+class UpdateNotificationPhaseDto(BaseModel):
+    """DTO for updating notification phase."""
+    notificacion_enviada: bool
+
+
+@app.patch("/project-version-states/{state_id}/proposal", tags=["project-version-states"])
+def update_proposal_phase_endpoint(
+    state_id: int,
+    payload: UpdateProposalPhaseDto,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Updates proposal phase (client and internal acceptance)."""
+    try:
+        return router.update_proposal_phase(state_id, payload, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/project-version-states/{state_id}/training", tags=["project-version-states"])
+def update_training_phase_endpoint(
+    state_id: int,
+    payload: UpdateTrainingPhaseDto,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Updates training phase."""
+    try:
+        return router.update_training_phase(state_id, payload, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/project-version-states/{state_id}/evaluation", tags=["project-version-states"])
+def update_evaluation_phase_endpoint(
+    state_id: int,
+    payload: UpdateEvaluationPhaseDto,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Updates evaluation phase."""
+    try:
+        return router.update_evaluation_phase(state_id, payload, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/project-version-states/{state_id}/generation", tags=["project-version-states"])
+def update_generation_phase_endpoint(
+    state_id: int,
+    payload: UpdateGenerationPhaseDto,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Updates generation phase."""
+    try:
+        return router.update_generation_phase(state_id, payload, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/project-version-states/{state_id}/notification", tags=["project-version-states"])
+def update_notification_phase_endpoint(
+    state_id: int,
+    payload: UpdateNotificationPhaseDto,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Updates notification phase."""
+    try:
+        return router.update_notification_phase(state_id, payload, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# PROMPTS
+# ============================================================================
+
 @app.patch("/prompts/{category}/{id_prompt}/toggle", tags=["prompts"])
 def toggle_prompt_endpoint(
     category: str,
