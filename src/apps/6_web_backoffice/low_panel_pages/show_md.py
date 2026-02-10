@@ -9,7 +9,7 @@ COLORS = {
     "background": "#1a1a2e",
     "foreground": "#eaeaea",
     "card": "#2d2d2d",
-    "primary": "#f97316",  # Naranja para backoffice
+    "primary": "#FF8C00",  # Naranja para backoffice
     "muted_foreground": "#a0a0a0",
     "border": "#404040",
 }

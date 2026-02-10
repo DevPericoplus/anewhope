@@ -15,6 +15,8 @@ import importlib.util
 from pathlib import Path
 from sqlalchemy import text
 
+from components.org_selector import org_project_selector_bar
+
 # Importar módulos de 2_shared_application usando importlib (directorio con número)
 _shared_app_dir = Path(__file__).resolve().parents[3] / "2_shared_application"
 
@@ -31,6 +33,7 @@ _org_helpers_spec = importlib.util.spec_from_file_location(
 _org_helpers_module = importlib.util.module_from_spec(_org_helpers_spec)
 _org_helpers_spec.loader.exec_module(_org_helpers_module)
 find_org_id_by_name = _org_helpers_module.find_org_id_by_name
+find_project_id_by_name = _org_helpers_module.find_project_id_by_name
 load_organizations_for_selector = _org_helpers_module.load_organizations_for_selector
 load_projects_for_selector = _org_helpers_module.load_projects_for_selector
 
@@ -43,6 +46,7 @@ COLORS = {
     "background": "#0B1120",
     "card": "#141b2d",
     "border": "#1e2744",
+    "input": "#3a3a3a",
     "primary": "#FF8C00",  # Naranja del tema backoffice
     "foreground": "#ffffff",
     "muted_foreground": "#94a3b8",
@@ -121,10 +125,37 @@ class DayInfo(pydantic.BaseModel):
 class SeguimientoState(rx.State):
     """Estado combinado para seguimiento."""
 
-    # Selector de proyecto
-    seguimiento_projects_select: list[str] = []
-    seguimiento_project_name: str = ""
-    seguimiento_project_id: int = 0
+    # === SELECTORES UNIFICADOS DE PÁGINA ===
+    seg_organizations: list[dict] = []       # [{id, name}]
+    seg_selected_org_id: int = 0
+    seg_projects: list[dict] = []            # [{id, name}]
+    seg_selected_project_id: int = 0
+
+    @rx.var
+    def seg_org_names(self) -> list[str]:
+        """Nombres de organizaciones para el selector."""
+        return [o["name"] for o in self.seg_organizations]
+
+    @rx.var
+    def seg_selected_org_display(self) -> str:
+        """Nombre de la organización seleccionada."""
+        for o in self.seg_organizations:
+            if o["id"] == self.seg_selected_org_id:
+                return o["name"]
+        return ""
+
+    @rx.var
+    def seg_project_names(self) -> list[str]:
+        """Nombres de proyectos para el selector."""
+        return [p["name"] for p in self.seg_projects]
+
+    @rx.var
+    def seg_selected_project_display(self) -> str:
+        """Nombre del proyecto seleccionado."""
+        for p in self.seg_projects:
+            if p["id"] == self.seg_selected_project_id:
+                return p["name"]
+        return ""
 
     # === NOTIFICACIONES ===
     messages: list[Message] = []
@@ -159,24 +190,6 @@ class SeguimientoState(rx.State):
     modal_eventos_fecha: str = ""
     modal_eventos_contenido: str = ""
 
-    # Selectores para calendario (backoffice)
-    organizaciones_calendario: list[dict] = []
-    selected_org_calendario: int = 0
-    selected_org_nombre: str = ""
-    proyectos_calendario: list[dict] = []
-    selected_proyecto_calendario: int = 0
-    selected_proyecto_nombre: str = "Todos"
-
-    @rx.var
-    def org_calendario_names(self) -> list[str]:
-        """Nombres de organizaciones para el selector."""
-        return [org["nombre"] for org in self.organizaciones_calendario]
-
-    @rx.var
-    def proyecto_calendario_names(self) -> list[str]:
-        """Nombres de proyectos para el selector."""
-        return ["Todos"] + [p["nombre"] for p in self.proyectos_calendario]
-
     # === TICKETS ===
     tickets_list: list[dict] = []
     is_loading_tickets: bool = False
@@ -200,7 +213,14 @@ class SeguimientoState(rx.State):
     # === MÉTODOS NOTIFICACIONES ===
 
     async def load_conversaciones_organizacion(self):
-        """Carga las conversaciones de la organización."""
+        """Carga las conversaciones de la organización seleccionada."""
+        org_id = self.seg_selected_org_id
+        if org_id <= 0:
+            self.conversaciones_list = []
+            self.messages = []
+            self.id_conversacion_actual = 0
+            return
+
         engine = await self._get_db_engine()
         if not engine:
             self.conversaciones_error = "Error de conexión a base de datos"
@@ -208,11 +228,7 @@ class SeguimientoState(rx.State):
             return
 
         try:
-            from web_backoffice.web_backoffice import State as MainState
             conversaciones_adapter = _load_conversaciones_adapter()
-
-            main_state = await self.get_state(MainState)
-            org_id = main_state.organization_id
             print(f"[DEBUG] Cargando conversaciones para organization_id={org_id}")
 
             # Obtener conversaciones de la organización
@@ -497,96 +513,70 @@ class SeguimientoState(rx.State):
 
         return resultado
 
-    # === MÉTODOS CALENDARIO ===
+    # === MÉTODOS SELECTORES UNIFICADOS ===
 
-    async def load_organizaciones_calendario(self):
-        """Carga las organizaciones asignadas al usuario interno (backoffice).
+    async def set_seg_organization(self, org_name: str):
+        """Cambia la organización seleccionada y recarga todos los componentes."""
+        new_id = find_org_id_by_name(self.seg_organizations, org_name)
+        if new_id <= 0:
+            return
 
-        Usa el servicio centralizado de acceso a organizaciones.
-        """
-        print("[DEBUG CALENDARIO] load_organizaciones_calendario INICIADO")
+        self.seg_selected_org_id = new_id
+        self.seg_selected_project_id = 0
 
-        try:
-            from web_backoffice.web_backoffice import State as MainState
+        # Cargar proyectos de la organización
+        await self._load_seg_projects()
 
-            main_state = await self.get_state(MainState)
-            user_id = main_state.user_id
-            identity_type_id = main_state.identity_type_id
-            session_org_id = main_state.organization_id
-            print(f"[DEBUG CALENDARIO] user_id={user_id}")
+        # Recargar los tres componentes
+        await self.load_conversaciones_organizacion()
+        await self.load_events_data()
+        await self.load_tickets()
 
-            # Usar servicio centralizado
-            orgs, default_id = load_organizations_for_selector(
-                user_id=user_id,
-                identity_type_id=identity_type_id,
-                session_org_id=session_org_id,
-            )
+    async def set_seg_project(self, project_name: str):
+        """Cambia el proyecto seleccionado y recarga calendario y tickets."""
+        new_id = find_project_id_by_name(self.seg_projects, project_name)
+        if new_id <= 0:
+            return
 
-            # Convertir formato {id, name} a {id, nombre} para compatibilidad
-            self.organizaciones_calendario = [
-                {"id": org["id"], "nombre": org["name"]} for org in orgs
-            ]
-            print(f"[DEBUG CALENDARIO] Organizaciones cargadas: {len(orgs)}")
+        self.seg_selected_project_id = new_id
 
-            # Si hay organizaciones, seleccionar por defecto
-            if orgs and default_id > 0:
-                self.selected_org_calendario = default_id
-                for org in orgs:
-                    if org["id"] == default_id:
-                        self.selected_org_nombre = org["name"]
-                        break
-                print(
-                    f"[DEBUG CALENDARIO] Organización seleccionada: "
-                    f"{self.selected_org_nombre} (ID: {self.selected_org_calendario})"
-                )
-                await self.load_proyectos_calendario()
-                await self.load_events_data()
+        # Recargar calendario y tickets (notificaciones son por org, no por proyecto)
+        await self.load_events_data()
+        await self.load_tickets()
 
-        except Exception as e:
-            print(f"[ERROR CALENDARIO] Error al cargar organizaciones: {e}")
-            import traceback
-            traceback.print_exc()
-
-    async def load_proyectos_calendario(self):
-        """Carga los proyectos de la organización seleccionada."""
-        if self.selected_org_calendario == 0:
-            self.proyectos_calendario = []
+    async def _load_seg_projects(self):
+        """Carga los proyectos de la organización seleccionada (respeta asignaciones)."""
+        if self.seg_selected_org_id <= 0:
+            self.seg_projects = []
             return
 
         try:
             from web_backoffice.web_backoffice import State as MainState
-
             main_state = await self.get_state(MainState)
-            user_id = main_state.user_id
-            identity_type_id = main_state.identity_type_id
 
-            # Usar servicio centralizado
-            projects, _ = load_projects_for_selector(
-                user_id=user_id,
-                identity_type_id=identity_type_id,
-                organization_id=self.selected_org_calendario,
+            projects, default_id = load_projects_for_selector(
+                user_id=main_state.user_id,
+                identity_type_id=main_state.identity_type_id,
+                organization_id=self.seg_selected_org_id,
             )
+            self.seg_projects = projects
 
-            # Convertir formato {id, name} a {id, nombre} para compatibilidad
-            self.proyectos_calendario = [
-                {"id": p["id"], "nombre": p["name"]} for p in projects
-            ]
-
-            # Resetear selección de proyecto
-            self.selected_proyecto_calendario = 0
-
-            # Recargar eventos con la nueva organización
-            await self.load_events_data()
+            # Seleccionar primer proyecto por defecto si hay
+            if projects and default_id > 0:
+                self.seg_selected_project_id = default_id
+            else:
+                self.seg_selected_project_id = 0
 
         except Exception as e:
-            print(f"[ERROR] Error al cargar proyectos para calendario: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[ERROR] Error al cargar proyectos: {e}")
+            self.seg_projects = []
+
+    # === MÉTODOS CALENDARIO ===
 
     async def load_events_data(self):
         """Carga eventos del calendario desde la tabla cambios."""
         print("[DEBUG CALENDARIO] load_events_data INICIADO")
-        if self.selected_org_calendario == 0:
+        if self.seg_selected_org_id <= 0:
             print("[DEBUG CALENDARIO] No hay organización seleccionada, saltando carga de eventos")
             self.events_data = []
             return
@@ -605,10 +595,10 @@ class SeguimientoState(rx.State):
             anio = int(self.selected_year)
 
             # Determinar id_proyecto (None o el seleccionado)
-            id_proyecto = self.selected_proyecto_calendario if self.selected_proyecto_calendario > 0 else None
+            id_proyecto = self.seg_selected_project_id if self.seg_selected_project_id > 0 else None
 
             print(f"[DEBUG CALENDARIO] Consultando eventos para:")
-            print(f"[DEBUG CALENDARIO]   org_id={self.selected_org_calendario}")
+            print(f"[DEBUG CALENDARIO]   org_id={self.seg_selected_org_id}")
             print(f"[DEBUG CALENDARIO]   mes={mes} ({self.selected_month})")
             print(f"[DEBUG CALENDARIO]   año={anio}")
             print(f"[DEBUG CALENDARIO]   proyecto_id={id_proyecto}")
@@ -616,7 +606,7 @@ class SeguimientoState(rx.State):
             # Obtener eventos agrupados por día
             eventos = cambios_adapter.obtener_cambios_agrupados_por_dia(
                 engine=engine,
-                id_organizacion=self.selected_org_calendario,
+                id_organizacion=self.seg_selected_org_id,
                 mes=mes,
                 anio=anio,
                 id_proyecto=id_proyecto
@@ -624,37 +614,12 @@ class SeguimientoState(rx.State):
 
             self.events_data = eventos
             print(f"[DEBUG CALENDARIO] Eventos cargados: {len(eventos)} días con eventos")
-            for evento in eventos[:3]:  # Mostrar primeros 3
-                print(f"[DEBUG CALENDARIO]   - {evento['date']}: {evento['count']} evento(s), color={evento['color']}")
 
         except Exception as e:
             print(f"[ERROR CALENDARIO] Error al cargar eventos: {e}")
             import traceback
             traceback.print_exc()
             self.events_data = []
-
-    def set_org_calendario(self, org_nombre: str):
-        """Cambia la organización seleccionada y recarga proyectos y eventos."""
-        self.selected_org_nombre = org_nombre
-        # Buscar el ID de la organización por nombre
-        for org in self.organizaciones_calendario:
-            if org["nombre"] == org_nombre:
-                self.selected_org_calendario = org["id"]
-                break
-        return SeguimientoState.load_proyectos_calendario
-
-    def set_proyecto_calendario(self, proyecto_nombre: str):
-        """Cambia el proyecto seleccionado y recarga eventos."""
-        self.selected_proyecto_nombre = proyecto_nombre
-        if proyecto_nombre == "Todos":
-            self.selected_proyecto_calendario = 0
-        else:
-            # Buscar el ID del proyecto por nombre
-            for p in self.proyectos_calendario:
-                if p["nombre"] == proyecto_nombre:
-                    self.selected_proyecto_calendario = p["id"]
-                    break
-        return SeguimientoState.load_events_data
 
     @rx.var
     def month_days_with_events(self) -> list[list[DayInfo]]:
@@ -775,38 +740,19 @@ class SeguimientoState(rx.State):
 
     # === MÉTODOS TICKETS ===
 
-    async def set_seguimiento_project(self, project_name: str):
-        """Cambia el proyecto seleccionado y carga los tickets."""
-        self.seguimiento_project_name = project_name
-        engine = await self._get_db_engine()
-        if not engine:
-            self.tickets_error = "Error de conexión a base de datos"
-            return
-
-        try:
-            with engine.connect() as conn:
-                query = text("""
-                    SELECT id FROM myllm_projects_db.proyectos
-                    WHERE nombre = :nombre
-                    LIMIT 1
-                """)
-                result = conn.execute(query, {"nombre": project_name}).fetchone()
-
-                if result:
-                    self.seguimiento_project_id = result[0]
-                    await self.load_tickets()
-                else:
-                    self.seguimiento_project_id = 0
-                    self.tickets_list = []
-
-        except Exception as e:
-            print(f"Error al obtener project_id: {e}")
-            self.tickets_error = f"Error: {str(e)}"
-
     async def load_tickets(self):
         """Carga los tickets del proyecto seleccionado (VISTA INTERNA - todos los usuarios)."""
         self.is_loading_tickets = True
         self.tickets_error = ""
+
+        org_id = self.seg_selected_org_id
+        project_id = self.seg_selected_project_id
+
+        if org_id <= 0:
+            self.tickets_list = []
+            self.is_loading_tickets = False
+            return
+
         engine = await self._get_db_engine()
         if not engine:
             self.tickets_error = "Error de conexión a base de datos"
@@ -814,10 +760,6 @@ class SeguimientoState(rx.State):
             return
 
         try:
-            from web_backoffice.web_backoffice import State as MainState
-            main_state = await self.get_state(MainState)
-            org_id = main_state.organization_id
-
             with engine.connect() as conn:
                 # DIFERENCIA: En backoffice se ven TODOS los tickets de la organización
                 query = text("""
@@ -831,7 +773,7 @@ class SeguimientoState(rx.State):
 
                 results = conn.execute(query, {
                     "org_id": org_id,
-                    "project_id": self.seguimiento_project_id if self.seguimiento_project_id > 0 else None
+                    "project_id": project_id if project_id > 0 else None
                 })
 
                 self.tickets_list = []
@@ -1016,43 +958,54 @@ class SeguimientoState(rx.State):
 
     @rx.event
     async def on_mount_seguimiento(self):
-        """Se ejecuta cuando se monta el componente."""
-        print("[DEBUG BACKOFFICE] on_mount_seguimiento INICIADO")
-        engine = await self._get_db_engine()
-        if not engine:
-            print("[DEBUG BACKOFFICE] ERROR: No se pudo obtener el engine")
-            return
+        """Se ejecuta cuando se monta el componente.
 
-        print("[DEBUG BACKOFFICE] Engine obtenido correctamente")
+        Carga organizaciones usando load_organizations_for_selector (respeta asignaciones),
+        selecciona la primera por defecto y carga todos los datos.
+        """
+        print("[DEBUG BACKOFFICE] on_mount_seguimiento INICIADO")
+
         try:
             from web_backoffice.web_backoffice import State as MainState
             main_state = await self.get_state(MainState)
-            org_id = main_state.organization_id
-            print(f"[DEBUG BACKOFFICE] Organization ID: {org_id}")
+            user_id = main_state.user_id
+            identity_type_id = main_state.identity_type_id
+            session_org_id = main_state.organization_id
+            print(f"[DEBUG BACKOFFICE] user_id={user_id}, identity_type_id={identity_type_id}")
 
-            # Cargar proyectos
-            with engine.connect() as conn:
-                query = text("""
-                    SELECT nombre FROM myllm_projects_db.proyectos
-                    WHERE id_organizacion = :org_id
-                    ORDER BY nombre
-                """)
-                results = conn.execute(query, {"org_id": org_id})
-                self.seguimiento_projects_select = [row[0] for row in results]
-            print(f"[DEBUG BACKOFFICE] Proyectos cargados: {len(self.seguimiento_projects_select)}")
+            # 1. Cargar organizaciones (respeta asignaciones)
+            orgs, default_id = load_organizations_for_selector(
+                user_id=user_id,
+                identity_type_id=identity_type_id,
+                session_org_id=session_org_id,
+            )
+            self.seg_organizations = orgs
+            print(f"[DEBUG BACKOFFICE] Organizaciones cargadas: {len(orgs)}")
 
-            # Cargar conversaciones
-            print("[DEBUG BACKOFFICE] Llamando a load_conversaciones_organizacion...")
+            if not orgs or default_id <= 0:
+                print("[DEBUG BACKOFFICE] No hay organizaciones disponibles")
+                return
+
+            # 2. Seleccionar organización por defecto
+            self.seg_selected_org_id = default_id
+            print(f"[DEBUG BACKOFFICE] Org seleccionada: {self.seg_selected_org_display} (ID: {default_id})")
+
+            # 3. Cargar proyectos de la organización
+            await self._load_seg_projects()
+            print(f"[DEBUG BACKOFFICE] Proyectos cargados: {len(self.seg_projects)}")
+
+            # 4. Cargar datos de los tres componentes
             await self.load_conversaciones_organizacion()
-            print("[DEBUG BACKOFFICE] load_conversaciones_organizacion completado")
+            print("[DEBUG BACKOFFICE] Conversaciones cargadas")
 
-            # Cargar organizaciones para calendario
-            print("[DEBUG BACKOFFICE] Llamando a load_organizaciones_calendario...")
-            await self.load_organizaciones_calendario()
-            print("[DEBUG BACKOFFICE] load_organizaciones_calendario completado")
+            await self.load_events_data()
+            print("[DEBUG BACKOFFICE] Eventos calendario cargados")
+
+            await self.load_tickets()
+            print("[DEBUG BACKOFFICE] Tickets cargados")
 
         except Exception as e:
-            print(f"[ERROR BACKOFFICE] Error al cargar proyectos: {e}")
+            print(f"[ERROR BACKOFFICE] Error en on_mount_seguimiento: {e}")
             import traceback
             traceback.print_exc()
 
@@ -1174,12 +1127,15 @@ def panel_filtros() -> rx.Component:
         rx.text("Filtros", font_weight="bold", color=COLORS["primary"], font_size="1.8em"),
         # Filtro por estado
         rx.hstack(
-            rx.text("Estado:", font_size="1.3em", color=COLORS["muted_foreground"], font_weight="bold"),
+            rx.text("Estado:", font_size="1.1em", color=COLORS["primary"], font_weight="bold"),
             rx.select(
                 ["todas", "abierta", "en_curso", "resuelta"],
                 value=SeguimientoState.filtro_estado,
                 on_change=SeguimientoState.set_filtro_estado,
-                size="2",
+                size="3",
+                background_color=COLORS["input"],
+                color=COLORS["foreground"],
+                border_color=COLORS["border"],
             ),
             width="100%",
             justify="between",
@@ -1187,12 +1143,15 @@ def panel_filtros() -> rx.Component:
         ),
         # Filtro por prioridad
         rx.hstack(
-            rx.text("Prioridad:", font_size="1.3em", color=COLORS["muted_foreground"], font_weight="bold"),
+            rx.text("Prioridad:", font_size="1.1em", color=COLORS["primary"], font_weight="bold"),
             rx.select(
                 ["todas", "baja", "media", "alta", "urgente"],
                 value=SeguimientoState.filtro_prioridad,
                 on_change=SeguimientoState.set_filtro_prioridad,
-                size="2",
+                size="3",
+                background_color=COLORS["input"],
+                color=COLORS["foreground"],
+                border_color=COLORS["border"],
             ),
             width="100%",
             justify="between",
@@ -1657,7 +1616,8 @@ def modal_eventos_calendario() -> rx.Component:
                         "Cerrar",
                         size="3",
                         background_color=COLORS["primary"],
-                        color=COLORS["background"],
+                        color="black",
+                        font_weight="bold",
                         cursor="pointer",
                         width="100%",
                         margin_top="1em",
@@ -1692,49 +1652,7 @@ def calendario_component():
             letter_spacing="-0.5px"
         ),
 
-        # Selector de Organización (solo backoffice)
-        rx.vstack(
-            rx.text("Organización:", color=COLORS["primary"], font_weight="bold", font_size="1em"),
-            rx.select(
-                SeguimientoState.org_calendario_names,
-                value=SeguimientoState.selected_org_nombre,
-                on_change=SeguimientoState.set_org_calendario,
-                placeholder="Seleccione organización",
-                size="3",
-                width="100%",
-                style={
-                    "fontSize": "16px",
-                    "padding": "8px 12px",
-                    "minHeight": "40px",
-                }
-            ),
-            width="100%",
-            spacing="2",
-            margin_bottom="15px"
-        ),
-
-        # Selector de Proyecto (opcional)
-        rx.vstack(
-            rx.text("Proyecto:", color=COLORS["primary"], font_weight="bold", font_size="1em"),
-            rx.select(
-                SeguimientoState.proyecto_calendario_names,
-                value=SeguimientoState.selected_proyecto_nombre,
-                on_change=SeguimientoState.set_proyecto_calendario,
-                placeholder="Todos los proyectos",
-                size="3",
-                width="100%",
-                style={
-                    "fontSize": "16px",
-                    "padding": "8px 12px",
-                    "minHeight": "40px",
-                }
-            ),
-            width="100%",
-            spacing="2",
-            margin_bottom="15px"
-        ),
-
-        # Selectors de Año y Mes
+        # Selectores de Año y Mes (org y proyecto se controlan desde la barra superior)
         rx.hstack(
             rx.hstack(
                 rx.text("Año:", color="yellow", font_weight="bold", font_size="1.1em"),
@@ -1823,20 +1741,6 @@ def calendario_component():
 
 def ticket_row(ticket: dict) -> rx.Component:
     """Fila que muestra un ticket con botón de soporte."""
-    estado_colors = {
-        "abierto": "blue",
-        "en_espera": "amber",  # Cambiado de yellow a amber para mejor contraste
-        "resuelto": "green",
-        "cerrado": "gray",
-    }
-
-    prioridad_colors = {
-        "baja": "gray",
-        "media": "cyan",  # Cambiado de blue a cyan para mejor contraste
-        "alta": "orange",
-        "urgente": "red",
-    }
-
     return rx.box(
         rx.hstack(
             # Título del ticket
@@ -1850,21 +1754,35 @@ def ticket_row(ticket: dict) -> rx.Component:
                 text_overflow="ellipsis",
                 white_space="nowrap",
             ),
-            # Badge de estado (más grande y con mejor contraste)
+            # Badge de estado (rx.match para evaluar Var reactivo en rx.foreach)
             rx.badge(
                 ticket["estado"],
-                color_scheme=estado_colors.get(ticket["estado"], "gray"),
-                variant="solid",  # Cambiado de soft a solid para mejor contraste
+                color_scheme=rx.match(
+                    ticket["estado"],
+                    ("abierto", "blue"),
+                    ("en_espera", "amber"),
+                    ("resuelto", "green"),
+                    ("cerrado", "gray"),
+                    "gray",
+                ),
+                variant="solid",
                 size="2",
-                style={"fontSize": "14px", "padding": "6px 12px", "fontWeight": "600"},
+                style={"fontSize": "14px", "padding": "6px 12px", "fontWeight": "600", "color": "black"},
             ),
-            # Badge de prioridad (más grande y con mejor contraste)
+            # Badge de prioridad (rx.match para evaluar Var reactivo en rx.foreach)
             rx.badge(
                 ticket["prioridad"],
-                color_scheme=prioridad_colors.get(ticket["prioridad"], "gray"),
-                variant="solid",  # Cambiado de outline a solid
+                color_scheme=rx.match(
+                    ticket["prioridad"],
+                    ("baja", "gray"),
+                    ("media", "cyan"),
+                    ("alta", "orange"),
+                    ("urgente", "red"),
+                    "gray",
+                ),
+                variant="solid",
                 size="2",
-                style={"fontSize": "14px", "padding": "6px 12px", "fontWeight": "600"},
+                style={"fontSize": "14px", "padding": "6px 12px", "fontWeight": "600", "color": "black"},
             ),
             # Botón de soporte
             rx.tooltip(
@@ -2051,13 +1969,16 @@ def modal_ticket_soporte() -> rx.Component:
 
                 # Selector de nuevo estado
                 rx.vstack(
-                    rx.text("Cambiar estado:", font_weight="bold", color=COLORS["primary"], font_size="0.9em"),
+                    rx.text("Cambiar estado:", font_weight="bold", color=COLORS["primary"], font_size="1.1em"),
                     rx.select(
                         ["abierto", "en_espera", "resuelto", "cerrado"],
                         value=SeguimientoState.ticket_nuevo_estado,
                         on_change=SeguimientoState.set_ticket_nuevo_estado,
                         size="3",
                         width="100%",
+                        background_color=COLORS["input"],
+                        color=COLORS["foreground"],
+                        border_color=COLORS["border"],
                     ),
                     spacing="1",
                     width="100%",
@@ -2119,50 +2040,27 @@ def modal_ticket_soporte() -> rx.Component:
 # PANEL PRINCIPAL SEGUIMIENTO
 # ============================================================================
 
-def selector_proyecto_component() -> rx.Component:
-    """Selector de proyecto compacto."""
-    return rx.vstack(
-        rx.hstack(
-            rx.icon("folder-kanban", size=24, color=COLORS["primary"]),
-            rx.heading("Seguimiento del Proyecto", size="7", color=COLORS["primary"]),
-            rx.badge(
-                "Vista Interna",
-                color_scheme="green",
-                variant="soft",
-                size="1",
-            ),
-            spacing="3",
-            align="center",
-        ),
-        rx.hstack(
-            rx.text("Proyecto:", font_weight="bold", color=COLORS["primary"], font_size="1.5em"),
-            rx.select(
-                SeguimientoState.seguimiento_projects_select,
-                placeholder="Seleccionar proyecto...",
-                value=SeguimientoState.seguimiento_project_name,
-                on_change=SeguimientoState.set_seguimiento_project,
-                width="300px",
-                size="3",
-            ),
-            spacing="3",
-            align="center",
-            width="100%",
-            justify="center",
-        ),
-        width="100%",
-        spacing="2",
-        padding="1em",
-        background_color=COLORS["card"],
-        border=f"1px solid {COLORS['border']}",
-        border_radius="0.5em",
-    )
-
-
 def seguimiento_panel() -> rx.Component:
-    """Panel principal de seguimiento con tres zonas."""
+    """Panel principal de seguimiento con tres zonas.
+
+    Un único par de selectores org/proyecto en la parte superior controla
+    el contenido de notificaciones, calendario y tickets.
+    """
 
     return rx.vstack(
-        # ===== CONTENIDO: TRES ZONAS (siempre visible) =====
+        # ===== BARRA SUPERIOR: Selectores unificados =====
+        org_project_selector_bar(
+            org_names=SeguimientoState.seg_org_names,
+            selected_org_display=SeguimientoState.seg_selected_org_display,
+            on_org_change=SeguimientoState.set_seg_organization,
+            project_names=SeguimientoState.seg_project_names,
+            selected_project_display=SeguimientoState.seg_selected_project_display,
+            on_project_change=SeguimientoState.set_seg_project,
+            org_placeholder="Seleccione organización",
+            project_placeholder="Seleccione proyecto",
+        ),
+
+        # ===== CONTENIDO: TRES ZONAS =====
         rx.hstack(
             # IZQUIERDA: Notificaciones (chat móvil)
             rx.box(
@@ -2173,17 +2071,14 @@ def seguimiento_panel() -> rx.Component:
                 border=f"1px solid {COLORS['border']}",
                 border_radius="0.5em",
                 overflow_y="auto",
-                max_height="calc(100vh - 150px)",
+                max_height="calc(100vh - 200px)",
             ),
 
-            # DERECHA: Calendario + Selector + Tickets (con scroll igual que notificaciones)
+            # DERECHA: Calendario + Tickets (con scroll)
             rx.box(
                 rx.vstack(
                     # Calendario (arriba)
                     calendario_component(),
-
-                    # Selector de Proyecto (medio)
-                    selector_proyecto_component(),
 
                     # Tickets (abajo)
                     tickets_viewer_component(),
@@ -2203,7 +2098,7 @@ def seguimiento_panel() -> rx.Component:
             spacing="3",
             width="100%",
             align_items="stretch",
-            height="calc(100vh - 120px)",
+            height="calc(100vh - 170px)",
         ),
 
         # Modal de soporte para tickets

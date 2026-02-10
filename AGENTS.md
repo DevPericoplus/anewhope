@@ -2660,6 +2660,117 @@ rx.button(
 
 **Nota:** El `color_scheme` define el color de fondo del botón. El texto siempre debe ser negro (`color: "black"`).
 
+## Colores estándar para badges de estado y prioridad (OBLIGATORIO EN AMBAS APPS)
+
+**Regla fundamental:** Los badges que representan **estado** y **prioridad** de tickets (y cualquier
+otra entidad con los mismos conceptos) deben usar un código de colores **homogéneo** en todas las
+aplicaciones. Esto garantiza que el usuario perciba la misma información visual en frontend y backoffice.
+
+### Componente obligatorio
+
+Usar siempre `rx.badge` con `variant="solid"` y texto en **negro** para máximo contraste y legibilidad:
+
+```python
+rx.badge(
+    ticket["estado"],
+    color_scheme="blue",
+    variant="solid",
+    size="2",
+    style={"fontSize": "14px", "padding": "6px 12px", "fontWeight": "600", "color": "black"},
+)
+```
+
+### Colores de estado de tickets
+
+| Estado | `color_scheme` | Significado |
+|--------|---------------|-------------|
+| `abierto` | `"blue"` | Ticket nuevo, requiere atención |
+| `en_espera` | `"amber"` | Esperando respuesta del cliente o del equipo |
+| `resuelto` | `"green"` | Resuelto satisfactoriamente |
+| `cerrado` | `"gray"` | Cerrado / archivado |
+
+### Colores de prioridad de tickets
+
+| Prioridad | `color_scheme` | Significado |
+|-----------|---------------|-------------|
+| `baja` | `"gray"` | Baja prioridad, sin urgencia |
+| `media` | `"cyan"` | Prioridad normal |
+| `alta` | `"orange"` | Requiere atención pronta |
+| `urgente` | `"red"` | Crítico, atención inmediata |
+
+### Implementación estándar (CRÍTICO: usar rx.match)
+
+**IMPORTANTE:** Dentro de `rx.foreach`, los valores como `ticket["estado"]` son `Var` reactivos de
+Reflex, NO strings de Python. Esto significa que `dict.get(ticket["estado"], "gray")` **SIEMPRE**
+retorna `"gray"` porque Python no puede comparar un `Var` con claves de diccionario en tiempo de
+compilación. Se **DEBE** usar `rx.match` para que la evaluación ocurra en el cliente (JavaScript).
+
+```python
+# ✅ CORRECTO - Usar rx.match para color_scheme dinámico en rx.foreach
+# Texto SIEMPRE en negro ("color": "black") para legibilidad sobre fondo coloreado
+rx.badge(
+    ticket["estado"],
+    color_scheme=rx.match(
+        ticket["estado"],
+        ("abierto", "blue"),
+        ("en_espera", "amber"),
+        ("resuelto", "green"),
+        ("cerrado", "gray"),
+        "gray",  # default
+    ),
+    variant="solid",
+    size="2",
+    style={"fontSize": "14px", "padding": "6px 12px", "fontWeight": "600", "color": "black"},
+)
+
+rx.badge(
+    ticket["prioridad"],
+    color_scheme=rx.match(
+        ticket["prioridad"],
+        ("baja", "gray"),
+        ("media", "cyan"),
+        ("alta", "orange"),
+        ("urgente", "red"),
+        "gray",  # default
+    ),
+    variant="solid",
+    size="2",
+    style={"fontSize": "14px", "padding": "6px 12px", "fontWeight": "600", "color": "black"},
+)
+```
+
+```python
+# ❌ INCORRECTO - dict.get() NO funciona con Var reactivos en rx.foreach
+estado_colors = {"abierto": "blue", "en_espera": "amber", ...}
+rx.badge(
+    ticket["estado"],
+    color_scheme=estado_colors.get(ticket["estado"], "gray"),  # Siempre retorna "gray"
+)
+
+# ❌ INCORRECTO - Usar rx.box con hexadecimales en lugar de rx.badge
+rx.box(
+    rx.text(ticket["estado"], color="#ffffff"),
+    background_color="#52525b",  # No usar hexadecimales, usar rx.badge + rx.match
+)
+
+# ❌ INCORRECTO - Usar variant="soft" (poco contraste)
+rx.badge(ticket["estado"], variant="soft")  # Debe ser variant="solid"
+```
+
+### Archivos afectados
+
+| Archivo | Componente | Descripción |
+|---------|-----------|-------------|
+| `src/apps/5_web_frontend/components/seguimiento.py` | `ticket_row()` | Visor de tickets del frontend |
+| `src/apps/6_web_backoffice/components/seguimiento.py` | `ticket_row()` | Visor de tickets de Seguimiento |
+| `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py` | `ticket_row()` | Visor de tickets de Soporte |
+
+### Extensión a otras entidades
+
+Si en el futuro se añaden badges para conversaciones, proyectos u otras entidades con estados/prioridades,
+deben seguir la misma paleta. Por ejemplo, el estado de conversación (`abierta`, `en_curso`, `resuelta`,
+`cerrada`) debería mapear a los mismos colores conceptuales (`blue`, `amber`, `green`, `gray`).
+
 ## Estilos visuales — Títulos, Labels y Selectores (OBLIGATORIO EN AMBAS APPS)
 
 **Regla fundamental:** Todas las páginas de **ambas aplicaciones** (frontend y backoffice)

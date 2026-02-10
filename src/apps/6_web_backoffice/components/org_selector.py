@@ -5,7 +5,7 @@ superior de múltiples páginas del backoffice para filtrar contenido por
 organización, proyecto y/o versión.
 
 El estilo visual sigue el patrón establecido en ``estado_proyectos.py``:
-- Labels naranjas (#f97316) con font_weight="600"
+- Labels naranjas (#FF8C00) con font_weight="bold"
 - ``rx.select`` con size="3" y ancho 100%
 - Distribución horizontal equitativa
 
@@ -38,14 +38,21 @@ import reflex as rx
 # Constantes de estilo (alineadas con tema backoffice)
 # ============================================================================
 
-LABEL_COLOR = "#f97316"
-LABEL_FONT_SIZE = "1em"
-LABEL_FONT_WEIGHT = "600"
+LABEL_COLOR = "#FF8C00"
+LABEL_FONT_SIZE = "1.1em"
+LABEL_FONT_WEIGHT = "bold"
 SELECT_SIZE = "3"
 SELECTOR_SPACING = "3"
 SELECTOR_MARGIN_BOTTOM = "2em"
 DEFAULT_ORG_PLACEHOLDER = "Seleccione organización"
 DEFAULT_ORG_LABEL = "Organización"
+
+# Estilo estándar para selectores en fondo oscuro (garantiza legibilidad)
+SELECT_STYLE = {
+    "backgroundColor": "#3a3a3a",
+    "color": "#f2f2f5",
+    "borderColor": "#555",
+}
 
 
 # ============================================================================
@@ -76,6 +83,7 @@ def _selector_column(
             placeholder=placeholder,
             width="100%",
             size=SELECT_SIZE,
+            style=SELECT_STYLE,
         ),
         spacing="1",
         width=width,

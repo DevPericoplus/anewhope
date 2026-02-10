@@ -509,7 +509,7 @@ def password_validation_modal() -> rx.Component:
                     rx.heading(
                         "Requisitos de Contraseña",
                         size="6",
-                        color=COLORS["foreground"],
+                        color=COLORS["primary"],
                         margin_bottom="1em",
                     ),
                     rx.text(
@@ -547,7 +547,7 @@ def password_validation_modal() -> rx.Component:
                         "Entendido",
                         on_click=ChangePasswordState.close_password_validation_modal,
                         background_color=COLORS["primary"],
-                        color=COLORS["background"],
+                        color="black",
                         font_weight="bold",
                         padding="0.75em 2em",
                         border_radius="0.5em",
@@ -592,7 +592,7 @@ def password_match_error_modal() -> rx.Component:
                     rx.heading(
                         "Error de Contraseña",
                         size="6",
-                        color=COLORS["foreground"],
+                        color=COLORS["primary"],
                         margin_bottom="1em",
                     ),
                     rx.text(
@@ -606,7 +606,7 @@ def password_match_error_modal() -> rx.Component:
                         "Entendido",
                         on_click=ChangePasswordState.close_password_match_error_modal,
                         background_color=COLORS["primary"],
-                        color=COLORS["background"],
+                        color="black",
                         font_weight="bold",
                         padding="0.75em 2em",
                         border_radius="0.5em",
@@ -641,7 +641,7 @@ def change_password_page() -> rx.Component:
         
         # Header
         rx.hstack(
-            rx.heading("Recordar Contraseña", size="6", color=COLORS["foreground"]),
+            rx.heading("Recordar Contraseña", size="6", color=COLORS["primary"]),
             width="100%",
             padding="1em",
             background_color=COLORS["card"],
@@ -652,7 +652,7 @@ def change_password_page() -> rx.Component:
         rx.vstack(
             # Panel informativo
             rx.vstack(
-                rx.heading("Proceso de Recuperación de Contraseña", size="5", color=COLORS["foreground"], margin_bottom="1em"),
+                rx.heading("Proceso de Recuperación de Contraseña", size="5", color=COLORS["primary"], margin_bottom="1em"),
                 rx.vstack(
                     rx.text(
                         "Para recuperar su contraseña, siga estos pasos:",
@@ -696,7 +696,7 @@ def change_password_page() -> rx.Component:
                 ChangePasswordState.step == 1,
                 rx.vstack(
                     rx.vstack(
-                        rx.heading("Paso 1: Ingrese su Email", size="5", color=COLORS["foreground"], margin_bottom="1em"),
+                        rx.heading("Paso 1: Ingrese su Email", size="5", color=COLORS["primary"], margin_bottom="1em"),
                         rx.vstack(
                             rx.text("Email *", font_size="0.9em", color=COLORS["muted_foreground"]),
                             rx.input(
@@ -715,7 +715,7 @@ def change_password_page() -> rx.Component:
                             "Solicitar código OTP",
                             on_click=ChangePasswordState.request_otp,
                             background_color=COLORS["primary"],
-                            color=COLORS["background"],
+                            color="black",
                             font_weight="bold",
                             padding="0.75em 2em",
                             border_radius="0.5em",
@@ -738,7 +738,7 @@ def change_password_page() -> rx.Component:
                 ChangePasswordState.step == 2,
                 rx.vstack(
                     rx.vstack(
-                        rx.heading("Paso 2: Validar Código OTP", size="5", color=COLORS["foreground"], margin_bottom="1em"),
+                        rx.heading("Paso 2: Validar Código OTP", size="5", color=COLORS["primary"], margin_bottom="1em"),
                         rx.vstack(
                             rx.text("Código OTP *", font_size="0.9em", color=COLORS["muted_foreground"]),
                             rx.input(
@@ -758,7 +758,7 @@ def change_password_page() -> rx.Component:
                             "Validar código OTP",
                             on_click=ChangePasswordState.validate_otp,
                             background_color=COLORS["primary"],
-                            color=COLORS["background"],
+                            color="black",
                             font_weight="bold",
                             padding="0.75em 2em",
                             border_radius="0.5em",
@@ -781,7 +781,7 @@ def change_password_page() -> rx.Component:
                 ChangePasswordState.step == 3,
                 rx.vstack(
                     rx.vstack(
-                        rx.heading("Paso 3: Nueva Contraseña", size="5", color=COLORS["foreground"], margin_bottom="1em"),
+                        rx.heading("Paso 3: Nueva Contraseña", size="5", color=COLORS["primary"], margin_bottom="1em"),
                         rx.vstack(
                             rx.text("Contraseña *", font_size="0.9em", color=COLORS["muted_foreground"]),
                             rx.input(
@@ -822,7 +822,7 @@ def change_password_page() -> rx.Component:
                                 "Actualizar",
                                 on_click=ChangePasswordState.update_password,
                                 background_color=COLORS["primary"],
-                                color=COLORS["background"],
+                                color="black",
                                 font_weight="bold",
                                 padding="0.75em 2em",
                                 border_radius="0.5em",

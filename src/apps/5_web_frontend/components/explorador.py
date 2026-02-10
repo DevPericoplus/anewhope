@@ -2343,6 +2343,8 @@ def create_folder_dialog() -> rx.Component:
                     rx.button(
                         "Crear",
                         on_click=ExploradorState.ejecutar_crear_carpeta,
+                        color_scheme="green",
+                        style={"font_weight": "bold", "color": "black"},
                     ),
                     spacing="3",
                     justify="end",
@@ -2382,6 +2384,8 @@ def rename_dialog() -> rx.Component:
                     rx.button(
                         "Renombrar",
                         on_click=ExploradorState.ejecutar_renombrar,
+                        color_scheme="green",
+                        style={"font_weight": "bold", "color": "black"},
                     ),
                     spacing="3",
                     justify="end",
@@ -2444,6 +2448,8 @@ def properties_dialog() -> rx.Component:
                     rx.button(
                         "Cerrar",
                         on_click=ExploradorState.cerrar_dialogo_propiedades,
+                        color_scheme="green",
+                        style={"font_weight": "bold", "color": "black"},
                         width="100%",
                     ),
                 ),
@@ -2479,7 +2485,7 @@ def explorador_panel(state) -> rx.Component:
         rx.vstack(
             # Header con título del explorador
             rx.hstack(
-                rx.heading("Explorador de versiones del proyecto", size="6", color="white"),
+                rx.heading("Explorador de versiones del proyecto", size="6", color="#22c55e"),
                 rx.spacer(),
                 width="100%",
                 align_items="center",
@@ -2616,6 +2622,9 @@ def explorador_page_internal() -> rx.Component:
                                             on_change=ExploradorState.set_version_state,
                                             width="150px",
                                             size="2",
+                                            background_color="#3a3a3a",
+                                            color="#f2f2f5",
+                                            border_color="#555",
                                         ),
                                         align_items="start",
                                     ),
@@ -2685,6 +2694,7 @@ def explorador_page_internal() -> rx.Component:
                                         ),
                                         on_click=ExploradorState.confirmar_entrenamiento,
                                         color_scheme="green",
+                                        style={"font_weight": "bold", "color": "black"},
                                         width="100%",
                                         size="2",
                                         disabled=~ExploradorState.is_internal_user, # Deshabilitado si es Cliente

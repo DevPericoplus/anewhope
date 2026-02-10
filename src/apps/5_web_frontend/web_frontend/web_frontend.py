@@ -2170,7 +2170,7 @@ def login_panel() -> rx.Component:
                 "Iniciar Sesión",
                 on_click=State.user_login,
                 background_color=COLORS["primary"],
-                color=COLORS["background"],
+                color="black",
                 width="100%",
                 font_weight="bold",
                 font_size="1.1em",
@@ -2237,7 +2237,7 @@ def sidebar_menu(is_logged_in: bool) -> rx.Component:
                         ),
                         color=rx.cond(
                             State.user_active_menu == item,
-                            COLORS["background"],
+                            "black",
                             COLORS["foreground"]
                         ),
                         width="100%",
@@ -2248,6 +2248,7 @@ def sidebar_menu(is_logged_in: bool) -> rx.Component:
                         cursor="pointer",
                         text_align="left",
                         font_size="1.1em",
+                        font_weight="bold",
                         _hover={"opacity": "0.8"},
                     ),
                 ),
@@ -2521,7 +2522,7 @@ def users_management_panel() -> rx.Component:
         remove_user_from_project_modal(),
         rx.hstack(
             rx.icon("users", size=28, color=COLORS["primary"]),
-            rx.heading("Gestión de Usuarios", size="6", color=COLORS["foreground"]),
+            rx.heading("Gestión de Usuarios", size="6", color=COLORS["primary"]),
             spacing="3",
             align="center",
         ),
@@ -2938,6 +2939,9 @@ def assign_user_to_project_modal() -> rx.Component:
                         value=State.selected_project_name,
                         on_change=State.set_assign_project,
                         width="100%",
+                        background_color=COLORS["input"],
+                        color=COLORS["foreground"],
+                        border_color=COLORS["border"],
                     ),
                     width="100%",
                     spacing="1",
@@ -2952,6 +2956,9 @@ def assign_user_to_project_modal() -> rx.Component:
                         value=State.selected_rol_name,
                         on_change=State.set_assign_rol,
                         width="100%",
+                        background_color=COLORS["input"],
+                        color=COLORS["foreground"],
+                        border_color=COLORS["border"],
                     ),
                     width="100%",
                     spacing="1",
@@ -3071,6 +3078,9 @@ def remove_user_from_project_modal() -> rx.Component:
                             placeholder="Seleccione el proyecto a quitar",
                             on_change=State.set_remove_project,
                             width="100%",
+                            background_color=COLORS["input"],
+                            color=COLORS["foreground"],
+                            border_color=COLORS["border"],
                         ),
                         rx.text(
                             "Este usuario no tiene asignaciones activas a proyectos.",
@@ -3132,9 +3142,9 @@ def remove_user_from_project_modal() -> rx.Component:
                         rx.cond(
                             State.is_removing_user,
                             rx.spinner(size="2"),
-                            rx.icon("user-x", size=18, color="white"),
+                            rx.icon("user-x", size=18, color="black"),
                         ),
-                        rx.text("Quitar", font_weight="bold", color="white"),
+                        rx.text("Quitar", font_weight="bold", color="black"),
                         on_click=State.confirm_remove_user,
                         disabled=State.is_removing_user,
                         color_scheme="orange",
@@ -3165,7 +3175,7 @@ def projects_management_panel() -> rx.Component:
         support_ticket_modal(),
         rx.hstack(
             rx.icon("folder-kanban", size=28, color=COLORS["primary"]),
-            rx.heading("Gestión de Proyectos", size="6", color=COLORS["foreground"]),
+            rx.heading("Gestión de Proyectos", size="6", color=COLORS["primary"]),
             spacing="3",
             align="center",
         ),
@@ -3263,7 +3273,7 @@ def project_assignments_panel() -> rx.Component:
     return rx.vstack(
         rx.hstack(
             rx.icon("users-round", size=28, color=COLORS["primary"]),
-            rx.heading("Asignaciones de Proyectos", size="6", color=COLORS["foreground"]),
+            rx.heading("Asignaciones de Proyectos", size="6", color=COLORS["primary"]),
             spacing="3",
             align="center",
         ),
@@ -3392,7 +3402,7 @@ def tecnologias_management_panel() -> rx.Component:
     return rx.vstack(
         rx.hstack(
             rx.icon("cpu", size=36, color=COLORS["primary"]),
-            rx.heading("Asignación de Tecnología", size="7", color=COLORS["foreground"]),
+            rx.heading("Asignación de Tecnología", size="7", color=COLORS["primary"]),
             spacing="4",
             align="center",
         ),
@@ -3410,6 +3420,9 @@ def tecnologias_management_panel() -> rx.Component:
                 on_change=State.set_tech_project,
                 width="350px",
                 size="3",
+                background_color=COLORS["input"],
+                color=COLORS["foreground"],
+                border_color=COLORS["border"],
             ),
             spacing="4",
             align="center",
@@ -3534,7 +3547,7 @@ def tecnologias_asignadas_panel() -> rx.Component:
             rx.heading(
                 "Tecnologías asignadas a proyecto",
                 size="6",
-                color=COLORS["foreground"],
+                color=COLORS["primary"],
             ),
             spacing="3",
             align="center",
@@ -3573,7 +3586,7 @@ def proyecciones_management_panel() -> rx.Component:
         rx.vstack(
             rx.hstack(
                 rx.icon("folder-git-2", size=36, color=COLORS["primary"]),
-                rx.heading("Gestión de Versiones", size="7", color=COLORS["foreground"]),
+                rx.heading("Gestión de Versiones", size="7", color=COLORS["primary"]),
                 spacing="4",
                 align="center",
             ),
@@ -3591,6 +3604,9 @@ def proyecciones_management_panel() -> rx.Component:
                     on_change=State.set_proyecciones_project,
                     width="350px",
                     size="3",
+                    background_color=COLORS["input"],
+                    color=COLORS["foreground"],
+                    border_color=COLORS["border"],
                 ),
                 spacing="4",
                 align="center",
@@ -3608,7 +3624,7 @@ def proyecciones_management_panel() -> rx.Component:
             rx.vstack(
                 rx.hstack(
                     rx.icon("git-branch", size=28, color=COLORS["primary"]),
-                    rx.heading("Gestión de Versiones", size="6", color=COLORS["foreground"]),
+                    rx.heading("Gestión de Versiones", size="6", color=COLORS["primary"]),
                     rx.spacer(),
                     rx.button(
                         rx.icon("plus", size=18),
@@ -3777,9 +3793,9 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             rx.markdown(
                 content_text,
                 component_map={
-                    "h1": lambda text: rx.heading(text, size="7", color=COLORS["foreground"], margin_bottom="0.5em"),
+                    "h1": lambda text: rx.heading(text, size="7", color=COLORS["primary"], margin_bottom="0.5em"),
                     "h2": lambda text: rx.heading(text, size="6", color=COLORS["primary"], margin_top="1em", margin_bottom="0.5em"),
-                    "h3": lambda text: rx.heading(text, size="5", color=COLORS["foreground"], margin_top="0.8em", margin_bottom="0.4em"),
+                    "h3": lambda text: rx.heading(text, size="5", color=COLORS["primary"], margin_top="0.8em", margin_bottom="0.4em"),
                     "p": lambda text: rx.text(text, color=COLORS["muted_foreground"], font_size="1.3em", line_height="1.6", margin_bottom="0.6em"),
                     "li": lambda text: rx.list_item(rx.text(text, color=COLORS["muted_foreground"], font_size="1.3em", line_height="1.5")),
                     "strong": lambda text: rx.text(text, font_weight="bold", color=COLORS["foreground"], as_="span"),
@@ -3842,9 +3858,9 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
                 rx.markdown(
                     projections_text,
                     component_map={
-                        "h1": lambda text: rx.heading(text, size="7", color=COLORS["foreground"], margin_bottom="0.5em"),
+                        "h1": lambda text: rx.heading(text, size="7", color=COLORS["primary"], margin_bottom="0.5em"),
                         "h2": lambda text: rx.heading(text, size="6", color=COLORS["primary"], margin_top="1em", margin_bottom="0.5em"),
-                        "h3": lambda text: rx.heading(text, size="5", color=COLORS["foreground"], margin_top="0.8em", margin_bottom="0.4em"),
+                        "h3": lambda text: rx.heading(text, size="5", color=COLORS["primary"], margin_top="0.8em", margin_bottom="0.4em"),
                         "p": lambda text: rx.text(text, color=COLORS["muted_foreground"], font_size="1.3em", line_height="1.6", margin_bottom="0.6em"),
                         "li": lambda text: rx.list_item(rx.text(text, color=COLORS["muted_foreground"], font_size="1.3em", line_height="1.5")),
                         "strong": lambda text: rx.text(text, font_weight="bold", color=COLORS["foreground"], as_="span"),
@@ -3968,7 +3984,7 @@ def dashboard_tabs() -> rx.Component:
                     ),
                     color=rx.cond(
                         active_tab == tab_id,
-                        COLORS["background"],
+                        "black",
                         COLORS["foreground"]
                     ),
                     border="none",
@@ -3988,7 +4004,7 @@ def dashboard_tabs() -> rx.Component:
         rx.cond(
             active_tab == "resumen",
             rx.vstack(
-                rx.heading("Resumen General", size="6", color=COLORS["foreground"]),
+                rx.heading("Resumen General", size="6", color=COLORS["primary"]),
                 rx.flex(
                     rx.box(
                         rx.vstack(
@@ -4037,7 +4053,7 @@ def dashboard_tabs() -> rx.Component:
         rx.cond(
             active_tab == "proyectos",
             rx.vstack(
-                rx.heading("Proyectos", size="6", color=COLORS["foreground"]),
+                rx.heading("Proyectos", size="6", color=COLORS["primary"]),
                 *[
                     rx.hstack(
                         rx.vstack(
@@ -4062,7 +4078,7 @@ def dashboard_tabs() -> rx.Component:
         rx.cond(
             active_tab == "tareas",
             rx.vstack(
-                rx.heading("Tareas", size="6", color=COLORS["foreground"]),
+                rx.heading("Tareas", size="6", color=COLORS["primary"]),
                 *[
                     rx.hstack(
                         rx.checkbox(checked=False),
@@ -4088,7 +4104,7 @@ def dashboard_tabs() -> rx.Component:
         rx.cond(
             active_tab == "reportes",
             rx.vstack(
-                rx.heading("Reportes", size="6", color=COLORS["foreground"]),
+                rx.heading("Reportes", size="6", color=COLORS["primary"]),
                 rx.flex(
                     *[
                         rx.box(
@@ -4121,7 +4137,7 @@ def dashboard_tabs() -> rx.Component:
         rx.cond(
             active_tab == "documentos",
             rx.vstack(
-                rx.heading("Documentos", size="6", color=COLORS["foreground"]),
+                rx.heading("Documentos", size="6", color=COLORS["primary"]),
                 *[
                     rx.hstack(
                         rx.text(doc, color=COLORS["foreground"]),
@@ -4147,7 +4163,7 @@ def dashboard_tabs() -> rx.Component:
         rx.cond(
             active_tab == "configuracion",
             rx.vstack(
-                rx.heading("Configuración", size="6", color=COLORS["foreground"]),
+                rx.heading("Configuración", size="6", color=COLORS["primary"]),
                 rx.vstack(
                     rx.vstack(
                         rx.text("Notificaciones por email", color=COLORS["muted_foreground"], font_size="0.9em"),
@@ -4260,7 +4276,8 @@ def user_portal() -> rx.Component:
                         "Backoffice",
                         on_click=State.go_to_backoffice,
                         background_color="#FF8C00",  # Naranja
-                        color="white",
+                        color="black",
+                        font_weight="bold",
                         font_size="1.1em",
                         _hover={"background_color": "#FF7000"},
                     ),
@@ -4269,7 +4286,8 @@ def user_portal() -> rx.Component:
                     "Desconectar",
                     on_click=State.user_logout,
                     background_color=COLORS["primary"],
-                    color=COLORS["background"],
+                    color="black",
+                    font_weight="bold",
                     font_size="1.1em",
                 ),
                 width="100%",

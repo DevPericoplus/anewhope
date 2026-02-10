@@ -2452,7 +2452,7 @@ def login_panel() -> rx.Component:
                 "Iniciar Sesión",
                 on_click=State.user_login,
                 background_color=COLORS["primary"],
-                color=COLORS["background"],
+                color="black",
                 width="100%",
                 font_weight="bold",
                 font_size="1.1em",
@@ -2519,7 +2519,7 @@ def sidebar_menu(is_logged_in: bool) -> rx.Component:
                         ),
                         color=rx.cond(
                             (State.user_active_menu == item) & (State.internal_active_menu == ""),
-                            COLORS["background"],
+                            "black",
                             COLORS["foreground"]
                         ),
                         width="100%",
@@ -2530,6 +2530,7 @@ def sidebar_menu(is_logged_in: bool) -> rx.Component:
                         cursor="pointer",
                         text_align="left",
                         font_size="1.1em",
+                        font_weight="bold",
                         _hover={"opacity": "0.8"},
                     ),
                 ),
@@ -2583,7 +2584,7 @@ def internal_menu(is_logged_in: bool) -> rx.Component:
                                 ),
                                 color=rx.cond(
                                     State.internal_active_menu == item,
-                                    COLORS["background"],
+                                    "black",
                                     COLORS["foreground"]
                                 ),
                                 width="100%",
@@ -2594,6 +2595,7 @@ def internal_menu(is_logged_in: bool) -> rx.Component:
                                 cursor="pointer",
                                 text_align="left",
                                 font_size="1.1em",
+                                font_weight="bold",
                                 _hover={"opacity": "0.8"},
                             ),
                             rx.fragment(),  # No mostrar nada si no es super admin
@@ -2609,7 +2611,7 @@ def internal_menu(is_logged_in: bool) -> rx.Component:
                             ),
                             color=rx.cond(
                                 State.internal_active_menu == item,
-                                COLORS["background"],
+                                "black",
                                 COLORS["foreground"]
                             ),
                             width="100%",
@@ -2620,6 +2622,7 @@ def internal_menu(is_logged_in: bool) -> rx.Component:
                             cursor="pointer",
                             text_align="left",
                             font_size="1.1em",
+                            font_weight="bold",
                             _hover={"opacity": "0.8"},
                         ),
                     ),
@@ -2892,7 +2895,7 @@ def users_management_panel() -> rx.Component:
         create_user_modal(),
         rx.hstack(
             rx.icon("users", size=28, color=COLORS["primary"]),
-            rx.heading("Gestión de Usuarios", size="6", color=COLORS["foreground"]),
+            rx.heading("Gestión de Usuarios", size="6", color=COLORS["primary"]),
             spacing="3",
             align="center",
         ),
@@ -3036,7 +3039,7 @@ def projects_management_panel() -> rx.Component:
     return rx.vstack(
         rx.hstack(
             rx.icon("folder-kanban", size=28, color=COLORS["primary"]),
-            rx.heading("Gestión de Proyectos", size="6", color=COLORS["foreground"]),
+            rx.heading("Gestión de Proyectos", size="6", color=COLORS["primary"]),
             spacing="3",
             align="center",
         ),
@@ -3073,21 +3076,6 @@ def projects_management_panel() -> rx.Component:
 
 def ticket_row(ticket: dict) -> rx.Component:
     """Fila de ticket con acciones."""
-    # Colores por estado
-    estado_colors = {
-        "abierto": "green",
-        "en_espera": "yellow",
-        "resuelto": "blue",
-        "cerrado": "gray",
-    }
-    # Colores por prioridad
-    prioridad_colors = {
-        "baja": "gray",
-        "media": "yellow",
-        "alta": "orange",
-        "urgente": "red",
-    }
-    
     return rx.hstack(
         # Información del ticket a la izquierda
         rx.vstack(
@@ -3099,15 +3087,31 @@ def ticket_row(ticket: dict) -> rx.Component:
             rx.hstack(
                 rx.badge(
                     ticket["estado"],
-                    color_scheme=estado_colors.get(ticket.get("estado", "abierto"), "gray"),
-                    variant="soft",
+                    color_scheme=rx.match(
+                        ticket["estado"],
+                        ("abierto", "blue"),
+                        ("en_espera", "amber"),
+                        ("resuelto", "green"),
+                        ("cerrado", "gray"),
+                        "gray",
+                    ),
+                    variant="solid",
                     size="2",
+                    style={"fontSize": "14px", "padding": "6px 12px", "fontWeight": "600", "color": "black"},
                 ),
                 rx.badge(
                     ticket["prioridad"],
-                    color_scheme=prioridad_colors.get(ticket.get("prioridad", "media"), "yellow"),
-                    variant="soft",
+                    color_scheme=rx.match(
+                        ticket["prioridad"],
+                        ("baja", "gray"),
+                        ("media", "cyan"),
+                        ("alta", "orange"),
+                        ("urgente", "red"),
+                        "gray",
+                    ),
+                    variant="solid",
                     size="2",
+                    style={"fontSize": "14px", "padding": "6px 12px", "fontWeight": "600", "color": "black"},
                 ),
                 rx.cond(
                     ticket.get("respuesta", "") != "",
@@ -3182,23 +3186,31 @@ def ticket_management_modal() -> rx.Component:
                 # Selectores de estado y prioridad
                 rx.hstack(
                     rx.vstack(
-                        rx.text("Estado", font_weight="bold", color=COLORS["foreground"]),
+                        rx.text("Estado", font_weight="bold", color=COLORS["primary"], font_size="1.1em"),
                         rx.select(
                             ["abierto", "en_espera", "resuelto", "cerrado"],
                             value=State.selected_ticket_estado,
                             on_change=State.set_ticket_estado,
                             width="150px",
+                            size="3",
+                            background_color=COLORS["input"],
+                            color=COLORS["foreground"],
+                            border_color=COLORS["border"],
                         ),
                         spacing="1",
                         align_items="flex-start",
                     ),
                     rx.vstack(
-                        rx.text("Prioridad", font_weight="bold", color=COLORS["foreground"]),
+                        rx.text("Prioridad", font_weight="bold", color=COLORS["primary"], font_size="1.1em"),
                         rx.select(
                             ["baja", "media", "alta", "urgente"],
                             value=State.selected_ticket_prioridad,
                             on_change=State.set_ticket_prioridad,
                             width="150px",
+                            size="3",
+                            background_color=COLORS["input"],
+                            color=COLORS["foreground"],
+                            border_color=COLORS["border"],
                         ),
                         spacing="1",
                         align_items="flex-start",
@@ -3249,6 +3261,7 @@ def ticket_management_modal() -> rx.Component:
                         "Enviar Respuesta",
                         on_click=State.save_ticket_response,
                         color_scheme="green",
+                        style={"font_weight": "bold", "color": "black"},
                         disabled=State.is_updating_ticket,
                     ),
                     spacing="2",
@@ -3271,7 +3284,7 @@ def tickets_management_panel() -> rx.Component:
     return rx.vstack(
         rx.hstack(
             rx.icon("headset", size=28, color=COLORS["primary"]),
-            rx.heading("Gestión de Tickets", size="6", color=COLORS["foreground"]),
+            rx.heading("Gestión de Tickets", size="6", color=COLORS["primary"]),
             spacing="3",
             align="center",
         ),
@@ -3455,7 +3468,7 @@ def tecnologias_asignadas_panel() -> rx.Component:
             rx.heading(
                 "Tecnologías asignadas a proyecto",
                 size="6",
-                color=COLORS["foreground"],
+                color=COLORS["primary"],
             ),
             spacing="3",
             align="center",
@@ -3495,7 +3508,7 @@ def tecnologias_management_panel() -> rx.Component:
     return rx.vstack(
         rx.hstack(
             rx.icon("cpu", size=36, color=COLORS["primary"]),
-            rx.heading("Gestión de Tecnología", size="7", color=COLORS["foreground"]),
+            rx.heading("Gestión de Tecnología", size="6", color=COLORS["primary"]),
             spacing="4",
             align_items="center",
         ),
@@ -3512,7 +3525,7 @@ def tecnologias_management_panel() -> rx.Component:
         ),
         # Selector de proyecto
         rx.hstack(
-            rx.text("Proyecto:", font_weight="bold", color=COLORS["foreground"], font_size="1.1em"),
+            rx.text("Proyecto:", font_weight="bold", color=COLORS["primary"], font_size="1.1em"),
             rx.select(
                 State.projects_for_tech_select,
                 placeholder="Selecciona un proyecto",
@@ -3520,6 +3533,9 @@ def tecnologias_management_panel() -> rx.Component:
                 on_change=State.select_tech_project,
                 width="350px",
                 size="3",
+                background_color=COLORS["input"],
+                color=COLORS["foreground"],
+                border_color=COLORS["border"],
             ),
             spacing="4",
             align_items="center",
@@ -3630,7 +3646,8 @@ def asistente_panel() -> rx.Component:
                 size="1",
                 variant="soft",
                 background_color=COLORS["primary"],
-                color="white",
+                color="black",
+                font_weight="bold",
                 _hover={"opacity": "0.9"},
             ),
             spacing="3",
@@ -3651,7 +3668,10 @@ def asistente_panel() -> rx.Component:
             rx.cond(
                 (State.asistente_models.length() > 0) & (State.asistente_selected_model != ""),
                 rx.select.root(
-                    rx.select.trigger(placeholder="Selecciona un modelo..."),
+                    rx.select.trigger(
+                        placeholder="Selecciona un modelo...",
+                        style={"backgroundColor": COLORS["input"], "color": COLORS["foreground"], "borderColor": COLORS["border"]},
+                    ),
                     rx.select.content(
                         rx.foreach(
                             State.asistente_models,
@@ -3799,7 +3819,10 @@ def _prompts_management_tab() -> rx.Component:
         # Category selector
         rx.text("Categoría de Prompts", font_weight="bold", color=COLORS["primary"], font_size="1.7em"),
         rx.select.root(
-            rx.select.trigger(placeholder="Selecciona categoría..."),
+            rx.select.trigger(
+                placeholder="Selecciona categoría...",
+                style={"backgroundColor": COLORS["input"], "color": COLORS["foreground"], "borderColor": COLORS["border"]},
+            ),
             rx.select.content(
                 rx.select.item("Identidades", value="identidades"),
                 rx.select.item("Contexto", value="contexto"),
@@ -3808,7 +3831,7 @@ def _prompts_management_tab() -> rx.Component:
             ),
             value=State.prompts_category,
             on_change=State.set_prompts_category,
-            size="2",
+            size="3",
             width="300px",
         ),
 
@@ -4064,11 +4087,14 @@ def _org_assignments_tab() -> rx.Component:
                 ),
 
                 # User selector
-                rx.text("Usuario Interno", color=COLORS["foreground"], font_size="0.9em"),
+                rx.text("Usuario Interno", color=COLORS["primary"], font_size="1.1em", font_weight="bold"),
                 rx.cond(
                     State.assignments_internal_users.length() > 0,
                     rx.select.root(
-                        rx.select.trigger(placeholder="Selecciona usuario..."),
+                        rx.select.trigger(
+                            placeholder="Selecciona usuario...",
+                            style={"backgroundColor": COLORS["input"], "color": COLORS["foreground"], "borderColor": COLORS["border"]},
+                        ),
                         rx.select.content(
                             rx.foreach(
                                 State.assignments_internal_users,
@@ -4079,18 +4105,21 @@ def _org_assignments_tab() -> rx.Component:
                             ),
                         ),
                         on_change=State.set_selected_user_org_from_str,
-                        size="2",
+                        size="3",
                         width="100%",
                     ),
                     rx.text("No hay usuarios internos cargados", color=COLORS["muted_foreground"], font_style="italic"),
                 ),
 
                 # Organization selector
-                rx.text("Organización", color=COLORS["foreground"], font_size="0.9em", margin_top="0.5em"),
+                rx.text("Organización", color=COLORS["primary"], font_size="1.1em", font_weight="bold", margin_top="0.5em"),
                 rx.cond(
                     State.assignments_organizations.length() > 0,
                     rx.select.root(
-                        rx.select.trigger(placeholder="Selecciona organización..."),
+                        rx.select.trigger(
+                            placeholder="Selecciona organización...",
+                            style={"backgroundColor": COLORS["input"], "color": COLORS["foreground"], "borderColor": COLORS["border"]},
+                        ),
                         rx.select.content(
                             rx.foreach(
                                 State.assignments_organizations,
@@ -4101,16 +4130,19 @@ def _org_assignments_tab() -> rx.Component:
                             ),
                         ),
                         on_change=State.set_selected_organization_assign_from_str,
-                        size="2",
+                        size="3",
                         width="100%",
                     ),
                     rx.text("No hay organizaciones cargadas", color=COLORS["muted_foreground"], font_style="italic"),
                 ),
 
                 # Role selector (filtered: only roles 2-5)
-                rx.text("Rol", color=COLORS["foreground"], font_size="0.9em", margin_top="0.5em"),
+                rx.text("Rol", color=COLORS["primary"], font_size="1.1em", font_weight="bold", margin_top="0.5em"),
                 rx.select.root(
-                    rx.select.trigger(placeholder="Selecciona rol..."),
+                    rx.select.trigger(
+                        placeholder="Selecciona rol...",
+                        style={"backgroundColor": COLORS["input"], "color": COLORS["foreground"], "borderColor": COLORS["border"]},
+                    ),
                     rx.select.content(
                         rx.foreach(
                             State.filtered_org_roles,
@@ -4121,7 +4153,7 @@ def _org_assignments_tab() -> rx.Component:
                         ),
                     ),
                     on_change=State.set_selected_org_role_from_str,
-                    size="2",
+                    size="3",
                     width="100%",
                 ),
 
@@ -4286,11 +4318,14 @@ def _project_assignments_tab() -> rx.Component:
                 ),
 
                 # User selector
-                rx.text("Usuario Interno", color=COLORS["foreground"], font_size="0.9em"),
+                rx.text("Usuario Interno", color=COLORS["primary"], font_size="1.1em", font_weight="bold"),
                 rx.cond(
                     State.assignments_internal_users.length() > 0,
                     rx.select.root(
-                        rx.select.trigger(placeholder="Selecciona usuario..."),
+                        rx.select.trigger(
+                            placeholder="Selecciona usuario...",
+                            style={"backgroundColor": COLORS["input"], "color": COLORS["foreground"], "borderColor": COLORS["border"]},
+                        ),
                         rx.select.content(
                             rx.foreach(
                                 State.assignments_internal_users,
@@ -4301,18 +4336,21 @@ def _project_assignments_tab() -> rx.Component:
                             ),
                         ),
                         on_change=State.set_selected_user_project_from_str,
-                        size="2",
+                        size="3",
                         width="100%",
                     ),
                     rx.text("No hay usuarios internos cargados", color=COLORS["muted_foreground"], font_style="italic"),
                 ),
 
                 # Organization selector for project
-                rx.text("Organización", color=COLORS["foreground"], font_size="0.9em", margin_top="0.5em"),
+                rx.text("Organización", color=COLORS["primary"], font_size="1.1em", font_weight="bold", margin_top="0.5em"),
                 rx.cond(
                     State.assignments_organizations.length() > 0,
                     rx.select.root(
-                        rx.select.trigger(placeholder="Selecciona organización..."),
+                        rx.select.trigger(
+                            placeholder="Selecciona organización...",
+                            style={"backgroundColor": COLORS["input"], "color": COLORS["foreground"], "borderColor": COLORS["border"]},
+                        ),
                         rx.select.content(
                             rx.foreach(
                                 State.assignments_organizations,
@@ -4323,18 +4361,21 @@ def _project_assignments_tab() -> rx.Component:
                             ),
                         ),
                         on_change=State.set_selected_org_for_project_from_str,
-                        size="2",
+                        size="3",
                         width="100%",
                     ),
                     rx.text("No hay organizaciones cargadas", color=COLORS["muted_foreground"], font_style="italic"),
                 ),
 
                 # Project selector (filtered by organization)
-                rx.text("Proyecto", color=COLORS["foreground"], font_size="0.9em", margin_top="0.5em"),
+                rx.text("Proyecto", color=COLORS["primary"], font_size="1.1em", font_weight="bold", margin_top="0.5em"),
                 rx.cond(
                     State.assignments_projects.length() > 0,
                     rx.select.root(
-                        rx.select.trigger(placeholder="Selecciona proyecto..."),
+                        rx.select.trigger(
+                            placeholder="Selecciona proyecto...",
+                            style={"backgroundColor": COLORS["input"], "color": COLORS["foreground"], "borderColor": COLORS["border"]},
+                        ),
                         rx.select.content(
                             rx.foreach(
                                 State.assignments_projects,
@@ -4345,7 +4386,7 @@ def _project_assignments_tab() -> rx.Component:
                             ),
                         ),
                         on_change=State.set_selected_project_assign_from_str,
-                        size="2",
+                        size="3",
                         width="100%",
                     ),
                     rx.text(
@@ -4360,9 +4401,12 @@ def _project_assignments_tab() -> rx.Component:
                 ),
 
                 # Role selector
-                rx.text("Rol en Proyecto", color=COLORS["foreground"], font_size="0.9em", margin_top="0.5em"),
+                rx.text("Rol en Proyecto", color=COLORS["primary"], font_size="1.1em", font_weight="bold", margin_top="0.5em"),
                 rx.select.root(
-                    rx.select.trigger(placeholder="Selecciona rol..."),
+                    rx.select.trigger(
+                        placeholder="Selecciona rol...",
+                        style={"backgroundColor": COLORS["input"], "color": COLORS["foreground"], "borderColor": COLORS["border"]},
+                    ),
                     rx.select.content(
                         rx.foreach(
                             State.assignments_project_roles,
@@ -4373,7 +4417,7 @@ def _project_assignments_tab() -> rx.Component:
                         ),
                     ),
                     on_change=State.set_selected_project_role_from_str,
-                    size="2",
+                    size="3",
                     width="100%",
                 ),
 
@@ -4712,9 +4756,9 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             rx.markdown(
                 content_text,
                 component_map={
-                    "h1": lambda text: rx.heading(text, size="5", color=COLORS["foreground"], margin_bottom="0.4em"),
+                    "h1": lambda text: rx.heading(text, size="5", color=COLORS["primary"], margin_bottom="0.4em"),
                     "h2": lambda text: rx.heading(text, size="4", color=COLORS["primary"], margin_top="0.8em", margin_bottom="0.4em"),
-                    "h3": lambda text: rx.heading(text, size="3", color=COLORS["foreground"], margin_top="0.6em", margin_bottom="0.3em"),
+                    "h3": lambda text: rx.heading(text, size="3", color=COLORS["primary"], margin_top="0.6em", margin_bottom="0.3em"),
                     "p": lambda text: rx.text(text, color=COLORS["muted_foreground"], font_size="1em", line_height="1.5", margin_bottom="0.5em"),
                     "li": lambda text: rx.list_item(rx.text(text, color=COLORS["muted_foreground"], font_size="1em", line_height="1.4")),
                     "strong": lambda text: rx.text(text, font_weight="bold", color=COLORS["foreground"], as_="span"),
@@ -4846,7 +4890,7 @@ def proyecciones_management_panel() -> rx.Component:
         rx.vstack(
             rx.hstack(
                 rx.icon("folder-git-2", size=36, color=COLORS["primary"]),
-                rx.heading("Gestión de Versiones", size="7", color=COLORS["foreground"]),
+                rx.heading("Gestión de Versiones", size="6", color=COLORS["primary"]),
                 spacing="4",
                 align="center",
             ),
@@ -4862,7 +4906,7 @@ def proyecciones_management_panel() -> rx.Component:
                 on_org_change=State.bo_set_organization,
             ),
             rx.hstack(
-                rx.text("Proyecto:", font_weight="bold", color=COLORS["foreground"], font_size="1.1em"),
+                rx.text("Proyecto:", font_weight="bold", color=COLORS["primary"], font_size="1.1em"),
                 rx.select(
                     State.proyecciones_projects_select,
                     placeholder="Seleccionar proyecto...",
@@ -4870,6 +4914,9 @@ def proyecciones_management_panel() -> rx.Component:
                     on_change=State.set_proyecciones_project,
                     width="350px",
                     size="3",
+                    background_color=COLORS["input"],
+                    color=COLORS["foreground"],
+                    border_color=COLORS["border"],
                 ),
                 spacing="4",
                 align="center",
@@ -4887,7 +4934,7 @@ def proyecciones_management_panel() -> rx.Component:
             rx.vstack(
                 rx.hstack(
                     rx.icon("git-branch", size=28, color=COLORS["primary"]),
-                    rx.heading("Gestión de Versiones", size="6", color=COLORS["foreground"]),
+                    rx.heading("Gestión de Versiones", size="6", color=COLORS["primary"]),
                     rx.spacer(),
                     rx.button(
                         rx.icon("plus", size=18),
@@ -4968,15 +5015,15 @@ def dashboard_tabs() -> rx.Component:
                     ),
                     color=rx.cond(
                         active_tab == tab_id,
-                        COLORS["background"],
+                        "black",
                         COLORS["foreground"]
                     ),
                     border="none",
                     padding="0.75em 1.5em",
                     border_radius="0.5em",
                     cursor="pointer",
-                    _hover={"opacity": "0.8"},
                     font_weight="bold",
+                    _hover={"opacity": "0.8"},
                 )
                 for tab_id, label in tabs_config
             ],
@@ -4988,7 +5035,7 @@ def dashboard_tabs() -> rx.Component:
         rx.cond(
             active_tab == "resumen",
             rx.vstack(
-                rx.heading("Resumen General", size="6", color=COLORS["foreground"]),
+                rx.heading("Resumen General", size="6", color=COLORS["primary"]),
                 rx.flex(
                     rx.box(
                         rx.vstack(
@@ -5037,7 +5084,7 @@ def dashboard_tabs() -> rx.Component:
         rx.cond(
             active_tab == "proyectos",
             rx.vstack(
-                rx.heading("Proyectos", size="6", color=COLORS["foreground"]),
+                rx.heading("Proyectos", size="6", color=COLORS["primary"]),
                 *[
                     rx.hstack(
                         rx.vstack(
@@ -5062,7 +5109,7 @@ def dashboard_tabs() -> rx.Component:
         rx.cond(
             active_tab == "tareas",
             rx.vstack(
-                rx.heading("Tareas", size="6", color=COLORS["foreground"]),
+                rx.heading("Tareas", size="6", color=COLORS["primary"]),
                 *[
                     rx.hstack(
                         rx.checkbox(checked=False),
@@ -5088,7 +5135,7 @@ def dashboard_tabs() -> rx.Component:
         rx.cond(
             active_tab == "reportes",
             rx.vstack(
-                rx.heading("Reportes", size="6", color=COLORS["foreground"]),
+                rx.heading("Reportes", size="6", color=COLORS["primary"]),
                 rx.flex(
                     *[
                         rx.box(
@@ -5121,7 +5168,7 @@ def dashboard_tabs() -> rx.Component:
         rx.cond(
             active_tab == "documentos",
             rx.vstack(
-                rx.heading("Documentos", size="6", color=COLORS["foreground"]),
+                rx.heading("Documentos", size="6", color=COLORS["primary"]),
                 *[
                     rx.hstack(
                         rx.text(doc, color=COLORS["foreground"]),
@@ -5147,7 +5194,7 @@ def dashboard_tabs() -> rx.Component:
         rx.cond(
             active_tab == "configuracion",
             rx.vstack(
-                rx.heading("Configuración", size="6", color=COLORS["foreground"]),
+                rx.heading("Configuración", size="6", color=COLORS["primary"]),
                 rx.vstack(
                     rx.vstack(
                         rx.text("Notificaciones por email", color=COLORS["muted_foreground"], font_size="0.9em"),
@@ -5258,7 +5305,8 @@ def user_portal() -> rx.Component:
                     "Volver al Frontend",
                     on_click=State.go_to_frontend,
                     background_color="#22c55e",  # Verde del frontend
-                    color="white",
+                    color="black",
+                    font_weight="bold",
                     font_size="1.1em",
                     _hover={"background_color": "#1ea34d"},
                 ),
@@ -5266,7 +5314,8 @@ def user_portal() -> rx.Component:
                     "Desconectar",
                     on_click=State.user_logout,
                     background_color="#FF8C00",  # Naranja
-                    color="white",
+                    color="black",
+                    font_weight="bold",
                     font_size="1.1em",
                     _hover={"background_color": "#FF7000"},
                 ),

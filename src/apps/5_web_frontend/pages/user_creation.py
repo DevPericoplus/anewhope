@@ -1186,7 +1186,7 @@ def organization_error_modal() -> rx.Component:
                     rx.heading(
                         "La Organización ya existe en el sistema",
                         size="6",
-                        color=COLORS["foreground"],
+                        color=COLORS["primary"],
                         margin_bottom="1em",
                     ),
                     rx.text(
@@ -1200,7 +1200,7 @@ def organization_error_modal() -> rx.Component:
                         "Entendido",
                         on_click=UserCreationState.close_org_error_modal,
                         background_color=COLORS["primary"],
-                        color=COLORS["background"],
+                        color="black",
                         font_weight="bold",
                         padding="0.75em 2em",
                         border_radius="0.5em",
@@ -1247,7 +1247,7 @@ def organization_creation_modal() -> rx.Component:
                     rx.heading(
                         "Crear Nueva Organización",
                         size="6",
-                        color=COLORS["foreground"],
+                        color=COLORS["primary"],
                         margin_bottom="0.5em",
                     ),
                     rx.text(
@@ -1345,7 +1345,7 @@ def organization_creation_modal() -> rx.Component:
                             "Guardar",
                             on_click=UserCreationState.save_organization,
                             background_color=COLORS["primary"],
-                            color=COLORS["background"],
+                            color="black",
                             font_weight="bold",
                             padding="0.75em 2em",
                             border_radius="0.5em",
@@ -1411,7 +1411,7 @@ def password_match_error_modal() -> rx.Component:
                     rx.heading(
                         "Error de Contraseña",
                         size="6",
-                        color=COLORS["foreground"],
+                        color=COLORS["primary"],
                         margin_bottom="1em",
                     ),
                     rx.text(
@@ -1425,7 +1425,7 @@ def password_match_error_modal() -> rx.Component:
                         "Entendido",
                         on_click=UserCreationState.close_password_match_error_modal,
                         background_color=COLORS["primary"],
-                        color=COLORS["background"],
+                        color="black",
                         font_weight="bold",
                         padding="0.75em 2em",
                         border_radius="0.5em",
@@ -1472,7 +1472,7 @@ def password_validation_modal() -> rx.Component:
                     rx.heading(
                         "Requisitos de Contraseña",
                         size="6",
-                        color=COLORS["foreground"],
+                        color=COLORS["primary"],
                         margin_bottom="1em",
                     ),
                     rx.text(
@@ -1510,7 +1510,7 @@ def password_validation_modal() -> rx.Component:
                         "Entendido",
                         on_click=UserCreationState.close_password_validation_modal,
                         background_color=COLORS["primary"],
-                        color=COLORS["background"],
+                        color="black",
                         font_weight="bold",
                         padding="0.75em 2em",
                         border_radius="0.5em",
@@ -1557,7 +1557,7 @@ def username_validation_modal() -> rx.Component:
                     rx.heading(
                         "Requisitos de Nombre de Usuario",
                         size="6",
-                        color=COLORS["foreground"],
+                        color=COLORS["primary"],
                         margin_bottom="1em",
                     ),
                     rx.text(
@@ -1595,7 +1595,7 @@ def username_validation_modal() -> rx.Component:
                         "Entendido",
                         on_click=UserCreationState.close_username_validation_modal,
                         background_color=COLORS["primary"],
-                        color=COLORS["background"],
+                        color="black",
                         font_weight="bold",
                         padding="0.75em 2em",
                         border_radius="0.5em",
@@ -1642,7 +1642,7 @@ def username_duplicate_error_modal() -> rx.Component:
                     rx.heading(
                         "Nombre de Usuario No Disponible",
                         size="6",
-                        color=COLORS["foreground"],
+                        color=COLORS["primary"],
                         margin_bottom="1em",
                     ),
                     rx.vstack(
@@ -1673,7 +1673,7 @@ def username_duplicate_error_modal() -> rx.Component:
                         "Entendido",
                         on_click=UserCreationState.close_username_duplicate_modal,
                         background_color=COLORS["primary"],
-                        color=COLORS["background"],
+                        color="black",
                         font_weight="bold",
                         padding="0.75em 2em",
                         border_radius="0.5em",
@@ -1718,7 +1718,7 @@ def user_creation_page() -> rx.Component:
         username_duplicate_error_modal(),
         # Header
         rx.hstack(
-            rx.heading("Crear Nuevo Usuario", size="6", color=COLORS["foreground"]),
+            rx.heading("Crear Nuevo Usuario", size="6", color=COLORS["primary"]),
             width="100%",
             padding="1em",
             background_color=COLORS["card"],
@@ -1728,7 +1728,7 @@ def user_creation_page() -> rx.Component:
         rx.vstack(
             rx.vstack(
                 # Sección: Información de Usuario
-                rx.heading("Información de Usuario", size="6", color=COLORS["foreground"], margin_bottom="1em"),
+                rx.heading("Información de Usuario", size="6", color=COLORS["primary"], margin_bottom="1em"),
                 rx.vstack(
                     rx.hstack(
                         rx.vstack(
@@ -1965,7 +1965,7 @@ def user_creation_page() -> rx.Component:
             ),
             # Sección: Información de Contacto
             rx.vstack(
-                rx.heading("Información de Contacto", size="6", color=COLORS["foreground"], margin_bottom="1em"),
+                rx.heading("Información de Contacto", size="6", color=COLORS["primary"], margin_bottom="1em"),
                 rx.vstack(
                     rx.hstack(
                         rx.vstack(
@@ -2084,7 +2084,7 @@ def user_creation_page() -> rx.Component:
             rx.cond(
                 UserCreationState.has_different_billing_address,
                 rx.vstack(
-                    rx.heading("Información de Facturación (Opcional)", size="6", color=COLORS["foreground"], margin_bottom="1em"),
+                    rx.heading("Información de Facturación (Opcional)", size="6", color=COLORS["primary"], margin_bottom="1em"),
                     rx.text(
                         "Si no se completa, se usará la información de contacto",
                         font_size="0.9em",
@@ -2242,7 +2242,7 @@ def user_creation_page() -> rx.Component:
                 "Guardar",
                 on_click=UserCreationState.save_user,
                 background_color=COLORS["primary"],
-                color=COLORS["background"],
+                color="black",
                 font_weight="bold",
                 padding="0.75em 2em",
                 border_radius="0.5em",

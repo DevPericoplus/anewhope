@@ -1003,7 +1003,7 @@ def estado_proyectos_panel() -> rx.Component:
         rx.heading(
             "Estado de Proyectos",
             size="8",
-            color="#f97316",
+            color="#FF8C00",
             margin_bottom="0.5em",
         ),
         rx.text(
@@ -1016,7 +1016,7 @@ def estado_proyectos_panel() -> rx.Component:
         # Selectores
         rx.hstack(
             rx.vstack(
-                rx.text("Organización", font_size="1em", color="#f97316", font_weight="600"),
+                rx.text("Organización", font_size="1.1em", color="#FF8C00", font_weight="bold"),
                 rx.select(
                     EstadoProyectosState.organization_names,
                     value=EstadoProyectosState.selected_org_display,
@@ -1024,12 +1024,13 @@ def estado_proyectos_panel() -> rx.Component:
                     placeholder="Seleccione organización",
                     width="100%",
                     size="3",
+                    style={"backgroundColor": "#3a3a3a", "color": "#f2f2f5", "borderColor": "#555"},
                 ),
                 spacing="1",
                 width="33%",
             ),
             rx.vstack(
-                rx.text("Proyecto", font_size="1em", color="#f97316", font_weight="600"),
+                rx.text("Proyecto", font_size="1.1em", color="#FF8C00", font_weight="bold"),
                 rx.select(
                     EstadoProyectosState.project_names,
                     value=EstadoProyectosState.selected_project_display,
@@ -1037,12 +1038,13 @@ def estado_proyectos_panel() -> rx.Component:
                     placeholder="Seleccione proyecto",
                     width="100%",
                     size="3",
+                    style={"backgroundColor": "#3a3a3a", "color": "#f2f2f5", "borderColor": "#555"},
                 ),
                 spacing="1",
                 width="33%",
             ),
             rx.vstack(
-                rx.text("Versión", font_size="1em", color="#f97316", font_weight="600"),
+                rx.text("Versión", font_size="1.1em", color="#FF8C00", font_weight="bold"),
                 rx.select(
                     EstadoProyectosState.version_numbers,
                     value=EstadoProyectosState.selected_version_display,
@@ -1050,6 +1052,7 @@ def estado_proyectos_panel() -> rx.Component:
                     placeholder="Seleccione versión",
                     width="100%",
                     size="3",
+                    style={"backgroundColor": "#3a3a3a", "color": "#f2f2f5", "borderColor": "#555"},
                 ),
                 spacing="1",
                 width="33%",
@@ -1112,7 +1115,7 @@ def _estado_summary_card() -> rx.Component:
     return rx.box(
         rx.vstack(
             rx.hstack(
-                rx.heading("Resumen de Estado", size="6", color="#f97316"),
+                rx.heading("Resumen de Estado", size="6", color="#FF8C00"),
                 rx.badge(
                     EstadoProyectosState.state_internal_display,
                     color_scheme="blue",
@@ -1161,7 +1164,7 @@ def _fase_1_card() -> rx.Component:
     """Tarjeta de Fase 1: Propuesta/Revisión."""
     return rx.box(
         rx.vstack(
-            rx.heading("Fase 1: Propuesta y Revisión", size="5", color="#f97316"),
+            rx.heading("Fase 1: Propuesta y Revisión", size="5", color="#FF8C00"),
             rx.divider(),
             rx.hstack(
                 rx.badge(
@@ -1235,7 +1238,7 @@ def _fase_2_card() -> rx.Component:
     """Tarjeta de Fase 2: Entrenamiento."""
     return rx.box(
         rx.vstack(
-            rx.heading("Fase 2: Entrenamiento Inicial", size="5", color="#f97316"),
+            rx.heading("Fase 2: Entrenamiento Inicial", size="5", color="#FF8C00"),
             rx.divider(),
             rx.hstack(
                 rx.badge(
@@ -1279,7 +1282,7 @@ def _fase_3_card() -> rx.Component:
     """Tarjeta de Fase 3: Evaluación."""
     return rx.box(
         rx.vstack(
-            rx.heading("Fase 3: Evaluación y Reentrenamiento", size="5", color="#f97316"),
+            rx.heading("Fase 3: Evaluación y Reentrenamiento", size="5", color="#FF8C00"),
             rx.divider(),
             rx.grid(
                 _toggle_field("evaluacion_entrenamiento", "Evaluación", "📊"),
@@ -1305,7 +1308,7 @@ def _fase_4_card() -> rx.Component:
     """Tarjeta de Fase 4: Generación."""
     return rx.box(
         rx.vstack(
-            rx.heading("Fase 4: Generación del Modelo LLM", size="5", color="#f97316"),
+            rx.heading("Fase 4: Generación del Modelo LLM", size="5", color="#FF8C00"),
             rx.divider(),
             rx.hstack(
                 rx.badge(
@@ -1355,7 +1358,7 @@ def _fase_5_card() -> rx.Component:
     """Tarjeta de Fase 5: Notificación."""
     return rx.box(
         rx.vstack(
-            rx.heading("Fase 5: Notificación de Descarga", size="5", color="#f97316"),
+            rx.heading("Fase 5: Notificación de Descarga", size="5", color="#FF8C00"),
             rx.divider(),
             _toggle_field(
                 "notificacion_descarga_enviada", "Notificación Enviada", "🔔"

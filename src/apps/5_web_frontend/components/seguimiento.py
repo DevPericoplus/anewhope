@@ -820,7 +820,8 @@ def modal_eventos_calendario() -> rx.Component:
                         "Cerrar",
                         size="3",
                         background_color=COLORS["primary"],
-                        color=COLORS["background"],
+                        color="black",
+                        font_weight="bold",
                         cursor="pointer",
                         width="100%",
                         margin_top="1em",
@@ -944,26 +945,6 @@ def calendario_component():
 
 def ticket_row(ticket: dict) -> rx.Component:
     """Fila que muestra un ticket."""
-    # Colores oscuros personalizados para estados
-    estado_styles = {
-        "abierto": {"background": "#1e40af", "color": "#ffffff"},  # Azul oscuro
-        "en_espera": {"background": "#d97706", "color": "#ffffff"},  # Ámbar oscuro
-        "resuelto": {"background": "#15803d", "color": "#ffffff"},  # Verde oscuro
-        "cerrado": {"background": "#52525b", "color": "#ffffff"},  # Gris oscuro
-    }
-
-    # Colores oscuros personalizados para prioridades
-    prioridad_styles = {
-        "baja": {"background": "#52525b", "color": "#ffffff"},  # Gris oscuro
-        "media": {"background": "#0891b2", "color": "#ffffff"},  # Cyan oscuro
-        "alta": {"background": "#ea580c", "color": "#ffffff"},  # Naranja oscuro
-        "urgente": {"background": "#dc2626", "color": "#ffffff"},  # Rojo oscuro
-    }
-
-    # Obtener estilos según estado y prioridad
-    estado_style = estado_styles.get(ticket["estado"], {"background": "#52525b", "color": "#ffffff"})
-    prioridad_style = prioridad_styles.get(ticket["prioridad"], {"background": "#52525b", "color": "#ffffff"})
-
     return rx.box(
         rx.hstack(
             rx.text(
@@ -976,31 +957,35 @@ def ticket_row(ticket: dict) -> rx.Component:
                 text_overflow="ellipsis",
                 white_space="nowrap",
             ),
-            # Badge de estado con colores oscuros personalizados
-            rx.box(
-                rx.text(
+            # Badge de estado (rx.match para evaluar Var reactivo en rx.foreach)
+            rx.badge(
+                ticket["estado"],
+                color_scheme=rx.match(
                     ticket["estado"],
-                    color=estado_style["color"],
-                    font_weight="600",
-                    font_size="14px",
+                    ("abierto", "blue"),
+                    ("en_espera", "amber"),
+                    ("resuelto", "green"),
+                    ("cerrado", "gray"),
+                    "gray",
                 ),
-                background_color=estado_style["background"],
-                padding="6px 12px",
-                border_radius="6px",
-                display="inline-block",
+                variant="solid",
+                size="2",
+                style={"fontSize": "14px", "padding": "6px 12px", "fontWeight": "600", "color": "black"},
             ),
-            # Badge de prioridad con colores oscuros personalizados
-            rx.box(
-                rx.text(
+            # Badge de prioridad (rx.match para evaluar Var reactivo en rx.foreach)
+            rx.badge(
+                ticket["prioridad"],
+                color_scheme=rx.match(
                     ticket["prioridad"],
-                    color=prioridad_style["color"],
-                    font_weight="600",
-                    font_size="14px",
+                    ("baja", "gray"),
+                    ("media", "cyan"),
+                    ("alta", "orange"),
+                    ("urgente", "red"),
+                    "gray",
                 ),
-                background_color=prioridad_style["background"],
-                padding="6px 12px",
-                border_radius="6px",
-                display="inline-block",
+                variant="solid",
+                size="2",
+                style={"fontSize": "14px", "padding": "6px 12px", "fontWeight": "600", "color": "black"},
             ),
             spacing="3",
             align="center",
@@ -1111,6 +1096,9 @@ def selector_proyecto_component() -> rx.Component:
                 on_change=SeguimientoState.set_seguimiento_project,
                 width="300px",
                 size="3",
+                background_color="#3a3a3a",
+                color="#f2f2f5",
+                border_color="#555",
             ),
             spacing="3",
             align="center",

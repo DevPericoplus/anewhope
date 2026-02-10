@@ -2749,7 +2749,7 @@ def explorador_panel(state: ExploradorState) -> rx.Component:
         rx.vstack(
             # Header con título del explorador
             rx.hstack(
-                rx.heading("Explorador de versiones del proyecto", size="6", color="white"),
+                rx.heading("Explorador de versiones del proyecto", size="6", color="#FF8C00"),
                 rx.spacer(),
                 width="100%",
                 align_items="center",

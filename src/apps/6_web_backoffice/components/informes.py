@@ -33,6 +33,7 @@ COLORS = {
     "foreground": "#FFFFFF",
     "card": "#2A2A2A",
     "border": "#3A3A3A",
+    "input": "#3a3a3a",
     "muted_foreground": "#A0A0A0",
 }
 
@@ -561,7 +562,7 @@ def informes_panel() -> rx.Component:
                     "Organización:",
                     color=COLORS["primary"],
                     font_weight="bold",
-                    font_size="1.2em",
+                    font_size="1.1em",
                     white_space="nowrap"
                 ),
                 rx.select(
@@ -571,6 +572,9 @@ def informes_panel() -> rx.Component:
                     placeholder="Seleccione organización",
                     size="3",
                     width="180px",
+                    background_color=COLORS["input"],
+                    color=COLORS["foreground"],
+                    border_color=COLORS["border"],
                 ),
                 spacing="2",
                 align_items="center",
@@ -582,7 +586,7 @@ def informes_panel() -> rx.Component:
                     "Proyecto:",
                     color=COLORS["primary"],
                     font_weight="bold",
-                    font_size="1.2em",
+                    font_size="1.1em",
                     white_space="nowrap"
                 ),
                 rx.select(
@@ -592,6 +596,9 @@ def informes_panel() -> rx.Component:
                     placeholder="Seleccione proyecto",
                     size="3",
                     width="180px",
+                    background_color=COLORS["input"],
+                    color=COLORS["foreground"],
+                    border_color=COLORS["border"],
                 ),
                 spacing="2",
                 align_items="center",
@@ -603,7 +610,7 @@ def informes_panel() -> rx.Component:
                     "Versión:",
                     color=COLORS["primary"],
                     font_weight="bold",
-                    font_size="1.2em",
+                    font_size="1.1em",
                     white_space="nowrap"
                 ),
                 rx.select(
@@ -613,6 +620,9 @@ def informes_panel() -> rx.Component:
                     placeholder="Seleccione versión",
                     size="3",
                     width="100px",
+                    background_color=COLORS["input"],
+                    color=COLORS["foreground"],
+                    border_color=COLORS["border"],
                 ),
                 spacing="2",
                 align_items="center",
@@ -624,7 +634,7 @@ def informes_panel() -> rx.Component:
                     "Informe:",
                     color=COLORS["primary"],
                     font_weight="bold",
-                    font_size="1.2em",
+                    font_size="1.1em",
                     white_space="nowrap"
                 ),
                 rx.select(
@@ -634,6 +644,9 @@ def informes_panel() -> rx.Component:
                     placeholder="Seleccione informe",
                     size="3",
                     width="300px",
+                    background_color=COLORS["input"],
+                    color=COLORS["foreground"],
+                    border_color=COLORS["border"],
                 ),
                 spacing="2",
                 align_items="center",
