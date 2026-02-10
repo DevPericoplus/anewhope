@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from sqlalchemy import text
+
 # Configurar sys.path ANTES de cualquier import local
 # para que los módulos puedan encontrar adapters, components, etc.
 _backoffice_dir = Path(__file__).parent.parent
@@ -47,7 +49,7 @@ from pages.estado_proyectos import estado_proyectos_panel, EstadoProyectosState
 from low_panel_pages.show_md import show_md  # noqa: F401 - Importado para registrar la ruta
 from web_backoffice.shared_state import SharedSessionState
 from components.explorador import explorador_panel, ExploradorState
-from components.org_selector import org_selector_bar, org_project_selector_bar
+from components.org_selector import org_selector_bar, org_project_selector_bar, org_project_version_selector_bar
 from components.seguimiento import seguimiento_panel, SeguimientoState
 from components.informes import informes_panel, InformesState
 
@@ -77,6 +79,21 @@ _org_helpers_module = importlib.util.module_from_spec(_org_helpers_spec)
 _org_helpers_spec.loader.exec_module(_org_helpers_module)
 load_organizations_for_selector = _org_helpers_module.load_organizations_for_selector
 find_org_id_by_name = _org_helpers_module.find_org_id_by_name
+
+# Importar db_query_helper para acceso a myllm_projects_db (plantillas de jobs)
+_db_helper_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "db_query_helper.py"
+_db_helper_spec = importlib.util.spec_from_file_location("db_query_helper_bo", _db_helper_path)
+_db_helper_module = importlib.util.module_from_spec(_db_helper_spec)
+_db_helper_spec.loader.exec_module(_db_helper_module)
+get_projects_db_engine = _db_helper_module.get_projects_db_engine
+get_projects_db_writer_engine = _db_helper_module.get_projects_db_writer_engine
+
+# Importar env_settings para acceso a variables de entorno (backend_ia_base_storage, etc.)
+_env_settings_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "config" / "env_settings.py"
+_env_settings_spec = importlib.util.spec_from_file_location("env_settings_bo_main", _env_settings_path)
+_env_settings_bo = importlib.util.module_from_spec(_env_settings_spec)
+_env_settings_spec.loader.exec_module(_env_settings_bo)
+get_env_value = _env_settings_bo.get_env_value
 
 COLORS = {
     "background": "#1a1a1a",
@@ -207,6 +224,62 @@ class State(SharedSessionState):
     form_prompt: str = ""
     form_error: str = ""
     form_success: str = ""
+
+    # Job Templates management (SuperAdmin only)
+    jt_list: list[dict] = []  # Lista de plantillas cargadas
+    jt_tipos: list[dict] = []  # Catálogo jobs_tipos
+    jt_estados: list[dict] = []  # Catálogo jobs_estados
+    jt_modelos: list[dict] = []  # Catálogo jobs_modelos
+    jt_salidas: list[dict] = []  # Catálogo jobs_salidas
+    jt_form_mode: str = "create"  # "create" o "edit"
+    jt_selected_id: int = 0
+    jt_nombre: str = ""
+    jt_descripcion: str = ""
+    jt_id_tipo: int = 0
+    jt_es_programable: bool = False
+    jt_id_estado_inicial: int = 0
+    jt_id_modelo: int = 0
+    jt_id_salida: int = 0
+    jt_acepta_entrada: bool = False
+    jt_permite_hijos: bool = False
+    jt_error: str = ""
+    jt_success: str = ""
+
+    # Análisis de Documentación - Selectores y estado
+    ad_org_id: int = 0
+    ad_orgs: list[dict] = []  # [{"id": int, "name": str}]
+    ad_project_id: int = 0
+    ad_projects: list[dict] = []  # [{"id": int, "name": str}]
+    ad_version_id: int = 0
+    ad_versions: list[dict] = []  # [{"id_version": int, "version_folder": str}]
+    # Análisis de Documentación - Plantillas y formulario
+    ad_templates: list[dict] = []  # Plantillas filtradas por tipo analisis_documentacion
+    ad_selected_template_id: int = 0
+    ad_job_nombre: str = ""
+    ad_job_descripcion: str = ""
+    ad_job_id_modelo: int = 0
+    ad_job_id_salida: int = 0
+    ad_job_id_estado: int = 0
+    ad_job_programado_para: str = ""  # datetime como string
+    ad_modelos: list[dict] = []
+    ad_salidas: list[dict] = []
+    ad_estados: list[dict] = []
+    ad_error: str = ""
+    ad_success: str = ""
+    # Análisis de Documentación - Visor de jobs
+    ad_jobs: list[dict] = []
+    # Análisis de Documentación - Modal de job + prompt builder
+    ad_modal_open: bool = False
+    ad_modal_job: dict = {}
+    ad_prompts_identidades: list[dict] = []
+    ad_prompts_contexto: list[dict] = []
+    ad_prompts_solicitudes: list[dict] = []
+    ad_prompts_modalidad: list[dict] = []
+    ad_sel_identidad: str = ""
+    ad_sel_contexto: str = ""
+    ad_sel_solicitud: str = ""
+    ad_sel_modalidad: str = ""
+    ad_prompt_final: str = ""
 
     # Selector de organización para backoffice (filtrado por asignaciones)
     # Usado por páginas: Organizacion, Tecnologias, Proyecciones
@@ -1953,6 +2026,8 @@ class State(SharedSessionState):
             self.load_org_assignments()
         elif tab == "proyectos":
             self.load_project_assignments()
+        elif tab == "job_templates":
+            self.load_jt_data()
 
     def load_org_assignments(self):
         """Loads organization assignments for selected org."""
@@ -2324,6 +2399,854 @@ class State(SharedSessionState):
                 self.form_success = result.get("message", "Estado actualizado")
         except Exception as e:
             self.form_error = str(e)
+
+
+    # ========================================================================
+    # JOB TEMPLATES MANAGER - Gestor de plantillas de jobs (SuperAdmin only)
+    # ========================================================================
+
+    def _get_projects_engine(self):
+        """Obtiene el engine de lectura de myllm_projects_db."""
+        return get_projects_db_engine()
+
+    def _get_projects_writer_engine(self):
+        """Obtiene el engine de escritura de myllm_projects_db."""
+        return get_projects_db_writer_engine()
+
+    def load_jt_catalogs(self):
+        """Carga los catálogos necesarios para el formulario de plantillas de jobs."""
+        try:
+            engine = self._get_projects_engine()
+            with engine.connect() as conn:
+                # Cargar tipos
+                rows = conn.execute(text(
+                    "SELECT id, clave, nombre, pagina_backoffice FROM jobs_tipos WHERE activo = 1 ORDER BY id"
+                )).fetchall()
+                self.jt_tipos = [
+                    {"id": r[0], "clave": r[1], "nombre": r[2], "pagina": r[3]}
+                    for r in rows
+                ]
+
+                # Cargar estados
+                rows = conn.execute(text(
+                    "SELECT id, clave, nombre, color FROM jobs_estados WHERE activo = 1 ORDER BY id"
+                )).fetchall()
+                self.jt_estados = [
+                    {"id": r[0], "clave": r[1], "nombre": r[2], "color": r[3]}
+                    for r in rows
+                ]
+
+                # Cargar modelos
+                rows = conn.execute(text(
+                    "SELECT id, nombre, familia FROM jobs_modelos WHERE activo = 1 ORDER BY nombre"
+                )).fetchall()
+                self.jt_modelos = [
+                    {"id": r[0], "nombre": r[1], "familia": r[2]}
+                    for r in rows
+                ]
+
+                # Cargar salidas
+                rows = conn.execute(text(
+                    "SELECT id, clave, nombre FROM jobs_salidas WHERE activo = 1 ORDER BY id"
+                )).fetchall()
+                self.jt_salidas = [
+                    {"id": r[0], "clave": r[1], "nombre": r[2]}
+                    for r in rows
+                ]
+
+            print(f"[JOB TEMPLATES] Catálogos cargados: tipos={len(self.jt_tipos)}, "
+                  f"estados={len(self.jt_estados)}, modelos={len(self.jt_modelos)}, "
+                  f"salidas={len(self.jt_salidas)}")
+        except Exception as e:
+            print(f"[ERROR JOB TEMPLATES] load_jt_catalogs: {type(e).__name__}: {e}")
+            self.jt_error = f"Error cargando catálogos: {e}"
+
+    def load_jt_list(self):
+        """Carga la lista de plantillas de jobs con información de catálogos resuelta."""
+        try:
+            engine = self._get_projects_engine()
+            with engine.connect() as conn:
+                rows = conn.execute(text("""
+                    SELECT
+                        jt.id,
+                        jt.nombre,
+                        jt.descripcion,
+                        jt.id_tipo,
+                        jtip.nombre       AS tipo_nombre,
+                        jtip.pagina_backoffice AS pagina,
+                        jt.es_programable,
+                        jt.activo,
+                        jt.id_estado_inicial,
+                        COALESCE(jest.nombre, '-')  AS estado_nombre,
+                        jt.id_modelo,
+                        COALESCE(jmod.nombre, '-')  AS modelo_nombre,
+                        jt.id_salida,
+                        COALESCE(jsal.nombre, '-')  AS salida_nombre,
+                        jt.acepta_entrada,
+                        jt.permite_hijos
+                    FROM jobs_templates jt
+                    INNER JOIN jobs_tipos jtip   ON jt.id_tipo = jtip.id
+                    LEFT  JOIN jobs_estados jest ON jt.id_estado_inicial = jest.id
+                    LEFT  JOIN jobs_modelos jmod ON jt.id_modelo = jmod.id
+                    LEFT  JOIN jobs_salidas jsal ON jt.id_salida = jsal.id
+                    ORDER BY jt.id DESC
+                """)).fetchall()
+                self.jt_list = [
+                    {
+                        "id": r[0],
+                        "nombre": r[1],
+                        "descripcion": r[2] or "",
+                        "id_tipo": r[3],
+                        "tipo_nombre": r[4],
+                        "pagina": r[5],
+                        "es_programable": bool(r[6]),
+                        "activo": bool(r[7]),
+                        "id_estado_inicial": r[8] or 0,
+                        "estado_nombre": r[9],
+                        "id_modelo": r[10] or 0,
+                        "modelo_nombre": r[11],
+                        "id_salida": r[12] or 0,
+                        "salida_nombre": r[13],
+                        "acepta_entrada": bool(r[14]),
+                        "permite_hijos": bool(r[15]),
+                    }
+                    for r in rows
+                ]
+            print(f"[JOB TEMPLATES] Plantillas cargadas: {len(self.jt_list)}")
+        except Exception as e:
+            print(f"[ERROR JOB TEMPLATES] load_jt_list: {type(e).__name__}: {e}")
+            self.jt_error = f"Error cargando plantillas: {e}"
+            self.jt_list = []
+
+    def load_jt_data(self):
+        """Carga catálogos y lista de plantillas (punto de entrada principal)."""
+        self.jt_error = ""
+        self.jt_success = ""
+        self.load_jt_catalogs()
+        self.load_jt_list()
+
+    def jt_clear_form(self):
+        """Limpia el formulario de plantillas."""
+        self.jt_form_mode = "create"
+        self.jt_selected_id = 0
+        self.jt_nombre = ""
+        self.jt_descripcion = ""
+        self.jt_id_tipo = 0
+        self.jt_es_programable = False
+        self.jt_id_estado_inicial = 0
+        self.jt_id_modelo = 0
+        self.jt_id_salida = 0
+        self.jt_acepta_entrada = False
+        self.jt_permite_hijos = False
+        self.jt_error = ""
+        self.jt_success = ""
+
+    def jt_select_template(self, template_id: int):
+        """Selecciona una plantilla para editar."""
+        for t in self.jt_list:
+            if t["id"] == template_id:
+                self.jt_form_mode = "edit"
+                self.jt_selected_id = t["id"]
+                self.jt_nombre = t["nombre"]
+                self.jt_descripcion = t["descripcion"]
+                self.jt_id_tipo = t["id_tipo"]
+                self.jt_es_programable = t["es_programable"]
+                self.jt_id_estado_inicial = t["id_estado_inicial"]
+                self.jt_id_modelo = t["id_modelo"]
+                self.jt_id_salida = t["id_salida"]
+                self.jt_acepta_entrada = t["acepta_entrada"]
+                self.jt_permite_hijos = t["permite_hijos"]
+                self.jt_error = ""
+                self.jt_success = ""
+                return
+
+    # Setters para conversión de string a int (requerido por rx.select)
+    def jt_set_id_tipo_from_str(self, val: str):
+        """Convierte string a int para id_tipo."""
+        self.jt_id_tipo = int(val) if val else 0
+
+    def jt_set_id_estado_from_str(self, val: str):
+        """Convierte string a int para id_estado_inicial."""
+        self.jt_id_estado_inicial = int(val) if val else 0
+
+    def jt_set_id_modelo_from_str(self, val: str):
+        """Convierte string a int para id_modelo."""
+        self.jt_id_modelo = int(val) if val else 0
+
+    def jt_set_id_salida_from_str(self, val: str):
+        """Convierte string a int para id_salida."""
+        self.jt_id_salida = int(val) if val else 0
+
+    def jt_save_template(self):
+        """Guarda (crea o actualiza) una plantilla de job."""
+        self.jt_error = ""
+        self.jt_success = ""
+
+        # Validaciones
+        if not self.jt_nombre.strip():
+            self.jt_error = "El nombre es obligatorio"
+            return
+        if self.jt_id_tipo <= 0:
+            self.jt_error = "Debe seleccionar un tipo de job"
+            return
+
+        try:
+            engine = self._get_projects_writer_engine()
+            with engine.begin() as conn:
+                if self.jt_form_mode == "create":
+                    conn.execute(text("""
+                        INSERT INTO jobs_templates
+                            (nombre, descripcion, id_tipo, es_programable,
+                             id_estado_inicial, id_modelo, id_salida,
+                             acepta_entrada, permite_hijos, activo)
+                        VALUES
+                            (:nombre, :descripcion, :id_tipo, :es_programable,
+                             :id_estado_inicial, :id_modelo, :id_salida,
+                             :acepta_entrada, :permite_hijos, 1)
+                    """), {
+                        "nombre": self.jt_nombre.strip(),
+                        "descripcion": self.jt_descripcion.strip() or None,
+                        "id_tipo": self.jt_id_tipo,
+                        "es_programable": 1 if self.jt_es_programable else 0,
+                        "id_estado_inicial": self.jt_id_estado_inicial if self.jt_id_estado_inicial > 0 else None,
+                        "id_modelo": self.jt_id_modelo if self.jt_id_modelo > 0 else None,
+                        "id_salida": self.jt_id_salida if self.jt_id_salida > 0 else None,
+                        "acepta_entrada": 1 if self.jt_acepta_entrada else 0,
+                        "permite_hijos": 1 if self.jt_permite_hijos else 0,
+                    })
+                    self.jt_success = f"Plantilla '{self.jt_nombre}' creada correctamente"
+                    print(f"[JOB TEMPLATES] Plantilla creada: {self.jt_nombre}")
+                else:
+                    conn.execute(text("""
+                        UPDATE jobs_templates SET
+                            nombre = :nombre,
+                            descripcion = :descripcion,
+                            id_tipo = :id_tipo,
+                            es_programable = :es_programable,
+                            id_estado_inicial = :id_estado_inicial,
+                            id_modelo = :id_modelo,
+                            id_salida = :id_salida,
+                            acepta_entrada = :acepta_entrada,
+                            permite_hijos = :permite_hijos
+                        WHERE id = :id
+                    """), {
+                        "id": self.jt_selected_id,
+                        "nombre": self.jt_nombre.strip(),
+                        "descripcion": self.jt_descripcion.strip() or None,
+                        "id_tipo": self.jt_id_tipo,
+                        "es_programable": 1 if self.jt_es_programable else 0,
+                        "id_estado_inicial": self.jt_id_estado_inicial if self.jt_id_estado_inicial > 0 else None,
+                        "id_modelo": self.jt_id_modelo if self.jt_id_modelo > 0 else None,
+                        "id_salida": self.jt_id_salida if self.jt_id_salida > 0 else None,
+                        "acepta_entrada": 1 if self.jt_acepta_entrada else 0,
+                        "permite_hijos": 1 if self.jt_permite_hijos else 0,
+                    })
+                    self.jt_success = f"Plantilla '{self.jt_nombre}' actualizada correctamente"
+                    print(f"[JOB TEMPLATES] Plantilla actualizada: id={self.jt_selected_id}")
+
+            # Recargar lista y limpiar formulario
+            self.load_jt_list()
+            self.jt_clear_form()
+        except Exception as e:
+            print(f"[ERROR JOB TEMPLATES] jt_save_template: {type(e).__name__}: {e}")
+            self.jt_error = f"Error guardando plantilla: {e}"
+
+    def jt_toggle_active(self, template_id: int):
+        """Activa o desactiva una plantilla de job."""
+        self.jt_error = ""
+        self.jt_success = ""
+
+        # Buscar el estado actual
+        current_active = True
+        for t in self.jt_list:
+            if t["id"] == template_id:
+                current_active = t["activo"]
+                break
+
+        try:
+            engine = self._get_projects_writer_engine()
+            with engine.begin() as conn:
+                new_active = 0 if current_active else 1
+                conn.execute(text(
+                    "UPDATE jobs_templates SET activo = :activo WHERE id = :id"
+                ), {"activo": new_active, "id": template_id})
+
+            action = "activada" if new_active == 1 else "desactivada"
+            self.jt_success = f"Plantilla {action} correctamente"
+            print(f"[JOB TEMPLATES] Plantilla {template_id} {action}")
+            self.load_jt_list()
+        except Exception as e:
+            print(f"[ERROR JOB TEMPLATES] jt_toggle_active: {type(e).__name__}: {e}")
+            self.jt_error = f"Error cambiando estado: {e}"
+
+    # ========================================================================
+    # ANÁLISIS DE DOCUMENTACIÓN - Página de creación de jobs
+    # ========================================================================
+
+    # --- Computed properties ---
+
+    @rx.var
+    def ad_org_names(self) -> list[str]:
+        """Nombres de organizaciones para el selector."""
+        return [o["name"] for o in self.ad_orgs]
+
+    @rx.var
+    def ad_selected_org_display(self) -> str:
+        """Nombre de la organización seleccionada."""
+        for o in self.ad_orgs:
+            if o["id"] == self.ad_org_id:
+                return o["name"]
+        return ""
+
+    @rx.var
+    def ad_project_names(self) -> list[str]:
+        """Nombres de proyectos para el selector."""
+        return [p["name"] for p in self.ad_projects]
+
+    @rx.var
+    def ad_selected_project_display(self) -> str:
+        """Nombre del proyecto seleccionado."""
+        for p in self.ad_projects:
+            if p["id"] == self.ad_project_id:
+                return p["name"]
+        return ""
+
+    @rx.var
+    def ad_version_names(self) -> list[str]:
+        """Carpetas de versiones para el selector."""
+        return [v["version_folder"] for v in self.ad_versions]
+
+    @rx.var
+    def ad_selected_version_display(self) -> str:
+        """Versión seleccionada."""
+        for v in self.ad_versions:
+            if v["id_version"] == self.ad_version_id:
+                return v["version_folder"]
+        return ""
+
+    @rx.var
+    def ad_template_names(self) -> list[str]:
+        """Nombres de plantillas para el selector."""
+        return [t["nombre"] for t in self.ad_templates]
+
+    @rx.var
+    def ad_selected_template_display(self) -> str:
+        """Nombre de la plantilla seleccionada."""
+        for t in self.ad_templates:
+            if t["id"] == self.ad_selected_template_id:
+                return t["nombre"]
+        return ""
+
+    @rx.var
+    def ad_show_form(self) -> bool:
+        """Muestra el formulario solo si hay plantilla seleccionada."""
+        return self.ad_selected_template_id > 0
+
+    # --- Carga de datos ---
+
+    def ad_load_organizations(self):
+        """Carga organizaciones accesibles para el usuario (consulta directa a BD)."""
+        try:
+            engine = self._get_projects_engine()
+            with engine.connect() as conn:
+                if self.identity_type_id == 1:
+                    # SuperAdmin ve todas las organizaciones
+                    rows = conn.execute(text(
+                        "SELECT organization_id, organization_name "
+                        "FROM myllm_core_db.organizations "
+                        "ORDER BY organization_name"
+                    )).fetchall()
+                else:
+                    # Otros usuarios: filtrar por asignaciones
+                    rows = conn.execute(text(
+                        "SELECT DISTINCT o.organization_id, o.organization_name "
+                        "FROM myllm_core_db.organizations o "
+                        "INNER JOIN asignaciones_organizaciones_internas aoi "
+                        "  ON o.organization_id = aoi.id_organizacion "
+                        "WHERE aoi.id_usuario = :uid AND aoi.active = 1 "
+                        "ORDER BY o.organization_name"
+                    ), {"uid": self.user_id}).fetchall()
+
+            self.ad_orgs = [{"id": int(r[0]), "name": r[1]} for r in rows]
+            print(f"[AD] Organizaciones cargadas: {len(self.ad_orgs)}")
+
+            # Seleccionar organización por defecto
+            if self.ad_orgs and self.ad_org_id == 0:
+                if self.organization_id > 0:
+                    self.ad_org_id = self.organization_id
+                else:
+                    self.ad_org_id = self.ad_orgs[0]["id"]
+
+            # Cargar proyectos si hay org seleccionada
+            if self.ad_org_id > 0:
+                self._ad_load_projects()
+        except Exception as e:
+            print(f"[ERROR AD] ad_load_organizations: {e}")
+            self.ad_orgs = []
+
+    def ad_set_organization(self, org_name: str):
+        """Cambia la organización y carga sus proyectos."""
+        new_id = find_org_id_by_name(self.ad_orgs, org_name)
+        if new_id <= 0:
+            return
+        self.ad_org_id = new_id
+        self.ad_project_id = 0
+        self.ad_version_id = 0
+        self.ad_projects = []
+        self.ad_versions = []
+        self.ad_jobs = []
+        self.ad_selected_template_id = 0
+        self._ad_load_projects()
+
+    def _ad_load_projects(self):
+        """Carga proyectos de la organización seleccionada (consulta directa a BD)."""
+        if self.ad_org_id <= 0:
+            self.ad_projects = []
+            return
+        try:
+            engine = self._get_projects_engine()
+            with engine.connect() as conn:
+                if self.identity_type_id == 1:
+                    rows = conn.execute(text(
+                        "SELECT id, nombre FROM proyectos "
+                        "WHERE id_organizacion = :org_id "
+                        "ORDER BY nombre"
+                    ), {"org_id": self.ad_org_id}).fetchall()
+                else:
+                    rows = conn.execute(text(
+                        "SELECT DISTINCT p.id, p.nombre "
+                        "FROM proyectos p "
+                        "LEFT JOIN proyectos_roles pr ON p.id = pr.id_proyecto "
+                        "WHERE p.id_organizacion = :org_id "
+                        "  AND pr.id_usuario = :uid AND pr.active = 1 "
+                        "ORDER BY p.nombre"
+                    ), {"org_id": self.ad_org_id, "uid": self.user_id}).fetchall()
+
+            self.ad_projects = [{"id": int(r[0]), "name": r[1]} for r in rows]
+            print(f"[AD] Proyectos cargados: {len(self.ad_projects)}")
+        except Exception as e:
+            print(f"[ERROR AD] _ad_load_projects: {e}")
+            self.ad_projects = []
+
+    def ad_set_project(self, project_name: str):
+        """Cambia el proyecto y carga sus versiones."""
+        for p in self.ad_projects:
+            if p["name"] == project_name:
+                self.ad_project_id = p["id"]
+                break
+        else:
+            self.ad_project_id = 0
+        self.ad_version_id = 0
+        self.ad_versions = []
+        self.ad_jobs = []
+        self.ad_selected_template_id = 0
+        if self.ad_project_id > 0:
+            self._ad_load_versions()
+
+    def _ad_load_versions(self):
+        """Carga versiones del proyecto seleccionado (consulta directa a BD)."""
+        if self.ad_org_id <= 0 or self.ad_project_id <= 0:
+            self.ad_versions = []
+            return
+        try:
+            engine = self._get_projects_engine()
+            with engine.connect() as conn:
+                rows = conn.execute(text(
+                    "SELECT v.id_version "
+                    "FROM versiones v "
+                    "WHERE v.id_organizacion = :org_id "
+                    "  AND v.id_proyecto = :prj_id "
+                    "ORDER BY v.id_version DESC"
+                ), {"org_id": self.ad_org_id, "prj_id": self.ad_project_id}).fetchall()
+
+            self.ad_versions = [
+                {"id_version": int(r[0]), "version_folder": f"v{int(r[0]):03d}"}
+                for r in rows
+            ]
+            print(f"[AD] Versiones cargadas: {len(self.ad_versions)}")
+        except Exception as e:
+            print(f"[ERROR AD] _ad_load_versions: {e}")
+            self.ad_versions = []
+
+    def ad_set_version(self, version_folder: str):
+        """Selecciona una versión y carga jobs existentes."""
+        for v in self.ad_versions:
+            if v["version_folder"] == version_folder:
+                self.ad_version_id = v["id_version"]
+                break
+        else:
+            self.ad_version_id = 0
+        self.ad_selected_template_id = 0
+        self._ad_load_jobs()
+
+    # --- Plantillas y catálogos ---
+
+    def ad_load_templates_and_catalogs(self):
+        """Carga las plantillas de tipo analisis_documentacion y los catálogos."""
+        try:
+            engine = self._get_projects_engine()
+            with engine.connect() as conn:
+                # Plantillas activas de tipo analisis_documentacion
+                rows = conn.execute(text("""
+                    SELECT jt.id, jt.nombre, jt.descripcion,
+                           jt.id_estado_inicial, jt.id_modelo, jt.id_salida,
+                           jt.es_programable, jt.acepta_entrada, jt.permite_hijos
+                    FROM jobs_templates jt
+                    INNER JOIN jobs_tipos jtip ON jt.id_tipo = jtip.id
+                    WHERE jtip.clave = 'analisis_documentacion'
+                      AND jt.activo = 1
+                    ORDER BY jt.nombre
+                """)).fetchall()
+                self.ad_templates = [
+                    {
+                        "id": r[0], "nombre": r[1], "descripcion": r[2] or "",
+                        "id_estado_inicial": r[3] or 0, "id_modelo": r[4] or 0,
+                        "id_salida": r[5] or 0, "es_programable": bool(r[6]),
+                        "acepta_entrada": bool(r[7]), "permite_hijos": bool(r[8]),
+                    }
+                    for r in rows
+                ]
+
+                # Catálogo de modelos
+                rows = conn.execute(text(
+                    "SELECT id, nombre, familia FROM jobs_modelos WHERE activo = 1 ORDER BY nombre"
+                )).fetchall()
+                self.ad_modelos = [{"id": r[0], "nombre": r[1], "familia": r[2]} for r in rows]
+
+                # Catálogo de salidas
+                rows = conn.execute(text(
+                    "SELECT id, clave, nombre FROM jobs_salidas WHERE activo = 1 ORDER BY id"
+                )).fetchall()
+                self.ad_salidas = [{"id": r[0], "clave": r[1], "nombre": r[2]} for r in rows]
+
+                # Catálogo de estados
+                rows = conn.execute(text(
+                    "SELECT id, clave, nombre, color FROM jobs_estados WHERE activo = 1 ORDER BY id"
+                )).fetchall()
+                self.ad_estados = [
+                    {"id": r[0], "clave": r[1], "nombre": r[2], "color": r[3]}
+                    for r in rows
+                ]
+
+            print(f"[AD] Catálogos: templates={len(self.ad_templates)}, "
+                  f"modelos={len(self.ad_modelos)}, salidas={len(self.ad_salidas)}")
+        except Exception as e:
+            print(f"[ERROR AD] ad_load_templates_and_catalogs: {e}")
+            self.ad_error = f"Error cargando catálogos: {e}"
+
+    def ad_select_template(self, template_name: str):
+        """Selecciona una plantilla y carga sus valores por defecto en el formulario."""
+        self.ad_error = ""
+        self.ad_success = ""
+        for t in self.ad_templates:
+            if t["nombre"] == template_name:
+                self.ad_selected_template_id = t["id"]
+                self.ad_job_nombre = t["nombre"]
+                self.ad_job_descripcion = t["descripcion"]
+                self.ad_job_id_modelo = t["id_modelo"]
+                self.ad_job_id_salida = t["id_salida"]
+                self.ad_job_id_estado = t["id_estado_inicial"]
+                self.ad_job_programado_para = ""
+                return
+        self.ad_selected_template_id = 0
+
+    # Setters para selectores del formulario
+    def ad_set_job_modelo_from_str(self, val: str):
+        """Convierte string a int para id_modelo."""
+        self.ad_job_id_modelo = int(val) if val else 0
+
+    def ad_set_job_salida_from_str(self, val: str):
+        """Convierte string a int para id_salida."""
+        self.ad_job_id_salida = int(val) if val else 0
+
+    def ad_set_job_estado_from_str(self, val: str):
+        """Convierte string a int para id_estado."""
+        self.ad_job_id_estado = int(val) if val else 0
+
+    # --- CRUD de jobs ---
+
+    def ad_create_job(self):
+        """Crea un nuevo job basado en la plantilla seleccionada."""
+        self.ad_error = ""
+        self.ad_success = ""
+
+        # Validaciones
+        if self.ad_org_id <= 0:
+            self.ad_error = "Debe seleccionar una organización"
+            return
+        if self.ad_project_id <= 0:
+            self.ad_error = "Debe seleccionar un proyecto"
+            return
+        if self.ad_version_id <= 0:
+            self.ad_error = "Debe seleccionar una versión"
+            return
+        if self.ad_selected_template_id <= 0:
+            self.ad_error = "Debe seleccionar una plantilla"
+            return
+        if not self.ad_job_nombre.strip():
+            self.ad_error = "El nombre del job es obligatorio"
+            return
+
+        # Obtener id_tipo de la plantilla
+        id_tipo = 0
+        try:
+            engine = self._get_projects_engine()
+            with engine.connect() as conn:
+                row = conn.execute(text(
+                    "SELECT id_tipo FROM jobs_templates WHERE id = :id"
+                ), {"id": self.ad_selected_template_id}).fetchone()
+                if row:
+                    id_tipo = row[0]
+        except Exception as e:
+            self.ad_error = f"Error obteniendo tipo de plantilla: {e}"
+            return
+
+        if id_tipo <= 0:
+            self.ad_error = "No se pudo determinar el tipo de job"
+            return
+
+        # Determinar estado
+        id_estado = self.ad_job_id_estado if self.ad_job_id_estado > 0 else 1
+
+        try:
+            engine = self._get_projects_writer_engine()
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    INSERT INTO jobs
+                        (id_template, id_organizacion, id_proyecto, id_version,
+                         nombre, descripcion, id_tipo, id_estado,
+                         id_modelo, id_salida, programado_para)
+                    VALUES
+                        (:id_template, :id_org, :id_proyecto, :id_version,
+                         :nombre, :descripcion, :id_tipo, :id_estado,
+                         :id_modelo, :id_salida, :programado_para)
+                """), {
+                    "id_template": self.ad_selected_template_id,
+                    "id_org": self.ad_org_id,
+                    "id_proyecto": self.ad_project_id,
+                    "id_version": self.ad_version_id,
+                    "nombre": self.ad_job_nombre.strip(),
+                    "descripcion": self.ad_job_descripcion.strip() or None,
+                    "id_tipo": id_tipo,
+                    "id_estado": id_estado,
+                    "id_modelo": self.ad_job_id_modelo if self.ad_job_id_modelo > 0 else None,
+                    "id_salida": self.ad_job_id_salida if self.ad_job_id_salida > 0 else None,
+                    "programado_para": self.ad_job_programado_para if self.ad_job_programado_para.strip() else None,
+                })
+
+            self.ad_success = f"Job '{self.ad_job_nombre}' creado correctamente"
+            print(f"[AD] Job creado: {self.ad_job_nombre}")
+            # Recargar lista y limpiar selección de plantilla
+            self._ad_load_jobs()
+            self.ad_selected_template_id = 0
+            self.ad_job_nombre = ""
+            self.ad_job_descripcion = ""
+            self.ad_job_programado_para = ""
+        except Exception as e:
+            print(f"[ERROR AD] ad_create_job: {e}")
+            self.ad_error = f"Error creando job: {e}"
+
+    def _ad_load_jobs(self):
+        """Carga los jobs de análisis de documentación para org/proyecto/versión."""
+        if self.ad_version_id <= 0:
+            self.ad_jobs = []
+            return
+        try:
+            engine = self._get_projects_engine()
+            with engine.connect() as conn:
+                rows = conn.execute(text("""
+                    SELECT
+                        j.id, j.nombre, j.descripcion,
+                        jest.nombre       AS estado_nombre,
+                        jest.color        AS estado_color,
+                        COALESCE(jmod.nombre, '-') AS modelo_nombre,
+                        COALESCE(jsal.nombre, '-') AS salida_nombre,
+                        jt.nombre         AS template_nombre,
+                        j.programado_para,
+                        j.iniciado_en,
+                        j.completado_en,
+                        j.error,
+                        j.created_at
+                    FROM jobs j
+                    INNER JOIN jobs_estados jest   ON j.id_estado = jest.id
+                    INNER JOIN jobs_templates jt   ON j.id_template = jt.id
+                    LEFT  JOIN jobs_modelos jmod   ON j.id_modelo = jmod.id
+                    LEFT  JOIN jobs_salidas jsal   ON j.id_salida = jsal.id
+                    INNER JOIN jobs_tipos jtip     ON j.id_tipo = jtip.id
+                    WHERE jtip.clave = 'analisis_documentacion'
+                      AND j.id_organizacion = :org_id
+                      AND j.id_proyecto = :prj_id
+                      AND j.id_version = :ver_id
+                    ORDER BY j.id DESC
+                """), {
+                    "org_id": self.ad_org_id,
+                    "prj_id": self.ad_project_id,
+                    "ver_id": self.ad_version_id,
+                }).fetchall()
+                self.ad_jobs = [
+                    {
+                        "id": r[0],
+                        "nombre": r[1],
+                        "descripcion": r[2] or "",
+                        "estado_nombre": r[3],
+                        "estado_color": r[4] or "#888",
+                        "modelo_nombre": r[5],
+                        "salida_nombre": r[6],
+                        "template_nombre": r[7],
+                        "programado_para": str(r[8]) if r[8] else "-",
+                        "iniciado_en": str(r[9]) if r[9] else "-",
+                        "completado_en": str(r[10]) if r[10] else "-",
+                        "error": r[11] or "",
+                        "created_at": str(r[12]) if r[12] else "",
+                    }
+                    for r in rows
+                ]
+            print(f"[AD] Jobs cargados: {len(self.ad_jobs)}")
+        except Exception as e:
+            print(f"[ERROR AD] _ad_load_jobs: {e}")
+            self.ad_jobs = []
+
+    def ad_init_page(self):
+        """Inicializa la página de Análisis de Documentación."""
+        self.ad_load_organizations()
+        self.ad_load_templates_and_catalogs()
+
+    # ========================================================================
+    # MODAL DE JOB - Prompt Builder para Análisis de Documentación
+    # ========================================================================
+
+    @rx.var
+    def ad_identidad_names(self) -> list[str]:
+        """Nombres de prompts de identidades para el selector."""
+        return [p["name"] for p in self.ad_prompts_identidades]
+
+    @rx.var
+    def ad_contexto_names(self) -> list[str]:
+        """Nombres de prompts de contexto para el selector."""
+        return [p["name"] for p in self.ad_prompts_contexto]
+
+    @rx.var
+    def ad_solicitud_names(self) -> list[str]:
+        """Nombres de prompts de solicitudes para el selector."""
+        return [p["name"] for p in self.ad_prompts_solicitudes]
+
+    @rx.var
+    def ad_modalidad_names(self) -> list[str]:
+        """Nombres de prompts de modalidad para el selector."""
+        return [p["name"] for p in self.ad_prompts_modalidad]
+
+    def ad_open_job_modal(self, job_id: int):
+        """Abre el modal con los datos del job y carga los 4 tipos de prompts."""
+        # Buscar el job
+        for j in self.ad_jobs:
+            if j["id"] == job_id:
+                self.ad_modal_job = j
+                break
+        else:
+            return
+
+        # Cargar las 4 categorías de prompts
+        from adapters.api_client import get_prompts
+
+        for category, attr in [
+            ("identidades", "ad_prompts_identidades"),
+            ("contexto", "ad_prompts_contexto"),
+            ("solicitudes", "ad_prompts_solicitudes"),
+            ("modalidad", "ad_prompts_modalidad"),
+        ]:
+            try:
+                prompts = get_prompts(
+                    category=category,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+                setattr(self, attr, prompts if isinstance(prompts, list) else [])
+            except Exception as e:
+                print(f"[ERROR AD MODAL] cargando prompts {category}: {e}")
+                setattr(self, attr, [])
+
+        # Limpiar selecciones previas
+        self.ad_sel_identidad = ""
+        self.ad_sel_contexto = ""
+        self.ad_sel_solicitud = ""
+        self.ad_sel_modalidad = ""
+        self.ad_prompt_final = ""
+        self.ad_modal_open = True
+
+    def ad_close_modal(self):
+        """Cierra el modal de job."""
+        self.ad_modal_open = False
+        self.ad_modal_job = {}
+        self.ad_prompt_final = ""
+
+    def _ad_find_prompt_text(self, prompts_list: list[dict], name: str) -> str:
+        """Busca el texto del prompt por nombre en una lista."""
+        for p in prompts_list:
+            if p.get("name") == name:
+                return p.get("prompt", "")
+        return ""
+
+    def _ad_build_work_path(self) -> str:
+        """Construye la ruta de trabajo: base_storage/ORG.../PRJ.../v..."""
+        base = get_env_value(
+            "backend_ia_base_storage",
+            "~/data/anewhope/files/trainer_server/external",
+        )
+        org_folder = get_folder_by_id_organization(self.ad_org_id)
+        prj_folder = get_folder_by_id_project(self.ad_project_id)
+        ver_folder = get_folder_by_id_version(self.ad_version_id)
+        return f"{base}/{org_folder}/{prj_folder}/{ver_folder}"
+
+    def _ad_compose_prompt(self):
+        """Compone el prompt final concatenando los 4 prompts seleccionados."""
+        parts: list[str] = []
+
+        # 1. Identidad
+        if self.ad_sel_identidad:
+            txt = self._ad_find_prompt_text(self.ad_prompts_identidades, self.ad_sel_identidad)
+            if txt:
+                parts.append(txt)
+
+        # 2. Contexto + ruta de trabajo
+        if self.ad_sel_contexto:
+            txt = self._ad_find_prompt_text(self.ad_prompts_contexto, self.ad_sel_contexto)
+            if txt:
+                work_path = self._ad_build_work_path()
+                parts.append(f"{txt} .Teniendo en cuenta que la ruta de trabajo es {work_path} .")
+
+        # 3. Solicitudes
+        if self.ad_sel_solicitud:
+            txt = self._ad_find_prompt_text(self.ad_prompts_solicitudes, self.ad_sel_solicitud)
+            if txt:
+                parts.append(txt)
+
+        # 4. Modalidad
+        if self.ad_sel_modalidad:
+            txt = self._ad_find_prompt_text(self.ad_prompts_modalidad, self.ad_sel_modalidad)
+            if txt:
+                parts.append(txt)
+
+        self.ad_prompt_final = "\n".join(parts)
+
+    def ad_set_sel_identidad(self, name: str):
+        """Selecciona un prompt de identidades y recompone."""
+        self.ad_sel_identidad = name
+        self._ad_compose_prompt()
+
+    def ad_set_sel_contexto(self, name: str):
+        """Selecciona un prompt de contexto y recompone."""
+        self.ad_sel_contexto = name
+        self._ad_compose_prompt()
+
+    def ad_set_sel_solicitud(self, name: str):
+        """Selecciona un prompt de solicitudes y recompone."""
+        self.ad_sel_solicitud = name
+        self._ad_compose_prompt()
+
+    def ad_set_sel_modalidad(self, name: str):
+        """Selecciona un prompt de modalidad y recompone."""
+        self.ad_sel_modalidad = name
+        self._ad_compose_prompt()
 
 
 def load_presentation_content() -> str:
@@ -3958,6 +4881,876 @@ def _prompts_management_tab() -> rx.Component:
     )
 
 
+def _ad_job_row(job: rx.Var) -> rx.Component:
+    """Fila de la tabla de jobs de análisis de documentación."""
+    return rx.table.row(
+        rx.table.cell(job["id"]),
+        rx.table.cell(
+            rx.text(job["nombre"], font_weight="bold", color=COLORS["foreground"]),
+        ),
+        rx.table.cell(job["template_nombre"]),
+        rx.table.cell(
+            rx.badge(
+                job["estado_nombre"],
+                variant="solid",
+                size="1",
+                style={"color": "black", "backgroundColor": job["estado_color"]},
+            ),
+        ),
+        rx.table.cell(job["modelo_nombre"]),
+        rx.table.cell(job["salida_nombre"]),
+        rx.table.cell(job["programado_para"]),
+        rx.table.cell(job["created_at"]),
+        rx.table.cell(
+            rx.hstack(
+                rx.cond(
+                    job["error"] != "",
+                    rx.tooltip(
+                        rx.icon("alert-triangle", size=16, color="red"),
+                        content=job["error"],
+                    ),
+                    rx.icon("check-circle", size=16, color="green"),
+                ),
+                rx.button(
+                    rx.icon("eye", size=14),
+                    on_click=State.ad_open_job_modal(job["id"]),
+                    size="1",
+                    variant="ghost",
+                    color=COLORS["primary"],
+                    cursor="pointer",
+                    title="Abrir detalle del job",
+                ),
+                spacing="2",
+            ),
+        ),
+    )
+
+
+def _ad_job_modal() -> rx.Component:
+    """Modal de detalle de job con prompt builder."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            # Título
+            rx.dialog.title(
+                rx.hstack(
+                    rx.icon("file-search", size=22, color=COLORS["primary"]),
+                    rx.text("Detalle del Job", font_size="1.3em", font_weight="bold",
+                            color=COLORS["primary"]),
+                    spacing="2",
+                    align_items="center",
+                ),
+            ),
+
+            # Datos del job
+            rx.separator(margin_y="0.5em"),
+            rx.hstack(
+                rx.vstack(
+                    rx.text("Nombre", font_weight="bold", color=COLORS["primary"], font_size="0.9em"),
+                    rx.text(State.ad_modal_job["nombre"], color=COLORS["foreground"]),
+                    spacing="0",
+                    width="50%",
+                ),
+                rx.vstack(
+                    rx.text("Plantilla", font_weight="bold", color=COLORS["primary"], font_size="0.9em"),
+                    rx.text(State.ad_modal_job["template_nombre"], color=COLORS["foreground"]),
+                    spacing="0",
+                    width="50%",
+                ),
+                width="100%",
+            ),
+            rx.hstack(
+                rx.vstack(
+                    rx.text("Estado", font_weight="bold", color=COLORS["primary"], font_size="0.9em"),
+                    rx.badge(
+                        State.ad_modal_job["estado_nombre"],
+                        variant="solid", size="1",
+                        style={"color": "black", "backgroundColor": State.ad_modal_job["estado_color"]},
+                    ),
+                    spacing="1",
+                    width="25%",
+                ),
+                rx.vstack(
+                    rx.text("Modelo", font_weight="bold", color=COLORS["primary"], font_size="0.9em"),
+                    rx.text(State.ad_modal_job["modelo_nombre"], color=COLORS["foreground"]),
+                    spacing="0",
+                    width="25%",
+                ),
+                rx.vstack(
+                    rx.text("Salida", font_weight="bold", color=COLORS["primary"], font_size="0.9em"),
+                    rx.text(State.ad_modal_job["salida_nombre"], color=COLORS["foreground"]),
+                    spacing="0",
+                    width="25%",
+                ),
+                rx.vstack(
+                    rx.text("Creado", font_weight="bold", color=COLORS["primary"], font_size="0.9em"),
+                    rx.text(State.ad_modal_job["created_at"], color=COLORS["foreground"], font_size="0.85em"),
+                    spacing="0",
+                    width="25%",
+                ),
+                width="100%",
+                margin_top="0.5em",
+            ),
+            # Contexto: Organización, Proyecto, Versión
+            rx.hstack(
+                rx.badge("Org", color_scheme="cyan", variant="solid", size="1",
+                         style={"color": "black"}),
+                rx.text(State.ad_selected_org_display, font_size="0.85em",
+                        color=COLORS["muted_foreground"]),
+                rx.badge("Proyecto", color_scheme="amber", variant="solid", size="1",
+                         style={"color": "black"}),
+                rx.text(State.ad_selected_project_display, font_size="0.85em",
+                        color=COLORS["muted_foreground"]),
+                rx.badge("Versión", color_scheme="blue", variant="solid", size="1",
+                         style={"color": "black"}),
+                rx.text(State.ad_selected_version_display, font_size="0.85em",
+                        color=COLORS["muted_foreground"]),
+                spacing="2",
+                margin_top="0.5em",
+            ),
+
+            # Sección de Prompt Builder
+            rx.separator(margin_y="0.8em"),
+            rx.text("Construir Prompt", font_weight="bold", color=COLORS["primary"],
+                    font_size="1.1em"),
+
+            # 4 selectores de prompts en grid 2x2
+            rx.hstack(
+                rx.vstack(
+                    rx.text("Identidad", font_weight="bold", color=COLORS["primary"],
+                            font_size="0.9em"),
+                    rx.select(
+                        State.ad_identidad_names,
+                        value=State.ad_sel_identidad,
+                        on_change=State.ad_set_sel_identidad,
+                        placeholder="Seleccionar identidad...",
+                        width="100%",
+                        size="2",
+                        style={"backgroundColor": COLORS["input"],
+                               "color": COLORS["foreground"],
+                               "borderColor": COLORS["border"]},
+                    ),
+                    spacing="1",
+                    width="50%",
+                ),
+                rx.vstack(
+                    rx.text("Contexto", font_weight="bold", color=COLORS["primary"],
+                            font_size="0.9em"),
+                    rx.select(
+                        State.ad_contexto_names,
+                        value=State.ad_sel_contexto,
+                        on_change=State.ad_set_sel_contexto,
+                        placeholder="Seleccionar contexto...",
+                        width="100%",
+                        size="2",
+                        style={"backgroundColor": COLORS["input"],
+                               "color": COLORS["foreground"],
+                               "borderColor": COLORS["border"]},
+                    ),
+                    spacing="1",
+                    width="50%",
+                ),
+                spacing="3",
+                width="100%",
+            ),
+            rx.hstack(
+                rx.vstack(
+                    rx.text("Solicitud", font_weight="bold", color=COLORS["primary"],
+                            font_size="0.9em"),
+                    rx.select(
+                        State.ad_solicitud_names,
+                        value=State.ad_sel_solicitud,
+                        on_change=State.ad_set_sel_solicitud,
+                        placeholder="Seleccionar solicitud...",
+                        width="100%",
+                        size="2",
+                        style={"backgroundColor": COLORS["input"],
+                               "color": COLORS["foreground"],
+                               "borderColor": COLORS["border"]},
+                    ),
+                    spacing="1",
+                    width="50%",
+                ),
+                rx.vstack(
+                    rx.text("Modalidad", font_weight="bold", color=COLORS["primary"],
+                            font_size="0.9em"),
+                    rx.select(
+                        State.ad_modalidad_names,
+                        value=State.ad_sel_modalidad,
+                        on_change=State.ad_set_sel_modalidad,
+                        placeholder="Seleccionar modalidad...",
+                        width="100%",
+                        size="2",
+                        style={"backgroundColor": COLORS["input"],
+                               "color": COLORS["foreground"],
+                               "borderColor": COLORS["border"]},
+                    ),
+                    spacing="1",
+                    width="50%",
+                ),
+                spacing="3",
+                width="100%",
+                margin_top="0.3em",
+            ),
+
+            # Prompt final compuesto
+            rx.text("Prompt Final", font_weight="bold", color=COLORS["primary"],
+                    font_size="1em", margin_top="0.8em"),
+            rx.text_area(
+                value=State.ad_prompt_final,
+                is_read_only=True,
+                width="100%",
+                min_height="180px",
+                style={
+                    "backgroundColor": "#1a1a2e",
+                    "color": "#e0e0e0",
+                    "borderColor": COLORS["border"],
+                    "fontFamily": "monospace",
+                    "fontSize": "0.85em",
+                    "whiteSpace": "pre-wrap",
+                },
+            ),
+
+            # Botón Salir
+            rx.separator(margin_y="0.5em"),
+            rx.hstack(
+                rx.button(
+                    "Salir",
+                    on_click=State.ad_close_modal,
+                    color_scheme="gray",
+                    size="3",
+                    variant="outline",
+                ),
+                justify="end",
+                width="100%",
+            ),
+
+            style={
+                "backgroundColor": "#1e1e2e",
+                "border": f"1px solid {COLORS['border']}",
+                "maxWidth": "750px",
+                "maxHeight": "90vh",
+                "overflowY": "auto",
+            },
+        ),
+        open=State.ad_modal_open,
+    )
+
+
+def analisis_documentacion_panel() -> rx.Component:
+    """Panel principal de Análisis de Documentación con creación de jobs."""
+    return rx.vstack(
+        # Botón para inicializar/recargar datos
+        rx.button(
+            rx.hstack(
+                rx.icon("refresh-cw", size=16),
+                rx.text("Cargar datos", font_weight="bold"),
+                spacing="2",
+            ),
+            on_click=State.ad_init_page,
+            size="2",
+            color_scheme="orange",
+            style={"font_weight": "bold", "color": "black"},
+            margin_bottom="1em",
+        ),
+
+        # Selector Organización → Proyecto → Versión
+        org_project_version_selector_bar(
+            org_names=State.ad_org_names,
+            selected_org_display=State.ad_selected_org_display,
+            on_org_change=State.ad_set_organization,
+            project_names=State.ad_project_names,
+            selected_project_display=State.ad_selected_project_display,
+            on_project_change=State.ad_set_project,
+            version_numbers=State.ad_version_names,
+            selected_version_display=State.ad_selected_version_display,
+            on_version_change=State.ad_set_version,
+        ),
+
+        # Mensajes de error/éxito
+        rx.cond(
+            State.ad_error != "",
+            rx.callout(State.ad_error, icon="alert_triangle", color_scheme="red", width="100%"),
+            rx.fragment(),
+        ),
+        rx.cond(
+            State.ad_success != "",
+            rx.callout(State.ad_success, icon="check", color_scheme="green", width="100%"),
+            rx.fragment(),
+        ),
+
+        # Solo mostrar si hay versión seleccionada
+        rx.cond(
+            State.ad_version_id > 0,
+            rx.vstack(
+                # Selector de plantilla
+                rx.text(
+                    "Seleccionar Plantilla de Job",
+                    font_weight="bold", color=COLORS["primary"], font_size="1.3em",
+                ),
+                rx.select(
+                    State.ad_template_names,
+                    value=State.ad_selected_template_display,
+                    on_change=State.ad_select_template,
+                    placeholder="Seleccione una plantilla de análisis...",
+                    width="100%",
+                    size="3",
+                    style={
+                        "backgroundColor": COLORS["input"],
+                        "color": COLORS["foreground"],
+                        "borderColor": COLORS["border"],
+                    },
+                ),
+
+                # Formulario desplegable (solo si hay plantilla seleccionada)
+                rx.cond(
+                    State.ad_show_form,
+                    rx.box(
+                        rx.vstack(
+                            rx.text(
+                                "Crear Job de Análisis de Documentación",
+                                font_weight="bold", color=COLORS["primary"],
+                                font_size="1.3em",
+                            ),
+                            rx.separator(margin_y="0.5em"),
+
+                            # Nombre del job
+                            rx.text("Nombre del Job *", color=COLORS["primary"],
+                                    font_weight="bold", font_size="1.1em"),
+                            rx.input(
+                                placeholder="Nombre descriptivo del job...",
+                                value=State.ad_job_nombre,
+                                on_change=State.set_ad_job_nombre,
+                                width="100%",
+                            ),
+
+                            # Descripción
+                            rx.text("Descripción", color=COLORS["primary"],
+                                    font_weight="bold", font_size="1.1em",
+                                    margin_top="0.3em"),
+                            rx.text_area(
+                                placeholder="Descripción del job...",
+                                value=State.ad_job_descripcion,
+                                on_change=State.set_ad_job_descripcion,
+                                width="100%",
+                                min_height="60px",
+                            ),
+
+                            # Fila de selectores: Modelo | Salida | Estado
+                            rx.hstack(
+                                # Modelo
+                                rx.vstack(
+                                    rx.text("Modelo LLM", color=COLORS["primary"],
+                                            font_weight="bold", font_size="1em"),
+                                    rx.select.root(
+                                        rx.select.trigger(
+                                            placeholder="Modelo...",
+                                            style={"backgroundColor": COLORS["input"],
+                                                   "color": COLORS["foreground"],
+                                                   "borderColor": COLORS["border"]},
+                                        ),
+                                        rx.select.content(
+                                            rx.foreach(
+                                                State.ad_modelos,
+                                                lambda m: rx.select.item(
+                                                    m["nombre"], value=m["id"].to(str)
+                                                ),
+                                            ),
+                                        ),
+                                        value=rx.cond(
+                                            State.ad_job_id_modelo > 0,
+                                            State.ad_job_id_modelo.to(str), ""
+                                        ),
+                                        on_change=State.ad_set_job_modelo_from_str,
+                                        size="3",
+                                        width="100%",
+                                    ),
+                                    spacing="1",
+                                    width="33%",
+                                ),
+                                # Salida
+                                rx.vstack(
+                                    rx.text("Tipo de Salida", color=COLORS["primary"],
+                                            font_weight="bold", font_size="1em"),
+                                    rx.select.root(
+                                        rx.select.trigger(
+                                            placeholder="Salida...",
+                                            style={"backgroundColor": COLORS["input"],
+                                                   "color": COLORS["foreground"],
+                                                   "borderColor": COLORS["border"]},
+                                        ),
+                                        rx.select.content(
+                                            rx.foreach(
+                                                State.ad_salidas,
+                                                lambda s: rx.select.item(
+                                                    s["nombre"], value=s["id"].to(str)
+                                                ),
+                                            ),
+                                        ),
+                                        value=rx.cond(
+                                            State.ad_job_id_salida > 0,
+                                            State.ad_job_id_salida.to(str), ""
+                                        ),
+                                        on_change=State.ad_set_job_salida_from_str,
+                                        size="3",
+                                        width="100%",
+                                    ),
+                                    spacing="1",
+                                    width="33%",
+                                ),
+                                # Estado inicial
+                                rx.vstack(
+                                    rx.text("Estado Inicial", color=COLORS["primary"],
+                                            font_weight="bold", font_size="1em"),
+                                    rx.select.root(
+                                        rx.select.trigger(
+                                            placeholder="Estado...",
+                                            style={"backgroundColor": COLORS["input"],
+                                                   "color": COLORS["foreground"],
+                                                   "borderColor": COLORS["border"]},
+                                        ),
+                                        rx.select.content(
+                                            rx.foreach(
+                                                State.ad_estados,
+                                                lambda e: rx.select.item(
+                                                    e["nombre"], value=e["id"].to(str)
+                                                ),
+                                            ),
+                                        ),
+                                        value=rx.cond(
+                                            State.ad_job_id_estado > 0,
+                                            State.ad_job_id_estado.to(str), ""
+                                        ),
+                                        on_change=State.ad_set_job_estado_from_str,
+                                        size="3",
+                                        width="100%",
+                                    ),
+                                    spacing="1",
+                                    width="33%",
+                                ),
+                                spacing="3",
+                                width="100%",
+                            ),
+
+                            # Programar para (opcional)
+                            rx.text("Programar para (opcional)", color=COLORS["primary"],
+                                    font_weight="bold", font_size="1em",
+                                    margin_top="0.3em"),
+                            rx.input(
+                                type="datetime-local",
+                                value=State.ad_job_programado_para,
+                                on_change=State.set_ad_job_programado_para,
+                                width="300px",
+                            ),
+
+                            # Información de contexto
+                            rx.hstack(
+                                rx.badge("Org", color_scheme="cyan", variant="solid",
+                                         size="1", style={"color": "black"}),
+                                rx.text(State.ad_selected_org_display, font_size="0.9em",
+                                        color=COLORS["muted_foreground"]),
+                                rx.badge("Proyecto", color_scheme="amber", variant="solid",
+                                         size="1", style={"color": "black"}),
+                                rx.text(State.ad_selected_project_display, font_size="0.9em",
+                                        color=COLORS["muted_foreground"]),
+                                rx.badge("Versión", color_scheme="blue", variant="solid",
+                                         size="1", style={"color": "black"}),
+                                rx.text(State.ad_selected_version_display, font_size="0.9em",
+                                        color=COLORS["muted_foreground"]),
+                                spacing="2",
+                                margin_top="0.5em",
+                            ),
+
+                            # Botón crear
+                            rx.separator(margin_y="0.5em"),
+                            rx.button(
+                                rx.icon("play", size=18),
+                                "Crear Job",
+                                on_click=State.ad_create_job,
+                                color_scheme="orange",
+                                size="3",
+                                style={"font_weight": "bold", "color": "black"},
+                            ),
+
+                            spacing="2",
+                            width="100%",
+                        ),
+                        width="100%",
+                        padding="1.5em",
+                        border=f"1px solid {COLORS['border']}",
+                        border_radius="0.5em",
+                        margin_top="1em",
+                    ),
+                    rx.fragment(),
+                ),
+
+                # Visor de jobs existentes
+                rx.separator(margin_y="1em"),
+                rx.text(
+                    "Jobs de Análisis de Documentación",
+                    font_weight="bold", color=COLORS["primary"], font_size="1.3em",
+                ),
+                rx.cond(
+                    State.ad_jobs.length() > 0,
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                rx.table.column_header_cell("ID"),
+                                rx.table.column_header_cell("Nombre"),
+                                rx.table.column_header_cell("Plantilla"),
+                                rx.table.column_header_cell("Estado"),
+                                rx.table.column_header_cell("Modelo"),
+                                rx.table.column_header_cell("Salida"),
+                                rx.table.column_header_cell("Programado"),
+                                rx.table.column_header_cell("Creado"),
+                                rx.table.column_header_cell(""),
+                            ),
+                        ),
+                        rx.table.body(
+                            rx.foreach(State.ad_jobs, _ad_job_row),
+                        ),
+                        width="100%",
+                        size="1",
+                    ),
+                    rx.text(
+                        "No hay jobs de análisis para esta versión. Seleccione una plantilla para crear uno.",
+                        color=COLORS["muted_foreground"],
+                        font_style="italic",
+                        padding="1em",
+                    ),
+                ),
+
+                spacing="3",
+                width="100%",
+            ),
+            rx.text(
+                "Seleccione una organización, proyecto y versión para gestionar jobs de análisis.",
+                color=COLORS["muted_foreground"],
+                font_style="italic",
+                padding="2em",
+                text_align="center",
+            ),
+        ),
+
+        # Modal de detalle del job con prompt builder
+        _ad_job_modal(),
+
+        spacing="4",
+        width="100%",
+    )
+
+
+def _jt_template_row(template: rx.Var) -> rx.Component:
+    """Fila de la tabla de plantillas de jobs."""
+    return rx.table.row(
+        rx.table.cell(template["id"]),
+        rx.table.cell(
+            rx.text(template["nombre"], font_weight="bold", color=COLORS["foreground"]),
+        ),
+        rx.table.cell(template["tipo_nombre"]),
+        rx.table.cell(template["pagina"]),
+        rx.table.cell(template["modelo_nombre"]),
+        rx.table.cell(template["salida_nombre"]),
+        rx.table.cell(template["estado_nombre"]),
+        rx.table.cell(
+            rx.hstack(
+                rx.cond(
+                    template["es_programable"],
+                    rx.badge("Prog", color_scheme="cyan", variant="solid", size="1", style={"color": "black"}),
+                    rx.fragment(),
+                ),
+                rx.cond(
+                    template["acepta_entrada"],
+                    rx.badge("Hijo", color_scheme="amber", variant="solid", size="1", style={"color": "black"}),
+                    rx.fragment(),
+                ),
+                rx.cond(
+                    template["permite_hijos"],
+                    rx.badge("Padre", color_scheme="blue", variant="solid", size="1", style={"color": "black"}),
+                    rx.fragment(),
+                ),
+                spacing="1",
+            ),
+        ),
+        rx.table.cell(
+            rx.cond(
+                template["activo"],
+                rx.badge("Activa", color_scheme="green", variant="solid", size="1", style={"color": "black"}),
+                rx.badge("Inactiva", color_scheme="red", variant="solid", size="1", style={"color": "black"}),
+            ),
+        ),
+        rx.table.cell(
+            rx.hstack(
+                rx.button(
+                    rx.icon("pencil", size=14),
+                    on_click=State.jt_select_template(template["id"]),
+                    size="1",
+                    variant="ghost",
+                    color=COLORS["primary"],
+                    cursor="pointer",
+                ),
+                rx.button(
+                    rx.icon("power", size=14),
+                    on_click=State.jt_toggle_active(template["id"]),
+                    size="1",
+                    variant="ghost",
+                    color=rx.cond(template["activo"], "red", "green"),
+                    cursor="pointer",
+                ),
+                spacing="1",
+            ),
+        ),
+    )
+
+
+def _job_templates_tab() -> rx.Component:
+    """Tab de gestión de plantillas de jobs (SuperAdmin only)."""
+    return rx.vstack(
+        # Mensajes de error/éxito
+        rx.cond(
+            State.jt_error != "",
+            rx.callout(State.jt_error, icon="alert_triangle", color_scheme="red", width="100%"),
+            rx.fragment(),
+        ),
+        rx.cond(
+            State.jt_success != "",
+            rx.callout(State.jt_success, icon="check", color_scheme="green", width="100%"),
+            rx.fragment(),
+        ),
+
+        # Layout horizontal: Formulario (38%) | Tabla (58%)
+        rx.hstack(
+            # Formulario (izquierda)
+            rx.box(
+                rx.vstack(
+                    rx.text(
+                        rx.cond(State.jt_form_mode == "create", "Crear Plantilla", "Editar Plantilla"),
+                        font_weight="bold", color=COLORS["primary"], font_size="1.5em",
+                    ),
+
+                    # Nombre
+                    rx.text("Nombre *", color=COLORS["primary"], font_weight="bold", font_size="1.1em"),
+                    rx.input(
+                        placeholder="Nombre de la plantilla...",
+                        value=State.jt_nombre,
+                        on_change=State.set_jt_nombre,
+                        width="100%",
+                    ),
+
+                    # Descripción
+                    rx.text("Descripción", color=COLORS["primary"], font_weight="bold", font_size="1.1em",
+                            margin_top="0.3em"),
+                    rx.text_area(
+                        placeholder="Descripción detallada...",
+                        value=State.jt_descripcion,
+                        on_change=State.set_jt_descripcion,
+                        width="100%",
+                        min_height="60px",
+                    ),
+
+                    # Tipo de Job
+                    rx.text("Tipo de Job *", color=COLORS["primary"], font_weight="bold", font_size="1.1em",
+                            margin_top="0.3em"),
+                    rx.select.root(
+                        rx.select.trigger(
+                            placeholder="Seleccionar tipo...",
+                            style={"backgroundColor": COLORS["input"], "color": COLORS["foreground"],
+                                   "borderColor": COLORS["border"]},
+                        ),
+                        rx.select.content(
+                            rx.foreach(
+                                State.jt_tipos,
+                                lambda t: rx.select.item(t["nombre"], value=t["id"].to(str)),
+                            ),
+                        ),
+                        value=rx.cond(State.jt_id_tipo > 0, State.jt_id_tipo.to(str), ""),
+                        on_change=State.jt_set_id_tipo_from_str,
+                        size="3",
+                        width="100%",
+                    ),
+
+                    # Modelo LLM
+                    rx.text("Modelo LLM", color=COLORS["primary"], font_weight="bold", font_size="1.1em",
+                            margin_top="0.3em"),
+                    rx.select.root(
+                        rx.select.trigger(
+                            placeholder="Modelo por defecto (opcional)...",
+                            style={"backgroundColor": COLORS["input"], "color": COLORS["foreground"],
+                                   "borderColor": COLORS["border"]},
+                        ),
+                        rx.select.content(
+                            rx.foreach(
+                                State.jt_modelos,
+                                lambda m: rx.select.item(m["nombre"], value=m["id"].to(str)),
+                            ),
+                        ),
+                        value=rx.cond(State.jt_id_modelo > 0, State.jt_id_modelo.to(str), ""),
+                        on_change=State.jt_set_id_modelo_from_str,
+                        size="3",
+                        width="100%",
+                    ),
+
+                    # Tipo de salida
+                    rx.text("Tipo de Salida", color=COLORS["primary"], font_weight="bold", font_size="1.1em",
+                            margin_top="0.3em"),
+                    rx.select.root(
+                        rx.select.trigger(
+                            placeholder="Salida por defecto (opcional)...",
+                            style={"backgroundColor": COLORS["input"], "color": COLORS["foreground"],
+                                   "borderColor": COLORS["border"]},
+                        ),
+                        rx.select.content(
+                            rx.foreach(
+                                State.jt_salidas,
+                                lambda s: rx.select.item(s["nombre"], value=s["id"].to(str)),
+                            ),
+                        ),
+                        value=rx.cond(State.jt_id_salida > 0, State.jt_id_salida.to(str), ""),
+                        on_change=State.jt_set_id_salida_from_str,
+                        size="3",
+                        width="100%",
+                    ),
+
+                    # Estado inicial
+                    rx.text("Estado Inicial", color=COLORS["primary"], font_weight="bold", font_size="1.1em",
+                            margin_top="0.3em"),
+                    rx.select.root(
+                        rx.select.trigger(
+                            placeholder="Estado al crear job (opcional)...",
+                            style={"backgroundColor": COLORS["input"], "color": COLORS["foreground"],
+                                   "borderColor": COLORS["border"]},
+                        ),
+                        rx.select.content(
+                            rx.foreach(
+                                State.jt_estados,
+                                lambda e: rx.select.item(e["nombre"], value=e["id"].to(str)),
+                            ),
+                        ),
+                        value=rx.cond(State.jt_id_estado_inicial > 0, State.jt_id_estado_inicial.to(str), ""),
+                        on_change=State.jt_set_id_estado_from_str,
+                        size="3",
+                        width="100%",
+                    ),
+
+                    # Toggles (switches)
+                    rx.separator(margin_y="0.5em"),
+                    rx.hstack(
+                        rx.switch(
+                            checked=State.jt_es_programable,
+                            on_change=State.set_jt_es_programable,
+                        ),
+                        rx.text("Programable", color=COLORS["foreground"], font_size="0.95em"),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    rx.hstack(
+                        rx.switch(
+                            checked=State.jt_acepta_entrada,
+                            on_change=State.set_jt_acepta_entrada,
+                        ),
+                        rx.text("Acepta entrada (puede ser job hijo)", color=COLORS["foreground"],
+                                font_size="0.95em"),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    rx.hstack(
+                        rx.switch(
+                            checked=State.jt_permite_hijos,
+                            on_change=State.set_jt_permite_hijos,
+                        ),
+                        rx.text("Permite hijos (puede ser job padre)", color=COLORS["foreground"],
+                                font_size="0.95em"),
+                        spacing="2",
+                        align_items="center",
+                    ),
+
+                    # Botones
+                    rx.separator(margin_y="0.5em"),
+                    rx.hstack(
+                        rx.button(
+                            rx.cond(State.jt_form_mode == "create", "Crear Plantilla", "Guardar Cambios"),
+                            on_click=State.jt_save_template,
+                            color_scheme="orange",
+                            size="3",
+                            style={"font_weight": "bold", "color": "black"},
+                        ),
+                        rx.cond(
+                            State.jt_form_mode == "edit",
+                            rx.button(
+                                "Cancelar",
+                                on_click=State.jt_clear_form,
+                                color_scheme="gray",
+                                size="3",
+                                variant="outline",
+                            ),
+                            rx.fragment(),
+                        ),
+                        spacing="2",
+                    ),
+
+                    spacing="2",
+                    width="100%",
+                ),
+                width="38%",
+                padding="1em",
+                border=f"1px solid {COLORS['border']}",
+                border_radius="0.5em",
+            ),
+
+            # Tabla de plantillas (derecha)
+            rx.box(
+                rx.vstack(
+                    rx.text("Plantillas Registradas", font_weight="bold", color=COLORS["primary"],
+                            font_size="1.5em"),
+                    rx.cond(
+                        State.jt_list.length() > 0,
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell("ID"),
+                                    rx.table.column_header_cell("Nombre"),
+                                    rx.table.column_header_cell("Tipo"),
+                                    rx.table.column_header_cell("Página"),
+                                    rx.table.column_header_cell("Modelo"),
+                                    rx.table.column_header_cell("Salida"),
+                                    rx.table.column_header_cell("Estado Ini."),
+                                    rx.table.column_header_cell("Flags"),
+                                    rx.table.column_header_cell("Estado"),
+                                    rx.table.column_header_cell("Acciones"),
+                                ),
+                            ),
+                            rx.table.body(
+                                rx.foreach(State.jt_list, _jt_template_row),
+                            ),
+                            width="100%",
+                            size="1",
+                        ),
+                        rx.text(
+                            "No hay plantillas registradas. Cree una usando el formulario.",
+                            color=COLORS["muted_foreground"],
+                            font_style="italic",
+                            padding="2em",
+                        ),
+                    ),
+                    spacing="3",
+                    width="100%",
+                ),
+                width="58%",
+                padding="1em",
+                border=f"1px solid {COLORS['border']}",
+                border_radius="0.5em",
+                overflow_x="auto",
+            ),
+
+            spacing="4",
+            width="100%",
+            align_items="flex-start",
+        ),
+
+        spacing="3",
+        width="100%",
+    )
+
+
 def asignaciones_panel() -> rx.Component:
     """Panel de Gestor de Asignaciones (SuperAdmin only)."""
     return rx.vstack(
@@ -4051,6 +5844,26 @@ def asignaciones_panel() -> rx.Component:
                 _hover={"opacity": "0.8"},
                 font_weight="bold",
             ),
+            rx.button(
+                "Plantillas de Jobs",
+                on_click=lambda: State.set_assignments_tab("job_templates"),
+                background_color=rx.cond(
+                    State.assignments_active_tab == "job_templates",
+                    COLORS["primary"],
+                    "transparent",
+                ),
+                color=rx.cond(
+                    State.assignments_active_tab == "job_templates",
+                    "black",
+                    COLORS["foreground"],
+                ),
+                border=f"1px solid {COLORS['border']}",
+                padding="0.75em 1.5em",
+                border_radius="0.5em",
+                cursor="pointer",
+                _hover={"opacity": "0.8"},
+                font_weight="bold",
+            ),
             spacing="2",
             padding="1em",
             border_bottom=f"1px solid {COLORS['border']}",
@@ -4064,7 +5877,11 @@ def asignaciones_panel() -> rx.Component:
             rx.cond(
                 State.assignments_active_tab == "proyectos",
                 _project_assignments_tab(),
-                _prompts_management_tab(),
+                rx.cond(
+                    State.assignments_active_tab == "prompts",
+                    _prompts_management_tab(),
+                    _job_templates_tab(),
+                ),
             ),
         ),
 
@@ -4604,7 +6421,7 @@ def internal_panel(active_item: str) -> rx.Component:
             estado_proyectos_panel(),
             rx.cond(
                 active_item == "analisis_documentacion",
-                rx.text("Panel de análisis de documentación.", color=COLORS["muted_foreground"]),
+                analisis_documentacion_panel(),
                 rx.cond(
                     active_item == "entrenamientos",
                     rx.text("Panel de gestión de entrenamientos de modelos.", color=COLORS["muted_foreground"]),

@@ -6378,3 +6378,1100 @@ permissions = get_user_permissions(user_id)  # Desde MariaDB
 
 ---
 
+## 27. Sistema de Plantillas de Jobs y Ejecución de Trabajos
+
+**DESCRIPCIÓN**: El sistema de plantillas de jobs define un modelo reutilizable para crear, programar y ejecutar trabajos de IA (análisis documental, entrenamiento, evaluación de resultados, generación de modelos LLM). Se basa en tablas catálogo, una tabla central de plantillas (`jobs_templates`) y tablas de ejecución (`jobs`, `jobs_eventos`, `jobs_entradas`) con soporte de encadenamiento padre-hijo.
+
+### 27.1. Arquitectura General
+
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                        CATÁLOGOS (solo lectura en runtime)                    │
+│  jobs_tipos │ jobs_estados │ jobs_modelos │ jobs_salidas │ jobs_documentacion │
+│  jobs_entrenamientos │ jobs_resultados │ jobs_generacion                      │
+└───────────────────────────────────────────────────────────────────────────────┘
+                                     ↓
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                     PLANTILLAS (configuradas por SuperAdmin)                  │
+│                              jobs_templates                                  │
+└───────────────────────────────────────────────────────────────────────────────┘
+                                     ↓
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                     EJECUCIÓN (instancias en runtime)                         │
+│              jobs │ jobs_eventos │ jobs_entradas                              │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Base de datos:** `myllm_projects_db`
+
+**Migración:** `infrastructure/database/migrations/011_jobs_templates_system.sql`
+
+### 27.2. Tablas Catálogo (OBLIGATORIO entender)
+
+Las tablas catálogo contienen registros fijos que se usan como referencia. NO deben modificarse
+desde el código de aplicación salvo por scripts de migración o el SuperAdmin desde backoffice.
+
+#### 27.2.1. `jobs_tipos` — Tipos de job
+
+Define en qué página del backoffice se puede usar cada plantilla.
+
+| `clave` | `nombre` | `pagina_backoffice` | Descripción |
+|---------|----------|---------------------|-------------|
+| `analisis_documentacion` | Análisis de Documentación | `Documentacion` | Analiza documentos subidos por clientes |
+| `entrenamiento` | Entrenamiento | `Entrenamientos` | Entrena modelo con parámetros RAG |
+| `analisis_resultados` | Análisis de Resultados | `Resultados` | Evalúa métricas y genera informes |
+| `crear_modelo_llm` | Crear Modelo LLM | `Generacion` | Genera modelo LLM fine-tuned |
+
+**Regla #1**: Cada plantilla (`jobs_templates`) tiene EXACTAMENTE un `id_tipo` que determina su página.
+
+**Regla #2**: Al crear nuevas páginas en backoffice, PRIMERO crear el registro en `jobs_tipos`.
+
+#### 27.2.2. `jobs_estados` — Estados de un job
+
+| `clave` | `nombre` | `color` | `es_final` | Descripción |
+|---------|----------|---------|------------|-------------|
+| `programado` | Programado | `blue` | 0 | Job creado, esperando ejecución |
+| `en_ejecucion` | En ejecución | `amber` | 0 | Job ejecutándose activamente |
+| `error` | Error | `red` | 1 | Job terminó con error |
+| `finalizado` | Finalizado | `green` | 1 | Job completado exitosamente |
+
+**Regla #3**: Los badges de estado en UI DEBEN usar `rx.match` con los colores definidos aquí.
+
+**Regla #4**: Un job solo puede transicionar a un estado `es_final=1` como último paso. Una vez en estado final, NO puede cambiar.
+
+**Transiciones válidas:**
+```
+programado → en_ejecucion → finalizado
+programado → en_ejecucion → error
+programado → error (si falla antes de ejecutarse)
+```
+
+#### 27.2.3. `jobs_modelos` — Modelos LLM disponibles
+
+Refleja la salida de `ollama list`. Cada registro representa un modelo disponible para su uso
+en jobs de tipo `entrenamiento` o `crear_modelo_llm`.
+
+**Regla #5**: La tabla `jobs_modelos` se actualiza periódicamente desde el Trainer (sincronización con Ollama).
+
+**Regla #6**: NUNCA crear registros manualmente; usar el endpoint de sincronización del Trainer.
+
+#### 27.2.4. `jobs_salidas` — Tipos de salida
+
+Define qué produce un job al terminar. Cada tipo tiene un `campo_referencia` diferente.
+
+| `clave` | `nombre` | `campo_referencia` | Descripción |
+|---------|----------|--------------------|-------------|
+| `nuevo_job` | Nuevo Job | `id_job` | El resultado dispara otro job hijo |
+| `informe` | Informe | `path_fichero` | Genera un fichero (markdown, PDF, etc.) |
+| `notificacion` | Notificación | `id_conversacion` | Envía notificación al sistema de conversaciones |
+| `ticket` | Ticket | `id_ticket` | Crea o responde un ticket de soporte |
+
+**Regla #7**: Al completarse un job, el campo `referencia_salida` en la tabla `jobs` se rellena
+con el valor correspondiente al `campo_referencia` del tipo de salida seleccionado.
+
+#### 27.2.5. `jobs_documentacion` — Plantillas Jinja2 para informes
+
+Almacena las plantillas Jinja2 (`.j2`) que se usan para generar informes de salida.
+
+**Regla #8**: Las plantillas Jinja2 residen en el filesystem (campo `template_path`), NO en base de datos.
+
+**Regla #9**: El campo `variables_requeridas` (JSON) documenta qué variables necesita la plantilla.
+Ejemplo:
+```json
+["nombre_proyecto", "version", "fecha_analisis", "metricas", "conclusiones"]
+```
+
+**Regla #10**: Verificar que TODAS las variables requeridas están disponibles antes de renderizar.
+
+#### 27.2.6. `jobs_entrenamientos` — Configuraciones de parámetros RAG
+
+Almacena perfiles de configuración reutilizables para entrenamientos. Cada perfil tiene
+parámetros de hiperparámetros (learning_rate, epochs, etc.), ChromaDB (collection, chunk_size)
+y generación (temperature, max_tokens).
+
+**Regla #11**: Los perfiles se seleccionan en la plantilla (`jobs_templates.configuracion_defecto`)
+y pueden sobrescribirse a nivel de job individual (`jobs.configuracion`).
+
+**Regla #12**: Los valores por defecto de la tabla son los estándar del proyecto. NUNCA modificar
+los defaults de la tabla sin consultar al equipo.
+
+#### 27.2.7. `jobs_resultados` — Resultados de ejecución
+
+Almacena métricas, informes generados y cualquier salida de un job. El campo `datos_resultado`
+(JSON) permite flexibilidad total.
+
+**Regla #13**: Cada resultado tiene un `tipo_resultado` que indica su naturaleza:
+- `metricas_entrenamiento`: Métricas de loss, accuracy, etc.
+- `informe_generado`: Informe renderizado desde plantilla Jinja2
+- `evaluacion_modelo`: Resultados de evaluación (perplexity, BLEU, etc.)
+
+**Regla #14**: Si el resultado genera un fichero, rellenar `path_fichero` y `nombre_fichero`.
+La FK opcional `id_documentacion` indica qué plantilla Jinja2 se usó.
+
+#### 27.2.8. `jobs_generacion` — Modelos LLM generados
+
+Registra cada modelo LLM producido. Vinculado a organización, proyecto y versión.
+
+**Regla #15**: `id_modelo_base` referencia a `jobs_modelos` (modelo base usado para fine-tuning).
+
+**Regla #16**: `path_modelo` sigue la estructura estándar de almacenamiento:
+```
+internal/models/ORG{id}/PRJ{id}/v{version}/{nombre_modelo}
+```
+
+### 27.3. Tabla Central: `jobs_templates` — Plantillas de Jobs
+
+**CONCEPTO CLAVE:** Una plantilla es una receta reutilizable que define los valores por defecto
+de un job. Cuando se crea un job desde una plantilla, hereda todos los valores pero permite
+sobreescribirlos individualmente.
+
+#### 27.3.1. Campos y semántica
+
+| Campo | Propósito | Heredable por job |
+|-------|-----------|-------------------|
+| `nombre` | Nombre visible de la plantilla | ✅ Sí (campo `nombre` del job) |
+| `descripcion` | Descripción detallada | ✅ Sí |
+| `id_tipo` | FK a `jobs_tipos` (determina página) | ✅ Sí (obligatorio) |
+| `es_programable` | Si los jobs soportan ejecución diferida | ✅ Sí |
+| `id_estado_inicial` | FK a `jobs_estados` (estado al crear job) | ✅ Sí (default: `programado`) |
+| `id_modelo` | FK a `jobs_modelos` (modelo LLM por defecto) | ✅ Sí (puede ser NULL) |
+| `id_salida` | FK a `jobs_salidas` (tipo de salida) | ✅ Sí |
+| `acepta_entrada` | Si puede ser job hijo | ✅ Sí |
+| `permite_hijos` | Si puede ser job padre | ✅ Sí |
+| `configuracion_defecto` | JSON con configuración flexible | ✅ Sí (a campo `configuracion`) |
+| `activo` | Si la plantilla está disponible | ❌ No |
+
+**Regla #17**: Una plantilla con `activo=0` NO puede usarse para crear nuevos jobs, pero los
+jobs existentes que la referencian siguen siendo válidos.
+
+**Regla #18**: El campo `configuracion_defecto` (JSON) puede contener CUALQUIER configuración
+específica del tipo de job. Ejemplo para un job de análisis documental:
+```json
+{
+  "formatos_aceptados": ["pdf", "docx", "txt"],
+  "max_paginas": 100,
+  "idioma": "es",
+  "id_entrenamiento": 1,
+  "id_documentacion": 2
+}
+```
+
+#### 27.3.2. Relación tipo → página del backoffice
+
+```
+jobs_templates.id_tipo → jobs_tipos.id → jobs_tipos.pagina_backoffice
+```
+
+| Página Backoffice | Tipo de plantilla | Ejemplo de plantilla |
+|-------------------|-------------------|----------------------|
+| **Documentación** | `analisis_documentacion` | "Análisis de contratos PDF" |
+| **Entrenamientos** | `entrenamiento` | "Fine-tuning Llama3 con RAG" |
+| **Resultados** | `analisis_resultados` | "Informe de evaluación de modelo" |
+| **Generación** | `crear_modelo_llm` | "Generar modelo Llama3 fine-tuned" |
+
+**Regla #19**: Cada página del backoffice SOLO muestra plantillas cuyo `id_tipo` corresponde
+a esa página. Usar filtro SQL:
+```sql
+SELECT t.*
+FROM jobs_templates t
+INNER JOIN jobs_tipos jt ON t.id_tipo = jt.id
+WHERE jt.pagina_backoffice = :pagina
+  AND t.activo = 1
+ORDER BY t.nombre;
+```
+
+#### 27.3.3. Encadenamiento: `acepta_entrada` y `permite_hijos`
+
+| `acepta_entrada` | `permite_hijos` | Comportamiento |
+|-------------------|-----------------|----------------|
+| 0 | 0 | Job independiente (sin padre ni hijos) |
+| 0 | 1 | Job padre (puede disparar hijos al completarse) |
+| 1 | 0 | Job hijo (recibe datos de un padre) |
+| 1 | 1 | Job intermedio (recibe datos y produce hijos) |
+
+**Regla #20**: Un job creado desde una plantilla con `acepta_entrada=1` DEBE tener un `id_job_padre`
+válido. Sin padre, no tiene datos de entrada.
+
+**Regla #21**: Un job creado desde una plantilla con `permite_hijos=1` puede (opcionalmente)
+crear jobs hijos al completarse. Los hijos se crean via `jobs_entradas`.
+
+### 27.4. Creación de Plantillas desde Backoffice (OBLIGATORIO)
+
+**Acceso:** Solo SuperAdmin (`identity_type_id=1`)
+
+#### 27.4.1. Flujo de creación
+
+```
+1. SuperAdmin navega a "Gestión de Plantillas" en Backoffice
+   ↓
+2. Selecciona tipo de job (determina página y contexto)
+   ↓
+3. Rellena formulario:
+   - Nombre y descripción
+   - Modelo LLM (selector desde jobs_modelos)
+   - Tipo de salida (selector desde jobs_salidas)
+   - Es programable (toggle)
+   - Acepta entrada / Permite hijos (toggles)
+   - Configuración por defecto (editor JSON)
+   ↓
+4. Backoffice → Middleware → Broker → Backend Core
+   ↓
+5. Backend Core valida permisos (identity_type_id=1)
+   ↓
+6. INSERT en jobs_templates
+   ↓
+7. Retorna plantilla creada con ID
+```
+
+#### 27.4.2. Validación de permisos (Security by Design)
+
+```python
+# OBLIGATORIO en TODOS los endpoints de plantillas
+@app.post("/job-templates")
+async def create_job_template(
+    request: CreateJobTemplateDto,
+    session: SessionContext = Depends(get_session_context),
+):
+    # VALIDACIÓN CRÍTICA: Solo SuperAdmin
+    if session.identity_type_id != 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo SuperAdmin puede gestionar plantillas de jobs",
+        )
+    # ... resto de lógica
+```
+
+**Regla #22**: SOLO `identity_type_id=1` (SuperAdmin) puede crear, editar o desactivar plantillas.
+
+**Regla #23**: Las operaciones de lectura (listar, consultar) requieren `training_read=true`.
+
+#### 27.4.3. Endpoints de plantillas
+
+| Endpoint | Método | Permiso | Descripción |
+|----------|--------|---------|-------------|
+| `/job-templates` | GET | `training_read` | Listar plantillas (con filtro por tipo) |
+| `/job-templates/{id}` | GET | `training_read` | Obtener plantilla por ID |
+| `/job-templates` | POST | SuperAdmin only | Crear plantilla |
+| `/job-templates/{id}` | PATCH | SuperAdmin only | Actualizar plantilla |
+| `/job-templates/{id}/deactivate` | PATCH | SuperAdmin only | Desactivar plantilla |
+
+#### 27.4.4. Flujo arquitectónico completo
+
+```
+Backoffice UI → Middleware → Broker → Backend Core → MariaDB
+  (Reflex)      (apife.py)  (apibe.py) (apicore.py)  (myllm_projects_db)
+```
+
+**Archivos a implementar:**
+
+| Capa | Archivo | Método |
+|------|---------|--------|
+| Backoffice UI | `web_backoffice.py` o `pages/job_templates.py` | Formulario CRUD |
+| API Client | `adapters/api_client.py` | `create_job_template()`, `list_job_templates()` |
+| Middleware API | `apife.py` | `POST /job-templates`, `GET /job-templates` |
+| Middleware Router | `routermiddleware.py` | `create_job_template()`, `list_job_templates()` |
+| Broker Client | `broker_backend_client.py` | `create_job_template()` |
+| Broker API | `apibe.py` | `POST /job-templates` |
+| Broker Router | `routerbroker.py` | `create_job_template()` |
+| Core Interface | `interfacetocore.py` | `create_job_template()` |
+| Core API | `apicore.py` | `POST /job-templates` |
+| Core Router | `routercore.py` | `create_job_template()` |
+
+### 27.5. Instanciación de Jobs desde Plantillas (OBLIGATORIO)
+
+**CONCEPTO CLAVE:** Un "job" es una instancia concreta de una plantilla, asociada a una
+organización, proyecto y versión específica. Hereda los valores de la plantilla pero puede
+sobrescribirlos.
+
+#### 27.5.1. Flujo de instanciación
+
+```
+1. Usuario (con permiso training_create) selecciona plantilla
+   ↓
+2. Sistema pre-rellena formulario con valores heredados de la plantilla
+   ↓
+3. Usuario puede modificar: nombre, modelo, configuración, fecha programada
+   ↓
+4. Sistema establece:
+   - id_template = plantilla seleccionada
+   - id_organizacion, id_proyecto, id_version = contexto actual
+   - id_estado = id_estado_inicial de la plantilla (default: "programado")
+   - id_tipo = heredado de plantilla
+   - id_salida = heredado de plantilla (modificable)
+   - configuracion = merge(plantilla.configuracion_defecto, modificaciones_usuario)
+   ↓
+5. INSERT en tabla jobs
+   ↓
+6. INSERT en tabla cambios (auditoría automática)
+   ↓
+7. Si id_estado = "programado" y programado_para IS NULL:
+   → Ejecución inmediata (cambiar a "en_ejecucion")
+   ↓
+8. Si programado_para IS NOT NULL:
+   → Encolar para ejecución futura
+```
+
+#### 27.5.2. Herencia de valores plantilla → job
+
+```python
+def create_job_from_template(template_id: int, overrides: dict) -> Job:
+    """Crea un job heredando valores de la plantilla con sobreescrituras opcionales."""
+    template = repository.get_template(template_id)
+
+    job = Job(
+        id_template=template.id,
+        nombre=overrides.get("nombre", template.nombre),
+        descripcion=overrides.get("descripcion", template.descripcion),
+        id_tipo=template.id_tipo,  # NUNCA sobrescribir
+        id_estado=template.id_estado_inicial or get_estado_by_clave("programado").id,
+        id_modelo=overrides.get("id_modelo", template.id_modelo),
+        id_salida=overrides.get("id_salida", template.id_salida),
+        programado_para=overrides.get("programado_para"),
+        configuracion=_merge_config(
+            template.configuracion_defecto,
+            overrides.get("configuracion", {}),
+        ),
+        id_organizacion=overrides["id_organizacion"],  # OBLIGATORIO
+        id_proyecto=overrides["id_proyecto"],            # OBLIGATORIO
+        id_version=overrides["id_version"],              # OBLIGATORIO
+    )
+    return repository.save_job(job)
+
+
+def _merge_config(base: dict | None, overrides: dict) -> dict:
+    """Merge configuración plantilla + sobreescrituras del usuario."""
+    merged = dict(base or {})
+    merged.update(overrides)
+    return merged
+```
+
+**Regla #24**: `id_tipo` NUNCA puede sobrescribirse al crear un job. Se hereda de la plantilla.
+
+**Regla #25**: `id_organizacion`, `id_proyecto` e `id_version` son OBLIGATORIOS y vienen del
+contexto del usuario (proyecto y versión seleccionados en la UI).
+
+**Regla #26**: La configuración del job es el resultado del merge entre `configuracion_defecto`
+de la plantilla y las modificaciones del usuario. Las claves del usuario sobrescriben las de
+la plantilla.
+
+#### 27.5.3. Permisos para instanciar jobs
+
+| Operación | Permiso requerido | identity_type_id permitidos |
+|-----------|-------------------|-----------------------------|
+| Crear job | `training_create` | 1 (SuperAdmin), 2 (Admin), 3 (Editor) |
+| Ver jobs | `training_read` | 1, 2, 3, 4, 5 |
+| Cancelar job | `training_stop` | 1, 2 |
+| Ver resultados | `training_read` | 1, 2, 3, 4, 5 |
+
+**Regla #27**: Validar permiso `training_create` en Middleware Y Backend Core antes de crear un job.
+
+#### 27.5.4. Endpoints de jobs
+
+| Endpoint | Método | Permiso | Descripción |
+|----------|--------|---------|-------------|
+| `/jobs` | POST | `training_create` | Crear job desde plantilla |
+| `/jobs` | GET | `training_read` | Listar jobs (filtros: org, proyecto, versión, estado) |
+| `/jobs/{id}` | GET | `training_read` | Obtener job con detalle |
+| `/jobs/{id}/cancel` | PATCH | `training_stop` | Cancelar job en ejecución |
+| `/jobs/{id}/events` | GET | `training_read` | Obtener eventos del job |
+| `/jobs/{id}/results` | GET | `training_read` | Obtener resultados del job |
+
+#### 27.5.5. Registro automático en tabla `cambios`
+
+Al crear un job, registrar automáticamente en la tabla `cambios`:
+
+```python
+# En routercore.py - al crear job
+conn.execute(text("""
+    INSERT INTO cambios
+        (id_organizacion, id_proyecto, id_version, fecha_cambio, tipo_cambio, descripcion)
+    VALUES
+        (:org_id, :project_id, :version_id, CURDATE(), :tipo, :descripcion)
+"""), {
+    "org_id": job.id_organizacion,
+    "project_id": job.id_proyecto,
+    "version_id": job.id_version,
+    "tipo": "Crear job",
+    "descripcion": f"Job '{job.nombre}' creado desde plantilla '{template.nombre}'"
+})
+```
+
+**Regla #28**: TODOS los eventos significativos de jobs (creación, inicio, error, finalización)
+deben registrarse en la tabla `cambios` para visibilidad en el Calendario.
+
+### 27.6. Ejecución de Jobs y Eventos (OBLIGATORIO)
+
+#### 27.6.1. Ciclo de vida de un job
+
+```
+         ┌──────────┐
+         │ CREACIÓN │
+         └────┬─────┘
+              ↓
+  ┌───────────────────────┐
+  │  estado = programado  │──── programado_para != NULL → Encolar
+  └───────────┬───────────┘
+              ↓ (ejecución inmediata o al llegar la hora)
+  ┌───────────────────────┐
+  │ estado = en_ejecucion │──── Evento: tipo_evento="inicio"
+  │ iniciado_en = NOW()   │
+  └───────────┬───────────┘
+              ↓
+      ┌───────┴────────┐
+      ↓                ↓
+  ┌────────┐     ┌──────────┐
+  │ ERROR  │     │ ÉXITO    │
+  │ error= │     │ datos_   │
+  │ "msg"  │     │ salida=  │
+  └────┬───┘     │ {JSON}   │
+       ↓         └────┬─────┘
+  ┌─────────┐    ┌──────────────┐
+  │ estado= │    │ estado=      │
+  │ error   │    │ finalizado   │
+  │         │    │ completado_  │
+  │         │    │ en=NOW()     │
+  └─────────┘    └──────┬───────┘
+                        ↓
+                 ┌──────────────┐
+                 │ Crear hijos  │ (si permite_hijos=1 y hay plantillas hijo)
+                 │ via jobs_    │
+                 │ entradas     │
+                 └──────────────┘
+```
+
+#### 27.6.2. Tabla `jobs_eventos` — Log cronológico
+
+Cada job produce eventos durante su ejecución. Son inmutables (solo INSERT, nunca UPDATE/DELETE).
+
+**Formato de `referencia_compuesta`:**
+```
+ORG{id_organizacion}-PRJ{id_proyecto}-VER{id_version}-JOB{id_job}
+```
+
+Ejemplo: `ORG1-PRJ3-VER2-JOB45`
+
+**Tipos de evento estándar:**
+
+| `tipo_evento` | Cuándo se genera | `datos_evento` (JSON) típico |
+|---------------|------------------|------------------------------|
+| `inicio` | Job comienza ejecución | `{"modelo": "llama3:latest"}` |
+| `progreso` | Actualización de progreso | `{"porcentaje": 45, "paso": "embedding"}` |
+| `metricas` | Métricas parciales | `{"loss": 0.234, "epoch": 3}` |
+| `error` | Error durante ejecución | `{"error": "OOM", "detalle": "..."}` |
+| `fin` | Job completa exitosamente | `{"duracion_segundos": 3600}` |
+| `hijo_creado` | Se crea un job hijo | `{"id_job_hijo": 46, "tipo": "notificacion"}` |
+
+**Regla #29**: Los eventos son INMUTABLES. NUNCA hacer UPDATE ni DELETE sobre `jobs_eventos`.
+
+**Regla #30**: Todo evento debe incluir `referencia_compuesta` para búsqueda rápida por contexto.
+
+**Regla #31**: El Trainer (Backend IA) es el principal productor de eventos. Los envía vía
+el Broker al Backend Core para persistencia.
+
+### 27.7. Encadenamiento Padre-Hijo (OBLIGATORIO)
+
+El encadenamiento permite que un job, al completarse, dispare automáticamente uno o más
+jobs hijos, transfiriendo datos de salida como datos de entrada.
+
+#### 27.7.1. Flujo de encadenamiento
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│ Job Padre (permite_hijos=1) completa exitosamente             │
+│ → datos_salida = {"metricas": {...}, "path_informe": "/..."}  │
+│ → referencia_salida = "/data/internal/reports/ORG1/..."       │
+└───────────────────────────────┬───────────────────────────────┘
+                                ↓
+┌───────────────────────────────────────────────────────────────┐
+│ Sistema busca plantillas hijo configuradas                    │
+│ (jobs_templates con acepta_entrada=1 y tipo compatible)       │
+└───────────────────────────────┬───────────────────────────────┘
+                                ↓
+┌───────────────────────────────────────────────────────────────┐
+│ Para cada hijo configurado:                                   │
+│ 1. Crear job hijo (id_job_padre = padre.id)                   │
+│ 2. Crear registro en jobs_entradas:                           │
+│    - id_job_padre, id_job_hijo                                │
+│    - datos = padre.datos_salida (total o parcial)             │
+│    - id_resultado (si hay resultado asociado)                 │
+│ 3. Job hijo recibe datos en datos_entrada (copiados)          │
+│ 4. Job hijo inicia ejecución                                  │
+└───────────────────────────────────────────────────────────────┘
+```
+
+#### 27.7.2. Tabla `jobs_entradas` — Transferencia de datos
+
+Cada registro representa una transferencia de datos de un padre a un hijo.
+
+**Regla #32**: `id_job_padre` y `id_job_hijo` DEBEN referenciar jobs existentes en la tabla `jobs`.
+
+**Regla #33**: El campo `datos` (JSON) contiene el payload flexible que el padre envía al hijo.
+Es una copia (no referencia) de los datos para garantizar inmutabilidad.
+
+**Regla #34**: Si el padre produjo un resultado (`jobs_resultados`), se puede vincular via
+`id_resultado` para trazabilidad.
+
+#### 27.7.3. Ejemplo completo de encadenamiento
+
+```
+Escenario: Análisis documental → Genera informe → Notifica al cliente
+
+Job 1 (Padre): "Análisis de contratos PDF"
+  - id_tipo: analisis_documentacion
+  - permite_hijos: 1
+  - Al completar:
+    - datos_salida: {"paginas_analizadas": 45, "entidades": [...], "resumen": "..."}
+    - referencia_salida: null
+    - Crea resultado en jobs_resultados con tipo "metricas_entrenamiento"
+
+Job 2 (Hijo intermedio): "Generar informe de análisis"
+  - id_tipo: analisis_resultados
+  - acepta_entrada: 1
+  - permite_hijos: 1
+  - id_job_padre: Job1.id
+  - datos_entrada: (copiado de Job1.datos_salida)
+  - Al completar:
+    - Renderiza plantilla Jinja2 con los datos
+    - datos_salida: {"path_informe": "/data/internal/reports/..."}
+    - referencia_salida: "/data/internal/reports/ORG1/PRJ3/v001/analisis_20260210.md"
+
+Job 3 (Hijo final): "Notificar resultado al cliente"
+  - id_tipo: analisis_resultados (subtipo notificación)
+  - acepta_entrada: 1
+  - permite_hijos: 0
+  - id_job_padre: Job2.id
+  - datos_entrada: (copiado de Job2.datos_salida)
+  - Al completar:
+    - Crea conversación o mensaje en sistema de notificaciones
+    - referencia_salida: "conv-uuid-1234" (id_conversacion)
+```
+
+#### 27.7.4. Registro en `jobs_entradas` para el ejemplo
+
+```sql
+-- Transferencia Job1 → Job2
+INSERT INTO jobs_entradas (id_job_padre, id_job_hijo, id_tipo_salida, id_resultado, datos)
+VALUES (1, 2, NULL, 1, '{"paginas_analizadas": 45, "entidades": [...], "resumen": "..."}');
+
+-- Transferencia Job2 → Job3
+INSERT INTO jobs_entradas (id_job_padre, id_job_hijo, id_tipo_salida, id_resultado, datos)
+VALUES (2, 3, 2, 2, '{"path_informe": "/data/internal/reports/ORG1/PRJ3/v001/analisis.md"}');
+```
+
+#### 27.7.5. Implementación del encadenamiento en Backend Core
+
+```python
+def complete_job(self, job_id: int, datos_salida: dict, referencia_salida: str | None) -> dict:
+    """Completa un job y dispara hijos si aplica."""
+    with self._engine.begin() as conn:
+        # 1. Actualizar job padre
+        conn.execute(text("""
+            UPDATE jobs
+            SET id_estado = (SELECT id FROM jobs_estados WHERE clave = 'finalizado'),
+                completado_en = NOW(),
+                datos_salida = :datos_salida,
+                referencia_salida = :referencia_salida
+            WHERE id = :job_id
+        """), {
+            "job_id": job_id,
+            "datos_salida": json.dumps(datos_salida),
+            "referencia_salida": referencia_salida,
+        })
+
+        # 2. Registrar evento de fin
+        self._create_event(conn, job_id, "fin", {"duracion": "..."})
+
+        # 3. Si permite_hijos, crear jobs hijos
+        job = self._get_job(conn, job_id)
+        template = self._get_template(conn, job["id_template"])
+
+        if template["permite_hijos"]:
+            self._create_child_jobs(conn, job, datos_salida)
+
+    return self.get_job(job_id)
+
+
+def _create_child_jobs(
+    self,
+    conn,
+    parent_job: dict,
+    parent_output: dict,
+) -> list[int]:
+    """Crea jobs hijos configurados para el padre."""
+    child_job_ids = []
+
+    # Buscar plantillas hijas configuradas en configuracion del padre
+    child_templates = parent_job.get("configuracion", {}).get("hijos", [])
+
+    for child_config in child_templates:
+        child_template_id = child_config["id_template"]
+        child_template = self._get_template(conn, child_template_id)
+
+        if not child_template or not child_template["acepta_entrada"]:
+            continue
+
+        # Crear job hijo
+        child_job_id = self._insert_job(
+            conn,
+            template=child_template,
+            id_organizacion=parent_job["id_organizacion"],
+            id_proyecto=parent_job["id_proyecto"],
+            id_version=parent_job["id_version"],
+            id_job_padre=parent_job["id"],
+            datos_entrada=parent_output,
+        )
+
+        # Crear registro en jobs_entradas
+        conn.execute(text("""
+            INSERT INTO jobs_entradas
+                (id_job_padre, id_job_hijo, datos)
+            VALUES
+                (:padre, :hijo, :datos)
+        """), {
+            "padre": parent_job["id"],
+            "hijo": child_job_id,
+            "datos": json.dumps(parent_output),
+        })
+
+        child_job_ids.append(child_job_id)
+
+    return child_job_ids
+```
+
+**Regla #35**: La creación de jobs hijos DEBE ser transaccional con la finalización del padre.
+Si falla la creación de hijos, el padre NO se marca como finalizado.
+
+**Regla #36**: Los hijos configurados se definen en `jobs.configuracion.hijos` (array de
+`{"id_template": N, "datos_filtro": {...}}`).
+
+### 27.8. Configuración de Hijos en Plantillas
+
+Para que una plantilla padre sepa qué hijos crear, se configura en `configuracion_defecto`:
+
+```json
+{
+  "parametros_analisis": {"max_paginas": 100},
+  "hijos": [
+    {
+      "id_template": 5,
+      "descripcion": "Generar informe automático",
+      "datos_filtro": ["metricas", "resumen"]
+    },
+    {
+      "id_template": 8,
+      "descripcion": "Notificar al cliente",
+      "datos_filtro": ["path_informe"]
+    }
+  ]
+}
+```
+
+**Regla #37**: `datos_filtro` (opcional) es un array de claves de `datos_salida` del padre
+que se envían al hijo. Si está vacío o ausente, se envía TODO `datos_salida`.
+
+**Regla #38**: Al configurar hijos en una plantilla, verificar que las plantillas hijas existen
+y tienen `acepta_entrada=1`.
+
+### 27.9. Comunicación con el Trainer (Backend IA)
+
+Los jobs de tipo `entrenamiento` y `crear_modelo_llm` se ejecutan en el servidor Trainer.
+
+#### 27.9.1. Flujo de ejecución en Trainer
+
+```
+Backend Core crea job (estado=programado)
+  ↓
+Broker envía petición al Trainer (POST /jobs/{id}/execute)
+  ↓
+Trainer cambia estado a en_ejecucion
+  ↓
+Trainer ejecuta trabajo (Ollama, ChromaDB, etc.)
+  ↓
+Trainer envía eventos periódicos (POST /jobs/{id}/events → Broker → Core)
+  ↓
+Trainer completa o falla
+  ↓
+Trainer notifica resultado (PATCH /jobs/{id}/complete → Broker → Core)
+  ↓
+Backend Core registra resultado y dispara hijos si aplica
+```
+
+**Regla #39**: El Trainer NUNCA escribe directamente en `myllm_projects_db`. Todas las
+operaciones de persistencia pasan por el Broker → Backend Core.
+
+**Regla #40**: Los eventos de progreso del Trainer se envían asíncronamente. El Backend Core
+los persiste en `jobs_eventos` sin bloquear al Trainer.
+
+### 27.10. Consultas SQL de Referencia
+
+#### 27.10.1. Listar plantillas por página de backoffice
+
+```sql
+SELECT
+    t.id,
+    t.nombre,
+    t.descripcion,
+    jt.nombre AS tipo_nombre,
+    jt.pagina_backoffice,
+    je.nombre AS estado_inicial,
+    jm.nombre AS modelo_nombre,
+    js.nombre AS salida_nombre,
+    t.es_programable,
+    t.acepta_entrada,
+    t.permite_hijos,
+    t.activo
+FROM jobs_templates t
+INNER JOIN jobs_tipos jt ON t.id_tipo = jt.id
+LEFT JOIN jobs_estados je ON t.id_estado_inicial = je.id
+LEFT JOIN jobs_modelos jm ON t.id_modelo = jm.id
+LEFT JOIN jobs_salidas js ON t.id_salida = js.id
+WHERE jt.pagina_backoffice = :pagina
+  AND t.activo = 1
+ORDER BY t.nombre;
+```
+
+#### 27.10.2. Listar jobs de un proyecto/versión con estado
+
+```sql
+SELECT
+    j.id,
+    j.nombre,
+    j.descripcion,
+    jt.nombre AS tipo_nombre,
+    je.nombre AS estado_nombre,
+    je.color AS estado_color,
+    jm.nombre AS modelo_nombre,
+    js.nombre AS salida_nombre,
+    j.programado_para,
+    j.iniciado_en,
+    j.completado_en,
+    j.error,
+    j.id_job_padre,
+    t.nombre AS template_nombre
+FROM jobs j
+INNER JOIN jobs_templates t ON j.id_template = t.id
+INNER JOIN jobs_tipos jt ON j.id_tipo = jt.id
+INNER JOIN jobs_estados je ON j.id_estado = je.id
+LEFT JOIN jobs_modelos jm ON j.id_modelo = jm.id
+LEFT JOIN jobs_salidas js ON j.id_salida = js.id
+WHERE j.id_organizacion = :org_id
+  AND j.id_proyecto = :project_id
+  AND j.id_version = :version_id
+ORDER BY j.created_at DESC;
+```
+
+#### 27.10.3. Obtener cadena padre-hijo completa
+
+```sql
+-- Obtener todos los hijos de un job (recursivo con CTE)
+WITH RECURSIVE job_chain AS (
+    SELECT id, id_job_padre, nombre, id_estado, 0 AS nivel
+    FROM jobs
+    WHERE id = :root_job_id
+
+    UNION ALL
+
+    SELECT j.id, j.id_job_padre, j.nombre, j.id_estado, jc.nivel + 1
+    FROM jobs j
+    INNER JOIN job_chain jc ON j.id_job_padre = jc.id
+)
+SELECT jc.*, je.nombre AS estado_nombre, je.color
+FROM job_chain jc
+INNER JOIN jobs_estados je ON jc.id_estado = je.id
+ORDER BY jc.nivel, jc.id;
+```
+
+### 27.11. Permisos en MariaDB (OBLIGATORIO)
+
+```sql
+-- Lectura de todas las tablas del sistema de jobs
+GRANT SELECT ON myllm_projects_db.jobs_tipos TO 'myllm_reader'@'localhost';
+GRANT SELECT ON myllm_projects_db.jobs_estados TO 'myllm_reader'@'localhost';
+GRANT SELECT ON myllm_projects_db.jobs_modelos TO 'myllm_reader'@'localhost';
+GRANT SELECT ON myllm_projects_db.jobs_salidas TO 'myllm_reader'@'localhost';
+GRANT SELECT ON myllm_projects_db.jobs_documentacion TO 'myllm_reader'@'localhost';
+GRANT SELECT ON myllm_projects_db.jobs_entrenamientos TO 'myllm_reader'@'localhost';
+GRANT SELECT ON myllm_projects_db.jobs_resultados TO 'myllm_reader'@'localhost';
+GRANT SELECT ON myllm_projects_db.jobs_generacion TO 'myllm_reader'@'localhost';
+GRANT SELECT ON myllm_projects_db.jobs_templates TO 'myllm_reader'@'localhost';
+GRANT SELECT ON myllm_projects_db.jobs TO 'myllm_reader'@'localhost';
+GRANT SELECT ON myllm_projects_db.jobs_eventos TO 'myllm_reader'@'localhost';
+GRANT SELECT ON myllm_projects_db.jobs_entradas TO 'myllm_reader'@'localhost';
+
+-- Escritura para el writer
+GRANT SELECT, INSERT, UPDATE, DELETE ON myllm_projects_db.jobs_tipos TO 'myllm_writer'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON myllm_projects_db.jobs_estados TO 'myllm_writer'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON myllm_projects_db.jobs_modelos TO 'myllm_writer'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON myllm_projects_db.jobs_salidas TO 'myllm_writer'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON myllm_projects_db.jobs_documentacion TO 'myllm_writer'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON myllm_projects_db.jobs_entrenamientos TO 'myllm_writer'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON myllm_projects_db.jobs_resultados TO 'myllm_writer'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON myllm_projects_db.jobs_generacion TO 'myllm_writer'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON myllm_projects_db.jobs_templates TO 'myllm_writer'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON myllm_projects_db.jobs TO 'myllm_writer'@'localhost';
+GRANT SELECT, INSERT ON myllm_projects_db.jobs_eventos TO 'myllm_writer'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON myllm_projects_db.jobs_entradas TO 'myllm_writer'@'localhost';
+
+FLUSH PRIVILEGES;
+```
+
+**Regla #41**: `jobs_eventos` solo tiene permisos `INSERT` (nunca UPDATE ni DELETE) para el writer,
+reforzando la inmutabilidad del log.
+
+### 27.12. UI en Backoffice — Gestión de Plantillas
+
+#### 27.12.1. Página principal
+
+La gestión de plantillas se presenta con tabs por tipo de job:
+
+```python
+rx.tabs.root(
+    rx.tabs.list(
+        rx.tabs.trigger("Documentación", value="Documentacion"),
+        rx.tabs.trigger("Entrenamientos", value="Entrenamientos"),
+        rx.tabs.trigger("Resultados", value="Resultados"),
+        rx.tabs.trigger("Generación", value="Generacion"),
+    ),
+    rx.tabs.content(
+        templates_table(state, "Documentacion"),  # Tabla de plantillas filtrada
+        value="Documentacion",
+    ),
+    # ... otros tabs
+)
+```
+
+**Regla #42**: Cada tab filtra plantillas por `jobs_tipos.pagina_backoffice`.
+
+#### 27.12.2. Formulario de creación/edición
+
+```python
+rx.dialog.root(
+    rx.dialog.content(
+        rx.heading("Nueva Plantilla de Job", size="6", color=COLORS["primary"]),
+        # Nombre
+        rx.input(value=state.template_nombre, on_change=state.set_template_nombre),
+        # Tipo (selector)
+        rx.select(
+            state.available_tipos,
+            value=state.selected_tipo,
+            on_change=state.set_selected_tipo,
+            size="3",
+            background_color=COLORS["input"],
+            color=COLORS["foreground"],
+        ),
+        # Modelo LLM (selector)
+        rx.select(state.available_modelos, ...),
+        # Tipo de salida (selector)
+        rx.select(state.available_salidas, ...),
+        # Toggles
+        rx.switch(checked=state.es_programable, label="Programable"),
+        rx.switch(checked=state.acepta_entrada, label="Acepta entrada (puede ser hijo)"),
+        rx.switch(checked=state.permite_hijos, label="Permite hijos (puede ser padre)"),
+        # Botón guardar
+        rx.button(
+            "Guardar",
+            on_click=state.save_template,
+            color_scheme="orange",
+            style={"font_weight": "bold", "color": "black"},
+        ),
+    ),
+)
+```
+
+**Regla #43**: Seguir las reglas de estilo de backoffice (sección AGENTS.md "Estilos visuales"):
+- Títulos: `COLORS["primary"]` (naranja)
+- Selectores: `background_color=COLORS["input"]`, `color=COLORS["foreground"]`
+- Botones: `color="black"`, `font_weight="bold"`
+
+### 27.13. Reglas de Seguridad (CRÍTICO)
+
+**Regla #44**: NUNCA exponer `configuracion_defecto` directamente al cliente (puede contener
+claves internas). Filtrar campos sensibles antes de enviar al frontend.
+
+**Regla #45**: Los jobs de un proyecto/versión solo son visibles para usuarios con rol activo
+en ese proyecto (`proyectos_roles` con `active=true` y `id_rol > 0`).
+
+**Regla #46**: El Trainer (Backend IA) se autentica con un token de servicio (no token de usuario)
+para reportar eventos y resultados. Este token se configura en `protected_values.py`.
+
+**Regla #47**: Los datos JSON en `datos_entrada`, `datos_salida` y `datos_evento` NO deben
+contener información sensible (contraseñas, tokens, etc.). Validar en Backend Core antes de
+persistir.
+
+### 27.14. Testing
+
+#### 27.14.1. Tests unitarios
+
+```python
+# tests/unit/test_job_template_creation.py
+
+def test_create_job_from_template(monkeypatch):
+    """Verifica herencia de valores plantilla → job."""
+    monkeypatch.setenv("STORAGE_MODE", "mock")
+
+    template = {
+        "id": 1,
+        "nombre": "Análisis PDF",
+        "id_tipo": 1,
+        "id_estado_inicial": 1,
+        "id_modelo": 2,
+        "id_salida": 2,
+        "configuracion_defecto": {"max_paginas": 100},
+    }
+
+    job = create_job_from_template(
+        template_id=1,
+        overrides={"id_organizacion": 1, "id_proyecto": 3, "id_version": 1},
+    )
+
+    assert job["nombre"] == "Análisis PDF"  # Heredado
+    assert job["id_tipo"] == 1  # Heredado (no sobrescribible)
+    assert job["configuracion"]["max_paginas"] == 100  # Heredado
+```
+
+#### 27.14.2. Tests de encadenamiento
+
+```python
+# tests/unit/test_job_chaining.py
+
+def test_parent_job_creates_children(monkeypatch):
+    """Verifica que un job padre crea hijos al completarse."""
+    monkeypatch.setenv("STORAGE_MODE", "mock")
+
+    parent_job = create_test_job(permite_hijos=True, configuracion={
+        "hijos": [{"id_template": 5}]
+    })
+
+    result = complete_job(
+        job_id=parent_job["id"],
+        datos_salida={"metricas": {"accuracy": 0.95}},
+    )
+
+    # Verificar que se creó el hijo
+    children = list_jobs(id_job_padre=parent_job["id"])
+    assert len(children) == 1
+    assert children[0]["datos_entrada"]["metricas"]["accuracy"] == 0.95
+
+
+def test_child_job_requires_parent():
+    """Verifica que un job hijo necesita padre."""
+    with pytest.raises(ValueError, match="requiere id_job_padre"):
+        create_job_from_template(
+            template_id=5,  # Template con acepta_entrada=1
+            overrides={"id_organizacion": 1, "id_proyecto": 1, "id_version": 1},
+            # Falta id_job_padre
+        )
+```
+
+#### 27.14.3. Entornos virtuales para tests
+
+| Test | Entorno virtual | Razón |
+|------|-----------------|-------|
+| Tests de Backend Core (routercore, apicore) | `.venv_backend313` | Acceso a MariaDB |
+| Tests de Middleware (routermiddleware) | `.venv_middleware313` | Propagación HTTP |
+| Tests de Backoffice (UI) | `.venv_backoffice313` | Componentes Reflex |
+| Tests de Trainer (ejecución) | `.venv_trainer312` | Dependencias IA |
+
+### 27.15. Debugging Checklist
+
+Cuando depurar problemas con el sistema de jobs:
+
+1. [ ] Verificar que las tablas catálogo tienen seed data: `SELECT COUNT(*) FROM jobs_tipos`
+2. [ ] Verificar FKs: `SELECT * FROM jobs_templates WHERE id_tipo NOT IN (SELECT id FROM jobs_tipos)`
+3. [ ] Verificar permisos MariaDB: `SHOW GRANTS FOR 'myllm_writer'@'localhost'`
+4. [ ] Verificar estado del job: `SELECT j.*, je.clave FROM jobs j JOIN jobs_estados je ON j.id_estado = je.id WHERE j.id = ?`
+5. [ ] Verificar eventos del job: `SELECT * FROM jobs_eventos WHERE id_job = ? ORDER BY fecha_evento`
+6. [ ] Verificar cadena padre-hijo: `SELECT * FROM jobs_entradas WHERE id_job_padre = ?`
+7. [ ] Revisar logs del Trainer: `src/apps/4_trainer/logs/console.log`
+8. [ ] Revisar logs del Backend Core: `src/apps/3_backend/logs/console.log`
+9. [ ] Verificar configuración heredada: comparar `jobs_templates.configuracion_defecto` vs `jobs.configuracion`
+10. [ ] Verificar registro en cambios: `SELECT * FROM cambios WHERE tipo_cambio LIKE '%job%' ORDER BY fecha_cambio DESC`
+
+### 27.16. Common Pitfalls (Errores Comunes)
+
+#### 27.16.1. Sobrescribir id_tipo al crear job
+
+```python
+# ❌ INCORRECTO - Permitir que usuario cambie el tipo
+job = create_job(id_tipo=user_input["tipo"])
+
+# ✅ CORRECTO - Heredar siempre de plantilla
+job = create_job(id_tipo=template.id_tipo)
+```
+
+#### 27.16.2. Crear hijo sin padre
+
+```python
+# ❌ INCORRECTO - Template con acepta_entrada=1 sin padre
+create_job(template_id=5, id_job_padre=None)
+
+# ✅ CORRECTO - Validar antes de crear
+if template.acepta_entrada and not id_job_padre:
+    raise ValueError("Plantilla requiere id_job_padre")
+```
+
+#### 27.16.3. Escribir directamente en jobs_eventos
+
+```python
+# ❌ INCORRECTO - UPDATE en eventos
+UPDATE jobs_eventos SET tipo_evento = 'corregido' WHERE id = 1;
+
+# ✅ CORRECTO - Solo INSERT (inmutable)
+INSERT INTO jobs_eventos (id_job, tipo_evento, descripcion) VALUES (1, 'correccion', '...');
+```
+
+#### 27.16.4. No registrar en tabla cambios
+
+```python
+# ❌ INCORRECTO - Crear job sin auditoría
+conn.execute(text("INSERT INTO jobs ..."))
+
+# ✅ CORRECTO - Siempre registrar en cambios
+conn.execute(text("INSERT INTO jobs ..."))
+conn.execute(text("INSERT INTO cambios ..."))  # Auditoría
+```
+
+#### 27.16.5. Trainer escribe directamente en BD
+
+```python
+# ❌ INCORRECTO - Trainer accede a myllm_projects_db
+engine = create_engine("mysql://...@backend:3306/myllm_projects_db")
+engine.execute("UPDATE jobs SET ...")
+
+# ✅ CORRECTO - Trainer notifica via API
+requests.patch(
+    f"http://broker:8008/jobs/{job_id}/complete",
+    json={"datos_salida": {...}},
+    headers={"X-Client-App": "trainer"},
+)
+```
+
+### 27.17. Documentación Relacionada
+
+- **Plan de diseño**: `cursor/plans/job_templates_db_design_*.plan.md`
+- **Migración SQL**: `infrastructure/database/migrations/011_jobs_templates_system.sql`
+- **README.md**: Sección "Sistema de Plantillas y Jobs" (documentada)
+- **Diagrama ER**: Ver plan de diseño para diagrama Mermaid completo
+
+---
+
+**⚠️ ADVERTENCIA CRÍTICA**: El sistema de plantillas y jobs gestiona la ejecución de trabajos
+de IA que pueden consumir recursos costosos (GPU, tiempo de cómputo). Modificaciones incorrectas
+pueden:
+- Disparar entrenamientos no autorizados (coste elevado)
+- Crear cadenas infinitas de jobs padre-hijo (loop)
+- Perder resultados de ejecución
+- Corromper el log de eventos (inmutabilidad violada)
+- Exponer datos sensibles en campos JSON
+
+**Regla #48 (OBLIGATORIA)**: Al configurar encadenamiento padre-hijo, verificar que NO exista
+un ciclo (job A → hijo B → hijo A). Implementar validación de profundidad máxima (recomendado: 5 niveles).
+
+**Regla #49 (OBLIGATORIA)**: NUNCA crear una plantilla con `permite_hijos=1` y `acepta_entrada=1`
+que se referencie a sí misma en `configuracion_defecto.hijos`. Esto crea un loop infinito.
+
+**Regla #50 (OBLIGATORIA)**: Antes de modificar cualquier tabla del sistema de jobs, consultar
+el plan de diseño y verificar el impacto en las FKs y el encadenamiento.
+
+---
+

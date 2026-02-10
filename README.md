@@ -8867,3 +8867,412 @@ def refresh_tokens(self, session_token: str) -> dict:
   - **L**iskov Substitution: Cualquier SessionRepository es intercambiable
   - **I**nterface Segregation: SessionRepository con métodos cohesivos
   - **D**ependency Inversion: SessionService depende de abstracciones (Protocol)
+
+---
+
+## Sistema de Plantillas y Jobs
+
+El sistema de plantillas y jobs gestiona la ejecución de tareas de IA (análisis documental, entrenamiento, evaluación de resultados y generación de modelos LLM). Se organiza en **12 tablas** dentro de `myllm_projects_db`, agrupadas en 3 bloques funcionales.
+
+### Arquitectura general
+
+```mermaid
+erDiagram
+    jobs_tipos ||--o{ jobs_templates : "id_tipo"
+    jobs_estados ||--o{ jobs_templates : "id_estado_inicial"
+    jobs_modelos ||--o{ jobs_templates : "id_modelo"
+    jobs_salidas ||--o{ jobs_templates : "id_salida"
+    jobs_templates ||--o{ jobs : "id_template"
+    jobs_tipos ||--o{ jobs : "id_tipo"
+    jobs_estados ||--o{ jobs : "id_estado"
+    jobs_modelos ||--o{ jobs : "id_modelo"
+    jobs_salidas ||--o{ jobs : "id_salida"
+    jobs ||--o{ jobs_eventos : "referencia"
+    jobs ||--o{ jobs_entradas : "id_job_padre"
+    jobs_resultados ||--o{ jobs_entradas : "id_resultado"
+    jobs_documentacion ||--o{ jobs_resultados : "id_documentacion"
+```
+
+### Convenciones de base de datos
+
+- `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+- PKs: `id INT AUTO_INCREMENT PRIMARY KEY`
+- FKs: `CONSTRAINT fk_<tabla>_<destino>`
+- Timestamps: `created_at`, `updated_at`
+- Booleans: `TINYINT(1)`
+
+### Migración
+
+- **Archivo**: `infrastructure/database/migrations/011_jobs_templates_system.sql`
+- Contiene las 12 tablas, seed data de catálogos, permisos de MariaDB y vistas útiles.
+- Usa `CREATE TABLE IF NOT EXISTS` para idempotencia.
+- Usa `ON DUPLICATE KEY UPDATE` para seed data.
+
+---
+
+### BLOQUE 1: Tablas catálogo (8 tablas)
+
+#### 1. `jobs_tipos` — Catálogo de tipos de job
+
+Determina en qué página del backoffice se puede usar cada plantilla. 4 registros fijos.
+
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| `id` | INT PK AUTO_INCREMENT | Identificador único |
+| `clave` | VARCHAR(50) UNIQUE | Clave interna: `analisis_documentacion`, `entrenamiento`, `analisis_resultados`, `crear_modelo_llm` |
+| `nombre` | VARCHAR(100) | Nombre visible en UI |
+| `descripcion` | VARCHAR(255) | Descripción del tipo |
+| `pagina_backoffice` | VARCHAR(100) | Página donde se usa: `Documentacion`, `Entrenamientos`, `Resultados`, `Generacion` |
+| `activo` | TINYINT(1) DEFAULT 1 | Tipo activo/inactivo |
+| `created_at` | TIMESTAMP | Fecha de creación |
+| `updated_at` | TIMESTAMP | Última modificación |
+
+**Seed data (4 registros):**
+
+| clave | nombre | pagina_backoffice |
+|-------|--------|-------------------|
+| `analisis_documentacion` | Análisis de Documentación | Documentacion |
+| `entrenamiento` | Entrenamiento | Entrenamientos |
+| `analisis_resultados` | Análisis de Resultados | Resultados |
+| `crear_modelo_llm` | Crear Modelo LLM | Generacion |
+
+#### 2. `jobs_estados` — Catálogo de estados de un job
+
+4 estados que describen el ciclo de vida de un job.
+
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| `id` | INT PK AUTO_INCREMENT | Identificador único |
+| `clave` | VARCHAR(50) UNIQUE | `programado`, `en_ejecucion`, `error`, `finalizado` |
+| `nombre` | VARCHAR(100) | Nombre visible en UI |
+| `descripcion` | VARCHAR(255) | Descripción del estado |
+| `color` | VARCHAR(20) | Color hexadecimal para badges en UI |
+| `es_final` | TINYINT(1) DEFAULT 0 | Si el estado es terminal |
+| `activo` | TINYINT(1) DEFAULT 1 | Estado activo/inactivo |
+| `created_at` | TIMESTAMP | Fecha de creación |
+| `updated_at` | TIMESTAMP | Última modificación |
+
+**Seed data (4 registros):**
+
+| clave | nombre | color | es_final |
+|-------|--------|-------|----------|
+| `programado` | Programado | `#3b82f6` | 0 |
+| `en_ejecucion` | En Ejecución | `#f59e0b` | 0 |
+| `error` | Error | `#ef4444` | 1 |
+| `finalizado` | Finalizado | `#22c55e` | 1 |
+
+#### 3. `jobs_modelos` — Modelos LLM disponibles
+
+Sincronizado con `ollama list`. Registra los modelos disponibles en el servidor trainer.
+
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| `id` | INT PK AUTO_INCREMENT | Identificador único |
+| `nombre` | VARCHAR(200) NOT NULL | Nombre del modelo (ej: `llama3:latest`) |
+| `tag` | VARCHAR(100) | Tag o versión del modelo |
+| `size_bytes` | BIGINT DEFAULT 0 | Tamaño en bytes |
+| `digest` | VARCHAR(200) | Hash/digest del modelo |
+| `familia` | VARCHAR(100) | Familia del modelo (llama, mistral, etc.) |
+| `activo` | TINYINT(1) DEFAULT 1 | Modelo activo/inactivo |
+| `created_at` | TIMESTAMP | Fecha de creación |
+| `updated_at` | TIMESTAMP | Última modificación |
+
+**Modelos cargados (sincronizados desde `ollama list`):**
+
+| id | nombre | tag | familia | tamaño |
+|----|--------|-----|---------|--------|
+| 1 | `gemma3:4b` | 4b | gemma | 3.3 GB |
+| 2 | `llama-pro:latest` | latest | llama | 4.7 GB |
+| 3 | `qwen2.5:7b` | 7b | qwen | 4.7 GB |
+| 4 | `kimi-k2.5:cloud` | cloud | kimi | cloud |
+| 5 | `deepseek-coder:6.7b` | 6.7b | deepseek-coder | 3.8 GB |
+| 6 | `qwen2.5-coder:1.5b-base` | 1.5b-base | qwen-coder | 986 MB |
+| 7 | `nomic-embed-text:latest` | latest | nomic | 274 MB |
+| 8 | `llama3.1:8b` | 8b | llama | 4.9 GB |
+| 9 | `dagbs/qwen2.5-coder-1.5b-instruct-abliterated:latest` | latest | qwen-coder | 1.1 GB |
+| 10 | `deepseek-r1:1.5b` | 1.5b | deepseek | 1.1 GB |
+| 11 | `deepseek-r1:8b` | 8b | deepseek | 5.2 GB |
+
+**Sincronización:** Esta tabla debe actualizarse cuando se instalen o eliminen modelos en Ollama.
+El comando `ollama list` es la fuente de verdad. En futuras versiones, el Trainer (puerto 8004)
+podrá sincronizar automáticamente esta tabla consultando la API de Ollama.
+
+#### 4. `jobs_salidas` — Catálogo de tipos de salida
+
+Define qué tipo de resultado puede producir un job y cómo referenciarlo.
+
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| `id` | INT PK AUTO_INCREMENT | Identificador único |
+| `clave` | VARCHAR(50) UNIQUE | `nuevo_job`, `informe`, `notificacion`, `ticket` |
+| `nombre` | VARCHAR(100) | Nombre visible en UI |
+| `descripcion` | VARCHAR(255) | Descripción del tipo de salida |
+| `campo_referencia` | VARCHAR(50) | Campo clave de referencia: `id_job`, `path_fichero`, `id_conversacion`, `id_ticket` |
+| `activo` | TINYINT(1) DEFAULT 1 | Tipo de salida activo/inactivo |
+| `created_at` | TIMESTAMP | Fecha de creación |
+| `updated_at` | TIMESTAMP | Última modificación |
+
+**Seed data (4 registros):**
+
+| clave | nombre | campo_referencia |
+|-------|--------|-----------------|
+| `nuevo_job` | Nuevo Job | `id_job` |
+| `informe` | Informe | `path_fichero` |
+| `notificacion` | Notificación | `id_conversacion` |
+| `ticket` | Ticket | `id_ticket` |
+
+#### 5. `jobs_documentacion` — Plantillas Jinja2 para informes
+
+Almacena metadatos de plantillas Jinja2 usadas para generar informes a partir de resultados de jobs.
+
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| `id` | INT PK AUTO_INCREMENT | Identificador único |
+| `nombre` | VARCHAR(200) NOT NULL | Nombre descriptivo de la plantilla |
+| `descripcion` | TEXT | Para qué sirve la plantilla |
+| `template_path` | VARCHAR(500) NOT NULL | Path completo al fichero `.j2` |
+| `template_filename` | VARCHAR(200) NOT NULL | Nombre del fichero `.j2` |
+| `formato_salida` | VARCHAR(50) DEFAULT 'markdown' | Formato del output (markdown, html, pdf) |
+| `variables_requeridas` | JSON DEFAULT NULL | Lista de variables que necesita el template |
+| `activo` | TINYINT(1) DEFAULT 1 | Plantilla activa/inactiva |
+| `created_at` | TIMESTAMP | Fecha de creación |
+| `updated_at` | TIMESTAMP | Última modificación |
+
+#### 6. `jobs_entrenamientos` — Configuraciones de parámetros RAG
+
+Almacena configuraciones reutilizables de parámetros para entrenamiento, embeddings, ChromaDB y generación.
+
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| `id` | INT PK AUTO_INCREMENT | Identificador único |
+| `nombre` | VARCHAR(200) NOT NULL | Nombre de la configuración |
+| `descripcion` | TEXT | Descripción de la configuración |
+| `learning_rate` | DECIMAL(10,8) DEFAULT 0.00100000 | Tasa de aprendizaje |
+| `batch_size` | INT DEFAULT 32 | Tamaño de lote |
+| `epochs` | INT DEFAULT 10 | Número de épocas |
+| `embedding_dimension` | INT DEFAULT 768 | Dimensión de embeddings |
+| `sequence_length` | INT DEFAULT 512 | Longitud de secuencia |
+| `hidden_units` | INT DEFAULT 256 | Unidades ocultas |
+| `dropout_rate` | DECIMAL(5,4) DEFAULT 0.1000 | Tasa de dropout |
+| `collection_name` | VARCHAR(200) DEFAULT NULL | Nombre de la colección ChromaDB |
+| `distance_metric` | VARCHAR(50) DEFAULT 'cosine' | Métrica de distancia (cosine, euclidean) |
+| `persist_directory` | VARCHAR(500) DEFAULT NULL | Directorio de persistencia ChromaDB |
+| `top_k` | INT DEFAULT 5 | Resultados a recuperar |
+| `chunk_size` | INT DEFAULT 1000 | Tamaño de fragmento de texto |
+| `chunk_overlap` | INT DEFAULT 200 | Solapamiento entre fragmentos |
+| `temperature` | DECIMAL(4,3) DEFAULT 0.700 | Temperatura de generación |
+| `max_tokens` | INT DEFAULT 2048 | Máximo de tokens a generar |
+| `loss_function` | VARCHAR(100) DEFAULT 'cross_entropy' | Función de pérdida |
+| `optimizer` | VARCHAR(100) DEFAULT 'adam' | Optimizador |
+| `activo` | TINYINT(1) DEFAULT 1 | Configuración activa/inactiva |
+| `created_at` | TIMESTAMP | Fecha de creación |
+| `updated_at` | TIMESTAMP | Última modificación |
+
+#### 7. `jobs_resultados` — Resultados de ejecución de jobs
+
+Almacena métricas, datos generados y cualquier información de salida. Usa campo JSON para flexibilidad.
+
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| `id` | INT PK AUTO_INCREMENT | Identificador único |
+| `id_job` | INT DEFAULT NULL | FK a `jobs` (se vincula al crear la tabla jobs) |
+| `id_documentacion` | INT DEFAULT NULL | FK a `jobs_documentacion` (template Jinja2 usado) |
+| `tipo_resultado` | VARCHAR(100) NOT NULL | Tipo: `metricas_entrenamiento`, `informe_generado`, `evaluacion_modelo`, etc. |
+| `datos_resultado` | JSON NOT NULL | Datos flexibles en JSON |
+| `path_fichero` | VARCHAR(500) DEFAULT NULL | Path al fichero de salida si aplica |
+| `nombre_fichero` | VARCHAR(200) DEFAULT NULL | Nombre del fichero generado |
+| `created_at` | TIMESTAMP | Fecha de creación |
+
+**FKs:**
+- `fk_resultado_documentacion` → `jobs_documentacion(id)` ON DELETE SET NULL
+- `fk_resultado_job` → `jobs(id)` ON DELETE SET NULL (creada después de tabla `jobs`)
+
+#### 8. `jobs_generacion` — Modelos LLM generados
+
+Registro de modelos LLM personalizados generados como resultado de entrenamiento.
+
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| `id` | INT PK AUTO_INCREMENT | Identificador único |
+| `id_modelo_base` | INT DEFAULT NULL | FK a `jobs_modelos` (modelo base usado) |
+| `nombre` | VARCHAR(200) NOT NULL | Nombre del modelo generado |
+| `path_modelo` | VARCHAR(500) NOT NULL | Path interno completo al fichero del modelo |
+| `size_bytes` | BIGINT DEFAULT 0 | Tamaño del modelo en bytes |
+| `id_organizacion` | INT NOT NULL | Organización propietaria |
+| `id_proyecto` | INT NOT NULL | Proyecto asociado |
+| `id_version` | INT NOT NULL | Versión asociada |
+| `activo` | TINYINT(1) DEFAULT 1 | Modelo generado activo/inactivo |
+| `created_at` | TIMESTAMP | Fecha de creación |
+| `updated_at` | TIMESTAMP | Última modificación |
+
+**FKs:**
+- `fk_generacion_modelo` → `jobs_modelos(id)` ON DELETE SET NULL
+
+---
+
+### BLOQUE 2: Tabla core de plantillas (1 tabla)
+
+#### 9. `jobs_templates` — Plantillas de jobs
+
+Tabla central del sistema. Cada registro define una plantilla con valores por defecto que los jobs heredan al instanciarse.
+
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| `id` | INT PK AUTO_INCREMENT | Identificador único |
+| `nombre` | VARCHAR(200) NOT NULL | Nombre de la plantilla |
+| `descripcion` | TEXT | Descripción detallada |
+| `id_tipo` | INT NOT NULL | FK a `jobs_tipos` |
+| `es_programable` | TINYINT(1) DEFAULT 0 | Si los jobs de esta plantilla soportan programación temporal |
+| `activo` | TINYINT(1) DEFAULT 1 | Plantilla activa/inactiva |
+| `id_estado_inicial` | INT DEFAULT NULL | FK a `jobs_estados` (estado inicial por defecto) |
+| `id_modelo` | INT DEFAULT NULL | FK a `jobs_modelos` (modelo LLM por defecto) |
+| `id_salida` | INT DEFAULT NULL | FK a `jobs_salidas` (tipo de salida por defecto) |
+| `acepta_entrada` | TINYINT(1) DEFAULT 0 | Si puede ser job hijo (recibe datos de padre) |
+| `permite_hijos` | TINYINT(1) DEFAULT 0 | Si puede ser job padre (envía datos a hijos) |
+| `configuracion_defecto` | JSON DEFAULT NULL | Configuración por defecto flexible |
+| `created_at` | TIMESTAMP | Fecha de creación |
+| `updated_at` | TIMESTAMP | Última modificación |
+
+**FKs:**
+- `fk_template_tipo` → `jobs_tipos(id)` ON DELETE RESTRICT
+- `fk_template_estado` → `jobs_estados(id)` ON DELETE SET NULL
+- `fk_template_modelo` → `jobs_modelos(id)` ON DELETE SET NULL
+- `fk_template_salida` → `jobs_salidas(id)` ON DELETE SET NULL
+
+**Índices:** `idx_template_tipo`, `idx_template_activo`
+
+---
+
+### BLOQUE 3: Tablas de ejecución (3 tablas)
+
+#### 10. `jobs` — Instancias de jobs creados desde plantillas
+
+Cada job es una instancia concreta de una plantilla, vinculada a una organización/proyecto/versión.
+
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| `id` | INT PK AUTO_INCREMENT | Identificador único |
+| `id_template` | INT NOT NULL | FK a `jobs_templates` |
+| `id_organizacion` | INT NOT NULL | Organización propietaria |
+| `id_proyecto` | INT NOT NULL | Proyecto asociado |
+| `id_version` | INT NOT NULL | Versión asociada |
+| `nombre` | VARCHAR(200) NOT NULL | Heredado de plantilla, modificable |
+| `descripcion` | TEXT | Descripción del job |
+| `id_tipo` | INT NOT NULL | FK a `jobs_tipos` |
+| `id_estado` | INT NOT NULL | FK a `jobs_estados` (actualizado en runtime) |
+| `id_modelo` | INT DEFAULT NULL | FK a `jobs_modelos` |
+| `id_salida` | INT DEFAULT NULL | FK a `jobs_salidas` |
+| `programado_para` | DATETIME DEFAULT NULL | Fecha/hora de ejecución programada |
+| `iniciado_en` | DATETIME DEFAULT NULL | Cuándo empezó a ejecutarse |
+| `completado_en` | DATETIME DEFAULT NULL | Cuándo terminó (para calcular duración) |
+| `error` | TEXT DEFAULT NULL | Descripción del error si aplica |
+| `id_cambio` | INT DEFAULT NULL | FK a `cambios` (registro en tabla de cambios) |
+| `id_job_padre` | INT DEFAULT NULL | FK a `jobs` (self-reference para jerarquía padre-hijo) |
+| `datos_entrada` | JSON DEFAULT NULL | Datos recibidos del padre (flexible) |
+| `datos_salida` | JSON DEFAULT NULL | Datos producidos para hijos (flexible) |
+| `referencia_salida` | VARCHAR(500) DEFAULT NULL | path, id_conversacion, id_ticket según tipo de salida |
+| `configuracion` | JSON DEFAULT NULL | Config del job (heredada de plantilla + modificaciones) |
+| `created_at` | TIMESTAMP | Fecha de creación |
+| `updated_at` | TIMESTAMP | Última modificación |
+
+**FKs:**
+- `fk_job_template` → `jobs_templates(id)` ON DELETE RESTRICT
+- `fk_job_tipo` → `jobs_tipos(id)` ON DELETE RESTRICT
+- `fk_job_estado` → `jobs_estados(id)` ON DELETE RESTRICT
+- `fk_job_modelo` → `jobs_modelos(id)` ON DELETE SET NULL
+- `fk_job_salida` → `jobs_salidas(id)` ON DELETE SET NULL
+- `fk_job_padre` → `jobs(id)` ON DELETE SET NULL (self-reference)
+
+**Índices compuestos:**
+- `idx_jobs_org_proj_ver (id_organizacion, id_proyecto, id_version)`
+- `idx_jobs_padre (id_job_padre)`
+- `idx_jobs_estado (id_estado)`
+- `idx_jobs_programado (programado_para)`
+
+#### 11. `jobs_eventos` — Log cronológico de ejecución
+
+Registra todos los eventos ocurridos durante la ejecución de un job (inicio, progreso, error, fin).
+
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| `id` | INT PK AUTO_INCREMENT | Identificador único |
+| `referencia_compuesta` | VARCHAR(200) NOT NULL | Calculado: `ORG{id}-PRJ{id}-VER{id}-JOB{id}` |
+| `id_job` | INT NOT NULL | FK a `jobs` |
+| `id_organizacion` | INT NOT NULL | Organización |
+| `id_proyecto` | INT NOT NULL | Proyecto |
+| `id_version` | INT NOT NULL | Versión |
+| `tipo_evento` | VARCHAR(100) NOT NULL | `inicio`, `progreso`, `error`, `fin`, etc. |
+| `descripcion` | TEXT | Descripción del evento |
+| `datos_evento` | JSON DEFAULT NULL | Datos adicionales flexibles |
+| `fecha_evento` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | Fecha y hora del evento |
+
+**FKs:**
+- `fk_evento_job` → `jobs(id)` ON DELETE CASCADE
+
+**Índices:** `idx_eventos_job`, `idx_eventos_referencia`, `idx_eventos_fecha (DESC)`, `idx_eventos_tipo`
+
+#### 12. `jobs_entradas` — Transferencia de datos padre a hijo
+
+Registra las transferencias de datos entre un job padre y sus jobs hijos.
+
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| `id` | INT PK AUTO_INCREMENT | Identificador único |
+| `id_job_padre` | INT NOT NULL | FK a `jobs` (job padre) |
+| `id_job_hijo` | INT NOT NULL | FK a `jobs` (job hijo) |
+| `id_tipo_salida` | INT DEFAULT NULL | FK a `jobs_salidas` (qué tipo de dato se transfiere) |
+| `id_resultado` | INT DEFAULT NULL | FK a `jobs_resultados` (si se pasa referencia a resultado) |
+| `datos` | JSON DEFAULT NULL | Payload flexible con lo que el padre pasa al hijo |
+| `created_at` | TIMESTAMP | Fecha de creación |
+
+**FKs:**
+- `fk_entrada_padre` → `jobs(id)` ON DELETE CASCADE
+- `fk_entrada_hijo` → `jobs(id)` ON DELETE CASCADE
+- `fk_entrada_tipo_salida` → `jobs_salidas(id)` ON DELETE SET NULL
+- `fk_entrada_resultado` → `jobs_resultados(id)` ON DELETE SET NULL
+
+---
+
+### Flujo de encadenamiento padre-hijo
+
+```mermaid
+sequenceDiagram
+    participant P as Job Padre
+    participant R as jobs_resultados
+    participant E as jobs_entradas
+    participant H1 as Job Hijo 1 (Notificación)
+    participant H2 as Job Hijo 2 (Ticket)
+
+    P->>P: Ejecuta análisis documental
+    P->>R: Guarda métricas/informe en JSON
+    P->>P: Actualiza datos_salida y referencia_salida
+    P->>E: Crea registro padre-hijo1 con datos JSON
+    P->>E: Crea registro padre-hijo2 con datos JSON
+    E->>H1: Hijo1 lee datos de entrada
+    H1->>H1: Envía notificación al usuario
+    E->>H2: Hijo2 lee datos de entrada
+    H2->>H2: Responde ticket de soporte
+```
+
+### Vistas útiles
+
+La migración crea dos vistas para simplificar consultas:
+
+- **`view_jobs_templates`**: Plantillas con nombres de catálogos resueltos (tipo, estado, modelo, salida).
+- **`view_jobs_completo`**: Jobs con información completa incluyendo template, tipo, estado, modelo y salida.
+
+### Permisos de MariaDB
+
+| Usuario | Permisos | Tablas |
+|---------|----------|--------|
+| `myllm_writer` | SELECT, INSERT, UPDATE, DELETE | Las 12 tablas del sistema |
+| `myllm_reader` | SELECT | Las 12 tablas del sistema |
+
+### Mapeo tipos de job → páginas del backoffice
+
+| Tipo (`clave`) | Página del backoffice | Uso principal |
+|----------------|----------------------|---------------|
+| `analisis_documentacion` | Documentación | Análisis y procesamiento de documentos del cliente |
+| `entrenamiento` | Entrenamientos | Fine-tuning y entrenamiento de modelos |
+| `analisis_resultados` | Resultados | Evaluación y análisis de resultados de entrenamiento |
+| `crear_modelo_llm` | Generación | Generación final de modelos LLM personalizados |
