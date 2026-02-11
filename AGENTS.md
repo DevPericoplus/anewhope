@@ -7478,43 +7478,90 @@ el plan de diseño y verificar el impacto en las FKs y el encadenamiento.
 ## 28. Ejecución de Jobs en el Trainer: Flujo Backoffice → Trainer → Backend Core (OBLIGATORIO)
 
 Este módulo describe cómo se ejecutan jobs de IA lanzados desde el Backoffice hacia el Trainer,
-y cómo el Trainer notifica al Backend Core cuando el procesamiento finaliza.
+y cómo el Trainer notifica al Backend Core cuando el procesamiento finaliza. Actualmente hay
+**dos flujos paralelos e independientes** implementados: Análisis de Documentación y Análisis
+de Metadatos. Ambos siguen el mismo patrón arquitectónico pero con servicios, plantillas y
+prompts de fusión completamente separados.
 
 ### 28.1. Arquitectura general
 
 ```
-Backoffice (8006) → Middleware (8007) → Broker (8008) → Trainer (8004)
-                                                              ↓
-                                                   [Procesamiento asíncrono]
-                                                              ↓
-                                               Backend Core (8003) ← Notificación
-                                                   (UPDATE jobs + INSERT cambios)
+Backoffice (8006)
+     │
+     ├─ _is_metadatos_job() → TRUE  → /training/metadatos  ─┐
+     │                                                       │
+     └─ _is_metadatos_job() → FALSE → /training/documentacion ─┐
+                                                                │
+     Middleware (8007) → Broker (8008) → Trainer (8004) ◄───────┘
+                                              │
+                              [Procesamiento asíncrono en thread]
+                                              │
+                                   ┌──────────┴──────────┐
+                                   │                     │
+                           [1/2] Ollama            [2/2] Ollama
+                         (análisis IA)         (fusión con plantilla)
+                                   │                     │
+                                   └──────────┬──────────┘
+                                              │
+                                   Escribe informe .md
+                                              │
+                               Backend Core (8003) ← Notificación HTTP
+                                   (UPDATE jobs + INSERT cambios)
 ```
 
 **Patrón de comunicación:**
 - La petición sigue el flujo estándar: Backoffice → Middleware → Broker → Trainer
 - El Trainer responde con un ACK inmediato (síncrono) y procesa en background (asíncrono)
+- El procesamiento incluye DOS llamadas a Ollama: análisis + fusión con plantilla Jinja2
 - Al terminar, el Trainer llama directamente al Backend Core para actualizar el estado del job
 
-### 28.2. Flujo detallado: Análisis de Documentación
-
-El primer job implementado es **Análisis de Documentación** (`analisis_documentacion`).
-Sirve como patrón de referencia para los demás tipos de job.
-
-#### 28.2.1. Paso 1: Envío desde Backoffice
+### 28.2. Detección automática del tipo de job (CRÍTICO)
 
 **Archivo:** `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py`
 
-El usuario abre un modal con los detalles del job, selecciona prompts de las 4 categorías
-(identidad, contexto, solicitud, modalidad), el sistema compone el prompt final, y al
-hacer clic en "Enviar al Trainer":
+El método `_is_metadatos_job()` decide a qué endpoint enviar el job:
 
-1. `ad_send_to_trainer()` recopila: `id_job`, `id_organizacion`, `id_proyecto`, `id_version`,
-   datos del job, y `prompt_final`
-2. Llama a `send_documentacion_to_trainer()` en `adapters/api_client.py`
-3. Muestra badge "Recibido en Trainer" si el ACK es exitoso
+```python
+def _is_metadatos_job(self) -> bool:
+    nombre_job = self.ad_modal_job.get("nombre", "").lower()
+    prompt_lower = self.ad_prompt_final.lower()
 
-#### 28.2.2. Paso 2: Propagación por la cadena
+    nombre_tiene_metadatos = "metadatos" in nombre_job
+    prompt_menciones = prompt_lower.count("metadatos")
+
+    return nombre_tiene_metadatos and prompt_menciones >= 2
+```
+
+**Condiciones para enrutar a `/metadatos`:**
+1. El **nombre del job** contiene la palabra "metadatos" (case-insensitive)
+2. El **prompt final** contiene **2 o más** menciones a "metadatos"
+
+Si ambas condiciones se cumplen → `send_metadatos_to_trainer()` → `/training/metadatos`
+En caso contrario → `send_documentacion_to_trainer()` → `/training/documentacion`
+
+**Regla #59**: Al implementar nuevos tipos de job, seguir este mismo patrón de detección
+en `ad_send_to_trainer()` añadiendo una nueva condición antes del `else` final.
+
+### 28.3. Flujos paralelos implementados
+
+| Aspecto | Documentación | Metadatos |
+|---------|--------------|-----------|
+| **Endpoint Middleware** | `POST /training/documentacion` | `POST /training/metadatos` |
+| **Endpoint Trainer** | `POST /trainer/documentacion` | `POST /trainer/metadatos` |
+| **Servicio** | `documentacion_service.py` | `metadatos_service.py` |
+| **Función principal** | `process_documentacion()` | `process_metadatos()` |
+| **Plantilla Jinja2** | `evaluacion_documental.j2` | `evaluacion_metadatos.j2` |
+| **Prompt de fusión (BD)** | `formateador_documental_documentos` | `formateador_documental_metadatos` |
+| **Prefijo de logs** | `[DOCUMENTACION]` | `[METADATOS]` |
+| **Fichero de salida** | `*_analisis_documental.md` | `*_analisis_metadatos.md` |
+| **tipo_cambio** | `evaluacion_documental` | `evaluacion_metadatos` |
+| **Nombre thread** | `doc-analysis-job-{id}` | `metadata-analysis-job-{id}` |
+
+### 28.4. Propagación por la cadena de servicios
+
+Cada flujo tiene su propia cadena completa de métodos y endpoints:
+
+**Flujo Documentación:**
 
 | Capa | Archivo | Endpoint/Método |
 |------|---------|-----------------|
@@ -7527,61 +7574,121 @@ hacer clic en "Enviar al Trainer":
 | Trainer Client | `8_service_backend/interfacetotrainer.py` | `send_documentacion()` |
 | Trainer API | `4_trainer/apitrainer.py` | `POST /trainer/documentacion` |
 
-**Validación de permisos:** El Middleware valida `training_create` antes de propagar.
+**Flujo Metadatos:**
 
-#### 28.2.3. Paso 3: Procesamiento asíncrono en el Trainer
+| Capa | Archivo | Endpoint/Método |
+|------|---------|-----------------|
+| Backoffice API Client | `6_web_backoffice/adapters/api_client.py` | `send_metadatos_to_trainer()` |
+| Middleware API | `7_service_frontend/apife.py` | `POST /training/metadatos` |
+| Middleware Router | `7_service_frontend/routermiddleware.py` | `send_metadatos()` |
+| Broker Client | `7_service_frontend/broker_backend_client.py` | `send_metadatos()` |
+| Broker API | `8_service_backend/apibe.py` | `POST /training/metadatos` |
+| Broker Router | `8_service_backend/routerbroker.py` | `send_metadatos()` |
+| Trainer Client | `8_service_backend/interfacetotrainer.py` | `send_metadatos()` |
+| Trainer API | `4_trainer/apitrainer.py` | `POST /trainer/metadatos` |
 
-**Archivos:**
-- `src/apps/4_trainer/apitrainer.py` - Recibe petición, lanza thread
-- `src/apps/4_trainer/documentacion_service.py` - Lógica de negocio
+**Validación de permisos:** Ambos flujos validan `training_create` en el Middleware.
 
-**Flujo del thread background (`process_documentacion()`):**
+### 28.5. Procesamiento asíncrono en el Trainer (flujo de 6 pasos)
 
-1. **Lectura de archivos** del storage externo:
-   - Ruta: `{backend_ia_base_storage}/{ORG#####}/{PRJ#####}/{v###}/`
-   - Clasifica archivos en texto (lee contenido) y binarios (solo registra en árbol)
-   - Extensiones de texto: `.txt`, `.md`, `.csv`, `.json`, `.xml`, `.html`, `.py`, `.yml`, etc.
+Ambos servicios (`documentacion_service.py` y `metadatos_service.py`) siguen exactamente
+el mismo flujo de 6 pasos:
 
-2. **Construcción del prompt completo:**
-   ```
-   {prompt_final del usuario}
+#### Paso 1: Lectura de archivos del storage externo
 
-   === ESTRUCTURA DE DIRECTORIOS ===
-   {árbol de archivos con tamaños}
+```
+Ruta: {backend_ia_base_storage}/{ORG#####}/{PRJ#####}/{v###}/
+```
 
-   === CONTENIDO DE ARCHIVOS ===
-   {contenido concatenado de archivos de texto}
-   ```
+- Recorre recursivamente todos los archivos de la versión
+- Clasifica archivos en **texto** (lee contenido) y **binarios** (solo registra en árbol)
+- Extensiones de texto: `.txt`, `.md`, `.csv`, `.json`, `.xml`, `.html`, `.py`, `.yml`, `.sql`, etc.
+- Genera: árbol de directorios, contenido concatenado, estadísticas
 
-3. **Envío a Ollama:**
-   - Modelo: el especificado en el job (ej: `llama3:latest`)
-   - Opciones: `num_ctx=65536`, `num_predict=-1`, `temperature=0.3`
-   - Usa `OllamaAdapter.generate()` con `GenerateRequestDto`
+#### Paso 2: Construcción del prompt completo
 
-4. **Escritura del resultado:**
-   - Ruta: `{backend_ia_internal_storage}/{ORG#####}/{PRJ#####}/{v###}/`
-   - Nombre: `{YYYY_MM_DD_HHMM}_analisis_documental.md`
+```
+{prompt_final del usuario (identidad + contexto + solicitud + modalidad)}
 
-5. **Notificación al Backend Core:**
-   - Llama a `PATCH /jobs/{job_id}/complete` en Backend Core
-   - Envía: `id_organizacion`, `id_proyecto`, `id_version`, `descripcion`, `referencia_salida`, `tipo_cambio`
+=== ESTRUCTURA DE DIRECTORIOS ===
+{árbol de archivos con tamaños}
 
-#### 28.2.4. Paso 4: Actualización en Backend Core
+=== CONTENIDO DE ARCHIVOS ===
+{contenido concatenado de archivos de texto}
+```
 
-**Archivos:**
-- `src/apps/3_backend/apicore.py` - Endpoint `PATCH /jobs/{job_id}/complete`
-- `src/apps/3_backend/routercore.py` - Método `complete_job()`
+#### Paso 3: Primera llamada a Ollama [1/2] — Análisis
 
-**Transacción SQL (atómica):**
+- Modelo: el especificado en el job (ej: `llama3.1:8b`)
+- `num_ctx`: calculado dinámicamente (~tokens estimados + 4096, entre 8192 y 65536)
+- `num_predict`: -1 (sin límite de tokens de respuesta)
+- `temperature`: 0.3
+- Usa `OllamaAdapter.generate()` con `GenerateRequestDto`
+
+**Cálculo dinámico de `num_ctx`:**
+```python
+estimated_tokens = len(prompt_text) // 3
+num_ctx = min(65536, max(8192, ((estimated_tokens + 4096) // 2048 + 1) * 2048))
+```
+
+#### Paso 4: Enriquecimiento con Jinja2 + segunda llamada a Ollama [2/2]
+
+Este es el paso más complejo. Se realiza en sub-pasos:
+
+**4a. Obtener datos de BD:**
+- Nombre de la organización: `SELECT organization_name FROM myllm_core_db.organizations`
+- Nombre del proyecto: `SELECT nombre FROM myllm_projects_db.proyectos`
+- Usa `pymysql` con credenciales de `mariadb_reader` desde `protected_values.py`
+
+**4b. Calcular ruta de salida:**
+- Usa `_compute_output_path()` con `backend_ia_internal_storage`
+- Nombre del fichero:
+  - Documentación: `{YYYY_MM_DD_HHMM}_analisis_documental.md`
+  - Metadatos: `{YYYY_MM_DD_HHMM}_analisis_metadatos.md`
+
+**4c. Renderizar plantilla Jinja2:**
+- Plantilla: `evaluacion_documental.j2` o `evaluacion_metadatos.j2`
+- Variables: payload del job + nombres de BD + estadísticas + respuesta de Ollama + tiempos
+- Resultado: `plantilla_informe` (markdown temporal con estructura formal)
+
+**4d. Obtener prompt de fusión desde BD:**
+- `SELECT prompt FROM myllm_projects_db.prompts_identidades WHERE name = :prompt_name`
+- Documentación: `formateador_documental_documentos`
+- Metadatos: `formateador_documental_metadatos`
+
+**4e. Construir prompt de fusión:**
+- Reemplaza `{plantilla_informe}` con el markdown temporal renderizado
+- Reemplaza `{analisis_ollama}` con la respuesta del paso 3
+
+**4f. Segunda llamada a Ollama [2/2] — Fusión:**
+- `num_ctx`: calculado dinámicamente para el prompt de fusión
+- `temperature`: 0.2 (más determinista para preservar formato)
+- Fusiona la plantilla formal con el análisis de Ollama en un informe final cohesivo
+
+**Fallbacks:**
+- Si no existe el prompt de fusión → escribe la plantilla directamente
+- Si Ollama devuelve respuesta vacía → escribe la plantilla como fallback
+
+#### Paso 5: Escritura del informe final
+
+```
+Ruta: {backend_ia_internal_storage}/{ORG#####}/{PRJ#####}/{v###}/{fichero}.md
+```
+
+#### Paso 6: Notificación al Backend Core
+
+- Llama a `PATCH /jobs/{job_id}/complete` en Backend Core
+- Envía: `id_organizacion`, `id_proyecto`, `id_version`, `descripcion`, `referencia_salida`, `tipo_cambio`
+- El Backend Core ejecuta una transacción atómica:
 
 ```sql
--- Paso 1: Registrar evento en tabla cambios
+-- Registrar evento en tabla cambios
 INSERT INTO cambios
     (id_version, fecha_cambio, tipo_cambio, descripcion, creado_at, id_proyecto, id_organizacion)
 VALUES
     (:id_version, NOW(), :tipo_cambio, :descripcion, NOW(), :id_proyecto, :id_organizacion);
 
--- Paso 2: Actualizar estado del job
+-- Actualizar estado del job
 UPDATE jobs
 SET id_estado = :id_estado,
     completado_en = NOW(),
@@ -7594,11 +7701,86 @@ WHERE id = :job_id;
 - `id_estado=4` → Finalizado (éxito)
 - `id_estado=3` → Error
 
-### 28.3. Logging obligatorio en el Trainer
+### 28.6. Plantillas Jinja2 del Trainer
 
-**CRÍTICO:** Todo el procesamiento asíncrono debe escribir en `logs/console.log` con prefijo `[DOCUMENTACION]`.
+Las plantillas están en `src/apps/4_trainer/templates/` y definen la estructura formal
+del informe que se fusiona con el análisis de Ollama.
 
-**Eventos a loguear:**
+**Variables esperadas por ambas plantillas:**
+
+| Categoría | Variables |
+|-----------|----------|
+| **Payload del job** | `id_job`, `id_organizacion`, `id_proyecto`, `id_version`, `nombre_job`, `descripcion_job`, `id_template`, `template_nombre`, `modelo_nombre`, `salida_nombre`, `estado_nombre` |
+| **Datos derivados** | `nombre_organizacion`, `nombre_proyecto`, `org_folder`, `prj_folder`, `ver_folder`, `ruta_external`, `ruta_internal`, `ruta_salida` |
+| **Estadísticas** | `num_text`, `num_binary`, `total_files`, `total_kb`, `tree_text` |
+| **Ollama** | `ollama_response` |
+| **Ejecución** | `fecha_ejecucion`, `hora_ejecucion`, `tiempo_ollama`, `tiempo_total` |
+
+**Secciones de los informes:**
+
+1. Ficha Técnica del Informe (tabla con metadatos)
+2. Presentación (contexto y propósito del análisis)
+3. Metodología de Evaluación (criterios y preguntas clave)
+4. Estadísticas de Archivos (métricas + árbol de directorios)
+5. Resultados del Análisis (respuesta de Ollama embebida)
+6. Conclusiones y Recomendaciones
+7. Trazabilidad de Ejecución (tiempos, rutas, modelo)
+8. Referencias de Fuentes
+
+**Diferenciación:**
+- `evaluacion_documental.j2`: Orientada a estructura documental, calidad de contenido y optimización RAG
+- `evaluacion_metadatos.j2`: Orientada a gobernanza de datos, metadatos embebidos (EXIF, XMP, Dublin Core) y detección de datos sensibles
+
+### 28.7. Prompts de fusión en base de datos
+
+Los prompts de fusión están almacenados en `myllm_projects_db.prompts_identidades` y
+definen cómo Ollama debe combinar la plantilla formal con el análisis de IA.
+
+| Prompt (campo `name`) | Propósito |
+|------------------------|-----------|
+| `formateador_documental_documentos` | Fusión para análisis de documentación (estructura, contenido, RAG) |
+| `formateador_documental_metadatos` | Fusión para análisis de metadatos (EXIF, XMP, privacidad, gobernanza) |
+
+**Estructura de los prompts de fusión:**
+
+```
+### ROL
+Eres un Ingeniero de Documentación/Datos Senior especializado en...
+
+### CONTEXTO
+Recibirás dos documentos:
+1. PLANTILLA_INFORME: Documento generado por el sistema myllm (estructura formal)
+2. ANALISIS_OLLAMA: Resultado de análisis de IA (contenido generado)
+
+### TAREA
+Fusiona ambos documentos para producir un INFORME_FINAL...
+
+### REGLAS CRÍTICAS DE FUSIÓN
+1-10+ reglas específicas para cada tipo de fusión
+
+### ENTRADA
+{plantilla_informe}
+{analisis_ollama}
+
+### SALIDA ESPERADA
+Un único documento Markdown cohesivo...
+```
+
+**Placeholders obligatorios en el prompt:**
+- `{plantilla_informe}` → Se reemplaza con el markdown renderizado de la plantilla Jinja2
+- `{analisis_ollama}` → Se reemplaza con la respuesta de la primera llamada a Ollama
+
+### 28.8. Logging obligatorio en el Trainer
+
+**CRÍTICO:** Todo el procesamiento asíncrono debe escribir en `logs/console.log`.
+Cada flujo usa su propio prefijo:
+
+| Prefijo | Flujo | Indicadores |
+|---------|-------|-------------|
+| `[DOCUMENTACION]` | Análisis de documentación | `[1/2]` análisis, `[2/2]` fusión |
+| `[METADATOS]` | Análisis de metadatos | `[1/2]` análisis, `[2/2]` fusión |
+
+**Eventos a loguear (aplicable a ambos flujos):**
 
 | Evento | Nivel | Ejemplo |
 |--------|-------|---------|
@@ -7606,15 +7788,20 @@ WHERE id = :job_id;
 | Thread lanzado | INFO | `[DOCUMENTACION] Thread background lanzado para job_id=5` |
 | Lectura de archivos | INFO | `[DOCUMENTACION] Leyendo archivos de: /path/to/version` |
 | Resultado de lectura | INFO | `[DOCUMENTACION] 12 archivos texto, 3 binarios, 450 KB total` |
-| Prompt construido | INFO | `[DOCUMENTACION] Prompt construido: 25000 caracteres totales` |
-| Envío a Ollama | INFO | `[DOCUMENTACION] Enviando a Ollama modelo=llama3:latest num_ctx=65536` |
-| Respuesta de Ollama | INFO | `[DOCUMENTACION] Respuesta recibida: 8500 caracteres en 120.5s` |
-| Resultado escrito | INFO | `[DOCUMENTACION] Resultado escrito en: /path/to/output.md` |
+| Prompt construido | INFO | `[DOCUMENTACION] Prompt de análisis construido: 25000 caracteres` |
+| Ollama análisis [1/2] | INFO | `[DOCUMENTACION] [1/2] Enviando a Ollama: modelo=llama3.1:8b num_ctx=26624` |
+| Respuesta análisis | INFO | `[DOCUMENTACION] [1/2] Respuesta recibida: 8500 caracteres en 5m 32s` |
+| Datos de BD | INFO | `[DOCUMENTACION] Datos de BD: org='myllm', prj='dptocomercial'` |
+| Plantilla renderizada | INFO | `[DOCUMENTACION] Plantilla Jinja2 renderizada: 7078 caracteres` |
+| Prompt fusión obtenido | INFO | `[DOCUMENTACION] Prompt de fusión obtenido: 4109 caracteres` |
+| Ollama fusión [2/2] | INFO | `[DOCUMENTACION] [2/2] Enviando fusión a Ollama: modelo=llama3.1:8b num_ctx=8192` |
+| Respuesta fusión | INFO | `[DOCUMENTACION] [2/2] Respuesta de fusión recibida: 12000 caracteres en 3m 15s` |
+| Informe escrito | INFO | `[DOCUMENTACION] Informe FINAL fusionado escrito en: /path/to/output.md` |
 | Notificación a Core | INFO | `[DOCUMENTACION] Backend Core actualizado: id_cambio=42` |
-| Proceso completado | INFO | `[DOCUMENTACION] Proceso completado para job_id=5 en 135.2s` |
-| Error | ERROR | `[DOCUMENTACION][ERROR] descripción del error para job_id=5` |
+| Proceso completado | INFO | `[DOCUMENTACION] Proceso completado exitosamente para job_id=5 en 9m 10s` |
+| Error | ERROR | `[DOCUMENTACION][ERROR] descripción del error para job_id=5 (tras 5m 32s)` |
 
-### 28.4. Variables de entorno requeridas
+### 28.9. Variables de entorno requeridas
 
 | Variable | Uso | Ejemplo (macbook) |
 |----------|-----|-------------------|
@@ -7622,49 +7809,34 @@ WHERE id = :job_id;
 | `backend_ia_internal_storage` | Ruta de escritura (internal) | `~/data/anewhope/files/trainer_server/internal` |
 | `backend_core_base_url` | URL del Backend Core para notificaciones | `http://localhost:8003` |
 
-### 28.5. Reglas para implementar nuevos tipos de job (OBLIGATORIO)
+**Credenciales de BD (solo lectura, desde `protected_values.py`):**
 
-Los siguientes tipos de job seguirán el mismo patrón arquitectónico:
+| Variable | Uso |
+|----------|-----|
+| `mariadb_host` | Host de MariaDB |
+| `mariadb_port` | Puerto de MariaDB |
+| `mariadb_reader_user` | Usuario de solo lectura (myllm_reader) |
+| `mariadb_reader_password` | Contraseña del reader |
 
-| Tipo de Job | Descripción | Estado |
-|-------------|-------------|--------|
-| `analisis_documentacion` | Análisis de documentos del cliente | Implementado |
-| `entrenamiento` | Fine-tuning de modelos LLM | Pendiente |
-| `analisis_resultados` | Evaluación de resultados de entrenamiento | Pendiente |
-| `crear_modelo_llm` | Generación final de modelos LLM | Pendiente |
+### 28.10. Timeout de Ollama
 
-**Regla #51**: Todo nuevo tipo de job DEBE seguir el patrón de `analisis_documentacion`:
-1. Endpoint en el Trainer que devuelve ACK inmediato
-2. Procesamiento en background thread (daemon=True)
-3. Logging completo con prefijo específico (ej: `[ENTRENAMIENTO]`)
-4. Notificación al Backend Core via `PATCH /jobs/{job_id}/complete`
-5. INSERT en tabla `cambios` + UPDATE en tabla `jobs` (transacción atómica)
+**CRÍTICO:** El timeout del adaptador de Ollama está configurado en `apitrainer_ollama.py`.
+En macbook (CPU, sin GPU) los tiempos de procesamiento pueden ser muy largos.
 
-**Regla #52**: El Trainer NUNCA accede directamente a la base de datos. Siempre notifica
-via HTTP al Backend Core.
+| Entorno | Timeout | Motivo |
+|---------|---------|--------|
+| macbook (CPU) | 28800s (8 horas) | Análisis + fusión en CPU pueden tardar 6+ horas |
+| dev/pre/pro (GPU) | Ajustar según hardware | Con GPU debería ser mucho más rápido |
 
-**Regla #53**: Cada tipo de job debe crear un servicio dedicado en el Trainer:
-- `documentacion_service.py` → Análisis de documentación
-- `entrenamiento_service.py` → Entrenamiento de modelos (futuro)
-- `resultados_service.py` → Análisis de resultados (futuro)
-- `generacion_service.py` → Generación de modelos (futuro)
+**Regla #60**: Nunca reducir el timeout sin verificar primero los tiempos reales de procesamiento
+en el entorno objetivo.
 
-**Regla #54**: El prompt se construye siempre en 4 partes (identidad + contexto + solicitud + modalidad)
-desde el Backoffice, y se envía ya compuesto al Trainer como `prompt_final`.
+### 28.11. DTOs compartidos entre capas
 
-**Regla #55**: Todo job que lea archivos del storage debe usar las funciones de
-`storage_access_structure.py` (`get_folder_by_id_organization`, `get_folder_by_id_project`,
-`get_folder_by_id_version`) para construir rutas.
-
-**Regla #56**: El resultado de cada job se escribe en el storage interno
-(`backend_ia_internal_storage`) con marca de tiempo en el nombre del fichero.
-
-### 28.6. DTO compartido entre capas
-
-El payload que viaja por toda la cadena tiene esta estructura:
+Ambos flujos usan DTOs con la misma estructura base:
 
 ```python
-class DocumentacionRequest(BaseModel):
+class DocumentacionRequest(BaseModel):  # o MetadatosRequest
     id_job: int = 0
     id_organizacion: int
     id_proyecto: int
@@ -7684,7 +7856,7 @@ class DocumentacionRequest(BaseModel):
 campos base (`id_job`, `id_organizacion`, `id_proyecto`, `id_version`, `prompt_final`,
 `modelo_nombre`) más campos específicos del tipo.
 
-### 28.7. Endpoint de completado en Backend Core
+### 28.12. Endpoint de completado en Backend Core
 
 ```
 PATCH /jobs/{job_id}/complete
@@ -7699,19 +7871,96 @@ class JobCompleteRequest(BaseModel):
     id_version: int
     descripcion: str = ""
     referencia_salida: str = ""
-    tipo_cambio: str = "evaluacion_documental"
+    tipo_cambio: str = "evaluacion_documental"  # o "evaluacion_metadatos"
     id_estado: int = 4  # 4=Finalizado, 3=Error
 ```
 
 **Regla #58**: Este endpoint es reutilizable por TODOS los tipos de job. Solo cambia
 `tipo_cambio` y `descripcion` según el tipo de procesamiento.
 
-### 28.8. Documentación relacionada
+### 28.13. Reglas para implementar nuevos tipos de job (OBLIGATORIO)
 
-- **Servicio del Trainer:** `src/apps/4_trainer/documentacion_service.py`
-- **Endpoint del Trainer:** `src/apps/4_trainer/apitrainer.py` → `POST /trainer/documentacion`
-- **Endpoint Backend Core:** `src/apps/3_backend/apicore.py` → `PATCH /jobs/{job_id}/complete`
-- **Lógica Backend Core:** `src/apps/3_backend/routercore.py` → `complete_job()`
+Los siguientes tipos de job seguirán el mismo patrón arquitectónico:
+
+| Tipo de Job | Descripción | Estado |
+|-------------|-------------|--------|
+| `analisis_documentacion` | Análisis de estructura documental y contenido | **Implementado** |
+| `analisis_metadatos` | Análisis de metadatos de ficheros | **Implementado** |
+| `entrenamiento` | Fine-tuning de modelos LLM | Pendiente |
+| `analisis_resultados` | Evaluación de resultados de entrenamiento | Pendiente |
+| `crear_modelo_llm` | Generación final de modelos LLM | Pendiente |
+
+**Regla #51**: Todo nuevo tipo de job DEBE seguir el patrón implementado:
+1. Método de detección en el Backoffice (`_is_xxx_job()`) que examina nombre y prompt
+2. Función dedicada en `api_client.py` del backoffice (`send_xxx_to_trainer()`)
+3. Endpoint dedicado en Middleware, Broker y Trainer (`/training/xxx` → `/trainer/xxx`)
+4. Servicio dedicado en el Trainer (`xxx_service.py` con `process_xxx()`)
+5. Plantilla Jinja2 dedicada (`evaluacion_xxx.j2`)
+6. Prompt de fusión dedicado en BD (`prompts_identidades`)
+7. Procesamiento en background thread (daemon=True) con logging `[XXX]`
+8. Notificación al Backend Core via `PATCH /jobs/{job_id}/complete`
+9. INSERT en tabla `cambios` + UPDATE en tabla `jobs` (transacción atómica)
+
+**Regla #52**: El Trainer accede a la BD SOLO en modo lectura (con `myllm_reader`) para
+obtener nombres de organización/proyecto y prompts de fusión. Las escrituras se hacen
+siempre via HTTP al Backend Core.
+
+**Regla #53**: Cada tipo de job DEBE crear un servicio COMPLETAMENTE independiente:
+- `documentacion_service.py` → Análisis de documentación (**implementado**)
+- `metadatos_service.py` → Análisis de metadatos (**implementado**)
+- `entrenamiento_service.py` → Entrenamiento de modelos (futuro)
+- `resultados_service.py` → Análisis de resultados (futuro)
+- `generacion_service.py` → Generación de modelos (futuro)
+
+**Regla #54**: El prompt se construye siempre en 4 partes (identidad + contexto + solicitud + modalidad)
+desde el Backoffice, y se envía ya compuesto al Trainer como `prompt_final`.
+
+**Regla #55**: Todo job que lea archivos del storage debe usar las funciones de
+`storage_access_structure.py` (`get_folder_by_id_organization`, `get_folder_by_id_project`,
+`get_folder_by_id_version`) para construir rutas.
+
+**Regla #56**: El resultado de cada job se escribe en el storage interno
+(`backend_ia_internal_storage`) con marca de tiempo en el nombre del fichero.
+
+### 28.14. Checklist para implementar un nuevo tipo de job
+
+Al implementar un nuevo tipo de job (ej: `entrenamiento`):
+
+- [ ] **Backoffice**: Crear `_is_xxx_job()` y `send_xxx_to_trainer()` en `api_client.py`
+- [ ] **Backoffice**: Añadir condición en `ad_send_to_trainer()` antes del `else`
+- [ ] **Middleware**: Crear `XxxRequest`/`XxxResponse` en `apife.py`
+- [ ] **Middleware**: Crear endpoint `POST /training/xxx` en `apife.py`
+- [ ] **Middleware**: Crear `send_xxx()` en `routermiddleware.py`
+- [ ] **Middleware**: Crear `send_xxx()` en `broker_backend_client.py`
+- [ ] **Broker**: Crear DTOs en `apibe.py`
+- [ ] **Broker**: Crear endpoint `POST /training/xxx` en `apibe.py`
+- [ ] **Broker**: Crear `send_xxx()` en `routerbroker.py`
+- [ ] **Broker**: Crear `send_xxx()` en `interfacetotrainer.py`
+- [ ] **Trainer**: Crear DTOs en `apitrainer.py`
+- [ ] **Trainer**: Crear endpoint `POST /trainer/xxx` con thread background
+- [ ] **Trainer**: Crear `xxx_service.py` con `process_xxx()`
+- [ ] **Trainer**: Crear plantilla `evaluacion_xxx.j2` en `templates/`
+- [ ] **BD**: Crear prompt de fusión en `prompts_identidades`
+- [ ] **Docs**: Actualizar esta sección y README.md
+
+### 28.15. Documentación relacionada
+
+**Servicios del Trainer:**
+- `src/apps/4_trainer/documentacion_service.py` → Análisis de documentación
+- `src/apps/4_trainer/metadatos_service.py` → Análisis de metadatos
+
+**Endpoints del Trainer:**
+- `src/apps/4_trainer/apitrainer.py` → `POST /trainer/documentacion` y `POST /trainer/metadatos`
+
+**Plantillas Jinja2:**
+- `src/apps/4_trainer/templates/evaluacion_documental.j2`
+- `src/apps/4_trainer/templates/evaluacion_metadatos.j2`
+
+**Backend Core:**
+- `src/apps/3_backend/apicore.py` → `PATCH /jobs/{job_id}/complete`
+- `src/apps/3_backend/routercore.py` → `complete_job()`
+
+**Otros:**
 - **Sistema de Plantillas:** Sección 27 de este documento
 - **Migración SQL:** `infrastructure/database/migrations/011_jobs_templates_system.sql`
 

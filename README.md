@@ -9279,41 +9279,77 @@ La migración crea dos vistas para simplificar consultas:
 
 ### Ejecución de Jobs: Flujo Backoffice → Trainer → Backend Core
 
-El sistema ejecuta jobs de IA de forma asíncrona siguiendo este flujo:
+El sistema ejecuta jobs de IA de forma asíncrona con **dos flujos paralelos e independientes**
+implementados: Análisis de Documentación y Análisis de Metadatos.
 
 ```
-Backoffice (8006) → Middleware (8007) → Broker (8008) → Trainer (8004)
-                                                              ↓
-                                                   [Procesamiento asíncrono]
-                                                              ↓
-                                               Backend Core (8003) ← Notificación HTTP
-                                                   (UPDATE jobs + INSERT cambios)
+Backoffice (8006)
+     │
+     ├─ Job de metadatos → /training/metadatos  ─┐
+     │                                            │
+     └─ Job de documentación → /training/documentacion ─┐
+                                                        │
+     Middleware (8007) → Broker (8008) → Trainer (8004) ◄┘
+                                              │
+                              [Thread asíncrono en background]
+                                              │
+                                   ┌──────────┴──────────┐
+                                   │                     │
+                           [1/2] Ollama            [2/2] Ollama
+                         (análisis IA)         (fusión con plantilla)
+                                   │                     │
+                                   └──────────┬──────────┘
+                                              │
+                                   Escribe informe .md
+                                              │
+                               Backend Core (8003) ← Notificación HTTP
+                                   (UPDATE jobs + INSERT cambios)
 ```
 
-**Patrón implementado (Análisis de Documentación):**
+**Detección automática del tipo de job:**
 
-1. El Backoffice envía el job con prompts compuestos (identidad + contexto + solicitud + modalidad)
-2. La petición viaja por Middleware → Broker → Trainer siguiendo el flujo arquitectónico estándar
-3. El Trainer responde con un ACK inmediato y procesa en un thread background
-4. El thread lee archivos del storage externo (`backend_ia_base_storage`)
-5. Construye un prompt con árbol de directorios + contenido de archivos de texto
-6. Envía el prompt a Ollama con contexto expandido (`num_ctx=65536`)
-7. Escribe el resultado en markdown en el storage interno (`backend_ia_internal_storage`)
-8. Notifica al Backend Core via `PATCH /jobs/{job_id}/complete`
-9. El Backend Core registra un INSERT en `cambios` + UPDATE del `job` en una transacción
+El Backoffice detecta automáticamente si un job es de metadatos o documentación
+mediante `_is_metadatos_job()`. Si el nombre del job contiene "metadatos" y el prompt
+final tiene 2+ menciones a "metadatos", se enruta a `/training/metadatos`.
+
+**Flujos implementados:**
+
+| Aspecto | Documentación | Metadatos |
+|---------|--------------|-----------|
+| **Endpoint** | `/training/documentacion` → `/trainer/documentacion` | `/training/metadatos` → `/trainer/metadatos` |
+| **Servicio** | `documentacion_service.py` | `metadatos_service.py` |
+| **Plantilla Jinja2** | `evaluacion_documental.j2` | `evaluacion_metadatos.j2` |
+| **Prompt fusión (BD)** | `formateador_documental_documentos` | `formateador_documental_metadatos` |
+| **Fichero salida** | `*_analisis_documental.md` | `*_analisis_metadatos.md` |
+| **Prefijo logs** | `[DOCUMENTACION]` | `[METADATOS]` |
+| **tipo_cambio** | `evaluacion_documental` | `evaluacion_metadatos` |
+
+**Procesamiento asíncrono (6 pasos en cada flujo):**
+
+1. **Lectura de archivos** del storage externo (`backend_ia_base_storage`)
+2. **Construcción del prompt** con árbol de directorios + contenido de archivos de texto
+3. **Primera llamada a Ollama [1/2]** — Análisis (con `num_ctx` dinámico)
+4. **Enriquecimiento** — Renderiza plantilla Jinja2 + obtiene prompt de fusión de BD + **segunda llamada a Ollama [2/2]** para fusionar plantilla formal con análisis de IA
+5. **Escritura del informe** en el storage interno (`backend_ia_internal_storage`)
+6. **Notificación al Backend Core** via `PATCH /jobs/{job_id}/complete`
 
 **Archivos clave:**
 
 | Componente | Archivo |
 |------------|---------|
-| Servicio del Trainer | `src/apps/4_trainer/documentacion_service.py` |
-| Endpoint del Trainer | `src/apps/4_trainer/apitrainer.py` → `POST /trainer/documentacion` |
+| Servicio Documentación | `src/apps/4_trainer/documentacion_service.py` |
+| Servicio Metadatos | `src/apps/4_trainer/metadatos_service.py` |
+| Endpoints Trainer | `src/apps/4_trainer/apitrainer.py` |
+| Plantilla Documentación | `src/apps/4_trainer/templates/evaluacion_documental.j2` |
+| Plantilla Metadatos | `src/apps/4_trainer/templates/evaluacion_metadatos.j2` |
 | Endpoint Backend Core | `src/apps/3_backend/apicore.py` → `PATCH /jobs/{job_id}/complete` |
 | Lógica Backend Core | `src/apps/3_backend/routercore.py` → `complete_job()` |
+| Detección en Backoffice | `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py` → `_is_metadatos_job()` |
 
 **Próximos tipos de job** que seguirán el mismo patrón:
 - Entrenamiento de modelos (`entrenamiento_service.py`)
 - Análisis de resultados (`resultados_service.py`)
 - Generación de modelos LLM (`generacion_service.py`)
 
-Ver AGENTS.md sección 28 para reglas detalladas de implementación.
+Ver AGENTS.md sección 28 para reglas detalladas de implementación, checklist de nuevos tipos
+de job, DTOs, logging obligatorio y configuración de timeouts.
