@@ -1026,25 +1026,102 @@ def _get_middleware_base_url() -> str:
 - **backend.***: Backend Core, Broker, Fmanagement, MariaDB
 - **trainer.***: Trainer (Backend IA), Ollama, BD Vectorial
 
-### Servidor Trainer - Servicios planificados
+### Servidor Trainer - Servicios y dependencias de IA
 
-El servidor trainer albergará servicios de IA con la siguiente arquitectura:
+El servidor trainer alberga los servicios de IA con la siguiente arquitectura:
 
-| Servicio | Puerto | Función |
-|----------|--------|---------|
-| `4_trainer` | 8004 | API FastAPI que recibe peticiones del Broker |
-| Ollama | 11434 | Servidor de modelos LLM locales (llama3, mistral, etc.) |
-| BD Vectorial | Por definir | Almacenamiento de embeddings para RAG |
+| Servicio | Puerto | Función | Estado |
+|----------|--------|---------|--------|
+| `4_trainer` | 8004 | API FastAPI que recibe peticiones del Broker | Operativo |
+| Ollama | 11434 | Servidor de modelos LLM locales (llama3, mistral, etc.) | Operativo |
+| ChromaDB | 8100 | Base de datos vectorial para embeddings (RAG) | Operativo |
+
+**Dependencias de IA en `.venv_trainer312` (Python 3.12):**
+
+| Paquete | Versión | Uso | Notas |
+|---------|---------|-----|-------|
+| TensorFlow | 2.16.2 | Framework de deep learning | Requiere protobuf <5.0 |
+| Keras | 3.13.2 | API de alto nivel para redes neuronales | Independiente de TF desde v3 |
+| ChromaDB | 1.5.0 | BD vectorial con servidor HTTP autónomo | CLI nativo Rust (`chroma run`) |
+| Ollama | 0.4.7 | Cliente Python para modelos LLM locales | `OllamaAdapter` encapsula |
 
 **Flujo de comunicación:**
 ```
-Broker → 4_trainer → Ollama (inferencia LLM)
-              ↓
-         BD Vectorial (búsqueda semántica)
+Broker (8008) → 4_trainer (8004) → Ollama (11434) → Inferencia LLM
+                     ↓
+              ChromaDB (8100) → Búsqueda semántica (embeddings)
 ```
 
-**Regla de diseño:** `4_trainer` se comunica **directamente** con Ollama (sin intermediarios como N8N)
-para minimizar latencia y complejidad en el MVP.
+**Regla de diseño:** `4_trainer` se comunica **directamente** con Ollama y ChromaDB
+(sin intermediarios como N8N) para minimizar latencia y complejidad.
+
+### ChromaDB - Base de datos vectorial (OBLIGATORIO)
+
+**Arquitectura del servidor:**
+```
+Trainer (FastAPI:8004) ──arranca──► ChromaDB Server (HTTP:8100)
+Trainer (HttpClient)   ──opera───► ChromaDB Server
+```
+
+**Ciclo de vida:**
+1. El trainer arranca ChromaDB como subproceso en su `lifespan` (startup)
+2. ChromaDB funciona como servidor HTTP autónomo en puerto 8100
+3. El trainer opera sobre ChromaDB vía `chromadb.HttpClient`
+4. Al detenerse el trainer, ChromaDB se detiene automáticamente (shutdown)
+
+**Módulo gestor:** `src/apps/4_trainer/chroma_server.py`
+
+**Funciones principales:**
+
+| Función | Descripción |
+|---------|-------------|
+| `start_chroma_server()` | Arranca el servidor como subproceso, espera heartbeat |
+| `stop_chroma_server()` | Detiene el servidor enviando SIGTERM |
+| `get_chroma_client()` | Singleton de `chromadb.HttpClient` para operaciones |
+| `get_or_create_collection()` | Obtiene o crea una colección vectorial |
+| `is_server_running()` | Verifica si el servidor responde al heartbeat |
+| `get_server_info()` | Información completa del estado del servidor |
+| `get_chroma_settings()` | Lee configuración desde env.yaml + protected_values.py |
+
+**Variables de configuración por entorno:**
+
+| Variable | Fichero | macbook | dev/pre/pro |
+|----------|---------|---------|-------------|
+| `chroma_host` | env.yaml | localhost | trainer.*.loc/aws |
+| `chroma_port` | env.yaml | 8100 | 8100 |
+| `chroma_persist_directory` | env.yaml | ~/data/.../persistence/chroma | /data/persistence/chroma |
+| `chroma_collection_name` | env.yaml | myllm_embeddings | myllm_embeddings |
+| `chroma_anonymized_telemetry` | env.yaml | false | false |
+| `chroma_log_level` | env.yaml | INFO | WARNING/ERROR |
+| `chroma_auth_token` | protected_values.py | token-dev | CAMBIAR EN PRODUCCIÓN |
+| `chroma_auth_provider` | protected_values.py | TokenAuth... | TokenAuth... |
+
+**Endpoints del trainer para ChromaDB:**
+
+| Endpoint | Método | Descripción |
+|----------|--------|-------------|
+| `/trainer/chroma/health` | GET | Estado del servidor ChromaDB |
+
+**Reglas obligatorias de ChromaDB:**
+
+1. ✅ **NUNCA** acceder a ChromaDB directamente desde otras aplicaciones; siempre a través del trainer
+2. ✅ **SIEMPRE** usar `chroma_server.get_chroma_client()` para obtener el cliente HTTP
+3. ✅ **SIEMPRE** usar `chroma_server.get_or_create_collection()` para operar con colecciones
+4. ✅ **NUNCA** cambiar el puerto 8100 sin actualizar todos los entornos
+5. ✅ **SIEMPRE** configurar `chroma_auth_token` en producción (protected_values.py)
+6. ✅ El directorio de persistencia debe existir antes del arranque (se crea automáticamente)
+7. ✅ ChromaDB 1.5.0 usa API v2 (`/api/v2/heartbeat`); la v1 está deprecada
+8. ✅ El CLI nativo es `chroma run` (binario Rust), NO `python -m chromadb.cli.cli`
+
+**Nota sobre conflicto de protobuf:**
+TensorFlow 2.16.2 requiere `protobuf <5.0.0` y ChromaDB (vía opentelemetry-proto) prefiere
+`protobuf >=5.0`. Se usa `protobuf==4.25.8` como compromiso estable. Ambas librerías funcionan
+correctamente con esta versión. **NO actualizar protobuf sin verificar compatibilidad con ambas.**
+
+**Logging de ChromaDB:**
+- Prefijo de log: `[CHROMADB]`
+- Log del servidor: `src/apps/4_trainer/logs/chroma_server.log`
+- Log integrado en: `src/apps/4_trainer/logs/console.log`
 
 ### Variables protegidas (protected_values.py)
 
@@ -1103,6 +1180,13 @@ db_password = get_protected_value("mariadb_password")
 **NOTA IMPORTANTE sobre Python 3.12 en 4_trainer:**
 El Backend IA (`4_trainer`) usa **Python 3.12** (no 3.13) debido a requisitos de compatibilidad
 con dependencias de IA como TensorFlow y Keras. Ver `src/docs/stack_of_technologies.adr` para más detalles.
+
+**Dependencias de IA instaladas en `.venv_trainer312`:**
+- `tensorflow==2.16.2` (deep learning)
+- `keras==3.13.2` (API de alto nivel para redes neuronales)
+- `chromadb==1.5.0` (base de datos vectorial con servidor HTTP)
+- `ollama==0.4.7` (cliente para modelos LLM locales)
+- `protobuf==4.25.8` (versión de compromiso TF + ChromaDB)
 
 #### Reglas de diseño de entornos:
 
@@ -1208,7 +1292,7 @@ ENTRYPOINT ["/app/entrypoint.sh"]
 |----------|-----------|------------------------|
 | frontend | Redis, Nginx, web_frontend, web_backoffice, service_frontend | Sí |
 | backend | MariaDB, backend_core, service_backend, fmanagement | Sí |
-| trainer | trainer_api, ollama (planificado), keras_service (placeholder) | Sí |
+| trainer | trainer_api, ollama, chromadb (puerto 8100) | Sí |
 | macbook | Todos (para desarrollo local en contenedores) | Sí |
 
 **Variables de entorno críticas en docker-compose:**
@@ -3021,7 +3105,7 @@ Incluye roles de usuario, servidores frontend/backend/trainer, el flujo entre `5
   El broker reparte peticiones entre el backend core (datos) y el backend IA (entrenamiento/uso interno).
 - **Destino por tipo de operación**:
   - Datos (MariaDB/MySQL y sistema de ficheros) → `3_backend` en servidor backend.
-  - IA (uso interno y entrenamiento) → `4_trainer` en servidor trainer (API REST + BD vectorial Keras).
+  - IA (uso interno y entrenamiento) → `4_trainer` en servidor trainer (API REST + ChromaDB vectorial + Ollama LLM).
 - **Capas compartidas**:
   - Dominio común → `src/1_shared_domain/`.
   - Aplicación común → `src/2_shared_application/`.

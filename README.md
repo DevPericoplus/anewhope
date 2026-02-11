@@ -167,7 +167,7 @@ que las aplicaciones conozcan la ubicación de los otros servicios en cada entor
 
 - **Servidor Frontend:** `5_web_frontend`, `6_web_backoffice`, `7_service_frontend`, Redis
 - **Servidor Backend:** `3_backend`, `8_service_backend`, Fmanagement, MariaDB
-- **Servidor Trainer:** `4_trainer`, Ollama (IA local), base de datos vectorial (Keras - pendiente)
+- **Servidor Trainer:** `4_trainer`, Ollama (IA local), ChromaDB (BD vectorial, puerto 8100)
 
 ### Endpoint de Consulta de Entorno Activo
 
@@ -272,22 +272,48 @@ def _get_middleware_base_url() -> str:
 | `TRAINER_BACKEND_BASE_URL` | Broker → Trainer | `http://localhost:8004` |
 | `FMANAGEMENT_BASE_URL` | Backend Core → Fmanagement | `http://localhost:1666` |
 
-### Servicios planificados en el servidor Trainer
+### Servicios en el servidor Trainer
 
-El servidor trainer albergará los siguientes servicios:
+El servidor trainer alberga los siguientes servicios:
 
 | Servicio | Puerto | Descripción | Estado |
 |----------|--------|-------------|--------|
-| `4_trainer` | 8004 | Backend IA - gestiona entrenamientos y uso de modelos | Implementado |
-| Ollama | 11434 | Servidor de modelos LLM locales | Planificado |
-| Base de datos vectorial | Por definir | Almacenamiento de embeddings (Keras/Chroma) | Pendiente diseño |
+| `4_trainer` | 8004 | Backend IA - gestiona entrenamientos, análisis y uso de modelos | Implementado |
+| Ollama | 11434 | Servidor de modelos LLM locales (llama3, mistral, etc.) | Operativo |
+| ChromaDB | 8100 | Base de datos vectorial para embeddings (RAG) | Implementado |
+
+**Dependencias de IA instaladas en `.venv_trainer312` (Python 3.12):**
+
+| Paquete | Versión | Propósito |
+|---------|---------|-----------|
+| TensorFlow | 2.16.2 | Framework de deep learning para entrenamiento de modelos |
+| Keras | 3.13.2 | API de alto nivel para redes neuronales |
+| ChromaDB | 1.5.0 | Base de datos vectorial para búsqueda semántica (RAG) |
+| Ollama | 0.4.7 | Cliente Python para interacción con modelos LLM locales |
 
 **Flujo de comunicación:**
 ```
-Broker (8008) → 4_trainer (8004) → Ollama (11434)
+Broker (8008) → 4_trainer (8004) → Ollama (11434) → Inferencia LLM
                      ↓
-              BD Vectorial
+              ChromaDB (8100) → Búsqueda semántica (embeddings)
 ```
+
+**Arquitectura de ChromaDB:**
+- El trainer arranca ChromaDB como proceso independiente al inicializarse (lifespan)
+- ChromaDB funciona como servidor HTTP autónomo en el puerto 8100
+- El trainer opera sobre ChromaDB mediante `chromadb.HttpClient`
+- Al detenerse el trainer, ChromaDB se detiene automáticamente
+- Datos persistidos en `persistence/chroma/` del servidor trainer
+- Endpoint de health check: `GET /trainer/chroma/health`
+
+**Configuración de ChromaDB por entorno:**
+
+| Variable | macbook | dev | pre/pro |
+|----------|---------|-----|---------|
+| `chroma_host` | localhost | trainer.house.loc | trainer.anewhope.aws |
+| `chroma_port` | 8100 | 8100 | 8100 |
+| `chroma_persist_directory` | ~/data/.../persistence/chroma | /data/persistence/chroma | /data/persistence/chroma |
+| `chroma_auth_token` | (en protected_values.py) | (en protected_values.py) | CAMBIAR EN PRODUCCIÓN |
 
 ### Variables protegidas por entorno (protected_values.py)
 
@@ -299,8 +325,9 @@ Cada entorno tiene su archivo `protected_values.py` con credenciales y URLs inte
 | `broker_backend_base_url` | http://localhost:8008 | http://backend.house.loc:8008 | http://backend.anewhope.aws:8008 |
 | `core_backend_base_url` | http://localhost:8003 | http://backend.house.loc:8003 | http://backend.anewhope.aws:8003 |
 | `mariadb_cli_path` | /usr/local/opt/mariadb@10.6/bin/mysql | /usr/bin/mariadb | /usr/bin/mariadb |
+| `chroma_auth_token` | chroma-dev-token-macbook-2026 | chroma-dev-token-house-2026 | CAMBIAR EN PRODUCCIÓN |
 
-**Importante:** En producción (`pro`), todas las contraseñas y claves JWT deben cambiarse antes del despliegue.
+**Importante:** En producción (`pro`), todas las contraseñas, claves JWT y tokens de ChromaDB deben cambiarse antes del despliegue.
 
 ### Orden de carga y prioridad
 
@@ -1205,6 +1232,20 @@ python --version
 - Este entorno es exclusivo para el Backend IA; otros servicios usan Python 3.13
 - Ver ADR completo en `src/docs/stack_of_technologies.adr`
 
+**Dependencias de IA del trainer (Python 3.12):**
+
+| Paquete | Versión | Uso |
+|---------|---------|-----|
+| TensorFlow | 2.16.2 | Entrenamiento de modelos de deep learning |
+| Keras | 3.13.2 | API de alto nivel para redes neuronales |
+| ChromaDB | 1.5.0 | Servidor de base de datos vectorial (embeddings para RAG) |
+| Ollama | 0.4.7 | Interacción con modelos LLM locales |
+| Jinja2 | 3.1.6 | Plantillas para generación de informes |
+
+**Nota sobre conflicto de protobuf:** TensorFlow requiere protobuf <5.0.0, mientras que
+ChromaDB (vía opentelemetry) prefiere protobuf >=5.0. Se usa protobuf 4.25.8 como compromiso;
+ambas librerías funcionan correctamente con esta versión.
+
 #### Despliegue de Nginx en macbook
 
 Para desplegar y configurar nginx en el entorno macbook, se proporciona el script `deploy_nginx_macbook.sh`:
@@ -1633,7 +1674,7 @@ además de las dependencias con Nginx y MariaDB.
   - **Operaciones de datos** (MariaDB/MySQL y sistema de ficheros): las atiende el backend core `3_backend`
     ejecutado en el servidor backend.
   - **Operaciones de IA** (uso interno y entrenamiento): las atiende `4_trainer`, que tendrá API REST y se
-    ejecutará en el servidor trainer con base de datos vectorial Keras para entrenamientos.
+    ejecutará en el servidor trainer con ChromaDB (BD vectorial) y Ollama (LLM) para entrenamientos.
 - La capa de dominio común vive en `src/1_shared_domain/`.
 - La capa de aplicación compartida vive en `src/2_shared_application/`.
 

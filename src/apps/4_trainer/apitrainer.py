@@ -30,6 +30,10 @@ def _load_trainer_module(module_name: str, module_path: Path) -> Any:
 _router_path = Path(__file__).resolve().parent / "routertrainer.py"
 _routertrainer = _load_trainer_module("routertrainer_backend", _router_path)
 
+# Cargar chroma_server
+_chroma_server_path = Path(__file__).resolve().parent / "chroma_server.py"
+_chroma_server = _load_trainer_module("chroma_server", _chroma_server_path)
+
 BackendTrainerBusinessError = _routertrainer.BackendTrainerBusinessError
 BackendTrainerPermissionError = _routertrainer.BackendTrainerPermissionError
 BackendTrainerRouter = _routertrainer.BackendTrainerRouter
@@ -314,7 +318,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logging.warning(f"No se pudo inicializar Ollama (puede no estar instalado): {e}")
 
+    # Inicializar servidor ChromaDB (base de datos vectorial)
+    try:
+        settings = _chroma_server.get_chroma_settings()
+        logging.info(
+            "[CHROMADB] Iniciando servidor ChromaDB en puerto %s (persist=%s)...",
+            settings["port"],
+            settings["persist_directory"],
+        )
+        chroma_ok = _chroma_server.start_chroma_server()
+        if chroma_ok:
+            logging.info("[CHROMADB] Servidor ChromaDB arrancado correctamente")
+        else:
+            logging.warning("[CHROMADB] No se pudo arrancar el servidor ChromaDB")
+    except Exception as e:
+        logging.warning(f"[CHROMADB] Error inicializando ChromaDB: {e}")
+
     yield
+
+    # Detener servidor ChromaDB al cerrar el trainer
+    try:
+        logging.info("[CHROMADB] Deteniendo servidor ChromaDB...")
+        _chroma_server.stop_chroma_server()
+        logging.info("[CHROMADB] Servidor ChromaDB detenido")
+    except Exception as e:
+        logging.warning(f"[CHROMADB] Error deteniendo ChromaDB: {e}")
 
 
 app = FastAPI(title="Backend IA (Trainer)", lifespan=lifespan)
@@ -340,6 +368,36 @@ def health_check() -> HealthResponse:
         service="backend-ia-trainer",
         version="1.0.0",
     )
+
+
+class ChromaHealthResponse(BaseModel):
+    """Respuesta del health check de ChromaDB."""
+
+    running: bool
+    host: str = ""
+    port: int = 0
+    persist_directory: str = ""
+    collection_name: str = ""
+    pid: int | None = None
+    authenticated: bool = False
+    heartbeat: int | None = None
+    collections: list[str] = Field(default_factory=list)
+    version: str = ""
+    error: str = ""
+
+
+@app.get("/trainer/chroma/health", response_model=ChromaHealthResponse)
+def chroma_health_check() -> ChromaHealthResponse:
+    """Health check del servidor ChromaDB gestionado por el trainer."""
+
+    try:
+        info = _chroma_server.get_server_info()
+        return ChromaHealthResponse(**info)
+    except Exception as exc:
+        return ChromaHealthResponse(
+            running=False,
+            error=str(exc),
+        )
 
 
 @app.post("/trainer/version/clone", response_model=VersionCloneResponse)
