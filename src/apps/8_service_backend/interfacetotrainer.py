@@ -302,3 +302,27 @@ class TrainerBackendClient:
         return self._request(
             "GET", f"/trainer/permissions?identity_type_id={identity_type_id}"
         )
+
+    # === Análisis de Documentación ===
+
+    def send_documentacion(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Envía una solicitud de análisis de documentación al trainer.
+
+        Args:
+            payload: Datos del job incluyendo prompt_final, ids, etc.
+
+        Returns:
+            Respuesta ACK del trainer
+        """
+        return self._request("POST", "/trainer/documentacion", payload=payload)
+
+    def send_metadatos(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Envía una solicitud de análisis de metadatos al trainer.
+
+        Args:
+            payload: Datos del job incluyendo prompt_final, ids, etc.
+
+        Returns:
+            Respuesta ACK del trainer
+        """
+        return self._request("POST", "/trainer/metadatos", payload=payload)

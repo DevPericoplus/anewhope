@@ -52,7 +52,7 @@ def convert_fmanagement_to_explorador(
         org_id: ID de la organización
         project_id: ID del proyecto
         version_name: Nombre de la versión (ej: "v001")
-        org_folder: Nombre de la carpeta de organización (ej: "ORG0001")
+        org_folder: Nombre de la carpeta de organización (ej: "ORG00001")
         prj_folder: Nombre de la carpeta de proyecto (ej: "PRJ00001")
 
     Returns:
@@ -320,7 +320,7 @@ def example_usage():
         org_id=1,
         project_id=1,
         version_name="v001",
-        org_folder="ORG0001",
+        org_folder="ORG00001",
         prj_folder="PRJ00001"
     )
 

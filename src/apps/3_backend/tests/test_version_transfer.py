@@ -66,8 +66,8 @@ class TestVersionTransferEndpoint:
         response = VersionTransferResponse(
             status="success",
             message="Version transferred successfully to trainer",
-            source_path="/data/files/external/ORG0001/PRJ00001/v001",
-            destination_path="/data/files/trainer/ORG0001/PRJ00001/v001",
+            source_path="/data/files/external/ORG00001/PRJ00001/v001",
+            destination_path="/data/files/trainer/ORG00001/PRJ00001/v001",
             bytes_transferred=1024,
             files_transferred=5,
         )
@@ -105,8 +105,8 @@ class TestVersionTransferRouter:
         client.request_json.return_value = {
             "status": "success",
             "message": "Version transferred successfully to trainer",
-            "source_path": "/data/files/external/ORG0001/PRJ00001/v001",
-            "destination_path": "/data/files/trainer/ORG0001/PRJ00001/v001",
+            "source_path": "/data/files/external/ORG00001/PRJ00001/v001",
+            "destination_path": "/data/files/trainer/ORG00001/PRJ00001/v001",
             "bytes_transferred": 2048,
             "files_transferred": 10,
         }

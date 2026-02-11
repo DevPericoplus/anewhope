@@ -49,15 +49,15 @@ def test_get_folder_by_id_organization() -> None:
     """Valida formato ORG con relleno de ceros."""
 
     helpers_module = _load_storage_helpers_module()
-    assert helpers_module.get_folder_by_id_organization(1) == "ORG0001"
-    assert helpers_module.get_folder_by_id_organization(25) == "ORG0025"
-    assert helpers_module.get_folder_by_id_organization(1234) == "ORG1234"
+    assert helpers_module.get_folder_by_id_organization(1) == "ORG00001"
+    assert helpers_module.get_folder_by_id_organization(25) == "ORG00025"
+    assert helpers_module.get_folder_by_id_organization(1234) == "ORG01234"
 
 
 def test_get_folder_by_id_project() -> None:
     """Valida formato PRJ con relleno de ceros."""
 
     helpers_module = _load_storage_helpers_module()
-    assert helpers_module.get_folder_by_id_project(1) == "PRJ0001"
-    assert helpers_module.get_folder_by_id_project(7) == "PRJ0007"
-    assert helpers_module.get_folder_by_id_project(9999) == "PRJ9999"
+    assert helpers_module.get_folder_by_id_project(1) == "PRJ00001"
+    assert helpers_module.get_folder_by_id_project(7) == "PRJ00007"
+    assert helpers_module.get_folder_by_id_project(9999) == "PRJ09999"

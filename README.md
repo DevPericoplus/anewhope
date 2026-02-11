@@ -399,7 +399,7 @@ El proyecto utiliza una estructura de carpetas específica para organizar logs, 
 ├── backend_core/logs/       # Logs de backend_core (puerto 8003)
 ├── service_backend/logs/    # Logs de broker (puerto 8008)
 ├── fmanagement/logs/        # Logs de fmanagement (puerto 1666)
-├── external/                # Contenido de clientes (ORG####/PRJ#####/v###/)
+├── external/                # Contenido de clientes (ORG#####/PRJ#####/v###/)
 ├── internal/                # Contenido generado (models/, reports/)
 ├── Mariadb/                 # Persistencia de MariaDB
 └── images/                  # Imágenes Docker (tar.gz)
@@ -433,14 +433,14 @@ El proyecto utiliza una estructura de carpetas específica para organizar logs, 
 | **internal** | Modelos LLM y reportes generados | Solo sistema | Trainer → Backend (automático cada 5 min) |
 
 **Estructura de external:**
-- Jerarquía: `ORG####/PRJ#####/v###/` (los usuarios pueden crear cualquier estructura dentro de cada versión)
-- Ejemplo: `external/ORG0001/PRJ00001/v001/images/logo.png`
+- Jerarquía: `ORG#####/PRJ#####/v###/` (los usuarios pueden crear cualquier estructura dentro de cada versión)
+- Ejemplo: `external/ORG00001/PRJ00001/v001/images/logo.png`
 
 **Estructura de internal:**
 - Carpetas fijas: `models/` y `reports/`
-- Jerarquía: `ORG####/PRJ#####/v###/` (igual que external)
-- Ejemplo: `internal/models/ORG0001/PRJ00001/v001/model_llm.tar.gz`
-- Ejemplo: `internal/reports/ORG0001/PRJ00001/v001/training_report.md`
+- Jerarquía: `ORG#####/PRJ#####/v###/` (igual que external)
+- Ejemplo: `internal/models/ORG00001/PRJ00001/v001/model_llm.tar.gz`
+- Ejemplo: `internal/reports/ORG00001/PRJ00001/v001/training_report.md`
 
 ### Variables de configuración
 
@@ -531,9 +531,9 @@ Los informes generados durante el entrenamiento siguen un flujo específico de c
 
 **1. Generación en Trainer Server:**
 ```
-Ruta: {backend_ia_internal_storage}/ORG####/PRJ#####/v###/*.md
-Ejemplo macbook: ~/data/anewhope/files/trainer_server/internal/ORG0001/PRJ00001/v001/
-Ejemplo prod: /data/files/internal/ORG0001/PRJ00001/v001/
+Ruta: {backend_ia_internal_storage}/ORG#####/PRJ#####/v###/*.md
+Ejemplo macbook: ~/data/anewhope/files/trainer_server/internal/ORG00001/PRJ00001/v001/
+Ejemplo prod: /data/files/internal/ORG00001/PRJ00001/v001/
 ```
 
 Los informes se generan como archivos markdown con formato de timestamp:
@@ -544,15 +544,15 @@ Los informes se generan como archivos markdown con formato de timestamp:
 ```bash
 # Trainer → Backend (cada 5 minutos)
 rsync -avz --delete \
-  {trainer_internal}/ORG####/PRJ#####/v###/ \
-  {backend_internal}/ORG####/PRJ#####/v###/
+  {trainer_internal}/ORG#####/PRJ#####/v###/ \
+  {backend_internal}/ORG#####/PRJ#####/v###/
 ```
 
 **3. Lectura por Visor de Informes:**
 ```
-Ruta: {backend_core_internal_storage}/ORG####/PRJ#####/v###/*.md
-Ejemplo macbook: ~/data/anewhope/files/backend_server/internal/ORG0001/PRJ00001/v001/
-Ejemplo prod: /data/files/internal/ORG0001/PRJ00001/v001/
+Ruta: {backend_core_internal_storage}/ORG#####/PRJ#####/v###/*.md
+Ejemplo macbook: ~/data/anewhope/files/backend_server/internal/ORG00001/PRJ00001/v001/
+Ejemplo prod: /data/files/internal/ORG00001/PRJ00001/v001/
 ```
 
 **Variables de configuración relevantes:**
@@ -2101,7 +2101,7 @@ Ruta de almacenamiento esperada en producción: `/data/files/external`.
 Estructura esperada:
 ```
 /data/files/external/
-  ORG0001/
+  ORG00001/
     PRJ00001/
       v001/
       v002/
@@ -2363,7 +2363,7 @@ Cuando un proyecto no tiene versiones previas:
 - **Acción**: Usuario hace click en "Crear nueva versión"
 - **Backend**: Detecta que `version_id = 1`
 - **fmanagement**: Crea estructura base con `POST /fmo/createfolder`
-- **Resultado**: `ORG0001/PRJ00001/v001/` con carpetas: `datos/`, `modelos/`, `evaluaciones/`, `resultados/`
+- **Resultado**: `ORG00001/PRJ00001/v001/` con carpetas: `datos/`, `modelos/`, `evaluaciones/`, `resultados/`
 
 **2. Versión subsecuente (v002+) - Clonar versión anterior**
 
@@ -2371,7 +2371,7 @@ Cuando ya existe al menos una versión:
 - **Acción**: Usuario hace click en "Crear nueva versión" con v001 seleccionada
 - **Backend**: Calcula `version_id = 2`, determina `clone_from = "v001"`
 - **fmanagement**: Clona recursivamente con `POST /fmo/newversion`
-- **Resultado**: `ORG0001/PRJ00001/v002/` con copia completa de v001
+- **Resultado**: `ORG00001/PRJ00001/v002/` con copia completa de v001
 
 **3. Clonar versión específica (v007 desde v003)**
 
@@ -2449,7 +2449,7 @@ Archivo: `src/apps/3_backend/routercore.py:create_version_full()`
    **Caso A - Crear versión vacía (v001)**:
    ```python
    client._create_empty_version(
-       orgpath="ORG0001",
+       orgpath="ORG00001",
        prjpath="PRJ00001",
        versionpath="v001",
        identity_type_id=10,
@@ -2462,7 +2462,7 @@ Archivo: `src/apps/3_backend/routercore.py:create_version_full()`
    **Caso B - Clonar versión (v002+)**:
    ```python
    client._clone_version(
-       orgpath="ORG0001",
+       orgpath="ORG00001",
        prjpath="PRJ00001",
        source_version="v002",  # Versión ORIGEN (a clonar)
        identity_type_id=10,
@@ -2514,7 +2514,7 @@ Request:
 {
   "iduser": 123,
   "basepath": "default",
-  "orgpath": "ORG0001",
+  "orgpath": "ORG00001",
   "prjpath": "PRJ00001",
   "versionpath": "v002",  // Versión ORIGEN (a clonar)
   "identity_type_id": 10
@@ -2533,7 +2533,7 @@ Response:
   "message": "New version created successfully",
   "old_version": "v002",
   "new_version": "v003",
-  "path": "/tmp/tfmmyllm/files/default/ORG0001/PRJ00001/v003"
+  "path": "/tmp/tfmmyllm/files/default/ORG00001/PRJ00001/v003"
 }
 ```
 
@@ -2655,7 +2655,7 @@ mysql -u myllm_writer -p myllm_projects_db \
   -e "SELECT * FROM versiones WHERE id_proyecto = 1"
 
 # Verificar en filesystem
-ls -la /tmp/tfmmyllm/files/default/ORG0001/PRJ00001/
+ls -la /tmp/tfmmyllm/files/default/ORG00001/PRJ00001/
 ```
 
 #### Referencias
@@ -4576,8 +4576,8 @@ El sistema utiliza identificadores formateados para organizar el sistema de arch
 
 | Entidad | Función Helper | Formato | Ejemplo |
 |---------|----------------|---------|---------|
-| Organización | `get_folder_by_id_organization(1)` | `ORG####` | `ORG0001` |
-| Proyecto | `get_folder_by_id_project(2)` | `PRJ####` | `PRJ0002` |
+| Organización | `get_folder_by_id_organization(1)` | `ORG#####` | `ORG00001` |
+| Proyecto | `get_folder_by_id_project(2)` | `PRJ#####` | `PRJ00002` |
 | Versión | `get_folder_by_id_version(3)` | `v###` | `v003` |
 
 **Helper disponible**: `src/2_shared_application/storage_access_structure.py`
@@ -4589,8 +4589,8 @@ La página de Proyecciones está dividida en 3 capas funcionales:
 #### Capa 1: Selector de Proyecto
 - Dropdown con proyectos activos y existentes de la organización
 - Al seleccionar un proyecto, se generan automáticamente:
-  - `proyecciones_org_folder`: Ej. `ORG0001`
-  - `proyecciones_prj_folder`: Ej. `PRJ0002`
+  - `proyecciones_org_folder`: Ej. `ORG00001`
+  - `proyecciones_prj_folder`: Ej. `PRJ00002`
 - Se cargan las versiones asociadas al proyecto
 
 #### Capa 2: Selector de Versión + Botón Crear
@@ -4603,7 +4603,7 @@ La página de Proyecciones está dividida en 3 capas funcionales:
   - `proyecciones_version_folder`: Ej. `v003`
 
 #### Capa 3: Explorador de Archivos (Placeholder)
-- Recibe contexto completo: `ORG0001` / `PRJ0002` / `v003`
+- Recibe contexto completo: `ORG00001` / `PRJ00002` / `v003`
 - Componente complejo a implementar próximamente
 - Permitirá navegar y gestionar archivos de la versión
 
@@ -4710,8 +4710,8 @@ proyecciones_project_name: str = ""       # Nombre del proyecto
 proyecciones_versions: list[dict] = []    # Lista de versiones del proyecto
 proyecciones_version_id: int = 0          # ID de versión seleccionada
 proyecciones_version_folder: str = ""     # Carpeta formateada (v001, v002, etc.)
-proyecciones_org_folder: str = ""         # Carpeta de organización (ORG0001)
-proyecciones_prj_folder: str = ""         # Carpeta de proyecto (PRJ0002)
+proyecciones_org_folder: str = ""         # Carpeta de organización (ORG00001)
+proyecciones_prj_folder: str = ""         # Carpeta de proyecto (PRJ00002)
 ```
 
 ### Helpers de Formato
@@ -4724,12 +4724,12 @@ from storage_access_structure import (
 )
 
 # Generar identificadores formateados
-org_folder = get_folder_by_id_organization(1)  # "ORG0001"
-prj_folder = get_folder_by_id_project(2)       # "PRJ0002"
+org_folder = get_folder_by_id_organization(1)  # "ORG00001"
+prj_folder = get_folder_by_id_project(2)       # "PRJ00002"
 ver_folder = get_folder_by_id_version(3)       # "v003"
 
 # Ruta completa para el explorador de archivos
-# /data/files/external/ORG0001/PRJ0002/v003/
+# /data/files/external/ORG00001/PRJ00002/v003/
 ```
 
 ### Tests
@@ -6301,8 +6301,8 @@ En `src/2_shared_application/storage_access_structure.py` se definen helpers
 para construir los nombres de carpetas en disco a partir de IDs numéricos:
 
 ```python
-get_folder_by_id_organization(1)  # "ORG0001"
-get_folder_by_id_project(1)       # "PRJ0001"
+get_folder_by_id_organization(1)  # "ORG00001"
+get_folder_by_id_project(1)       # "PRJ00001"
 ```
 
 Estos helpers deben usarse de forma consistente en todas las capas cuando se
@@ -9276,3 +9276,44 @@ La migración crea dos vistas para simplificar consultas:
 | `entrenamiento` | Entrenamientos | Fine-tuning y entrenamiento de modelos |
 | `analisis_resultados` | Resultados | Evaluación y análisis de resultados de entrenamiento |
 | `crear_modelo_llm` | Generación | Generación final de modelos LLM personalizados |
+
+### Ejecución de Jobs: Flujo Backoffice → Trainer → Backend Core
+
+El sistema ejecuta jobs de IA de forma asíncrona siguiendo este flujo:
+
+```
+Backoffice (8006) → Middleware (8007) → Broker (8008) → Trainer (8004)
+                                                              ↓
+                                                   [Procesamiento asíncrono]
+                                                              ↓
+                                               Backend Core (8003) ← Notificación HTTP
+                                                   (UPDATE jobs + INSERT cambios)
+```
+
+**Patrón implementado (Análisis de Documentación):**
+
+1. El Backoffice envía el job con prompts compuestos (identidad + contexto + solicitud + modalidad)
+2. La petición viaja por Middleware → Broker → Trainer siguiendo el flujo arquitectónico estándar
+3. El Trainer responde con un ACK inmediato y procesa en un thread background
+4. El thread lee archivos del storage externo (`backend_ia_base_storage`)
+5. Construye un prompt con árbol de directorios + contenido de archivos de texto
+6. Envía el prompt a Ollama con contexto expandido (`num_ctx=65536`)
+7. Escribe el resultado en markdown en el storage interno (`backend_ia_internal_storage`)
+8. Notifica al Backend Core via `PATCH /jobs/{job_id}/complete`
+9. El Backend Core registra un INSERT en `cambios` + UPDATE del `job` en una transacción
+
+**Archivos clave:**
+
+| Componente | Archivo |
+|------------|---------|
+| Servicio del Trainer | `src/apps/4_trainer/documentacion_service.py` |
+| Endpoint del Trainer | `src/apps/4_trainer/apitrainer.py` → `POST /trainer/documentacion` |
+| Endpoint Backend Core | `src/apps/3_backend/apicore.py` → `PATCH /jobs/{job_id}/complete` |
+| Lógica Backend Core | `src/apps/3_backend/routercore.py` → `complete_job()` |
+
+**Próximos tipos de job** que seguirán el mismo patrón:
+- Entrenamiento de modelos (`entrenamiento_service.py`)
+- Análisis de resultados (`resultados_service.py`)
+- Generación de modelos LLM (`generacion_service.py`)
+
+Ver AGENTS.md sección 28 para reglas detalladas de implementación.

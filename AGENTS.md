@@ -299,7 +299,7 @@ Cada servidor físico tiene su contenido directamente en `/data/`:
 ├── service_backend/logs/    # Logs de broker (puerto 8008)
 ├── fmanagement/logs/        # Logs de fmanagement (puerto 1666)
 ├── external/                # Contenido de clientes (organizaciones/proyectos/versiones)
-│   └── ORG0001/PRJ00001/v001/
+│   └── ORG00001/PRJ00001/v001/
 │       ├── images/
 │       └── text/
 ├── internal/                # Contenido generado por el sistema
@@ -339,13 +339,13 @@ Cada servidor físico tiene su contenido directamente en `/data/`:
 | **internal** | Contenido generado | Modelos LLM y reportes generados por el sistema | Trainer → Backend (rsync automático) |
 
 **Reglas de external:**
-- ✅ Estructura: `ORG####/PRJ#####/v###/` (flexible dentro de cada versión)
+- ✅ Estructura: `ORG#####/PRJ#####/v###/` (flexible dentro de cada versión)
 - ✅ Los usuarios pueden crear cualquier estructura de carpetas dentro de cada versión
 - ✅ Se sincroniza desde backend a trainer cuando se ejecuta `transferversion`
 - ✅ Corresponde a la variable `backend_core_base_storage` y `backend_ia_base_storage`
 
 **Reglas de internal:**
-- ✅ Estructura fija: `models/` y `reports/` con jerarquía `ORG####/PRJ#####/v###/`
+- ✅ Estructura fija: `models/` y `reports/` con jerarquía `ORG#####/PRJ#####/v###/`
 - ✅ Solo la aplicación puede escribir aquí (usuarios no tienen acceso directo)
 - ✅ Se sincroniza bidireccionalmente entre backend y trainer
 - ✅ Models: Trainer genera → Backend sirve para descarga
@@ -7472,6 +7472,248 @@ que se referencie a sí misma en `configuracion_defecto.hijos`. Esto crea un loo
 
 **Regla #50 (OBLIGATORIA)**: Antes de modificar cualquier tabla del sistema de jobs, consultar
 el plan de diseño y verificar el impacto en las FKs y el encadenamiento.
+
+---
+
+## 28. Ejecución de Jobs en el Trainer: Flujo Backoffice → Trainer → Backend Core (OBLIGATORIO)
+
+Este módulo describe cómo se ejecutan jobs de IA lanzados desde el Backoffice hacia el Trainer,
+y cómo el Trainer notifica al Backend Core cuando el procesamiento finaliza.
+
+### 28.1. Arquitectura general
+
+```
+Backoffice (8006) → Middleware (8007) → Broker (8008) → Trainer (8004)
+                                                              ↓
+                                                   [Procesamiento asíncrono]
+                                                              ↓
+                                               Backend Core (8003) ← Notificación
+                                                   (UPDATE jobs + INSERT cambios)
+```
+
+**Patrón de comunicación:**
+- La petición sigue el flujo estándar: Backoffice → Middleware → Broker → Trainer
+- El Trainer responde con un ACK inmediato (síncrono) y procesa en background (asíncrono)
+- Al terminar, el Trainer llama directamente al Backend Core para actualizar el estado del job
+
+### 28.2. Flujo detallado: Análisis de Documentación
+
+El primer job implementado es **Análisis de Documentación** (`analisis_documentacion`).
+Sirve como patrón de referencia para los demás tipos de job.
+
+#### 28.2.1. Paso 1: Envío desde Backoffice
+
+**Archivo:** `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py`
+
+El usuario abre un modal con los detalles del job, selecciona prompts de las 4 categorías
+(identidad, contexto, solicitud, modalidad), el sistema compone el prompt final, y al
+hacer clic en "Enviar al Trainer":
+
+1. `ad_send_to_trainer()` recopila: `id_job`, `id_organizacion`, `id_proyecto`, `id_version`,
+   datos del job, y `prompt_final`
+2. Llama a `send_documentacion_to_trainer()` en `adapters/api_client.py`
+3. Muestra badge "Recibido en Trainer" si el ACK es exitoso
+
+#### 28.2.2. Paso 2: Propagación por la cadena
+
+| Capa | Archivo | Endpoint/Método |
+|------|---------|-----------------|
+| Backoffice API Client | `6_web_backoffice/adapters/api_client.py` | `send_documentacion_to_trainer()` |
+| Middleware API | `7_service_frontend/apife.py` | `POST /training/documentacion` |
+| Middleware Router | `7_service_frontend/routermiddleware.py` | `send_documentacion()` |
+| Broker Client | `7_service_frontend/broker_backend_client.py` | `send_documentacion()` |
+| Broker API | `8_service_backend/apibe.py` | `POST /training/documentacion` |
+| Broker Router | `8_service_backend/routerbroker.py` | `send_documentacion()` |
+| Trainer Client | `8_service_backend/interfacetotrainer.py` | `send_documentacion()` |
+| Trainer API | `4_trainer/apitrainer.py` | `POST /trainer/documentacion` |
+
+**Validación de permisos:** El Middleware valida `training_create` antes de propagar.
+
+#### 28.2.3. Paso 3: Procesamiento asíncrono en el Trainer
+
+**Archivos:**
+- `src/apps/4_trainer/apitrainer.py` - Recibe petición, lanza thread
+- `src/apps/4_trainer/documentacion_service.py` - Lógica de negocio
+
+**Flujo del thread background (`process_documentacion()`):**
+
+1. **Lectura de archivos** del storage externo:
+   - Ruta: `{backend_ia_base_storage}/{ORG#####}/{PRJ#####}/{v###}/`
+   - Clasifica archivos en texto (lee contenido) y binarios (solo registra en árbol)
+   - Extensiones de texto: `.txt`, `.md`, `.csv`, `.json`, `.xml`, `.html`, `.py`, `.yml`, etc.
+
+2. **Construcción del prompt completo:**
+   ```
+   {prompt_final del usuario}
+
+   === ESTRUCTURA DE DIRECTORIOS ===
+   {árbol de archivos con tamaños}
+
+   === CONTENIDO DE ARCHIVOS ===
+   {contenido concatenado de archivos de texto}
+   ```
+
+3. **Envío a Ollama:**
+   - Modelo: el especificado en el job (ej: `llama3:latest`)
+   - Opciones: `num_ctx=65536`, `num_predict=-1`, `temperature=0.3`
+   - Usa `OllamaAdapter.generate()` con `GenerateRequestDto`
+
+4. **Escritura del resultado:**
+   - Ruta: `{backend_ia_internal_storage}/{ORG#####}/{PRJ#####}/{v###}/`
+   - Nombre: `{YYYY_MM_DD_HHMM}_analisis_documental.md`
+
+5. **Notificación al Backend Core:**
+   - Llama a `PATCH /jobs/{job_id}/complete` en Backend Core
+   - Envía: `id_organizacion`, `id_proyecto`, `id_version`, `descripcion`, `referencia_salida`, `tipo_cambio`
+
+#### 28.2.4. Paso 4: Actualización en Backend Core
+
+**Archivos:**
+- `src/apps/3_backend/apicore.py` - Endpoint `PATCH /jobs/{job_id}/complete`
+- `src/apps/3_backend/routercore.py` - Método `complete_job()`
+
+**Transacción SQL (atómica):**
+
+```sql
+-- Paso 1: Registrar evento en tabla cambios
+INSERT INTO cambios
+    (id_version, fecha_cambio, tipo_cambio, descripcion, creado_at, id_proyecto, id_organizacion)
+VALUES
+    (:id_version, NOW(), :tipo_cambio, :descripcion, NOW(), :id_proyecto, :id_organizacion);
+
+-- Paso 2: Actualizar estado del job
+UPDATE jobs
+SET id_estado = :id_estado,
+    completado_en = NOW(),
+    referencia_salida = :referencia_salida,
+    id_cambio = LAST_INSERT_ID()
+WHERE id = :job_id;
+```
+
+**Estados de job:**
+- `id_estado=4` → Finalizado (éxito)
+- `id_estado=3` → Error
+
+### 28.3. Logging obligatorio en el Trainer
+
+**CRÍTICO:** Todo el procesamiento asíncrono debe escribir en `logs/console.log` con prefijo `[DOCUMENTACION]`.
+
+**Eventos a loguear:**
+
+| Evento | Nivel | Ejemplo |
+|--------|-------|---------|
+| Solicitud recibida | INFO | `[DOCUMENTACION] Solicitud recibida: job_id=5 org=1 prj=3 ver=2` |
+| Thread lanzado | INFO | `[DOCUMENTACION] Thread background lanzado para job_id=5` |
+| Lectura de archivos | INFO | `[DOCUMENTACION] Leyendo archivos de: /path/to/version` |
+| Resultado de lectura | INFO | `[DOCUMENTACION] 12 archivos texto, 3 binarios, 450 KB total` |
+| Prompt construido | INFO | `[DOCUMENTACION] Prompt construido: 25000 caracteres totales` |
+| Envío a Ollama | INFO | `[DOCUMENTACION] Enviando a Ollama modelo=llama3:latest num_ctx=65536` |
+| Respuesta de Ollama | INFO | `[DOCUMENTACION] Respuesta recibida: 8500 caracteres en 120.5s` |
+| Resultado escrito | INFO | `[DOCUMENTACION] Resultado escrito en: /path/to/output.md` |
+| Notificación a Core | INFO | `[DOCUMENTACION] Backend Core actualizado: id_cambio=42` |
+| Proceso completado | INFO | `[DOCUMENTACION] Proceso completado para job_id=5 en 135.2s` |
+| Error | ERROR | `[DOCUMENTACION][ERROR] descripción del error para job_id=5` |
+
+### 28.4. Variables de entorno requeridas
+
+| Variable | Uso | Ejemplo (macbook) |
+|----------|-----|-------------------|
+| `backend_ia_base_storage` | Ruta de lectura (external) | `~/data/anewhope/files/trainer_server/external` |
+| `backend_ia_internal_storage` | Ruta de escritura (internal) | `~/data/anewhope/files/trainer_server/internal` |
+| `backend_core_base_url` | URL del Backend Core para notificaciones | `http://localhost:8003` |
+
+### 28.5. Reglas para implementar nuevos tipos de job (OBLIGATORIO)
+
+Los siguientes tipos de job seguirán el mismo patrón arquitectónico:
+
+| Tipo de Job | Descripción | Estado |
+|-------------|-------------|--------|
+| `analisis_documentacion` | Análisis de documentos del cliente | Implementado |
+| `entrenamiento` | Fine-tuning de modelos LLM | Pendiente |
+| `analisis_resultados` | Evaluación de resultados de entrenamiento | Pendiente |
+| `crear_modelo_llm` | Generación final de modelos LLM | Pendiente |
+
+**Regla #51**: Todo nuevo tipo de job DEBE seguir el patrón de `analisis_documentacion`:
+1. Endpoint en el Trainer que devuelve ACK inmediato
+2. Procesamiento en background thread (daemon=True)
+3. Logging completo con prefijo específico (ej: `[ENTRENAMIENTO]`)
+4. Notificación al Backend Core via `PATCH /jobs/{job_id}/complete`
+5. INSERT en tabla `cambios` + UPDATE en tabla `jobs` (transacción atómica)
+
+**Regla #52**: El Trainer NUNCA accede directamente a la base de datos. Siempre notifica
+via HTTP al Backend Core.
+
+**Regla #53**: Cada tipo de job debe crear un servicio dedicado en el Trainer:
+- `documentacion_service.py` → Análisis de documentación
+- `entrenamiento_service.py` → Entrenamiento de modelos (futuro)
+- `resultados_service.py` → Análisis de resultados (futuro)
+- `generacion_service.py` → Generación de modelos (futuro)
+
+**Regla #54**: El prompt se construye siempre en 4 partes (identidad + contexto + solicitud + modalidad)
+desde el Backoffice, y se envía ya compuesto al Trainer como `prompt_final`.
+
+**Regla #55**: Todo job que lea archivos del storage debe usar las funciones de
+`storage_access_structure.py` (`get_folder_by_id_organization`, `get_folder_by_id_project`,
+`get_folder_by_id_version`) para construir rutas.
+
+**Regla #56**: El resultado de cada job se escribe en el storage interno
+(`backend_ia_internal_storage`) con marca de tiempo en el nombre del fichero.
+
+### 28.6. DTO compartido entre capas
+
+El payload que viaja por toda la cadena tiene esta estructura:
+
+```python
+class DocumentacionRequest(BaseModel):
+    id_job: int = 0
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    nombre_job: str = ""
+    descripcion_job: str = ""
+    id_template: int = 0
+    template_nombre: str = ""
+    modelo_nombre: str = ""
+    salida_nombre: str = ""
+    estado_nombre: str = ""
+    prompt_final: str = ""
+    identity_type_id: int | None = None
+```
+
+**Regla #57**: Al implementar nuevos tipos de job, usar un DTO equivalente con los mismos
+campos base (`id_job`, `id_organizacion`, `id_proyecto`, `id_version`, `prompt_final`,
+`modelo_nombre`) más campos específicos del tipo.
+
+### 28.7. Endpoint de completado en Backend Core
+
+```
+PATCH /jobs/{job_id}/complete
+```
+
+**Payload:**
+```python
+class JobCompleteRequest(BaseModel):
+    job_id: int
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    descripcion: str = ""
+    referencia_salida: str = ""
+    tipo_cambio: str = "evaluacion_documental"
+    id_estado: int = 4  # 4=Finalizado, 3=Error
+```
+
+**Regla #58**: Este endpoint es reutilizable por TODOS los tipos de job. Solo cambia
+`tipo_cambio` y `descripcion` según el tipo de procesamiento.
+
+### 28.8. Documentación relacionada
+
+- **Servicio del Trainer:** `src/apps/4_trainer/documentacion_service.py`
+- **Endpoint del Trainer:** `src/apps/4_trainer/apitrainer.py` → `POST /trainer/documentacion`
+- **Endpoint Backend Core:** `src/apps/3_backend/apicore.py` → `PATCH /jobs/{job_id}/complete`
+- **Lógica Backend Core:** `src/apps/3_backend/routercore.py` → `complete_job()`
+- **Sistema de Plantillas:** Sección 27 de este documento
+- **Migración SQL:** `infrastructure/database/migrations/011_jobs_templates_system.sql`
 
 ---
 

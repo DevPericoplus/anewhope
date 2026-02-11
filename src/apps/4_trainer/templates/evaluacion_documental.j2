@@ -1,0 +1,164 @@
+{# ============================================================================
+   Plantilla Jinja2: Informe de Evaluación Documental y Optimización para RAG
+   ---------------------------------------------------------------------------
+   Esta plantilla genera el informe final de evaluación documental combinando:
+   - Metadatos del job recibido en el endpoint /documentacion
+   - Estadísticas de los archivos analizados
+   - Respuesta de análisis generada por Ollama
+   - Datos de trazabilidad del proceso
+
+   Variables esperadas (desde DocumentacionRequest + datos computados):
+
+   Datos del job (del payload de /documentacion):
+     - id_job              : int    - Identificador del job
+     - id_organizacion     : int    - ID de la organización
+     - id_proyecto         : int    - ID del proyecto
+     - id_version          : int    - ID de la versión
+     - nombre_job          : str    - Nombre del job
+     - descripcion_job     : str    - Descripción del job
+     - id_template         : int    - ID de la plantilla de prompts usada
+     - template_nombre     : str    - Nombre de la plantilla de prompts
+     - modelo_nombre       : str    - Modelo de Ollama utilizado
+     - salida_nombre       : str    - Nombre del tipo de salida
+     - estado_nombre       : str    - Estado del job al momento del envío
+
+   Datos derivados (calculados por el Trainer):
+     - nombre_organizacion : str    - Nombre legible de la organización
+     - nombre_proyecto     : str    - Nombre legible del proyecto
+     - org_folder          : str    - Carpeta de organización (ORG00001)
+     - prj_folder          : str    - Carpeta de proyecto (PRJ00001)
+     - ver_folder          : str    - Carpeta de versión (v001)
+     - ruta_external       : str    - Ruta completa del storage externo
+     - ruta_internal       : str    - Ruta completa del storage interno
+     - ruta_salida         : str    - Ruta completa del fichero de salida
+
+   Estadísticas de archivos:
+     - num_text            : int    - Número de archivos de texto leídos
+     - num_binary          : int    - Número de archivos binarios detectados
+     - total_files         : int    - Total de archivos (num_text + num_binary)
+     - total_kb            : int    - Tamaño total en KB
+     - tree_text           : str    - Representación del árbol de directorios
+
+   Respuesta de Ollama:
+     - ollama_response     : str    - Respuesta completa de Ollama en Markdown
+
+   Datos de ejecución:
+     - fecha_ejecucion     : str    - Fecha de ejecución (YYYY-MM-DD)
+     - hora_ejecucion      : str    - Hora de ejecución (HH:MM:SS)
+     - tiempo_ollama       : str    - Tiempo de procesamiento de Ollama
+     - tiempo_total        : str    - Tiempo total del proceso
+   ============================================================================ #}
+# Informe de Evaluación Documental y Optimización para RAG
+
+---
+
+## Ficha Técnica del Informe
+
+| Campo | Valor |
+| :--- | :--- |
+| **Organización** | {{ nombre_organizacion }} (`{{ org_folder }}`) |
+| **Proyecto** | {{ nombre_proyecto }} (`{{ prj_folder }}`) |
+| **Versión analizada** | `{{ ver_folder }}` |
+| **ID del Job** | #{{ id_job }} |
+| **Nombre del Job** | {{ nombre_job }} |
+| **Modelo de IA** | `{{ modelo_nombre }}` |
+| **Plantilla de prompts** | {{ template_nombre }} |
+| **Fecha de ejecución** | {{ fecha_ejecucion }} a las {{ hora_ejecucion }} |
+
+---
+
+## 1. Presentación
+
+El presente informe tiene como objetivo evaluar la estructura y calidad documental contenida en el directorio **`{{ ver_folder }}`** del proyecto **{{ nombre_proyecto }}** perteneciente a la organización **{{ nombre_organizacion }}**. El análisis ha sido ejecutado de forma automatizada mediante el modelo de inteligencia artificial **{{ modelo_nombre }}**, dentro del flujo de trabajo del sistema myllm.
+
+{% if descripcion_job %}
+**Descripción del job:** {{ descripcion_job }}
+{% endif %}
+
+El propósito principal de este análisis es determinar la viabilidad y eficiencia del repositorio documental para el entrenamiento y alimentación de un modelo de Inteligencia Artificial basado en la arquitectura **RAG (Retrieval-Augmented Generation)**. La arquitectura RAG depende críticamente de la calidad, accesibilidad y estructura semántica de los datos ingeridos para proporcionar respuestas precisas y reducir las "alucinaciones" del modelo.
+
+---
+
+## 2. Descripción del Cuestionario (Metodología de Evaluación)
+
+Para realizar esta auditoría documental, se han planteado las siguientes preguntas clave y criterios de análisis, diseñados para identificar cuellos de botella en la ingesta de datos:
+
+* **Identificación de Formatos**: ¿Qué diversidad de formatos de archivo existe (PDF, DOCX, TXT, MD, Imágenes)? ¿Son todos legibles por máquina o requieren OCR?
+* **Análisis Jerárquico**: ¿Cuál es la profundidad de los directorios? ¿La estructura de carpetas añade contexto semántico o ruido?
+* **Integridad de Metadatos**: ¿Los nombres de archivos y carpetas son descriptivos o códigos genéricos?
+* **Evaluación de Atomización ("Chunking")**: ¿Son los documentos monolíticos y extensos, o están segmentados lógicamente por temáticas?
+* **Detección de Duplicados y Ruido**: ¿Existe redundancia de información o archivos temporales/irrelevantes?
+
+---
+
+## 3. Estadísticas de los Archivos Analizados
+
+| Métrica | Valor |
+| :--- | :---: |
+| **Archivos de texto procesados** | {{ num_text }} |
+| **Archivos binarios detectados** | {{ num_binary }} |
+| **Total de archivos** | {{ total_files }} |
+| **Tamaño total analizado** | {{ total_kb }} KB |
+
+### Ruta de origen (storage externo)
+
+```
+{{ ruta_external }}
+```
+
+### Estructura de directorios analizada
+
+```
+{{ tree_text }}
+```
+
+---
+
+## 4. Resultados del Análisis
+
+A continuación se presenta el análisis generado por el modelo **{{ modelo_nombre }}** sobre la estructura y contenido documental de **`{{ ver_folder }}`**:
+
+{{ ollama_response }}
+
+---
+
+## 5. Conclusión y Recomendaciones
+
+El análisis automatizado del directorio **`{{ ver_folder }}`** del proyecto **{{ nombre_proyecto }}** ha sido completado satisfactoriamente. Las recomendaciones detalladas en la sección anterior deben evaluarse en el contexto específico del proyecto y la organización **{{ nombre_organizacion }}** para determinar las acciones prioritarias de optimización.
+
+**Próximos pasos sugeridos:**
+
+1. Revisar las recomendaciones del análisis y priorizar las acciones de mayor impacto.
+2. Aplicar las mejoras estructurales recomendadas sobre la documentación de la versión.
+3. Re-ejecutar la evaluación documental tras los cambios para medir la mejora.
+4. Proceder al siguiente paso del flujo de trabajo del proyecto.
+
+---
+
+## 6. Trazabilidad de Ejecución
+
+| Dato | Valor |
+| :--- | :--- |
+| **Job ID** | #{{ id_job }} |
+| **Tipo de salida** | {{ salida_nombre }} |
+| **Plantilla utilizada** | {{ template_nombre }} (ID: {{ id_template }}) |
+| **Modelo de IA** | `{{ modelo_nombre }}` |
+| **Tiempo de procesamiento IA** | {{ tiempo_ollama }} |
+| **Tiempo total del proceso** | {{ tiempo_total }} |
+| **Ruta del informe generado** | `{{ ruta_salida }}` |
+| **Ruta del almacenamiento interno** | `{{ ruta_internal }}` |
+| **Estado al finalizar** | {{ estado_nombre }} |
+
+---
+
+## 7. Referencias de Fuentes
+
+La metodología aplicada se basa en las mejores prácticas actuales de Ingeniería de Datos para LLMs:
+
+* *Lewis, P., et al. (2020)*. "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks".
+* *LangChain Documentation*. "Data Connection: Document Loaders & Splitters Best Practices".
+* *LlamaIndex Guides*. "Optimizing Context Retrieval with Hierarchical Structures".
+
+---
+
+*Informe generado automáticamente por el sistema myllm — {{ fecha_ejecucion }} {{ hora_ejecucion }}*

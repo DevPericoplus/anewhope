@@ -132,7 +132,7 @@ class VersionEventListResponse(BaseModel):
 class FmanagementListRequest(BaseModel):
     """Request para listar estructura de archivos via fmanagement."""
     
-    org_folder: str = Field(..., description="Carpeta organización (ej: ORG0001)")
+    org_folder: str = Field(..., description="Carpeta organización (ej: ORG00001)")
     prj_folder: str = Field(..., description="Carpeta proyecto (ej: PRJ0001)")
     version_folder: str = Field(..., description="Carpeta versión (ej: v001)")
     user_id: int = Field(..., description="ID del usuario que solicita")

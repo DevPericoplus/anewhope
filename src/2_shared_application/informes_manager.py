@@ -143,7 +143,7 @@ def build_version_path(org_id: int, project_id: int, version_id: int) -> str:
 
     Returns:
         Path completo a la carpeta de versión
-        Ejemplo: /Users/.../internal/ORG0001/PRJ00001/v001
+        Ejemplo: /Users/.../internal/ORG00001/PRJ00001/v001
     """
     storage_module = _get_storage_module()
 

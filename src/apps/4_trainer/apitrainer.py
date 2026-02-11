@@ -148,6 +148,58 @@ class PermissionsResponse(BaseModel):
     permissions: dict[str, bool] = Field(default_factory=dict)
 
 
+class DocumentacionRequest(BaseModel):
+    """Payload para análisis de documentación."""
+
+    id_job: int = 0
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    nombre_job: str = ""
+    descripcion_job: str = ""
+    id_template: int = 0
+    template_nombre: str = ""
+    modelo_nombre: str = ""
+    salida_nombre: str = ""
+    estado_nombre: str = ""
+    prompt_final: str = ""
+    identity_type_id: int | None = None
+
+
+class DocumentacionResponse(BaseModel):
+    """Respuesta de análisis de documentación (ACK)."""
+
+    success: bool
+    message: str = ""
+    received_at: str = ""
+
+
+class MetadatosRequest(BaseModel):
+    """Payload para análisis de metadatos de ficheros."""
+
+    id_job: int = 0
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    nombre_job: str = ""
+    descripcion_job: str = ""
+    id_template: int = 0
+    template_nombre: str = ""
+    modelo_nombre: str = ""
+    salida_nombre: str = ""
+    estado_nombre: str = ""
+    prompt_final: str = ""
+    identity_type_id: int | None = None
+
+
+class MetadatosResponse(BaseModel):
+    """Respuesta de análisis de metadatos (ACK)."""
+
+    success: bool
+    message: str = ""
+    received_at: str = ""
+
+
 # === Helpers ===
 
 
@@ -492,3 +544,120 @@ def get_training_permissions(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(exc),
         ) from exc
+
+
+# ============================================================================
+# Análisis de Documentación
+# ============================================================================
+
+
+@app.post("/trainer/documentacion", response_model=DocumentacionResponse)
+def recibir_documentacion(
+    request: DocumentacionRequest,
+    client_app: str = Depends(get_client_app),
+) -> DocumentacionResponse:
+    """Recibe una solicitud de análisis de documentación desde el backoffice.
+
+    Devuelve un ACK inmediato y lanza el procesamiento real en un thread de background.
+    """
+
+    import threading
+    from datetime import datetime, timezone
+
+    logger = logging.getLogger("trainer_api")
+    logger.info(
+        "[DOCUMENTACION] Solicitud recibida: job_id=%s org=%s prj=%s ver=%s job='%s' template='%s'",
+        request.id_job,
+        request.id_organizacion,
+        request.id_proyecto,
+        request.id_version,
+        request.nombre_job,
+        request.template_nombre,
+    )
+    logger.info(
+        "[DOCUMENTACION] Prompt final (%d chars): %s...",
+        len(request.prompt_final),
+        request.prompt_final[:200] if request.prompt_final else "(vacío)",
+    )
+
+    # Lanzar procesamiento en background thread
+    from documentacion_service import process_documentacion
+
+    thread = threading.Thread(
+        target=process_documentacion,
+        args=(request.model_dump(),),
+        daemon=True,
+        name=f"doc-analysis-job-{request.id_job}",
+    )
+    thread.start()
+    logger.info("[DOCUMENTACION] Thread background lanzado para job_id=%s", request.id_job)
+
+    received_at = datetime.now(timezone.utc).isoformat()
+
+    return DocumentacionResponse(
+        success=True,
+        message=(
+            f"Solicitud de análisis recibida para org={request.id_organizacion}, "
+            f"prj={request.id_proyecto}, ver={request.id_version}"
+        ),
+        received_at=received_at,
+    )
+
+
+# ============================================================================
+# Análisis de Metadatos de Ficheros (flujo paralelo a documentación)
+# ============================================================================
+
+
+@app.post("/trainer/metadatos", response_model=MetadatosResponse)
+def recibir_metadatos(
+    request: MetadatosRequest,
+    client_app: str = Depends(get_client_app),
+) -> MetadatosResponse:
+    """Recibe una solicitud de análisis de metadatos desde el backoffice.
+
+    Devuelve un ACK inmediato y lanza el procesamiento real en un thread de background.
+    Flujo paralelo e independiente al de documentación.
+    """
+
+    import threading
+    from datetime import datetime, timezone
+
+    logger = logging.getLogger("trainer_api")
+    logger.info(
+        "[METADATOS] Solicitud recibida: job_id=%s org=%s prj=%s ver=%s job='%s' template='%s'",
+        request.id_job,
+        request.id_organizacion,
+        request.id_proyecto,
+        request.id_version,
+        request.nombre_job,
+        request.template_nombre,
+    )
+    logger.info(
+        "[METADATOS] Prompt final (%d chars): %s...",
+        len(request.prompt_final),
+        request.prompt_final[:200] if request.prompt_final else "(vacío)",
+    )
+
+    # Lanzar procesamiento en background thread
+    from metadatos_service import process_metadatos
+
+    thread = threading.Thread(
+        target=process_metadatos,
+        args=(request.model_dump(),),
+        daemon=True,
+        name=f"metadata-analysis-job-{request.id_job}",
+    )
+    thread.start()
+    logger.info("[METADATOS] Thread background lanzado para job_id=%s", request.id_job)
+
+    received_at = datetime.now(timezone.utc).isoformat()
+
+    return MetadatosResponse(
+        success=True,
+        message=(
+            f"Solicitud de análisis de metadatos recibida para org={request.id_organizacion}, "
+            f"prj={request.id_proyecto}, ver={request.id_version}"
+        ),
+        received_at=received_at,
+    )

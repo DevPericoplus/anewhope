@@ -531,6 +531,28 @@ class BrokerBackendRouter:
                 "No se pudo obtener permisos de entrenamiento"
             ) from exc
 
+    def send_documentacion(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Envía solicitud de análisis de documentación al trainer."""
+
+        client = self._ensure_trainer_client()
+        try:
+            return client.send_documentacion(payload)
+        except TrainerBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo enviar la solicitud de análisis de documentación al trainer"
+            ) from exc
+
+    def send_metadatos(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Envía solicitud de análisis de metadatos al trainer."""
+
+        client = self._ensure_trainer_client()
+        try:
+            return client.send_metadatos(payload)
+        except TrainerBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo enviar la solicitud de análisis de metadatos al trainer"
+            ) from exc
+
     # ========================================================================
     # Gestión de Proyectos (enrutados a Backend Core)
     # ========================================================================

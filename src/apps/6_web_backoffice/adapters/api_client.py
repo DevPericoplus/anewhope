@@ -1698,7 +1698,7 @@ def fmanagement_list(
     Flujo: Backoffice → Middleware → Broker → Backend Core → fmanagement
     
     Args:
-        org_folder: Carpeta de organización (ej: "ORG0001")
+        org_folder: Carpeta de organización (ej: "ORG00001")
         prj_folder: Carpeta de proyecto (ej: "PRJ0001")
         version_folder: Carpeta de versión (ej: "V001")
         access_token: Token de acceso JWT
@@ -1760,7 +1760,7 @@ def fmanagement_list_for_explorador(
         org_id: ID de la organización
         project_id: ID del proyecto
         version_name: Nombre de la versión (ej: "v001")
-        org_folder: Carpeta de organización (ej: "ORG0001"), se genera si no se provee
+        org_folder: Carpeta de organización (ej: "ORG00001"), se genera si no se provee
         prj_folder: Carpeta de proyecto (ej: "PRJ00001"), se genera si no se provee
         access_token: Token de acceso JWT
         session_token: Token de sesión JWT
@@ -1878,7 +1878,7 @@ def fmanagement_list_all_project_versions(
     Args:
         org_id: ID de la organización
         project_id: ID del proyecto
-        org_folder: Carpeta de organización (ej: "ORG0001"), se genera si no se provee
+        org_folder: Carpeta de organización (ej: "ORG00001"), se genera si no se provee
         prj_folder: Carpeta de proyecto (ej: "PRJ00001"), se genera si no se provee
         access_token: Token de acceso JWT
         session_token: Token de sesión JWT
@@ -2681,6 +2681,75 @@ def chat_with_ollama(
     except Exception as exc:
         print(f"Error chatting with Ollama: {exc}")
         return {"message": {"content": ""}, "error": str(exc)}
+
+
+# ============================================================================
+# ANÁLISIS DE DOCUMENTACIÓN - Envío al Trainer
+# ============================================================================
+
+
+def send_documentacion_to_trainer(
+    payload: dict[str, Any],
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Envía solicitud de análisis de documentación al trainer.
+
+    Flujo: Backoffice → Middleware → Broker → Trainer
+
+    Args:
+        payload: Datos del job con prompt_final, ids de org/prj/ver, etc.
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+
+    Returns:
+        Respuesta ACK del trainer con success, message y received_at
+    """
+    headers: dict[str, str] = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "POST",
+        "/training/documentacion",
+        payload=payload,
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
+def send_metadatos_to_trainer(
+    payload: dict[str, Any],
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Envía solicitud de análisis de metadatos al trainer.
+
+    Flujo: Backoffice → Middleware → Broker → Trainer
+
+    Args:
+        payload: Datos del job con prompt_final, ids de org/prj/ver, etc.
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+
+    Returns:
+        Respuesta ACK del trainer con success, message y received_at
+    """
+    headers: dict[str, str] = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "POST",
+        "/training/metadatos",
+        payload=payload,
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
 
 
 # ============================================================================

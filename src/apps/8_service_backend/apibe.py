@@ -293,6 +293,58 @@ class TrainingPermissionsResponse(BaseModel):
     permissions: dict[str, bool] = Field(default_factory=dict)
 
 
+class DocumentacionRequest(BaseModel):
+    """Payload para análisis de documentación."""
+
+    id_job: int = 0
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    nombre_job: str = ""
+    descripcion_job: str = ""
+    id_template: int = 0
+    template_nombre: str = ""
+    modelo_nombre: str = ""
+    salida_nombre: str = ""
+    estado_nombre: str = ""
+    prompt_final: str = ""
+    identity_type_id: int | None = None
+
+
+class DocumentacionResponse(BaseModel):
+    """Respuesta de análisis de documentación (ACK)."""
+
+    success: bool
+    message: str = ""
+    received_at: str = ""
+
+
+class MetadatosRequest(BaseModel):
+    """Payload para análisis de metadatos de ficheros."""
+
+    id_job: int = 0
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    nombre_job: str = ""
+    descripcion_job: str = ""
+    id_template: int = 0
+    template_nombre: str = ""
+    modelo_nombre: str = ""
+    salida_nombre: str = ""
+    estado_nombre: str = ""
+    prompt_final: str = ""
+    identity_type_id: int | None = None
+
+
+class MetadatosResponse(BaseModel):
+    """Respuesta de análisis de metadatos (ACK)."""
+
+    success: bool
+    message: str = ""
+    received_at: str = ""
+
+
 def _configure_logging() -> None:
     """Configura logging del broker backend con salida a console.log."""
 
@@ -1032,6 +1084,40 @@ def get_training_permissions(
     try:
         response = router.get_training_permissions(identity_type_id)
         return TrainingPermissionsResponse(**response)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/training/documentacion", response_model=DocumentacionResponse)
+def send_documentacion(
+    request: DocumentacionRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> DocumentacionResponse:
+    """Envía solicitud de análisis de documentación al trainer."""
+
+    try:
+        response = router.send_documentacion(request.model_dump())
+        return DocumentacionResponse(**response)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/training/metadatos", response_model=MetadatosResponse)
+def send_metadatos(
+    request: MetadatosRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> MetadatosResponse:
+    """Envía solicitud de análisis de metadatos al trainer."""
+
+    try:
+        response = router.send_metadatos(request.model_dump())
+        return MetadatosResponse(**response)
     except BrokerBusinessError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

@@ -1055,6 +1055,56 @@ class TrainingPermissionsResponse(BaseModel):
     permissions: dict[str, bool] = Field(default_factory=dict)
 
 
+class DocumentacionRequest(BaseModel):
+    """Payload para análisis de documentación."""
+
+    id_job: int = 0
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    nombre_job: str = ""
+    descripcion_job: str = ""
+    id_template: int = 0
+    template_nombre: str = ""
+    modelo_nombre: str = ""
+    salida_nombre: str = ""
+    estado_nombre: str = ""
+    prompt_final: str = ""
+
+
+class DocumentacionResponse(BaseModel):
+    """Respuesta de análisis de documentación (ACK)."""
+
+    success: bool
+    message: str = ""
+    received_at: str = ""
+
+
+class MetadatosRequest(BaseModel):
+    """Payload para análisis de metadatos de ficheros."""
+
+    id_job: int = 0
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    nombre_job: str = ""
+    descripcion_job: str = ""
+    id_template: int = 0
+    template_nombre: str = ""
+    modelo_nombre: str = ""
+    salida_nombre: str = ""
+    estado_nombre: str = ""
+    prompt_final: str = ""
+
+
+class MetadatosResponse(BaseModel):
+    """Respuesta de análisis de metadatos (ACK)."""
+
+    success: bool
+    message: str = ""
+    received_at: str = ""
+
+
 @app.get("/training/health", response_model=TrainerHealthResponse)
 def trainer_health_check_endpoint(
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
@@ -1230,6 +1280,53 @@ def get_training_permissions_endpoint(
     except BusinessRuleError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/training/documentacion", response_model=DocumentacionResponse)
+def send_documentacion_endpoint(
+    request: DocumentacionRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> DocumentacionResponse:
+    """Envía solicitud de análisis de documentación al trainer."""
+
+    try:
+        response = router.send_documentacion(request.model_dump(), session)
+        return DocumentacionResponse(**response)
+    except BusinessRuleError as exc:
+        # Distinguir error de permisos vs error de comunicación
+        error_msg = str(exc).lower()
+        if "permisos" in error_msg or "permiso" in error_msg:
+            status_code = status.HTTP_403_FORBIDDEN
+        else:
+            status_code = status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/training/metadatos", response_model=MetadatosResponse)
+def send_metadatos_endpoint(
+    request: MetadatosRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> MetadatosResponse:
+    """Envía solicitud de análisis de metadatos al trainer."""
+
+    try:
+        response = router.send_metadatos(request.model_dump(), session)
+        return MetadatosResponse(**response)
+    except BusinessRuleError as exc:
+        error_msg = str(exc).lower()
+        if "permisos" in error_msg or "permiso" in error_msg:
+            status_code = status.HTTP_403_FORBIDDEN
+        else:
+            status_code = status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(
+            status_code=status_code,
             detail=str(exc),
         ) from exc
 

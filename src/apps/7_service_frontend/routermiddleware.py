@@ -3236,6 +3236,70 @@ class RouterMiddleware:
                 "No se pudo obtener los permisos de entrenamiento"
             ) from exc
 
+    def send_documentacion(
+        self,
+        payload: dict[str, Any],
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Envía solicitud de análisis de documentación al trainer vía broker.
+
+        Args:
+            payload: Datos del job con prompt_final, ids de org/prj/ver, etc.
+            session: Contexto de sesión del usuario
+
+        Returns:
+            Respuesta ACK del trainer
+        """
+        # Validar permiso de entrenamiento
+        if not self.has_low_level_permission(session, "training_create"):
+            raise BusinessRuleError(
+                "Sin permisos para enviar análisis de documentación"
+            )
+
+        self._configure_broker_security(session)
+
+        # Añadir identity_type_id al payload
+        payload["identity_type_id"] = session.identity_type_id
+
+        try:
+            return self._broker_client.send_documentacion(payload)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                "No se pudo enviar la solicitud de análisis de documentación"
+            ) from exc
+
+    def send_metadatos(
+        self,
+        payload: dict[str, Any],
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Envía solicitud de análisis de metadatos al trainer vía broker.
+
+        Args:
+            payload: Datos del job con prompt_final, ids de org/prj/ver, etc.
+            session: Contexto de sesión del usuario
+
+        Returns:
+            Respuesta ACK del trainer
+        """
+        # Validar permiso de entrenamiento
+        if not self.has_low_level_permission(session, "training_create"):
+            raise BusinessRuleError(
+                "Sin permisos para enviar análisis de metadatos"
+            )
+
+        self._configure_broker_security(session)
+
+        # Añadir identity_type_id al payload
+        payload["identity_type_id"] = session.identity_type_id
+
+        try:
+            return self._broker_client.send_metadatos(payload)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                "No se pudo enviar la solicitud de análisis de metadatos"
+            ) from exc
+
     # ========================================================================
     # Gestión de Proyectos
     # ========================================================================

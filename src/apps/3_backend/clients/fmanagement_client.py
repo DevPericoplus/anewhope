@@ -388,7 +388,7 @@ class FmanagementClient:
         Si clone_from está especificado, clona desde esa versión.
 
         Args:
-            orgpath: Carpeta organización (ej: ORG0001)
+            orgpath: Carpeta organización (ej: ORG00001)
             prjpath: Carpeta proyecto (ej: PRJ00001)
             versionpath: Nueva versión a crear (ej: v001, v002)
             identity_type_id: Tipo de identidad del usuario

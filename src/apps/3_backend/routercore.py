@@ -3232,7 +3232,7 @@ class BackendCoreRouter:
         """Proxy para listar estructura de archivos vía fmanagement.
         
         Args:
-            org_folder: Carpeta organización (ej: ORG0001)
+            org_folder: Carpeta organización (ej: ORG00001)
             prj_folder: Carpeta proyecto (ej: PRJ0001)
             version_folder: Carpeta versión (ej: v001)
             user_id: ID del usuario
@@ -5640,6 +5640,111 @@ class BackendCoreRouter:
                 "success": True,
                 "message": "Fase de notificación actualizada correctamente",
             }
+
+    # ================================================================
+    # Gestión de Jobs (actualización de estado desde Trainer)
+    # ================================================================
+
+    def complete_job(
+        self,
+        job_id: int,
+        id_organizacion: int,
+        id_proyecto: int,
+        id_version: int,
+        descripcion: str,
+        referencia_salida: str,
+        tipo_cambio: str = "evaluacion_documental",
+        id_estado: int = 4,
+    ) -> dict[str, Any]:
+        """Actualiza el estado de un job y registra un evento en la tabla cambios.
+
+        Ejecuta en una sola transacción:
+        1. INSERT INTO cambios → registra el evento de finalización
+        2. UPDATE jobs → establece id_estado, completado_en, referencia_salida e id_cambio
+
+        Args:
+            job_id: ID del job a actualizar
+            id_organizacion: ID de la organización
+            id_proyecto: ID del proyecto
+            id_version: ID de la versión
+            descripcion: Descripción del resultado
+            referencia_salida: Ruta del archivo generado
+            tipo_cambio: Tipo de cambio para la tabla cambios
+            id_estado: Estado final del job (4=finalizado, 3=error)
+
+        Returns:
+            Diccionario con success, id_cambio y message
+        """
+        from sqlalchemy import text
+
+        self._logger.info(
+            "[JOBS] Completando job_id=%s estado=%s tipo=%s",
+            job_id, id_estado, tipo_cambio,
+        )
+
+        with self._get_projects_db_writer_connection() as conn:
+            try:
+                # Paso 1: INSERT INTO cambios
+                result_cambio = conn.execute(
+                    text("""
+                        INSERT INTO cambios
+                            (id_version, fecha_cambio, tipo_cambio, descripcion,
+                             creado_at, id_proyecto, id_organizacion)
+                        VALUES
+                            (:id_version, NOW(), :tipo_cambio, :descripcion,
+                             NOW(), :id_proyecto, :id_organizacion)
+                    """),
+                    {
+                        "id_version": id_version,
+                        "tipo_cambio": tipo_cambio,
+                        "descripcion": descripcion,
+                        "id_proyecto": id_proyecto,
+                        "id_organizacion": id_organizacion,
+                    },
+                )
+
+                # Obtener el id del cambio insertado
+                id_cambio = result_cambio.lastrowid
+
+                # Paso 2: UPDATE jobs con estado y referencia
+                conn.execute(
+                    text("""
+                        UPDATE jobs
+                        SET id_estado = :id_estado,
+                            completado_en = NOW(),
+                            referencia_salida = :referencia_salida,
+                            id_cambio = :id_cambio
+                        WHERE id = :job_id
+                    """),
+                    {
+                        "id_estado": id_estado,
+                        "referencia_salida": referencia_salida,
+                        "id_cambio": id_cambio,
+                        "job_id": job_id,
+                    },
+                )
+
+                conn.commit()
+
+                self._logger.info(
+                    "[JOBS] Job completado: job_id=%s id_cambio=%s estado=%s",
+                    job_id, id_cambio, id_estado,
+                )
+
+                return {
+                    "success": True,
+                    "id_cambio": id_cambio,
+                    "message": f"Job {job_id} actualizado a estado {id_estado}",
+                }
+
+            except Exception as exc:
+                conn.rollback()
+                self._logger.error(
+                    "[JOBS] Error completando job_id=%s: %s", job_id, exc,
+                )
+                raise BackendCoreBusinessError(
+                    f"Error actualizando job {job_id}: {exc}"
+                ) from exc
 
     def _build_dsn(self, settings: dict, database: str) -> str:
         """Construye DSN para SQLAlchemy."""

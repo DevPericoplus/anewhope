@@ -456,6 +456,27 @@ class UpdateNotificationPhaseDto(BaseModel):
     notificacion_enviada: bool
 
 
+class JobCompleteRequest(BaseModel):
+    """Payload para completar un job desde el Trainer."""
+
+    job_id: int
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    descripcion: str = ""
+    referencia_salida: str = ""
+    tipo_cambio: str = "evaluacion_documental"
+    id_estado: int = 4  # 4=Finalizado, 3=Error
+
+
+class JobCompleteResponse(BaseModel):
+    """Respuesta de completado de job."""
+
+    success: bool
+    id_cambio: int | None = None
+    message: str = ""
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Gestiona el ciclo de vida de la aplicación."""
@@ -3166,6 +3187,41 @@ def update_notification_phase_endpoint(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
         ) from exc
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# Jobs - Actualización de estado desde Trainer
+# ============================================================================
+
+
+@app.patch("/jobs/{job_id}/complete", response_model=JobCompleteResponse, tags=["jobs"])
+def complete_job_endpoint(
+    job_id: int,
+    payload: JobCompleteRequest,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> JobCompleteResponse:
+    """Actualiza el estado de un job y registra un evento en la tabla cambios.
+
+    Llamado por el Trainer al completar (o fallar) un procesamiento asíncrono.
+    Ejecuta INSERT en cambios + UPDATE en jobs dentro de una transacción.
+    """
+    try:
+        result = router.complete_job(
+            job_id=job_id,
+            id_organizacion=payload.id_organizacion,
+            id_proyecto=payload.id_proyecto,
+            id_version=payload.id_version,
+            descripcion=payload.descripcion,
+            referencia_salida=payload.referencia_salida,
+            tipo_cambio=payload.tipo_cambio,
+            id_estado=payload.id_estado,
+        )
+        return JobCompleteResponse(**result)
     except BackendCoreBusinessError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

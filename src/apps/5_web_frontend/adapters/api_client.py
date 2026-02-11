@@ -1856,7 +1856,7 @@ def fmanagement_list(
     Flujo: Frontend → Middleware → Broker → Backend Core → fmanagement
 
     Args:
-        org_folder: Carpeta de organización (ej: "ORG0001")
+        org_folder: Carpeta de organización (ej: "ORG00001")
         prj_folder: Carpeta de proyecto (ej: "PRJ0001")
         version_folder: Carpeta de versión (ej: "V001")
         access_token: Token de acceso JWT
@@ -1916,7 +1916,7 @@ def fmanagement_list_for_explorador(
         org_id: ID de la organización
         project_id: ID del proyecto
         version_name: Nombre de la versión (ej: "v001")
-        org_folder: Carpeta de organización (ej: "ORG0001"), se genera si no se provee
+        org_folder: Carpeta de organización (ej: "ORG00001"), se genera si no se provee
         prj_folder: Carpeta de proyecto (ej: "PRJ00001"), se genera si no se provee
         access_token: Token de acceso JWT
         session_token: Token de sesión JWT
@@ -2046,7 +2046,7 @@ def fmanagement_list_all_project_versions(
     Args:
         org_id: ID de la organización
         project_id: ID del proyecto
-        org_folder: Carpeta de organización (ej: "ORG0001"), se genera si no se provee
+        org_folder: Carpeta de organización (ej: "ORG00001"), se genera si no se provee
         prj_folder: Carpeta de proyecto (ej: "PRJ00001"), se genera si no se provee
         access_token: Token de acceso JWT
         session_token: Token de sesión JWT

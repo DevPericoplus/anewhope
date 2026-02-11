@@ -182,7 +182,7 @@ class State(SharedSessionState):
     proyecciones_versions: list[dict] = []  # Lista de versiones del proyecto
     proyecciones_version_id: int = 0  # Versión seleccionada
     proyecciones_version_folder: str = ""  # Carpeta de versión (v001, v002, etc.)
-    proyecciones_org_folder: str = ""  # Carpeta de organización (ORG0001, etc.)
+    proyecciones_org_folder: str = ""  # Carpeta de organización (ORG00001, etc.)
     proyecciones_prj_folder: str = ""  # Carpeta de proyecto (PRJ0001, etc.)
     proyecciones_error: str = ""
     proyecciones_success: str = ""
@@ -280,6 +280,9 @@ class State(SharedSessionState):
     ad_sel_solicitud: str = ""
     ad_sel_modalidad: str = ""
     ad_prompt_final: str = ""
+    ad_trainer_ack: bool = False
+    ad_trainer_sending: bool = False
+    ad_trainer_error: str = ""
 
     # Selector de organización para backoffice (filtrado por asignaciones)
     # Usado por páginas: Organizacion, Tecnologias, Proyecciones
@@ -3171,6 +3174,9 @@ class State(SharedSessionState):
         self.ad_sel_solicitud = ""
         self.ad_sel_modalidad = ""
         self.ad_prompt_final = ""
+        self.ad_trainer_ack = False
+        self.ad_trainer_sending = False
+        self.ad_trainer_error = ""
         self.ad_modal_open = True
 
     def ad_close_modal(self):
@@ -3178,6 +3184,9 @@ class State(SharedSessionState):
         self.ad_modal_open = False
         self.ad_modal_job = {}
         self.ad_prompt_final = ""
+        self.ad_trainer_ack = False
+        self.ad_trainer_sending = False
+        self.ad_trainer_error = ""
 
     def _ad_find_prompt_text(self, prompts_list: list[dict], name: str) -> str:
         """Busca el texto del prompt por nombre en una lista."""
@@ -3247,6 +3256,85 @@ class State(SharedSessionState):
         """Selecciona un prompt de modalidad y recompone."""
         self.ad_sel_modalidad = name
         self._ad_compose_prompt()
+
+    def _is_metadatos_job(self) -> bool:
+        """Detecta si el job actual es de análisis de metadatos.
+
+        Condiciones: el nombre del job contiene "metadatos" (case-insensitive)
+        Y el prompt final contiene múltiples referencias a "metadatos".
+
+        Returns:
+            True si el job es de metadatos, False si es de documentación
+        """
+        nombre_job = self.ad_modal_job.get("nombre", "").lower()
+        prompt_lower = self.ad_prompt_final.lower()
+
+        nombre_tiene_metadatos = "metadatos" in nombre_job
+        # Consideramos "múltiples referencias" como 2 o más ocurrencias en el prompt
+        prompt_menciones = prompt_lower.count("metadatos")
+
+        return nombre_tiene_metadatos and prompt_menciones >= 2
+
+    def ad_send_to_trainer(self):
+        """Envía los datos del modal al endpoint apropiado del trainer.
+
+        Detecta automáticamente si el job es de metadatos o documentación
+        y enruta al endpoint correspondiente:
+        - /metadatos: si el nombre del job contiene "metadatos" y el prompt
+          tiene múltiples referencias a "metadatos"
+        - /documentacion: para el resto de jobs de análisis documental
+        """
+        from adapters.api_client import (
+            send_documentacion_to_trainer,
+            send_metadatos_to_trainer,
+        )
+
+        if not self.ad_prompt_final.strip():
+            self.ad_trainer_error = "El prompt final está vacío. Seleccione al menos un prompt."
+            return
+
+        self.ad_trainer_sending = True
+        self.ad_trainer_error = ""
+        self.ad_trainer_ack = False
+
+        payload = {
+            "id_job": self.ad_modal_job.get("id", 0),
+            "id_organizacion": self.ad_org_id,
+            "id_proyecto": self.ad_project_id,
+            "id_version": self.ad_version_id,
+            "nombre_job": self.ad_modal_job.get("nombre", ""),
+            "descripcion_job": self.ad_modal_job.get("descripcion", ""),
+            "id_template": self.ad_modal_job.get("id_template", 0),
+            "template_nombre": self.ad_modal_job.get("template_nombre", ""),
+            "modelo_nombre": self.ad_modal_job.get("modelo_nombre", ""),
+            "salida_nombre": self.ad_modal_job.get("salida_nombre", ""),
+            "estado_nombre": self.ad_modal_job.get("estado_nombre", ""),
+            "prompt_final": self.ad_prompt_final,
+        }
+
+        try:
+            # Detección automática: metadatos vs documentación
+            if self._is_metadatos_job():
+                result = send_metadatos_to_trainer(
+                    payload=payload,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+            else:
+                result = send_documentacion_to_trainer(
+                    payload=payload,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+            if result.get("success"):
+                self.ad_trainer_ack = True
+                self.ad_trainer_error = ""
+            else:
+                self.ad_trainer_error = result.get("message", "Error desconocido del trainer")
+        except Exception as e:
+            self.ad_trainer_error = f"Error de comunicación: {str(e)}"
+        finally:
+            self.ad_trainer_sending = False
 
 
 def load_presentation_content() -> str:
@@ -5110,9 +5198,59 @@ def _ad_job_modal() -> rx.Component:
                 },
             ),
 
-            # Botón Salir
+            # Error del trainer
+            rx.cond(
+                State.ad_trainer_error != "",
+                rx.callout(
+                    State.ad_trainer_error,
+                    icon="alert_triangle",
+                    color_scheme="red",
+                    size="1",
+                    width="100%",
+                    margin_top="0.5em",
+                ),
+            ),
+
+            # Botones y ACK
             rx.separator(margin_y="0.5em"),
             rx.hstack(
+                rx.button(
+                    rx.cond(
+                        State.ad_trainer_sending,
+                        rx.hstack(
+                            rx.icon("loader", size=16),
+                            rx.text("Enviando..."),
+                            spacing="1",
+                        ),
+                        rx.hstack(
+                            rx.icon("send", size=16),
+                            rx.text("Enviar al Trainer"),
+                            spacing="1",
+                        ),
+                    ),
+                    on_click=State.ad_send_to_trainer,
+                    color_scheme="orange",
+                    size="3",
+                    style={"font_weight": "bold", "color": "black"},
+                    disabled=State.ad_trainer_sending,
+                ),
+                # Etiqueta ACK
+                rx.cond(
+                    State.ad_trainer_ack,
+                    rx.badge(
+                        rx.hstack(
+                            rx.icon("check-circle", size=14),
+                            rx.text("Recibido en Trainer"),
+                            spacing="1",
+                            align_items="center",
+                        ),
+                        color_scheme="green",
+                        variant="solid",
+                        size="2",
+                        style={"color": "black"},
+                    ),
+                ),
+                rx.spacer(),
                 rx.button(
                     "Salir",
                     on_click=State.ad_close_modal,
@@ -5120,8 +5258,8 @@ def _ad_job_modal() -> rx.Component:
                     size="3",
                     variant="outline",
                 ),
-                justify="end",
                 width="100%",
+                align_items="center",
             ),
 
             style={

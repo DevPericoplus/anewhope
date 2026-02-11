@@ -1,0 +1,167 @@
+{# ============================================================================
+   Plantilla Jinja2: Informe de Evaluación de Metadatos y Gobernanza de Datos
+   ---------------------------------------------------------------------------
+   Esta plantilla genera el informe final de evaluación de metadatos combinando:
+   - Metadatos del job recibido en el endpoint /metadatos
+   - Estadísticas de los archivos analizados
+   - Respuesta de análisis de metadatos generada por Ollama
+   - Datos de trazabilidad del proceso
+
+   Variables esperadas (desde MetadatosRequest + datos computados):
+
+   Datos del job (del payload de /metadatos):
+     - id_job              : int    - Identificador del job
+     - id_organizacion     : int    - ID de la organización
+     - id_proyecto         : int    - ID del proyecto
+     - id_version          : int    - ID de la versión
+     - nombre_job          : str    - Nombre del job
+     - descripcion_job     : str    - Descripción del job
+     - id_template         : int    - ID de la plantilla de prompts usada
+     - template_nombre     : str    - Nombre de la plantilla de prompts
+     - modelo_nombre       : str    - Modelo de Ollama utilizado
+     - salida_nombre       : str    - Nombre del tipo de salida
+     - estado_nombre       : str    - Estado del job al momento del envío
+
+   Datos derivados (calculados por el Trainer):
+     - nombre_organizacion : str    - Nombre legible de la organización
+     - nombre_proyecto     : str    - Nombre legible del proyecto
+     - org_folder          : str    - Carpeta de organización (ORG00001)
+     - prj_folder          : str    - Carpeta de proyecto (PRJ00001)
+     - ver_folder          : str    - Carpeta de versión (v001)
+     - ruta_external       : str    - Ruta completa del storage externo
+     - ruta_internal       : str    - Ruta completa del storage interno
+     - ruta_salida         : str    - Ruta completa del fichero de salida
+
+   Estadísticas de archivos:
+     - num_text            : int    - Número de archivos de texto leídos
+     - num_binary          : int    - Número de archivos binarios detectados
+     - total_files         : int    - Total de archivos (num_text + num_binary)
+     - total_kb            : int    - Tamaño total en KB
+     - tree_text           : str    - Representación del árbol de directorios
+
+   Respuesta de Ollama:
+     - ollama_response     : str    - Respuesta completa de Ollama en Markdown
+
+   Datos de ejecución:
+     - fecha_ejecucion     : str    - Fecha de ejecución (YYYY-MM-DD)
+     - hora_ejecucion      : str    - Hora de ejecución (HH:MM:SS)
+     - tiempo_ollama       : str    - Tiempo de procesamiento de Ollama
+     - tiempo_total        : str    - Tiempo total del proceso
+   ============================================================================ #}
+# Informe de Evaluación de Metadatos y Gobernanza de Datos para RAG
+
+---
+
+## Ficha Técnica del Informe
+
+| Campo | Valor |
+| :--- | :--- |
+| **Organización** | {{ nombre_organizacion }} (`{{ org_folder }}`) |
+| **Proyecto** | {{ nombre_proyecto }} (`{{ prj_folder }}`) |
+| **Versión analizada** | `{{ ver_folder }}` |
+| **ID del Job** | #{{ id_job }} |
+| **Nombre del Job** | {{ nombre_job }} |
+| **Modelo de IA** | `{{ modelo_nombre }}` |
+| **Plantilla de prompts** | {{ template_nombre }} |
+| **Fecha de ejecución** | {{ fecha_ejecucion }} a las {{ hora_ejecucion }} |
+
+---
+
+## 1. Presentación
+
+El presente informe tiene como objetivo evaluar los **metadatos** de los ficheros contenidos en el directorio **`{{ ver_folder }}`** del proyecto **{{ nombre_proyecto }}** perteneciente a la organización **{{ nombre_organizacion }}**. El análisis ha sido ejecutado de forma automatizada mediante el modelo de inteligencia artificial **{{ modelo_nombre }}**, dentro del flujo de trabajo del sistema myllm.
+
+{% if descripcion_job %}
+**Descripción del job:** {{ descripcion_job }}
+{% endif %}
+
+El propósito principal de este análisis es auditar la calidad, completitud y consistencia de los metadatos embebidos en los ficheros del repositorio documental, con el fin de optimizar su aprovechamiento en pipelines de ingesta para arquitecturas **RAG (Retrieval-Augmented Generation)**. Los metadatos bien estructurados son críticos para la indexación semántica, la trazabilidad de documentos y la detección de información sensible antes del entrenamiento de modelos de IA.
+
+---
+
+## 2. Descripción del Cuestionario (Metodología de Evaluación de Metadatos)
+
+Para realizar esta auditoría de metadatos, se han planteado las siguientes áreas de análisis:
+
+* **Inventario de Metadatos**: ¿Qué tipos de metadatos embebidos existen (EXIF, XMP, Dublin Core, propiedades de documento, cabeceras HTTP)?
+* **Completitud de Metadatos**: ¿Los ficheros contienen metadatos básicos (autor, fecha de creación, título, descripción) o están incompletos?
+* **Consistencia de Metadatos**: ¿Son coherentes los metadatos entre ficheros del mismo tipo? ¿Existen conflictos (fechas futuras, autores inconsistentes)?
+* **Detección de Datos Sensibles**: ¿Los metadatos contienen información personal identificable (PII), coordenadas GPS, información de dispositivos o datos internos de la organización?
+* **Enriquecimiento para RAG**: ¿Qué metadatos adicionales podrían añadirse para mejorar la indexación y recuperación en un sistema RAG?
+
+---
+
+## 3. Estadísticas de los Archivos Analizados
+
+| Métrica | Valor |
+| :--- | :---: |
+| **Archivos de texto procesados** | {{ num_text }} |
+| **Archivos binarios detectados** | {{ num_binary }} |
+| **Total de archivos** | {{ total_files }} |
+| **Tamaño total analizado** | {{ total_kb }} KB |
+
+### Ruta de origen (storage externo)
+
+```
+{{ ruta_external }}
+```
+
+### Estructura de directorios analizada
+
+```
+{{ tree_text }}
+```
+
+---
+
+## 4. Resultados del Análisis de Metadatos
+
+A continuación se presenta el análisis de metadatos generado por el modelo **{{ modelo_nombre }}** sobre los ficheros de **`{{ ver_folder }}`**:
+
+{{ ollama_response }}
+
+---
+
+## 5. Conclusión y Recomendaciones
+
+El análisis automatizado de metadatos del directorio **`{{ ver_folder }}`** del proyecto **{{ nombre_proyecto }}** ha sido completado satisfactoriamente. Las recomendaciones detalladas en la sección anterior deben evaluarse en el contexto de la gobernanza de datos de la organización **{{ nombre_organizacion }}** y los requisitos de privacidad aplicables.
+
+**Próximos pasos sugeridos:**
+
+1. Revisar las alertas de privacidad y datos sensibles identificados en los metadatos.
+2. Aplicar las acciones de limpieza o enriquecimiento de metadatos recomendadas.
+3. Estandarizar la nomenclatura y completitud de metadatos según las directrices del proyecto.
+4. Re-ejecutar la evaluación de metadatos tras los cambios para validar la mejora.
+5. Proceder al siguiente paso del flujo de trabajo del proyecto.
+
+---
+
+## 6. Trazabilidad de Ejecución
+
+| Dato | Valor |
+| :--- | :--- |
+| **Job ID** | #{{ id_job }} |
+| **Tipo de salida** | {{ salida_nombre }} |
+| **Plantilla utilizada** | {{ template_nombre }} (ID: {{ id_template }}) |
+| **Modelo de IA** | `{{ modelo_nombre }}` |
+| **Tiempo de procesamiento IA** | {{ tiempo_ollama }} |
+| **Tiempo total del proceso** | {{ tiempo_total }} |
+| **Ruta del informe generado** | `{{ ruta_salida }}` |
+| **Ruta del almacenamiento interno** | `{{ ruta_internal }}` |
+| **Estado al finalizar** | {{ estado_nombre }} |
+
+---
+
+## 7. Referencias de Fuentes
+
+La metodología aplicada se basa en las mejores prácticas actuales de Gobernanza de Datos e Ingeniería de Metadatos:
+
+* *Dublin Core Metadata Initiative (DCMI)*. "Dublin Core Metadata Element Set, Version 1.1".
+* *EXIF Specification*. "Exchangeable Image File Format for Digital Still Cameras".
+* *Adobe XMP Specification*. "Extensible Metadata Platform (XMP) Specification Part 1".
+* *Lewis, P., et al. (2020)*. "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks".
+* *GDPR Recital 26*. "Principles relating to processing of personal data".
+
+---
+
+*Informe generado automáticamente por el sistema myllm — {{ fecha_ejecucion }} {{ hora_ejecucion }}*

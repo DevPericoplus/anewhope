@@ -415,6 +415,32 @@ class BrokerBackendClient:
         )
         return dict(data or {})
 
+    # === Análisis de Documentación ===
+
+    def send_documentacion(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Envía solicitud de análisis de documentación al broker → trainer.
+
+        Args:
+            payload: Datos del job con prompt_final, ids de org/prj/ver, etc.
+
+        Returns:
+            Respuesta ACK del trainer
+        """
+        data = self._request("POST", "/training/documentacion", payload=payload)
+        return dict(data or {})
+
+    def send_metadatos(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Envía solicitud de análisis de metadatos al broker → trainer.
+
+        Args:
+            payload: Datos del job con prompt_final, ids de org/prj/ver, etc.
+
+        Returns:
+            Respuesta ACK del trainer
+        """
+        data = self._request("POST", "/training/metadatos", payload=payload)
+        return dict(data or {})
+
     # === Operaciones de Ollama ===
 
     def ollama_health(self) -> dict[str, Any]:

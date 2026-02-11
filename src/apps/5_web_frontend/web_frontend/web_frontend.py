@@ -218,7 +218,7 @@ class State(SharedSessionState):
     proyecciones_versions: list[dict] = []  # Lista de versiones del proyecto
     proyecciones_version_id: int = 0  # Versión seleccionada
     proyecciones_version_folder: str = ""  # Carpeta de versión (v001, v002, etc.)
-    proyecciones_org_folder: str = ""  # Carpeta de organización (ORG0001, etc.)
+    proyecciones_org_folder: str = ""  # Carpeta de organización (ORG00001, etc.)
     proyecciones_prj_folder: str = ""  # Carpeta de proyecto (PRJ0001, etc.)
     proyecciones_error: str = ""
     proyecciones_success: str = ""
