@@ -991,6 +991,18 @@ class VersionCloneResponse(BaseModel):
     message: str = ""
 
 
+class TrainingProgressNotification(BaseModel):
+    """Notificación de progreso de entrenamiento desde el trainer."""
+
+    id_entrenamiento: int
+    phase_key: str          # Clave de la fase principal (ej: "3")
+    subfase_key: str        # Clave de la subfase (ej: "3.2")
+    subfase_name: str       # Nombre legible (ej: "Chunking")
+    status: str             # "in_progress", "completed", "error"
+    elapsed_time: str = ""  # Tiempo empleado (ej: "2m 15s")
+    error_message: str = ""
+
+
 class TrainingStartRequest(BaseModel):
     """Payload para iniciar entrenamiento."""
 
@@ -1078,6 +1090,57 @@ class DocumentacionResponse(BaseModel):
     success: bool
     message: str = ""
     received_at: str = ""
+
+
+class EntrenamientoRequest(BaseModel):
+    """Payload para solicitud de entrenamiento inicial."""
+
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    pat_version: str = ""
+    # Parámetros opcionales de entrenamiento
+    learning_rate: float | None = None
+    batch_size: int | None = None
+    epochs: int | None = None
+    embedding_dimension: int | None = None
+    sequence_length: int | None = None
+    hidden_units: int | None = None
+    dropout_rate: float | None = None
+    chunk_size: int | None = None
+    chunk_overlap: int | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    distance_metric: str | None = None
+    top_k: int | None = None
+    loss_function: str | None = None
+    optimizer: str | None = None
+    model_type: str | None = None
+
+
+class EntrenamientoResponse(BaseModel):
+    """Respuesta de solicitud de entrenamiento (ACK)."""
+
+    success: bool
+    message: str = ""
+    received_at: str = ""
+    id_entrenamiento: int = 0  # ID del entrenamiento creado en BD
+    collection_name: str = ""  # Nombre de la colección en ChromaDB
+    numero_secuencia: int = 0  # Número de secuencia del entrenamiento
+
+
+class EntrenamientoCancelRequest(BaseModel):
+    """Payload para cancelar entrenamiento."""
+
+    id_entrenamiento: int
+    motivo: str = "Cancelado por usuario"
+
+
+class EntrenamientoCancelResponse(BaseModel):
+    """Respuesta de cancelación de entrenamiento."""
+
+    success: bool
+    message: str = ""
 
 
 class MetadatosRequest(BaseModel):
@@ -1297,6 +1360,153 @@ def send_documentacion_endpoint(
         return DocumentacionResponse(**response)
     except BusinessRuleError as exc:
         # Distinguir error de permisos vs error de comunicación
+        error_msg = str(exc).lower()
+        if "permisos" in error_msg or "permiso" in error_msg:
+            status_code = status.HTTP_403_FORBIDDEN
+        else:
+            status_code = status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/training/params/{org_id}/{project_id}/{version_id}")
+def get_training_params_endpoint(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+):
+    """Endpoint inteligente que devuelve parámetros de entrenamiento.
+
+    Devuelve defaults (primer entrenamiento) o último job (reentrenamiento),
+    junto con flags informativos y lista de modelos disponibles.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+    """
+    try:
+        result = router.get_training_params(
+            org_id, project_id, version_id, session
+        )
+        return result
+    except BusinessRuleError as exc:
+        error_msg = str(exc).lower()
+        if "permisos" in error_msg or "permiso" in error_msg:
+            status_code = status.HTTP_403_FORBIDDEN
+        else:
+            status_code = status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/training/progress")
+async def update_training_progress_endpoint(
+    payload: TrainingProgressNotification,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+) -> dict[str, Any]:
+    """Recibe notificaciones de progreso desde el trainer.
+
+    NO requiere validación de sesión ya que viene directamente del trainer.
+
+    Flujo: Trainer → Middleware → Broker → Backend Core
+    """
+    try:
+        result = await router.update_training_progress(payload.model_dump())
+        return result
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/training/entrenamientos", response_model=EntrenamientoResponse)
+def send_entrenamiento_endpoint(
+    request: EntrenamientoRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> EntrenamientoResponse:
+    """Envía solicitud de entrenamiento inicial al trainer."""
+
+    try:
+        response = router.send_entrenamiento(request.model_dump(), session)
+
+        print(f"[MIDDLEWARE ENDPOINT] ===== RESPUESTA DEL BROKER =====")
+        print(f"[MIDDLEWARE ENDPOINT] Response type: {type(response)}")
+        print(f"[MIDDLEWARE ENDPOINT] Response: {response}")
+        if isinstance(response, dict):
+            print(f"[MIDDLEWARE ENDPOINT] id_entrenamiento: {response.get('id_entrenamiento', 'NO EXISTE')}")
+            print(f"[MIDDLEWARE ENDPOINT] collection_name: {response.get('collection_name', 'NO EXISTE')}")
+            print(f"[MIDDLEWARE ENDPOINT] numero_secuencia: {response.get('numero_secuencia', 'NO EXISTE')}")
+
+        result = EntrenamientoResponse(**response)
+
+        print(f"[MIDDLEWARE ENDPOINT] ===== RESPONSE MODEL CREADO =====")
+        print(f"[MIDDLEWARE ENDPOINT] result.id_entrenamiento: {result.id_entrenamiento}")
+        print(f"[MIDDLEWARE ENDPOINT] result.collection_name: {result.collection_name}")
+        print(f"[MIDDLEWARE ENDPOINT] result.numero_secuencia: {result.numero_secuencia}")
+        print(f"[MIDDLEWARE ENDPOINT] ==========================================")
+
+        return result
+    except BusinessRuleError as exc:
+        error_msg = str(exc).lower()
+        if "permisos" in error_msg or "permiso" in error_msg:
+            status_code = status.HTTP_403_FORBIDDEN
+        else:
+            status_code = status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/training/entrenamientos/cancel", response_model=EntrenamientoCancelResponse)
+def cancel_entrenamiento_endpoint(
+    request: EntrenamientoCancelRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> EntrenamientoCancelResponse:
+    """Cancela un entrenamiento en progreso."""
+
+    try:
+        response = router.cancel_entrenamiento(request.model_dump(), session)
+        return EntrenamientoCancelResponse(**response)
+    except BusinessRuleError as exc:
+        error_msg = str(exc).lower()
+        if "permisos" in error_msg or "permiso" in error_msg:
+            status_code = status.HTTP_403_FORBIDDEN
+        else:
+            status_code = status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/training/entrenamientos/{id_entrenamiento}/progress")
+def get_training_progress_endpoint(
+    id_entrenamiento: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> dict[str, Any]:
+    """Consulta el progreso actual de un entrenamiento.
+
+    Flujo: Backoffice → Middleware → Backend Core
+
+    Args:
+        id_entrenamiento: ID del entrenamiento a consultar
+
+    Returns:
+        Diccionario con success y data (phases, last_update)
+    """
+    try:
+        response = router.get_training_progress(id_entrenamiento, session)
+        return response
+    except BusinessRuleError as exc:
         error_msg = str(exc).lower()
         if "permisos" in error_msg or "permiso" in error_msg:
             status_code = status.HTTP_403_FORBIDDEN
@@ -3385,6 +3595,29 @@ def toggle_prompt_endpoint(
     """Toggles prompt active status."""
     try:
         return router.toggle_prompt(category, id_prompt, payload, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# Training - Versiones pendientes de entrenamiento
+# ============================================================================
+
+
+@app.get("/training/pending-versions", tags=["training"])
+def get_pending_training_versions_endpoint(
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Obtiene versiones con entrenamiento inicial solicitado.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+    """
+    try:
+        return router.get_pending_training_versions(session)
     except BusinessRuleError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

@@ -3268,6 +3268,73 @@ class RouterMiddleware:
                 "No se pudo enviar la solicitud de análisis de documentación"
             ) from exc
 
+    def get_training_params(
+        self,
+        org_id: int,
+        project_id: int,
+        version_id: int,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Obtiene parámetros de entrenamiento (defaults o último job).
+
+        Valida permiso training_read antes de consultar.
+        Delega en Broker → Backend Core → MariaDB.
+
+        Args:
+            org_id: ID de la organización.
+            project_id: ID del proyecto.
+            version_id: ID de la versión.
+            session: Contexto de sesión del usuario.
+
+        Returns:
+            Diccionario con parámetros, flags y modelos disponibles.
+        """
+        # Validar permiso de lectura de entrenamiento
+        if not self.has_low_level_permission(session, "training_read"):
+            raise BusinessRuleError(
+                "Sin permisos para consultar parámetros de entrenamiento"
+            )
+
+        self._configure_broker_security(session)
+
+        try:
+            return self._broker_client.get_training_params(
+                org_id, project_id, version_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                "No se pudo obtener parámetros de entrenamiento"
+            ) from exc
+
+    def send_entrenamiento(
+        self,
+        payload: dict[str, Any],
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Envía solicitud de entrenamiento inicial al trainer vía broker.
+
+        Args:
+            payload: Datos con ids de org/prj/ver y pat_version.
+            session: Contexto de sesión del usuario
+
+        Returns:
+            Respuesta ACK del trainer
+        """
+        # Validar permiso de entrenamiento
+        if not self.has_low_level_permission(session, "training_create"):
+            raise BusinessRuleError(
+                "Sin permisos para enviar solicitud de entrenamiento"
+            )
+
+        self._configure_broker_security(session)
+
+        try:
+            return self._broker_client.send_entrenamiento(payload)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                "No se pudo enviar la solicitud de entrenamiento"
+            ) from exc
+
     def send_metadatos(
         self,
         payload: dict[str, Any],
@@ -3298,6 +3365,64 @@ class RouterMiddleware:
         except BrokerBackendCommunicationError as exc:
             raise BusinessRuleError(
                 "No se pudo enviar la solicitud de análisis de metadatos"
+            ) from exc
+
+    def cancel_entrenamiento(
+        self,
+        payload: dict[str, Any],
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Cancela un entrenamiento en progreso vía broker.
+
+        Args:
+            payload: Datos con id_entrenamiento y motivo.
+            session: Contexto de sesión del usuario
+
+        Returns:
+            Respuesta del broker indicando éxito o error
+        """
+        # Validar permiso de cancelación de entrenamiento
+        if not self.has_low_level_permission(session, "training_create"):
+            raise BusinessRuleError(
+                "Sin permisos para cancelar entrenamiento"
+            )
+
+        self._configure_broker_security(session)
+
+        try:
+            return self._broker_client.cancel_entrenamiento(payload)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                "No se pudo cancelar el entrenamiento"
+            ) from exc
+
+    def get_training_progress(
+        self,
+        id_entrenamiento: int,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Consulta el progreso actual de un entrenamiento vía broker.
+
+        Args:
+            id_entrenamiento: ID del entrenamiento a consultar
+            session: Contexto de sesión del usuario
+
+        Returns:
+            Diccionario con success y data (phases, last_update)
+        """
+        # Validar permiso de consulta de entrenamiento
+        if not self.has_low_level_permission(session, "training_read"):
+            raise BusinessRuleError(
+                "Sin permisos para consultar progreso de entrenamiento"
+            )
+
+        self._configure_broker_security(session)
+
+        try:
+            return self._broker_client.get_training_progress(id_entrenamiento)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                "No se pudo consultar el progreso del entrenamiento"
             ) from exc
 
     # ========================================================================
@@ -4401,4 +4526,36 @@ class RouterMiddleware:
         except BrokerBackendCommunicationError as exc:
             raise BusinessRuleError(
                 f"No se pudo actualizar fase de notificación: {state_id}"
+            ) from exc
+
+    def get_pending_training_versions(
+        self,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Obtiene versiones con entrenamiento inicial solicitado.
+
+        Flujo: Middleware → Broker → Backend Core → MariaDB
+        """
+        self._configure_broker_security(session)
+        self._logger.info(
+            "[middleware] Consultando versiones pendientes de entrenamiento user_id=%s",
+            session.user_id,
+        )
+        try:
+            return self._broker_client.get_pending_training_versions()
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                "No se pudieron obtener versiones pendientes de entrenamiento"
+            ) from exc
+
+    async def update_training_progress(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Envía notificación de progreso al broker."""
+        try:
+            return await self._broker_client.update_training_progress(payload)
+        except BrokerCommunicationError as exc:
+            raise BusinessRuleError(
+                f"Error actualizando progreso de entrenamiento: {str(exc)}"
             ) from exc

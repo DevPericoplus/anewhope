@@ -10,4 +10,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 source "$ROOT_DIR/.venv_trainer312/bin/activate"
 
 export PYTHONPATH="$ROOT_DIR"
+
+# Configurar certificados SSL para que TensorFlow Hub pueda descargar modelos
+SSL_CERT_FILE=$(python -c "import certifi; print(certifi.where())" 2>/dev/null)
+if [ -n "$SSL_CERT_FILE" ]; then
+    export SSL_CERT_FILE
+    export REQUESTS_CA_BUNDLE="$SSL_CERT_FILE"
+fi
+
 python -m src.apps.4_trainer.main

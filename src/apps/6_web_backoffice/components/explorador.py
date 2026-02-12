@@ -2243,7 +2243,7 @@ def create_folder_menu_items(item_obj: FolderItem):
                     on_click=lambda id=item_id: ExploradorState.entrenar_version(id),
                 ),
                 rx.context_menu.item(
-                    rx.hstack(rx.icon(tag="check-circle", size=16), rx.text("Finalizar"), spacing="2"),
+                    rx.hstack(rx.icon(tag="circle-check", size=16), rx.text("Finalizar"), spacing="2"),
                     on_click=lambda id=item_id: ExploradorState.finalizar_version(id),
                 ),
                 rx.context_menu.separator(),

@@ -3301,3 +3301,175 @@ def update_notification_phase(
         headers=headers,
     )
     return response if isinstance(response, dict) else {}
+
+
+def get_pending_training_versions(
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Obtiene versiones con entrenamiento inicial solicitado.
+
+    Returns:
+        {"versions": [...], "total": int}
+    """
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "GET",
+        "/training/pending-versions",
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {"versions": [], "total": 0}
+
+
+def get_training_params(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Obtiene parámetros de entrenamiento (defaults o último job).
+
+    Endpoint inteligente que devuelve los parámetros por defecto si es
+    primer entrenamiento, o los del último job si ya hubo entrenamientos.
+    Incluye flags es_primer_entrenamiento/es_reentrenamiento y lista de
+    modelos disponibles.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+
+    Args:
+        org_id: ID de la organización.
+        project_id: ID del proyecto.
+        version_id: ID de la versión.
+        access_token: Token de acceso JWT.
+        session_token: Token de sesión JWT.
+
+    Returns:
+        Diccionario con parámetros, flags y modelos disponibles.
+    """
+    headers: dict[str, str] = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "GET",
+        f"/training/params/{org_id}/{project_id}/{version_id}",
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
+def send_entrenamiento_to_trainer(
+    payload: dict[str, Any],
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Envía solicitud de entrenamiento inicial al trainer.
+
+    Flujo: Backoffice → Middleware → Broker → Trainer
+
+    Args:
+        payload: Datos con ids de org/prj/ver, pat_version y parámetros.
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+
+    Returns:
+        Respuesta ACK del trainer con success, message y received_at
+    """
+    headers: dict[str, str] = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    print(f"[BACKOFFICE API_CLIENT] ===== ENVIANDO A MIDDLEWARE =====")
+    print(f"[BACKOFFICE API_CLIENT] Payload: {payload}")
+    print(f"[BACKOFFICE API_CLIENT] Headers: {headers}")
+
+    response = _request_middleware(
+        "POST",
+        "/training/entrenamientos",
+        payload=payload,
+        headers=headers,
+    )
+
+    print(f"[BACKOFFICE API_CLIENT] ===== RESPUESTA DEL MIDDLEWARE =====")
+    print(f"[BACKOFFICE API_CLIENT] Response type: {type(response)}")
+    print(f"[BACKOFFICE API_CLIENT] Response: {response}")
+    if isinstance(response, dict):
+        print(f"[BACKOFFICE API_CLIENT] id_entrenamiento: {response.get('id_entrenamiento', 'NO EXISTE')}")
+        print(f"[BACKOFFICE API_CLIENT] collection_name: {response.get('collection_name', 'NO EXISTE')}")
+        print(f"[BACKOFFICE API_CLIENT] numero_secuencia: {response.get('numero_secuencia', 'NO EXISTE')}")
+    print(f"[BACKOFFICE API_CLIENT] ===========================================")
+
+    return response if isinstance(response, dict) else {}
+
+
+def cancel_entrenamiento_training(
+    payload: dict[str, Any],
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Cancela un entrenamiento en progreso.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core
+
+    Args:
+        payload: Datos con id_entrenamiento y motivo.
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+
+    Returns:
+        Respuesta con success y message
+    """
+    headers: dict[str, str] = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "PATCH",
+        "/training/entrenamientos/cancel",
+        payload=payload,
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
+def get_training_progress(
+    id_entrenamiento: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Consulta el progreso actual de un entrenamiento.
+
+    Flujo: Backoffice → Middleware → Backend Core
+
+    Args:
+        id_entrenamiento: ID del entrenamiento a consultar.
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+
+    Returns:
+        Respuesta con success, data (phases y last_update)
+    """
+    headers: dict[str, str] = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "GET",
+        f"/training/entrenamientos/{id_entrenamiento}/progress",
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}

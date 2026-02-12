@@ -8050,3 +8050,131 @@ Al implementar un nuevo tipo de job (ej: `entrenamiento`):
 
 ---
 
+## 29. Roadmap: Flujo completo de entrenamiento y generación de modelos LLM (CRÍTICO)
+
+**OBLIGATORIO:** Este roadmap define el orden de implementación de las funcionalidades restantes
+para completar el ciclo de vida de un modelo LLM. Cada fase depende de la anterior.
+
+### Flujo completo del sistema
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ FLUJO COMPLETO: Entrenamiento → Evaluación → Generación → Descarga        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  PÁGINA: Entrenamientos (backoffice)                                       │
+│  ┌───────────────────────────────────────────────────────┐                 │
+│  │ 1. Visor de versiones pendientes de entrenamiento     │                 │
+│  │ 2. Botón "Enviar al Trainer" → ACK                   │                 │
+│  │ 3. Panel "Evolución entrenamiento" (fases del trainer)│                 │
+│  │    📥 Recepción → 🔍 Validación → 📊 Preparación    │                 │
+│  │    → ⚙️ Configuración → 🏋️ Entrenamiento            │                 │
+│  └───────────────────────┬───────────────────────────────┘                 │
+│                          │ Entrenamiento completado                        │
+│                          ▼                                                 │
+│  PÁGINA: Análisis Resultados (backoffice)                                  │
+│  ┌───────────────────────────────────────────────────────┐                 │
+│  │ Evaluación de métricas y calidad del modelo entrenado │                 │
+│  │ → Si resultados NO óptimos: volver a Entrenamientos   │                 │
+│  │   (reentrenamiento con ajustes)                       │                 │
+│  │ → Si resultados ÓPTIMOS: proceder a Crear LLM         │                 │
+│  └───────────────────────┬───────────────────────────────┘                 │
+│                          │ ◄── BUCLE iterativo ──►                         │
+│                          ▼                                                 │
+│  PÁGINA: Crear LLM (backoffice)                                            │
+│  ┌───────────────────────────────────────────────────────┐                 │
+│  │ Generación del modelo LLM definitivo                  │                 │
+│  │ Empaquetado y preparación para distribución           │                 │
+│  └───────────────────────┬───────────────────────────────┘                 │
+│                          │ Modelo generado                                 │
+│                          ▼                                                 │
+│  PÁGINA: Descargas (backoffice + frontend)                                 │
+│  ┌───────────────────────────────────────────────────────┐                 │
+│  │ Backoffice: soporte al admin de org para descargas    │                 │
+│  │ Frontend: descarga segura para admin de organización  │                 │
+│  │ → Procedimiento de seguridad para descarga            │                 │
+│  │ → Solo identity_type_id in (1, 2) pueden descargar    │                 │
+│  └───────────────────────────────────────────────────────┘                 │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Orden de implementación (roadmap secuencial)
+
+| Orden | Página | Componente | Estado | Descripción |
+|-------|--------|------------|--------|-------------|
+| **1** | Entrenamientos | Visor versiones pendientes | ✅ Completado | Tabla con versiones donde `entrenamiento_inicial_solicitado=true` |
+| **2** | Entrenamientos | Botón "Enviar al Trainer" | ✅ Completado | Endpoint `/entrenamientos` con ACK |
+| **3** | Entrenamientos | Panel evolución | ✅ Completado | Timeline de 5 fases del proceso de entrenamiento |
+| **4** | Trainer | Proceso de entrenamiento | 🔜 Siguiente | Implementar las 5 fases en el trainer |
+| **5** | Análisis Resultados | Evaluación de métricas | ⏳ Pendiente | Visualización de resultados del entrenamiento |
+| **6** | Entrenamientos | Reentrenamiento | ⏳ Pendiente | Bucle Entrenamientos ↔ Análisis Resultados |
+| **7** | Crear LLM | Generación modelo definitivo | ⏳ Pendiente | Cuando resultados son óptimos |
+| **8** | Descargas (backoffice) | Soporte descarga | ⏳ Pendiente | Panel de soporte al admin de org |
+| **9** | Descargas (frontend) | Descarga segura | ⏳ Pendiente | Procedimiento de seguridad para admin org |
+
+### Reglas de diseño del roadmap
+
+1. **Separación de responsabilidades por página:**
+   - ✅ **Entrenamientos**: Solo el proceso de entrenamiento (5 fases del trainer)
+   - ✅ **Análisis Resultados**: Solo evaluación de métricas y calidad
+   - ✅ **Crear LLM**: Solo generación del modelo definitivo
+   - ✅ **Descargas**: Solo distribución segura del modelo
+
+2. **Bucle iterativo:**
+   - El usuario puede ir y venir entre **Entrenamientos** y **Análisis Resultados**
+   - Cada iteración puede ajustar hiperparámetros o datos antes de reentrenar
+   - El bucle termina cuando el usuario decide que los resultados son óptimos
+
+3. **Flujo entre páginas:**
+   - Entrenamientos → trainer procesa → notifica progreso → completa
+   - Usuario navega a Análisis Resultados → evalúa métricas
+   - Si no satisfecho → vuelve a Entrenamientos (reentrenamiento)
+   - Si satisfecho → navega a Crear LLM
+   - Modelo generado → disponible en Descargas
+
+4. **Seguridad en Descargas:**
+   - Solo `identity_type_id in (1, 2)` (SuperAdmin, Admin Org) pueden descargar
+   - La página Descargas estará en **ambas** aplicaciones (frontend + backoffice)
+   - Procedimiento de seguridad específico antes de permitir descarga
+
+### Notificaciones del Trainer al Backoffice
+
+El trainer notifica al backoffice el avance de cada fase del entrenamiento.
+Estas notificaciones actualizan el panel "Evolución entrenamiento":
+
+| Fase (key) | Notificación | Actualización UI |
+|------------|-------------|-----------------|
+| `recepcion` | Solicitud recibida (ACK) | Fase completada automáticamente |
+| `validacion` | Contenido validado | `ent_evo_advance_to_phase("preparacion")` |
+| `preparacion` | Dataset preparado | `ent_evo_advance_to_phase("configuracion")` |
+| `configuracion` | Modelo configurado | `ent_evo_advance_to_phase("entrenamiento")` |
+| `entrenamiento` | Entrenamiento completado | `ent_evo_complete_all()` |
+| (error) | Error en cualquier fase | `ent_evo_update_phase(key, "error")` |
+
+### Archivos clave por funcionalidad
+
+**Entrenamientos (completado):**
+- Trainer: `src/apps/4_trainer/apitrainer.py` → `POST /trainer/entrenamientos`
+- Broker: `src/apps/8_service_backend/` → routing a trainer
+- Middleware: `src/apps/7_service_frontend/` → `POST /training/entrenamientos`
+- Backoffice UI: `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py`
+- Backoffice API: `src/apps/6_web_backoffice/adapters/api_client.py`
+
+**Proceso de entrenamiento en Trainer (siguiente):**
+- `src/apps/4_trainer/apitrainer.py` → endpoint receptor
+- `src/apps/4_trainer/entrenamiento_service.py` → servicio de entrenamiento (por crear)
+
+**Análisis Resultados (pendiente):**
+- `src/apps/6_web_backoffice/` → página "Análisis Resultados"
+
+**Crear LLM (pendiente):**
+- `src/apps/6_web_backoffice/` → página "Crear LLM"
+- `src/apps/4_trainer/` → servicio de generación
+
+**Descargas (pendiente):**
+- `src/apps/6_web_backoffice/` → página "Descargas" (backoffice)
+- `src/apps/5_web_frontend/` → página "Descargas" (frontend)
+- Procedimiento de seguridad para descarga
+
+---

@@ -1011,3 +1011,94 @@ class CoreBackendClient:
             payload=payload,
         )
         return dict(data or {})
+
+    def get_pending_training_versions(self) -> dict[str, Any]:
+        """Obtiene versiones con entrenamiento inicial solicitado."""
+        data = self._request("GET", "/training/pending-versions")
+        return dict(data or {"versions": [], "total": 0})
+
+    # ================================================================
+    # Training - Registro y seguimiento de entrenamientos
+    # ================================================================
+
+    def get_training_params(
+        self, org_id: int, project_id: int, version_id: int
+    ) -> dict[str, Any]:
+        """Obtiene parámetros de entrenamiento inteligentes desde Backend Core.
+
+        Devuelve defaults (primer entrenamiento) o los parámetros del último
+        job (reentrenamiento), junto con flags informativos y lista de modelos.
+        """
+        data = self._request(
+            "GET",
+            f"/training/params/{org_id}/{project_id}/{version_id}",
+        )
+        return dict(data or {})
+
+    def register_entrenamiento(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Registra un nuevo entrenamiento en Backend Core."""
+        data = self._request("POST", "/entrenamientos/register", payload=payload)
+        return dict(data or {})
+
+    def update_entrenamiento_phase(
+        self, id_entrenamiento: int, fase_actual: str
+    ) -> dict[str, Any]:
+        """Actualiza la fase de un entrenamiento en Backend Core."""
+        payload = {"fase_actual": fase_actual}
+        data = self._request(
+            "PATCH",
+            f"/entrenamientos/{id_entrenamiento}/phase",
+            payload=payload,
+        )
+        return dict(data or {})
+
+    def complete_entrenamiento(
+        self, id_entrenamiento: int, modelo_path: str
+    ) -> dict[str, Any]:
+        """Marca un entrenamiento como completado en Backend Core."""
+        payload = {"modelo_path": modelo_path}
+        data = self._request(
+            "PATCH",
+            f"/entrenamientos/{id_entrenamiento}/complete",
+            payload=payload,
+        )
+        return dict(data or {})
+
+    def error_entrenamiento(
+        self, id_entrenamiento: int, error_mensaje: str
+    ) -> dict[str, Any]:
+        """Marca un entrenamiento como error en Backend Core."""
+        payload = {"error_mensaje": error_mensaje}
+        data = self._request(
+            "PATCH",
+            f"/entrenamientos/{id_entrenamiento}/error",
+            payload=payload,
+        )
+        return dict(data or {})
+
+    def cancel_entrenamiento(
+        self, id_entrenamiento: int, motivo: str = "Cancelado por usuario"
+    ) -> dict[str, Any]:
+        """Cancela un entrenamiento en progreso en Backend Core."""
+        payload = {"motivo": motivo}
+        data = self._request(
+            "PATCH",
+            f"/entrenamientos/{id_entrenamiento}/cancel",
+            payload=payload,
+        )
+        return dict(data or {})
+
+    async def update_training_progress(
+        self, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Envía notificación de progreso al Backend Core."""
+        data = self._request("PATCH", "/training/progress", payload=payload)
+        return dict(data or {})
+
+    async def get_training_progress(self, id_entrenamiento: int) -> dict[str, Any]:
+        """Consulta el progreso actual de un entrenamiento."""
+        data = self._request(
+            "GET",
+            f"/training/entrenamientos/{id_entrenamiento}/progress"
+        )
+        return dict(data or {})

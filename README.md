@@ -9394,3 +9394,86 @@ final tiene 2+ menciones a "metadatos", se enruta a `/training/metadatos`.
 
 Ver AGENTS.md sección 28 para reglas detalladas de implementación, checklist de nuevos tipos
 de job, DTOs, logging obligatorio y configuración de timeouts.
+
+## Roadmap: Flujo completo de entrenamiento y generación de modelos LLM
+
+El sistema implementa un flujo completo desde el entrenamiento de un modelo hasta su
+descarga segura por parte del administrador de la organización. El flujo se distribuye
+en varias páginas del backoffice y frontend.
+
+### Diagrama del flujo
+
+```
+Entrenamientos ──► Trainer (proceso) ──► Análisis Resultados
+     ▲                                         │
+     │              BUCLE ITERATIVO             │
+     └──────── (reentrenamiento) ◄──────────────┘
+                                                │
+                                     Resultados óptimos
+                                                │
+                                                ▼
+                                          Crear LLM ──► Descargas
+                                                        (backoffice + frontend)
+```
+
+### Páginas involucradas y su responsabilidad
+
+| Página | Ubicación | Responsabilidad |
+|--------|-----------|-----------------|
+| **Entrenamientos** | Backoffice | Visor de versiones pendientes, envío al trainer, panel de evolución con 5 fases |
+| **Análisis Resultados** | Backoffice | Evaluación de métricas de calidad del modelo entrenado |
+| **Crear LLM** | Backoffice | Generación del modelo LLM definitivo cuando resultados son óptimos |
+| **Descargas** | Backoffice + Frontend | Descarga segura del modelo por el admin de organización |
+
+### Fases del proceso de entrenamiento (página Entrenamientos)
+
+El panel "Evolución entrenamiento" muestra 5 fases secuenciales que corresponden
+al proceso que ejecuta el Trainer:
+
+| # | Fase | Descripción |
+|---|------|-------------|
+| 1 | 📥 Recepción solicitud | Solicitud recibida por el trainer (ACK inmediato) |
+| 2 | 🔍 Validación contenido | Verificación de estructura y contenido de la versión |
+| 3 | 📊 Preparación dataset | Procesamiento y limpieza de datos |
+| 4 | ⚙️ Configuración modelo | Selección de hiperparámetros y arquitectura |
+| 5 | 🏋️ Entrenamiento | Entrenamiento del modelo con los datos preparados |
+
+### Bucle iterativo Entrenamientos ↔ Análisis Resultados
+
+El usuario puede iterar entre estas dos páginas:
+
+1. **Entrenamientos**: Envía versión al trainer → trainer entrena el modelo
+2. **Análisis Resultados**: Evalúa métricas del modelo entrenado
+3. Si no satisfecho → vuelve a Entrenamientos con ajustes (reentrenamiento)
+4. Si satisfecho → procede a Crear LLM
+
+### Seguridad en Descargas
+
+- Solo `identity_type_id in (1, 2)` (SuperAdmin, Admin de Organización) pueden descargar
+- Procedimiento de seguridad específico antes de permitir la descarga
+- Disponible en **ambas** aplicaciones (frontend para el admin, backoffice para soporte)
+
+### Estado de implementación
+
+| Funcionalidad | Estado |
+|---------------|--------|
+| Visor versiones pendientes | ✅ Completado |
+| Botón "Enviar al Trainer" con ACK | ✅ Completado |
+| Panel evolución entrenamiento (5 fases) | ✅ Completado |
+| Proceso de entrenamiento en Trainer | 🔜 En desarrollo |
+| Evaluación en Análisis Resultados | ⏳ Pendiente |
+| Reentrenamiento (bucle iterativo) | ⏳ Pendiente |
+| Generación modelo en Crear LLM | ⏳ Pendiente |
+| Descargas en backoffice | ⏳ Pendiente |
+| Descargas en frontend | ⏳ Pendiente |
+
+### Endpoints implementados
+
+| Capa | Endpoint | Método | Descripción |
+|------|----------|--------|-------------|
+| Trainer | `/trainer/entrenamientos` | POST | Recibe solicitud de entrenamiento, devuelve ACK |
+| Broker | `/training/entrenamientos` | POST | Enruta al trainer |
+| Middleware | `/training/entrenamientos` | POST | Valida permisos (`training_create`) y enruta |
+| Backend Core | `/training/pending-versions` | GET | Lista versiones con `entrenamiento_inicial_solicitado=true` |
+
+Ver AGENTS.md sección 29 para reglas detalladas del roadmap, diagramas y orden de implementación.

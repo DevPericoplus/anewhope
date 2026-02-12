@@ -4,7 +4,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import AsyncGenerator, Optional, TypedDict
 
 from sqlalchemy import text
 
@@ -94,6 +94,27 @@ _env_settings_spec = importlib.util.spec_from_file_location("env_settings_bo_mai
 _env_settings_bo = importlib.util.module_from_spec(_env_settings_spec)
 _env_settings_spec.loader.exec_module(_env_settings_bo)
 get_env_value = _env_settings_bo.get_env_value
+
+
+# TypedDict para tipado de fases y subfases del entrenamiento
+class SubfaseDict(TypedDict):
+    """Estructura de una subfase de entrenamiento."""
+    key: str
+    nombre: str
+    status: str
+    tiempo: str
+
+
+class PhaseDict(TypedDict):
+    """Estructura de una fase de entrenamiento."""
+    key: str
+    nombre: str
+    emoji: str
+    descripcion: str
+    status: str
+    tiempo: str
+    subfases: list[SubfaseDict]
+
 
 COLORS = {
     "background": "#1a1a1a",
@@ -283,6 +304,55 @@ class State(SharedSessionState):
     ad_trainer_ack: bool = False
     ad_trainer_sending: bool = False
     ad_trainer_error: str = ""
+
+    # Entrenamientos (ent_ prefix)
+    ent_pending_versions: list[dict] = []
+    ent_error: str = ""
+    ent_loading: bool = False
+    ent_sending_state_id: int = 0
+    ent_send_error: str = ""
+
+    # Modal de parámetros de entrenamiento (ent_modal_ prefix)
+    ent_modal_open: bool = False
+    ent_modal_loading: bool = False
+    ent_modal_version_data: dict = {}
+    ent_modal_es_primer: bool = True
+    ent_modal_es_reentrenamiento: bool = False
+    # Grupo 1: Preparación de datos
+    ent_modal_chunk_size: str = "1000"
+    ent_modal_chunk_overlap: str = "200"
+    ent_modal_embedding_dimension: str = "768"
+    ent_modal_sequence_length: str = "512"
+    ent_modal_distance_metric: str = "cosine"
+    # Grupo 2: Modelo y generación
+    ent_modal_model_type: str = ""
+    ent_modal_modelos_disponibles: list[str] = []
+    ent_modal_temperature: str = "0.7"
+    ent_modal_max_tokens: str = "2048"
+    ent_modal_top_k: str = "5"
+    # Grupo 3: Optimización
+    ent_modal_learning_rate: str = "0.001"
+    ent_modal_batch_size: str = "32"
+    ent_modal_epochs: str = "10"
+    ent_modal_hidden_units: str = "256"
+    ent_modal_dropout_rate: str = "0.1"
+    ent_modal_loss_function: str = "cross_entropy"
+    ent_modal_optimizer: str = "adam"
+    # Warnings de validación
+    ent_modal_warnings: list[str] = []
+
+    # Evolución de entrenamiento (ent_evo_ prefix)
+    ent_evo_active: bool = False
+    ent_evo_version_label: str = ""
+    ent_evo_org_name: str = ""
+    ent_evo_project_name: str = ""
+    ent_evo_phases: list[PhaseDict] = []
+    ent_evo_id_entrenamiento: int = 0         # ID del entrenamiento en curso
+    ent_evo_current_phase: str = ""           # Fase actual (ej: "3.2")
+    ent_evo_current_phase_name: str = ""      # Nombre legible
+    ent_evo_can_cancel: bool = True           # Si se puede cancelar
+    ent_evo_cancelling: bool = False          # Si está cancelando
+    ent_evo_expanded_phase: str = ""          # Key de la fase expandida (vacío = ninguna)
 
     # Selector de organización para backoffice (filtrado por asignaciones)
     # Usado por páginas: Organizacion, Tecnologias, Proyecciones
@@ -575,6 +645,10 @@ class State(SharedSessionState):
         print(f"[DEBUG] set_internal_menu called with menu='{menu}'")
         self.internal_active_menu = menu
         self.user_active_menu = ""  # Desactivar menú principal cuando se activa menú interno
+
+        # Resetear panel de evolución al navegar a entrenamientos
+        if menu == "entrenamientos":
+            self.ent_evo_reset()
 
         # Log de navegación
         if self.is_logged_in and self.user_id > 0:
@@ -3115,6 +3189,730 @@ class State(SharedSessionState):
         self.ad_load_templates_and_catalogs()
 
     # ========================================================================
+    # ENTRENAMIENTOS - Visor de versiones pendientes
+    # ========================================================================
+
+    def ent_load_pending_versions(self):
+        """Carga las versiones con entrenamiento inicial solicitado."""
+        self.ent_error = ""
+        self.ent_send_error = ""
+        self.ent_loading = True
+
+        try:
+            from adapters.api_client import get_pending_training_versions
+
+            result = get_pending_training_versions(
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if isinstance(result, dict):
+                # Añadir campo 'ack' a cada versión para tracking de envío
+                versions = result.get("versions", [])
+                self.ent_pending_versions = [
+                    {**v, "ack": False} for v in versions
+                ]
+            else:
+                self.ent_pending_versions = []
+                self.ent_error = "Respuesta inesperada del servidor"
+        except Exception as exc:
+            self.ent_error = f"Error cargando versiones: {str(exc)}"
+            self.ent_pending_versions = []
+        finally:
+            self.ent_loading = False
+
+    def ent_open_params_modal(self, state_id: int):
+        """Abre el modal de parámetros de entrenamiento.
+
+        Busca la versión en la lista, consulta el endpoint inteligente de
+        parámetros y carga los valores en las variables del modal.
+        """
+        from adapters.api_client import get_training_params
+
+        self.ent_modal_loading = True
+        self.ent_modal_warnings = []
+        self.ent_send_error = ""
+
+        # Buscar la versión en la lista
+        version_data = None
+        for v in self.ent_pending_versions:
+            if v.get("state_id") == state_id:
+                version_data = v
+                break
+
+        if not version_data:
+            self.ent_send_error = "Versión no encontrada en el listado"
+            self.ent_modal_loading = False
+            return
+
+        self.ent_modal_version_data = version_data
+
+        try:
+            result = get_training_params(
+                org_id=version_data["id_organizacion"],
+                project_id=version_data["id_proyecto"],
+                version_id=version_data["id_version"],
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if not result.get("success", False):
+                self.ent_send_error = result.get(
+                    "message", "Error obteniendo parámetros"
+                )
+                self.ent_modal_loading = False
+                return
+
+            # Flags informativos
+            self.ent_modal_es_primer = result.get("es_primer_entrenamiento", True)
+            self.ent_modal_es_reentrenamiento = result.get("es_reentrenamiento", False)
+
+            # Grupo 1: Preparación de datos
+            self.ent_modal_chunk_size = str(result.get("chunk_size", 1000))
+            self.ent_modal_chunk_overlap = str(result.get("chunk_overlap", 200))
+            self.ent_modal_embedding_dimension = str(
+                result.get("embedding_dimension", 768)
+            )
+            self.ent_modal_sequence_length = str(
+                result.get("sequence_length", 512)
+            )
+            self.ent_modal_distance_metric = str(
+                result.get("distance_metric", "cosine")
+            )
+
+            # Grupo 2: Modelo y generación
+            self.ent_modal_model_type = str(result.get("model_type", ""))
+            # Convertir lista de dicts a lista de nombres para el dropdown
+            raw_modelos = result.get("modelos_disponibles", [])
+            self.ent_modal_modelos_disponibles = [
+                str(m.get("nombre", "")) if isinstance(m, dict) else str(m)
+                for m in raw_modelos
+                if m
+            ]
+            self.ent_modal_temperature = str(result.get("temperature", 0.7))
+            self.ent_modal_max_tokens = str(result.get("max_tokens", 2048))
+            self.ent_modal_top_k = str(result.get("top_k", 5))
+
+            # Grupo 3: Optimización
+            self.ent_modal_learning_rate = str(
+                result.get("learning_rate", 0.001)
+            )
+            self.ent_modal_batch_size = str(result.get("batch_size", 32))
+            self.ent_modal_epochs = str(result.get("epochs", 10))
+            self.ent_modal_hidden_units = str(result.get("hidden_units", 256))
+            self.ent_modal_dropout_rate = str(result.get("dropout_rate", 0.1))
+            self.ent_modal_loss_function = str(
+                result.get("loss_function", "cross_entropy")
+            )
+            self.ent_modal_optimizer = str(result.get("optimizer", "adam"))
+
+            self.ent_modal_open = True
+
+        except Exception as exc:
+            self.ent_send_error = f"Error cargando parámetros: {str(exc)}"
+        finally:
+            self.ent_modal_loading = False
+
+    def ent_close_params_modal(self):
+        """Cierra el modal de parámetros de entrenamiento."""
+        self.ent_modal_open = False
+        self.ent_modal_warnings = []
+
+    def _ent_validate_params(self):
+        """Ejecuta validaciones no bloqueantes sobre los parámetros.
+
+        Genera warnings si los valores están fuera de rangos recomendados.
+        No bloquea el envío.
+        """
+        warnings: list[str] = []
+        try:
+            temp = float(self.ent_modal_temperature)
+            if temp < 0.0 or temp > 1.0:
+                warnings.append(
+                    "Temperatura fuera del rango recomendado (0.0 - 1.0)"
+                )
+        except ValueError:
+            warnings.append("Temperatura: valor no numérico")
+
+        try:
+            chunk = int(self.ent_modal_chunk_size)
+            if chunk < 100 or chunk > 5000:
+                warnings.append(
+                    "Chunk size fuera del rango recomendado (100 - 5000)"
+                )
+        except ValueError:
+            warnings.append("Chunk size: valor no numérico")
+
+        try:
+            overlap = int(self.ent_modal_chunk_overlap)
+            chunk_val = int(self.ent_modal_chunk_size)
+            if overlap < 0 or overlap > chunk_val // 2:
+                warnings.append(
+                    f"Chunk overlap fuera del rango recomendado (0 - {chunk_val // 2})"
+                )
+        except ValueError:
+            warnings.append("Chunk overlap: valor no numérico")
+
+        try:
+            bs = int(self.ent_modal_batch_size)
+            if bs < 1 or bs > 256:
+                warnings.append(
+                    "Batch size fuera del rango recomendado (1 - 256)"
+                )
+        except ValueError:
+            warnings.append("Batch size: valor no numérico")
+
+        try:
+            ep = int(self.ent_modal_epochs)
+            if ep < 1 or ep > 100:
+                warnings.append(
+                    "Epochs fuera del rango recomendado (1 - 100)"
+                )
+        except ValueError:
+            warnings.append("Epochs: valor no numérico")
+
+        try:
+            lr = float(self.ent_modal_learning_rate)
+            if lr < 0.00001 or lr > 0.1:
+                warnings.append(
+                    "Learning rate fuera del rango recomendado (0.00001 - 0.1)"
+                )
+        except ValueError:
+            warnings.append("Learning rate: valor no numérico")
+
+        try:
+            mt = int(self.ent_modal_max_tokens)
+            if mt < 256 or mt > 32768:
+                warnings.append(
+                    "Max tokens fuera del rango recomendado (256 - 32768)"
+                )
+        except ValueError:
+            warnings.append("Max tokens: valor no numérico")
+
+        try:
+            tk = int(self.ent_modal_top_k)
+            if tk < 1 or tk > 100:
+                warnings.append(
+                    "Top K fuera del rango recomendado (1 - 100)"
+                )
+        except ValueError:
+            warnings.append("Top K: valor no numérico")
+
+        try:
+            dr = float(self.ent_modal_dropout_rate)
+            if dr < 0.0 or dr > 0.5:
+                warnings.append(
+                    "Dropout rate fuera del rango recomendado (0.0 - 0.5)"
+                )
+        except ValueError:
+            warnings.append("Dropout rate: valor no numérico")
+
+        try:
+            hu = int(self.ent_modal_hidden_units)
+            if hu < 32 or hu > 2048:
+                warnings.append(
+                    "Hidden units fuera del rango recomendado (32 - 2048)"
+                )
+        except ValueError:
+            warnings.append("Hidden units: valor no numérico")
+
+        try:
+            ed = int(self.ent_modal_embedding_dimension)
+            if ed < 128 or ed > 2048:
+                warnings.append(
+                    "Embedding dimension fuera del rango recomendado (128 - 2048)"
+                )
+        except ValueError:
+            warnings.append("Embedding dimension: valor no numérico")
+
+        try:
+            sl = int(self.ent_modal_sequence_length)
+            if sl < 64 or sl > 4096:
+                warnings.append(
+                    "Sequence length fuera del rango recomendado (64 - 4096)"
+                )
+        except ValueError:
+            warnings.append("Sequence length: valor no numérico")
+
+        self.ent_modal_warnings = warnings
+
+    def ent_send_to_trainer_from_modal(self) -> list[rx.EventHandler]:
+        """Envía solicitud de entrenamiento con los parámetros del modal.
+
+        Recoge todos los params del modal, ejecuta validaciones (warnings,
+        no bloqueos), construye payload con ids + pat_version + params y envía.
+
+        Returns:
+            Lista con el evento de polling si el envío fue exitoso.
+        """
+        from adapters.api_client import send_entrenamiento_to_trainer
+
+        # Ejecutar validaciones (warnings, no bloqueo)
+        self._ent_validate_params()
+
+        version_data = self.ent_modal_version_data
+        if not version_data:
+            self.ent_send_error = "No hay versión seleccionada"
+            return
+
+        state_id = version_data.get("state_id", 0)
+        self.ent_sending_state_id = state_id
+        self.ent_send_error = ""
+
+        # Construir ruta estática completa: base/ORG00001/PRJ00001/v001
+        base_storage = get_env_value(
+            "backend_ia_base_storage",
+            "~/data/anewhope/files/trainer_server/external",
+        )
+        org_folder = get_folder_by_id_organization(version_data["id_organizacion"])
+        prj_folder = get_folder_by_id_project(version_data["id_proyecto"])
+        ver_folder = get_folder_by_id_version(version_data["id_version"])
+        pat_version = f"{base_storage}/{org_folder}/{prj_folder}/{ver_folder}"
+
+        # Construir payload con ids + params del modal
+        payload: dict[str, Any] = {
+            "id_organizacion": version_data["id_organizacion"],
+            "id_proyecto": version_data["id_proyecto"],
+            "id_version": version_data["id_version"],
+            "pat_version": pat_version,
+            # Parámetros del modal
+            "learning_rate": float(self.ent_modal_learning_rate),
+            "batch_size": int(self.ent_modal_batch_size),
+            "epochs": int(self.ent_modal_epochs),
+            "embedding_dimension": int(self.ent_modal_embedding_dimension),
+            "sequence_length": int(self.ent_modal_sequence_length),
+            "hidden_units": int(self.ent_modal_hidden_units),
+            "dropout_rate": float(self.ent_modal_dropout_rate),
+            "chunk_size": int(self.ent_modal_chunk_size),
+            "chunk_overlap": int(self.ent_modal_chunk_overlap),
+            "temperature": float(self.ent_modal_temperature),
+            "max_tokens": int(self.ent_modal_max_tokens),
+            "distance_metric": self.ent_modal_distance_metric,
+            "top_k": int(self.ent_modal_top_k),
+            "loss_function": self.ent_modal_loss_function,
+            "optimizer": self.ent_modal_optimizer,
+            "model_type": self.ent_modal_model_type,
+        }
+
+        print(f"[DEBUG] ent_send_to_trainer INICIO - state_id={state_id}")
+        print(f"[DEBUG] payload keys: {list(payload.keys())}")
+
+        try:
+            print(f"[DEBUG] Llamando a send_entrenamiento_to_trainer...")
+            result = send_entrenamiento_to_trainer(
+                payload=payload,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            print(f"[DEBUG] Resultado recibido: success={result.get('success')}, keys={list(result.keys())}")
+            print(f"[DEBUG] id_entrenamiento en result: {result.get('id_entrenamiento', 'NO EXISTE')}")
+
+            if result.get("success"):
+                import logging
+                logger = logging.getLogger("backoffice")
+                print(f"[SEND_TO_TRAINER] ✅ Training enviado exitosamente")
+                print(f"[SEND_TO_TRAINER] Result: {result}")
+                logger.info("[SEND_TO_TRAINER] ✅ Training enviado exitosamente")
+                logger.info("[SEND_TO_TRAINER] Result: %s", result)
+
+                # Marcar la versión como ACKed en el visor
+                self.ent_pending_versions = [
+                    {**v, "ack": True} if v.get("state_id") == state_id else v
+                    for v in self.ent_pending_versions
+                ]
+                self.ent_send_error = ""
+
+                # Cerrar modal
+                self.ent_modal_open = False
+                self.ent_modal_warnings = []
+
+                # Agregar datos del result al version_data para el polling
+                version_data_with_result = {
+                    **version_data,
+                    "id_entrenamiento": result.get("id_entrenamiento", 0),
+                    "collection_name": result.get("collection_name", ""),
+                    "numero_secuencia": result.get("numero_secuencia", 0),
+                }
+
+                # Inicializar panel de evolución
+                self._ent_evo_init(version_data_with_result)
+
+                print(f"[SEND_TO_TRAINER] Panel de evolución inicializado")
+                print(f"[SEND_TO_TRAINER] ent_evo_id_entrenamiento={self.ent_evo_id_entrenamiento}")
+                print(f"[SEND_TO_TRAINER] ent_evo_active={self.ent_evo_active}")
+                print(f"[SEND_TO_TRAINER] 🔄 Retornando polling event...")
+                logger.info("[SEND_TO_TRAINER] Panel de evolución inicializado")
+                logger.info("[SEND_TO_TRAINER] ent_evo_id_entrenamiento=%s", self.ent_evo_id_entrenamiento)
+                logger.info("[SEND_TO_TRAINER] ent_evo_active=%s", self.ent_evo_active)
+                logger.info("[SEND_TO_TRAINER] 🔄 Retornando polling event...")
+
+                # Iniciar polling automático
+                return [type(self).ent_poll_training_progress]
+            else:
+                print(f"[DEBUG] ERROR: result.success=False, message={result.get('message')}")
+                self.ent_send_error = result.get(
+                    "message", "Error desconocido del trainer"
+                )
+        except Exception as exc:
+            print(f"[DEBUG] EXCEPCIÓN: {type(exc).__name__}: {str(exc)}")
+            self.ent_send_error = f"Error de comunicación: {str(exc)}"
+        finally:
+            self.ent_sending_state_id = 0
+
+        return []
+
+    def _ent_evo_init(self, version_data: dict):
+        """Inicializa el panel de evolución tras recibir ACK del trainer.
+
+        Define las fases secuenciales del entrenamiento con sus subfases
+        correspondientes basadas en el código real del trainer.
+        """
+        self.ent_evo_active = True
+        self.ent_evo_org_name = version_data.get("organization_name", "")
+        self.ent_evo_project_name = version_data.get("proyecto_nombre", "")
+        self.ent_evo_version_label = version_data.get("version_display", "")
+        self.ent_evo_id_entrenamiento = version_data.get("id_entrenamiento", 0)
+        self.ent_evo_can_cancel = True
+        self.ent_evo_cancelling = False
+        self.ent_evo_current_phase = "2.1"
+        self.ent_evo_current_phase_name = "Verificar directorio"
+
+        # Estructura detallada con subfases basada en el código real del trainer
+        # NOTA: Solo incluye fases del trainer. La evaluación de resultados,
+        # reentrenamiento, generación LLM y descarga se gestionan desde
+        # otras páginas del backoffice (ver roadmap en README.md y AGENTS.md).
+        self.ent_evo_phases = [
+            {
+                "key": "1",
+                "nombre": "Recepción",
+                "emoji": "📥",
+                "color": "#3b82f6",
+                "status": "completed",
+                "tiempo": "",
+                "descripcion": "Solicitud recibida y registrada",
+                "subfases": [
+                    {"key": "1.1", "nombre": "Registro en BD", "status": "completed", "tiempo": ""},
+                    {"key": "1.2", "nombre": "Carga de parámetros", "status": "completed", "tiempo": ""},
+                ]
+            },
+            {
+                "key": "2",
+                "nombre": "Validación",
+                "emoji": "🔍",
+                "color": "#8b5cf6",
+                "status": "in_progress",
+                "tiempo": "",
+                "descripcion": "Verificando estructura y contenido",
+                "subfases": [
+                    {"key": "2.1", "nombre": "Verificar directorio", "status": "in_progress", "tiempo": ""},
+                    {"key": "2.2", "nombre": "Escaneo de archivos", "status": "pending", "tiempo": ""},
+                    {"key": "2.3", "nombre": "Clasificación por tipo", "status": "pending", "tiempo": ""},
+                    {"key": "2.4", "nombre": "Validación de contenido", "status": "pending", "tiempo": ""},
+                ]
+            },
+            {
+                "key": "3",
+                "nombre": "Preparación",
+                "emoji": "📊",
+                "color": "#f59e0b",
+                "status": "pending",
+                "tiempo": "",
+                "descripcion": "Procesamiento de datos",
+                "subfases": [
+                    {"key": "3.1", "nombre": "Carga de documentos", "status": "pending", "tiempo": ""},
+                    {"key": "3.2", "nombre": "Chunking", "status": "pending", "tiempo": ""},
+                    {"key": "3.3", "nombre": "Generación de embeddings", "status": "pending", "tiempo": ""},
+                ]
+            },
+            {
+                "key": "4",
+                "nombre": "Configuración",
+                "emoji": "⚙️",
+                "color": "#06b6d4",
+                "status": "pending",
+                "tiempo": "",
+                "descripcion": "Configuración del modelo",
+                "subfases": [
+                    {"key": "4.1", "nombre": "Conexión ChromaDB", "status": "pending", "tiempo": ""},
+                    {"key": "4.2", "nombre": "Crear colección", "status": "pending", "tiempo": ""},
+                    {"key": "4.3", "nombre": "Inserción de documentos", "status": "pending", "tiempo": ""},
+                    {"key": "4.4", "nombre": "Verificación de integridad", "status": "pending", "tiempo": ""},
+                ]
+            },
+            {
+                "key": "5",
+                "nombre": "Entrenamiento",
+                "emoji": "🏋️",
+                "color": "#10b981",
+                "status": "pending",
+                "tiempo": "",
+                "descripcion": "Entrenamiento del modelo",
+                "subfases": [
+                    {"key": "5.1", "nombre": "Obtener nombres", "status": "pending", "tiempo": ""},
+                    {"key": "5.2", "nombre": "Generar Modelfile", "status": "pending", "tiempo": ""},
+                    {"key": "5.3", "nombre": "Guardar Modelfile", "status": "pending", "tiempo": ""},
+                    {"key": "5.4", "nombre": "Registrar en Ollama", "status": "pending", "tiempo": ""},
+                    {"key": "5.5", "nombre": "Test de verificación", "status": "pending", "tiempo": ""},
+                ]
+            },
+        ]
+
+    def ent_evo_update_phase(self, phase_key: str, new_status: str):
+        """Actualiza el estado de una fase del entrenamiento.
+
+        Será invocado cuando el trainer envíe notificaciones de progreso.
+
+        Args:
+            phase_key: Clave de la fase (recepcion, validacion, etc.)
+            new_status: Nuevo estado (pending, in_progress, completed, error)
+        """
+        self.ent_evo_phases = [
+            {**p, "status": new_status} if p.get("key") == phase_key else p
+            for p in self.ent_evo_phases
+        ]
+
+    def ent_evo_advance_to_phase(self, phase_key: str):
+        """Avanza la ejecución hasta una fase determinada.
+
+        Marca como 'completed' todas las fases anteriores y como
+        'in_progress' la fase indicada.
+
+        Args:
+            phase_key: Clave de la fase que se activa
+        """
+        found = False
+        updated: list[dict] = []
+        for phase in self.ent_evo_phases:
+            if phase["key"] == phase_key:
+                found = True
+                updated.append({**phase, "status": "in_progress"})
+            elif not found:
+                # Fases anteriores → completadas
+                updated.append({**phase, "status": "completed"})
+            else:
+                # Fases posteriores → pendientes
+                updated.append({**phase, "status": "pending"})
+        self.ent_evo_phases = updated
+
+    def ent_evo_complete_all(self):
+        """Marca todas las fases como completadas (entrenamiento finalizado)."""
+        self.ent_evo_phases = [
+            {**p, "status": "completed"} for p in self.ent_evo_phases
+        ]
+
+    def ent_evo_reset(self):
+        """Resetea el panel de evolución."""
+        self.ent_evo_active = False
+        self.ent_evo_version_label = ""
+        self.ent_evo_org_name = ""
+        self.ent_evo_project_name = ""
+        self.ent_evo_phases = []
+        self.ent_evo_id_entrenamiento = 0
+        self.ent_evo_current_phase = ""
+        self.ent_evo_current_phase_name = ""
+        self.ent_evo_can_cancel = True
+        self.ent_evo_cancelling = False
+        self.ent_evo_expanded_phase = ""
+
+    def ent_evo_toggle_phase(self, phase_key: str):
+        """Toggle expansión/colapso de una fase.
+
+        Args:
+            phase_key: Clave de la fase a expandir/colapsar (ej: "2", "3", "4", "5")
+        """
+        if self.ent_evo_expanded_phase == phase_key:
+            # Si ya está expandida, colapsar
+            self.ent_evo_expanded_phase = ""
+        else:
+            # Si está colapsada o es otra fase, expandir esta
+            self.ent_evo_expanded_phase = phase_key
+
+    def ent_evo_update_subfase(
+        self,
+        phase_key: str,
+        subfase_key: str,
+        status: str,
+        tiempo: str = "",
+    ):
+        """Actualiza el estado de una subfase específica.
+
+        Args:
+            phase_key: Clave de la fase principal (ej: "3")
+            subfase_key: Clave de la subfase (ej: "3.2")
+            status: Nuevo estado (pending, in_progress, completed, error)
+            tiempo: Tiempo empleado (ej: "2m 15s")
+        """
+        updated_phases = []
+        for phase in self.ent_evo_phases:
+            if phase["key"] == phase_key:
+                # Actualizar subfase
+                updated_subfases = []
+                for subfase in phase.get("subfases", []):
+                    if subfase["key"] == subfase_key:
+                        updated_subfases.append({
+                            **subfase,
+                            "status": status,
+                            "tiempo": tiempo,
+                        })
+                    else:
+                        updated_subfases.append(subfase)
+
+                # Si todas las subfases están completadas, marcar fase como completada
+                all_completed = all(
+                    sf["status"] == "completed" for sf in updated_subfases
+                )
+                phase_status = "completed" if all_completed else phase["status"]
+
+                # Si alguna subfase está in_progress, marcar fase como in_progress
+                any_in_progress = any(
+                    sf["status"] == "in_progress" for sf in updated_subfases
+                )
+                if any_in_progress:
+                    phase_status = "in_progress"
+
+                updated_phases.append({
+                    **phase,
+                    "subfases": updated_subfases,
+                    "status": phase_status,
+                    "tiempo": tiempo if all_completed else phase.get("tiempo", ""),
+                })
+            else:
+                updated_phases.append(phase)
+
+        self.ent_evo_phases = updated_phases
+        self.ent_evo_current_phase = subfase_key
+        self.ent_evo_current_phase_name = next(
+            (sf["nombre"] for p in updated_phases if p["key"] == phase_key
+             for sf in p.get("subfases", []) if sf["key"] == subfase_key),
+            ""
+        )
+
+    @rx.event(background=True)
+    async def ent_poll_training_progress(self) -> AsyncGenerator[None, None]:
+        """Polling automático del progreso del entrenamiento.
+
+        Consulta el endpoint GET de progreso cada 2 segundos y actualiza
+        las subfases en tiempo real. Se detiene cuando el entrenamiento
+        está completado o hay un error.
+        """
+        import asyncio
+        import logging
+        from adapters.api_client import get_training_progress
+
+        logger = logging.getLogger("backoffice")
+        logger.info("[POLLING] 🚀 Background event INICIADO")
+
+        while True:
+            async with self:
+                id_entrenamiento = self.ent_evo_id_entrenamiento
+                is_active = self.ent_evo_active
+                logger.info("[POLLING] Checking - id_entrenamiento=%s, active=%s", id_entrenamiento, is_active)
+
+                if not is_active or id_entrenamiento == 0:
+                    # Polling detenido
+                    logger.warning("[POLLING] ⚠️  Detenido: active=%s, id=%s", is_active, id_entrenamiento)
+                    break
+
+            # Consultar progreso desde el backend
+            try:
+                logger.info("[POLLING] 📡 Consultando progreso para id_entrenamiento=%s", id_entrenamiento)
+                result = get_training_progress(
+                    id_entrenamiento=id_entrenamiento,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+
+                if result.get("success") and result.get("data"):
+                    data = result["data"]
+                    phases_data = data.get("phases", {})
+                    logger.info("[POLLING] ✅ Datos recibidos: %d fases", len(phases_data))
+
+                    # Actualizar subfases con los datos reales
+                    async with self:
+                        for phase_key, phase_info in phases_data.items():
+                            for subfase_key, subfase_info in phase_info.get("subfases", {}).items():
+                                self.ent_evo_update_subfase(
+                                    phase_key=phase_key,
+                                    subfase_key=subfase_key,
+                                    status=subfase_info["status"],
+                                    tiempo=subfase_info.get("elapsed_time", ""),
+                                )
+                    logger.info("[POLLING] 🔄 UI actualizada, esperando 2s...")
+                    yield
+                else:
+                    logger.warning("[POLLING] ⚠️  No success or no data in result: %s", result)
+
+            except Exception as exc:
+                # Log error pero continuar polling
+                import logging
+                logger = logging.getLogger("backoffice")
+                logger.error("[POLLING] Error consultando progreso: %s", exc)
+
+            # Esperar 2 segundos antes del siguiente poll
+            await asyncio.sleep(2)
+
+    async def ent_cancel_training(self):
+        """Cancela un entrenamiento en progreso."""
+        from adapters.api_client import cancel_entrenamiento_training
+
+        if not self.ent_evo_id_entrenamiento:
+            yield rx.toast.error(
+                "No hay entrenamiento activo para cancelar",
+                position="bottom-right",
+                duration=3000,
+            )
+            return
+
+        if self.ent_evo_cancelling:
+            # Ya está en proceso de cancelación
+            return
+
+        # Marcar como cancelando
+        self.ent_evo_cancelling = True
+        self.ent_evo_can_cancel = False
+        yield
+
+        try:
+            # Llamar al middleware para cancelar
+            payload = {
+                "id_entrenamiento": self.ent_evo_id_entrenamiento,
+                "motivo": "Cancelado por usuario desde backoffice",
+            }
+
+            response = cancel_entrenamiento_training(
+                payload=payload,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if response.get("success"):
+                yield rx.toast.success(
+                    "Entrenamiento cancelado exitosamente",
+                    position="bottom-right",
+                    duration=3000,
+                )
+                # Resetear el panel de evolución
+                self.ent_evo_reset()
+            else:
+                yield rx.toast.error(
+                    f"Error al cancelar: {response.get('message', 'Error desconocido')}",
+                    position="bottom-right",
+                    duration=5000,
+                )
+                self.ent_evo_cancelling = False
+                self.ent_evo_can_cancel = True
+
+        except Exception as exc:
+            yield rx.toast.error(
+                f"Error al cancelar entrenamiento: {str(exc)}",
+                position="bottom-right",
+                duration=5000,
+            )
+            self.ent_evo_cancelling = False
+            self.ent_evo_can_cancel = True
+
+    # ========================================================================
     # MODAL DE JOB - Prompt Builder para Análisis de Documentación
     # ========================================================================
 
@@ -4575,7 +5373,7 @@ def tecnologias_management_panel() -> rx.Component:
                 rx.cond(
                     State.proyecto_tecnologia_asignada.length() > 0,
                     rx.hstack(
-                        rx.icon("check-circle", size=24, color=COLORS["primary"]),
+                        rx.icon("circle-check", size=24, color=COLORS["primary"]),
                         rx.text(
                             "Tecnología actualmente asignada",
                             color=COLORS["primary"],
@@ -4610,7 +5408,7 @@ def tecnologias_management_panel() -> rx.Component:
                     State.tech_assign_error != "",
                     rx.callout(
                         State.tech_assign_error,
-                        icon="alert-triangle",
+                        icon="triangle-alert",
                         color_scheme="red",
                         margin_top="0.5em",
                     ),
@@ -4765,7 +5563,7 @@ def asistente_panel() -> rx.Component:
             State.asistente_error != "",
             rx.box(
                 rx.hstack(
-                    rx.icon("alert-circle", size=20, color="#ef4444"),
+                    rx.icon("circle-alert", size=20, color="#ef4444"),
                     rx.text(State.asistente_error, color="#ef4444"),
                     spacing="2",
                 ),
@@ -4896,8 +5694,8 @@ def _prompts_management_tab() -> rx.Component:
                         spacing="2",
                         margin_top="1em",
                     ),
-                    rx.cond(State.form_error != "", rx.callout(State.form_error, icon="alert-circle", color_scheme="red")),
-                    rx.cond(State.form_success != "", rx.callout(State.form_success, icon="check-circle", color_scheme="green")),
+                    rx.cond(State.form_error != "", rx.callout(State.form_error, icon="circle-alert", color_scheme="red")),
+                    rx.cond(State.form_success != "", rx.callout(State.form_success, icon="circle-check", color_scheme="green")),
                     spacing="2",
                 ),
                 padding="1.5em",
@@ -4994,10 +5792,10 @@ def _ad_job_row(job: rx.Var) -> rx.Component:
                 rx.cond(
                     job["error"] != "",
                     rx.tooltip(
-                        rx.icon("alert-triangle", size=16, color="red"),
+                        rx.icon("triangle-alert", size=16, color="red"),
                         content=job["error"],
                     ),
-                    rx.icon("check-circle", size=16, color="green"),
+                    rx.icon("circle-check", size=16, color="green"),
                 ),
                 rx.button(
                     rx.icon("eye", size=14),
@@ -5203,7 +6001,7 @@ def _ad_job_modal() -> rx.Component:
                 State.ad_trainer_error != "",
                 rx.callout(
                     State.ad_trainer_error,
-                    icon="alert_triangle",
+                    icon="triangle-alert",
                     color_scheme="red",
                     size="1",
                     width="100%",
@@ -5239,7 +6037,7 @@ def _ad_job_modal() -> rx.Component:
                     State.ad_trainer_ack,
                     rx.badge(
                         rx.hstack(
-                            rx.icon("check-circle", size=14),
+                            rx.icon("circle-check", size=14),
                             rx.text("Recibido en Trainer"),
                             spacing="1",
                             align_items="center",
@@ -5271,6 +6069,947 @@ def _ad_job_modal() -> rx.Component:
             },
         ),
         open=State.ad_modal_open,
+    )
+
+
+def _ent_version_row(item: dict) -> rx.Component:
+    """Fila de la tabla de versiones pendientes de entrenamiento."""
+    return rx.table.row(
+        rx.table.cell(
+            rx.text(item["organization_name"], font_weight="500"),
+        ),
+        rx.table.cell(
+            rx.text(item["proyecto_nombre"]),
+        ),
+        rx.table.cell(
+            rx.badge(
+                item["version_display"],
+                color_scheme="orange",
+                variant="solid",
+                size="2",
+            ),
+        ),
+        rx.table.cell(
+            rx.hstack(
+                # Botón "Enviar al Trainer" - oculto si ya se recibió ACK
+                rx.cond(
+                    item["ack"],
+                    rx.fragment(),
+                    rx.button(
+                        rx.cond(
+                            State.ent_sending_state_id == item["state_id"],
+                            rx.spinner(size="1"),
+                            rx.icon("play", size=14),
+                        ),
+                        on_click=State.ent_open_params_modal(item["state_id"]),
+                        size="1",
+                        variant="ghost",
+                        color=COLORS["primary"],
+                        cursor="pointer",
+                        title="Abrir parámetros de entrenamiento",
+                        disabled=State.ent_sending_state_id > 0,
+                    ),
+                ),
+                # Etiqueta ACK
+                rx.cond(
+                    item["ack"],
+                    rx.badge(
+                        rx.hstack(
+                            rx.icon("circle-check", size=14),
+                            rx.text("Solicitud recibida"),
+                            spacing="1",
+                            align_items="center",
+                        ),
+                        color_scheme="green",
+                        size="2",
+                    ),
+                    rx.fragment(),
+                ),
+                spacing="2",
+                align_items="center",
+            ),
+        ),
+        _hover={"background_color": "rgba(255, 140, 0, 0.08)"},
+    )
+
+
+def _ent_param_field(
+    label: str,
+    value: rx.Var,
+    on_change,
+    hint: str = "",
+) -> rx.Component:
+    """Campo individual para el modal de parámetros de entrenamiento."""
+    return rx.vstack(
+        rx.text(label, font_weight="bold", font_size="0.85em", color=COLORS["primary"]),
+        rx.input(
+            value=value,
+            on_change=on_change,
+            size="2",
+            width="100%",
+            style={
+                "background_color": COLORS["input"],
+                "color": COLORS["foreground"],
+                "border_color": COLORS["border"],
+            },
+        ),
+        rx.cond(
+            hint != "",
+            rx.text(hint, font_size="0.7em", color=COLORS["muted_foreground"]),
+            rx.fragment(),
+        ),
+        spacing="1",
+        width="100%",
+    )
+
+
+def _ent_params_modal() -> rx.Component:
+    """Modal de parámetros de entrenamiento con 3 grupos conceptuales."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            # Título
+            rx.dialog.title(
+                rx.hstack(
+                    rx.icon("settings-2", size=22, color=COLORS["primary"]),
+                    rx.text(
+                        "Parámetros de Entrenamiento",
+                        font_size="1.3em",
+                        font_weight="bold",
+                        color=COLORS["primary"],
+                    ),
+                    spacing="2",
+                    align_items="center",
+                ),
+            ),
+
+            # Indicador de carga
+            rx.cond(
+                State.ent_modal_loading,
+                rx.center(
+                    rx.spinner(size="3"),
+                    padding="2em",
+                ),
+                rx.vstack(
+                    # Cabecera: info de versión + flags
+                    rx.separator(margin_y="0.5em"),
+                    rx.hstack(
+                        rx.badge("Org", color_scheme="cyan", variant="solid", size="1",
+                                 style={"color": "black"}),
+                        rx.text(
+                            State.ent_modal_version_data["organization_name"],
+                            font_size="0.85em",
+                            color=COLORS["muted_foreground"],
+                        ),
+                        rx.badge("Proyecto", color_scheme="amber", variant="solid", size="1",
+                                 style={"color": "black"}),
+                        rx.text(
+                            State.ent_modal_version_data["proyecto_nombre"],
+                            font_size="0.85em",
+                            color=COLORS["muted_foreground"],
+                        ),
+                        rx.badge("Versión", color_scheme="blue", variant="solid", size="1",
+                                 style={"color": "black"}),
+                        rx.text(
+                            State.ent_modal_version_data["version_display"],
+                            font_size="0.85em",
+                            color=COLORS["muted_foreground"],
+                        ),
+                        spacing="2",
+                        flex_wrap="wrap",
+                    ),
+
+                    # Checks informativos (solo lectura)
+                    rx.hstack(
+                        rx.hstack(
+                            rx.checkbox(
+                                checked=State.ent_modal_es_primer,
+                                disabled=True,
+                                color_scheme="green",
+                            ),
+                            rx.text("Primer Entrenamiento", font_size="0.9em",
+                                    color=COLORS["foreground"]),
+                            spacing="1",
+                            align_items="center",
+                        ),
+                        rx.hstack(
+                            rx.checkbox(
+                                checked=State.ent_modal_es_reentrenamiento,
+                                disabled=True,
+                                color_scheme="orange",
+                            ),
+                            rx.text("Reentrenamiento", font_size="0.9em",
+                                    color=COLORS["foreground"]),
+                            spacing="1",
+                            align_items="center",
+                        ),
+                        spacing="4",
+                        margin_y="0.5em",
+                    ),
+
+                    # ====== GRUPO 1: Preparación de Datos ======
+                    rx.separator(margin_y="0.5em"),
+                    rx.hstack(
+                        rx.icon("database", size=16, color=COLORS["primary"]),
+                        rx.text(
+                            "Preparación de Datos",
+                            font_weight="bold",
+                            font_size="1em",
+                            color=COLORS["primary"],
+                        ),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    rx.hstack(
+                        _ent_param_field(
+                            "Chunk Size",
+                            State.ent_modal_chunk_size,
+                            State.set_ent_modal_chunk_size,
+                            "Rec: 100-5000",
+                        ),
+                        _ent_param_field(
+                            "Chunk Overlap",
+                            State.ent_modal_chunk_overlap,
+                            State.set_ent_modal_chunk_overlap,
+                            "Rec: 0-chunk/2",
+                        ),
+                        _ent_param_field(
+                            "Embedding Dim",
+                            State.ent_modal_embedding_dimension,
+                            State.set_ent_modal_embedding_dimension,
+                            "Rec: 128-2048",
+                        ),
+                        spacing="3",
+                        width="100%",
+                    ),
+                    rx.hstack(
+                        _ent_param_field(
+                            "Sequence Length",
+                            State.ent_modal_sequence_length,
+                            State.set_ent_modal_sequence_length,
+                            "Rec: 64-4096",
+                        ),
+                        _ent_param_field(
+                            "Distance Metric",
+                            State.ent_modal_distance_metric,
+                            State.set_ent_modal_distance_metric,
+                            "cosine, l2, ip",
+                        ),
+                        rx.box(width="100%"),  # Spacer
+                        spacing="3",
+                        width="100%",
+                    ),
+
+                    # ====== GRUPO 2: Modelo y Generación ======
+                    rx.separator(margin_y="0.5em"),
+                    rx.hstack(
+                        rx.icon("brain", size=16, color=COLORS["primary"]),
+                        rx.text(
+                            "Modelo y Generación",
+                            font_weight="bold",
+                            font_size="1em",
+                            color=COLORS["primary"],
+                        ),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    rx.hstack(
+                        rx.vstack(
+                            rx.text(
+                                "Modelo Base",
+                                font_weight="bold",
+                                font_size="0.85em",
+                                color=COLORS["primary"],
+                            ),
+                            rx.select(
+                                State.ent_modal_modelos_disponibles,
+                                value=State.ent_modal_model_type,
+                                on_change=State.set_ent_modal_model_type,
+                                size="2",
+                                width="100%",
+                            ),
+                            spacing="1",
+                            width="100%",
+                        ),
+                        _ent_param_field(
+                            "Temperature",
+                            State.ent_modal_temperature,
+                            State.set_ent_modal_temperature,
+                            "Rec: 0.0-1.0",
+                        ),
+                        spacing="3",
+                        width="100%",
+                    ),
+                    rx.hstack(
+                        _ent_param_field(
+                            "Max Tokens",
+                            State.ent_modal_max_tokens,
+                            State.set_ent_modal_max_tokens,
+                            "Rec: 256-32768",
+                        ),
+                        _ent_param_field(
+                            "Top K",
+                            State.ent_modal_top_k,
+                            State.set_ent_modal_top_k,
+                            "Rec: 1-100",
+                        ),
+                        rx.box(width="100%"),  # Spacer
+                        spacing="3",
+                        width="100%",
+                    ),
+
+                    # ====== GRUPO 3: Optimización ======
+                    rx.separator(margin_y="0.5em"),
+                    rx.hstack(
+                        rx.icon("gauge", size=16, color=COLORS["primary"]),
+                        rx.text(
+                            "Optimización",
+                            font_weight="bold",
+                            font_size="1em",
+                            color=COLORS["primary"],
+                        ),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    rx.hstack(
+                        _ent_param_field(
+                            "Learning Rate",
+                            State.ent_modal_learning_rate,
+                            State.set_ent_modal_learning_rate,
+                            "Rec: 0.00001-0.1",
+                        ),
+                        _ent_param_field(
+                            "Batch Size",
+                            State.ent_modal_batch_size,
+                            State.set_ent_modal_batch_size,
+                            "Rec: 1-256",
+                        ),
+                        _ent_param_field(
+                            "Epochs",
+                            State.ent_modal_epochs,
+                            State.set_ent_modal_epochs,
+                            "Rec: 1-100",
+                        ),
+                        spacing="3",
+                        width="100%",
+                    ),
+                    rx.hstack(
+                        _ent_param_field(
+                            "Hidden Units",
+                            State.ent_modal_hidden_units,
+                            State.set_ent_modal_hidden_units,
+                            "Rec: 32-2048",
+                        ),
+                        _ent_param_field(
+                            "Dropout Rate",
+                            State.ent_modal_dropout_rate,
+                            State.set_ent_modal_dropout_rate,
+                            "Rec: 0.0-0.5",
+                        ),
+                        _ent_param_field(
+                            "Loss Function",
+                            State.ent_modal_loss_function,
+                            State.set_ent_modal_loss_function,
+                            "cross_entropy",
+                        ),
+                        spacing="3",
+                        width="100%",
+                    ),
+                    rx.hstack(
+                        _ent_param_field(
+                            "Optimizer",
+                            State.ent_modal_optimizer,
+                            State.set_ent_modal_optimizer,
+                            "adam, sgd, rmsprop",
+                        ),
+                        rx.box(width="100%"),
+                        rx.box(width="100%"),
+                        spacing="3",
+                        width="100%",
+                    ),
+
+                    # ====== ZONA DE WARNINGS ======
+                    rx.cond(
+                        State.ent_modal_warnings.length() > 0,
+                        rx.vstack(
+                            rx.separator(margin_y="0.5em"),
+                            rx.foreach(
+                                State.ent_modal_warnings,
+                                lambda w: rx.callout(
+                                    w,
+                                    icon="triangle-alert",
+                                    color_scheme="yellow",
+                                    width="100%",
+                                    size="1",
+                                ),
+                            ),
+                            spacing="1",
+                            width="100%",
+                        ),
+                        rx.fragment(),
+                    ),
+
+                    # ====== ERROR DE ENVÍO ======
+                    rx.cond(
+                        State.ent_send_error != "",
+                        rx.callout(
+                            State.ent_send_error,
+                            icon="triangle-alert",
+                            color_scheme="red",
+                            width="100%",
+                        ),
+                        rx.fragment(),
+                    ),
+
+                    # ====== PIE: Botones ======
+                    rx.separator(margin_y="0.5em"),
+                    rx.hstack(
+                        rx.dialog.close(
+                            rx.button(
+                                "Cancelar",
+                                color_scheme="gray",
+                                size="2",
+                                variant="soft",
+                                style={"font_weight": "bold", "color": "black"},
+                            ),
+                        ),
+                        rx.button(
+                            rx.cond(
+                                State.ent_sending_state_id > 0,
+                                rx.hstack(
+                                    rx.spinner(size="1"),
+                                    rx.text("Enviando..."),
+                                    spacing="1",
+                                ),
+                                rx.hstack(
+                                    rx.icon("send", size=14),
+                                    rx.text("Enviar al Trainer"),
+                                    spacing="1",
+                                ),
+                            ),
+                            on_click=State.ent_send_to_trainer_from_modal,
+                            color_scheme="orange",
+                            size="2",
+                            style={"font_weight": "bold", "color": "black"},
+                            disabled=State.ent_sending_state_id > 0,
+                        ),
+                        justify="end",
+                        spacing="2",
+                        width="100%",
+                    ),
+
+                    spacing="2",
+                    width="100%",
+                ),
+            ),
+
+            style={
+                "background_color": COLORS["card"],
+                "border": f"1px solid {COLORS['border']}",
+                "max_width": "750px",
+                "max_height": "85vh",
+                "overflow_y": "auto",
+            },
+        ),
+        open=State.ent_modal_open,
+        on_open_change=lambda val: State.ent_close_params_modal(),
+    )
+
+
+def entrenamientos_panel() -> rx.Component:
+    """Panel de entrenamientos - visor de versiones pendientes."""
+    return rx.vstack(
+        # Botón para cargar/recargar datos
+        rx.button(
+            rx.hstack(
+                rx.icon("refresh-cw", size=16),
+                rx.text("Cargar versiones pendientes", font_weight="bold"),
+                spacing="2",
+            ),
+            on_click=State.ent_load_pending_versions,
+            size="2",
+            color_scheme="orange",
+            style={"font_weight": "bold", "color": "black"},
+            margin_bottom="1em",
+        ),
+
+        # Indicador de carga
+        rx.cond(
+            State.ent_loading,
+            rx.hstack(
+                rx.spinner(size="3"),
+                rx.text("Cargando versiones...", color=COLORS["muted_foreground"]),
+                spacing="2",
+            ),
+            rx.fragment(),
+        ),
+
+        # Mensaje de error de carga
+        rx.cond(
+            State.ent_error != "",
+            rx.callout(
+                State.ent_error,
+                icon="triangle-alert",
+                color_scheme="red",
+                width="100%",
+            ),
+            rx.fragment(),
+        ),
+
+        # Mensaje de error de envío al trainer
+        rx.cond(
+            State.ent_send_error != "",
+            rx.callout(
+                State.ent_send_error,
+                icon="triangle-alert",
+                color_scheme="red",
+                width="100%",
+            ),
+            rx.fragment(),
+        ),
+
+        # Tabla de versiones pendientes
+        rx.cond(
+            State.ent_pending_versions.length() > 0,
+            rx.vstack(
+                rx.text(
+                    rx.text.strong("Versiones preparadas para entrenamiento inicial"),
+                    font_size="1.1em",
+                    color=COLORS["foreground"],
+                    margin_bottom="0.5em",
+                ),
+                rx.table.root(
+                    rx.table.header(
+                        rx.table.row(
+                            rx.table.column_header_cell(
+                                rx.text("Organización", font_weight="bold", color=COLORS["primary"]),
+                            ),
+                            rx.table.column_header_cell(
+                                rx.text("Proyecto", font_weight="bold", color=COLORS["primary"]),
+                            ),
+                            rx.table.column_header_cell(
+                                rx.text("Versión", font_weight="bold", color=COLORS["primary"]),
+                            ),
+                            rx.table.column_header_cell(
+                                rx.text("Acción", font_weight="bold", color=COLORS["primary"]),
+                            ),
+                        ),
+                    ),
+                    rx.table.body(
+                        rx.foreach(
+                            State.ent_pending_versions,
+                            _ent_version_row,
+                        ),
+                    ),
+                    width="100%",
+                    size="2",
+                ),
+                width="100%",
+            ),
+            # Sin versiones pendientes
+            rx.cond(
+                ~State.ent_loading,
+                rx.callout(
+                    "No hay versiones pendientes de entrenamiento inicial.",
+                    icon="info",
+                    color_scheme="blue",
+                    width="100%",
+                ),
+                rx.fragment(),
+            ),
+        ),
+        width="100%",
+        spacing="3",
+    )
+
+
+# ============================================================================
+# Panel: Evolución del Entrenamiento (fases secuenciales)
+# ============================================================================
+
+# Mapeo de estados a colores e iconos para las fases
+_EVO_STATUS_COLORS = {
+    "completed": "#22c55e",
+    "in_progress": "#f59e0b",
+    "pending": "#94a3b8",
+    "error": "#ef4444",
+}
+
+_EVO_STATUS_ICONS = {
+    "completed": "circle-check",
+    "in_progress": "loader",
+    "pending": "circle",
+    "error": "circle-x",
+}
+
+_EVO_STATUS_LABELS = {
+    "completed": "Completado",
+    "in_progress": "En progreso",
+    "pending": "Pendiente",
+    "error": "Error",
+}
+
+
+def _ent_evo_subfase_row(subfase: dict) -> rx.Component:
+    """Fila individual de una subfase dentro de una fase.
+
+    Args:
+        subfase: Diccionario con key, nombre, status, tiempo
+    """
+    is_completed = subfase["status"] == "completed"
+    is_active = subfase["status"] == "in_progress"
+    is_error = subfase["status"] == "error"
+    is_pending = subfase["status"] == "pending"
+
+    return rx.hstack(
+        # Mini indicador de estado
+        rx.cond(
+            is_completed,
+            rx.icon("check", size=14, color="#22c55e"),
+            rx.cond(
+                is_active,
+                rx.spinner(size="1", color="#f59e0b"),
+                rx.cond(
+                    is_error,
+                    rx.icon("x", size=14, color="#ef4444"),
+                    rx.icon("circle", size=8, color="#64748b"),
+                ),
+            ),
+        ),
+        # Nombre de la subfase
+        rx.text(
+            subfase["nombre"],
+            font_size="0.85em",
+            color=rx.cond(
+                is_pending,
+                "#64748b",
+                rx.cond(
+                    is_active,
+                    "#f59e0b",
+                    rx.cond(
+                        is_error,
+                        "#ef4444",
+                        "#94a3b8",
+                    ),
+                ),
+            ),
+        ),
+        rx.spacer(),
+        # Tiempo empleado (si está disponible)
+        rx.cond(
+            subfase["tiempo"] != "",
+            rx.text(
+                subfase["tiempo"],
+                font_size="0.75em",
+                color="#64748b",
+                font_family="monospace",
+            ),
+            rx.fragment(),
+        ),
+        spacing="2",
+        align_items="center",
+        padding="0.4em 0.6em",
+        border_radius="4px",
+        background=rx.cond(
+            is_active,
+            "rgba(245, 158, 11, 0.08)",
+            "transparent",
+        ),
+        width="100%",
+    )
+
+
+def _ent_evo_phase_card(phase: dict) -> rx.Component:
+    """Tarjeta individual de una fase del entrenamiento con subfases expandibles.
+
+    Estilo visual inspirado en la página de flujos: opacidad diferenciada,
+    bordes coloreados y transiciones suaves.
+    """
+    is_completed = phase["status"] == "completed"
+    is_active = phase["status"] == "in_progress"
+    is_error = phase["status"] == "error"
+    is_pending = phase["status"] == "pending"
+    is_expanded = State.ent_evo_expanded_phase == phase["key"]
+
+    return rx.vstack(
+        # Tarjeta principal de la fase
+        rx.hstack(
+            # Indicador visual (línea + círculo)
+            rx.vstack(
+                # Icono de estado
+                rx.cond(
+                    is_completed,
+                    rx.icon("circle-check", size=22, color="#22c55e"),
+                    rx.cond(
+                        is_active,
+                        rx.icon("loader", size=22, color="#f59e0b"),
+                        rx.cond(
+                            is_error,
+                            rx.icon("circle-x", size=22, color="#ef4444"),
+                            rx.icon("circle", size=22, color="#64748b"),
+                        ),
+                    ),
+                ),
+                align="center",
+                width="30px",
+                min_width="30px",
+            ),
+
+            # Contenido de la fase
+            rx.box(
+                rx.hstack(
+                    # Emoji
+                    rx.text(phase["emoji"], font_size="1.4em"),
+                    # Nombre y descripción
+                    rx.vstack(
+                        rx.text(
+                            phase["nombre"],
+                            font_weight="bold",
+                            font_size="0.95em",
+                            color=rx.cond(
+                                is_pending,
+                                "#94a3b8",
+                                "#e2e8f0",
+                            ),
+                        ),
+                        rx.text(
+                            phase["descripcion"],
+                            font_size="0.8em",
+                            color=rx.cond(
+                                is_pending,
+                                "#64748b",
+                                "#94a3b8",
+                            ),
+                        ),
+                        spacing="0",
+                    ),
+                    # Badge de estado
+                    rx.spacer(),
+                    rx.cond(
+                        is_completed,
+                        rx.badge("Completado", color_scheme="green", size="1", variant="surface"),
+                        rx.cond(
+                            is_active,
+                            rx.badge(
+                                rx.hstack(
+                                    rx.spinner(size="1"),
+                                    rx.text("En progreso"),
+                                    spacing="1",
+                                    align_items="center",
+                                ),
+                                color_scheme="yellow",
+                                size="1",
+                                variant="surface",
+                            ),
+                            rx.cond(
+                                is_error,
+                                rx.badge("Error", color_scheme="red", size="1", variant="surface"),
+                                rx.badge("Pendiente", color_scheme="gray", size="1", variant="surface"),
+                            ),
+                        ),
+                    ),
+                    # Icono de expansión
+                    rx.icon(
+                        rx.cond(
+                            is_expanded,
+                            "chevron-down",
+                            "chevron-right",
+                        ),
+                        size=18,
+                        color="#94a3b8",
+                    ),
+                    spacing="3",
+                    align_items="center",
+                    width="100%",
+                ),
+                border_left=rx.cond(
+                    is_completed,
+                    "3px solid #22c55e",
+                    rx.cond(
+                        is_active,
+                        "3px solid #f59e0b",
+                        rx.cond(
+                            is_error,
+                            "3px solid #ef4444",
+                            "3px solid #334155",
+                        ),
+                    ),
+                ),
+                opacity=rx.cond(is_pending, "0.45", "1"),
+                box_shadow=rx.cond(
+                    is_active,
+                    "0 0 12px rgba(245, 158, 11, 0.25)",
+                    "none",
+                ),
+                transition="all 0.5s ease-in-out",
+                padding="0.75em 1em",
+                border_radius="8px",
+                background=rx.cond(
+                    is_active,
+                    "rgba(245, 158, 11, 0.08)",
+                    rx.cond(
+                        is_completed,
+                        "rgba(34, 197, 94, 0.05)",
+                        rx.cond(
+                            is_error,
+                            "rgba(239, 68, 68, 0.08)",
+                            "#1e293b",
+                        ),
+                    ),
+                ),
+                width="100%",
+                cursor="pointer",
+                on_click=State.ent_evo_toggle_phase(phase["key"]),
+                _hover={"opacity": "0.85"},
+            ),
+            spacing="3",
+            align_items="flex_start",
+            width="100%",
+        ),
+
+        # Subfases (expandibles)
+        rx.cond(
+            is_expanded,
+            rx.vstack(
+                rx.foreach(
+                    phase["subfases"],
+                    _ent_evo_subfase_row,
+                ),
+                padding_left="3.5em",
+                spacing="1",
+                width="100%",
+                margin_top="0.5em",
+            ),
+            rx.fragment(),
+        ),
+
+        spacing="0",
+        width="100%",
+    )
+
+
+def _ent_evo_connector() -> rx.Component:
+    """Línea conectora vertical entre fases."""
+    return rx.box(
+        width="2px",
+        height="12px",
+        background="#334155",
+        margin_left="14px",
+    )
+
+
+def evolucion_entrenamiento_panel() -> rx.Component:
+    """Panel de evolución del entrenamiento - fases secuenciales."""
+    return rx.cond(
+        State.ent_evo_active,
+        rx.vstack(
+            rx.separator(margin_y="1.5em"),
+
+            # Título del panel
+            rx.hstack(
+                rx.icon("activity", size=20, color=COLORS["primary"]),
+                rx.text(
+                    rx.text.strong("Evolución del entrenamiento"),
+                    font_size="1.1em",
+                    color=COLORS["foreground"],
+                ),
+                spacing="2",
+                align_items="center",
+            ),
+
+            # Información de la versión en entrenamiento
+            rx.hstack(
+                rx.badge(
+                    rx.hstack(
+                        rx.text("Organización:", font_weight="bold"),
+                        rx.text(State.ent_evo_org_name),
+                        spacing="1",
+                    ),
+                    color_scheme="blue",
+                    size="2",
+                    variant="surface",
+                ),
+                rx.badge(
+                    rx.hstack(
+                        rx.text("Proyecto:", font_weight="bold"),
+                        rx.text(State.ent_evo_project_name),
+                        spacing="1",
+                    ),
+                    color_scheme="purple",
+                    size="2",
+                    variant="surface",
+                ),
+                rx.badge(
+                    rx.hstack(
+                        rx.text("Versión:", font_weight="bold"),
+                        rx.text(State.ent_evo_version_label),
+                        spacing="1",
+                    ),
+                    color_scheme="orange",
+                    size="2",
+                    variant="surface",
+                ),
+                spacing="2",
+                flex_wrap="wrap",
+            ),
+
+            # Botón de cancelar entrenamiento
+            rx.cond(
+                State.ent_evo_can_cancel & ~State.ent_evo_cancelling,
+                rx.button(
+                    rx.hstack(
+                        rx.icon("circle-x", size=16),
+                        rx.text("Cancelar Entrenamiento", font_weight="bold"),
+                        spacing="2",
+                    ),
+                    on_click=State.ent_cancel_training,
+                    size="2",
+                    color_scheme="red",
+                    variant="soft",
+                    style={"font_weight": "bold"},
+                ),
+                rx.cond(
+                    State.ent_evo_cancelling,
+                    rx.hstack(
+                        rx.spinner(size="2"),
+                        rx.text("Cancelando...", color="#ef4444"),
+                        spacing="2",
+                    ),
+                    rx.fragment(),
+                ),
+            ),
+
+            # Timeline de fases
+            rx.box(
+                rx.foreach(
+                    State.ent_evo_phases,
+                    lambda phase, idx: rx.fragment(
+                        rx.cond(
+                            idx > 0,
+                            _ent_evo_connector(),
+                            rx.fragment(),
+                        ),
+                        _ent_evo_phase_card(phase),
+                    ),
+                ),
+                width="100%",
+                padding="0.5em 0",
+            ),
+
+            width="100%",
+            spacing="3",
+        ),
+        rx.fragment(),
+    )
+
+
+def entrenamientos_full_panel() -> rx.Component:
+    """Panel completo de Entrenamientos: visor + evolución."""
+    return rx.vstack(
+        entrenamientos_panel(),
+        evolucion_entrenamiento_panel(),
+        _ent_params_modal(),
+        width="100%",
+        spacing="2",
     )
 
 
@@ -5307,7 +7046,7 @@ def analisis_documentacion_panel() -> rx.Component:
         # Mensajes de error/éxito
         rx.cond(
             State.ad_error != "",
-            rx.callout(State.ad_error, icon="alert_triangle", color_scheme="red", width="100%"),
+            rx.callout(State.ad_error, icon="triangle-alert", color_scheme="red", width="100%"),
             rx.fragment(),
         ),
         rx.cond(
@@ -5646,7 +7385,7 @@ def _job_templates_tab() -> rx.Component:
         # Mensajes de error/éxito
         rx.cond(
             State.jt_error != "",
-            rx.callout(State.jt_error, icon="alert_triangle", color_scheme="red", width="100%"),
+            rx.callout(State.jt_error, icon="triangle-alert", color_scheme="red", width="100%"),
             rx.fragment(),
         ),
         rx.cond(
@@ -6139,7 +7878,7 @@ def _org_assignments_tab() -> rx.Component:
                     State.org_assignment_error != "",
                     rx.callout(
                         State.org_assignment_error,
-                        icon="alert-circle",
+                        icon="circle-alert",
                         color_scheme="red",
                         size="1",
                         margin_top="0.5em",
@@ -6149,7 +7888,7 @@ def _org_assignments_tab() -> rx.Component:
                     State.org_assignment_success != "",
                     rx.callout(
                         State.org_assignment_success,
-                        icon="check-circle",
+                        icon="circle-check",
                         color_scheme="green",
                         size="1",
                         margin_top="0.5em",
@@ -6381,7 +8120,7 @@ def _project_assignments_tab() -> rx.Component:
                     State.prerequisite_validation_error != "",
                     rx.callout(
                         State.prerequisite_validation_error,
-                        icon="alert-triangle",
+                        icon="triangle-alert",
                         color_scheme="orange",
                         size="1",
                         margin_top="0.5em",
@@ -6415,7 +8154,7 @@ def _project_assignments_tab() -> rx.Component:
                     State.project_assignment_error != "",
                     rx.callout(
                         State.project_assignment_error,
-                        icon="alert-circle",
+                        icon="circle-alert",
                         color_scheme="red",
                         size="1",
                         margin_top="0.5em",
@@ -6425,7 +8164,7 @@ def _project_assignments_tab() -> rx.Component:
                     State.project_assignment_success != "",
                     rx.callout(
                         State.project_assignment_success,
-                        icon="check-circle",
+                        icon="circle-check",
                         color_scheme="green",
                         size="1",
                         margin_top="0.5em",
@@ -6562,7 +8301,7 @@ def internal_panel(active_item: str) -> rx.Component:
                 analisis_documentacion_panel(),
                 rx.cond(
                     active_item == "entrenamientos",
-                    rx.text("Panel de gestión de entrenamientos de modelos.", color=COLORS["muted_foreground"]),
+                    entrenamientos_full_panel(),
                     rx.cond(
                         active_item == "analisis_resultados",
                         rx.text("Panel de análisis de resultados de entrenamiento.", color=COLORS["muted_foreground"]),

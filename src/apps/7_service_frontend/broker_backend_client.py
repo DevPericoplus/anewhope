@@ -429,6 +429,39 @@ class BrokerBackendClient:
         data = self._request("POST", "/training/documentacion", payload=payload)
         return dict(data or {})
 
+    def get_training_params(
+        self, org_id: int, project_id: int, version_id: int
+    ) -> dict[str, Any]:
+        """Obtiene parámetros de entrenamiento desde el broker.
+
+        Endpoint inteligente: devuelve defaults o último job según historial.
+
+        Args:
+            org_id: ID de la organización.
+            project_id: ID del proyecto.
+            version_id: ID de la versión.
+
+        Returns:
+            Diccionario con parámetros, flags y modelos disponibles.
+        """
+        data = self._request(
+            "GET",
+            f"/training/params/{org_id}/{project_id}/{version_id}",
+        )
+        return dict(data or {})
+
+    def send_entrenamiento(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Envía solicitud de entrenamiento inicial al broker → trainer.
+
+        Args:
+            payload: Datos con ids de org/prj/ver y pat_version.
+
+        Returns:
+            Respuesta ACK del trainer
+        """
+        data = self._request("POST", "/training/entrenamientos", payload=payload)
+        return dict(data or {})
+
     def send_metadatos(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Envía solicitud de análisis de metadatos al broker → trainer.
 
@@ -439,6 +472,41 @@ class BrokerBackendClient:
             Respuesta ACK del trainer
         """
         data = self._request("POST", "/training/metadatos", payload=payload)
+        return dict(data or {})
+
+    def cancel_entrenamiento(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Cancela un entrenamiento en progreso via broker.
+
+        Args:
+            payload: Datos con id_entrenamiento y motivo.
+
+        Returns:
+            Respuesta del broker indicando éxito o error
+        """
+        id_entrenamiento = payload.get("id_entrenamiento", 0)
+        motivo = payload.get("motivo", "Cancelado por usuario")
+        data = self._request(
+            "PATCH",
+            f"/training/entrenamientos/{id_entrenamiento}/cancel",
+            payload={"motivo": motivo},
+        )
+        return dict(data or {})
+
+    def get_training_progress(self, id_entrenamiento: int) -> dict[str, Any]:
+        """Consulta el progreso actual de un entrenamiento.
+
+        Flujo: Middleware → Backend Core
+
+        Args:
+            id_entrenamiento: ID del entrenamiento a consultar
+
+        Returns:
+            Diccionario con success y data (phases, last_update)
+        """
+        data = self._request(
+            "GET",
+            f"/training/entrenamientos/{id_entrenamiento}/progress",
+        )
         return dict(data or {})
 
     # === Operaciones de Ollama ===
@@ -1266,4 +1334,16 @@ class BrokerBackendClient:
             f"/project-version-states/{state_id}/notification?user_id={user_id}&identity_type_id={identity_type_id}",
             payload=payload,
         )
+        return dict(data or {})
+
+    def get_pending_training_versions(self) -> dict[str, Any]:
+        """Obtiene versiones con entrenamiento inicial solicitado."""
+        data = self._request("GET", "/training/pending-versions")
+        return dict(data or {"versions": [], "total": 0})
+
+    async def update_training_progress(
+        self, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Envía notificación de progreso al broker."""
+        data = self._request("PATCH", "/training/progress", payload=payload)
         return dict(data or {})

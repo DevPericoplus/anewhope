@@ -3227,3 +3227,416 @@ def complete_job_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+# ============================================================================
+# Training - Versiones pendientes de entrenamiento
+# ============================================================================
+
+
+@app.get("/training/pending-versions", tags=["training"])
+def get_pending_training_versions_endpoint(
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Obtiene versiones con entrenamiento inicial solicitado.
+
+    Flujo: Broker → Backend Core → MariaDB (myllm_projects_db + myllm_core_db)
+    """
+    try:
+        versions = router.get_pending_training_versions()
+        return {"versions": versions, "total": len(versions)}
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# Training - Registro y seguimiento de entrenamientos
+# ============================================================================
+
+
+class TrainingParamsResponse(BaseModel):
+    """Respuesta del endpoint inteligente de parámetros de entrenamiento.
+
+    Devuelve defaults (primer entrenamiento) o los parámetros del último job
+    (reentrenamiento), junto con flags informativos y lista de modelos.
+    """
+
+    success: bool = True
+    es_primer_entrenamiento: bool = True
+    es_reentrenamiento: bool = False
+    # Parámetros de preparación de datos
+    chunk_size: int = 1000
+    chunk_overlap: int = 200
+    embedding_dimension: int = 768
+    sequence_length: int = 512
+    distance_metric: str = "cosine"
+    # Parámetros de modelo y generación
+    model_type: str = ""
+    temperature: float = 0.7
+    max_tokens: int = 2048
+    top_k: int = 5
+    # Parámetros de optimización
+    learning_rate: float = 0.001
+    batch_size: int = 32
+    epochs: int = 10
+    hidden_units: int = 256
+    dropout_rate: float = 0.1
+    loss_function: str = "cross_entropy"
+    optimizer: str = "adam"
+    # Modelos disponibles
+    modelos_disponibles: list[dict] = []
+    message: str = ""
+
+
+class TrainingProgressNotification(BaseModel):
+    """Notificación de progreso de entrenamiento desde el trainer."""
+
+    id_entrenamiento: int
+    phase_key: str          # Clave de la fase principal (ej: "3")
+    subfase_key: str        # Clave de la subfase (ej: "3.2")
+    subfase_name: str       # Nombre legible (ej: "Chunking")
+    status: str             # "in_progress", "completed", "error"
+    elapsed_time: str = ""  # Tiempo empleado (ej: "2m 15s")
+    error_message: str = ""
+
+
+class EntrenamientoRegisterRequest(BaseModel):
+    """Payload para registrar un nuevo entrenamiento."""
+
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    pat_version: str = ""
+    entrenamiento_inicial: bool = True
+    reentrenamiento: bool = False
+    # Parámetros opcionales de entrenamiento (si llegan, se usan; si no, defaults)
+    learning_rate: float | None = None
+    batch_size: int | None = None
+    epochs: int | None = None
+    embedding_dimension: int | None = None
+    sequence_length: int | None = None
+    hidden_units: int | None = None
+    dropout_rate: float | None = None
+    chunk_size: int | None = None
+    chunk_overlap: int | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    distance_metric: str | None = None
+    top_k: int | None = None
+    loss_function: str | None = None
+    optimizer: str | None = None
+    model_type: str | None = None
+
+
+class EntrenamientoRegisterResponse(BaseModel):
+    """Respuesta al registrar un entrenamiento."""
+
+    success: bool
+    id_entrenamiento: int | None = None
+    id_job_entrenamientos: int | None = None
+    collection_name: str = ""
+    numero_secuencia: int = 0
+    message: str = ""
+
+
+class EntrenamientoPhaseRequest(BaseModel):
+    """Payload para actualizar fase de un entrenamiento."""
+
+    fase_actual: str = Field(
+        ...,
+        description="Fase: validacion, preparacion, configuracion, entrenamiento",
+    )
+
+
+class EntrenamientoPhaseResponse(BaseModel):
+    """Respuesta de actualización de fase."""
+
+    success: bool
+    message: str = ""
+
+
+class EntrenamientoCompleteRequest(BaseModel):
+    """Payload para marcar entrenamiento como completado."""
+
+    modelo_path: str = ""
+
+
+class EntrenamientoCompleteResponse(BaseModel):
+    """Respuesta de completado de entrenamiento."""
+
+    success: bool
+    message: str = ""
+
+
+class EntrenamientoCancelRequest(BaseModel):
+    """Payload para cancelar entrenamiento."""
+
+    motivo: str = "Cancelado por usuario"
+
+
+class EntrenamientoCancelResponse(BaseModel):
+    """Respuesta de cancelación de entrenamiento."""
+
+    success: bool
+    message: str = ""
+
+
+class EntrenamientoErrorRequest(BaseModel):
+    """Payload para marcar entrenamiento como error."""
+
+    error_mensaje: str = ""
+
+
+class EntrenamientoErrorResponse(BaseModel):
+    """Respuesta de error de entrenamiento."""
+
+    success: bool
+    message: str = ""
+
+
+@app.post(
+    "/entrenamientos/register",
+    response_model=EntrenamientoRegisterResponse,
+    tags=["training"],
+)
+def register_entrenamiento_endpoint(
+    payload: EntrenamientoRegisterRequest,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> EntrenamientoRegisterResponse:
+    """Registra un nuevo entrenamiento en la BD.
+
+    Crea registro en jobs_entrenamientos (parámetros) + entrenamientos (proceso).
+    Calcula numero_secuencia y genera collection_name para ChromaDB.
+
+    Flujo: Trainer → Broker → Backend Core → MariaDB
+    """
+    # Extraer parámetros opcionales del request
+    training_params = {}
+    for key in (
+        "learning_rate", "batch_size", "epochs", "embedding_dimension",
+        "sequence_length", "hidden_units", "dropout_rate", "chunk_size",
+        "chunk_overlap", "temperature", "max_tokens", "distance_metric",
+        "top_k", "loss_function", "optimizer", "model_type",
+    ):
+        val = getattr(payload, key, None)
+        if val is not None:
+            training_params[key] = val
+
+    try:
+        result = router.register_entrenamiento(
+            id_organizacion=payload.id_organizacion,
+            id_proyecto=payload.id_proyecto,
+            id_version=payload.id_version,
+            pat_version=payload.pat_version,
+            entrenamiento_inicial=payload.entrenamiento_inicial,
+            reentrenamiento=payload.reentrenamiento,
+            training_params=training_params if training_params else None,
+        )
+        return EntrenamientoRegisterResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/entrenamientos/{id_entrenamiento}/phase",
+    response_model=EntrenamientoPhaseResponse,
+    tags=["training"],
+)
+def update_entrenamiento_phase_endpoint(
+    id_entrenamiento: int,
+    payload: EntrenamientoPhaseRequest,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> EntrenamientoPhaseResponse:
+    """Actualiza la fase actual de un entrenamiento.
+
+    Si es la primera fase activa, establece fecha_inicio y estado=en_progreso.
+
+    Flujo: Trainer → Broker → Backend Core → MariaDB
+    """
+    try:
+        result = router.update_entrenamiento_phase(
+            id_entrenamiento=id_entrenamiento,
+            fase_actual=payload.fase_actual,
+        )
+        return EntrenamientoPhaseResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/entrenamientos/{id_entrenamiento}/complete",
+    response_model=EntrenamientoCompleteResponse,
+    tags=["training"],
+)
+def complete_entrenamiento_endpoint(
+    id_entrenamiento: int,
+    payload: EntrenamientoCompleteRequest,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> EntrenamientoCompleteResponse:
+    """Marca un entrenamiento como completado.
+
+    Actualiza estado=completado, fecha_fin=NOW(), modelo_path.
+
+    Flujo: Trainer → Broker → Backend Core → MariaDB
+    """
+    try:
+        result = router.complete_entrenamiento(
+            id_entrenamiento=id_entrenamiento,
+            modelo_path=payload.modelo_path,
+        )
+        return EntrenamientoCompleteResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/entrenamientos/{id_entrenamiento}/error",
+    response_model=EntrenamientoErrorResponse,
+    tags=["training"],
+)
+def error_entrenamiento_endpoint(
+    id_entrenamiento: int,
+    payload: EntrenamientoErrorRequest,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> EntrenamientoErrorResponse:
+    """Marca un entrenamiento como error.
+
+    Actualiza estado=error, fecha_fin=NOW(), error_mensaje.
+
+    Flujo: Trainer → Broker → Backend Core → MariaDB
+    """
+    try:
+        result = router.error_entrenamiento(
+            id_entrenamiento=id_entrenamiento,
+            error_mensaje=payload.error_mensaje,
+        )
+        return EntrenamientoErrorResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/entrenamientos/{id_entrenamiento}/cancel",
+    response_model=EntrenamientoCancelResponse,
+    tags=["training"],
+)
+def cancel_entrenamiento_endpoint(
+    id_entrenamiento: int,
+    payload: EntrenamientoCancelRequest,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> EntrenamientoCancelResponse:
+    """Cancela un entrenamiento en progreso.
+
+    Actualiza estado=cancelado, fecha_fin=NOW(), registra motivo en cambios.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+    """
+    try:
+        result = router.cancel_entrenamiento(
+            id_entrenamiento=id_entrenamiento,
+            motivo=payload.motivo,
+        )
+        return EntrenamientoCancelResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# Endpoint inteligente de parámetros de entrenamiento
+# ============================================================================
+
+
+@app.get(
+    "/training/params/{org_id}/{project_id}/{version_id}",
+    response_model=TrainingParamsResponse,
+    tags=["training"],
+)
+def get_training_params_endpoint(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> TrainingParamsResponse:
+    """Endpoint inteligente que devuelve parámetros de entrenamiento.
+
+    Si nunca se ha entrenado la versión → devuelve defaults de protected_values.
+    Si ya se ha entrenado → devuelve los parámetros del último jobs_entrenamientos.
+    Incluye flags es_primer_entrenamiento/es_reentrenamiento y lista de modelos.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+    """
+    try:
+        result = router.get_training_params(org_id, project_id, version_id)
+        return TrainingParamsResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/training/progress", tags=["training"])
+async def update_training_progress_endpoint(
+    payload: TrainingProgressNotification,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Recibe notificaciones de progreso desde el trainer.
+
+    El trainer envía actualizaciones de cada subfase durante el entrenamiento
+    para que el backoffice pueda actualizar el panel de evolución en tiempo real.
+
+    Flujo: Trainer → Broker → Backend Core → Almacena progreso
+    """
+    try:
+        result = await router.update_training_progress(payload.model_dump())
+        return result
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/training/entrenamientos/{id_entrenamiento}/progress", tags=["training"])
+async def get_training_progress_endpoint(
+    id_entrenamiento: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Consulta el progreso actual de un entrenamiento.
+
+    El backoffice usa este endpoint para polling y actualizar la UI en tiempo real.
+
+    Flujo: Backoffice → Middleware → Backend Core → Devuelve progreso en caché
+
+    Args:
+        id_entrenamiento: ID del entrenamiento a consultar.
+
+    Returns:
+        Diccionario con el progreso de todas las fases y subfases.
+    """
+    try:
+        result = await router.get_training_progress(id_entrenamiento)
+        return result
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc

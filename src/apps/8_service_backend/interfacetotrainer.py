@@ -138,7 +138,14 @@ class TrainerBackendClient:
 
         if response.content:
             try:
-                return response.json()
+                json_response = response.json()
+                print(f"[DEBUG BROKER->TRAINER] ===== RESPUESTA DEL TRAINER =====")
+                print(f"[DEBUG BROKER->TRAINER] JSON completo: {json_response}")
+                print(f"[DEBUG BROKER->TRAINER] id_entrenamiento: {json_response.get('id_entrenamiento', 'NO EXISTE')}")
+                print(f"[DEBUG BROKER->TRAINER] collection_name: {json_response.get('collection_name', 'NO EXISTE')}")
+                print(f"[DEBUG BROKER->TRAINER] numero_secuencia: {json_response.get('numero_secuencia', 'NO EXISTE')}")
+                print(f"[DEBUG BROKER->TRAINER] ============================================")
+                return json_response
             except json.JSONDecodeError as exc:
                 raise TrainerBackendCommunicationError(
                     "Respuesta del backend IA no es JSON válido"
@@ -326,3 +333,14 @@ class TrainerBackendClient:
             Respuesta ACK del trainer
         """
         return self._request("POST", "/trainer/metadatos", payload=payload)
+
+    def send_entrenamiento(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Envía una solicitud de entrenamiento inicial al trainer.
+
+        Args:
+            payload: Datos con ids de org/prj/ver y pat_version.
+
+        Returns:
+            Respuesta ACK del trainer
+        """
+        return self._request("POST", "/trainer/entrenamientos", payload=payload)

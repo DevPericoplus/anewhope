@@ -553,6 +553,17 @@ class BrokerBackendRouter:
                 "No se pudo enviar la solicitud de análisis de metadatos al trainer"
             ) from exc
 
+    def send_entrenamiento(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Envía solicitud de entrenamiento inicial al trainer."""
+
+        client = self._ensure_trainer_client()
+        try:
+            return client.send_entrenamiento(payload)
+        except TrainerBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo enviar la solicitud de entrenamiento al trainer"
+            ) from exc
+
     # ========================================================================
     # Gestión de Proyectos (enrutados a Backend Core)
     # ========================================================================
@@ -1480,4 +1491,183 @@ class BrokerBackendRouter:
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(
                 f"Error al actualizar fase de notificación: {str(exc)}"
+            ) from exc
+
+    def get_pending_training_versions(self) -> dict[str, Any]:
+        """Obtiene versiones con entrenamiento inicial solicitado.
+
+        Enruta a Backend Core → MariaDB (myllm_projects_db + myllm_core_db)
+        """
+        self._logger.info(
+            "[%s] Consultando versiones pendientes de entrenamiento",
+            self._client_app,
+        )
+        try:
+            return self._core_client.get_pending_training_versions()
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error obteniendo versiones pendientes: {str(exc)}"
+            ) from exc
+
+    # ================================================================
+    # Training - Registro y seguimiento de entrenamientos
+    # ================================================================
+
+    def get_training_params(
+        self, org_id: int, project_id: int, version_id: int
+    ) -> dict[str, Any]:
+        """Obtiene parámetros de entrenamiento inteligentes desde Backend Core.
+
+        Devuelve defaults (primer entrenamiento) o los parámetros del último
+        job (reentrenamiento), junto con flags informativos y lista de modelos.
+
+        Enruta: Backoffice → Middleware → Broker → Backend Core → MariaDB
+        """
+        self._logger.info(
+            "[%s] Consultando parámetros de entrenamiento: org=%s, prj=%s, ver=%s",
+            self._client_app,
+            org_id,
+            project_id,
+            version_id,
+        )
+        try:
+            return self._core_client.get_training_params(
+                org_id, project_id, version_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error obteniendo parámetros de entrenamiento: {str(exc)}"
+            ) from exc
+
+    def register_entrenamiento(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Registra un nuevo entrenamiento via Backend Core.
+
+        Enruta: Trainer → Broker → Backend Core → MariaDB
+        """
+        self._logger.info(
+            "[%s] Registrando entrenamiento: org=%s, prj=%s, ver=%s",
+            self._client_app,
+            payload.get("id_organizacion"),
+            payload.get("id_proyecto"),
+            payload.get("id_version"),
+        )
+        try:
+            return self._core_client.register_entrenamiento(payload)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error registrando entrenamiento: {str(exc)}"
+            ) from exc
+
+    def update_entrenamiento_phase(
+        self, id_entrenamiento: int, fase_actual: str
+    ) -> dict[str, Any]:
+        """Actualiza la fase de un entrenamiento via Backend Core."""
+        self._logger.info(
+            "[%s] Actualizando fase entrenamiento=%s → %s",
+            self._client_app,
+            id_entrenamiento,
+            fase_actual,
+        )
+        try:
+            return self._core_client.update_entrenamiento_phase(
+                id_entrenamiento, fase_actual
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error actualizando fase de entrenamiento: {str(exc)}"
+            ) from exc
+
+    def complete_entrenamiento(
+        self, id_entrenamiento: int, modelo_path: str
+    ) -> dict[str, Any]:
+        """Marca un entrenamiento como completado via Backend Core."""
+        self._logger.info(
+            "[%s] Completando entrenamiento=%s, modelo=%s",
+            self._client_app,
+            id_entrenamiento,
+            modelo_path,
+        )
+        try:
+            return self._core_client.complete_entrenamiento(
+                id_entrenamiento, modelo_path
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error completando entrenamiento: {str(exc)}"
+            ) from exc
+
+    def error_entrenamiento(
+        self, id_entrenamiento: int, error_mensaje: str
+    ) -> dict[str, Any]:
+        """Marca un entrenamiento como error via Backend Core."""
+        self._logger.info(
+            "[%s] Error en entrenamiento=%s: %s",
+            self._client_app,
+            id_entrenamiento,
+            error_mensaje[:200],
+        )
+        try:
+            return self._core_client.error_entrenamiento(
+                id_entrenamiento, error_mensaje
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error marcando entrenamiento como error: {str(exc)}"
+            ) from exc
+
+    def cancel_entrenamiento(
+        self, id_entrenamiento: int, motivo: str = "Cancelado por usuario"
+    ) -> dict[str, Any]:
+        """Cancela un entrenamiento en progreso via Backend Core."""
+        self._logger.info(
+            "[%s] Cancelando entrenamiento=%s, motivo=%s",
+            self._client_app,
+            id_entrenamiento,
+            motivo,
+        )
+        try:
+            return self._core_client.cancel_entrenamiento(
+                id_entrenamiento, motivo
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error cancelando entrenamiento: {str(exc)}"
+            ) from exc
+
+    async def update_training_progress(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Envía notificación de progreso al Backend Core."""
+        id_entrenamiento = payload.get("id_entrenamiento", 0)
+        subfase_key = payload.get("subfase_key", "")
+
+        self._logger.info(
+            "[%s] Progreso entrenamiento=%s: subfase=%s",
+            self._client_app,
+            id_entrenamiento,
+            subfase_key,
+        )
+        try:
+            return await self._core_client.update_training_progress(payload)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error actualizando progreso: {str(exc)}"
+            ) from exc
+
+    async def get_training_progress(
+        self,
+        id_entrenamiento: int,
+    ) -> dict[str, Any]:
+        """Consulta el progreso actual de un entrenamiento desde el Backend Core."""
+        self._logger.info(
+            "[%s] Consultando progreso entrenamiento=%s",
+            self._client_app,
+            id_entrenamiento,
+        )
+        try:
+            return await self._core_client.get_training_progress(id_entrenamiento)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error consultando progreso: {str(exc)}"
             ) from exc

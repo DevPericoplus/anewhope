@@ -5746,6 +5746,1098 @@ class BackendCoreRouter:
                     f"Error actualizando job {job_id}: {exc}"
                 ) from exc
 
+    def get_pending_training_versions(self) -> list[dict[str, Any]]:
+        """Obtiene versiones con entrenamiento inicial solicitado.
+
+        Consulta estado_version con JOIN a organizations y proyectos
+        para obtener nombres legibles. Solo incluye versiones donde
+        entrenamiento_inicial_solicitado = 1.
+
+        Returns:
+            Lista de dicts con organization_name, proyecto_nombre,
+            id_version y metadatos.
+        """
+        from sqlalchemy import text
+
+        self._logger.info(
+            "[backend-core] Consultando versiones pendientes de entrenamiento"
+        )
+
+        with self._get_projects_db_connection() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT
+                        o.organization_name,
+                        p.nombre AS proyecto_nombre,
+                        ev.id_version,
+                        ev.id AS state_id,
+                        ev.id_organizacion,
+                        ev.id_proyecto
+                    FROM estado_version ev
+                    INNER JOIN myllm_core_db.organizations o
+                        ON ev.id_organizacion = o.organization_id
+                    INNER JOIN proyectos p
+                        ON ev.id_proyecto = p.id
+                    WHERE ev.entrenamiento_inicial_solicitado = 1
+                    ORDER BY o.organization_name, p.nombre, ev.id_version
+                """),
+            )
+            rows = result.fetchall()
+
+            return [
+                {
+                    "organization_name": row[0],
+                    "proyecto_nombre": row[1],
+                    "id_version": row[2],
+                    "version_display": f"v{row[2]:03d}",
+                    "state_id": row[3],
+                    "id_organizacion": row[4],
+                    "id_proyecto": row[5],
+                }
+                for row in rows
+            ]
+
+    # ============================================================================
+    # Training - Registro y seguimiento de entrenamientos
+    # ============================================================================
+
+    def _load_training_default_params(self) -> dict[str, Any]:
+        """Carga los parámetros de entrenamiento por defecto desde protected_values."""
+
+        env_settings_path = (
+            Path(__file__).resolve().parents[3]
+            / "src/2_shared_application/config/env_settings.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "env_settings_training_params", env_settings_path
+        )
+        if spec is None or spec.loader is None:
+            raise BackendCoreBusinessError(
+                "No se pudo cargar el módulo de configuración"
+            )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        protected = module.load_protected_settings()
+        if not protected:
+            raise BackendCoreBusinessError(
+                "No se pudo cargar protected_values para parámetros de entrenamiento"
+            )
+
+        return {
+            "learning_rate": protected.get("training_default_learning_rate", 0.001),
+            "batch_size": protected.get("training_default_batch_size", 32),
+            "epochs": protected.get("training_default_epochs", 10),
+            "embedding_dimension": protected.get(
+                "training_default_embedding_dimension", 768
+            ),
+            "sequence_length": protected.get(
+                "training_default_sequence_length", 512
+            ),
+            "hidden_units": protected.get("training_default_hidden_units", 256),
+            "dropout_rate": protected.get("training_default_dropout_rate", 0.1),
+            "chunk_size": protected.get("training_default_chunk_size", 1000),
+            "chunk_overlap": protected.get("training_default_chunk_overlap", 200),
+            "temperature": protected.get("training_default_temperature", 0.7),
+            "max_tokens": protected.get("training_default_max_tokens", 2048),
+            "distance_metric": protected.get(
+                "training_default_distance_metric", "cosine"
+            ),
+            "top_k": protected.get("training_default_top_k", 5),
+            "loss_function": protected.get(
+                "training_default_loss_function", "cross_entropy"
+            ),
+            "optimizer": protected.get("training_default_optimizer", "adam"),
+        }
+
+    def get_training_params(
+        self,
+        org_id: int,
+        project_id: int,
+        version_id: int,
+    ) -> dict[str, Any]:
+        """Endpoint inteligente: devuelve parámetros de entrenamiento.
+
+        Si no hay entrenamientos previos completados para la versión,
+        devuelve los defaults de protected_values.py.
+        Si hay entrenamientos previos, devuelve los parámetros del último
+        jobs_entrenamientos asociado.
+
+        Incluye flags es_primer_entrenamiento/es_reentrenamiento y lista
+        de modelos disponibles de jobs_modelos.
+
+        Args:
+            org_id: ID de la organización.
+            project_id: ID del proyecto.
+            version_id: ID de la versión.
+
+        Returns:
+            Diccionario con parámetros, flags y modelos disponibles.
+        """
+        from sqlalchemy import text
+
+        self._logger.info(
+            "[TRAINING] Consultando parámetros: org=%s, prj=%s, ver=%s",
+            org_id, project_id, version_id,
+        )
+
+        # Cargar defaults como base
+        defaults = self._load_training_default_params()
+
+        # Obtener modelo base de Ollama desde env.yaml
+        env_settings_path = (
+            Path(__file__).resolve().parents[3]
+            / "src/2_shared_application/config/env_settings.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "env_settings_model_base", env_settings_path
+        )
+        default_model = "deepseek-r1:8b"
+        if spec is not None and spec.loader is not None:
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            default_model = module.get_env_value(
+                "ollama_rag_base_model", "deepseek-r1:8b"
+            )
+
+        with self._get_projects_db_connection() as conn:
+            try:
+                # Contar entrenamientos completados para esta versión
+                count_result = conn.execute(
+                    text("""
+                        SELECT COUNT(*) FROM entrenamientos
+                        WHERE id_version = :version_id
+                          AND estado = 'completado'
+                    """),
+                    {"version_id": version_id},
+                )
+                completed_count = count_result.scalar() or 0
+
+                es_primer = completed_count == 0
+                es_reentrenamiento = completed_count > 0
+
+                params = dict(defaults)
+                model_type = default_model
+
+                if es_reentrenamiento:
+                    # Obtener parámetros del último entrenamiento completado
+                    last_job = conn.execute(
+                        text("""
+                            SELECT je.*
+                            FROM entrenamientos e
+                            INNER JOIN jobs_entrenamientos je
+                                ON e.id_job_entrenamientos = je.id
+                            WHERE e.id_version = :version_id
+                              AND e.estado = 'completado'
+                            ORDER BY e.created_at DESC
+                            LIMIT 1
+                        """),
+                        {"version_id": version_id},
+                    )
+                    row = last_job.mappings().fetchone()
+                    if row:
+                        for key in (
+                            "learning_rate", "batch_size", "epochs",
+                            "embedding_dimension", "sequence_length",
+                            "hidden_units", "dropout_rate", "chunk_size",
+                            "chunk_overlap", "temperature", "max_tokens",
+                            "distance_metric", "top_k", "loss_function",
+                            "optimizer",
+                        ):
+                            if key in row and row[key] is not None:
+                                params[key] = row[key]
+
+                # Obtener modelos disponibles de jobs_modelos
+                modelos_result = conn.execute(
+                    text("""
+                        SELECT id, nombre, tag, familia
+                        FROM jobs_modelos
+                        WHERE activo = 1
+                        ORDER BY nombre
+                    """),
+                )
+                modelos_rows = modelos_result.mappings().fetchall()
+                modelos_disponibles = [
+                    {
+                        "id": int(r["id"]),
+                        "nombre": str(r["nombre"]),
+                        "tag": str(r.get("tag", "") or ""),
+                        "familia": str(r.get("familia", "") or ""),
+                    }
+                    for r in modelos_rows
+                ]
+
+                self._logger.info(
+                    "[TRAINING] Parámetros: primer=%s, reentrenamiento=%s, "
+                    "modelos=%s, modelo_default=%s",
+                    es_primer, es_reentrenamiento,
+                    len(modelos_disponibles), model_type,
+                )
+
+                return {
+                    "success": True,
+                    "es_primer_entrenamiento": es_primer,
+                    "es_reentrenamiento": es_reentrenamiento,
+                    "chunk_size": params["chunk_size"],
+                    "chunk_overlap": params["chunk_overlap"],
+                    "embedding_dimension": params["embedding_dimension"],
+                    "sequence_length": params.get("sequence_length", 512),
+                    "distance_metric": params["distance_metric"],
+                    "model_type": model_type,
+                    "temperature": params["temperature"],
+                    "max_tokens": params["max_tokens"],
+                    "top_k": params["top_k"],
+                    "learning_rate": params["learning_rate"],
+                    "batch_size": params["batch_size"],
+                    "epochs": params["epochs"],
+                    "hidden_units": params.get("hidden_units", 256),
+                    "dropout_rate": params.get("dropout_rate", 0.1),
+                    "loss_function": params["loss_function"],
+                    "optimizer": params["optimizer"],
+                    "modelos_disponibles": modelos_disponibles,
+                    "message": (
+                        "Parámetros por defecto" if es_primer
+                        else "Parámetros del último entrenamiento"
+                    ),
+                }
+
+            except Exception as exc:
+                self._logger.error(
+                    "[TRAINING] Error obteniendo parámetros: %s", exc,
+                )
+                raise BackendCoreBusinessError(
+                    f"Error obteniendo parámetros de entrenamiento: {exc}"
+                ) from exc
+
+    def register_entrenamiento(
+        self,
+        id_organizacion: int,
+        id_proyecto: int,
+        id_version: int,
+        pat_version: str,
+        entrenamiento_inicial: bool = True,
+        reentrenamiento: bool = False,
+        training_params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Registra un nuevo entrenamiento creando registros en jobs_entrenamientos y entrenamientos.
+
+        Calcula numero_secuencia (MAX+1 para la versión) y genera collection_name
+        para ChromaDB con el formato ORG{org}_PRJ{prj}_v{ver}_ENT{id}_SEQ{seq}.
+
+        Args:
+            id_organizacion: ID de la organización.
+            id_proyecto: ID del proyecto.
+            id_version: ID de la versión.
+            pat_version: Ruta completa al contenido de la versión.
+            entrenamiento_inicial: True si es el primer entrenamiento.
+            reentrenamiento: True si es un reentrenamiento.
+            training_params: Parámetros de entrenamiento enviados desde el modal.
+                Si es None, se cargan los defaults de protected_values.py.
+
+        Returns:
+            Diccionario con id_entrenamiento, id_job_entrenamientos,
+            collection_name y numero_secuencia.
+        """
+        from sqlalchemy import text
+
+        self._logger.info(
+            "[TRAINING] Registrando entrenamiento: org=%s, prj=%s, ver=%s, "
+            "inicial=%s, reentrenamiento=%s",
+            id_organizacion,
+            id_proyecto,
+            id_version,
+            entrenamiento_inicial,
+            reentrenamiento,
+        )
+
+        # Usar parámetros del request si los hay, sino cargar defaults
+        if training_params:
+            defaults = self._load_training_default_params()
+            # Merge: request sobreescribe defaults
+            params = {**defaults, **training_params}
+            self._logger.info(
+                "[TRAINING] Usando parámetros del request para entrenamiento"
+            )
+        else:
+            params = self._load_training_default_params()
+            self._logger.info(
+                "[TRAINING] Usando parámetros por defecto (no se enviaron desde modal)"
+            )
+
+        with self._get_projects_db_writer_connection() as conn:
+            try:
+                # 1. Calcular numero_secuencia (MAX+1 para esta versión)
+                seq_result = conn.execute(
+                    text("""
+                        SELECT COALESCE(MAX(numero_secuencia), 0) + 1
+                        FROM entrenamientos
+                        WHERE id_version = :id_version
+                    """),
+                    {"id_version": id_version},
+                )
+                numero_secuencia = seq_result.scalar()
+
+                # 2. Insertar parámetros en jobs_entrenamientos
+                job_name = (
+                    f"Training ORG{id_organizacion:05d}_PRJ{id_proyecto:05d}"
+                    f"_v{id_version:03d}_SEQ{numero_secuencia}"
+                )
+                conn.execute(
+                    text("""
+                        INSERT INTO jobs_entrenamientos (
+                            nombre, learning_rate, batch_size, epochs,
+                            embedding_dimension, sequence_length, hidden_units,
+                            dropout_rate, chunk_size, chunk_overlap,
+                            distance_metric, top_k, temperature, max_tokens,
+                            loss_function, optimizer, activo
+                        ) VALUES (
+                            :nombre, :learning_rate, :batch_size, :epochs,
+                            :embedding_dimension, :sequence_length, :hidden_units,
+                            :dropout_rate, :chunk_size, :chunk_overlap,
+                            :distance_metric, :top_k, :temperature, :max_tokens,
+                            :loss_function, :optimizer, 1
+                        )
+                    """),
+                    {
+                        "nombre": job_name,
+                        "learning_rate": params["learning_rate"],
+                        "batch_size": params["batch_size"],
+                        "epochs": params["epochs"],
+                        "embedding_dimension": params["embedding_dimension"],
+                        "sequence_length": params["sequence_length"],
+                        "hidden_units": params["hidden_units"],
+                        "dropout_rate": params["dropout_rate"],
+                        "chunk_size": params["chunk_size"],
+                        "chunk_overlap": params["chunk_overlap"],
+                        "distance_metric": params["distance_metric"],
+                        "top_k": params["top_k"],
+                        "temperature": params["temperature"],
+                        "max_tokens": params["max_tokens"],
+                        "loss_function": params["loss_function"],
+                        "optimizer": params["optimizer"],
+                    },
+                )
+                id_job = conn.execute(text("SELECT LAST_INSERT_ID()")).scalar()
+
+                # 3. Generar collection_name para ChromaDB
+                collection_name = (
+                    f"ORG{id_organizacion:05d}_PRJ{id_proyecto:05d}"
+                    f"_v{id_version:03d}_ENT{{id}}_SEQ{numero_secuencia}"
+                )
+
+                # 4. Insertar registro en entrenamientos
+                conn.execute(
+                    text("""
+                        INSERT INTO entrenamientos (
+                            id_organizacion, id_proyecto, id_version,
+                            pat_version, entrenamiento_inicial, reentrenamiento,
+                            numero_secuencia, fase_actual, estado,
+                            id_job_entrenamientos
+                        ) VALUES (
+                            :id_organizacion, :id_proyecto, :id_version,
+                            :pat_version, :entrenamiento_inicial, :reentrenamiento,
+                            :numero_secuencia, 'recepcion', 'pendiente',
+                            :id_job
+                        )
+                    """),
+                    {
+                        "id_organizacion": id_organizacion,
+                        "id_proyecto": id_proyecto,
+                        "id_version": id_version,
+                        "pat_version": pat_version,
+                        "entrenamiento_inicial": 1 if entrenamiento_inicial else 0,
+                        "reentrenamiento": 1 if reentrenamiento else 0,
+                        "numero_secuencia": numero_secuencia,
+                        "id_job": id_job,
+                    },
+                )
+                id_entrenamiento = conn.execute(
+                    text("SELECT LAST_INSERT_ID()")
+                ).scalar()
+
+                # 5. Actualizar collection_name con el id real
+                collection_name = (
+                    f"ORG{id_organizacion:05d}_PRJ{id_proyecto:05d}"
+                    f"_v{id_version:03d}_ENT{id_entrenamiento}_SEQ{numero_secuencia}"
+                )
+                conn.execute(
+                    text("""
+                        UPDATE entrenamientos
+                        SET collection_name = :collection_name
+                        WHERE id = :id_entrenamiento
+                    """),
+                    {
+                        "collection_name": collection_name,
+                        "id_entrenamiento": id_entrenamiento,
+                    },
+                )
+
+                conn.commit()
+
+                # 6. Registrar cambio en tabla cambios (inicio de entrenamiento)
+                try:
+                    tipo_ent = "inicial" if entrenamiento_inicial else "reentrenamiento"
+                    descripcion = f"Inicio de entrenamiento {tipo_ent} (secuencia {numero_secuencia})"
+
+                    conn.execute(
+                        text("CALL sp_registrar_cambio_entrenamiento(:id_ent, :tipo, :desc)"),
+                        {
+                            "id_ent": id_entrenamiento,
+                            "tipo": "Inicio de entrenamiento",
+                            "desc": descripcion,
+                        },
+                    )
+                    conn.commit()
+                    self._logger.info(
+                        "[TRAINING] Cambio registrado: inicio entrenamiento %s",
+                        id_entrenamiento,
+                    )
+                except Exception as exc:
+                    # No fallar el registro si falla el cambio
+                    self._logger.warning(
+                        "[TRAINING] Error registrando cambio de inicio: %s", exc,
+                    )
+
+                self._logger.info(
+                    "[TRAINING] Entrenamiento registrado: id=%s, job=%s, "
+                    "collection=%s, seq=%s",
+                    id_entrenamiento,
+                    id_job,
+                    collection_name,
+                    numero_secuencia,
+                )
+
+                return {
+                    "success": True,
+                    "id_entrenamiento": id_entrenamiento,
+                    "id_job_entrenamientos": id_job,
+                    "collection_name": collection_name,
+                    "numero_secuencia": numero_secuencia,
+                    "message": (
+                        f"Entrenamiento {id_entrenamiento} registrado "
+                        f"con colección {collection_name}"
+                    ),
+                }
+
+            except Exception as exc:
+                conn.rollback()
+                self._logger.error(
+                    "[TRAINING] Error registrando entrenamiento: %s", exc,
+                )
+                raise BackendCoreBusinessError(
+                    f"Error registrando entrenamiento: {exc}"
+                ) from exc
+
+    def update_entrenamiento_phase(
+        self,
+        id_entrenamiento: int,
+        fase_actual: str,
+    ) -> dict[str, Any]:
+        """Actualiza la fase actual de un entrenamiento.
+
+        Si es la primera actualización de fase (estado=pendiente),
+        establece fecha_inicio y cambia estado a en_progreso.
+
+        Args:
+            id_entrenamiento: ID del entrenamiento.
+            fase_actual: Nueva fase (validacion, preparacion, configuracion, entrenamiento).
+
+        Returns:
+            Diccionario con success y message.
+        """
+        from sqlalchemy import text
+
+        valid_phases = (
+            "recepcion", "validacion", "preparacion",
+            "configuracion", "entrenamiento",
+        )
+        if fase_actual not in valid_phases:
+            raise BackendCoreBusinessError(
+                f"Fase '{fase_actual}' no válida. Valores permitidos: {valid_phases}"
+            )
+
+        self._logger.info(
+            "[TRAINING] Actualizando fase: entrenamiento=%s, fase=%s",
+            id_entrenamiento,
+            fase_actual,
+        )
+
+        with self._get_projects_db_writer_connection() as conn:
+            try:
+                # Verificar que existe y obtener estado actual
+                row = conn.execute(
+                    text("""
+                        SELECT estado, fase_actual
+                        FROM entrenamientos
+                        WHERE id = :id_entrenamiento
+                    """),
+                    {"id_entrenamiento": id_entrenamiento},
+                ).fetchone()
+
+                if not row:
+                    raise BackendCoreBusinessError(
+                        f"Entrenamiento {id_entrenamiento} no encontrado"
+                    )
+
+                estado_actual = row[0]
+
+                # Si estaba pendiente, establecer fecha_inicio y estado en_progreso
+                if estado_actual == "pendiente":
+                    conn.execute(
+                        text("""
+                            UPDATE entrenamientos
+                            SET fase_actual = :fase,
+                                estado = 'en_progreso',
+                                fecha_inicio = NOW()
+                            WHERE id = :id_entrenamiento
+                        """),
+                        {
+                            "fase": fase_actual,
+                            "id_entrenamiento": id_entrenamiento,
+                        },
+                    )
+                else:
+                    conn.execute(
+                        text("""
+                            UPDATE entrenamientos
+                            SET fase_actual = :fase
+                            WHERE id = :id_entrenamiento
+                        """),
+                        {
+                            "fase": fase_actual,
+                            "id_entrenamiento": id_entrenamiento,
+                        },
+                    )
+
+                conn.commit()
+
+                self._logger.info(
+                    "[TRAINING] Fase actualizada: entrenamiento=%s → %s",
+                    id_entrenamiento,
+                    fase_actual,
+                )
+
+                return {
+                    "success": True,
+                    "message": (
+                        f"Entrenamiento {id_entrenamiento} "
+                        f"actualizado a fase '{fase_actual}'"
+                    ),
+                }
+
+            except BackendCoreBusinessError:
+                conn.rollback()
+                raise
+            except Exception as exc:
+                conn.rollback()
+                self._logger.error(
+                    "[TRAINING] Error actualizando fase: %s", exc,
+                )
+                raise BackendCoreBusinessError(
+                    f"Error actualizando fase: {exc}"
+                ) from exc
+
+    def complete_entrenamiento(
+        self,
+        id_entrenamiento: int,
+        modelo_path: str = "",
+    ) -> dict[str, Any]:
+        """Marca un entrenamiento como completado.
+
+        Actualiza estado a 'completado', establece fecha_fin y modelo_path.
+
+        Args:
+            id_entrenamiento: ID del entrenamiento.
+            modelo_path: Ruta del modelo generado.
+
+        Returns:
+            Diccionario con success y message.
+        """
+        from sqlalchemy import text
+
+        self._logger.info(
+            "[TRAINING] Completando entrenamiento=%s, modelo=%s",
+            id_entrenamiento,
+            modelo_path,
+        )
+
+        with self._get_projects_db_writer_connection() as conn:
+            try:
+                result = conn.execute(
+                    text("""
+                        UPDATE entrenamientos
+                        SET estado = 'completado',
+                            fase_actual = 'entrenamiento',
+                            fecha_fin = NOW(),
+                            modelo_path = :modelo_path
+                        WHERE id = :id_entrenamiento
+                    """),
+                    {
+                        "modelo_path": modelo_path,
+                        "id_entrenamiento": id_entrenamiento,
+                    },
+                )
+
+                if result.rowcount == 0:
+                    raise BackendCoreBusinessError(
+                        f"Entrenamiento {id_entrenamiento} no encontrado"
+                    )
+
+                conn.commit()
+
+                # Registrar cambio en tabla cambios
+                try:
+                    descripcion = f"Entrenamiento completado exitosamente. Modelo: {modelo_path}"
+                    conn.execute(
+                        text("CALL sp_registrar_cambio_entrenamiento(:id_ent, :tipo, :desc)"),
+                        {
+                            "id_ent": id_entrenamiento,
+                            "tipo": "Entrenamiento completado",
+                            "desc": descripcion,
+                        },
+                    )
+                    conn.commit()
+                    self._logger.info(
+                        "[TRAINING] Cambio registrado: completado entrenamiento %s",
+                        id_entrenamiento,
+                    )
+                except Exception as exc:
+                    self._logger.warning(
+                        "[TRAINING] Error registrando cambio de completado: %s", exc,
+                    )
+
+                self._logger.info(
+                    "[TRAINING] Entrenamiento %s completado", id_entrenamiento,
+                )
+
+                return {
+                    "success": True,
+                    "message": (
+                        f"Entrenamiento {id_entrenamiento} completado. "
+                        f"Modelo: {modelo_path}"
+                    ),
+                }
+
+            except BackendCoreBusinessError:
+                conn.rollback()
+                raise
+            except Exception as exc:
+                conn.rollback()
+                self._logger.error(
+                    "[TRAINING] Error completando entrenamiento: %s", exc,
+                )
+                raise BackendCoreBusinessError(
+                    f"Error completando entrenamiento: {exc}"
+                ) from exc
+
+    def error_entrenamiento(
+        self,
+        id_entrenamiento: int,
+        error_mensaje: str = "",
+    ) -> dict[str, Any]:
+        """Marca un entrenamiento como error.
+
+        Actualiza estado a 'error', establece fecha_fin y error_mensaje.
+
+        Args:
+            id_entrenamiento: ID del entrenamiento.
+            error_mensaje: Mensaje descriptivo del error.
+
+        Returns:
+            Diccionario con success y message.
+        """
+        from sqlalchemy import text
+
+        self._logger.info(
+            "[TRAINING] Error en entrenamiento=%s: %s",
+            id_entrenamiento,
+            error_mensaje[:200],
+        )
+
+        with self._get_projects_db_writer_connection() as conn:
+            try:
+                result = conn.execute(
+                    text("""
+                        UPDATE entrenamientos
+                        SET estado = 'error',
+                            fecha_fin = NOW(),
+                            error_mensaje = :error_mensaje
+                        WHERE id = :id_entrenamiento
+                    """),
+                    {
+                        "error_mensaje": error_mensaje,
+                        "id_entrenamiento": id_entrenamiento,
+                    },
+                )
+
+                if result.rowcount == 0:
+                    raise BackendCoreBusinessError(
+                        f"Entrenamiento {id_entrenamiento} no encontrado"
+                    )
+
+                conn.commit()
+
+                # Registrar cambio en tabla cambios
+                try:
+                    descripcion = f"Error en entrenamiento: {error_mensaje[:200]}"
+                    conn.execute(
+                        text("CALL sp_registrar_cambio_entrenamiento(:id_ent, :tipo, :desc)"),
+                        {
+                            "id_ent": id_entrenamiento,
+                            "tipo": "Error en entrenamiento",
+                            "desc": descripcion,
+                        },
+                    )
+                    conn.commit()
+                    self._logger.info(
+                        "[TRAINING] Cambio registrado: error entrenamiento %s",
+                        id_entrenamiento,
+                    )
+                except Exception as exc:
+                    self._logger.warning(
+                        "[TRAINING] Error registrando cambio de error: %s", exc,
+                    )
+
+                self._logger.info(
+                    "[TRAINING] Entrenamiento %s marcado como error",
+                    id_entrenamiento,
+                )
+
+                return {
+                    "success": True,
+                    "message": (
+                        f"Entrenamiento {id_entrenamiento} marcado como error"
+                    ),
+                }
+
+            except BackendCoreBusinessError:
+                conn.rollback()
+                raise
+            except Exception as exc:
+                conn.rollback()
+                self._logger.error(
+                    "[TRAINING] Error marcando error: %s", exc,
+                )
+                raise BackendCoreBusinessError(
+                    f"Error marcando entrenamiento como error: {exc}"
+                ) from exc
+
+    def cancel_entrenamiento(
+        self,
+        id_entrenamiento: int,
+        motivo: str = "Cancelado por usuario",
+    ) -> dict[str, Any]:
+        """Cancela un entrenamiento en progreso.
+
+        Actualiza estado a 'cancelado', establece fecha_fin y registra
+        el motivo en la tabla cambios.
+
+        Args:
+            id_entrenamiento: ID del entrenamiento.
+            motivo: Motivo de la cancelación.
+
+        Returns:
+            Diccionario con success y message.
+        """
+        from sqlalchemy import text
+
+        self._logger.info(
+            "[TRAINING] Cancelando entrenamiento=%s, motivo=%s",
+            id_entrenamiento,
+            motivo,
+        )
+
+        with self._get_projects_db_writer_connection() as conn:
+            try:
+                # Verificar que el entrenamiento existe y está en progreso
+                check_result = conn.execute(
+                    text("""
+                        SELECT estado FROM entrenamientos
+                        WHERE id = :id_entrenamiento
+                    """),
+                    {"id_entrenamiento": id_entrenamiento},
+                )
+                row = check_result.fetchone()
+
+                if not row:
+                    raise BackendCoreBusinessError(
+                        f"Entrenamiento {id_entrenamiento} no encontrado"
+                    )
+
+                current_state = row[0]
+                if current_state in ("completado", "error", "cancelado"):
+                    raise BackendCoreBusinessError(
+                        f"No se puede cancelar un entrenamiento en estado '{current_state}'"
+                    )
+
+                # Actualizar entrenamiento a cancelado
+                conn.execute(
+                    text("""
+                        UPDATE entrenamientos
+                        SET estado = 'cancelado',
+                            fecha_fin = NOW()
+                        WHERE id = :id_entrenamiento
+                    """),
+                    {"id_entrenamiento": id_entrenamiento},
+                )
+
+                conn.commit()
+
+                # Registrar en tabla cambios
+                try:
+                    descripcion = f"Entrenamiento cancelado. Motivo: {motivo}"
+                    conn.execute(
+                        text("CALL sp_registrar_cambio_entrenamiento(:id_ent, :tipo, :desc)"),
+                        {
+                            "id_ent": id_entrenamiento,
+                            "tipo": "Entrenamiento cancelado",
+                            "desc": descripcion,
+                        },
+                    )
+                    conn.commit()
+                    self._logger.info(
+                        "[TRAINING] Cambio registrado: cancelado entrenamiento %s",
+                        id_entrenamiento,
+                    )
+                except Exception as exc:
+                    self._logger.warning(
+                        "[TRAINING] Error registrando cambio de cancelación: %s", exc,
+                    )
+
+                self._logger.info(
+                    "[TRAINING] Entrenamiento %s cancelado", id_entrenamiento,
+                )
+
+                return {
+                    "success": True,
+                    "message": f"Entrenamiento {id_entrenamiento} cancelado",
+                }
+
+            except BackendCoreBusinessError:
+                conn.rollback()
+                raise
+            except Exception as exc:
+                conn.rollback()
+                self._logger.error(
+                    "[TRAINING] Error cancelando entrenamiento: %s", exc,
+                )
+                raise BackendCoreBusinessError(
+                    f"Error cancelando entrenamiento: {exc}"
+                ) from exc
+
+    async def update_training_progress(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Recibe y almacena notificaciones de progreso del entrenamiento.
+
+        Guarda el progreso en la tabla evoluciones_entrenamientos para que
+        el backoffice pueda consultar el estado actualizado en tiempo real.
+
+        Args:
+            payload: Diccionario con id_entrenamiento, phase_key, subfase_key,
+                    subfase_name, status, elapsed_time, error_message.
+
+        Returns:
+            Diccionario con success y message.
+        """
+        from datetime import datetime
+        from sqlalchemy import text
+
+        id_entrenamiento = payload.get("id_entrenamiento", 0)
+        phase_key = payload.get("phase_key", "")
+        subfase_key = payload.get("subfase_key", "")
+        subfase_name = payload.get("subfase_name", "")
+        status = payload.get("status", "")
+        elapsed_time = payload.get("elapsed_time", "")
+        error_message = payload.get("error_message", "")
+
+        self._logger.info(
+            "[TRAINING-PROGRESS] id=%s, subfase=%s (%s), status=%s, time=%s",
+            id_entrenamiento,
+            subfase_key,
+            subfase_name,
+            status,
+            elapsed_time,
+        )
+
+        # Convertir elapsed_time a segundos
+        duracion_segundos = self._parse_elapsed_time_to_seconds(elapsed_time)
+
+        try:
+            # Usar UPSERT: INSERT ... ON DUPLICATE KEY UPDATE
+            query = text("""
+                INSERT INTO evoluciones_entrenamientos
+                    (id_entrenamiento, phase_key, subfase_key, subfase_name, status,
+                     fecha_inicio, fecha_fin, duracion_segundos, error_mensaje)
+                VALUES
+                    (:id_ent, :phase, :subfase, :name, :status,
+                     :fecha_inicio, :fecha_fin, :duracion, :error)
+                ON DUPLICATE KEY UPDATE
+                    status = VALUES(status),
+                    fecha_fin = VALUES(fecha_fin),
+                    duracion_segundos = VALUES(duracion_segundos),
+                    error_mensaje = VALUES(error_mensaje),
+                    updated_at = CURRENT_TIMESTAMP
+            """)
+
+            # Calcular fechas según el status
+            now = datetime.now()
+            fecha_inicio = now if status == "in_progress" else None
+            fecha_fin = now if status in ("completed", "error") else None
+
+            with self._get_projects_db_writer_connection() as conn:
+                conn.execute(query, {
+                    "id_ent": id_entrenamiento,
+                    "phase": phase_key,
+                    "subfase": subfase_key,
+                    "name": subfase_name,
+                    "status": status,
+                    "fecha_inicio": fecha_inicio,
+                    "fecha_fin": fecha_fin,
+                    "duracion": duracion_segundos,
+                    "error": error_message if error_message else None,
+                })
+                conn.commit()
+
+            return {
+                "success": True,
+                "message": f"Progreso actualizado: {subfase_key} - {status}",
+            }
+
+        except Exception as exc:
+            self._logger.error(
+                "[TRAINING-PROGRESS] Error guardando en BD: %s",
+                exc
+            )
+            return {
+                "success": False,
+                "message": f"Error almacenando progreso: {str(exc)}",
+            }
+
+    def _parse_elapsed_time_to_seconds(self, elapsed_time: str) -> int:
+        """Convierte elapsed_time (ej: '1m 30s', '45s') a segundos."""
+        if not elapsed_time:
+            return 0
+
+        total_seconds = 0
+        parts = elapsed_time.split()
+
+        for part in parts:
+            if 'm' in part:
+                total_seconds += int(part.replace('m', '')) * 60
+            elif 's' in part:
+                total_seconds += int(part.replace('s', ''))
+            elif 'h' in part:
+                total_seconds += int(part.replace('h', '')) * 3600
+
+        return total_seconds
+
+    async def get_training_progress(
+        self,
+        id_entrenamiento: int,
+    ) -> dict[str, Any]:
+        """Obtiene el progreso actual de un entrenamiento desde la BD.
+
+        Args:
+            id_entrenamiento: ID del entrenamiento a consultar.
+
+        Returns:
+            Diccionario con el progreso de todas las fases y subfases.
+        """
+        from sqlalchemy import text
+
+        try:
+            query = text("""
+                SELECT
+                    phase_key,
+                    subfase_key,
+                    subfase_name,
+                    status,
+                    duracion_segundos,
+                    error_mensaje,
+                    updated_at
+                FROM evoluciones_entrenamientos
+                WHERE id_entrenamiento = :id_ent
+                ORDER BY phase_key, subfase_key
+            """)
+
+            with self._get_projects_db_connection() as conn:
+                result = conn.execute(query, {"id_ent": id_entrenamiento})
+                rows = result.fetchall()
+
+            if not rows:
+                return {
+                    "success": False,
+                    "message": "No hay datos de progreso para este entrenamiento",
+                    "data": None,
+                }
+
+            # Agrupar por fases
+            phases = {}
+            last_phase = None
+
+            for row in rows:
+                phase_key = row[0]
+                subfase_key = row[1]
+                subfase_name = row[2]
+                status = row[3]
+                duracion = row[4] or 0
+                error = row[5]
+
+                # Convertir duracion_segundos a formato legible
+                elapsed_time = self._format_seconds_to_elapsed(duracion)
+
+                if phase_key not in phases:
+                    phases[phase_key] = {"subfases": {}}
+
+                phases[phase_key]["subfases"][subfase_key] = {
+                    "name": subfase_name,
+                    "status": status,
+                    "elapsed_time": elapsed_time,
+                    "error_message": error,
+                }
+
+                last_phase = phase_key
+
+            return {
+                "success": True,
+                "data": {
+                    "phases": phases,
+                    "last_update": last_phase,
+                },
+            }
+
+        except Exception as exc:
+            self._logger.error(
+                "[TRAINING-PROGRESS] Error consultando BD: %s",
+                exc
+            )
+            return {
+                "success": False,
+                "message": f"Error consultando progreso: {str(exc)}",
+                "data": None,
+            }
+
+    def _format_seconds_to_elapsed(self, seconds: int) -> str:
+        """Convierte segundos a formato legible (ej: '1m 30s')."""
+        if seconds == 0:
+            return "0s"
+
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        secs = seconds % 60
+
+        parts = []
+        if hours > 0:
+            parts.append(f"{hours}h")
+        if minutes > 0:
+            parts.append(f"{minutes}m")
+        if secs > 0 or not parts:
+            parts.append(f"{secs}s")
+
+        return " ".join(parts)
+
     def _build_dsn(self, settings: dict, database: str) -> str:
         """Construye DSN para SQLAlchemy."""
         from urllib.parse import quote_plus

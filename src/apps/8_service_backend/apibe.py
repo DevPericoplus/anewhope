@@ -319,6 +319,43 @@ class DocumentacionResponse(BaseModel):
     received_at: str = ""
 
 
+class EntrenamientoRequest(BaseModel):
+    """Payload para solicitud de entrenamiento inicial."""
+
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    pat_version: str = ""
+    # Parámetros opcionales de entrenamiento
+    learning_rate: float | None = None
+    batch_size: int | None = None
+    epochs: int | None = None
+    embedding_dimension: int | None = None
+    sequence_length: int | None = None
+    hidden_units: int | None = None
+    dropout_rate: float | None = None
+    chunk_size: int | None = None
+    chunk_overlap: int | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    distance_metric: str | None = None
+    top_k: int | None = None
+    loss_function: str | None = None
+    optimizer: str | None = None
+    model_type: str | None = None
+
+
+class EntrenamientoResponse(BaseModel):
+    """Respuesta de solicitud de entrenamiento (ACK)."""
+
+    success: bool
+    message: str = ""
+    received_at: str = ""
+    id_entrenamiento: int = 0
+    collection_name: str = ""
+    numero_secuencia: int = 0
+
+
 class MetadatosRequest(BaseModel):
     """Payload para análisis de metadatos de ficheros."""
 
@@ -1118,6 +1155,35 @@ def send_metadatos(
     try:
         response = router.send_metadatos(request.model_dump())
         return MetadatosResponse(**response)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/training/entrenamientos", response_model=EntrenamientoResponse)
+def send_entrenamiento(
+    request: EntrenamientoRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> EntrenamientoResponse:
+    """Envía solicitud de entrenamiento inicial al trainer."""
+
+    try:
+        response = router.send_entrenamiento(request.model_dump())
+        print(f"[DEBUG BROKER ENDPOINT] ===== RESPONSE DEL ROUTER =====")
+        print(f"[DEBUG BROKER ENDPOINT] response type: {type(response)}")
+        print(f"[DEBUG BROKER ENDPOINT] response: {response}")
+        print(f"[DEBUG BROKER ENDPOINT] id_entrenamiento: {response.get('id_entrenamiento') if isinstance(response, dict) else 'N/A'}")
+        print(f"[DEBUG BROKER ENDPOINT] ==========================================")
+        result = EntrenamientoResponse(**response)
+        print(f"[DEBUG BROKER ENDPOINT] ===== ENTRENAMIENTO RESPONSE CREADO =====")
+        print(f"[DEBUG BROKER ENDPOINT] result.id_entrenamiento: {result.id_entrenamiento}")
+        print(f"[DEBUG BROKER ENDPOINT] result.collection_name: {result.collection_name}")
+        print(f"[DEBUG BROKER ENDPOINT] result.numero_secuencia: {result.numero_secuencia}")
+        print(f"[DEBUG BROKER ENDPOINT] result.model_dump(): {result.model_dump()}")
+        print(f"[DEBUG BROKER ENDPOINT] ==========================================")
+        return result
     except BrokerBusinessError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -3280,6 +3346,363 @@ def update_notification_phase_endpoint(
             user_id,
             identity_type_id,
         )
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# Training - Versiones pendientes de entrenamiento
+# ============================================================================
+
+
+@app.get("/training/pending-versions", tags=["training"])
+def get_pending_training_versions_endpoint(
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Obtiene versiones con entrenamiento inicial solicitado.
+
+    Flujo: Middleware → Broker → Backend Core → MariaDB
+    """
+    try:
+        return router.get_pending_training_versions()
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# Training - Registro y seguimiento de entrenamientos
+# ============================================================================
+
+
+class TrainingProgressNotification(BaseModel):
+    """Notificación de progreso de entrenamiento desde el trainer."""
+
+    id_entrenamiento: int
+    phase_key: str          # Clave de la fase principal (ej: "3")
+    subfase_key: str        # Clave de la subfase (ej: "3.2")
+    subfase_name: str       # Nombre legible (ej: "Chunking")
+    status: str             # "in_progress", "completed", "error"
+    elapsed_time: str = ""  # Tiempo empleado (ej: "2m 15s")
+    error_message: str = ""
+
+
+class TrainingParamsResponse(BaseModel):
+    """Respuesta con parámetros de entrenamiento (passthrough desde Backend Core)."""
+
+    success: bool = True
+    es_primer_entrenamiento: bool = True
+    es_reentrenamiento: bool = False
+    chunk_size: int = 1000
+    chunk_overlap: int = 200
+    embedding_dimension: int = 768
+    sequence_length: int = 512
+    distance_metric: str = "cosine"
+    model_type: str = ""
+    temperature: float = 0.7
+    max_tokens: int = 2048
+    top_k: int = 5
+    learning_rate: float = 0.001
+    batch_size: int = 32
+    epochs: int = 10
+    hidden_units: int = 256
+    dropout_rate: float = 0.1
+    loss_function: str = "cross_entropy"
+    optimizer: str = "adam"
+    modelos_disponibles: list[dict] = []
+    message: str = ""
+
+
+class EntrenamientoRegisterRequest(BaseModel):
+    """Payload para registrar un nuevo entrenamiento."""
+
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    pat_version: str = ""
+    entrenamiento_inicial: bool = True
+    reentrenamiento: bool = False
+    # Parámetros opcionales de entrenamiento
+    learning_rate: float | None = None
+    batch_size: int | None = None
+    epochs: int | None = None
+    embedding_dimension: int | None = None
+    sequence_length: int | None = None
+    hidden_units: int | None = None
+    dropout_rate: float | None = None
+    chunk_size: int | None = None
+    chunk_overlap: int | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    distance_metric: str | None = None
+    top_k: int | None = None
+    loss_function: str | None = None
+    optimizer: str | None = None
+    model_type: str | None = None
+
+
+class EntrenamientoRegisterResponse(BaseModel):
+    """Respuesta al registrar un entrenamiento."""
+
+    success: bool
+    id_entrenamiento: int | None = None
+    id_job_entrenamientos: int | None = None
+    collection_name: str = ""
+    numero_secuencia: int = 0
+    message: str = ""
+
+
+class EntrenamientoPhaseRequest(BaseModel):
+    """Payload para actualizar fase de un entrenamiento."""
+
+    fase_actual: str
+
+
+class EntrenamientoPhaseResponse(BaseModel):
+    """Respuesta de actualización de fase."""
+
+    success: bool
+    message: str = ""
+
+
+class EntrenamientoCompleteRequest(BaseModel):
+    """Payload para marcar entrenamiento como completado."""
+
+    modelo_path: str = ""
+
+
+class EntrenamientoCompleteResponse(BaseModel):
+    """Respuesta de completado de entrenamiento."""
+
+    success: bool
+    message: str = ""
+
+
+class EntrenamientoErrorRequest(BaseModel):
+    """Payload para marcar entrenamiento como error."""
+
+    error_mensaje: str = ""
+
+
+class EntrenamientoErrorResponse(BaseModel):
+    """Respuesta de error de entrenamiento."""
+
+    success: bool
+    message: str = ""
+
+
+class EntrenamientoCancelRequest(BaseModel):
+    """Payload para cancelar entrenamiento."""
+
+    motivo: str = "Cancelado por usuario"
+
+
+class EntrenamientoCancelResponse(BaseModel):
+    """Respuesta de cancelación de entrenamiento."""
+
+    success: bool
+    message: str = ""
+
+
+@app.get(
+    "/training/params/{org_id}/{project_id}/{version_id}",
+    response_model=TrainingParamsResponse,
+    tags=["training"],
+)
+def get_training_params_endpoint(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> TrainingParamsResponse:
+    """Obtiene parámetros de entrenamiento (passthrough a Backend Core).
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+    """
+    try:
+        result = router.get_training_params(org_id, project_id, version_id)
+        return TrainingParamsResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post(
+    "/training/entrenamientos/register",
+    response_model=EntrenamientoRegisterResponse,
+    tags=["training"],
+)
+def register_entrenamiento_endpoint(
+    payload: EntrenamientoRegisterRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> EntrenamientoRegisterResponse:
+    """Registra un nuevo entrenamiento.
+
+    Flujo: Trainer → Broker → Backend Core → MariaDB
+    """
+    try:
+        result = router.register_entrenamiento(payload.model_dump())
+        return EntrenamientoRegisterResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/training/entrenamientos/{id_entrenamiento}/phase",
+    response_model=EntrenamientoPhaseResponse,
+    tags=["training"],
+)
+def update_entrenamiento_phase_endpoint(
+    id_entrenamiento: int,
+    payload: EntrenamientoPhaseRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> EntrenamientoPhaseResponse:
+    """Actualiza la fase actual de un entrenamiento.
+
+    Flujo: Trainer → Broker → Backend Core → MariaDB
+    """
+    try:
+        result = router.update_entrenamiento_phase(
+            id_entrenamiento, payload.fase_actual
+        )
+        return EntrenamientoPhaseResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/training/entrenamientos/{id_entrenamiento}/complete",
+    response_model=EntrenamientoCompleteResponse,
+    tags=["training"],
+)
+def complete_entrenamiento_endpoint(
+    id_entrenamiento: int,
+    payload: EntrenamientoCompleteRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> EntrenamientoCompleteResponse:
+    """Marca un entrenamiento como completado.
+
+    Flujo: Trainer → Broker → Backend Core → MariaDB
+    """
+    try:
+        result = router.complete_entrenamiento(
+            id_entrenamiento, payload.modelo_path
+        )
+        return EntrenamientoCompleteResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/training/entrenamientos/{id_entrenamiento}/error",
+    response_model=EntrenamientoErrorResponse,
+    tags=["training"],
+)
+def error_entrenamiento_endpoint(
+    id_entrenamiento: int,
+    payload: EntrenamientoErrorRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> EntrenamientoErrorResponse:
+    """Marca un entrenamiento como error.
+
+    Flujo: Trainer → Broker → Backend Core → MariaDB
+    """
+    try:
+        result = router.error_entrenamiento(
+            id_entrenamiento, payload.error_mensaje
+        )
+        return EntrenamientoErrorResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/training/entrenamientos/{id_entrenamiento}/cancel",
+    response_model=EntrenamientoCancelResponse,
+    tags=["training"],
+)
+def cancel_entrenamiento_endpoint(
+    id_entrenamiento: int,
+    payload: EntrenamientoCancelRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> EntrenamientoCancelResponse:
+    """Cancela un entrenamiento en progreso.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+    """
+    try:
+        result = router.cancel_entrenamiento(
+            id_entrenamiento, payload.motivo
+        )
+        return EntrenamientoCancelResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+# (Endpoint GET /training/params ya definido arriba con TrainingParamsResponse)
+
+
+@app.patch(
+    "/training/progress",
+    response_model=dict,
+    tags=["training"],
+)
+async def update_training_progress_endpoint(
+    payload: TrainingProgressNotification,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Recibe notificaciones de progreso desde el trainer.
+
+    Flujo: Trainer → Broker → Backend Core
+    """
+    try:
+        result = await router.update_training_progress(payload.model_dump())
+        return result
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get(
+    "/training/entrenamientos/{id_entrenamiento}/progress",
+    response_model=dict,
+    tags=["training"],
+)
+async def get_training_progress_endpoint(
+    id_entrenamiento: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Consulta el progreso actual de un entrenamiento.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core
+    """
+    try:
+        result = await router.get_training_progress(id_entrenamiento)
+        return result
     except BrokerBusinessError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

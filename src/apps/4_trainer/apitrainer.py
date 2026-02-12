@@ -34,6 +34,16 @@ _routertrainer = _load_trainer_module("routertrainer_backend", _router_path)
 _chroma_server_path = Path(__file__).resolve().parent / "chroma_server.py"
 _chroma_server = _load_trainer_module("chroma_server", _chroma_server_path)
 
+# Cargar módulos del proceso de entrenamiento RAG
+_entrenamiento_service_path = Path(__file__).resolve().parent / "entrenamiento_service.py"
+_load_trainer_module("entrenamiento_service", _entrenamiento_service_path)
+
+_broker_client_path = Path(__file__).resolve().parent / "broker_client.py"
+_load_trainer_module("broker_client", _broker_client_path)
+
+_keras_embeddings_path = Path(__file__).resolve().parent / "keras_embeddings.py"
+_load_trainer_module("keras_embeddings", _keras_embeddings_path)
+
 BackendTrainerBusinessError = _routertrainer.BackendTrainerBusinessError
 BackendTrainerPermissionError = _routertrainer.BackendTrainerPermissionError
 BackendTrainerRouter = _routertrainer.BackendTrainerRouter
@@ -176,6 +186,43 @@ class DocumentacionResponse(BaseModel):
     success: bool
     message: str = ""
     received_at: str = ""
+
+
+class EntrenamientoRequest(BaseModel):
+    """Payload para solicitud de entrenamiento inicial."""
+
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    pat_version: str = ""
+    # Parámetros opcionales de entrenamiento (enviados desde modal del backoffice)
+    learning_rate: float | None = None
+    batch_size: int | None = None
+    epochs: int | None = None
+    embedding_dimension: int | None = None
+    sequence_length: int | None = None
+    hidden_units: int | None = None
+    dropout_rate: float | None = None
+    chunk_size: int | None = None
+    chunk_overlap: int | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    distance_metric: str | None = None
+    top_k: int | None = None
+    loss_function: str | None = None
+    optimizer: str | None = None
+    model_type: str | None = None
+
+
+class EntrenamientoResponse(BaseModel):
+    """Respuesta de solicitud de entrenamiento (ACK)."""
+
+    success: bool
+    message: str = ""
+    received_at: str = ""
+    id_entrenamiento: int = 0  # ID del entrenamiento creado en BD
+    collection_name: str = ""  # Nombre de la colección en ChromaDB
+    numero_secuencia: int = 0  # Número de secuencia del entrenamiento
 
 
 class MetadatosRequest(BaseModel):
@@ -718,4 +765,130 @@ def recibir_metadatos(
             f"prj={request.id_proyecto}, ver={request.id_version}"
         ),
         received_at=received_at,
+    )
+
+
+# ============================================================================
+# Entrenamientos - Solicitud de entrenamiento inicial
+# ============================================================================
+
+
+@app.post("/trainer/entrenamientos", response_model=EntrenamientoResponse)
+def recibir_entrenamiento(
+    request: EntrenamientoRequest,
+    client_app: str = Depends(get_client_app),
+) -> EntrenamientoResponse:
+    """Recibe una solicitud de entrenamiento inicial desde el backoffice.
+
+    Devuelve un ACK inmediato y lanza el proceso de entrenamiento RAG
+    completo en un thread de background (5 fases: recepcion, validacion,
+    preparacion, configuracion, entrenamiento).
+
+    Flujo del thread:
+        1. Registra entrenamiento en BD via Broker → Backend Core → MariaDB
+        2. Escanea y clasifica archivos de la versión
+        3. Carga documentos (LangChain), chunking, embeddings (Keras/TF-Hub)
+        4. Inserta vectores en ChromaDB
+        5. Genera Modelfile y registra modelo en Ollama
+    """
+    import threading
+    from datetime import datetime, timezone
+
+    logger = logging.getLogger("trainer_api")
+    logger.info(
+        "[ENTRENAMIENTO] Solicitud recibida: org=%s prj=%s ver=%s pat=%s client=%s",
+        request.id_organizacion,
+        request.id_proyecto,
+        request.id_version,
+        request.pat_version,
+        client_app,
+    )
+
+    # PASO 1: Registrar entrenamiento en BD ANTES de lanzar el background thread
+    from broker_client import TrainerBrokerClient
+
+    broker_client = TrainerBrokerClient()
+    payload_dict = request.model_dump()
+
+    # Construir payload de registro
+    register_payload = {
+        "id_organizacion": payload_dict["id_organizacion"],
+        "id_proyecto": payload_dict["id_proyecto"],
+        "id_version": payload_dict["id_version"],
+        "pat_version": payload_dict["pat_version"],
+        "entrenamiento_inicial": True,
+        "reentrenamiento": False,
+        **{k: v for k, v in payload_dict.items() if k not in [
+            "id_organizacion", "id_proyecto", "id_version", "pat_version"
+        ]}
+    }
+
+    logger.info("[ENTRENAMIENTO] Registrando en BD via Broker...")
+    try:
+        result = broker_client.register_entrenamiento(register_payload)
+
+        if not result.get("success"):
+            error_msg = result.get("message", "Error desconocido al registrar")
+            logger.error("[ENTRENAMIENTO] Error en registro: %s", error_msg)
+            return EntrenamientoResponse(
+                success=False,
+                message=f"Error al registrar entrenamiento: {error_msg}",
+                received_at=datetime.now(timezone.utc).isoformat(),
+            )
+
+        id_entrenamiento = result["id_entrenamiento"]
+        collection_name = result["collection_name"]
+        numero_secuencia = result["numero_secuencia"]
+
+        logger.info(
+            "[ENTRENAMIENTO] Registrado: id=%s, collection=%s, seq=%s",
+            id_entrenamiento, collection_name, numero_secuencia
+        )
+    except Exception as exc:
+        logger.error("[ENTRENAMIENTO] Excepción al registrar: %s", exc)
+        return EntrenamientoResponse(
+            success=False,
+            message=f"Excepción al registrar: {str(exc)}",
+            received_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+    # PASO 2: Lanzar procesamiento en background thread CON el id_entrenamiento
+    from entrenamiento_service import process_entrenamiento_with_id
+
+    # Agregar el ID al payload
+    payload_with_id = {
+        **payload_dict,
+        "id_entrenamiento": id_entrenamiento,
+        "collection_name": collection_name,
+        "numero_secuencia": numero_secuencia,
+    }
+
+    thread = threading.Thread(
+        target=process_entrenamiento_with_id,
+        args=(payload_with_id,),
+        daemon=True,
+        name=(
+            f"training-org{request.id_organizacion}"
+            f"-prj{request.id_proyecto}"
+            f"-ver{request.id_version}-ent{id_entrenamiento}"
+        ),
+    )
+    thread.start()
+    logger.info(
+        "[ENTRENAMIENTO] Thread background lanzado: %s (id=%s)",
+        thread.name, id_entrenamiento,
+    )
+
+    received_at = datetime.now(timezone.utc).isoformat()
+
+    return EntrenamientoResponse(
+        success=True,
+        message=(
+            f"Entrenamiento {id_entrenamiento} registrado para "
+            f"org={request.id_organizacion}, prj={request.id_proyecto}, ver={request.id_version}"
+        ),
+        received_at=received_at,
+        id_entrenamiento=id_entrenamiento,
+        collection_name=collection_name,
+        numero_secuencia=numero_secuencia,
     )

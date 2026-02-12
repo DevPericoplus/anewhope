@@ -7903,309 +7903,329 @@
       "expires_at": "2026-02-11T09:31:45Z",
       "ip_address": "127.0.0.1",
       "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "a83194c4-ab71-4794-9121-5f801b7328a9",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "ee15a881-23df-4c5e-9c89-b94a8c948555",
+        "session_token_jti": "3c60c5ee-3386-4d62-be31-9647d3e4607f"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-11T10:38:46.217108Z",
+      "last_activity": "2026-02-11T11:02:32.906837Z",
+      "expires_at": "2026-02-11T11:23:46Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "a9597c9f-23f3-4d99-87e6-ed1903191c26",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "6c0697d4-3435-4d64-b690-0f747707de4b",
+        "session_token_jti": "8fb5fcdd-313c-4654-9022-e46ccc432ddb"
+      },
+      "status": "active",
+      "created_at": "2026-02-11T11:03:12.151275Z",
+      "last_activity": "2026-02-11T11:10:01.892782Z",
+      "expires_at": "2026-02-11T11:48:12Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "022ddc58-5a5d-4e8c-ac4e-3a61d5f4d730",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "910f98ed-4986-4b8d-9013-ae37bb53b482",
+        "session_token_jti": "6d1583c1-f0a0-4a56-a1d0-80dcabf77e53"
+      },
+      "status": "active",
+      "created_at": "2026-02-11T15:50:20.821696Z",
+      "last_activity": "2026-02-11T16:10:46.246376Z",
+      "expires_at": "2026-02-11T16:35:20Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "e6a2d803-5d07-4975-885e-7d5bf601ce80",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "6e56f549-2ef8-4fdd-8430-40550acd74bd",
+        "session_token_jti": "3918cd62-f4ff-4368-84d6-2c08f2421751"
+      },
+      "status": "active",
+      "created_at": "2026-02-11T23:38:08.473796Z",
+      "last_activity": "2026-02-11T23:38:22.290364Z",
+      "expires_at": "2026-02-12T00:23:08Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "6255f8c3-3b7c-4f78-9a4c-14a4bd69750d",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "f79376a6-dc38-4f13-8ecf-b849bbbff327",
+        "session_token_jti": "1a86b15d-208c-4bcf-a7eb-75ff80ef5410"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-12T03:57:30.194180Z",
+      "last_activity": "2026-02-12T04:04:45.011503Z",
+      "expires_at": "2026-02-12T04:42:30Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "3dec2435-cda1-4b5f-a175-07a105f82410",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "72f9d6a3-a970-4a86-af80-1f8c97bb69c9",
+        "session_token_jti": "0af28a28-6aea-4dbb-8ce2-a6093bf8a891"
+      },
+      "status": "active",
+      "created_at": "2026-02-12T04:05:14.919385Z",
+      "last_activity": "2026-02-12T04:45:28.811456Z",
+      "expires_at": "2026-02-12T04:50:14Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "cfda5d1e-1793-405c-9f3c-e7933509e61c",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "d0665e40-07d7-4f3e-b28b-ec08318007e0",
+        "session_token_jti": "7aa3a349-8c38-4d0f-993d-e9240bf77ec9"
+      },
+      "status": "active",
+      "created_at": "2026-02-12T04:57:41.923247Z",
+      "last_activity": "2026-02-12T05:10:28.114505Z",
+      "expires_at": "2026-02-12T05:42:41Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "3801adfa-8981-4c59-ab89-589bb8ebb9f5",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "0248cea4-65d4-43f4-9e88-6d15fa08ac1f",
+        "session_token_jti": "693e157f-578d-4519-89c9-33bf282bf6c0"
+      },
+      "status": "active",
+      "created_at": "2026-02-12T13:42:50.721955Z",
+      "last_activity": "2026-02-12T14:23:45.884112Z",
+      "expires_at": "2026-02-12T14:27:50Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "0062df4b-ec2a-4537-9603-38a9655ff38a",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "e0e94367-f924-41c9-ba1e-ed5d77828ed2",
+        "session_token_jti": "8c879620-a857-43fb-9108-5ee8502ac278"
+      },
+      "status": "active",
+      "created_at": "2026-02-12T14:31:48.418931Z",
+      "last_activity": "2026-02-12T14:54:52.416444Z",
+      "expires_at": "2026-02-12T15:16:48Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "084b839f-c535-4d9c-bf8b-744ce36e26fa",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "a09d1a57-2695-49f5-9ae0-f4f5d3f42f5c",
+        "session_token_jti": "a5a2a464-dd5b-4229-97c2-d2d9dda5066b"
+      },
+      "status": "active",
+      "created_at": "2026-02-12T15:31:06.237928Z",
+      "last_activity": "2026-02-12T15:48:45.248778Z",
+      "expires_at": "2026-02-12T16:16:06Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "816501ac-c9f9-4375-9e11-b5ce52328e0c",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "1732ed1c-d8ba-489e-814a-317643a5d29f",
+        "session_token_jti": "e85ae7ff-9d4d-46ad-8bfc-f62fdcf040cb"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-12T15:59:46.867155Z",
+      "last_activity": "2026-02-12T16:04:32.501367Z",
+      "expires_at": "2026-02-12T16:44:46Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "14f1f937-55be-423a-ae2c-351272554afc",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "49a80eb2-308c-40d0-9b7a-d1361952ea58",
+        "session_token_jti": "724507f2-cc4b-415d-80a6-4ccd74e5c7ac"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-12T16:07:24.457075Z",
+      "last_activity": "2026-02-12T16:17:50.442601Z",
+      "expires_at": "2026-02-12T16:52:24Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "ad121f14-9233-4f96-8d0c-c56a72587562",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "a43d6336-5465-4bd9-b271-107c498ef003",
+        "session_token_jti": "16dd6adc-09ab-4627-ade1-c9c284770a70"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-12T16:18:27.639621Z",
+      "last_activity": "2026-02-12T16:22:34.422820Z",
+      "expires_at": "2026-02-12T17:03:27Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "b5bf00a8-5418-49cd-9d01-eba6fa781b00",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "8db15234-7d17-4b18-aa92-3d03700f241b",
+        "session_token_jti": "63514a85-059c-4f1d-844c-734964f37f3c"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-12T16:24:29.940406Z",
+      "last_activity": "2026-02-12T16:28:09.644369Z",
+      "expires_at": "2026-02-12T17:09:29Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "793be1c3-c774-4e63-b5d3-ce5e709b16e5",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "bca5adf7-240e-42f7-90bd-aab4bab124e0",
+        "session_token_jti": "fe22a5d9-81ab-4839-b445-919b7b92b6f6"
+      },
+      "status": "active",
+      "created_at": "2026-02-12T16:28:42.153779Z",
+      "last_activity": "2026-02-12T16:48:33.845922Z",
+      "expires_at": "2026-02-12T17:13:42Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "6d45ce46-3d5a-4831-8e2f-6db267e794eb",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "b3f7a273-479e-4257-939a-81955ebb23d4",
+        "session_token_jti": "7d814659-8487-4adb-be5d-2d9102a70b67"
+      },
+      "status": "active",
+      "created_at": "2026-02-12T16:55:03.652439Z",
+      "last_activity": "2026-02-12T16:56:19.647823Z",
+      "expires_at": "2026-02-12T17:40:03Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "053e8557-e5d0-46bd-aa1a-1735910a4644",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "5b9a8a39-1235-45b7-aa3d-eca0e625e6c4",
+        "session_token_jti": "c8dec4be-9bbc-44d4-a040-f281f6a29974"
+      },
+      "status": "active",
+      "created_at": "2026-02-12T17:00:49.231808Z",
+      "last_activity": "2026-02-12T17:01:45.822590Z",
+      "expires_at": "2026-02-12T17:45:49Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "09dc88a7-7f18-4a4e-b8a0-d71b7f022228",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "c2a03e12-186a-42b4-ac5f-8dc87dbcdc3c",
+        "session_token_jti": "07832a64-a00a-495a-ada9-6ab594aceb05"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-12T17:11:14.207318Z",
+      "last_activity": "2026-02-12T17:20:57.979147Z",
+      "expires_at": "2026-02-12T17:56:14Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "a8c05894-9f49-45de-b678-a4ea787e0a0e",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "64cc0fb4-c28a-4df3-9259-261bc2bb7e09",
+        "session_token_jti": "d161780c-959b-4908-ae5f-1cfa3f2604ec"
+      },
+      "status": "inactive",
+      "created_at": "2026-02-12T17:21:32.736212Z",
+      "last_activity": "2026-02-12T17:26:59.937769Z",
+      "expires_at": "2026-02-12T18:06:32Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "0f8c46c2-806d-4152-bd71-72afd36dd991",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "1198ea96-9311-4ec3-b060-c0a31e14f16a",
+        "session_token_jti": "0e7c61a8-29e7-405b-be61-521f61518952"
+      },
+      "status": "active",
+      "created_at": "2026-02-12T17:28:49.299677Z",
+      "last_activity": "2026-02-12T17:46:04.473994Z",
+      "expires_at": "2026-02-12T18:13:49Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
     }
   ],
   "auth_logs": [
-    {
-      "timestamp": "2026-02-03T18:59:28.143287Z",
-      "user_name": "adminone",
-      "event": "login_attempt",
-      "status": "failed",
-      "ip_address": "127.0.0.1",
-      "error_code": "INVALID_OTP",
-      "details": "OTP inválido",
-      "user_agent": "python-requests/2.32.5"
-    },
-    {
-      "timestamp": "2026-02-03T19:01:10.333731Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "c07da3ea-63cd-4104-ae52-e3afeb75e6b5",
-      "user_agent": "python-requests/2.32.5"
-    },
-    {
-      "timestamp": "2026-02-03T19:03:41.939797Z",
-      "user_name": "adminone",
-      "event": "login_attempt",
-      "status": "failed",
-      "ip_address": "127.0.0.1",
-      "error_code": "INVALID_OTP",
-      "details": "OTP inválido",
-      "user_agent": "python-requests/2.32.5"
-    },
-    {
-      "timestamp": "2026-02-03T19:07:16.206146Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "c611674c-bf44-420c-9ae9-b8d53cfff4f8",
-      "user_agent": "python-requests/2.32.5"
-    },
-    {
-      "timestamp": "2026-02-03T19:08:17.048299Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "5d8994a5-3fde-457b-914e-4ebd99827d06",
-      "user_agent": "python-requests/2.32.5"
-    },
-    {
-      "timestamp": "2026-02-03T19:09:49.832348Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "93a75784-f649-41b2-be40-5e65dd50fc3a",
-      "user_agent": "python-requests/2.32.5"
-    },
-    {
-      "timestamp": "2026-02-03T19:16:23.454256Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "9e8825b8-ad45-40cf-803e-14cde502b6fe",
-      "user_agent": "python-requests/2.32.5"
-    },
-    {
-      "timestamp": "2026-02-03T19:19:31.685556Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "8bcafa98-2fe1-4c7e-aacb-3a29d14c769c",
-      "user_agent": "python-requests/2.32.5"
-    },
-    {
-      "timestamp": "2026-02-03T19:20:28.560899Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "ba6f8f1c-76df-4598-9fa0-1efb161b85fe",
-      "user_agent": "python-requests/2.32.5"
-    },
-    {
-      "timestamp": "2026-02-03T19:22:38.492817Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "3cdf1d0b-8dee-4515-8276-cb47929120d3",
-      "user_agent": "python-requests/2.32.5"
-    },
-    {
-      "timestamp": "2026-02-03T19:23:38.871171Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "7cec2482-bddb-499d-9b48-6115d28583ec",
-      "user_agent": "python-requests/2.32.5"
-    },
-    {
-      "timestamp": "2026-02-03T19:25:40.795610Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "c4526b7c-afa1-46de-979d-a61121f58b65",
-      "user_agent": "python-requests/2.32.5"
-    },
-    {
-      "timestamp": "2026-02-03T19:29:54.712712Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "bd0c9b23-fb97-4f18-b023-b3ed209d6951",
-      "user_agent": "python-requests/2.32.5"
-    },
-    {
-      "timestamp": "2026-02-03T19:34:04.230790Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "bf0b6412-80b1-4e1e-913f-4d4b3b7e35fb",
-      "user_agent": "python-requests/2.32.5"
-    },
-    {
-      "timestamp": "2026-02-03T19:35:52.938599Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "a31dd40f-ddf9-43f4-8541-567eacfde66a",
-      "user_agent": "Python-urllib/3.13"
-    },
-    {
-      "timestamp": "2026-02-03T19:43:16.156259Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "11788743-1412-42d1-9f76-3c1a60417bb0",
-      "user_agent": "Python-urllib/3.13"
-    },
-    {
-      "timestamp": "2026-02-03T20:15:03.330711Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "ed780537-afbf-4511-b4fe-8e5ebb195a8e",
-      "user_agent": "Python-urllib/3.13"
-    },
-    {
-      "timestamp": "2026-02-03T20:21:08.610254Z",
-      "user_name": "adminone",
-      "event": "logout",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "ed780537-afbf-4511-b4fe-8e5ebb195a8e",
-      "user_agent": "Python-urllib/3.13"
-    },
-    {
-      "timestamp": "2026-02-03T20:21:45.880177Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "d8647a28-ca82-4fe3-bfb7-faff7a432602",
-      "user_agent": "Python-urllib/3.13"
-    },
-    {
-      "timestamp": "2026-02-03T20:23:46.198792Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "c2f6c5ec-3e0e-4f4b-847a-87e81ddec908",
-      "user_agent": "python-requests/2.32.5"
-    },
-    {
-      "timestamp": "2026-02-03T20:25:52.770611Z",
-      "user_name": "adminone",
-      "event": "logout",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "d8647a28-ca82-4fe3-bfb7-faff7a432602",
-      "user_agent": "Python-urllib/3.13"
-    },
-    {
-      "timestamp": "2026-02-03T20:26:34.697398Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "b4fa2cc9-ec5f-4c0b-a9c9-a053ceb5a337",
-      "user_agent": "Python-urllib/3.13"
-    },
-    {
-      "timestamp": "2026-02-03T20:30:35.117730Z",
-      "user_name": "adminone",
-      "event": "logout",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "b4fa2cc9-ec5f-4c0b-a9c9-a053ceb5a337",
-      "user_agent": "Python-urllib/3.13"
-    },
-    {
-      "timestamp": "2026-02-03T20:31:12.147916Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "3ec901e9-d4f7-45a1-9533-df3f9f9854aa",
-      "user_agent": "Python-urllib/3.13"
-    },
-    {
-      "timestamp": "2026-02-03T20:36:27.500885Z",
-      "user_name": "adminone",
-      "event": "logout",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "3ec901e9-d4f7-45a1-9533-df3f9f9854aa",
-      "user_agent": "Python-urllib/3.13"
-    },
-    {
-      "timestamp": "2026-02-03T20:36:59.563880Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "756af212-0cfc-4813-a3ee-47cd96073409",
-      "user_agent": "Python-urllib/3.13"
-    },
-    {
-      "timestamp": "2026-02-03T20:49:59.321014Z",
-      "user_name": "adminone",
-      "event": "logout",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "756af212-0cfc-4813-a3ee-47cd96073409",
-      "user_agent": "Python-urllib/3.13"
-    },
-    {
-      "timestamp": "2026-02-03T20:50:30.243835Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "b59fe005-1f8c-4eed-bbb5-f5aac29cfbf7",
-      "user_agent": "Python-urllib/3.13"
-    },
-    {
-      "timestamp": "2026-02-03T21:03:58.566602Z",
-      "user_name": "adminone",
-      "event": "logout",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "b59fe005-1f8c-4eed-bbb5-f5aac29cfbf7",
-      "user_agent": "Python-urllib/3.13"
-    },
-    {
-      "timestamp": "2026-02-03T21:04:25.713308Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "29344d57-ca3e-4315-a482-530d77a6e82d",
-      "user_agent": "Python-urllib/3.13"
-    },
-    {
-      "timestamp": "2026-02-03T21:17:02.377469Z",
-      "user_name": "adminone",
-      "event": "logout",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "29344d57-ca3e-4315-a482-530d77a6e82d",
-      "user_agent": "Python-urllib/3.13"
-    },
-    {
-      "timestamp": "2026-02-03T21:17:50.051049Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "89e52d70-c8b0-4b4f-8420-71afca06aa72",
-      "user_agent": "Python-urllib/3.13"
-    },
-    {
-      "timestamp": "2026-02-03T22:14:46.311858Z",
-      "user_name": "adminone",
-      "event": "login_attempt",
-      "status": "failed",
-      "ip_address": "127.0.0.1",
-      "error_code": "INVALID_OTP",
-      "details": "OTP inválido",
-      "user_agent": "Python-urllib/3.13"
-    },
     {
       "timestamp": "2026-02-03T22:15:06.500709Z",
       "user_name": "adminone",
@@ -12431,6 +12451,308 @@
       "status": "success",
       "ip_address": "127.0.0.1",
       "session_id": "2e909918-f941-4820-91d2-be6904c76d18",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-11T10:38:46.243097Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "a83194c4-ab71-4794-9121-5f801b7328a9",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-11T11:02:32.906878Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "a83194c4-ab71-4794-9121-5f801b7328a9",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-11T11:03:12.172982Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "a9597c9f-23f3-4d99-87e6-ed1903191c26",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-11T15:50:20.843415Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "022ddc58-5a5d-4e8c-ac4e-3a61d5f4d730",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-11T23:38:08.495973Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "e6a2d803-5d07-4975-885e-7d5bf601ce80",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T03:57:30.218754Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "6255f8c3-3b7c-4f78-9a4c-14a4bd69750d",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T04:04:45.011525Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "6255f8c3-3b7c-4f78-9a4c-14a4bd69750d",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T04:05:14.941139Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "3dec2435-cda1-4b5f-a175-07a105f82410",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T04:57:41.944323Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "cfda5d1e-1793-405c-9f3c-e7933509e61c",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T13:42:50.750003Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "3801adfa-8981-4c59-ab89-589bb8ebb9f5",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T14:19:44.883840Z",
+      "user_name": "admin",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "USER_NOT_FOUND",
+      "details": "Usuario no existe",
+      "user_agent": "python-requests/2.32.5"
+    },
+    {
+      "timestamp": "2026-02-12T14:31:35.914009Z",
+      "user_name": "aadminone",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "USER_NOT_FOUND",
+      "details": "Usuario no existe",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T14:31:48.445375Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "0062df4b-ec2a-4537-9603-38a9655ff38a",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T15:31:06.261046Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "084b839f-c535-4d9c-bf8b-744ce36e26fa",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T15:59:46.888499Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "816501ac-c9f9-4375-9e11-b5ce52328e0c",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T16:04:32.501408Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "816501ac-c9f9-4375-9e11-b5ce52328e0c",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T16:07:24.479139Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "14f1f937-55be-423a-ae2c-351272554afc",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T16:17:50.442620Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "14f1f937-55be-423a-ae2c-351272554afc",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T16:18:27.659311Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "ad121f14-9233-4f96-8d0c-c56a72587562",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T16:22:34.422843Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "ad121f14-9233-4f96-8d0c-c56a72587562",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T16:24:29.963836Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "b5bf00a8-5418-49cd-9d01-eba6fa781b00",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T16:24:32.463222Z",
+      "user_name": "adminone",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "INVALID_OTP",
+      "details": "OTP inválido",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T16:28:09.644395Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "b5bf00a8-5418-49cd-9d01-eba6fa781b00",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T16:28:42.173847Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "793be1c3-c774-4e63-b5d3-ce5e709b16e5",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T16:55:03.682273Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "6d45ce46-3d5a-4831-8e2f-6db267e794eb",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T17:00:49.265675Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "053e8557-e5d0-46bd-aa1a-1735910a4644",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T17:11:14.231721Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "09dc88a7-7f18-4a4e-b8a0-d71b7f022228",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T17:20:57.979169Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "09dc88a7-7f18-4a4e-b8a0-d71b7f022228",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T17:21:32.757579Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "a8c05894-9f49-45de-b678-a4ea787e0a0e",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T17:21:35.155507Z",
+      "user_name": "adminone",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "INVALID_OTP",
+      "details": "OTP inválido",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T17:26:59.937790Z",
+      "user_name": "adminone",
+      "event": "logout",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "a8c05894-9f49-45de-b678-a4ea787e0a0e",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T17:28:38.689341Z",
+      "user_name": "adminoner",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "USER_NOT_FOUND",
+      "details": "Usuario no existe",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-12T17:28:49.320153Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "0f8c46c2-806d-4152-bd71-72afd36dd991",
       "user_agent": "Python-urllib/3.13"
     }
   ]
