@@ -564,6 +564,20 @@ class BrokerBackendRouter:
                 "No se pudo enviar la solicitud de entrenamiento al trainer"
             ) from exc
 
+    def send_autonomous_training(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Envía solicitud de entrenamiento autónomo al trainer.
+
+        Ejecuta las fases 6-9 (Dataset + LoRA + GGUF export).
+        """
+
+        client = self._ensure_trainer_client()
+        try:
+            return client.send_autonomous_training(payload)
+        except TrainerBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo enviar la solicitud de entrenamiento autónomo al trainer"
+            ) from exc
+
     # ========================================================================
     # Gestión de Proyectos (enrutados a Backend Core)
     # ========================================================================

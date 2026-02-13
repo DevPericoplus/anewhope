@@ -1143,6 +1143,27 @@ class EntrenamientoCancelResponse(BaseModel):
     message: str = ""
 
 
+class AutonomousTrainingRequest(BaseModel):
+    """Payload para solicitud de entrenamiento autónomo (RAG + LoRA + GGUF)."""
+
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    id_entrenamiento: int  # ID del entrenamiento RAG previo
+    pat_version: str = ""
+    collection_name: str = ""  # Nombre de colección ChromaDB
+
+
+class AutonomousTrainingResponse(BaseModel):
+    """Respuesta de solicitud de entrenamiento autónomo (ACK)."""
+
+    success: bool
+    message: str = ""
+    received_at: str = ""
+    id_entrenamiento: int = 0
+    training_mode: str = ""  # simulation, test o production
+
+
 class MetadatosRequest(BaseModel):
     """Payload para análisis de metadatos de ficheros."""
 
@@ -1475,6 +1496,40 @@ def cancel_entrenamiento_endpoint(
     try:
         response = router.cancel_entrenamiento(request.model_dump(), session)
         return EntrenamientoCancelResponse(**response)
+    except BusinessRuleError as exc:
+        error_msg = str(exc).lower()
+        if "permisos" in error_msg or "permiso" in error_msg:
+            status_code = status.HTTP_403_FORBIDDEN
+        else:
+            status_code = status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/training/entrenamientos/autonomous", response_model=AutonomousTrainingResponse)
+def send_autonomous_training_endpoint(
+    request: AutonomousTrainingRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> AutonomousTrainingResponse:
+    """Envía solicitud de entrenamiento autónomo al trainer.
+
+    El entrenamiento autónomo ejecuta las fases 6-9:
+        Fase 6: Generación de Dataset desde ChromaDB
+        Fases 7-8: Fine-tuning con LoRA (solo test/production)
+        Fase 9: Exportación a GGUF y empaquetado (solo test/production)
+    """
+
+    try:
+        response = router.send_autonomous_training(request.model_dump(), session)
+
+        print(f"[MIDDLEWARE ENDPOINT] ===== RESPUESTA AUTONOMOUS =====")
+        print(f"[MIDDLEWARE ENDPOINT] Response: {response}")
+        print(f"[MIDDLEWARE ENDPOINT] ====================================")
+
+        return AutonomousTrainingResponse(**response)
     except BusinessRuleError as exc:
         error_msg = str(exc).lower()
         if "permisos" in error_msg or "permiso" in error_msg:

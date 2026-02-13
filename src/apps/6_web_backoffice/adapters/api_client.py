@@ -3412,6 +3412,52 @@ def send_entrenamiento_to_trainer(
     return response if isinstance(response, dict) else {}
 
 
+def send_autonomous_training_to_trainer(
+    payload: dict[str, Any],
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Envía solicitud de entrenamiento autónomo al trainer.
+
+    El entrenamiento autónomo ejecuta las fases 6-9:
+        Fase 6: Generación de Dataset desde ChromaDB
+        Fases 7-8: Fine-tuning con LoRA (solo test/production)
+        Fase 9: Exportación a GGUF y empaquetado (solo test/production)
+
+    Flujo: Backoffice → Middleware → Broker → Trainer
+
+    Args:
+        payload: Datos con ids y collection_name del RAG previo.
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+
+    Returns:
+        Respuesta ACK del trainer con success, message, training_mode
+    """
+    headers: dict[str, str] = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    print(f"[BACKOFFICE API_CLIENT] ===== ENVIANDO AUTONOMOUS TRAINING =====")
+    print(f"[BACKOFFICE API_CLIENT] Payload: {payload}")
+    print(f"[BACKOFFICE API_CLIENT] Headers: {headers}")
+
+    response = _request_middleware(
+        "POST",
+        "/training/entrenamientos/autonomous",
+        payload=payload,
+        headers=headers,
+    )
+
+    print(f"[BACKOFFICE API_CLIENT] ===== RESPUESTA AUTONOMOUS =====")
+    print(f"[BACKOFFICE API_CLIENT] Response: {response}")
+    print(f"[BACKOFFICE API_CLIENT] ======================================")
+
+    return response if isinstance(response, dict) else {}
+
+
 def cancel_entrenamiento_training(
     payload: dict[str, Any],
     access_token: str = "",

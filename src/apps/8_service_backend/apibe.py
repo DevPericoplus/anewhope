@@ -382,6 +382,27 @@ class MetadatosResponse(BaseModel):
     received_at: str = ""
 
 
+class AutonomousTrainingRequest(BaseModel):
+    """Payload para solicitud de entrenamiento autónomo."""
+
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    id_entrenamiento: int
+    pat_version: str = ""
+    collection_name: str = ""
+
+
+class AutonomousTrainingResponse(BaseModel):
+    """Respuesta de solicitud de entrenamiento autónomo (ACK)."""
+
+    success: bool
+    message: str = ""
+    received_at: str = ""
+    id_entrenamiento: int = 0
+    training_mode: str = ""
+
+
 def _configure_logging() -> None:
     """Configura logging del broker backend con salida a console.log."""
 
@@ -1184,6 +1205,29 @@ def send_entrenamiento(
         print(f"[DEBUG BROKER ENDPOINT] result.model_dump(): {result.model_dump()}")
         print(f"[DEBUG BROKER ENDPOINT] ==========================================")
         return result
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/training/entrenamientos/autonomous", response_model=AutonomousTrainingResponse)
+def send_autonomous_training(
+    request: AutonomousTrainingRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> AutonomousTrainingResponse:
+    """Envía solicitud de entrenamiento autónomo al trainer.
+
+    Ejecuta las fases 6-9 (Dataset + LoRA + GGUF export).
+    """
+
+    try:
+        response = router.send_autonomous_training(request.model_dump())
+        print(f"[DEBUG BROKER ENDPOINT] ===== AUTONOMOUS TRAINING RESPONSE =====")
+        print(f"[DEBUG BROKER ENDPOINT] response: {response}")
+        print(f"[DEBUG BROKER ENDPOINT] ===========================================")
+        return AutonomousTrainingResponse(**response)
     except BrokerBusinessError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

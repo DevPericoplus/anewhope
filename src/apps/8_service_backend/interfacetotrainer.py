@@ -344,3 +344,16 @@ class TrainerBackendClient:
             Respuesta ACK del trainer
         """
         return self._request("POST", "/trainer/entrenamientos", payload=payload)
+
+    def send_autonomous_training(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Envía una solicitud de entrenamiento autónomo al trainer.
+
+        Ejecuta las fases 6-9 (Dataset + LoRA + GGUF export).
+
+        Args:
+            payload: Datos con ids y collection_name del RAG previo.
+
+        Returns:
+            Respuesta ACK del trainer con training_mode
+        """
+        return self._request("POST", "/trainer/entrenamientos/autonomous", payload=payload)

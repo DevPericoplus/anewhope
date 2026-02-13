@@ -3367,6 +3367,37 @@ class RouterMiddleware:
                 "No se pudo enviar la solicitud de análisis de metadatos"
             ) from exc
 
+    def send_autonomous_training(
+        self,
+        payload: dict[str, Any],
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Envía solicitud de entrenamiento autónomo al trainer vía broker.
+
+        Ejecuta las fases 6-9 (Dataset + LoRA + GGUF export).
+
+        Args:
+            payload: Datos con ids y collection_name del RAG previo.
+            session: Contexto de sesión del usuario
+
+        Returns:
+            Respuesta ACK del trainer con training_mode
+        """
+        # Validar permiso de entrenamiento
+        if not self.has_low_level_permission(session, "training_create"):
+            raise BusinessRuleError(
+                "Sin permisos para enviar entrenamiento autónomo"
+            )
+
+        self._configure_broker_security(session)
+
+        try:
+            return self._broker_client.send_autonomous_training(payload)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                "No se pudo enviar la solicitud de entrenamiento autónomo"
+            ) from exc
+
     def cancel_entrenamiento(
         self,
         payload: dict[str, Any],

@@ -474,6 +474,20 @@ class BrokerBackendClient:
         data = self._request("POST", "/training/metadatos", payload=payload)
         return dict(data or {})
 
+    def send_autonomous_training(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Envía solicitud de entrenamiento autónomo al broker → trainer.
+
+        Ejecuta las fases 6-9 (Dataset + LoRA + GGUF export).
+
+        Args:
+            payload: Datos con ids y collection_name del RAG previo.
+
+        Returns:
+            Respuesta ACK del trainer con training_mode
+        """
+        data = self._request("POST", "/training/entrenamientos/autonomous", payload=payload)
+        return dict(data or {})
+
     def cancel_entrenamiento(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Cancela un entrenamiento en progreso via broker.
 
