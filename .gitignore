@@ -206,6 +206,12 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+.cursor
+
+#Claude
+.claude
+
+
 
 # Marimo
 marimo/_static/
@@ -233,3 +239,4 @@ infrastructure/certificates/**/*.csr
 .venv_middleware313/
 .venv_broker313/
 .venv_trainer312/
+
