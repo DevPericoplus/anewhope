@@ -173,7 +173,7 @@ GRANT SELECT ON myllm_projects_db.* TO 'myllm_reader'@'localhost';
 
 -- Usuario de escritura para tests de modificación
 CREATE USER IF NOT EXISTS 'myllm_writer'@'localhost'
-IDENTIFIED BY 'Us3r@wr1t3rP@ss';
+IDENTIFIED BY '<mariadb_writer_password>';  -- See protected_values.py
 
 GRANT ALL PRIVILEGES ON myllm_projects_db.* TO 'myllm_writer'@'localhost';
 ```

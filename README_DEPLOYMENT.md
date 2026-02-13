@@ -7,7 +7,7 @@ Guía rápida de despliegue y verificación para entornos locales o servidores.
 Ejecuta el script de inicialización y revisa los conteos por tabla:
 
 ```bash
-/usr/local/opt/mariadb@10.6/bin/mysql -u root -p'RootP@ssw0rd2026' --database=myllm_core_db --init-command="SET @users_json_path='/ruta/a/users.json'; SET @permissions_json_path='/ruta/a/basic_permissions.json'; SET @low_level_permissions_json_path='/ruta/a/low_level_permisions.json'; SET @roles_json_path='/ruta/a/roles.json'; SET @organizations_json_path='/ruta/a/organizations.json'; SET @manage_roles_json_path='/ruta/a/manage_roles_by_org.json'; SET @sessions_json_path='/ruta/a/sessions.json';" < /ruta/a/init_myllm_core_db.sql
+/usr/local/opt/mariadb@10.6/bin/mysql -u root -p'<mariadb_root_password>' --database=myllm_core_db --init-command="SET @users_json_path='/ruta/a/users.json'; SET @permissions_json_path='/ruta/a/basic_permissions.json'; SET @low_level_permissions_json_path='/ruta/a/low_level_permisions.json'; SET @roles_json_path='/ruta/a/roles.json'; SET @organizations_json_path='/ruta/a/organizations.json'; SET @manage_roles_json_path='/ruta/a/manage_roles_by_org.json'; SET @sessions_json_path='/ruta/a/sessions.json';" < /ruta/a/init_myllm_core_db.sql
 ```
 
 Bloque de verificación (incluido en el script):

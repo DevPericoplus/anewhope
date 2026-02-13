@@ -247,7 +247,7 @@ tail -50 /tmp/backoffice_final.log
 python3 tests/test_failing_switches_simple.py
 
 # 4. Verificar BD directamente
-/usr/local/opt/mariadb@10.6/bin/mariadb -u myllm_admin -p'Us3r@dminP@ss' \
+/usr/local/opt/mariadb@10.6/bin/mariadb -u myllm_admin -p'<mariadb_admin_password>' \
   -D myllm_projects_db \
   -e "SELECT id, revision_interna, propuesta_mejoras, generacion_llm_solicitada FROM estado_version WHERE id=1;"
 ```

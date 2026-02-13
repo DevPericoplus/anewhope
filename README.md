@@ -3413,7 +3413,7 @@ Si un usuario está bloqueado, un administrador puede desbloquearlo:
 **Desde la base de datos (desarrollo):**
 ```bash
 # Desbloquear usuario en MariaDB
-/usr/local/opt/mariadb@10.6/bin/mysql -u myllm_writer -p'Us3r@wr1t3rP@ss' \
+/usr/local/opt/mariadb@10.6/bin/mysql -u myllm_writer -p'<mariadb_writer_password>' \
   -D myllm_core_db \
   -e "UPDATE users SET blocked = 0 WHERE user_name = 'adminone';"
 
@@ -7539,11 +7539,11 @@ def crear_conversacion(engine_projects, engine_core, ...):
 
 ```bash
 # Ejecutar DDL en myllm_projects_db
-/usr/local/opt/mariadb@10.6/bin/mariadb -u myllm_admin -p'Us3r@dminP@ss' \
+/usr/local/opt/mariadb@10.6/bin/mariadb -u myllm_admin -p'<mariadb_admin_password>' \
     myllm_projects_db < infrastructure/database/migrations/007_conversaciones_sistema_final.sql
 
 # Verificar tablas creadas
-/usr/local/opt/mariadb@10.6/bin/mariadb -u myllm_admin -p'Us3r@dminP@ss' \
+/usr/local/opt/mariadb@10.6/bin/mariadb -u myllm_admin -p'<mariadb_admin_password>' \
     myllm_projects_db -e "SHOW TABLES LIKE '%conversaciones%';"
 ```
 
@@ -7992,7 +7992,7 @@ MariaDB (myllm_projects_db)
 
 ```bash
 # Conectar a MariaDB
-/usr/local/opt/mariadb@10.6/bin/mariadb -u myllm_admin -p'Us3r@dminP@ss'
+/usr/local/opt/mariadb@10.6/bin/mariadb -u myllm_admin -p'<mariadb_admin_password>'
 
 # Ejecutar DDL para cada tabla
 USE myllm_projects_db;
@@ -8016,7 +8016,7 @@ CREATE TABLE prompts_identidades (
 
 **Verificar instalación:**
 ```bash
-/usr/local/opt/mariadb@10.6/bin/mariadb -u myllm_admin -p'Us3r@dminP@ss' \
+/usr/local/opt/mariadb@10.6/bin/mariadb -u myllm_admin -p'<mariadb_admin_password>' \
     myllm_projects_db -e "SHOW TABLES LIKE 'prompts_%';"
 ```
 

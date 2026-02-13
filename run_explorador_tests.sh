@@ -5,6 +5,15 @@
 
 set -e
 
+# Cargar credenciales desde protected_values.py (nunca hardcodear en scripts)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+MARIADB_WRITER_PASS=$(python3 -c "
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location('pv', '$SCRIPT_DIR/infrastructure/environments/macbook/protected_values.py')
+mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+print(mod.mariadb_writer_password)
+" 2>/dev/null || echo "")
+
 echo "=============================================="
 echo "Tests del Explorador - Estados de Versión"
 echo "=============================================="
@@ -56,13 +65,13 @@ fi
 
 # Verificar tabla estado_version
 echo "Verificando tabla estado_version..."
-if /usr/local/opt/mariadb@10.6/bin/mariadb -u myllm_writer -p'Us3r@wr1t3rP@ss' myllm_projects_db -e "DESCRIBE estado_version;" > /dev/null 2>&1; then
+if /usr/local/opt/mariadb@10.6/bin/mariadb -u myllm_writer -p"$MARIADB_WRITER_PASS" myllm_projects_db -e "DESCRIBE estado_version;" > /dev/null 2>&1; then
     echo -e "${GREEN}✓${NC} Tabla estado_version existe"
 else
     echo -e "${RED}✗${NC} Tabla estado_version NO existe"
     echo ""
     echo "Crea la tabla con:"
-    echo "  /usr/local/opt/mariadb@10.6/bin/mariadb -u root -p'RootP@ssw0rd2026' myllm_projects_db < infrastructure/database/ddl_estado_version.sql"
+    echo "  /usr/local/opt/mariadb@10.6/bin/mariadb -u root -p'<mariadb_root_password>' myllm_projects_db < infrastructure/database/ddl_estado_version.sql"
     echo ""
     exit 1
 fi

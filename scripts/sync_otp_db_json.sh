@@ -25,7 +25,13 @@ fi
 
 DB_NAME="myllm_core_db"
 DB_USER="myllm_reader"
-DB_PASS="Us3r@R3@derP@ss"
+# Cargar credenciales desde protected_values.py (nunca hardcodear)
+DB_PASS=$(python3 -c "
+import importlib.util
+spec = importlib.util.spec_from_file_location('pv', '$ROOT_DIR/infrastructure/environments/macbook/protected_values.py')
+mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+print(mod.mariadb_reader_password)
+" 2>/dev/null || echo "")
 
 echo "Leyendo OTPs desde MariaDB (usando view_users_otp)..."
 echo ""
