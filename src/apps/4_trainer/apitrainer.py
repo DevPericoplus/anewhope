@@ -225,6 +225,27 @@ class EntrenamientoResponse(BaseModel):
     numero_secuencia: int = 0  # Número de secuencia del entrenamiento
 
 
+class AutonomousTrainingRequest(BaseModel):
+    """Payload para solicitud de entrenamiento autónomo (RAG + LoRA + GGUF)."""
+
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    id_entrenamiento: int  # ID del entrenamiento RAG previo (con ChromaDB)
+    pat_version: str = ""
+    collection_name: str = ""  # Nombre de colección ChromaDB con chunks
+
+
+class AutonomousTrainingResponse(BaseModel):
+    """Respuesta de solicitud de entrenamiento autónomo (ACK)."""
+
+    success: bool
+    message: str = ""
+    received_at: str = ""
+    id_entrenamiento: int = 0  # ID del entrenamiento (mismo que el RAG previo)
+    training_mode: str = ""  # simulation, test o production
+
+
 class MetadatosRequest(BaseModel):
     """Payload para análisis de metadatos de ficheros."""
 
@@ -891,4 +912,91 @@ def recibir_entrenamiento(
         id_entrenamiento=id_entrenamiento,
         collection_name=collection_name,
         numero_secuencia=numero_secuencia,
+    )
+
+
+@app.post("/trainer/entrenamientos/autonomous", response_model=AutonomousTrainingResponse)
+def recibir_entrenamiento_autonomo(
+    request: AutonomousTrainingRequest,
+    client_app: str = Depends(get_client_app),
+) -> AutonomousTrainingResponse:
+    """Recibe una solicitud de entrenamiento autónomo desde el backoffice.
+
+    El entrenamiento autónomo ejecuta las fases 6-9:
+        Fase 6: Generación de Dataset desde ChromaDB
+        Fases 7-8: Fine-tuning con LoRA (solo en test/production)
+        Fase 9: Exportación a GGUF y empaquetado (solo en test/production)
+
+    Requisitos previos:
+        - Debe existir un entrenamiento RAG completado (fases 1-5)
+        - La colección ChromaDB debe contener los chunks generados
+
+    Resultado:
+        - simulation: Solo dataset JSONL
+        - test/production: Paquete ZIP con modelo GGUF + Modelfile + README
+
+    Devuelve un ACK inmediato y lanza el proceso en background thread.
+    """
+    import threading
+    from datetime import datetime, timezone
+
+    logger = logging.getLogger("trainer_api")
+    logger.info(
+        "[AUTONOMOUS] Solicitud recibida: org=%s prj=%s ver=%s ent=%s collection=%s client=%s",
+        request.id_organizacion,
+        request.id_proyecto,
+        request.id_version,
+        request.id_entrenamiento,
+        request.collection_name,
+        client_app,
+    )
+
+    # Leer training_mode desde .envglobal
+    from autonomous_training_service import _get_training_mode
+
+    training_mode = _get_training_mode()
+
+    logger.info(f"[AUTONOMOUS] training_mode: {training_mode}")
+
+    # Construir payload para background thread
+    payload_dict = {
+        "id_organizacion": request.id_organizacion,
+        "id_proyecto": request.id_proyecto,
+        "id_version": request.id_version,
+        "id_entrenamiento": request.id_entrenamiento,
+        "pat_version": request.pat_version,
+        "collection_name": request.collection_name,
+    }
+
+    # PASO: Lanzar procesamiento en background thread
+    from autonomous_training_service import process_autonomous_training
+
+    thread = threading.Thread(
+        target=process_autonomous_training,
+        args=(payload_dict,),
+        daemon=True,
+        name=(
+            f"autonomous-org{request.id_organizacion}"
+            f"-prj{request.id_proyecto}"
+            f"-ver{request.id_version}-ent{request.id_entrenamiento}"
+        ),
+    )
+    thread.start()
+    logger.info(
+        "[AUTONOMOUS] Thread background lanzado: %s (id=%s, mode=%s)",
+        thread.name, request.id_entrenamiento, training_mode,
+    )
+
+    received_at = datetime.now(timezone.utc).isoformat()
+
+    return AutonomousTrainingResponse(
+        success=True,
+        message=(
+            f"Entrenamiento autónomo iniciado para ent={request.id_entrenamiento} "
+            f"(modo: {training_mode}). "
+            f"Se procesarán las fases 6-9 en background."
+        ),
+        received_at=received_at,
+        id_entrenamiento=request.id_entrenamiento,
+        training_mode=training_mode,
     )

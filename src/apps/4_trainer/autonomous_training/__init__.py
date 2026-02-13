@@ -26,6 +26,7 @@ from autonomous_training.package_generator import (
     PackageGenerator,
     PackageGenerationError,
 )
+from autonomous_training.path_manager import PathManager
 from autonomous_training.phase6_executor import (
     Phase6Executor,
     execute_phase6_generation,
@@ -59,6 +60,7 @@ __all__ = [
     "execute_phase9_export",
     # Común
     "AutonomousProgressTracker",
+    "PathManager",
 ]
 
 __version__ = "0.3.0"
