@@ -12,10 +12,10 @@ Permite:
 import reflex as rx
 import httpx
 import logging
-from typing import Optional
+from typing import Optional, TypedDict
 
-# Importar el State global para acceder a datos compartidos
-from web_backoffice.web_backoffice import State as GlobalState
+# Importar SharedSessionState para acceder a tokens sin importación circular
+from web_backoffice.shared_state import SharedSessionState
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,22 @@ COLORS = {
     "warning": "#F59E0B",
     "error": "#EF4444",
 }
+
+
+# Tipos para estadísticas
+class EstadisticaPunto(TypedDict):
+    """Punto de datos en una serie estadística."""
+    clave: str
+    valor: float
+    valor_grafico: float
+
+
+class EstadisticaSerie(TypedDict):
+    """Serie de estadísticas de un entrenamiento."""
+    referencia: str
+    titulo: str
+    series: list[EstadisticaPunto]
+    resumen: str
 
 
 class AnalisisResultadosState(rx.State):
@@ -68,10 +84,119 @@ class AnalisisResultadosState(rx.State):
     message: str = ""
     message_type: str = ""  # "success", "error", "info"
 
+    # Estadísticas
+    estadisticas_series: list[EstadisticaSerie] = []
+    estadisticas_error: str = ""
+
+    @rx.var
+    def org_options(self) -> list[str]:
+        """Opciones para el select de organizaciones."""
+        return ["Seleccione..."] + [
+            org['organization_name']
+            for org in self.organizaciones
+        ]
+
+    @rx.var
+    def project_options(self) -> list[str]:
+        """Opciones para el select de proyectos."""
+        return ["Seleccione..."] + [
+            proj['nombre']
+            for proj in self.proyectos
+        ]
+
+    @rx.var
+    def version_options(self) -> list[str]:
+        """Opciones para el select de versiones."""
+        logger.info(f"version_options called - versiones count: {len(self.versiones)}")
+        if self.versiones:
+            logger.info(f"First version: {self.versiones[0]}")
+        options = ["Seleccione..."] + [
+            ver['version_folder']
+            for ver in self.versiones
+        ]
+        logger.info(f"version_options result: {options}")
+        return options
+
+    @rx.var
+    def selected_org_display(self) -> str:
+        """Valor display para organización seleccionada."""
+        if self.selected_org_id == 0:
+            return "Seleccione..."
+        for org in self.organizaciones:
+            if org['organization_id'] == self.selected_org_id:
+                return org['organization_name']
+        return "Seleccione..."
+
+    @rx.var
+    def selected_project_display(self) -> str:
+        """Valor display para proyecto seleccionado."""
+        if self.selected_project_id == 0:
+            return "Seleccione..."
+        for proj in self.proyectos:
+            if proj['id'] == self.selected_project_id:
+                return proj['nombre']
+        return "Seleccione..."
+
+    @rx.var
+    def selected_version_display(self) -> str:
+        """Valor display para versión seleccionada."""
+        if self.selected_version_id == 0:
+            return "Seleccione..."
+        for ver in self.versiones:
+            if ver['id_version'] == self.selected_version_id:
+                return ver['version_folder']
+        return "Seleccione..."
+
+    @rx.var
+    def comparaciones_list(self) -> list[dict]:
+        """Lista de comparaciones para el modal."""
+        if self.suggestions_data and 'comparaciones' in self.suggestions_data:
+            return self.suggestions_data['comparaciones']
+        return []
+
+    def on_org_select(self, value: str):
+        """Handler para selección de organización."""
+        if value == "Seleccione...":
+            yield AnalisisResultadosState.on_org_change("0")
+        else:
+            # Buscar el ID de la organización por nombre
+            org_id = "0"
+            for org in self.organizaciones:
+                if org['organization_name'] == value:
+                    org_id = str(org['organization_id'])
+                    break
+            yield AnalisisResultadosState.on_org_change(org_id)
+
+    def on_project_select(self, value: str):
+        """Handler para selección de proyecto."""
+        if value == "Seleccione...":
+            yield AnalisisResultadosState.on_project_change("0")
+        else:
+            # Buscar el ID del proyecto por nombre
+            project_id = "0"
+            for proj in self.proyectos:
+                if proj['nombre'] == value:
+                    project_id = str(proj['id'])
+                    break
+            yield AnalisisResultadosState.on_project_change(project_id)
+
+    def on_version_select(self, value: str):
+        """Handler para selección de versión."""
+        if value == "Seleccione...":
+            yield AnalisisResultadosState.on_version_change("0")
+        else:
+            # Buscar el ID de la versión por version_folder
+            version_id = "0"
+            for ver in self.versiones:
+                if ver['version_folder'] == value:
+                    version_id = str(ver['id_version'])
+                    break
+            yield AnalisisResultadosState.on_version_change(version_id)
+
     def on_mount(self):
         """Se ejecuta al montar la página."""
         logger.info("AnalisisResultadosState montado")
-        return self.cargar_organizaciones()
+        yield AnalisisResultadosState.cargar_organizaciones
 
     @rx.event(background=True)
     async def cargar_organizaciones(self):
@@ -79,7 +204,7 @@ class AnalisisResultadosState(rx.State):
         async with self:
             try:
                 # Obtener token del state global
-                parent_state = await self.get_state(GlobalState)
+                parent_state = await self.get_state(SharedSessionState)
                 access_token = parent_state.access_token
                 session_token = parent_state.session_token
 
@@ -90,7 +215,7 @@ class AnalisisResultadosState(rx.State):
 
                 async with httpx.AsyncClient() as client:
                     response = await client.get(
-                        f"{MIDDLEWARE_URL}/organizations/list",
+                        f"{CORE_URL}/organizations",
                         headers={
                             "Authorization": f"Bearer {access_token}",
                             "X-Session-Token": session_token
@@ -99,8 +224,8 @@ class AnalisisResultadosState(rx.State):
                     )
 
                     if response.status_code == 200:
-                        data = response.json()
-                        self.organizaciones = data.get("organizaciones", [])
+                        # El endpoint devuelve directamente una lista
+                        self.organizaciones = response.json()
                     else:
                         self.message = f"Error cargando organizaciones: {response.status_code}"
                         self.message_type = "error"
@@ -121,8 +246,34 @@ class AnalisisResultadosState(rx.State):
             self.versiones = []
             self.entrenamientos = []
 
+            # Cargar proyectos si hay una organización seleccionada
             if self.selected_org_id > 0:
-                await self.cargar_proyectos()
+                try:
+                    parent_state = await self.get_state(SharedSessionState)
+                    access_token = parent_state.access_token
+                    session_token = parent_state.session_token
+
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get(
+                            f"{CORE_URL}/projects/organization/{self.selected_org_id}",
+                            headers={
+                                "Authorization": f"Bearer {access_token}",
+                                "X-Session-Token": session_token
+                            },
+                            timeout=10.0
+                        )
+
+                        if response.status_code == 200:
+                            data = response.json()
+                            self.proyectos = data.get("projects", [])
+                        else:
+                            self.message = f"Error cargando proyectos: {response.status_code}"
+                            self.message_type = "error"
+
+                except Exception as e:
+                    logger.error(f"Error cargando proyectos: {e}")
+                    self.message = f"Error: {str(e)}"
+                    self.message_type = "error"
 
     @rx.event(background=True)
     async def cargar_proyectos(self):
@@ -132,7 +283,7 @@ class AnalisisResultadosState(rx.State):
                 return
 
             try:
-                parent_state = await self.get_state(GlobalState)
+                parent_state = await self.get_state(SharedSessionState)
                 access_token = parent_state.access_token
                 session_token = parent_state.session_token
 
@@ -167,8 +318,39 @@ class AnalisisResultadosState(rx.State):
             self.versiones = []
             self.entrenamientos = []
 
+            logger.info(f"on_project_change: project_id={project_id}, selected_project_id={self.selected_project_id}, selected_org_id={self.selected_org_id}")
+
+            # Cargar versiones si hay un proyecto seleccionado
             if self.selected_project_id > 0:
-                await self.cargar_versiones()
+                try:
+                    parent_state = await self.get_state(SharedSessionState)
+                    access_token = parent_state.access_token
+                    session_token = parent_state.session_token
+
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get(
+                            f"{CORE_URL}/proyectos/{self.selected_project_id}/versiones",
+                            params={"org_id": self.selected_org_id},
+                            headers={
+                                "Authorization": f"Bearer {access_token}",
+                                "X-Session-Token": session_token
+                            },
+                            timeout=10.0
+                        )
+
+                        if response.status_code == 200:
+                            data = response.json()
+                            self.versiones = data.get("versiones", [])
+                            logger.info(f"Versiones cargadas: {len(self.versiones)} versiones - Data: {self.versiones}")
+                        else:
+                            self.message = f"Error cargando versiones: {response.status_code}"
+                            self.message_type = "error"
+                            logger.error(f"Error HTTP {response.status_code} cargando versiones")
+
+                except Exception as e:
+                    logger.error(f"Error cargando versiones: {e}", exc_info=True)
+                    self.message = f"Error: {str(e)}"
+                    self.message_type = "error"
 
     @rx.event(background=True)
     async def cargar_versiones(self):
@@ -178,13 +360,13 @@ class AnalisisResultadosState(rx.State):
                 return
 
             try:
-                parent_state = await self.get_state(GlobalState)
+                parent_state = await self.get_state(SharedSessionState)
                 access_token = parent_state.access_token
                 session_token = parent_state.session_token
 
                 async with httpx.AsyncClient() as client:
                     response = await client.get(
-                        f"{CORE_URL}/projects/{self.selected_project_id}/versions",
+                        f"{CORE_URL}/proyectos/{self.selected_project_id}/versiones",
                         params={"org_id": self.selected_org_id},
                         headers={
                             "Authorization": f"Bearer {access_token}",
@@ -195,7 +377,7 @@ class AnalisisResultadosState(rx.State):
 
                     if response.status_code == 200:
                         data = response.json()
-                        self.versiones = data.get("versions", [])
+                        self.versiones = data.get("versiones", [])
                     else:
                         self.message = f"Error cargando versiones: {response.status_code}"
                         self.message_type = "error"
@@ -221,7 +403,7 @@ class AnalisisResultadosState(rx.State):
             self.message = ""
 
             try:
-                parent_state = await self.get_state(GlobalState)
+                parent_state = await self.get_state(SharedSessionState)
                 access_token = parent_state.access_token
                 session_token = parent_state.session_token
 
@@ -248,6 +430,60 @@ class AnalisisResultadosState(rx.State):
                         self.entrenamientos = response.json()
                         self.message = f"Se encontraron {len(self.entrenamientos)} entrenamientos"
                         self.message_type = "success"
+
+                        # Cargar estadísticas con los mismos filtros
+                        response_metrics = await client.get(
+                            f"{CORE_URL}/analysis/metrics",
+                            params=params,
+                            headers={
+                                "Authorization": f"Bearer {access_token}",
+                                "X-Session-Token": session_token
+                            },
+                            timeout=10.0
+                        )
+
+                        if response_metrics.status_code == 200:
+                            analisis_list = response_metrics.json()
+                            if analisis_list:
+                                # Procesar estadísticas
+                                series = []
+                                for analisis in analisis_list:
+                                    numero_secuencia = analisis.get('numero_secuencia', 0)
+                                    metricas = analisis.get('metricas', {})
+
+                                    rag_quality = float(metricas.get('rag_quality_score', 0))
+                                    response_quality = float(metricas.get('response_quality_score', 0))
+                                    generation_quality = float(metricas.get('generation_quality_score', 0))
+                                    overall_quality = float(metricas.get('overall_quality_score', 0))
+
+                                    puntos = [
+                                        {"clave": "RAG", "valor": round(rag_quality * 100, 1), "valor_grafico": round(rag_quality * 100, 1)},
+                                        {"clave": "Response", "valor": round(response_quality * 100, 1), "valor_grafico": round(response_quality * 100, 1)},
+                                        {"clave": "Generation", "valor": round(generation_quality * 100, 1), "valor_grafico": round(generation_quality * 100, 1)},
+                                        {"clave": "Overall", "valor": round(overall_quality * 100, 1), "valor_grafico": round(overall_quality * 100, 1)}
+                                    ]
+
+                                    resumen = f"""RAG Quality: {round(rag_quality * 100, 1)}%
+Response Quality: {round(response_quality * 100, 1)}%
+Generation Quality: {round(generation_quality * 100, 1)}%
+Overall Quality: {round(overall_quality * 100, 1)}%"""
+
+                                    series.append({
+                                        "referencia": str(numero_secuencia),
+                                        "titulo": f"Entrenamiento Secuencia #{numero_secuencia}",
+                                        "series": puntos,
+                                        "resumen": resumen
+                                    })
+
+                                series.sort(key=lambda x: int(x["referencia"]))
+                                self.estadisticas_series = series
+                                self.estadisticas_error = ""
+                            else:
+                                self.estadisticas_error = "No hay análisis disponibles"
+                                self.estadisticas_series = []
+                        else:
+                            self.estadisticas_error = f"Error cargando métricas: {response_metrics.status_code}"
+                            self.estadisticas_series = []
                     else:
                         self.message = f"Error buscando entrenamientos: {response.status_code}"
                         self.message_type = "error"
@@ -267,7 +503,7 @@ class AnalisisResultadosState(rx.State):
             self.message = ""
 
             try:
-                parent_state = await self.get_state(GlobalState)
+                parent_state = await self.get_state(SharedSessionState)
                 access_token = parent_state.access_token
                 session_token = parent_state.session_token
 
@@ -282,10 +518,8 @@ class AnalisisResultadosState(rx.State):
                     )
 
                     if response.status_code == 200:
-                        self.message = "Sugerencias generadas exitosamente"
+                        self.message = "Sugerencias generadas exitosamente. Recarga la página para ver los resultados actualizados."
                         self.message_type = "success"
-                        # Recargar lista de entrenamientos
-                        await self.buscar_entrenamientos()
                     else:
                         self.message = f"Error generando sugerencias: {response.status_code}"
                         self.message_type = "error"
@@ -305,7 +539,7 @@ class AnalisisResultadosState(rx.State):
             self.selected_training_id = id_entrenamiento
 
             try:
-                parent_state = await self.get_state(GlobalState)
+                parent_state = await self.get_state(SharedSessionState)
                 access_token = parent_state.access_token
                 session_token = parent_state.session_token
 
@@ -343,7 +577,7 @@ class AnalisisResultadosState(rx.State):
         """Prepara el reentrenamiento con parámetros sugeridos."""
         async with self:
             try:
-                parent_state = await self.get_state(GlobalState)
+                parent_state = await self.get_state(SharedSessionState)
                 access_token = parent_state.access_token
                 session_token = parent_state.session_token
 
@@ -385,7 +619,7 @@ class AnalisisResultadosState(rx.State):
             self.message = ""
 
             try:
-                parent_state = await self.get_state(GlobalState)
+                parent_state = await self.get_state(SharedSessionState)
                 access_token = parent_state.access_token
                 session_token = parent_state.session_token
 
@@ -402,10 +636,8 @@ class AnalisisResultadosState(rx.State):
                     if response.status_code == 200:
                         data = response.json()
                         score = data.get('overall_quality_score', 0)
-                        self.message = f"Análisis completado: Score {score:.2%}"
+                        self.message = f"Análisis completado: Score {score:.2%}. Recarga la página para ver los resultados actualizados."
                         self.message_type = "success"
-                        # Recargar lista
-                        await self.buscar_entrenamientos()
                     else:
                         self.message = f"Error analizando modelo: {response.status_code}"
                         self.message_type = "error"
@@ -416,6 +648,109 @@ class AnalisisResultadosState(rx.State):
                 self.message_type = "error"
             finally:
                 self.loading_suggestions = False
+
+    @rx.event(background=True)
+    async def cargar_estadisticas(self):
+        """Carga las estadísticas de los entrenamientos para mostrar en gráficos."""
+        async with self:
+            try:
+                parent_state = await self.get_state(SharedSessionState)
+                access_token = parent_state.access_token
+                session_token = parent_state.session_token
+
+                # Usar los mismos filtros que buscar_entrenamientos
+                params = {}
+                if self.selected_org_id > 0:
+                    params["organization_id"] = self.selected_org_id
+                if self.selected_project_id > 0:
+                    params["project_id"] = self.selected_project_id
+                if self.selected_version_id > 0:
+                    params["version_id"] = self.selected_version_id
+
+                # Obtener análisis de entrenamientos con métricas
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"{CORE_URL}/analysis/metrics",
+                        params=params,
+                        headers={
+                            "Authorization": f"Bearer {access_token}",
+                            "X-Session-Token": session_token
+                        },
+                        timeout=10.0
+                    )
+
+                    if response.status_code != 200:
+                        self.estadisticas_error = f"Error cargando métricas: {response.status_code}"
+                        self.estadisticas_series = []
+                        return
+
+                    analisis_list = response.json()
+
+                    if not analisis_list:
+                        self.estadisticas_error = "No hay análisis disponibles para los filtros seleccionados"
+                        self.estadisticas_series = []
+                        return
+
+                    # Procesar cada análisis para crear series de gráficos
+                    series = []
+                    for analisis in analisis_list:
+                        numero_secuencia = analisis.get('numero_secuencia', 0)
+                        metricas = analisis.get('metricas', {})
+
+                        # Seleccionar métricas clave para el gráfico
+                        # Usamos 4 métricas principales para mantener el gráfico legible
+                        rag_quality = float(metricas.get('rag_quality_score', 0))
+                        response_quality = float(metricas.get('response_quality_score', 0))
+                        generation_quality = float(metricas.get('generation_quality_score', 0))
+                        overall_quality = float(metricas.get('overall_quality_score', 0))
+
+                        # Crear puntos para el gráfico
+                        puntos = [
+                            {
+                                "clave": "RAG",
+                                "valor": round(rag_quality * 100, 1),
+                                "valor_grafico": round(rag_quality * 100, 1)
+                            },
+                            {
+                                "clave": "Response",
+                                "valor": round(response_quality * 100, 1),
+                                "valor_grafico": round(response_quality * 100, 1)
+                            },
+                            {
+                                "clave": "Generation",
+                                "valor": round(generation_quality * 100, 1),
+                                "valor_grafico": round(generation_quality * 100, 1)
+                            },
+                            {
+                                "clave": "Overall",
+                                "valor": round(overall_quality * 100, 1),
+                                "valor_grafico": round(overall_quality * 100, 1)
+                            }
+                        ]
+
+                        # Crear resumen con las métricas principales
+                        resumen = f"""RAG Quality: {round(rag_quality * 100, 1)}%
+Response Quality: {round(response_quality * 100, 1)}%
+Generation Quality: {round(generation_quality * 100, 1)}%
+Overall Quality: {round(overall_quality * 100, 1)}%"""
+
+                        series.append({
+                            "referencia": str(numero_secuencia),
+                            "titulo": f"Entrenamiento Secuencia #{numero_secuencia}",
+                            "series": puntos,
+                            "resumen": resumen
+                        })
+
+                    # Ordenar por secuencia
+                    series.sort(key=lambda x: int(x["referencia"]))
+
+                    self.estadisticas_series = series
+                    self.estadisticas_error = ""
+
+            except Exception as e:
+                logger.error(f"Error cargando estadísticas: {e}")
+                self.estadisticas_error = f"Error: {str(e)}"
+                self.estadisticas_series = []
 
 # ============================================================================
 # Componentes UI
@@ -429,36 +764,18 @@ def filtros_section() -> rx.Component:
             rx.box(
                 rx.text("Organización", size="2", color=COLORS["muted_foreground"]),
                 rx.select(
-                    ["Seleccione..."] + [
-                        f"{org['organization_id']} - {org['organization_name']}"
-                        for org in AnalisisResultadosState.organizaciones
-                    ],
-                    value=rx.cond(
-                        AnalisisResultadosState.selected_org_id > 0,
-                        f"{AnalisisResultadosState.selected_org_id} - {[org['organization_name'] for org in AnalisisResultadosState.organizaciones if org['organization_id'] == AnalisisResultadosState.selected_org_id][0] if [org for org in AnalisisResultadosState.organizaciones if org['organization_id'] == AnalisisResultadosState.selected_org_id] else ''}",
-                        "Seleccione..."
-                    ),
-                    on_change=lambda value: AnalisisResultadosState.on_org_change(
-                        value.split(" - ")[0] if value != "Seleccione..." else "0"
-                    ),
+                    AnalisisResultadosState.org_options,
+                    value=AnalisisResultadosState.selected_org_display,
+                    on_change=AnalisisResultadosState.on_org_select,
                 ),
                 width="30%",
             ),
             rx.box(
                 rx.text("Proyecto", size="2", color=COLORS["muted_foreground"]),
                 rx.select(
-                    ["Seleccione..."] + [
-                        f"{proj['id']} - {proj['nombre']}"
-                        for proj in AnalisisResultadosState.proyectos
-                    ],
-                    value=rx.cond(
-                        AnalisisResultadosState.selected_project_id > 0,
-                        f"{AnalisisResultadosState.selected_project_id} - ...",
-                        "Seleccione..."
-                    ),
-                    on_change=lambda value: AnalisisResultadosState.on_project_change(
-                        value.split(" - ")[0] if value != "Seleccione..." else "0"
-                    ),
+                    AnalisisResultadosState.project_options,
+                    value=AnalisisResultadosState.selected_project_display,
+                    on_change=AnalisisResultadosState.on_project_select,
                     disabled=AnalisisResultadosState.selected_org_id == 0,
                 ),
                 width="30%",
@@ -466,18 +783,9 @@ def filtros_section() -> rx.Component:
             rx.box(
                 rx.text("Versión", size="2", color=COLORS["muted_foreground"]),
                 rx.select(
-                    ["Seleccione..."] + [
-                        f"{ver['id']} - v{ver['id']}"
-                        for ver in AnalisisResultadosState.versiones
-                    ],
-                    value=rx.cond(
-                        AnalisisResultadosState.selected_version_id > 0,
-                        f"{AnalisisResultadosState.selected_version_id} - v{AnalisisResultadosState.selected_version_id}",
-                        "Seleccione..."
-                    ),
-                    on_change=lambda value: AnalisisResultadosState.on_version_change(
-                        value.split(" - ")[0] if value != "Seleccione..." else "0"
-                    ),
+                    AnalisisResultadosState.version_options,
+                    value=AnalisisResultadosState.selected_version_display,
+                    on_change=AnalisisResultadosState.on_version_select,
                     disabled=AnalisisResultadosState.selected_project_id == 0,
                 ),
                 width="20%",
@@ -503,11 +811,29 @@ def filtros_section() -> rx.Component:
 def training_row(training: dict) -> rx.Component:
     """Fila de la tabla de entrenamientos."""
     return rx.table.row(
-        rx.table.cell(f"#{training['numero_secuencia']}"),
-        rx.table.cell(training['fecha_fin'][:10] if training.get('fecha_fin') else "En progreso"),
+        rx.table.cell(training['numero_secuencia']),
+        rx.table.cell(
+            rx.cond(
+                training['fecha_fin'],
+                training['fecha_fin'],
+                "En progreso"
+            )
+        ),
         rx.table.cell(training['estado']),
-        rx.table.cell(f"{training['loss_final']:.4f}" if training.get('loss_final') else "N/A"),
-        rx.table.cell(f"{training['accuracy_validacion']:.2%}" if training.get('accuracy_validacion') else "N/A"),
+        rx.table.cell(
+            rx.cond(
+                training['loss_final'],
+                training['loss_final'],
+                "N/A"
+            )
+        ),
+        rx.table.cell(
+            rx.cond(
+                training['accuracy_validacion'],
+                training['accuracy_validacion'],
+                "N/A"
+            )
+        ),
         rx.table.cell(
             rx.cond(
                 training['tiene_sugerencias'],
@@ -596,6 +922,147 @@ def entrenamientos_table() -> rx.Component:
         background=COLORS["card"],
         border_radius="8px",
         border=f"1px solid {COLORS['border']}",
+    )
+
+
+def estadisticas_panel() -> rx.Component:
+    """Panel de estadísticas con gráficos de evolución de métricas."""
+    return rx.box(
+        rx.heading("Estadísticas", size="6", margin_bottom="1em"),
+        rx.text(
+            "Visualiza las puntuaciones clave generadas durante la evaluación de modelos.",
+            color=COLORS["muted_foreground"],
+            margin_bottom="1em",
+        ),
+        rx.cond(
+            AnalisisResultadosState.estadisticas_error != "",
+            rx.callout(
+                AnalisisResultadosState.estadisticas_error,
+                color_scheme="red",
+                margin_bottom="1em",
+            ),
+            rx.fragment(),
+        ),
+        rx.cond(
+            AnalisisResultadosState.estadisticas_series.length() == 0,
+            rx.text(
+                "No hay datos disponibles. Busca entrenamientos y genera análisis para ver estadísticas.",
+                color=COLORS["muted_foreground"],
+            ),
+            rx.vstack(
+                rx.foreach(
+                    AnalisisResultadosState.estadisticas_series,
+                    lambda item: rx.box(
+                        rx.vstack(
+                            rx.heading(item["titulo"], size="5", margin_bottom="0.5em"),
+                            rx.hstack(
+                                # Lista de métricas a la izquierda
+                                rx.vstack(
+                                    rx.foreach(
+                                        item["series"],
+                                        lambda punto: rx.hstack(
+                                            rx.text(
+                                                punto["clave"],
+                                                font_family="monospace",
+                                                color=COLORS["muted_foreground"],
+                                                size="2",
+                                            ),
+                                            rx.text(
+                                                punto["valor"],
+                                                font_family="monospace",
+                                                color=COLORS["foreground"],
+                                                size="2",
+                                            ),
+                                            spacing="2",
+                                            align="center",
+                                        ),
+                                    ),
+                                    spacing="2",
+                                    align="start",
+                                    width="140px",
+                                ),
+                                # Gráfico de líneas
+                                rx.recharts.line_chart(
+                                    rx.recharts.cartesian_grid(stroke_dasharray="3 3", stroke=COLORS["border"]),
+                                    rx.recharts.x_axis(
+                                        data_key="clave",
+                                        type="category",
+                                        stroke=COLORS["muted_foreground"],
+                                        tick={"fill": COLORS["muted_foreground"], "fontSize": 12},
+                                        tick_line=False,
+                                        axis_line=False,
+                                    ),
+                                    rx.recharts.y_axis(
+                                        data_key="valor_grafico",
+                                        type="number",
+                                        stroke=COLORS["muted_foreground"],
+                                        tick={"fill": COLORS["muted_foreground"], "fontSize": 12},
+                                        tick_line=False,
+                                        axis_line=False,
+                                    ),
+                                    rx.recharts.tooltip(),
+                                    rx.recharts.line(
+                                        rx.recharts.label_list(
+                                            data_key="valor",
+                                            position="top",
+                                            style={"fill": COLORS["foreground"], "fontSize": 12},
+                                        ),
+                                        data_key="valor_grafico",
+                                        type="monotone",
+                                        stroke="#00c9a7",
+                                        stroke_width=3,
+                                        dot={
+                                            "r": 6,
+                                            "fill": "#00b49a",
+                                            "stroke": "#006b5c",
+                                            "strokeWidth": 1.5,
+                                        },
+                                        active_dot={
+                                            "r": 9,
+                                            "fill": "#00d8b3",
+                                            "stroke": "#00594d",
+                                        },
+                                        connect_nulls=True,
+                                    ),
+                                    data=item["series"],
+                                    height=300,
+                                    width="100%",
+                                ),
+                                spacing="3",
+                                align="stretch",
+                                width="100%",
+                            ),
+                            # Resumen debajo del gráfico
+                            rx.box(
+                                rx.text(
+                                    item["resumen"],
+                                    font_family="monospace",
+                                    white_space="pre-wrap",
+                                    size="2",
+                                    color=COLORS["foreground"],
+                                ),
+                                width="100%",
+                            ),
+                            spacing="3",
+                            align="stretch",
+                            width="100%",
+                        ),
+                        padding="1.5em",
+                        background=COLORS["card"],
+                        border_radius="8px",
+                        border=f"1px solid {COLORS['border']}",
+                        width="100%",
+                    ),
+                ),
+                spacing="4",
+                width="100%",
+            ),
+        ),
+        padding="1.5em",
+        background=COLORS["card"],
+        border_radius="8px",
+        border=f"1px solid {COLORS['border']}",
+        margin_top="2em",
     )
 
 
@@ -714,7 +1181,7 @@ def suggestions_modal() -> rx.Component:
                             ),
                             rx.table.body(
                                 rx.foreach(
-                                    AnalisisResultadosState.suggestions_data['comparaciones'],
+                                    AnalisisResultadosState.comparaciones_list,
                                     comparison_row
                                 )
                             ),
@@ -752,11 +1219,10 @@ def suggestions_modal() -> rx.Component:
 
                 # Botones de acción
                 rx.hstack(
-                    rx.dialog.close(
-                        rx.button(
-                            "Cerrar",
-                            color_scheme="gray",
-                        )
+                    rx.button(
+                        "Cerrar",
+                        on_click=AnalisisResultadosState.cerrar_modal_sugerencias,
+                        color_scheme="gray",
                     ),
                     rx.cond(
                         AnalisisResultadosState.suggestions_data != None,
@@ -813,10 +1279,14 @@ def analisis_resultados_page() -> rx.Component:
         filtros_section(),
         entrenamientos_table(),
 
+        # Panel de estadísticas
+        estadisticas_panel(),
+
         # Modal de sugerencias
         suggestions_modal(),
 
         padding="2em",
         max_width="1400px",
         margin="0 auto",
+        on_mount=AnalisisResultadosState.on_mount,
     )

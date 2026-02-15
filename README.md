@@ -9912,3 +9912,706 @@ training_mode: test  # o production
 
 Ver AGENTS.md sección 30 para reglas detalladas de implementación, estructura de tablas,
 endpoints, y mejores prácticas de desarrollo.
+
+---
+
+## 17. Backoffice - Análisis de Resultados y Monitoreo del Sistema
+
+### 17.1 Página: Análisis de Resultados
+
+Ubicación: **Internal → Análisis de Resultados**
+
+#### Descripción General
+
+Página del backoffice que permite analizar resultados de entrenamientos de modelos y obtener sugerencias automáticas para optimizar hiperparámetros basándose en métricas de calidad.
+
+#### Funcionalidades Implementadas
+
+##### 1. Filtros de Búsqueda
+
+Panel superior que permite filtrar entrenamientos por:
+- **Organización**: Selector con lista de organizaciones disponibles
+- **Proyecto**: Selector dependiente de la organización seleccionada
+- **Versión**: Selector dependiente del proyecto seleccionado
+- **Botón "Buscar"**: Ejecuta la búsqueda con los filtros aplicados
+
+**Flujo de datos:**
+```
+Backoffice → Backend Core → MariaDB (job_entrenamientos_analisis)
+```
+
+**Endpoints utilizados:**
+- `GET /organizations` - Lista de organizaciones
+- `GET /projects/organization/{org_id}` - Proyectos de una organización
+- `GET /proyectos/{project_id}/versiones?org_id={org_id}` - Versiones de un proyecto
+- `GET /analysis/trainings` - Entrenamientos filtrados
+
+##### 2. Panel de Entrenamientos Completados
+
+Tabla que muestra los entrenamientos con la siguiente información:
+- **Secuencia**: Número de secuencia del entrenamiento
+- **Fecha**: Fecha de finalización
+- **Estado**: Estado actual (completado, error, etc.)
+- **Loss Final**: Pérdida final del entrenamiento
+- **Accuracy**: Precisión en validación
+- **Sugerencias**: Indicador de si tiene sugerencias generadas
+- **Acciones**: Botones para analizar, ver/generar sugerencias y reentrenar
+
+**Acciones disponibles:**
+- **Analizar**: Ejecuta análisis del modelo entrenado
+- **Generar Sugerencias**: Crea sugerencias de optimización basadas en métricas
+- **Ver Sugerencias**: Muestra modal con comparativa de parámetros
+- **Reentrenar**: Inicia nuevo entrenamiento con parámetros sugeridos
+
+##### 3. Modal de Comparativa de Parámetros
+
+Modal que muestra la comparación entre parámetros originales y sugeridos:
+
+**Información mostrada:**
+- **Confianza Score**: Nivel de confianza de las sugerencias (0-100%)
+- **Mejora Esperada**: Porcentaje de mejora estimado
+- **Razón General**: Análisis general de por qué se sugieren los cambios
+
+**Tabla comparativa:**
+- Parámetro
+- Valor Original
+- Valor Sugerido
+- Tipo de Cambio (aumentar, disminuir, mantener)
+- Razón del cambio
+
+**Prioridades visuales:**
+- 🔴 **Crítico**: Cambios prioritarios (fondo rojo claro)
+- 🟠 **Importante**: Cambios recomendados (fondo naranja claro)
+- ⚪ **Opcional**: Cambios opcionales (sin fondo)
+
+**Botones:**
+- **Cerrar**: Cierra el modal
+- **Reentrenar con estos parámetros**: Inicia reentrenamiento automático
+
+##### 4. Panel de Estadísticas
+
+Panel inferior que muestra la evolución de métricas de calidad a lo largo de múltiples entrenamientos.
+
+**Métricas visualizadas:**
+- **RAG Quality**: Calidad del sistema RAG (precision, recall, F1, MRR, NDCG)
+- **Response Quality**: Calidad de respuestas (relevancia, coherencia, fluidez, groundedness, completitud)
+- **Generation Quality**: Calidad de generación (BLEU, ROUGE, METEOR)
+- **Overall Quality**: Calidad general agregada
+
+**Visualización:**
+- Gráfico de líneas para cada entrenamiento (Recharts)
+- Muestra hasta 5 ciclos de reentrenamiento
+- Resumen numérico de cada métrica por entrenamiento
+
+**Flujo de datos:**
+```
+Backoffice → Backend Core (/analysis/metrics) → MariaDB → Cálculo de scores agregados
+```
+
+#### Arquitectura de Backend
+
+##### Endpoints Implementados
+
+**1. GET /analysis/trainings**
+```python
+@app.get("/analysis/trainings", tags=["analysis"])
+async def get_analysis_trainings_endpoint(
+    organization_id: int | None = None,
+    project_id: int | None = None,
+    version_id: int | None = None,
+) -> list[dict[str, Any]]:
+```
+- Retorna lista de entrenamientos filtrados
+- Incluye información de sugerencias asociadas
+
+**2. GET /analysis/metrics**
+```python
+@app.get("/analysis/metrics", tags=["analysis"])
+async def get_analysis_metrics_endpoint(
+    organization_id: int | None = None,
+    project_id: int | None = None,
+    version_id: int | None = None,
+) -> list[dict[str, Any]]:
+```
+- Retorna métricas agregadas de análisis
+- Calcula scores compuestos:
+  - `rag_quality_score`: Promedio de precision, recall, f1, mrr, ndcg
+  - `response_quality_score`: Promedio de relevance, coherence, fluency, groundedness, completeness
+  - `generation_quality_score`: Promedio de BLEU, ROUGE, METEOR
+  - `overall_quality_score`: Factuality score
+
+**3. GET /analysis/trainings/{id}/suggestions**
+```python
+@app.get("/analysis/trainings/{id}/suggestions", tags=["analysis"])
+async def get_training_suggestions_endpoint(id: int):
+```
+- Retorna sugerencias generadas para un entrenamiento
+- Incluye comparaciones de parámetros y razones
+
+**4. POST /analysis/trainings/{id}/generate-suggestions**
+```python
+@app.post("/analysis/trainings/{id}/generate-suggestions", tags=["analysis"])
+async def generate_training_suggestions_endpoint(id: int):
+```
+- Genera sugerencias automáticas basadas en métricas
+
+**5. POST /analysis/trainings/{id}/analyze**
+```python
+@app.post("/analysis/trainings/{id}/analyze", tags=["analysis"])
+async def analyze_training_endpoint(id: int):
+```
+- Ejecuta análisis completo del modelo entrenado
+
+##### Tablas de Base de Datos
+
+**job_entrenamientos_analisis**
+```sql
+CREATE TABLE job_entrenamientos_analisis (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    id_entrenamiento INT NOT NULL,
+    numero_secuencia INT NOT NULL,
+    -- Métricas RAG
+    precision_score DECIMAL(5,4),
+    recall_score DECIMAL(5,4),
+    f1_score DECIMAL(5,4),
+    mrr_score DECIMAL(5,4),
+    ndcg_score DECIMAL(5,4),
+    -- Métricas de Respuesta
+    relevance_score DECIMAL(5,4),
+    coherence_score DECIMAL(5,4),
+    fluency_score DECIMAL(5,4),
+    groundedness_score DECIMAL(5,4),
+    completeness_score DECIMAL(5,4),
+    -- Métricas de Generación
+    bleu_score DECIMAL(5,4),
+    rouge1_score DECIMAL(5,4),
+    rouge2_score DECIMAL(5,4),
+    rougeL_score DECIMAL(5,4),
+    meteor_score DECIMAL(5,4),
+    -- Métricas de Factualidad
+    accuracy_score DECIMAL(5,4),
+    hallucination_score DECIMAL(5,4),
+    citation_accuracy DECIMAL(5,4),
+    -- Metadata
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (id_entrenamiento) REFERENCES entrenamientos(id)
+);
+```
+
+#### Implementación Frontend (Reflex)
+
+##### Estado de la Página
+
+**Archivo**: `src/apps/6_web_backoffice/pages/analisis_resultados.py`
+
+**Variables de estado:**
+```python
+class AnalisisResultadosState(rx.State):
+    # Filtros
+    organizaciones: list[dict] = []
+    proyectos: list[dict] = []
+    versiones: list[dict] = []
+    selected_org_id: int = 0
+    selected_project_id: int = 0
+    selected_version_id: int = 0
+    
+    # Entrenamientos
+    entrenamientos: list[dict] = []
+    loading_entrenamientos: bool = False
+    
+    # Sugerencias
+    selected_training_id: int = 0
+    suggestions_data: Optional[dict] = None
+    show_suggestions_modal: bool = False
+    
+    # Estadísticas
+    estadisticas_series: list[EstadisticaSerie] = []
+    estadisticas_error: str = ""
+```
+
+**TypedDict para estadísticas:**
+```python
+class EstadisticaPunto(TypedDict):
+    clave: str
+    valor: float
+    valor_grafico: float
+
+class EstadisticaSerie(TypedDict):
+    referencia: str
+    titulo: str
+    series: list[EstadisticaPunto]
+    resumen: str
+```
+
+##### Métodos Principales
+
+**Carga de filtros:**
+- `cargar_organizaciones()`: Carga lista de organizaciones
+- `on_org_change(org_id)`: Maneja cambio de organización y carga proyectos
+- `on_project_change(project_id)`: Maneja cambio de proyecto y carga versiones
+- `on_version_change(version_id)`: Maneja cambio de versión
+
+**Búsqueda y análisis:**
+- `buscar_entrenamientos()`: Busca entrenamientos con filtros y carga estadísticas
+- `analizar_modelo(id)`: Lanza análisis de modelo
+- `generar_sugerencias(id)`: Genera sugerencias para un entrenamiento
+- `ver_sugerencias(id)`: Muestra modal con sugerencias
+
+**Reentrenamiento:**
+- `preparar_reentrenamiento(id_sugerencia)`: Prepara parámetros para reentrenar
+- `cerrar_modal_reentrenar()`: Cierra modal de reentrenamiento
+
+#### Solución de Problemas Comunes
+
+##### Error: Versiones no se cargan en el selector
+
+**Causa:** Endpoint incorrecto o formato de respuesta incorrecto
+
+**Solución:**
+- Endpoint correcto: `GET /proyectos/{project_id}/versiones?org_id={org_id}`
+- Respuesta esperada: `{"versiones": [...], "total": N}`
+- Parsing: `self.versiones = data.get("versiones", [])`
+
+##### Error: Background tasks no pueden llamarse entre sí
+
+**Causa:** Reflex no permite que `@rx.event(background=True)` llame a otro background task con `await`
+
+**Solución:** Integrar la lógica directamente en el método llamador:
+```python
+# ❌ Incorrecto
+async def on_project_change(self, project_id: str):
+    await self.cargar_versiones()  # Error!
+
+# ✅ Correcto
+async def on_project_change(self, project_id: str):
+    # Integrar lógica de cargar_versiones directamente aquí
+    response = await client.get(...)
+    self.versiones = response.json().get("versiones", [])
+```
+
+##### Error: Modal no se cierra con botón "Cerrar"
+
+**Causa:** Solo usar `rx.dialog.close` sin actualizar el estado
+
+**Solución:**
+```python
+# Agregar on_click que actualice el estado
+rx.button(
+    "Cerrar",
+    on_click=AnalisisResultadosState.cerrar_modal_sugerencias,
+    color_scheme="gray",
+)
+
+def cerrar_modal_sugerencias(self):
+    self.show_suggestions_modal = False
+    self.suggestions_data = None
+```
+
+---
+
+### 17.2 Página: Sistema (Monitoreo de Servicios)
+
+Ubicación: **Internal → Sistema** (antes llamado "Crear Llm")
+
+#### Descripción General
+
+Página de monitoreo en tiempo real que verifica el estado de todos los componentes del MVP, organizada en tres paneles: Frontend, Backend y Trainer.
+
+#### Estructura de Paneles
+
+##### Panel 1: Frontend
+- **Aplicación Frontend** (puerto 8005) - Servicio web principal de usuarios
+- **Backoffice** (puerto 8006) - Servicio web de administración
+- **Middleware** (puerto 8007) - Capa intermedia de comunicación
+- **Redis** - Servicio de caché y sesiones (verificado vía Backend Core)
+- **API SMS** - Infobip API para envío de SMS
+
+##### Panel 2: Backend
+- **Broker** (puerto 8008) - Servicio de enrutamiento backend
+- **Backend Core** (puerto 8003) - API principal del sistema
+- **fmanagement** (puerto 1666) - Servicio Go de gestión de archivos
+- **MariaDB** - Base de datos principal (verificado vía Backend Core)
+
+##### Panel 3: Trainer
+- **Backend IA** (puerto 8004) - Servicio de entrenamiento de modelos
+- **ChromaDB** (puerto 8100) - Base de datos vectorial
+- **Ollama** - Servicio de LLM (verificado vía Middleware con auth)
+
+#### Funcionalidad de Health Checks
+
+##### Características
+- ✅ Verificación individual de cada servicio con botón de refresh
+- ✅ Botón "Verificar Todos" para revisar todos los servicios simultáneamente
+- ✅ Indicadores visuales con colores:
+  - 🟢 Verde: Servicio activo/operativo
+  - 🔴 Rojo: Servicio inactivo/error
+  - 🟡 Amarillo: No configurado
+- ✅ Icono de actividad para cada servicio
+- ✅ Timeout de 5 segundos por verificación
+
+##### Métodos de Verificación por Servicio
+
+**Servicios FastAPI (Middleware, Backend Core, Broker, Trainer):**
+```python
+def check_service_health(url: str) -> dict:
+    # Verifica endpoint /docs (siempre disponible en FastAPI)
+    return {"status": "healthy"} si HTTP 200
+```
+
+**Servicios Reflex (Frontend):**
+```python
+def check_frontend_health() -> dict:
+    # Acepta HTTP 404 como válido (servicios Reflex)
+    return {"status": "healthy"} si HTTP 404 o 200
+```
+
+**Backoffice (verificación especial):**
+```python
+def check_backoffice_health() -> dict:
+    # Usa socket check para evitar deadlock (no HTTP)
+    sock.connect_ex((host, port))
+    return {"status": "healthy"} si puerto abierto
+```
+
+**fmanagement (Go service):**
+```python
+def check_fmanagement_health() -> dict:
+    # Acepta HTTP 404 como válido
+    return {"status": "healthy"} si responde
+```
+
+**ChromaDB:**
+```python
+def check_chromadb_health() -> dict:
+    # Usa API v2 de ChromaDB
+    return check_service_health(f"http://{host}:{port}/api/v2/heartbeat")
+```
+
+**Redis y MariaDB:**
+```python
+def check_redis_health() -> dict:
+    # Verifica que Backend Core esté operativo
+    # (Backend depende de Redis y MariaDB)
+    return {"status": "healthy", "detail": "Backend Core operativo (usa Redis)"}
+```
+
+**Ollama:**
+```python
+def check_ollama_service(self):
+    # Requiere autenticación
+    result = check_ollama_health(
+        access_token=self.access_token,
+        session_token=self.session_token,
+    )
+```
+
+**API SMS (Infobip):**
+```python
+def check_sms_api_health() -> dict:
+    # Desactiva verificación SSL
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    
+    # Acepta HTTP 200, 401, 403 como válidos
+    return {"status": "healthy"} si alcanzable
+```
+
+#### Implementación Backend
+
+##### Archivo: `src/apps/6_web_backoffice/adapters/api_client.py`
+
+**Funciones de health check:**
+```python
+def check_service_health(url: str, timeout: int = 5) -> dict:
+    """Función genérica para verificar servicios HTTP."""
+    
+def check_frontend_health() -> dict:
+    """Verifica servicio Frontend."""
+    
+def check_backoffice_health() -> dict:
+    """Verifica servicio Backoffice (socket check)."""
+    
+def check_middleware_health() -> dict:
+    """Verifica Middleware."""
+    
+def check_redis_health() -> dict:
+    """Verifica Redis vía Backend Core."""
+    
+def check_sms_api_health() -> dict:
+    """Verifica API SMS (Infobip)."""
+    
+def check_broker_health() -> dict:
+    """Verifica Broker."""
+    
+def check_backend_core_health() -> dict:
+    """Verifica Backend Core."""
+    
+def check_fmanagement_health() -> dict:
+    """Verifica fmanagement (Go)."""
+    
+def check_mariadb_health() -> dict:
+    """Verifica MariaDB vía Backend Core."""
+    
+def check_trainer_health() -> dict:
+    """Verifica Backend IA/Trainer."""
+    
+def check_chromadb_health() -> dict:
+    """Verifica ChromaDB."""
+```
+
+#### Implementación Frontend (Reflex)
+
+##### Archivo: `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py`
+
+**Variables de estado:**
+```python
+class State(rx.State):
+    # Panel Frontend
+    sys_frontend_status: str = "Verificando..."
+    sys_frontend_available: bool = False
+    sys_backoffice_status: str = "Verificando..."
+    sys_backoffice_available: bool = False
+    sys_middleware_status: str = "Verificando..."
+    sys_middleware_available: bool = False
+    sys_redis_status: str = "Verificando..."
+    sys_redis_available: bool = False
+    sys_sms_api_status: str = "Verificando..."
+    sys_sms_api_available: bool = False
+    
+    # Panel Backend
+    sys_broker_status: str = "Verificando..."
+    sys_broker_available: bool = False
+    sys_backend_core_status: str = "Verificando..."
+    sys_backend_core_available: bool = False
+    sys_fmanagement_status: str = "Verificando..."
+    sys_fmanagement_available: bool = False
+    sys_mariadb_status: str = "Verificando..."
+    sys_mariadb_available: bool = False
+    
+    # Panel Trainer
+    sys_trainer_status: str = "Verificando..."
+    sys_trainer_available: bool = False
+    sys_chromadb_status: str = "Verificando..."
+    sys_chromadb_available: bool = False
+    sys_ollama_status: str = "Verificando..."
+    sys_ollama_available: bool = False
+```
+
+**Métodos de verificación:**
+```python
+def check_all_services(self):
+    """Verifica todos los servicios del sistema."""
+    
+def check_frontend_service(self):
+    """Verifica el estado del servicio Frontend."""
+    
+def check_backoffice_service(self):
+    """Verifica el estado del servicio Backoffice."""
+    
+# ... (un método por cada servicio)
+```
+
+**Componente de UI:**
+```python
+def sistema_panel() -> rx.Component:
+    """Panel de Sistema con monitoreo de servicios."""
+    
+    def service_check_item(label, status_var, available_var, check_func):
+        """Componente reutilizable para cada check de servicio."""
+        return rx.hstack(
+            rx.icon("activity", size=20, color=COLORS["primary"]),
+            rx.text(f"{label}:", ...),
+            rx.text(status_var, color=verde_o_rojo),
+            rx.button("↻", on_click=check_func),
+        )
+```
+
+#### Configuración de Variables de Entorno
+
+##### Archivo: `infrastructure/environments/macbook/env.yaml`
+
+Variables utilizadas por los health checks:
+```yaml
+# Hosts y puertos
+backend_core_host: localhost
+backend_core_port: "8003"
+trainer_host: localhost
+trainer_port: "8004"
+frontend_host: localhost
+frontend_port: "8005"
+backoffice_host: localhost
+backoffice_port: "8006"
+middleware_host: localhost
+middleware_port: "8007"
+broker_host: localhost
+broker_port: "8008"
+fmanagement_host: localhost
+fmanagement_port: "1666"
+chroma_host: localhost
+chroma_port: "8100"
+redis_host: localhost
+redis_port: "6379"
+
+# URLs construidas
+broker_backend_base_url: http://localhost:8008
+core_backend_base_url: http://localhost:8003
+middleware_base_url: http://localhost:8007
+fmanagement_base_url: http://192.168.0.39:1666
+trainer_base_url: http://localhost:8004
+```
+
+##### Archivo: `infrastructure/environments/macbook/protected_values.py`
+
+Variables sensibles para SMS API:
+```python
+sms_api_key = "d93dd9d323662d761b21dddb626b9f2d-cf9b562a-6590-419b-8318-8ab3de06611b"
+sms_api_url = "https://pdy6d3.api.infobip.com"
+sms_sender_id = "myllm.ia"
+```
+
+##### Carga de variables en el backoffice
+
+**Archivo**: `src/apps/6_web_backoffice/run.sh`
+
+```bash
+# Cargar variables de entorno desde protected_values.py
+PROTECTED_VALUES="$ROOT_DIR/infrastructure/environments/macbook/protected_values.py"
+if [ -f "$PROTECTED_VALUES" ]; then
+    echo "Cargando variables protegidas..."
+    export SMS_API_URL=$(python3 -c "exec(open('$PROTECTED_VALUES').read()); print(sms_api_url)")
+    export SMS_API_KEY=$(python3 -c "exec(open('$PROTECTED_VALUES').read()); print(sms_api_key)")
+    export SMS_SENDER_ID=$(python3 -c "exec(open('$PROTECTED_VALUES').read()); print(sms_sender_id)")
+fi
+```
+
+#### Multi-Entorno
+
+El sistema de health checks usa variables de entorno para ser compatible con todos los entornos:
+- **macbook**: localhost con puertos locales
+- **dev**: Servidores de desarrollo
+- **pre**: Servidores de preproducción
+- **pro**: Servidores de producción
+
+Cada entorno define sus propias variables en `infrastructure/environments/{env}/env.yaml` y `protected_values.py`.
+
+#### Script de Pruebas
+
+**Archivo**: `/Users/administrator/develop/anewhope/test_health_checks.py`
+
+Script independiente para verificar el estado de todos los servicios sin necesidad de iniciar el backoffice:
+
+```bash
+# Ejecutar test de health checks
+python3 test_health_checks.py
+```
+
+**Salida esperada:**
+```
+============================================================
+HEALTH CHECK TEST - ANEWHOPE MVP
+============================================================
+...
+============================================================
+RESUMEN
+============================================================
+Frontend             ✅ PASS
+Backoffice           ✅ PASS
+Middleware           ✅ PASS
+Backend Core         ✅ PASS
+Broker               ✅ PASS
+Trainer              ✅ PASS
+fmanagement          ✅ PASS
+ChromaDB             ✅ PASS
+Ollama               ❌ FAIL (requiere tokens - normal)
+SMS API              ✅ PASS
+
+Total: 9/10 servicios operativos
+============================================================
+```
+
+#### Solución de Problemas Comunes
+
+##### Error: Backoffice aparece como "Inactivo"
+
+**Causa:** Deadlock al intentar hacer petición HTTP a sí mismo
+
+**Solución:** Usar socket check en lugar de HTTP:
+```python
+import socket
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.settimeout(2)
+result = sock.connect_ex((host, port))
+return {"status": "healthy"} if result == 0
+```
+
+##### Error: API SMS dice "No configurado"
+
+**Causa:** Variable SMS_API_URL no está exportada
+
+**Solución:** Agregar carga de variables en `run.sh`:
+```bash
+export SMS_API_URL=$(python3 -c "exec(open('$PROTECTED_VALUES').read()); print(sms_api_url)")
+```
+
+##### Error: SSL Certificate Failed en SMS API
+
+**Causa:** Certificado SSL no se puede verificar
+
+**Solución:** Desactivar verificación SSL:
+```python
+import ssl
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
+urllib.request.urlopen(request, context=ssl_context)
+```
+
+##### Error: Ollama siempre muestra "Inactivo"
+
+**Causa:** Endpoint requiere autenticación y los tokens no se están pasando
+
+**Solución:** Verificar que el método pase los tokens:
+```python
+def check_ollama_service(self):
+    result = check_ollama_health(
+        access_token=self.access_token,  # ← Importante
+        session_token=self.session_token, # ← Importante
+    )
+```
+
+##### Error: Servicios muestran "Inactivo" en otros entornos
+
+**Causa:** Variables de entorno no configuradas para el entorno
+
+**Solución:** Verificar que existan en `infrastructure/environments/{env}/env.yaml`:
+```yaml
+backend_core_host: nombre_servidor_dev  # No "localhost"
+backend_core_port: "8003"
+# ... etc para cada servicio
+```
+
+#### Mejores Prácticas
+
+1. **Timeouts apropiados**: Usar 5 segundos para health checks (suficiente pero no excesivo)
+2. **Verificación por socket**: Usar para servicios que verifican su propio puerto
+3. **Variables de entorno**: Siempre usar variables en lugar de URLs hardcodeadas
+4. **Códigos HTTP válidos**: Aceptar 404 para servicios que no tienen endpoint raíz
+5. **SSL flexible**: Desactivar verificación SSL cuando sea necesario para APIs externas
+6. **Autenticación**: Pasar tokens cuando el servicio lo requiera (Ollama)
+7. **Feedback visual**: Usar colores claros (verde/rojo/amarillo) para facilitar lectura
+
+#### Mantenimiento
+
+**Al agregar un nuevo servicio al sistema:**
+
+1. Agregar función de health check en `api_client.py`
+2. Agregar variables de estado en `web_backoffice.py`
+3. Agregar método de verificación en el State
+4. Agregar componente visual en `sistema_panel()`
+5. Agregar variables de entorno en `env.yaml` (todos los entornos)
+6. Actualizar script de pruebas `test_health_checks.py`
+7. Documentar en este README
+
+---
+

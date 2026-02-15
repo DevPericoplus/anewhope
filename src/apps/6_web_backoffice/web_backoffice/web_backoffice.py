@@ -46,6 +46,7 @@ from pages.organizacion import load_organizacion_content
 from pages.proyecciones import load_proyecciones_content
 from pages.tecnologias import load_tecnologias_content
 from pages.estado_proyectos import estado_proyectos_panel, EstadoProyectosState
+from pages.analisis_resultados import analisis_resultados_page, AnalisisResultadosState
 from low_panel_pages.show_md import show_md  # noqa: F401 - Importado para registrar la ruta
 from web_backoffice.shared_state import SharedSessionState
 from components.explorador import explorador_panel, ExploradorState
@@ -169,6 +170,37 @@ class State(SharedSessionState):
     asistente_response: str = ""
     asistente_is_loading: bool = False
     asistente_error: str = ""
+
+    # Estado para página Sistema (sys_ prefix) - Health checks
+    # Panel Frontend
+    sys_frontend_status: str = "Verificando..."
+    sys_frontend_available: bool = False
+    sys_backoffice_status: str = "Verificando..."
+    sys_backoffice_available: bool = False
+    sys_middleware_status: str = "Verificando..."
+    sys_middleware_available: bool = False
+    sys_redis_status: str = "Verificando..."
+    sys_redis_available: bool = False
+    sys_sms_api_status: str = "Verificando..."
+    sys_sms_api_available: bool = False
+
+    # Panel Backend
+    sys_broker_status: str = "Verificando..."
+    sys_broker_available: bool = False
+    sys_backend_core_status: str = "Verificando..."
+    sys_backend_core_available: bool = False
+    sys_fmanagement_status: str = "Verificando..."
+    sys_fmanagement_available: bool = False
+    sys_mariadb_status: str = "Verificando..."
+    sys_mariadb_available: bool = False
+
+    # Panel Trainer
+    sys_trainer_status: str = "Verificando..."
+    sys_trainer_available: bool = False
+    sys_chromadb_status: str = "Verificando..."
+    sys_chromadb_available: bool = False
+    sys_ollama_status: str = "Verificando..."
+    sys_ollama_available: bool = False
 
     # Estado para página Descargas (dl_ prefix)
     dl_otp_validated: bool = False
@@ -882,6 +914,168 @@ class State(SharedSessionState):
         finally:
             async with self:
                 self.asistente_is_loading = False
+
+    # ========== Página Sistema - Health Checks ==========
+
+    def check_all_services(self):
+        """Verifica el estado de todos los servicios del sistema."""
+        # Panel Frontend
+        self.check_frontend_service()
+        self.check_backoffice_service()
+        self.check_middleware_service()
+        self.check_redis_service()
+        self.check_sms_api_service()
+
+        # Panel Backend
+        self.check_broker_service()
+        self.check_backend_core_service()
+        self.check_fmanagement_service()
+        self.check_mariadb_service()
+
+        # Panel Trainer
+        self.check_trainer_service()
+        self.check_chromadb_service()
+        self.check_ollama_service()
+
+    def check_frontend_service(self):
+        """Verifica el estado del servicio Frontend."""
+        try:
+            from adapters.api_client import check_frontend_health
+            result = check_frontend_health()
+            self.sys_frontend_available = result.get("status") == "healthy"
+            self.sys_frontend_status = "✅ Activo" if self.sys_frontend_available else "❌ Inactivo"
+        except Exception as e:
+            self.sys_frontend_available = False
+            self.sys_frontend_status = f"❌ Error: {str(e)}"
+
+    def check_backoffice_service(self):
+        """Verifica el estado del servicio Backoffice."""
+        try:
+            from adapters.api_client import check_backoffice_health
+            result = check_backoffice_health()
+            self.sys_backoffice_available = result.get("status") == "healthy"
+            self.sys_backoffice_status = "✅ Activo" if self.sys_backoffice_available else "❌ Inactivo"
+        except Exception as e:
+            self.sys_backoffice_available = False
+            self.sys_backoffice_status = f"❌ Error: {str(e)}"
+
+    def check_middleware_service(self):
+        """Verifica el estado del Middleware."""
+        try:
+            from adapters.api_client import check_middleware_health
+            result = check_middleware_health()
+            self.sys_middleware_available = result.get("status") == "healthy"
+            self.sys_middleware_status = "✅ Activo" if self.sys_middleware_available else "❌ Inactivo"
+        except Exception as e:
+            self.sys_middleware_available = False
+            self.sys_middleware_status = f"❌ Error: {str(e)}"
+
+    def check_redis_service(self):
+        """Verifica el estado de Redis."""
+        try:
+            from adapters.api_client import check_redis_health
+            result = check_redis_health()
+            self.sys_redis_available = result.get("status") == "healthy"
+            self.sys_redis_status = "✅ Operativo (vía Backend)" if self.sys_redis_available else "❌ Inactivo"
+        except Exception as e:
+            self.sys_redis_available = False
+            self.sys_redis_status = f"❌ Error: {str(e)}"
+
+    def check_sms_api_service(self):
+        """Verifica si la API de SMS es alcanzable."""
+        try:
+            from adapters.api_client import check_sms_api_health
+            result = check_sms_api_health()
+            detail = result.get("detail", "")
+            if detail == "No configurado":
+                self.sys_sms_api_available = False
+                self.sys_sms_api_status = "⚠️ No configurado"
+            else:
+                self.sys_sms_api_available = result.get("status") == "healthy"
+                self.sys_sms_api_status = "✅ Alcanzable" if self.sys_sms_api_available else "❌ No alcanzable"
+        except Exception as e:
+            self.sys_sms_api_available = False
+            self.sys_sms_api_status = f"❌ Error: {str(e)}"
+
+    def check_broker_service(self):
+        """Verifica el estado del Broker."""
+        try:
+            from adapters.api_client import check_broker_health
+            result = check_broker_health()
+            self.sys_broker_available = result.get("status") == "healthy"
+            self.sys_broker_status = "✅ Activo" if self.sys_broker_available else "❌ Inactivo"
+        except Exception as e:
+            self.sys_broker_available = False
+            self.sys_broker_status = f"❌ Error: {str(e)}"
+
+    def check_backend_core_service(self):
+        """Verifica el estado del Backend Core."""
+        try:
+            from adapters.api_client import check_backend_core_health
+            result = check_backend_core_health()
+            self.sys_backend_core_available = result.get("status") == "healthy"
+            self.sys_backend_core_status = "✅ Activo" if self.sys_backend_core_available else "❌ Inactivo"
+        except Exception as e:
+            self.sys_backend_core_available = False
+            self.sys_backend_core_status = f"❌ Error: {str(e)}"
+
+    def check_fmanagement_service(self):
+        """Verifica el estado de fmanagement."""
+        try:
+            from adapters.api_client import check_fmanagement_health
+            result = check_fmanagement_health()
+            self.sys_fmanagement_available = result.get("status") == "healthy"
+            self.sys_fmanagement_status = "✅ Activo" if self.sys_fmanagement_available else "❌ Inactivo"
+        except Exception as e:
+            self.sys_fmanagement_available = False
+            self.sys_fmanagement_status = f"❌ Error: {str(e)}"
+
+    def check_mariadb_service(self):
+        """Verifica el estado de MariaDB."""
+        try:
+            from adapters.api_client import check_mariadb_health
+            result = check_mariadb_health()
+            self.sys_mariadb_available = result.get("status") == "healthy"
+            self.sys_mariadb_status = "✅ Operativo (vía Backend)" if self.sys_mariadb_available else "❌ Inactivo"
+        except Exception as e:
+            self.sys_mariadb_available = False
+            self.sys_mariadb_status = f"❌ Error: {str(e)}"
+
+    def check_trainer_service(self):
+        """Verifica el estado del Backend IA/Trainer."""
+        try:
+            from adapters.api_client import check_trainer_health
+            result = check_trainer_health()
+            self.sys_trainer_available = result.get("status") == "healthy"
+            self.sys_trainer_status = "✅ Activo" if self.sys_trainer_available else "❌ Inactivo"
+        except Exception as e:
+            self.sys_trainer_available = False
+            self.sys_trainer_status = f"❌ Error: {str(e)}"
+
+    def check_chromadb_service(self):
+        """Verifica el estado de ChromaDB."""
+        try:
+            from adapters.api_client import check_chromadb_health
+            result = check_chromadb_health()
+            self.sys_chromadb_available = result.get("status") == "healthy"
+            self.sys_chromadb_status = "✅ Activo" if self.sys_chromadb_available else "❌ Inactivo"
+        except Exception as e:
+            self.sys_chromadb_available = False
+            self.sys_chromadb_status = f"❌ Error: {str(e)}"
+
+    def check_ollama_service(self):
+        """Verifica el estado de Ollama."""
+        try:
+            from adapters.api_client import check_ollama_health
+            result = check_ollama_health(
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            self.sys_ollama_available = result.get("status") == "healthy"
+            self.sys_ollama_status = "✅ Activo" if self.sys_ollama_available else "❌ Inactivo"
+        except Exception as e:
+            self.sys_ollama_available = False
+            self.sys_ollama_status = f"❌ Error: {str(e)}"
 
     # ========== Gestión de Usuarios de la Organización ==========
     
@@ -5061,7 +5255,11 @@ def internal_menu(is_logged_in: bool) -> rx.Component:
                         rx.cond(
                             State.identity_type_id == 1,
                             rx.button(
-                                item.replace("_", " ").title(),
+                                rx.match(
+                                    item,
+                                    ("crear_llm", "Sistema"),
+                                    item.replace("_", " ").title(),
+                                ),
                                 on_click=lambda _, i=item: State.set_internal_menu(i),
                                 background_color=rx.cond(
                                     State.internal_active_menu == item,
@@ -5088,7 +5286,11 @@ def internal_menu(is_logged_in: bool) -> rx.Component:
                         ),
                         # Para cualquier otro item, siempre mostrar
                         rx.button(
-                            item.replace("_", " ").title(),
+                            rx.match(
+                                item,
+                                ("crear_llm", "Sistema"),
+                                item.replace("_", " ").title(),
+                            ),
                             on_click=lambda _, i=item: State.set_internal_menu(i),
                             background_color=rx.cond(
                                 State.internal_active_menu == item,
@@ -6294,6 +6496,126 @@ def asistente_panel() -> rx.Component:
             width="100%",
         ),
         spacing="4",
+        width="100%",
+        align_items="flex-start",
+    )
+
+
+def sistema_panel() -> rx.Component:
+    """Panel de Sistema con monitoreo de servicios."""
+
+    def service_check_item(label: str, status_var, available_var, check_func) -> rx.Component:
+        """Componente reutilizable para cada check de servicio."""
+        return rx.hstack(
+            rx.icon("activity", size=20, color=COLORS["primary"]),
+            rx.text(f"{label}:", font_weight="bold", font_size="1em", color=COLORS["foreground"], min_width="180px"),
+            rx.text(
+                status_var,
+                color=rx.cond(
+                    available_var,
+                    "#22c55e",  # Verde
+                    "#ef4444",  # Rojo
+                ),
+                font_weight="bold",
+                min_width="150px",
+            ),
+            rx.button(
+                rx.icon("refresh-cw", size=16),
+                on_click=check_func,
+                size="1",
+                variant="soft",
+                background_color=COLORS["primary"],
+                color="black",
+                font_weight="bold",
+                _hover={"opacity": "0.9"},
+            ),
+            spacing="3",
+            align_items="center",
+            padding="0.75em",
+            background_color=COLORS["background"],
+            border_radius="0.5em",
+            width="100%",
+        )
+
+    return rx.vstack(
+        # Botón para verificar todos los servicios
+        rx.hstack(
+            rx.text("Estado del Sistema", font_size="1.5em", font_weight="bold", color=COLORS["foreground"]),
+            rx.button(
+                rx.icon("refresh-cw", size=18, margin_right="0.5em"),
+                "Verificar Todos",
+                on_click=State.check_all_services,
+                size="2",
+                background_color=COLORS["primary"],
+                color="black",
+                font_weight="bold",
+                _hover={"opacity": "0.9"},
+            ),
+            spacing="4",
+            align_items="center",
+            justify="between",
+            width="100%",
+            margin_bottom="1em",
+        ),
+
+        # ===== PANEL FRONTEND =====
+        rx.vstack(
+            rx.hstack(
+                rx.icon("monitor", size=24, color=COLORS["primary"]),
+                rx.text("Frontend", font_weight="bold", font_size="1.3em", color=COLORS["primary"]),
+                spacing="3",
+            ),
+            service_check_item("Aplicación Frontend", State.sys_frontend_status, State.sys_frontend_available, State.check_frontend_service),
+            service_check_item("Backoffice", State.sys_backoffice_status, State.sys_backoffice_available, State.check_backoffice_service),
+            service_check_item("Middleware", State.sys_middleware_status, State.sys_middleware_available, State.check_middleware_service),
+            service_check_item("Redis", State.sys_redis_status, State.sys_redis_available, State.check_redis_service),
+            service_check_item("API SMS", State.sys_sms_api_status, State.sys_sms_api_available, State.check_sms_api_service),
+            spacing="2",
+            padding="1.5em",
+            background_color=COLORS["card"],
+            border_radius="0.5em",
+            border=f"2px solid {COLORS['primary']}",
+            width="100%",
+        ),
+
+        # ===== PANEL BACKEND =====
+        rx.vstack(
+            rx.hstack(
+                rx.icon("server", size=24, color=COLORS["primary"]),
+                rx.text("Backend", font_weight="bold", font_size="1.3em", color=COLORS["primary"]),
+                spacing="3",
+            ),
+            service_check_item("Broker", State.sys_broker_status, State.sys_broker_available, State.check_broker_service),
+            service_check_item("Backend Core", State.sys_backend_core_status, State.sys_backend_core_available, State.check_backend_core_service),
+            service_check_item("fmanagement", State.sys_fmanagement_status, State.sys_fmanagement_available, State.check_fmanagement_service),
+            service_check_item("MariaDB", State.sys_mariadb_status, State.sys_mariadb_available, State.check_mariadb_service),
+            spacing="2",
+            padding="1.5em",
+            background_color=COLORS["card"],
+            border_radius="0.5em",
+            border=f"2px solid {COLORS['primary']}",
+            width="100%",
+        ),
+
+        # ===== PANEL TRAINER =====
+        rx.vstack(
+            rx.hstack(
+                rx.icon("cpu", size=24, color=COLORS["primary"]),
+                rx.text("Trainer", font_weight="bold", font_size="1.3em", color=COLORS["primary"]),
+                spacing="3",
+            ),
+            service_check_item("Backend IA", State.sys_trainer_status, State.sys_trainer_available, State.check_trainer_service),
+            service_check_item("ChromaDB", State.sys_chromadb_status, State.sys_chromadb_available, State.check_chromadb_service),
+            service_check_item("Ollama", State.sys_ollama_status, State.sys_ollama_available, State.check_ollama_service),
+            spacing="2",
+            padding="1.5em",
+            background_color=COLORS["card"],
+            border_radius="0.5em",
+            border=f"2px solid {COLORS['primary']}",
+            width="100%",
+        ),
+
+        spacing="3",
         width="100%",
         align_items="flex-start",
     )
@@ -9549,7 +9871,7 @@ def internal_panel(active_item: str) -> rx.Component:
         ("entrenamientos", "Entrenamientos"),
         ("descargas", "Descargas"),
         ("analisis_resultados", "Análisis de Resultados"),
-        ("crear_llm", "Crear LLM"),
+        ("crear_llm", "Sistema"),
         ("asistente", "Asistente"),
         "Internal Tools",
     )
@@ -9572,10 +9894,10 @@ def internal_panel(active_item: str) -> rx.Component:
                         descargas_panel(),
                         rx.cond(
                             active_item == "analisis_resultados",
-                            rx.text("Panel de análisis de resultados de entrenamiento.", color=COLORS["muted_foreground"]),
+                            analisis_resultados_page(),
                             rx.cond(
                                 active_item == "crear_llm",
-                                rx.text("Panel de creación y configuración de LLMs.", color=COLORS["muted_foreground"]),
+                                sistema_panel(),
                                 rx.cond(
                                     active_item == "asistente",
                                     asistente_panel(),

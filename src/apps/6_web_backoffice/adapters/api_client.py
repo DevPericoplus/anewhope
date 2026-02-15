@@ -3640,3 +3640,178 @@ def get_training_progress(
         headers=headers,
     )
     return response if isinstance(response, dict) else {}
+
+
+# ============================================================================
+# FUNCIONES DE HEALTH CHECK PARA PÁGINA SISTEMA
+# ============================================================================
+
+def check_service_health(url: str, timeout: int = 5) -> dict:
+    """
+    Verifica si un servicio está disponible haciendo una petición HTTP simple.
+
+    Args:
+        url: URL del servicio a verificar
+        timeout: Timeout en segundos
+
+    Returns:
+        Dict con status: "healthy" o "error"
+    """
+    try:
+        request = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            if response.status == 200:
+                return {"status": "healthy"}
+            else:
+                return {"status": "error", "detail": f"HTTP {response.status}"}
+    except urllib.error.HTTPError as exc:
+        return {"status": "error", "detail": f"HTTP {exc.code}"}
+    except urllib.error.URLError as exc:
+        return {"status": "error", "detail": f"Connection error: {exc.reason}"}
+    except Exception as exc:
+        return {"status": "error", "detail": str(exc)}
+
+
+def check_frontend_health() -> dict:
+    """Verifica el estado del servicio Frontend."""
+    frontend_host = os.environ.get("FRONTEND_HOST", "localhost")
+    frontend_port = os.environ.get("FRONTEND_PORT", "8005")
+    try:
+        request = urllib.request.Request(f"http://{frontend_host}:{frontend_port}/", method="GET")
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return {"status": "healthy"}
+    except urllib.error.HTTPError as exc:
+        # 404 es OK para servicios Reflex, significa que están corriendo
+        if exc.code == 404:
+            return {"status": "healthy"}
+        return {"status": "error", "detail": f"HTTP {exc.code}"}
+    except Exception as exc:
+        return {"status": "error", "detail": str(exc)}
+
+
+def check_backoffice_health() -> dict:
+    """Verifica el estado del servicio Backoffice."""
+    # El backoffice no puede verificarse a sí mismo via HTTP (causaría deadlock)
+    # Si este código se está ejecutando, el backoffice está activo
+    backoffice_host = os.environ.get("BACKOFFICE_HOST", "localhost")
+    backoffice_port = os.environ.get("BACKOFFICE_PORT", "8006")
+
+    import socket
+    try:
+        # Verificar si el puerto está abierto usando socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(2)
+        result = sock.connect_ex((backoffice_host, int(backoffice_port)))
+        sock.close()
+
+        if result == 0:
+            return {"status": "healthy"}
+        else:
+            return {"status": "error", "detail": "Puerto no accesible"}
+    except Exception as exc:
+        return {"status": "error", "detail": str(exc)}
+
+
+def check_middleware_health() -> dict:
+    """Verifica el estado del Middleware."""
+    middleware_base_url = os.environ.get("MIDDLEWARE_BASE_URL", "http://localhost:8007")
+    return check_service_health(f"{middleware_base_url}/docs")
+
+
+def check_redis_health() -> dict:
+    """Verifica el estado de Redis verificando si el backend está operativo."""
+    # Redis no tiene endpoint directo, verificamos que el backend core esté funcionando
+    # ya que el backend depende de Redis para funcionar
+    core_backend_base_url = os.environ.get("CORE_BACKEND_BASE_URL", "http://localhost:8003")
+    result = check_service_health(f"{core_backend_base_url}/docs")
+    if result.get("status") == "healthy":
+        return {"status": "healthy", "detail": "Backend Core operativo (usa Redis)"}
+    return result
+
+
+def check_sms_api_health() -> dict:
+    """Verifica si la API de SMS (Infobip) es alcanzable."""
+    sms_api_url = os.environ.get("SMS_API_URL", "")
+
+    if not sms_api_url:
+        return {"status": "error", "detail": "No configurado"}
+
+    try:
+        import ssl
+        # Crear contexto SSL que no verifica certificados (necesario para algunos entornos)
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+
+        # Hacer petición HTTPS para verificar si la API es alcanzable
+        # Infobip puede devolver 401/403 sin autenticación, pero eso significa que está alcanzable
+        request = urllib.request.Request(sms_api_url, method="GET")
+        with urllib.request.urlopen(request, timeout=5, context=ssl_context) as response:
+            # Cualquier respuesta exitosa (2xx) es OK
+            if 200 <= response.status < 300:
+                return {"status": "healthy"}
+            else:
+                return {"status": "error", "detail": f"HTTP {response.status}"}
+    except urllib.error.HTTPError as exc:
+        # 401/403 son OK - significa que el servidor está alcanzable pero requiere autenticación
+        if exc.code in [401, 403]:
+            return {"status": "healthy", "detail": "Alcanzable (requiere auth)"}
+        return {"status": "error", "detail": f"HTTP {exc.code}"}
+    except urllib.error.URLError as exc:
+        return {"status": "error", "detail": f"Connection error: {exc.reason}"}
+    except Exception as exc:
+        return {"status": "error", "detail": str(exc)}
+
+
+def check_broker_health() -> dict:
+    """Verifica el estado del Broker."""
+    broker_backend_base_url = os.environ.get("BROKER_BACKEND_BASE_URL", "http://localhost:8008")
+    return check_service_health(f"{broker_backend_base_url}/docs")
+
+
+def check_backend_core_health() -> dict:
+    """Verifica el estado del Backend Core."""
+    core_backend_base_url = os.environ.get("CORE_BACKEND_BASE_URL", "http://localhost:8003")
+    return check_service_health(f"{core_backend_base_url}/docs")
+
+
+def check_fmanagement_health() -> dict:
+    """Verifica el estado de fmanagement."""
+    # fmanagement es un servicio Go, verificamos que responda
+    fmanagement_base_url = os.environ.get("FMANAGEMENT_BASE_URL", "http://localhost:1666")
+    try:
+        request = urllib.request.Request(f"{fmanagement_base_url}/", method="GET")
+        with urllib.request.urlopen(request, timeout=5) as response:
+            # Cualquier respuesta (incluso 404) significa que está activo
+            return {"status": "healthy"}
+    except urllib.error.HTTPError as exc:
+        # 404 es OK, significa que el servicio está corriendo
+        if exc.code == 404:
+            return {"status": "healthy"}
+        return {"status": "error", "detail": f"HTTP {exc.code}"}
+    except Exception as exc:
+        return {"status": "error", "detail": str(exc)}
+
+
+def check_mariadb_health() -> dict:
+    """Verifica el estado de MariaDB verificando si el backend está operativo."""
+    # MariaDB no tiene endpoint directo, verificamos que el backend core esté funcionando
+    # ya que el backend depende de MariaDB para funcionar
+    core_backend_base_url = os.environ.get("CORE_BACKEND_BASE_URL", "http://localhost:8003")
+    result = check_service_health(f"{core_backend_base_url}/docs")
+    if result.get("status") == "healthy":
+        return {"status": "healthy", "detail": "Backend Core operativo (usa MariaDB)"}
+    return result
+
+
+def check_trainer_health() -> dict:
+    """Verifica el estado del Backend IA/Trainer."""
+    trainer_base_url = os.environ.get("TRAINER_BASE_URL", "http://localhost:8004")
+    return check_service_health(f"{trainer_base_url}/docs")
+
+
+def check_chromadb_health() -> dict:
+    """Verifica el estado de ChromaDB."""
+    chroma_host = os.environ.get("CHROMA_HOST", "localhost")
+    chroma_port = os.environ.get("CHROMA_PORT", "8100")
+    return check_service_health(f"http://{chroma_host}:{chroma_port}/api/v2/heartbeat")

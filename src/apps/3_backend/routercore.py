@@ -6848,3 +6848,141 @@ class BackendCoreRouter:
         password = quote_plus(settings.get("writer_password", ""))
 
         return f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
+
+    async def get_analysis_metrics(
+        self,
+        organization_id: int | None = None,
+        project_id: int | None = None,
+        version_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Obtiene las métricas de análisis de entrenamientos filtradas.
+
+        Args:
+            organization_id: ID de la organización (opcional).
+            project_id: ID del proyecto (opcional).
+            version_id: ID de la versión (opcional).
+
+        Returns:
+            Lista de análisis con métricas agregadas por categorías.
+        """
+        from sqlalchemy import text
+
+        try:
+            # Construir WHERE clause dinámico
+            where_clauses = []
+            params = {}
+
+            if organization_id:
+                where_clauses.append("e.id_organizacion = :org_id")
+                params["org_id"] = organization_id
+
+            if project_id:
+                where_clauses.append("e.id_proyecto = :proj_id")
+                params["proj_id"] = project_id
+
+            if version_id:
+                where_clauses.append("e.id_version = :ver_id")
+                params["ver_id"] = version_id
+
+            where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+            query = text(f"""
+                SELECT
+                    a.id,
+                    a.numero_secuencia,
+                    a.nombre_modelo,
+                    a.rag_precision,
+                    a.rag_recall,
+                    a.rag_f1_score,
+                    a.rag_mrr,
+                    a.rag_ndcg,
+                    a.response_relevance,
+                    a.response_coherence,
+                    a.response_fluency,
+                    a.response_groundedness,
+                    a.response_completeness,
+                    a.bleu_score,
+                    a.rouge_1,
+                    a.rouge_2,
+                    a.rouge_l,
+                    a.meteor_score,
+                    a.perplexity,
+                    a.factual_accuracy,
+                    a.hallucination_rate,
+                    a.citation_accuracy,
+                    a.overall_quality_score,
+                    a.fecha_analisis
+                FROM job_entrenamientos_analisis a
+                INNER JOIN entrenamientos e ON a.id_entrenamiento = e.id
+                WHERE {where_sql}
+                ORDER BY a.numero_secuencia ASC
+            """)
+
+            with self._get_projects_db_connection() as conn:
+                result = conn.execute(query, params)
+                rows = result.fetchall()
+
+            if not rows:
+                return []
+
+            # Procesar resultados y calcular scores por categoría
+            analisis_list = []
+            for row in rows:
+                # RAG Quality Score (promedio de métricas RAG)
+                rag_metrics = [
+                    float(row[3] or 0),  # rag_precision
+                    float(row[4] or 0),  # rag_recall
+                    float(row[5] or 0),  # rag_f1_score
+                    float(row[6] or 0),  # rag_mrr
+                    float(row[7] or 0),  # rag_ndcg
+                ]
+                rag_quality_score = sum(rag_metrics) / len([m for m in rag_metrics if m > 0]) if any(rag_metrics) else 0
+
+                # Response Quality Score (promedio de métricas de respuesta)
+                response_metrics = [
+                    float(row[8] or 0),   # response_relevance
+                    float(row[9] or 0),   # response_coherence
+                    float(row[10] or 0),  # response_fluency
+                    float(row[11] or 0),  # response_groundedness
+                    float(row[12] or 0),  # response_completeness
+                ]
+                response_quality_score = sum(response_metrics) / len([m for m in response_metrics if m > 0]) if any(response_metrics) else 0
+
+                # Generation Quality Score (promedio de métricas de generación)
+                generation_metrics = [
+                    float(row[13] or 0),  # bleu_score
+                    float(row[14] or 0),  # rouge_1
+                    float(row[15] or 0),  # rouge_2
+                    float(row[16] or 0),  # rouge_l
+                    float(row[17] or 0),  # meteor_score
+                ]
+                generation_quality_score = sum(generation_metrics) / len([m for m in generation_metrics if m > 0]) if any(generation_metrics) else 0
+
+                # Factuality Score (promedio de métricas de factualidad)
+                factuality_metrics = [
+                    float(row[19] or 0),  # factual_accuracy
+                    1.0 - float(row[20] or 0),  # 1 - hallucination_rate (invertido)
+                    float(row[21] or 0),  # citation_accuracy
+                ]
+                factuality_score = sum(factuality_metrics) / len([m for m in factuality_metrics if m > 0]) if any(factuality_metrics) else 0
+
+                analisis = {
+                    "id": row[0],
+                    "numero_secuencia": row[1],
+                    "nombre_modelo": row[2],
+                    "fecha_analisis": row[23].isoformat() if row[23] else None,
+                    "metricas": {
+                        "rag_quality_score": rag_quality_score,
+                        "response_quality_score": response_quality_score,
+                        "generation_quality_score": generation_quality_score,
+                        "factuality_score": factuality_score,
+                        "overall_quality_score": float(row[22] or 0),
+                    }
+                }
+                analisis_list.append(analisis)
+
+            return analisis_list
+
+        except Exception as exc:
+            logger.error(f"Error obteniendo métricas de análisis: {exc}")
+            raise BackendCoreBusinessError(f"Error obteniendo métricas: {str(exc)}") from exc

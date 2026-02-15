@@ -3651,3 +3651,34 @@ async def get_training_progress_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+@app.get("/analysis/metrics", tags=["analysis"])
+async def get_analysis_metrics_endpoint(
+    organization_id: int | None = None,
+    project_id: int | None = None,
+    version_id: int | None = None,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> list[dict[str, Any]]:
+    """Obtiene las métricas de análisis de entrenamientos filtradas.
+
+    Args:
+        organization_id: ID de la organización (opcional).
+        project_id: ID del proyecto (opcional).
+        version_id: ID de la versión (opcional).
+
+    Returns:
+        Lista de análisis con métricas agregadas por categorías.
+    """
+    try:
+        result = await router.get_analysis_metrics(
+            organization_id=organization_id,
+            project_id=project_id,
+            version_id=version_id
+        )
+        return result
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
