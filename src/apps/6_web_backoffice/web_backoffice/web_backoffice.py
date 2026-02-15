@@ -10428,6 +10428,17 @@ except ImportError as e:
     traceback.print_exc()
 except Exception as e:
     print(f"❌ Error al registrar ruta /model_downloads: {e}")
+
+try:
+    from pages.analisis_resultados import analisis_resultados_page
+    app.add_page(analisis_resultados_page, route="/analisis_resultados", title="Myllm - Análisis de Resultados")
+    print("✅ Ruta /analisis_resultados registrada exitosamente")
+except ImportError as e:
+    print(f"⚠️ Warning: Could not import analisis_resultados_page: {e}")
+    import traceback
+    traceback.print_exc()
+except Exception as e:
+    print(f"❌ Error al registrar ruta /model_downloads: {e}")
     import traceback
     traceback.print_exc()
     import traceback

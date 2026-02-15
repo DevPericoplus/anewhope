@@ -96,7 +96,7 @@ class ModelDownloadState(rx.State):
         # Cargar modelos al montar la página
         return self.load_models()
 
-    @rx.background
+    @rx.event(background=True)
     async def load_models(self):
         """Carga la lista de modelos disponibles."""
         async with self:
@@ -171,7 +171,7 @@ class ModelDownloadState(rx.State):
         self.otp_phone = ""
         self.otp_error = ""
 
-    @rx.background
+    @rx.event(background=True)
     async def request_otp(self):
         """Solicita el OTP para descarga."""
         async with self:
@@ -245,7 +245,7 @@ class ModelDownloadState(rx.State):
                 self.otp_error = f"Error de conexión: {str(e)}"
             logger.error(f"Excepción al solicitar OTP: {e}", exc_info=True)
 
-    @rx.background
+    @rx.event(background=True)
     async def validate_otp_and_download(self):
         """Valida el OTP e inicia la descarga del modelo."""
         async with self:
@@ -358,7 +358,7 @@ def model_card(model: dict[str, Any]) -> rx.Component:
                 color=COLORS["foreground"],
             ),
             rx.text(
-                f"Tamaño: {model['file_size'] / (1024*1024):.2f} MB",
+                f"Tamaño: {model['file_size_mb']} MB",
                 color=COLORS["muted_foreground"],
                 size="2",
             ),

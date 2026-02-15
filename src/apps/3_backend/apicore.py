@@ -487,6 +487,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Backend Core", lifespan=lifespan)
 
+# Setup logger
+logger = logging.getLogger(__name__)
+
+# Importar y registrar router de análisis de entrenamientos
+try:
+    from router_training_analysis import router as analysis_router
+    app.include_router(analysis_router)
+    logger.info("✅ Router de análisis de entrenamientos registrado")
+except Exception as e:
+    logger.warning(f"⚠️ No se pudo registrar router de análisis: {e}")
+
 
 @app.get("/users")
 def list_users(

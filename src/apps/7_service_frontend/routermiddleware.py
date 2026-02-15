@@ -4780,12 +4780,15 @@ class RouterMiddleware:
                 # Buscar archivos ZIP
                 for zip_file in ver_dir.glob("*.zip"):
                     file_stat = zip_file.stat()
+                    file_size_bytes = file_stat.st_size
+                    file_size_mb = file_size_bytes / (1024 * 1024)
                     models.append({
                         "organization_id": org_id,
                         "project_id": prj_id,
                         "version_id": ver_id,
                         "filename": zip_file.name,
-                        "file_size": file_stat.st_size,
+                        "file_size": file_size_bytes,
+                        "file_size_mb": f"{file_size_mb:.2f}",
                         "created_at": int(file_stat.st_mtime),
                         "relative_path": str(zip_file.relative_to(base_path)),
                     })
