@@ -87,7 +87,7 @@ def patch_vite_config():
         replacement_alt = rf'''\1
     allowedHosts: [{allowed_hosts_str}],'''
         new_content = re.sub(pattern_alt, replacement_alt, content, flags=re.DOTALL)
-
+    
     if new_content == content:
         print("[WARN] No se pudo encontrar el patrón para parchar. Revisión manual necesaria.")
         print("[INFO] Añade manualmente a la sección 'server' en vite.config.js:")

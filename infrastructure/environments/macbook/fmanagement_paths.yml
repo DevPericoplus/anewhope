@@ -24,7 +24,7 @@ backend_ia_base_storage: ~/data/anewhope/files/trainer_server/external
 # Rutas base de almacenamiento - Internal (contenido generado por sistema)
 # --------------------------------------------------------------------------
 backend_core_internal_storage: ~/data/anewhope/files/backend_server/internal
-backend_ia_internal_storage: ~/data/anewhope/files/trainer_server/internal
+backend_ia_internal_storage: ~/data/anewhope/files/backend_server/internal
 
 # Rutas específicas dentro de internal
 backend_core_models_storage: ~/data/anewhope/files/backend_server/internal/models

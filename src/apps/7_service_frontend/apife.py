@@ -117,6 +117,60 @@ class RefreshTokenResponse(BaseModel):
     session_expires_at: int
 
 
+class ModelDownloadOtpRequest(BaseModel):
+    """Request para solicitar OTP de descarga de modelo."""
+
+    organization_id: int
+    project_id: int
+    version_id: int
+
+
+class ModelDownloadOtpResponse(BaseModel):
+    """Response con datos de OTP para descarga de modelo.
+
+    El frontend/backoffice enviará el SMS con el OTP.
+    """
+
+    success: bool
+    otp: str | None = None
+    phone_number: str | None = None
+    message: str | None = None
+
+
+class ModelDownloadValidateOtpRequest(BaseModel):
+    """Request para validar OTP y obtener token de descarga."""
+
+    organization_id: int
+    project_id: int
+    version_id: int
+    otp: str
+
+
+class ModelDownloadValidateOtpResponse(BaseModel):
+    """Response con token de descarga de modelo."""
+
+    success: bool
+    download_token: str | None = None
+    fmanagement_url: str | None = None
+    expires_in: int | None = None
+    expires_at: int | None = None
+    message: str | None = None
+
+
+class ModelListRequest(BaseModel):
+    """Request para listar modelos disponibles."""
+
+    organization_id: int | None = None  # None = todas las organizaciones (solo backoffice)
+
+
+class ModelListResponse(BaseModel):
+    """Response con lista de modelos disponibles."""
+
+    success: bool
+    models: list[dict[str, Any]] = Field(default_factory=list)
+    message: str | None = None
+
+
 class PermissionsResponse(BaseModel):
     """Respuesta con permisos del usuario."""
 
@@ -1530,6 +1584,111 @@ def send_autonomous_training_endpoint(
         print(f"[MIDDLEWARE ENDPOINT] ====================================")
 
         return AutonomousTrainingResponse(**response)
+    except BusinessRuleError as exc:
+        error_msg = str(exc).lower()
+        if "permisos" in error_msg or "permiso" in error_msg:
+            status_code = status.HTTP_403_FORBIDDEN
+        else:
+            status_code = status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/training/entrenamientos/{id_entrenamiento}/autonomous/progress")
+def get_autonomous_training_progress_endpoint(
+    id_entrenamiento: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> dict[str, Any]:
+    """Consulta el progreso del entrenamiento autónomo (fases 6-9).
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core
+
+    Args:
+        id_entrenamiento: ID del entrenamiento autónomo a consultar
+
+    Returns:
+        Diccionario con success y data (subphases del entrenamiento autónomo)
+    """
+    try:
+        response = router.get_autonomous_training_progress(id_entrenamiento, session)
+        return response
+    except BusinessRuleError as exc:
+        error_msg = str(exc).lower()
+        if "permisos" in error_msg or "permiso" in error_msg:
+            status_code = status.HTTP_403_FORBIDDEN
+        else:
+            status_code = status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/training/entrenamientos/{id_entrenamiento}/autonomous/package")
+def download_autonomous_package_endpoint(
+    id_entrenamiento: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> Response:
+    """Descarga el paquete ZIP del modelo autónomo generado.
+
+    Flujo: Backoffice → Middleware → Broker → Trainer
+
+    Args:
+        id_entrenamiento: ID del entrenamiento autónomo
+
+    Returns:
+        Response con el archivo ZIP
+    """
+    try:
+        response = router.download_autonomous_package(id_entrenamiento, session)
+
+        # Devolver el contenido como Response
+        return Response(
+            content=response.content,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": response.headers.get("Content-Disposition", "attachment"),
+            },
+        )
+    except BusinessRuleError as exc:
+        error_msg = str(exc).lower()
+        if "permisos" in error_msg or "permiso" in error_msg:
+            status_code = status.HTTP_403_FORBIDDEN
+        else:
+            status_code = status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/training/entrenamientos/autonomous/packages")
+def list_autonomous_packages_endpoint(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+    id_organizacion: int | None = None,
+    id_proyecto: int | None = None,
+    id_version: int | None = None,
+) -> dict[str, Any]:
+    """Lista los paquetes autónomos disponibles para descargar.
+
+    Flujo: Backoffice → Middleware → Broker → Trainer
+
+    Args:
+        id_organizacion: Filtrar por organización (opcional)
+        id_proyecto: Filtrar por proyecto (opcional)
+        id_version: Filtrar por versión (opcional)
+
+    Returns:
+        Diccionario con success y lista de paquetes
+    """
+    try:
+        response = router.list_autonomous_packages(session, id_organizacion, id_proyecto, id_version)
+        return response
     except BusinessRuleError as exc:
         error_msg = str(exc).lower()
         if "permisos" in error_msg or "permiso" in error_msg:
@@ -3677,4 +3836,204 @@ def get_pending_training_versions_endpoint(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# MODEL DOWNLOADS - Descargas de modelos con OTP
+# ============================================================================
+
+
+@app.get("/models/list", response_model=ModelListResponse, tags=["models"])
+def list_available_model_packages_endpoint(
+    organization_id: int | None = None,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> ModelListResponse:
+    """Lista modelos disponibles para descarga.
+
+    Args:
+        organization_id: ID de organización (None = todas, solo para admins globales)
+
+    Security:
+        - Solo usuarios con identity_type_id (admin global o admin org)
+        - Backoffice: puede ver todas las organizaciones (organization_id=None)
+        - Frontend: solo puede ver su propia organización
+
+    Returns:
+        Lista de modelos con información de org/proyecto/versión/archivo
+    """
+    try:
+        # Verificar que el usuario tiene identity_type_id (es admin)
+        if session.identity_type_id is None:
+            raise HTTPException(
+                status_code=403,
+                detail="Solo administradores pueden descargar modelos"
+            )
+
+        # Si no se especifica organización, usar la del usuario
+        # (excepto para admins globales que pueden ver todas)
+        if organization_id is None:
+            if session.identity_type_id != 1:  # No es admin global
+                organization_id = session.organization_id
+
+        models = router.list_available_models(session, organization_id)
+        return ModelListResponse(
+            success=True,
+            models=models,
+            message=f"Se encontraron {len(models)} modelos disponibles"
+        )
+    except HTTPException:
+        raise
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        logger.error("Error listando modelos: %s", str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al listar modelos"
+        ) from exc
+
+
+@app.post("/models/download/request-otp", response_model=ModelDownloadOtpResponse, tags=["models"])
+def request_model_download_otp_endpoint(
+    request: ModelDownloadOtpRequest,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> ModelDownloadOtpResponse:
+    """Solicita OTP para descargar modelo.
+
+    Security:
+        - Solo usuarios con identity_type_id (admin global o admin org)
+        - Valida que el usuario pertenezca a la organización del modelo
+        - Genera OTP y devuelve datos para envío de SMS
+
+    Flow:
+        1. Frontend/Backoffice llama este endpoint
+        2. Middleware valida permisos y genera OTP
+        3. Middleware devuelve OTP + teléfono
+        4. Frontend/Backoffice envía SMS con OTP via Infobip
+        5. Usuario recibe SMS con código
+
+    Returns:
+        OTP y teléfono para envío de SMS
+    """
+    try:
+        # Verificar que el usuario tiene identity_type_id (es admin)
+        if session.identity_type_id is None:
+            raise HTTPException(
+                status_code=403,
+                detail="Solo administradores pueden descargar modelos"
+            )
+
+        # Verificar permisos de organización (solo admin global puede otras orgs)
+        if session.identity_type_id != 1:  # No es admin global
+            if request.organization_id != session.organization_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="No tiene permisos para descargar modelos de otra organización"
+                )
+
+        otp_data = router.request_model_download_otp(
+            session=session,
+            organization_id=request.organization_id,
+            project_id=request.project_id,
+            version_id=request.version_id
+        )
+
+        return ModelDownloadOtpResponse(
+            success=True,
+            otp=otp_data["otp"],
+            phone_number=otp_data["phone_number"],
+            message="OTP generado. Envíe el SMS al usuario."
+        )
+    except HTTPException:
+        raise
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        logger.error("Error solicitando OTP: %s", str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al solicitar OTP"
+        ) from exc
+
+
+@app.post("/models/download/validate-otp", response_model=ModelDownloadValidateOtpResponse, tags=["models"])
+def validate_model_download_otp_endpoint(
+    request: ModelDownloadValidateOtpRequest,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> ModelDownloadValidateOtpResponse:
+    """Valida OTP y genera token de descarga de modelo.
+
+    Security:
+        - Valida el código OTP del usuario
+        - Genera token JWT para descarga en fmanagement
+        - Rota el OTP del usuario (como en login)
+
+    Flow:
+        1. Usuario introduce OTP recibido por SMS
+        2. Frontend/Backoffice llama este endpoint con el OTP
+        3. Middleware valida OTP
+        4. Middleware genera token JWT con permisos de descarga
+        5. Middleware rota OTP del usuario
+        6. Frontend/Backoffice usa token para descargar desde fmanagement
+
+    Returns:
+        Token JWT para descarga directa desde fmanagement
+    """
+    try:
+        # Verificar que el usuario tiene identity_type_id (es admin)
+        if session.identity_type_id is None:
+            raise HTTPException(
+                status_code=403,
+                detail="Solo administradores pueden descargar modelos"
+            )
+
+        # Verificar permisos de organización
+        if session.identity_type_id != 1:  # No es admin global
+            if request.organization_id != session.organization_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="No tiene permisos para descargar modelos de otra organización"
+                )
+
+        token_data = router.validate_model_download_otp(
+            session=session,
+            organization_id=request.organization_id,
+            project_id=request.project_id,
+            version_id=request.version_id,
+            otp=request.otp
+        )
+
+        # Obtener URL de fmanagement
+        fmanagement_url = get_env_value("fmanagement_base_url", "http://localhost:1666")
+
+        return ModelDownloadValidateOtpResponse(
+            success=True,
+            download_token=token_data["token"],
+            fmanagement_url=fmanagement_url,
+            expires_in=token_data["expires_in"],
+            expires_at=token_data["expires_at"],
+            message="OTP validado. Token generado para descarga."
+        )
+    except HTTPException:
+        raise
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        logger.error("Error validando OTP: %s", str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al validar OTP"
         ) from exc

@@ -16,3 +16,15 @@ langchain-text-splitters==1.1.0
 langchain-core==1.2.11
 tensorflow-hub==0.16.1
 pypdf==6.7.0
+
+# Dependencias para Entrenamiento Autónomo (Fases 6-9)
+# Requeridas solo si training_mode = "test" o "production"
+# En modo "simulation" no se usan, pero deben estar instaladas
+# NOTA: Versiones compatibles con macOS (sin GPU)
+torch==2.2.2
+transformers==4.40.0
+peft==0.10.0
+accelerate==0.29.0
+datasets==2.19.0
+sentencepiece==0.2.0
+protobuf==4.25.3

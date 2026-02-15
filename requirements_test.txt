@@ -1,0 +1,2 @@
+# Requirements for running regression tests
+httpx==0.28.1

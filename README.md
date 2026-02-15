@@ -9395,85 +9395,520 @@ final tiene 2+ menciones a "metadatos", se enruta a `/training/metadatos`.
 Ver AGENTS.md sección 28 para reglas detalladas de implementación, checklist de nuevos tipos
 de job, DTOs, logging obligatorio y configuración de timeouts.
 
-## Roadmap: Flujo completo de entrenamiento y generación de modelos LLM
+## Sistema de Entrenamientos y Descargas de Modelos LLM
 
-El sistema implementa un flujo completo desde el entrenamiento de un modelo hasta su
-descarga segura por parte del administrador de la organización. El flujo se distribuye
-en varias páginas del backoffice y frontend.
+El sistema implementa un flujo completo de entrenamiento RAG y autónomo, seguido de la
+generación y descarga segura de modelos GGUF personalizados. El proceso se divide en dos
+etapas principales: **Entrenamiento RAG** (fases 2-5) y **Entrenamiento Autónomo** (fases 6-9).
 
-### Diagrama del flujo
+### Arquitectura del Sistema
 
 ```
-Entrenamientos ──► Trainer (proceso) ──► Análisis Resultados
-     ▲                                         │
-     │              BUCLE ITERATIVO             │
-     └──────── (reentrenamiento) ◄──────────────┘
-                                                │
-                                     Resultados óptimos
-                                                │
-                                                ▼
-                                          Crear LLM ──► Descargas
-                                                        (backoffice + frontend)
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         FLUJO COMPLETO                                   │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Backoffice UI ──► Middleware ──► Broker ──► Trainer                   │
+│       │                                          │                       │
+│       │                                          ▼                       │
+│       │                                    MariaDB (BD)                  │
+│       │                                    - entrenamientos              │
+│       │                                    - evoluciones_entrenamientos  │
+│       │                                    - entrenamientos_autonomos    │
+│       │                                    - evoluciones_autonomas       │
+│       │                                          │                       │
+│       └────────── Polling cada 2s ◄──────────────┘                      │
+│              (Actualización UI en tiempo real)                          │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    ALMACENAMIENTO DE ARCHIVOS                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  backend_ia_base_storage/                  (Entrada - Documentos)       │
+│    └── ORG/PRJ/VER/                                                     │
+│         └── *.txt, *.pdf, *.md                                          │
+│                                                                          │
+│  backend_ia_internal_storage/              (Salida - Modelos)           │
+│    └── models/ORG/PRJ/VER/                                              │
+│         ├── Modelfile_ENT{id}              (RAG: Fase 5)                │
+│         └── exports/ENT{id}/               (Autónomo: Fase 9)           │
+│              └── ENT{id}_modelo_autonomo.zip                            │
+│                   ├── ENT{id}_model_q4_k_m.gguf                         │
+│                   ├── Modelfile                                          │
+│                   └── README.md                                          │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Páginas involucradas y su responsabilidad
+### Flujo del Proceso
 
-| Página | Ubicación | Responsabilidad |
-|--------|-----------|-----------------|
-| **Entrenamientos** | Backoffice | Visor de versiones pendientes, envío al trainer, panel de evolución con 5 fases |
-| **Análisis Resultados** | Backoffice | Evaluación de métricas de calidad del modelo entrenado |
-| **Crear LLM** | Backoffice | Generación del modelo LLM definitivo cuando resultados son óptimos |
-| **Descargas** | Backoffice + Frontend | Descarga segura del modelo por el admin de organización |
+```
+┌────────────────────┐
+│ 1. Seleccionar     │  Usuario selecciona versión con documentos
+│    Versión         │  en página "Entrenamientos" del Backoffice
+└─────────┬──────────┘
+          ▼
+┌────────────────────┐
+│ 2. Enviar al       │  Click en "Enviar al Trainer"
+│    Trainer         │  ─► POST /training/entrenamientos
+└─────────┬──────────┘  ACK inmediato
+          ▼
+┌────────────────────────────────────────────────────────────────────┐
+│ 3. ENTRENAMIENTO RAG (Fases 2-5)                                   │
+│    Tiempo: ~2-3 minutos                                             │
+│                                                                     │
+│    Fase 2: Validación        (4 subfases)  ─► 2.1 - 2.4           │
+│    Fase 3: Preparación       (3 subfases)  ─► 3.1 - 3.3           │
+│    Fase 4: Configuración     (4 subfases)  ─► 4.1 - 4.4           │
+│    Fase 5: Entrenamiento     (5 subfases)  ─► 5.1 - 5.5           │
+│                                                                     │
+│    Resultado: Modelo RAG en Ollama + ChromaDB                      │
+│               collection_name: ORG_PRJ_VER_ENT{id}_SEQ{seq}        │
+└─────────┬───────────────────────────────────────────────────────────┘
+          ▼
+┌────────────────────┐
+│ 4. Botón Modal     │  Aparece botón "Entrenar Modelo Autónomo" 🚀
+│    Confirmación    │  ─► Modal muestra training_mode y fases 6-9
+└─────────┬──────────┘  Usuario confirma inicio
+          ▼
+┌────────────────────────────────────────────────────────────────────┐
+│ 5. ENTRENAMIENTO AUTÓNOMO (Fases 6-9)                              │
+│    Tiempo según modo:                                               │
+│    - SIMULATION: 2-5 min (solo fase 6, no genera ZIP)             │
+│    - TEST: 20-40 min (todas las fases, ZIP ~4-8GB)                │
+│    - PRODUCTION: 53-135 min (todas las fases, ZIP completo)       │
+│                                                                     │
+│    Fase 6: Dataset          (5 subfases)  ─► 6.1 - 6.5            │
+│    Fase 7: LoRA Training    (5 subfases)  ─► 7.1 - 7.5            │
+│    Fase 8: Model Fusion     (5 subfases)  ─► 8.1 - 8.5            │
+│    Fase 9: GGUF Export      (5 subfases)  ─► 9.1 - 9.5            │
+│                                                                     │
+│    Resultado: Paquete ZIP con modelo GGUF cuantizado              │
+└─────────┬───────────────────────────────────────────────────────────┘
+          ▼
+┌────────────────────┐
+│ 6. Descarga desde  │  Opción A: Botón "Descargar Modelo GGUF" 📥
+│    Panel           │  en panel de evolución
+└─────────┬──────────┘
+          │
+          ▼
+┌────────────────────┐
+│ 7. Página          │  Opción B: Ir a página "Descargas"
+│    Descargas       │  ─► Validación OTP (SuperAdmin/OrgAdmin)
+│                    │  ─► Filtros: Org/Proyecto/Versión
+│                    │  ─► Lista de paquetes disponibles
+└─────────┬──────────┘  ─► Descarga de ZIP
+          ▼
+┌────────────────────┐
+│ 8. Archivo         │  ENT{id}_modelo_autonomo.zip descargado
+│    Descargado      │  Listo para desplegar en infraestructura
+└────────────────────┘
+```
 
-### Fases del proceso de entrenamiento (página Entrenamientos)
+### Fases del Entrenamiento RAG (2-5)
 
-El panel "Evolución entrenamiento" muestra 5 fases secuenciales que corresponden
-al proceso que ejecuta el Trainer:
+El entrenamiento RAG prepara el modelo base con los documentos de conocimiento usando
+ChromaDB y embeddings. Total: **16 subfases**.
 
-| # | Fase | Descripción |
-|---|------|-------------|
-| 1 | 📥 Recepción solicitud | Solicitud recibida por el trainer (ACK inmediato) |
-| 2 | 🔍 Validación contenido | Verificación de estructura y contenido de la versión |
-| 3 | 📊 Preparación dataset | Procesamiento y limpieza de datos |
-| 4 | ⚙️ Configuración modelo | Selección de hiperparámetros y arquitectura |
-| 5 | 🏋️ Entrenamiento | Entrenamiento del modelo con los datos preparados |
+#### Fase 2: Validación de Contenido (4 subfases)
 
-### Bucle iterativo Entrenamientos ↔ Análisis Resultados
+| Subfase | Nombre | Descripción | Tiempo típico |
+|---------|--------|-------------|---------------|
+| 2.1 | Verificar directorio | Comprueba que existe el path de documentos | <1s |
+| 2.2 | Escaneo de archivos | Lista todos los archivos en el directorio | <1s |
+| 2.3 | Clasificación por tipo | Identifica tipos de archivo (txt, pdf, md, etc.) | 1s |
+| 2.4 | Validación de contenido | Verifica que los archivos son legibles | 1s |
 
-El usuario puede iterar entre estas dos páginas:
+#### Fase 3: Preparación de Dataset (3 subfases)
 
-1. **Entrenamientos**: Envía versión al trainer → trainer entrena el modelo
-2. **Análisis Resultados**: Evalúa métricas del modelo entrenado
-3. Si no satisfecho → vuelve a Entrenamientos con ajustes (reentrenamiento)
-4. Si satisfecho → procede a Crear LLM
+| Subfase | Nombre | Descripción | Tiempo típico |
+|---------|--------|-------------|---------------|
+| 3.1 | Carga de documentos | Lee el contenido de todos los archivos | <1s |
+| 3.2 | Chunking | Divide documentos en chunks de tamaño óptimo | 1s |
+| 3.3 | Generación de embeddings | Genera vectores con modelo de embeddings | 6s |
 
-### Seguridad en Descargas
+#### Fase 4: Configuración ChromaDB (4 subfases)
 
-- Solo `identity_type_id in (1, 2)` (SuperAdmin, Admin de Organización) pueden descargar
-- Procedimiento de seguridad específico antes de permitir la descarga
-- Disponible en **ambas** aplicaciones (frontend para el admin, backoffice para soporte)
+| Subfase | Nombre | Descripción | Tiempo típico |
+|---------|--------|-------------|---------------|
+| 4.1 | Conexión ChromaDB | Establece conexión con base vectorial | <1s |
+| 4.2 | Crear colección | Crea colección con nombre único | <1s |
+| 4.3 | Inserción de documentos | Inserta chunks con embeddings | 1s |
+| 4.4 | Verificación de integridad | Comprueba cantidad de documentos insertados | 1s |
 
-### Estado de implementación
+#### Fase 5: Entrenamiento del Modelo (5 subfases)
 
-| Funcionalidad | Estado |
-|---------------|--------|
-| Visor versiones pendientes | ✅ Completado |
-| Botón "Enviar al Trainer" con ACK | ✅ Completado |
-| Panel evolución entrenamiento (5 fases) | ✅ Completado |
-| Proceso de entrenamiento en Trainer | 🔜 En desarrollo |
-| Evaluación en Análisis Resultados | ⏳ Pendiente |
-| Reentrenamiento (bucle iterativo) | ⏳ Pendiente |
-| Generación modelo en Crear LLM | ⏳ Pendiente |
-| Descargas en backoffice | ⏳ Pendiente |
-| Descargas en frontend | ⏳ Pendiente |
+| Subfase | Nombre | Descripción | Tiempo típico |
+|---------|--------|-------------|---------------|
+| 5.1 | Obtener nombres | Genera nombre único para el modelo | <1s |
+| 5.2 | Generar Modelfile | Crea Modelfile con configuración RAG | <1s |
+| 5.3 | Guardar Modelfile | Escribe archivo en disco | <1s |
+| 5.4 | Registrar en Ollama | Crea modelo en Ollama con Modelfile | 1s |
+| 5.5 | Test de verificación | Ejecuta query de prueba al modelo | 101s |
 
-### Endpoints implementados
+**Total Fase RAG:** ~112 segundos (~2 minutos)
+
+**Resultado:** Modelo RAG funcional en Ollama con conocimiento de los documentos.
+
+### Fases del Entrenamiento Autónomo (6-9)
+
+El entrenamiento autónomo genera un modelo GGUF cuantizado listo para desplegar.
+El número de subfases y tiempo depende del `training_mode`.
+
+#### Training Modes
+
+| Modo | Fases | Subfases | Tiempo | Genera ZIP | Uso |
+|------|-------|----------|--------|------------|-----|
+| `simulation` | 6 | 5 | 2-5 min | ❌ No | Testing rápido |
+| `test` | 6-9 | 20 | 20-40 min | ✅ Sí (~4-8GB) | Validación |
+| `production` | 6-9 | 20 | 53-135 min | ✅ Sí (completo) | Producción |
+
+#### Fase 6: Preparación del Dataset (5 subfases)
+
+| Subfase | Nombre | Descripción |
+|---------|--------|-------------|
+| 6.1 | Cargar datos RAG | Obtiene documentos de ChromaDB |
+| 6.2 | Estructurar ejemplos | Formatea datos para fine-tuning |
+| 6.3 | Generar dataset | Crea archivo de dataset en formato JSONL |
+| 6.4 | Validar dataset | Verifica integridad y formato |
+| 6.5 | Guardar dataset | Escribe dataset en disco |
+
+**Tiempo:** 2-10 minutos según modo
+
+#### Fase 7: Entrenamiento LoRA (5 subfases) - Solo TEST/PRODUCTION
+
+| Subfase | Nombre | Descripción |
+|---------|--------|-------------|
+| 7.1 | Configurar hiperparámetros | Define parámetros de entrenamiento LoRA |
+| 7.2 | Preparar modelo base | Carga modelo base de Ollama |
+| 7.3 | Iniciar entrenamiento | Ejecuta fine-tuning con LoRA |
+| 7.4 | Validar checkpoints | Verifica progreso del entrenamiento |
+| 7.5 | Guardar adaptadores LoRA | Guarda pesos LoRA entrenados |
+
+**Tiempo:** 10-90 minutos según modo
+
+#### Fase 8: Fusión del Modelo (5 subfases) - Solo TEST/PRODUCTION
+
+| Subfase | Nombre | Descripción |
+|---------|--------|-------------|
+| 8.1 | Cargar modelo base | Carga modelo original |
+| 8.2 | Cargar adaptadores LoRA | Carga pesos LoRA entrenados |
+| 8.3 | Fusionar pesos | Merge de modelo base + adaptadores |
+| 8.4 | Validar modelo fusionado | Test de inferencia |
+| 8.5 | Guardar modelo fusionado | Escribe modelo completo |
+
+**Tiempo:** 5-15 minutos según modo
+
+#### Fase 9: Exportación GGUF (5 subfases) - Solo TEST/PRODUCTION
+
+| Subfase | Nombre | Descripción |
+|---------|--------|-------------|
+| 9.1 | Convertir a GGUF | Convierte modelo a formato GGUF |
+| 9.2 | Cuantizar modelo | Aplica cuantización q4_k_m |
+| 9.3 | Generar metadatos | Crea README y Modelfile |
+| 9.4 | Crear paquete ZIP | Empaqueta GGUF + metadatos |
+| 9.5 | Registrar en BD | Guarda package_path en DB |
+
+**Tiempo:** 5-10 minutos
+
+**Resultado:** Archivo ZIP con modelo GGUF cuantizado listo para descargar.
+
+### Base de Datos
+
+#### Tablas del Sistema
+
+| Tabla | Descripción | Registros por entrenamiento |
+|-------|-------------|----------------------------|
+| `entrenamientos` | Registro principal del entrenamiento | 1 |
+| `evoluciones_entrenamientos` | Subfases RAG (2.1-5.5) | 16 |
+| `entrenamientos_autonomos` | Registro del entrenamiento autónomo | 1 |
+| `evoluciones_autonomas` | Subfases autónomas (6.1-9.5) | 5 (simulation) o 20 (test/production) |
+
+#### Tabla: entrenamientos
+
+```sql
+CREATE TABLE entrenamientos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  numero_secuencia INT NOT NULL,
+  id_organizacion INT NOT NULL,
+  id_proyecto INT NOT NULL,
+  id_version INT NOT NULL,
+  estado VARCHAR(50),              -- 'pendiente', 'en_progreso', 'completado', 'error'
+  fase_actual VARCHAR(10),          -- '2.1', '2.2', ..., '5.5', 'entrenamiento'
+  collection_name VARCHAR(255),     -- Nombre de colección ChromaDB
+  modelo_path TEXT,                 -- Path del Modelfile generado
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+```
+
+#### Tabla: evoluciones_entrenamientos
+
+```sql
+CREATE TABLE evoluciones_entrenamientos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  id_entrenamiento INT NOT NULL,
+  phase_key VARCHAR(5),             -- '2', '3', '4', '5'
+  subfase_key VARCHAR(10),          -- '2.1', '2.2', ..., '5.5'
+  subfase_name VARCHAR(255),        -- Nombre descriptivo
+  status VARCHAR(20),               -- 'pending', 'in_progress', 'completed', 'failed'
+  duracion_segundos INT,
+  error_message TEXT,
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP,
+  FOREIGN KEY (id_entrenamiento) REFERENCES entrenamientos(id)
+);
+```
+
+#### Tabla: entrenamientos_autonomos
+
+```sql
+CREATE TABLE entrenamientos_autonomos (
+  id_entrenamiento INT PRIMARY KEY,
+  training_mode VARCHAR(20),        -- 'simulation', 'test', 'production'
+  dataset_path TEXT,                -- Path del dataset generado
+  dataset_size INT,                 -- Número de ejemplos
+  lora_adapters_path TEXT,          -- Path de adaptadores LoRA
+  gguf_path TEXT,                   -- Path del modelo GGUF
+  gguf_quantization VARCHAR(20),    -- 'q4_k_m', etc.
+  package_path TEXT,                -- Path del ZIP final
+  package_size_mb DECIMAL(10,2),    -- Tamaño del paquete
+  package_generated_at TIMESTAMP,   -- Fecha de generación
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP,
+  FOREIGN KEY (id_entrenamiento) REFERENCES entrenamientos(id)
+);
+```
+
+#### Tabla: evoluciones_autonomas
+
+```sql
+CREATE TABLE evoluciones_autonomas (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  id_entrenamiento INT NOT NULL,
+  phase_key VARCHAR(5),             -- '6', '7', '8', '9'
+  subfase_key VARCHAR(10),          -- '6.1', '6.2', ..., '9.5'
+  subfase_name VARCHAR(255),
+  status VARCHAR(20),
+  duracion_segundos INT,
+  error_message TEXT,
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP,
+  FOREIGN KEY (id_entrenamiento) REFERENCES entrenamientos(id)
+);
+```
+
+### Endpoints del Sistema
+
+#### Entrenamiento RAG
 
 | Capa | Endpoint | Método | Descripción |
 |------|----------|--------|-------------|
-| Trainer | `/trainer/entrenamientos` | POST | Recibe solicitud de entrenamiento, devuelve ACK |
-| Broker | `/training/entrenamientos` | POST | Enruta al trainer |
 | Middleware | `/training/entrenamientos` | POST | Valida permisos (`training_create`) y enruta |
-| Backend Core | `/training/pending-versions` | GET | Lista versiones con `entrenamiento_inicial_solicitado=true` |
+| Broker | `/training/entrenamientos` | POST | Enruta al trainer |
+| Trainer | `/trainer/entrenamientos` | POST | Recibe solicitud, crea registro, inicia proceso |
+| | | | |
+| Middleware | `/training/progress` | PATCH | Actualiza progreso de subfases |
+| Broker | `/training/progress` | PATCH | Enruta al core |
+| Backend Core | `/training/progress` | PATCH | Actualiza evoluciones_entrenamientos |
+| | | | |
+| Middleware | `/training/entrenamientos/{id}/complete` | PATCH | Marca entrenamiento como completado |
+| Broker | `/training/entrenamientos/{id}/complete` | PATCH | Enruta al core |
+| Backend Core | `/training/entrenamientos/{id}/complete` | PATCH | Actualiza estado y modelo_path |
 
-Ver AGENTS.md sección 29 para reglas detalladas del roadmap, diagramas y orden de implementación.
+#### Entrenamiento Autónomo
+
+| Capa | Endpoint | Método | Descripción |
+|------|----------|--------|-------------|
+| Middleware | `/training/entrenamientos/{id}/autonomous` | POST | Valida permisos e inicia autónomo |
+| Broker | `/training/entrenamientos/{id}/autonomous` | POST | Enruta al trainer |
+| Trainer | `/trainer/entrenamientos/{id}/autonomous` | POST | Inicia entrenamiento autónomo (fases 6-9) |
+| | | | |
+| Trainer | `/trainer/entrenamientos/{id}/autonomous/progress` | GET | Consulta progreso de entrenamiento autónomo |
+| Broker | `/training/entrenamientos/{id}/autonomous/progress` | GET | Proxy al trainer |
+| Middleware | `/training/entrenamientos/{id}/autonomous/progress` | GET | Proxy con validación de permisos |
+
+#### Descargas
+
+| Capa | Endpoint | Método | Descripción |
+|------|----------|--------|-------------|
+| Trainer | `/trainer/entrenamientos/autonomous/packages` | GET | Lista paquetes disponibles (con filtros opcionales) |
+| Broker | `/training/entrenamientos/autonomous/packages` | GET | Proxy al trainer |
+| Middleware | `/training/entrenamientos/autonomous/packages` | GET | Proxy con validación training_read |
+| | | | |
+| Trainer | `/trainer/entrenamientos/{id}/autonomous/package` | GET | Descarga paquete ZIP del entrenamiento |
+| Broker | `/training/entrenamientos/{id}/autonomous/package` | GET | Proxy streaming del ZIP |
+| Middleware | `/training/entrenamientos/{id}/autonomous/package` | GET | Proxy con validación training_read |
+
+**Filtros en listado de paquetes:**
+- `id_organizacion`: Filtrar por organización
+- `id_proyecto`: Filtrar por proyecto
+- `id_version`: Filtrar por versión
+
+### Página de Descargas
+
+La página "Descargas" permite a SuperAdmin y OrgAdmin descargar los modelos GGUF generados.
+
+#### Flujo de Descargas
+
+1. **Acceso a la página:** Menú → Descargas
+2. **Validación OTP** (solo para `identity_type_id` 1 o 2):
+   - Botón "Enviar Código OTP" → Envío por SMS
+   - Input de 6 dígitos → "Validar Código"
+   - Si válido → Mostrar filtros
+3. **Selectores en cascada:**
+   - **Backoffice:** Selector de organización (según asignaciones del usuario)
+   - **Frontend:** Organización auto-seleccionada (la del usuario)
+   - Proyecto (carga automática al seleccionar org)
+   - Versión (carga automática al seleccionar proyecto)
+4. **Lista de paquetes:**
+   - Card por cada paquete con:
+     - Filename: `ENT{id}_modelo_autonomo.zip`
+     - Badges: ID entrenamiento, Training mode, Cuantización
+     - Info: Tamaño, Dataset size, Fecha de generación
+     - Botón "Descargar Paquete"
+5. **Descarga:** Click → Inicia descarga del ZIP en navegador
+
+#### Permisos Requeridos
+
+| Acción | Permiso | Roles |
+|--------|---------|-------|
+| Ver página Descargas | `training_read` | SuperAdmin, OrgAdmin, ProjectAdmin |
+| Validar OTP | N/A | Solo `identity_type_id` 1 o 2 |
+| Listar paquetes | `training_read` | Cualquier usuario con permiso |
+| Descargar paquete | `training_read` | Cualquier usuario con permiso |
+
+### Contenido del Paquete ZIP
+
+El archivo `ENT{id}_modelo_autonomo.zip` contiene:
+
+```
+ENT{id}_modelo_autonomo.zip
+├── ENT{id}_model_q4_k_m.gguf    (4-8 GB en test, más en production)
+├── Modelfile                     (Configuración para Ollama)
+└── README.md                     (Instrucciones de uso)
+```
+
+**README.md** incluye:
+- Información del entrenamiento (org, proyecto, versión, fecha)
+- Training mode utilizado
+- Tamaño del dataset
+- Instrucciones de despliegue en Ollama
+- Ejemplo de uso con API
+
+### Monitoreo en Tiempo Real
+
+El Backoffice implementa **polling automático cada 2 segundos** para actualizar el
+progreso de los entrenamientos:
+
+```python
+@rx.event(background=True)
+async def ent_poll_training_progress(self) -> None:
+    """Background task que consulta progreso cada 2 segundos."""
+    while self.ent_evo_is_polling:
+        # Consultar progreso desde API
+        progress = await api_client.get_training_progress(id_entrenamiento)
+
+        # Actualizar estado
+        yield State.set_training_progress(progress)
+
+        # Esperar 2 segundos
+        await asyncio.sleep(2)
+```
+
+**UI actualizada automáticamente:**
+- Subfases cambian de color (gris → azul → verde)
+- Spinner gira en subfase en progreso
+- Duración de cada subfase se muestra en tiempo real
+- Panel se expande/contrae automáticamente
+
+### Estado de Implementación
+
+| Funcionalidad | Estado | Fecha |
+|---------------|--------|-------|
+| Visor versiones pendientes | ✅ Completado | Feb 2026 |
+| Botón "Enviar al Trainer" | ✅ Completado | Feb 2026 |
+| Panel evolución RAG (fases 2-5) | ✅ Completado | Feb 2026 |
+| Polling automático cada 2s | ✅ Completado | Feb 2026 |
+| Entrenamiento RAG en Trainer | ✅ Completado | Feb 2026 |
+| Entrenamiento Autónomo (fases 6-9) | ✅ Completado | Feb 2026 |
+| Modal confirmación autónomo | ✅ Completado | Feb 2026 |
+| Botón descarga desde panel | ✅ Completado | Feb 2026 |
+| Página Descargas en Backoffice | ✅ Completado | Feb 2026 |
+| Validación OTP en Descargas | ✅ Completado | Feb 2026 |
+| Filtros cascada (Org/Prj/Ver) | ✅ Completado | Feb 2026 |
+| Endpoints de listado y descarga | ✅ Completado | Feb 2026 |
+| Cadena completa (Middleware→Broker→Trainer) | ✅ Completado | Feb 2026 |
+| Testing E2E | ✅ Verificado | Feb 2026 |
+| Página Descargas en Frontend | ⏳ Pendiente | - |
+
+### Testing
+
+El sistema cuenta con testing E2E completo documentado en:
+
+- **`TESTING_E2E_ENTRENAMIENTOS.md`**: Documento principal con 40+ puntos de validación
+- **`GUIA_TESTING_MANUAL.md`**: Guía paso a paso para testing de UI
+- **`TESTING_E2E_RESUMEN_FINAL.md`**: Resumen ejecutivo con resultados
+
+**Cobertura de testing:**
+- ✅ Pre-requisitos (servicios, BD, usuarios, documentos)
+- ✅ PARTE 1: Entrenamiento RAG (16 subfases)
+- ✅ PARTE 4: Endpoints (8 endpoints verificados)
+- ⏸️ PARTE 2: Entrenamiento Autónomo (requiere ejecución manual)
+- ⏸️ PARTE 3: Página Descargas (requiere PARTE 2)
+- ⏸️ PARTE 5: Tests de Regresión
+
+### Troubleshooting
+
+#### Error: Endpoints no disponibles (404)
+
+**Causa:** Servicios corriendo con código anterior
+
+**Solución:**
+```bash
+# Reiniciar Trainer, Broker y Middleware
+cd src/apps/4_trainer && ./run.sh
+cd src/apps/8_service_backend && ./run.sh
+cd src/apps/7_service_frontend && ./run.sh
+```
+
+#### Error: Password con '@' causa error de conexión DB
+
+**Causa:** Password no está URL-encodeada
+
+**Solución:** Ya implementado en `autonomous_training_service.py`:
+```python
+from urllib.parse import quote_plus
+db_pass_encoded = quote_plus(db_pass)
+```
+
+#### Error: Botón "Entrenar Modelo Autónomo" no aparece
+
+**Causa:** Entrenamiento RAG no completado
+
+**Solución:**
+```sql
+-- Verificar estado
+SELECT id, estado, fase_actual FROM entrenamientos WHERE id = {id};
+-- Debe ser: estado='completado', fase_actual='5.5' o 'entrenamiento'
+```
+
+#### Error: Package_path es NULL
+
+**Causa:** Training mode es "simulation" (no genera ZIP)
+
+**Solución:** Configurar training mode en `.envglobal`:
+```yaml
+training_mode: test  # o production
+```
+
+### Documentación Adicional
+
+- **AGENTS.md sección 30**: Reglas para desarrollo de entrenamientos autónomos
+- **src/apps/4_trainer/AUTONOMOUS_TRAINING_SYSTEM.md**: Documentación técnica del trainer
+- **src/apps/4_trainer/autonomous_training/**: Código del sistema autónomo
+
+Ver AGENTS.md sección 30 para reglas detalladas de implementación, estructura de tablas,
+endpoints, y mejores prácticas de desarrollo.

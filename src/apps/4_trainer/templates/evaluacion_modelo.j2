@@ -1,0 +1,315 @@
+{# ============================================================================
+   Plantilla Jinja2: Informe de Evaluación y Calidad de Modelo LLM
+   ---------------------------------------------------------------------------
+   Genera un informe completo de evaluación de modelos LLM entrenados,
+   incluyendo métricas de calidad, rendimiento y recomendaciones.
+
+   Variables esperadas:
+
+   IDENTIFICACIÓN:
+     - nombre_organizacion  : str   - Nombre de la organización
+     - nombre_proyecto      : str   - Nombre del proyecto
+     - version_name         : str   - Identificador de la versión (ej: v001)
+     - ver_folder           : str   - Carpeta de la versión
+     - modelo_nombre        : str   - Nombre completo del modelo evaluado
+     - base_model           : str   - Modelo base utilizado (ej: llama3.2:latest)
+
+   PARÁMETROS DE ENTRENAMIENTO:
+     - training_id          : int   - ID del entrenamiento
+     - sequence_number      : int   - Número de secuencia del entrenamiento
+     - training_mode        : str   - Modo de entrenamiento (simulation, test, production)
+     - fecha_entrenamiento  : str   - Fecha de creación del entrenamiento
+     - temperatura          : float - Temperatura de generación (0.0 - 1.0)
+     - top_k                : int   - Top-K para sampling
+     - top_p                : float - Top-P (nucleus sampling)
+     - num_ctx              : int   - Tamaño de ventana de contexto (tokens)
+     - num_predict          : int   - Número máximo de tokens a generar
+     - chunk_size           : int   - Tamaño de chunks para procesamiento
+     - chunk_overlap        : int   - Solapamiento entre chunks
+     - embedding_model      : str   - Modelo de embeddings utilizado
+
+   DATOS DEL ENTRENAMIENTO:
+     - num_documents        : int   - Número total de documentos procesados
+     - num_chunks           : int   - Número total de chunks generados
+     - num_archivos_texto   : int   - Número de archivos de texto procesados
+     - num_archivos_binarios: int   - Número de archivos binarios
+     - total_kb             : float - Tamaño total de datos procesados (KB)
+     - document_types       : str   - Tipos de documentos (ej: pdf, txt, py, md)
+     - collection_name      : str   - Nombre de la colección ChromaDB
+
+   TIEMPOS DE EJECUCIÓN:
+     - duracion_total       : str   - Duración total del entrenamiento (formato HH:MM:SS)
+     - tiempo_validacion    : str   - Tiempo de fase de validación
+     - tiempo_preparacion   : str   - Tiempo de fase de preparación
+     - tiempo_configuracion : str   - Tiempo de fase de configuración
+     - tiempo_entrenamiento : str   - Tiempo de fase de entrenamiento
+
+   MÉTRICAS DE EVALUACIÓN (Opcionales - se muestran si están disponibles):
+     - humaneval_pass_at_1       : float - HumanEval Pass@1 (0.0-1.0)
+     - humaneval_umbral          : float - Umbral objetivo para HumanEval
+     - mbpp_pass_at_1            : float - MBPP Pass@1 (0.0-1.0)
+     - mbpp_umbral               : float - Umbral objetivo para MBPP
+     - bertscore_f1              : float - BERTScore F1 (0.0-1.0)
+     - bertscore_umbral          : float - Umbral objetivo para BERTScore
+     - rouge_l                   : float - Rouge-L score (0.0-1.0)
+     - rouge_l_umbral            : float - Umbral objetivo para Rouge-L
+     - tasa_alucinacion          : float - Tasa de alucinación (0.0-1.0)
+     - tasa_alucinacion_umbral   : float - Umbral objetivo para alucinación
+     - latencia_promedio         : float - Latencia promedio en ms
+     - throughput                : float - Throughput en tokens/segundo
+     - rechazo_prompts_toxicos   : float - % de rechazo de prompts tóxicos
+     - fuga_pii                  : int   - Casos detectados de fuga de PII
+     - casos_prueba_ejecutados   : int   - Número de casos de prueba ejecutados
+
+   ANÁLISIS CUALITATIVO (Opcionales):
+     - errores_frecuentes        : str   - Descripción de errores frecuentes
+     - fortalezas_modelo         : str   - Fortalezas identificadas del modelo
+     - recomendaciones           : str   - Recomendaciones específicas
+
+   ============================================================================ #}
+# Informe de Evaluación y Calidad de Modelo LLM
+
+## Modelo Evaluado: {{ modelo_nombre }}
+
+**Organización:** {{ nombre_organizacion }}
+**Proyecto:** {{ nombre_proyecto }}
+**Versión:** {{ version_name }} ({{ ver_folder }})
+**Entrenamiento:** #{{ training_id }} (secuencia {{ sequence_number }})
+**Fecha de Entrenamiento:** {{ fecha_entrenamiento }}
+**Modo de Entrenamiento:** {{ training_mode|upper }}
+
+---
+
+### 1. Presentación
+
+El presente informe detalla los resultados de la evaluación exhaustiva realizada al modelo de lenguaje **{{ modelo_nombre }}**, desarrollado para el proyecto **{{ nombre_proyecto }}** de la organización **{{ nombre_organizacion }}**.
+
+Este modelo fue entrenado utilizando **{{ base_model }}** como modelo base, procesando **{{ num_documents }} documentos** ({{ document_types }}) con un total de **{{ num_chunks }} fragmentos semánticos** almacenados en la colección vectorial "{{ collection_name }}".
+
+El objetivo de esta fase de evaluación es cuantificar el desempeño del modelo frente a benchmarks estándar y casos de uso específicos del negocio, asegurando que cumple con los umbrales de calidad necesarios para su despliegue en producción. Se analiza tanto la precisión semántica como la seguridad y robustez de las respuestas generadas.
+
+**Datos Procesados:**
+- **Archivos de texto:** {{ num_archivos_texto }}
+- **Archivos binarios:** {{ num_archivos_binarios }}
+- **Tamaño total:** {{ "%.2f"|format(total_kb) }} KB
+- **Fragmentos generados:** {{ num_chunks }} chunks (tamaño: {{ chunk_size }} tokens, solapamiento: {{ chunk_overlap }})
+- **Modelo de embeddings:** {{ embedding_model }}
+
+---
+
+### 2. Configuración del Modelo
+
+El modelo ha sido configurado con los siguientes parámetros de inferencia:
+
+| Parámetro | Valor | Descripción |
+| :--- | :---: | :--- |
+| **Modelo Base** | {{ base_model }} | Modelo fundacional utilizado |
+| **Temperatura** | {{ "%.2f"|format(temperatura) }} | Control de aleatoriedad en generación |
+| **Top-K** | {{ top_k }} | Límite de tokens candidatos |
+{% if top_p is defined -%}
+| **Top-P** | {{ "%.2f"|format(top_p) }} | Nucleus sampling threshold |
+{% endif -%}
+| **Context Window** | {{ num_ctx }} tokens | Ventana de contexto máxima |
+| **Max Predict** | {{ num_predict }} tokens | Tokens máximos a generar |
+| **Chunk Size** | {{ chunk_size }} tokens | Tamaño de fragmentos de documento |
+| **Chunk Overlap** | {{ chunk_overlap }} tokens | Solapamiento entre fragmentos |
+
+---
+
+### 3. Descripción del Cuestionario (Metodología de Validación)
+
+Para certificar la calidad del modelo, se ha diseñado un protocolo de evaluación que aborda las siguientes dimensiones críticas mediante sets de prueba automatizados y revisión humana:
+
+* **Evaluación de Precisión (Code Accuracy)**: ¿El código generado es sintácticamente correcto y funcional? ¿Pasa los tests unitarios proporcionados en el prompt?
+* **Métricas de Similitud Semántica**: Comparación de las respuestas generadas contra un "Gold Standard" (respuestas ideales) utilizando métricas como BERTScore y BLEU.
+* **Pruebas de Alucinación**: ¿El modelo inventa librerías o funciones inexistentes cuando se le consulta sobre APIs específicas?
+* **Análisis de Seguridad (Red Teaming)**: Resistencia del modelo ante inyecciones de prompt maliciosos o intentos de fuga de información.
+* **Latencia y Rendimiento**: Tiempos de inferencia promedio bajo carga concurrente.
+
+{% if casos_prueba_ejecutados is defined -%}
+**Total de casos de prueba ejecutados:** {{ casos_prueba_ejecutados }}
+{% endif %}
+
+---
+
+### 4. Descripción de Resultados
+
+{% if humaneval_pass_at_1 is defined or mbpp_pass_at_1 is defined or bertscore_f1 is defined -%}
+A continuación, se presentan las métricas obtenidas tras la evaluación del modelo:
+
+**Métricas Cuantitativas Globales:**
+
+| Métrica | Resultado Obtenido | Umbral Objetivo | Estado |
+| :--- | :---: | :---: | :--- |
+{% if humaneval_pass_at_1 is defined -%}
+| **HumanEval (Pass@1)** | {{ "%.1f"|format(humaneval_pass_at_1 * 100) }}% | > {{ "%.1f"|format(humaneval_umbral * 100) }}% | {% if humaneval_pass_at_1 >= humaneval_umbral %}✅ Superado{% else %}❌ **No alcanzado**{% endif %} |
+{% endif -%}
+{% if mbpp_pass_at_1 is defined -%}
+| **MBPP (Pass@1)** | {{ "%.1f"|format(mbpp_pass_at_1 * 100) }}% | > {{ "%.1f"|format(mbpp_umbral * 100) }}% | {% if mbpp_pass_at_1 >= mbpp_umbral %}✅ Superado{% else %}❌ **No alcanzado**{% endif %} |
+{% endif -%}
+{% if bertscore_f1 is defined -%}
+| **BERTScore (F1)** | {{ "%.2f"|format(bertscore_f1) }} | > {{ "%.2f"|format(bertscore_umbral) }} | {% if bertscore_f1 >= bertscore_umbral %}✅ Superado{% else %}❌ **No alcanzado**{% endif %} |
+{% endif -%}
+{% if rouge_l is defined -%}
+| **Rouge-L (Resumen)** | {{ "%.2f"|format(rouge_l) }} | > {{ "%.2f"|format(rouge_l_umbral) }} | {% if rouge_l >= rouge_l_umbral %}✅ Superado{% else %}❌ **No alcanzado**{% endif %} |
+{% endif -%}
+{% if tasa_alucinacion is defined -%}
+| **Tasa de Alucinación** | {{ "%.1f"|format(tasa_alucinacion * 100) }}% | < {{ "%.1f"|format(tasa_alucinacion_umbral * 100) }}% | {% if tasa_alucinacion <= tasa_alucinacion_umbral %}✅ Superado{% else %}❌ **Crítico**{% endif %} |
+{% endif -%}
+
+{% if latencia_promedio is defined or throughput is defined -%}
+**Métricas de Rendimiento:**
+
+| Métrica | Valor |
+| :--- | :---: |
+{% if latencia_promedio is defined -%}
+| **Latencia Promedio** | {{ "%.2f"|format(latencia_promedio) }} ms |
+{% endif -%}
+{% if throughput is defined -%}
+| **Throughput** | {{ "%.2f"|format(throughput) }} tokens/segundo |
+{% endif -%}
+{% endif -%}
+
+{% if rechazo_prompts_toxicos is defined or fuga_pii is defined -%}
+**Gráfico de Seguridad y Alineación:**
+
+{% if rechazo_prompts_toxicos is defined -%}
+* **Rechazo de Prompts Tóxicos**: {{ "%.1f"|format(rechazo_prompts_toxicos) }}% de efectividad.
+{% endif -%}
+{% if fuga_pii is defined -%}
+* **Fuga de PII (Datos Personales)**: {{ fuga_pii }} casos detectados.
+{% endif -%}
+{% endif -%}
+
+{% else -%}
+**NOTA:** Este informe es un template de evaluación. Las métricas cuantitativas se completarán tras la ejecución de las pruebas de evaluación del modelo.
+
+Para ejecutar las pruebas de evaluación, utilice el endpoint correspondiente del sistema de entrenamiento.
+{% endif -%}
+
+{% if errores_frecuentes is defined -%}
+**Análisis de Errores Frecuentes:**
+
+{{ errores_frecuentes }}
+{% endif -%}
+
+{% if fortalezas_modelo is defined -%}
+**Fortalezas Identificadas:**
+
+{{ fortalezas_modelo }}
+{% endif -%}
+
+---
+
+### 5. Tiempos de Ejecución del Entrenamiento
+
+El proceso de entrenamiento completó las siguientes fases:
+
+| Fase | Duración |
+| :--- | :---: |
+{% if tiempo_validacion is defined -%}
+| **Validación** | {{ tiempo_validacion }} |
+{% endif -%}
+{% if tiempo_preparacion is defined -%}
+| **Preparación** | {{ tiempo_preparacion }} |
+{% endif -%}
+{% if tiempo_configuracion is defined -%}
+| **Configuración ChromaDB** | {{ tiempo_configuracion }} |
+{% endif -%}
+{% if tiempo_entrenamiento is defined -%}
+| **Entrenamiento Final** | {{ tiempo_entrenamiento }} |
+{% endif -%}
+| **TOTAL** | **{{ duracion_total }}** |
+
+---
+
+### 6. Conclusión
+
+{% if humaneval_pass_at_1 is defined and tasa_alucinacion is defined -%}
+El modelo **{{ modelo_nombre }}** {% if humaneval_pass_at_1 >= humaneval_umbral %}demuestra una **capacidad superior**{% else %}muestra resultados mixtos{% endif %} en la generación de respuestas basadas en la documentación del proyecto {{ nombre_proyecto }}.
+
+{% if tasa_alucinacion > tasa_alucinacion_umbral -%}
+Sin embargo, la **Tasa de Alucinación del {{ "%.1f"|format(tasa_alucinacion * 100) }}%** en consultas sobre APIs propietarias requiere atención antes del despliegue automático sin supervisión humana.
+{% else -%}
+La **Tasa de Alucinación del {{ "%.1f"|format(tasa_alucinacion * 100) }}%** está dentro de los límites aceptables para el despliegue en producción.
+{% endif -%}
+{% else -%}
+El modelo **{{ modelo_nombre }}** ha completado su fase de entrenamiento exitosamente, procesando {{ num_documents }} documentos del proyecto {{ nombre_proyecto }} en un tiempo total de {{ duracion_total }}.
+
+El modelo está listo para la fase de evaluación, donde se ejecutarán las pruebas de calidad y rendimiento para validar su desempeño contra los benchmarks estándar.
+{% endif %}
+
+{% if recomendaciones is defined -%}
+**Recomendaciones Específicas:**
+
+{{ recomendaciones }}
+{% else -%}
+**Recomendaciones para Despliegue:**
+
+1. **Refuerzo de RAG**: Implementar una capa de recuperación estricta que obligue al modelo a citar fuentes, mitigando la invención de información no documentada.
+2. **Ajuste de Temperatura**: {% if temperatura > 0.5 %}Considerar reducir la temperatura de {{ "%.2f"|format(temperatura) }} a valores entre 0.2-0.3 para tareas técnicas que requieren mayor determinismo.{% else %}La temperatura actual de {{ "%.2f"|format(temperatura) }} es apropiada para tareas técnicas que requieren respuestas deterministas.{% endif %}
+3. **Monitorización Activa**: Desplegar en fase *Beta* solo para usuarios internos con un mecanismo de feedback positivo/negativo obligatorio.
+4. **Evaluación Continua**: Ejecutar las pruebas de evaluación completas (HumanEval, MBPP, BERTScore) para obtener métricas cuantitativas precisas antes del despliegue en producción.
+5. **Documentación de Uso**: Proporcionar ejemplos de uso óptimo del modelo y limitaciones conocidas a los usuarios finales.
+{% endif %}
+
+---
+
+### 7. Metadatos del Entrenamiento
+
+**Información Técnica Completa:**
+
+```
+Organización: {{ nombre_organizacion }}
+Proyecto: {{ nombre_proyecto }}
+Versión: {{ version_name }} ({{ ver_folder }})
+Modelo Base: {{ base_model }}
+Modelo Entrenado: {{ modelo_nombre }}
+Entrenamiento ID: {{ training_id }}
+Secuencia: {{ sequence_number }}
+Modo: {{ training_mode|upper }}
+Fecha: {{ fecha_entrenamiento }}
+
+Colección ChromaDB: {{ collection_name }}
+Documentos: {{ num_documents }}
+Chunks: {{ num_chunks }}
+Tipos de archivos: {{ document_types }}
+Tamaño total: {{ "%.2f"|format(total_kb) }} KB
+
+Parámetros de Inferencia:
+  - temperatura: {{ "%.2f"|format(temperatura) }}
+  - top_k: {{ top_k }}
+{% if top_p is defined -%}
+  - top_p: {{ "%.2f"|format(top_p) }}
+{% endif -%}
+  - num_ctx: {{ num_ctx }}
+  - num_predict: {{ num_predict }}
+
+Procesamiento:
+  - chunk_size: {{ chunk_size }}
+  - chunk_overlap: {{ chunk_overlap }}
+  - embedding_model: {{ embedding_model }}
+```
+
+---
+
+### 8. Referencias de Fuentes
+
+Las métricas y metodologías utilizadas se basan en los estándares de la industria para evaluación de LLMs y desarrollo de IA:
+
+* *Chen, M., et al. (2021)*. "Evaluating Large Language Models Trained on Code" (HumanEval).
+* *OpenAI Evals Framework*. "Best practices for automated grading of LLM outputs".
+* *Hugging Face Leaderboard Methodology*. "Open LLM Leaderboard Evaluation Standards".
+* *Lewis, P., et al. (2020)*. "Retrieval-Augmented Generation (RAG) for Knowledge-Intensive NLP Tasks".
+* *Hu, E.J., et al. (2021)*. "LoRA: Low-Rank Adaptation of Large Language Models" (Fine-Tuning techniques).
+* *Model Context Protocol (MCP)*. "Standardizing Context Exchange for AI Assistants & Tools".
+* *Abadi, M., et al.*. "TensorFlow: Large-Scale Machine Learning on Heterogeneous Systems".
+* *Chollet, F.*. "Keras: The Python Deep Learning API".
+* *Vaswani, A., et al. (2017)*. "Attention Is All You Need" (Transformer Architecture).
+* *Raffel, C., et al. (2020)*. "Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer" (T5).
+
+---
+
+**Generado por:** Sistema de Entrenamiento AnewHope
+**Template:** evaluacion_modelo.j2
+**Fecha de Generación:** {{ fecha_entrenamiento }}

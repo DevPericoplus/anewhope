@@ -304,11 +304,39 @@ def _human_size(size_bytes: int) -> str:
     return f"{size_bytes / (1024 * 1024):.1f} MB"
 
 
-def read_version_files(base_path: Path) -> tuple[str, str, int, int, int]:
+def _get_analisys_mode() -> str:
+    """Obtiene el analisys_mode del .envglobal.
+
+    Returns:
+        analisys_mode: simulation, test o production (default: production)
+    """
+    # Leer .envglobal para obtener analisys_mode
+    base_path = Path(__file__).resolve().parents[3]
+    envglobal_path = base_path / ".envglobal"
+
+    analisys_mode = "production"  # default
+
+    if envglobal_path.exists():
+        with open(envglobal_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("analisys_mode:"):
+                    analisys_mode = line.split(":", 1)[1].strip()
+                    break
+
+    logger.info(f"[DOCUMENTACION] analisys_mode detectado: {analisys_mode}")
+    return analisys_mode
+
+
+def read_version_files(base_path: Path, analisys_mode: str = "production") -> tuple[str, str, int, int, int]:
     """Lee todos los archivos de una versión y genera árbol + contenido.
 
     Args:
         base_path: Ruta absoluta a la carpeta de la versión
+        analisys_mode: Modo de análisis:
+            - simulation: Solo metadata (nombres, tamaños, jerarquía), sin contenido
+            - test: Análisis de subset (primeros 20 archivos de texto)
+            - production: Análisis completo de contenido
 
     Returns:
         Tupla con (arbol_texto, contenido_texto, num_texto, num_binarios, total_kb)
@@ -322,6 +350,10 @@ def read_version_files(base_path: Path) -> tuple[str, str, int, int, int]:
     num_text = 0
     num_binary = 0
     total_bytes = 0
+
+    # Límite de archivos para modo test
+    max_files_test = 20
+    files_read_count = 0
 
     # Recorrer recursivamente
     all_files = sorted(base_path.rglob("*"))
@@ -339,19 +371,45 @@ def read_version_files(base_path: Path) -> tuple[str, str, int, int, int]:
             num_text += 1
             tree_lines.append(f"  {relative} ({size_str})")
 
-            # Leer contenido
-            try:
-                text = filepath.read_text(encoding="utf-8", errors="replace")
-                content_parts.append(f"--- [{relative}] ---\n{text}")
-            except Exception as e:
-                content_parts.append(f"--- [{relative}] ---\n[Error leyendo archivo: {e}]")
-                logger.warning("[DOCUMENTACION] Error leyendo %s: %s", relative, e)
+            # Decidir si leer contenido según el modo
+            should_read_content = False
+
+            if analisys_mode == "production":
+                # Modo production: leer todo
+                should_read_content = True
+            elif analisys_mode == "test":
+                # Modo test: solo primeros N archivos
+                if files_read_count < max_files_test:
+                    should_read_content = True
+                    files_read_count += 1
+            # elif analisys_mode == "simulation":
+            #     should_read_content = False  (implícito, no se lee nada)
+
+            if should_read_content:
+                # Leer contenido
+                try:
+                    text = filepath.read_text(encoding="utf-8", errors="replace")
+                    content_parts.append(f"--- [{relative}] ---\n{text}")
+                except Exception as e:
+                    content_parts.append(f"--- [{relative}] ---\n[Error leyendo archivo: {e}]")
+                    logger.warning("[DOCUMENTACION] Error leyendo %s: %s", relative, e)
         else:
             num_binary += 1
             tree_lines.append(f"  {relative} ({size_str}) [BINARIO]")
 
     tree_text = "\n".join(tree_lines) if tree_lines else "(Sin archivos)"
-    content_text = "\n\n".join(content_parts) if content_parts else "(Sin contenido de texto)"
+
+    # En modo simulation, no hay contenido
+    if analisys_mode == "simulation":
+        content_text = "(Modo simulation: solo metadata, sin análisis de contenido)"
+    elif analisys_mode == "test" and files_read_count < num_text:
+        content_text = (
+            f"(Modo test: análisis de {files_read_count} de {num_text} archivos)\n\n"
+            + ("\n\n".join(content_parts) if content_parts else "(Sin contenido)")
+        )
+    else:
+        content_text = "\n\n".join(content_parts) if content_parts else "(Sin contenido de texto)"
+
     total_kb = total_bytes // 1024
 
     return tree_text, content_text, num_text, num_binary, total_kb
@@ -406,6 +464,14 @@ def process_documentacion(data: dict[str, Any]) -> None:
     )
 
     try:
+        # === PASO 0: Obtener modo de análisis ===
+        analisys_mode = _get_analisys_mode()
+        logger.info(
+            "[DOCUMENTACION] Ejecutando en modo: %s "
+            "(simulation=metadata only, test=subset, production=full)",
+            analisys_mode,
+        )
+
         # === PASO 1: Leer archivos del storage externo ===
         external_base = get_env_value(
             "backend_ia_base_storage",
@@ -423,6 +489,7 @@ def process_documentacion(data: dict[str, Any]) -> None:
 
         tree_text, content_text, num_text, num_binary, total_kb = read_version_files(
             version_path,
+            analisys_mode=analisys_mode,
         )
         logger.info(
             "[DOCUMENTACION] Arbol de directorios: %s archivos texto, "

@@ -114,7 +114,7 @@ class TrainerBackendClient:
 
         try:
             response = self._client.request(
-                method, url, json=payload, headers=headers, timeout=1800.0
+                method, url, json=payload, headers=headers, timeout=36000.0  # 10 horas para procesos largos
             )
             print(f"[DEBUG TRAINER CLIENT] Response status: {response.status_code}")
             print(f"[DEBUG TRAINER CLIENT] Response content length: {len(response.content) if response.content else 0}")
@@ -357,3 +357,79 @@ class TrainerBackendClient:
             Respuesta ACK del trainer con training_mode
         """
         return self._request("POST", "/trainer/entrenamientos/autonomous", payload=payload)
+
+    def get_autonomous_training_progress(self, id_entrenamiento: int) -> dict[str, Any]:
+        """Consulta el progreso del entrenamiento autónomo (fases 6-9).
+
+        Args:
+            id_entrenamiento: ID del entrenamiento autónomo a consultar
+
+        Returns:
+            Diccionario con success y data (subphases del entrenamiento autónomo)
+        """
+        return self._request("GET", f"/trainer/entrenamientos/{id_entrenamiento}/autonomous/progress")
+
+    def download_autonomous_package(self, id_entrenamiento: int) -> httpx.Response:
+        """Descarga el paquete ZIP del modelo autónomo generado.
+
+        Args:
+            id_entrenamiento: ID del entrenamiento autónomo
+
+        Returns:
+            httpx.Response con el contenido del archivo ZIP
+        """
+        url = f"{self._base_url}/trainer/entrenamientos/{id_entrenamiento}/autonomous/package"
+        headers = self._build_headers()
+
+        print(f"[DEBUG TRAINER CLIENT] Downloading package from {url}")
+
+        try:
+            response = self._client.request(
+                "GET", url, headers=headers, timeout=1800.0  # 30 minutos para descargas grandes
+            )
+            print(f"[DEBUG TRAINER CLIENT] Download response status: {response.status_code}")
+
+            if response.status_code >= 400:
+                raise TrainerBackendCommunicationError(
+                    f"Error descargando paquete: {response.status_code}"
+                )
+
+            return response
+
+        except httpx.RequestError as exc:
+            print(f"[ERROR TRAINER CLIENT] Download RequestError: {exc}")
+            raise TrainerBackendCommunicationError(
+                "No se pudo descargar el paquete del trainer"
+            ) from exc
+
+    def list_autonomous_packages(
+        self,
+        id_organizacion: int | None = None,
+        id_proyecto: int | None = None,
+        id_version: int | None = None,
+    ) -> dict[str, Any]:
+        """Lista los paquetes autónomos disponibles para descargar.
+
+        Args:
+            id_organizacion: Filtrar por organización (opcional)
+            id_proyecto: Filtrar por proyecto (opcional)
+            id_version: Filtrar por versión (opcional)
+
+        Returns:
+            Diccionario con success y lista de paquetes
+        """
+        params = {}
+        if id_organizacion is not None:
+            params["id_organizacion"] = id_organizacion
+        if id_proyecto is not None:
+            params["id_proyecto"] = id_proyecto
+        if id_version is not None:
+            params["id_version"] = id_version
+
+        # Construir query string
+        query_string = "&".join(f"{k}={v}" for k, v in params.items())
+        path = f"/trainer/entrenamientos/autonomous/packages"
+        if query_string:
+            path += f"?{query_string}"
+
+        return self._request("GET", path)

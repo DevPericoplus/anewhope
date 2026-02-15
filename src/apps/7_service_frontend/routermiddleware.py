@@ -3398,6 +3398,97 @@ class RouterMiddleware:
                 "No se pudo enviar la solicitud de entrenamiento autónomo"
             ) from exc
 
+    def get_autonomous_training_progress(
+        self,
+        id_entrenamiento: int,
+        session: SessionContext,
+    ) -> dict[str, Any]:
+        """Consulta el progreso del entrenamiento autónomo (fases 6-9) vía broker.
+
+        Args:
+            id_entrenamiento: ID del entrenamiento autónomo a consultar
+            session: Contexto de sesión del usuario
+
+        Returns:
+            Diccionario con success y data (subphases del entrenamiento autónomo)
+        """
+        # Validar permiso de consulta de entrenamiento
+        if not self.has_low_level_permission(session, "training_read"):
+            raise BusinessRuleError(
+                "Sin permisos para consultar progreso de entrenamiento autónomo"
+            )
+
+        self._configure_broker_security(session)
+
+        try:
+            return self._broker_client.get_autonomous_training_progress(id_entrenamiento)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                "No se pudo consultar el progreso del entrenamiento autónomo"
+            ) from exc
+
+    def download_autonomous_package(
+        self,
+        id_entrenamiento: int,
+        session: SessionContext,
+    ):
+        """Descarga el paquete ZIP del modelo autónomo generado vía broker.
+
+        Args:
+            id_entrenamiento: ID del entrenamiento autónomo
+            session: Contexto de sesión del usuario
+
+        Returns:
+            httpx.Response con el contenido del archivo ZIP
+        """
+        # Validar permiso de descarga
+        if not self.has_low_level_permission(session, "training_read"):
+            raise BusinessRuleError(
+                "Sin permisos para descargar paquete de entrenamiento autónomo"
+            )
+
+        self._configure_broker_security(session)
+
+        try:
+            return self._broker_client.download_autonomous_package(id_entrenamiento)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                "No se pudo descargar el paquete del entrenamiento autónomo"
+            ) from exc
+
+    def list_autonomous_packages(
+        self,
+        session: SessionContext,
+        id_organizacion: int | None = None,
+        id_proyecto: int | None = None,
+        id_version: int | None = None,
+    ) -> dict[str, Any]:
+        """Lista los paquetes autónomos disponibles para descargar vía broker.
+
+        Args:
+            session: Contexto de sesión del usuario
+            id_organizacion: Filtrar por organización (opcional)
+            id_proyecto: Filtrar por proyecto (opcional)
+            id_version: Filtrar por versión (opcional)
+
+        Returns:
+            Diccionario con success y lista de paquetes
+        """
+        # Validar permiso de lectura
+        if not self.has_low_level_permission(session, "training_read"):
+            raise BusinessRuleError(
+                "Sin permisos para listar paquetes de entrenamiento"
+            )
+
+        self._configure_broker_security(session)
+
+        try:
+            return self._broker_client.list_autonomous_packages(id_organizacion, id_proyecto, id_version)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                "No se pudo listar los paquetes autónomos"
+            ) from exc
+
     def cancel_entrenamiento(
         self,
         payload: dict[str, Any],
@@ -4590,3 +4681,231 @@ class RouterMiddleware:
             raise BusinessRuleError(
                 f"Error actualizando progreso de entrenamiento: {str(exc)}"
             ) from exc
+
+    # ========================================================================
+    # MODEL DOWNLOADS - Descargas de modelos con OTP
+    # ========================================================================
+
+    def list_available_models(
+        self,
+        session: SessionContext,
+        organization_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Lista modelos disponibles para descarga.
+
+        Args:
+            session: Contexto de sesión del usuario
+            organization_id: ID de organización (None = todas para admin global)
+
+        Returns:
+            Lista de modelos con información de org/proyecto/versión/archivo
+        """
+        import os
+        from pathlib import Path
+
+        # Obtener path de almacenamiento interno
+        base_path = os.getenv("BACKEND_IA_INTERNAL_STORAGE")
+        if not base_path:
+            base_path = "~/data/anewhope/files/backend_server/internal"
+
+        # Expandir tilde siempre (por si viene de variable de entorno)
+        base_path = Path(os.path.expanduser(base_path))
+        models = []
+
+        self._logger.info(f"[MODELS] Scanning base_path: {base_path}, exists: {base_path.exists()}")
+        self._logger.info(f"[MODELS] organization_id: {organization_id}, session.identity_type_id: {session.identity_type_id}")
+
+        # Si organization_id es None, listar todas las organizaciones (solo admin global)
+        if organization_id is None:
+            if session.identity_type_id != 1:
+                raise BusinessRuleError("Solo administradores globales pueden listar todas las organizaciones")
+
+            # Listar todas las carpetas ORG*
+            if base_path.exists():
+                org_dirs = list(base_path.glob("ORG*"))
+                self._logger.info(f"[MODELS] Found {len(org_dirs)} ORG directories")
+                for org_dir in org_dirs:
+                    if org_dir.is_dir():
+                        try:
+                            org_id = int(org_dir.name.replace("ORG", ""))
+                            self._logger.info(f"[MODELS] Scanning org_id: {org_id}")
+                            org_models = self._scan_organization_models(base_path, org_id)
+                            self._logger.info(f"[MODELS] Found {len(org_models)} models in org {org_id}")
+                            models.extend(org_models)
+                        except ValueError:
+                            continue
+        else:
+            # Listar solo la organización especificada
+            models = self._scan_organization_models(base_path, organization_id)
+
+        return models
+
+    def _scan_organization_models(self, base_path: Path, org_id: int) -> list[dict[str, Any]]:
+        """Escanea modelos de una organización específica.
+
+        Args:
+            base_path: Path base de almacenamiento
+            org_id: ID de organización
+
+        Returns:
+            Lista de modelos encontrados
+        """
+        models = []
+        org_folder = f"ORG{org_id:05d}"
+        org_path = base_path / org_folder
+
+        if not org_path.exists():
+            return models
+
+        # Iterar por proyectos
+        for prj_dir in org_path.glob("PRJ*"):
+            if not prj_dir.is_dir():
+                continue
+
+            try:
+                prj_id = int(prj_dir.name.replace("PRJ", ""))
+            except ValueError:
+                continue
+
+            # Iterar por versiones
+            for ver_dir in prj_dir.glob("v*"):
+                if not ver_dir.is_dir():
+                    continue
+
+                try:
+                    ver_id = int(ver_dir.name.replace("v", ""))
+                except ValueError:
+                    continue
+
+                # Buscar archivos ZIP
+                for zip_file in ver_dir.glob("*.zip"):
+                    file_stat = zip_file.stat()
+                    models.append({
+                        "organization_id": org_id,
+                        "project_id": prj_id,
+                        "version_id": ver_id,
+                        "filename": zip_file.name,
+                        "file_size": file_stat.st_size,
+                        "created_at": int(file_stat.st_mtime),
+                        "relative_path": str(zip_file.relative_to(base_path)),
+                    })
+
+        return models
+
+    def request_model_download_otp(
+        self,
+        session: SessionContext,
+        organization_id: int,
+        project_id: int,
+        version_id: int,
+    ) -> dict[str, str]:
+        """Solicita OTP para descarga de modelo.
+
+        Args:
+            session: Contexto de sesión del usuario
+            organization_id: ID de organización
+            project_id: ID de proyecto
+            version_id: ID de versión
+
+        Returns:
+            Dict con 'otp' y 'phone_number'
+        """
+        # Cargar usuario desde el archivo
+        users_path = self._get_users_file_path()
+        users = self._load_users(users_path)
+
+        user_record = next(
+            (entry for entry in users if entry.user_id == session.user_id), None
+        )
+
+        if user_record is None:
+            raise BusinessRuleError("Usuario no encontrado")
+
+        if not user_record.active or user_record.blocked:
+            raise BusinessRuleError("Usuario bloqueado o inactivo")
+
+        # Verificar que tiene teléfono
+        if not user_record.user_mobile:
+            raise BusinessRuleError("No hay teléfono asociado al usuario")
+
+        # Obtener OTP actual del usuario
+        user_otp = str(user_record.user_otp)
+        if len(user_otp) != 4 or not user_otp.isdigit():
+            raise BusinessRuleError("OTP del usuario inválido")
+
+        phone_number = str(user_record.user_mobile).strip()
+
+        self._logger.info(
+            "OTP solicitado para descarga modelo: user_id=%s org_id=%s prj_id=%s ver_id=%s",
+            session.user_id, organization_id, project_id, version_id
+        )
+
+        return {
+            "otp": user_otp,
+            "phone_number": phone_number,
+        }
+
+    def validate_model_download_otp(
+        self,
+        session: SessionContext,
+        organization_id: int,
+        project_id: int,
+        version_id: int,
+        otp: str,
+    ) -> dict[str, Any]:
+        """Valida OTP y genera token de descarga.
+
+        Args:
+            session: Contexto de sesión del usuario
+            organization_id: ID de organización
+            project_id: ID de proyecto
+            version_id: ID de versión
+            otp: Código OTP a validar
+
+        Returns:
+            Dict con 'token', 'expires_in', 'expires_at'
+        """
+        # Cargar usuario desde el archivo
+        users_path = self._get_users_file_path()
+        users = self._load_users(users_path)
+
+        user_record = next(
+            (entry for entry in users if entry.user_id == session.user_id), None
+        )
+
+        if user_record is None:
+            raise BusinessRuleError("Usuario no encontrado")
+
+        if not user_record.active or user_record.blocked:
+            raise BusinessRuleError("Usuario bloqueado o inactivo")
+
+        # Validar OTP
+        user_otp = str(user_record.user_otp)
+        if user_otp != otp:
+            self._logger.warning(
+                "OTP inválido para descarga modelo: user_id=%s expected=%s got=%s",
+                session.user_id, user_otp, otp
+            )
+            raise BusinessRuleError("OTP inválido")
+
+        # Generar token de descarga
+        # Usar "internal" como relative_path para indicar almacenamiento interno
+        token_data = self.generate_file_operation_token(
+            session=session,
+            project_id=project_id,
+            version_id=version_id,
+            operation="download_model",  # Operación especial para modelos
+            relative_path="internal",  # Indica almacenamiento interno
+            ttl_seconds=600,  # 10 minutos para descarga
+        )
+
+        # Rotar OTP del usuario (como en login)
+        new_otp = self._rotate_otp(user_record)
+        self._store_users(users_path, users)
+
+        self._logger.info(
+            "OTP validado y rotado para descarga modelo: user_id=%s org_id=%s new_otp=%s",
+            session.user_id, organization_id, new_otp
+        )
+
+        return token_data

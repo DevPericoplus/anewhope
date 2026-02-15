@@ -4,7 +4,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import AsyncGenerator, Optional, TypedDict
+from typing import Any, AsyncGenerator, Optional, TypedDict
 
 from sqlalchemy import text
 
@@ -116,6 +116,20 @@ class PhaseDict(TypedDict):
     subfases: list[SubfaseDict]
 
 
+class PackageDict(TypedDict):
+    """Estructura de un paquete de entrenamiento disponible para descarga."""
+    id_entrenamiento: int
+    package_filename: str
+    training_mode: str
+    created_at: str
+    file_size_mb: float
+    ollama_model_name: str
+    gguf_quantization: str
+    package_size_mb: float
+    dataset_size: int
+    package_generated_at: str
+
+
 COLORS = {
     "background": "#1a1a1a",
     "card": "#2d2d2d",
@@ -124,6 +138,7 @@ COLORS = {
     "secondary": "#383854",
     "border": "#404040",
     "input": "#3a3a3a",
+    "muted": "#9CA3AF",  # Gris medio para textos secundarios
     "muted_foreground": "#E0E0E0",
     "accent": "#FF8C00",  # Naranja para backoffice
 }
@@ -154,6 +169,37 @@ class State(SharedSessionState):
     asistente_response: str = ""
     asistente_is_loading: bool = False
     asistente_error: str = ""
+
+    # Estado para página Descargas (dl_ prefix)
+    dl_otp_validated: bool = False
+    dl_otp_code: str = ""
+    dl_otp_error: str = ""
+    dl_otp_loading: bool = False
+    dl_selected_org_id: int = 0
+    dl_selected_project_id: int = 0
+    dl_selected_version_id: int = 0
+    dl_organizations: list = []
+    dl_projects: list = []
+    dl_versions: list = []
+    dl_packages: list[PackageDict] = []
+    dl_loading_packages: bool = False
+    dl_downloading: bool = False
+    dl_error: str = ""
+
+    @rx.var
+    def dl_organization_options(self) -> list[str]:
+        """Opciones para selector de organizaciones."""
+        return [org.get("name", "") for org in self.dl_organizations if org.get("name")]
+
+    @rx.var
+    def dl_project_options(self) -> list[str]:
+        """Opciones para selector de proyectos."""
+        return [prj.get("name", "") for prj in self.dl_projects if prj.get("name")]
+
+    @rx.var
+    def dl_version_options(self) -> list[str]:
+        """Opciones para selector de versiones."""
+        return [ver.get("nombre", "") for ver in self.dl_versions if ver.get("nombre")]
 
     # Estado para gestión de usuarios y proyectos de la organización
     # Estado para gestión de usuarios de la organización
@@ -341,6 +387,11 @@ class State(SharedSessionState):
     # Warnings de validación
     ent_modal_warnings: list[str] = []
 
+    # Modal de confirmación entrenamiento autónomo (ent_auto_modal_ prefix)
+    ent_auto_modal_open: bool = False
+    ent_auto_modal_training_mode: str = ""
+    ent_auto_modal_version_data: dict = {}
+
     # Evolución de entrenamiento (ent_evo_ prefix)
     ent_evo_active: bool = False
     ent_evo_version_label: str = ""
@@ -353,6 +404,41 @@ class State(SharedSessionState):
     ent_evo_can_cancel: bool = True           # Si se puede cancelar
     ent_evo_cancelling: bool = False          # Si está cancelando
     ent_evo_expanded_phase: str = ""          # Key de la fase expandida (vacío = ninguna)
+    ent_evo_is_autonomous: bool = False       # Si es entrenamiento autónomo (fases 6-9)
+    ent_evo_training_mode: str = ""           # Modo: simulation, test, production
+    ent_evo_version_data: dict = {}           # Datos completos de la versión en entrenamiento
+
+    @rx.var
+    def ent_evo_rag_completed(self) -> bool:
+        """Indica si el entrenamiento RAG (fases 2-5) está completado y listo para autónomo.
+
+        Returns:
+            True si todas las fases RAG están completadas y NO es un entrenamiento autónomo
+        """
+        if self.ent_evo_is_autonomous:
+            return False
+
+        if not self.ent_evo_active or len(self.ent_evo_phases) == 0:
+            return False
+
+        # Verificar que todas las fases estén completadas
+        return all(phase.get("status") == "completed" for phase in self.ent_evo_phases)
+
+    @rx.var
+    def ent_evo_autonomous_completed(self) -> bool:
+        """Indica si el entrenamiento autónomo (fases 6-9) está completado.
+
+        Returns:
+            True si todas las subfases autónomas están completadas
+        """
+        if not self.ent_evo_is_autonomous or not self.ent_evo_active:
+            return False
+
+        if len(self.ent_evo_phases) == 0:
+            return False
+
+        # Verificar que todas las fases autónomas estén completadas
+        return all(phase.get("status") == "completed" for phase in self.ent_evo_phases)
 
     # Selector de organización para backoffice (filtrado por asignaciones)
     # Usado por páginas: Organizacion, Tecnologias, Proyecciones
@@ -1724,6 +1810,15 @@ class State(SharedSessionState):
                 user_id=self.user_id,
                 identity_type_id=self.identity_type_id,
             )
+        elif self.user_active_menu == "descargas":
+            # Reiniciar estado de descargas
+            self.dl_otp_validated = False
+            self.dl_otp_code = ""
+            self.dl_otp_error = ""
+            self.dl_selected_org_id = 0
+            self.dl_selected_project_id = 0
+            self.dl_selected_version_id = 0
+            self.dl_packages = []
 
         # Iniciar loop de renovación automática de tokens en background
         return State.auto_renew_tokens_loop
@@ -3573,6 +3668,7 @@ class State(SharedSessionState):
         self.ent_evo_project_name = version_data.get("proyecto_nombre", "")
         self.ent_evo_version_label = version_data.get("version_display", "")
         self.ent_evo_id_entrenamiento = version_data.get("id_entrenamiento", 0)
+        self.ent_evo_version_data = version_data  # Guardar datos completos para autónomo
         self.ent_evo_can_cancel = True
         self.ent_evo_cancelling = False
         self.ent_evo_current_phase = "2.1"
@@ -3714,6 +3810,9 @@ class State(SharedSessionState):
         self.ent_evo_can_cancel = True
         self.ent_evo_cancelling = False
         self.ent_evo_expanded_phase = ""
+        self.ent_evo_is_autonomous = False
+        self.ent_evo_training_mode = ""
+        self.ent_evo_version_data = {}
 
     def ent_evo_toggle_phase(self, phase_key: str):
         """Toggle expansión/colapso de una fase.
@@ -3911,6 +4010,584 @@ class State(SharedSessionState):
             )
             self.ent_evo_cancelling = False
             self.ent_evo_can_cancel = True
+
+    def ent_open_autonomous_modal(self):
+        """Abre el modal de confirmación para entrenamiento autónomo.
+
+        Lee el training_mode desde .envglobal y lo muestra en el modal.
+        """
+        import os
+        import yaml
+        from pathlib import Path
+
+        # Leer training_mode desde .envglobal (en raíz del proyecto)
+        envglobal_path = Path(__file__).parent.parent.parent.parent.parent / ".envglobal"
+        training_mode = "simulation"  # Valor por defecto si no se puede leer
+
+        try:
+            if envglobal_path.exists():
+                with open(envglobal_path, "r", encoding="utf-8") as f:
+                    envglobal_data = yaml.safe_load(f)
+                    training_mode = envglobal_data.get("training_mode", "simulation")
+        except Exception as exc:
+            print(f"[WARNING] No se pudo leer training_mode: {exc}")
+            training_mode = "simulation"
+
+        self.ent_auto_modal_training_mode = training_mode
+        self.ent_auto_modal_open = True
+
+    def ent_close_autonomous_modal(self):
+        """Cierra el modal de confirmación de entrenamiento autónomo."""
+        self.ent_auto_modal_open = False
+
+    def ent_confirm_autonomous_training(self) -> list[rx.EventHandler]:
+        """Confirma y envía el entrenamiento autónomo.
+
+        Este método se ejecuta al confirmar el modal y llama al handler
+        ent_send_autonomous_training con los datos del entrenamiento RAG completado.
+        """
+        # Usar datos completos almacenados durante el entrenamiento RAG
+        entrenamiento_data = self.ent_evo_version_data.copy()
+
+        # Cerrar modal
+        self.ent_auto_modal_open = False
+
+        # Llamar al handler de envío autónomo
+        return self.ent_send_autonomous_training(entrenamiento_data)
+
+    def ent_send_autonomous_training(self, entrenamiento_data: dict) -> list[rx.EventHandler]:
+        """Envía solicitud de entrenamiento autónomo (Fases 6-9).
+
+        Este método se llama cuando el usuario hace clic en el botón
+        "Entrenar Modelo Autónomo" después de completar un RAG.
+
+        Args:
+            entrenamiento_data: Dict con id_entrenamiento, collection_name, etc.
+
+        Returns:
+            Lista con evento de polling si el envío fue exitoso.
+        """
+        from adapters.api_client import send_autonomous_training_to_trainer
+
+        # Construir payload
+        payload = {
+            "id_organizacion": entrenamiento_data.get("id_organizacion", 0),
+            "id_proyecto": entrenamiento_data.get("id_proyecto", 0),
+            "id_version": entrenamiento_data.get("id_version", 0),
+            "id_entrenamiento": entrenamiento_data.get("id_entrenamiento", 0),
+            "pat_version": entrenamiento_data.get("pat_version", ""),
+            "collection_name": entrenamiento_data.get("collection_name", ""),
+        }
+
+        print(f"[AUTONOMOUS] Enviando entrenamiento autónomo: {payload}")
+
+        try:
+            result = send_autonomous_training_to_trainer(
+                payload=payload,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if result.get("success"):
+                print(f"[AUTONOMOUS] ✅ Entrenamiento autónomo iniciado")
+                print(f"[AUTONOMOUS] training_mode: {result.get('training_mode')}")
+                print(f"[AUTONOMOUS] id_entrenamiento: {result.get('id_entrenamiento')}")
+
+                # Inicializar panel de evolución para entrenamiento autónomo
+                self._ent_evo_init_autonomous(entrenamiento_data, result.get("training_mode", "simulation"))
+
+                print(f"[AUTONOMOUS] Panel de evolución autónomo inicializado")
+                print(f"[AUTONOMOUS] 🔄 Iniciando polling...")
+
+                # Iniciar polling automático para evoluciones autónomas
+                return [type(self).ent_poll_autonomous_progress]
+            else:
+                print(f"[AUTONOMOUS] ❌ Error: {result.get('message')}")
+                self.ent_send_error = result.get("message", "Error desconocido")
+        except Exception as exc:
+            print(f"[AUTONOMOUS] ❌ Excepción: {exc}")
+            self.ent_send_error = f"Error de comunicación: {str(exc)}"
+
+        return []
+
+    def _ent_evo_init_autonomous(self, entrenamiento_data: dict, training_mode: str):
+        """Inicializa el panel de evolución para entrenamiento autónomo.
+
+        Define las 20 subfases autónomas (6.1-9.5) según el training_mode.
+
+        Args:
+            entrenamiento_data: Datos del entrenamiento RAG previo
+            training_mode: simulation, test o production
+        """
+        self.ent_evo_active = True
+        self.ent_evo_org_name = entrenamiento_data.get("organization_name", "")
+        self.ent_evo_project_name = entrenamiento_data.get("proyecto_nombre", "")
+        self.ent_evo_version_label = entrenamiento_data.get("version_display", "")
+        self.ent_evo_id_entrenamiento = entrenamiento_data.get("id_entrenamiento", 0)
+        self.ent_evo_can_cancel = False  # No se puede cancelar el autónomo
+        self.ent_evo_cancelling = False
+        self.ent_evo_current_phase = "6.1"
+        self.ent_evo_current_phase_name = "Analizar chunks disponibles"
+        self.ent_evo_is_autonomous = True  # Flag para distinguir de RAG normal
+        self.ent_evo_training_mode = training_mode
+
+        # Estructura de fases autónomas (6-9)
+        phases = [
+            {
+                "key": "6",
+                "nombre": "Dataset",
+                "emoji": "📝",
+                "color": "#ec4899",
+                "status": "in_progress",
+                "tiempo": "",
+                "descripcion": "Generación de dataset para fine-tuning",
+                "subfases": [
+                    {"key": "6.1", "nombre": "Analizar chunks disponibles", "status": "in_progress", "tiempo": ""},
+                    {"key": "6.2", "nombre": "Generar plantillas de preguntas", "status": "pending", "tiempo": ""},
+                    {"key": "6.3", "nombre": "Generar Q&A con LLM", "status": "pending", "tiempo": ""},
+                    {"key": "6.4", "nombre": "Validar y formatear dataset", "status": "pending", "tiempo": ""},
+                    {"key": "6.5", "nombre": "Guardar dataset", "status": "pending", "tiempo": ""},
+                ]
+            },
+        ]
+
+        # Agregar fases 7-8-9 solo si NO es simulation
+        if training_mode != "simulation":
+            phases.extend([
+                {
+                    "key": "7",
+                    "nombre": "Preparación LoRA",
+                    "emoji": "🔧",
+                    "color": "#f59e0b",
+                    "status": "pending",
+                    "tiempo": "",
+                    "descripcion": "Preparación del entorno para fine-tuning",
+                    "subfases": [
+                        {"key": "7.1", "nombre": "Verificar dependencias", "status": "pending", "tiempo": ""},
+                        {"key": "7.2", "nombre": "Obtener modelo base", "status": "pending", "tiempo": ""},
+                        {"key": "7.3", "nombre": "Configurar parámetros LoRA", "status": "pending", "tiempo": ""},
+                        {"key": "7.4", "nombre": "Preparar entorno", "status": "pending", "tiempo": ""},
+                    ]
+                },
+                {
+                    "key": "8",
+                    "nombre": "Entrenamiento LoRA",
+                    "emoji": "🏋️",
+                    "color": "#10b981",
+                    "status": "pending",
+                    "tiempo": "",
+                    "descripcion": "Fine-tuning del modelo con LoRA",
+                    "subfases": [
+                        {"key": "8.1", "nombre": "Inicializar trainer", "status": "pending", "tiempo": ""},
+                        {"key": "8.2", "nombre": "Entrenamiento en progreso", "status": "pending", "tiempo": ""},
+                        {"key": "8.3", "nombre": "Finalizar entrenamiento", "status": "pending", "tiempo": ""},
+                        {"key": "8.4", "nombre": "Evaluar modelo", "status": "pending", "tiempo": ""},
+                        {"key": "8.5", "nombre": "Guardar adaptadores LoRA", "status": "pending", "tiempo": ""},
+                        {"key": "8.6", "nombre": "Validar resultados", "status": "pending", "tiempo": ""},
+                    ]
+                },
+                {
+                    "key": "9",
+                    "nombre": "Exportación GGUF",
+                    "emoji": "📦",
+                    "color": "#8b5cf6",
+                    "status": "pending",
+                    "tiempo": "",
+                    "descripcion": "Exportación y empaquetado del modelo",
+                    "subfases": [
+                        {"key": "9.1", "nombre": "Merge LoRA con modelo base", "status": "pending", "tiempo": ""},
+                        {"key": "9.2", "nombre": "Convertir a GGUF", "status": "pending", "tiempo": ""},
+                        {"key": "9.3", "nombre": "Crear Modelfile", "status": "pending", "tiempo": ""},
+                        {"key": "9.4", "nombre": "Generar README", "status": "pending", "tiempo": ""},
+                        {"key": "9.5", "nombre": "Empaquetar entregable", "status": "pending", "tiempo": ""},
+                    ]
+                },
+            ])
+
+        self.ent_evo_phases = phases
+
+    async def ent_poll_autonomous_progress(self) -> AsyncGenerator[None, None]:
+        """Polling de progreso para entrenamiento autónomo.
+
+        Consulta las evoluciones autónomas (subfases 6.1-9.5) cada 2 segundos.
+        """
+        import asyncio
+        from adapters.api_client import get_autonomous_training_progress
+
+        if not self.ent_evo_id_entrenamiento or not self.ent_evo_active:
+            return
+
+        print(f"[AUTONOMOUS POLLING] Iniciando polling para entrenamiento {self.ent_evo_id_entrenamiento}")
+
+        max_iterations = 18000  # 10 horas máximo (18000 * 2s = 36000s = 10h)
+        iteration = 0
+
+        while iteration < max_iterations and self.ent_evo_active:
+            try:
+                # Consultar progreso de subfases autónomas
+                result = get_autonomous_training_progress(
+                    id_entrenamiento=self.ent_evo_id_entrenamiento,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+
+                if result.get("success"):
+                    subfases = result.get("data", {}).get("subfases", [])
+
+                    # Actualizar cada subfase
+                    for subfase in subfases:
+                        subfase_key = subfase.get("subfase_key", "")
+                        status = subfase.get("status", "pending")
+                        duracion = subfase.get("duracion_segundos", 0)
+
+                        # Formatear tiempo
+                        if duracion > 0:
+                            if duracion < 60:
+                                tiempo = f"{duracion}s"
+                            else:
+                                mins = duracion // 60
+                                secs = duracion % 60
+                                tiempo = f"{mins}m {secs}s"
+                        else:
+                            tiempo = ""
+
+                        # Extraer phase_key y actualizar
+                        phase_key = subfase_key.split(".")[0]
+                        self.ent_evo_update_subfase(phase_key, subfase_key, status, tiempo)
+
+                        # Actualizar fase actual si está in_progress
+                        if status == "in_progress":
+                            self.ent_evo_current_phase = subfase_key
+                            self.ent_evo_current_phase_name = subfase.get("subfase_name", "")
+
+                    # Verificar si todas las subfases están completadas
+                    all_completed = all(sf.get("status") == "completed" for sf in subfases)
+                    if all_completed and subfases:
+                        print(f"[AUTONOMOUS POLLING] ✅ Todas las subfases completadas")
+                        self.ent_evo_complete_all()
+                        self.ent_evo_active = False
+                        yield
+                        break
+
+                    yield
+
+            except Exception as exc:
+                print(f"[AUTONOMOUS POLLING] ❌ Error: {exc}")
+
+            await asyncio.sleep(2)
+            iteration += 1
+
+        if iteration >= max_iterations:
+            print(f"[AUTONOMOUS POLLING] ⚠️ Timeout alcanzado")
+
+    def ent_download_autonomous_package(self):
+        """Descarga el paquete ZIP del modelo autónomo generado.
+
+        Este método inicia la descarga del archivo ZIP desde el navegador.
+        """
+        from adapters.api_client import download_autonomous_package
+        import base64
+
+        print(f"[DOWNLOAD] Iniciando descarga para entrenamiento {self.ent_evo_id_entrenamiento}")
+
+        try:
+            # Descargar paquete desde la API
+            package_bytes = download_autonomous_package(
+                id_entrenamiento=self.ent_evo_id_entrenamiento,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if package_bytes:
+                # Convertir a base64 para trigger download en navegador
+                package_b64 = base64.b64encode(package_bytes).decode('utf-8')
+                filename = f"ENT{self.ent_evo_id_entrenamiento}_modelo_autonomo.zip"
+
+                print(f"[DOWNLOAD] Paquete descargado: {len(package_bytes)} bytes")
+                print(f"[DOWNLOAD] Filename: {filename}")
+
+                # Usar rx.download para trigger la descarga
+                return rx.download(
+                    data=package_b64,
+                    filename=filename,
+                )
+            else:
+                print(f"[DOWNLOAD] ❌ Error: No se pudo obtener el paquete")
+                return rx.toast.error(
+                    "No se pudo descargar el paquete",
+                    position="bottom-right",
+                    duration=5000,
+                )
+
+        except Exception as exc:
+            print(f"[DOWNLOAD] ❌ Excepción: {exc}")
+            return rx.toast.error(
+                f"Error descargando paquete: {str(exc)}",
+                position="bottom-right",
+                duration=5000,
+            )
+
+    # ========================================================================
+    # PÁGINA DE DESCARGAS - Gestión de descargas de paquetes GGUF
+    # ========================================================================
+
+    def dl_set_otp_code(self, code: str):
+        """Establece el código OTP ingresado."""
+        self.dl_otp_code = code
+
+    def dl_request_otp(self):
+        """Solicita código OTP para validar identidad."""
+        from adapters.api_client import request_login_otp
+
+        self.dl_otp_loading = True
+        self.dl_otp_error = ""
+
+        # Usar el username y password de la sesión actual
+        # Para simplificar, reutilizamos el sistema de login
+        response = request_login_otp(self.user_email, "")  # El password no es necesario aquí
+
+        self.dl_otp_loading = False
+
+        if response.get("success"):
+            yield rx.toast.success(
+                "Código OTP enviado por SMS",
+                position="bottom-right",
+                duration=3000,
+            )
+        else:
+            self.dl_otp_error = "No se pudo enviar el código OTP"
+            yield rx.toast.error(
+                "No se pudo enviar el código OTP",
+                position="bottom-right",
+                duration=5000,
+            )
+
+    def dl_validate_otp(self):
+        """Valida el código OTP ingresado."""
+        from adapters.api_client import validate_login_otp
+
+        if not self.dl_otp_code:
+            self.dl_otp_error = "Debe ingresar el código OTP"
+            return
+
+        self.dl_otp_loading = True
+        self.dl_otp_error = ""
+
+        # Validar OTP con el backend
+        response = validate_login_otp(self.user_email, self.dl_otp_code)
+
+        self.dl_otp_loading = False
+
+        if response.get("success"):
+            self.dl_otp_validated = True
+            self.dl_otp_code = ""
+
+            # Cargar organizaciones disponibles según asignaciones
+            yield self.dl_load_organizations()
+
+            yield rx.toast.success(
+                "Código OTP validado correctamente",
+                position="bottom-right",
+                duration=3000,
+            )
+        else:
+            self.dl_otp_error = "Código OTP inválido"
+            yield rx.toast.error(
+                "Código OTP inválido",
+                position="bottom-right",
+                duration=5000,
+            )
+
+    def dl_load_organizations(self):
+        """Carga las organizaciones disponibles según asignaciones del usuario."""
+        from adapters.api_client import get_user_assigned_organizations
+
+        try:
+            response = get_user_assigned_organizations(
+                user_id=self.user_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if response.get("success"):
+                self.dl_organizations = response.get("organizations", [])
+
+                # Auto-seleccionar si solo hay una organización
+                if len(self.dl_organizations) == 1:
+                    self.dl_selected_org_id = self.dl_organizations[0]["id"]
+                    yield self.dl_load_projects()
+
+        except Exception as exc:
+            print(f"[DOWNLOAD] Error cargando organizaciones: {exc}")
+            self.dl_error = "Error cargando organizaciones"
+
+    def dl_set_selected_org(self, org_id: str):
+        """Establece la organización seleccionada y carga sus proyectos."""
+        self.dl_selected_org_id = int(org_id) if org_id else 0
+        self.dl_selected_project_id = 0
+        self.dl_selected_version_id = 0
+        self.dl_projects = []
+        self.dl_versions = []
+        self.dl_packages = []
+
+        if self.dl_selected_org_id > 0:
+            return self.dl_load_projects()
+
+    def dl_load_projects(self):
+        """Carga los proyectos de la organización seleccionada."""
+        from adapters.api_client import get_organization_projects
+
+        if self.dl_selected_org_id == 0:
+            return
+
+        try:
+            response = get_organization_projects(
+                organization_id=self.dl_selected_org_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if response.get("success"):
+                self.dl_projects = response.get("projects", [])
+
+                # Auto-seleccionar si solo hay un proyecto
+                if len(self.dl_projects) == 1:
+                    self.dl_selected_project_id = self.dl_projects[0]["id"]
+                    yield self.dl_load_versions()
+
+        except Exception as exc:
+            print(f"[DOWNLOAD] Error cargando proyectos: {exc}")
+            self.dl_error = "Error cargando proyectos"
+
+    def dl_set_selected_project(self, project_id: str):
+        """Establece el proyecto seleccionado y carga sus versiones."""
+        self.dl_selected_project_id = int(project_id) if project_id else 0
+        self.dl_selected_version_id = 0
+        self.dl_versions = []
+        self.dl_packages = []
+
+        if self.dl_selected_project_id > 0:
+            return self.dl_load_versions()
+
+    def dl_load_versions(self):
+        """Carga las versiones del proyecto seleccionado."""
+        from adapters.api_client import get_project_versions
+
+        if self.dl_selected_project_id == 0:
+            return
+
+        try:
+            response = get_project_versions(
+                project_id=self.dl_selected_project_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if response.get("success"):
+                self.dl_versions = response.get("versions", [])
+
+        except Exception as exc:
+            print(f"[DOWNLOAD] Error cargando versiones: {exc}")
+            self.dl_error = "Error cargando versiones"
+
+    def dl_set_selected_version(self, version_id: str):
+        """Establece la versión seleccionada y carga sus paquetes."""
+        self.dl_selected_version_id = int(version_id) if version_id else 0
+        self.dl_packages = []
+
+        if self.dl_selected_version_id > 0:
+            return self.dl_load_packages()
+
+    def dl_load_packages(self):
+        """Carga los paquetes disponibles para la selección actual."""
+        from adapters.api_client import list_autonomous_packages
+
+        self.dl_loading_packages = True
+        self.dl_error = ""
+        self.dl_packages = []
+
+        try:
+            response = list_autonomous_packages(
+                id_organizacion=self.dl_selected_org_id if self.dl_selected_org_id > 0 else None,
+                id_proyecto=self.dl_selected_project_id if self.dl_selected_project_id > 0 else None,
+                id_version=self.dl_selected_version_id if self.dl_selected_version_id > 0 else None,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            self.dl_loading_packages = False
+
+            if response.get("success"):
+                self.dl_packages = response.get("packages", [])
+
+                if len(self.dl_packages) == 0:
+                    yield rx.toast.info(
+                        "No se encontraron paquetes disponibles",
+                        position="bottom-right",
+                        duration=3000,
+                    )
+            else:
+                self.dl_error = response.get("error", "Error cargando paquetes")
+                yield rx.toast.error(
+                    "Error cargando paquetes",
+                    position="bottom-right",
+                    duration=5000,
+                )
+
+        except Exception as exc:
+            print(f"[DOWNLOAD] Error cargando paquetes: {exc}")
+            self.dl_loading_packages = False
+            self.dl_error = f"Error: {str(exc)}"
+            yield rx.toast.error(
+                f"Error cargando paquetes: {str(exc)}",
+                position="bottom-right",
+                duration=5000,
+            )
+
+    def dl_download_package(self, id_entrenamiento: int):
+        """Descarga un paquete específico."""
+        from adapters.api_client import download_autonomous_package
+        import base64
+
+        print(f"[DOWNLOAD PAGE] Descargando paquete {id_entrenamiento}")
+
+        self.dl_downloading = True
+
+        try:
+            package_bytes = download_autonomous_package(
+                id_entrenamiento=id_entrenamiento,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            self.dl_downloading = False
+
+            if package_bytes:
+                # Convertir a base64 para trigger download
+                package_b64 = base64.b64encode(package_bytes).decode('utf-8')
+                filename = f"ENT{id_entrenamiento}_modelo_autonomo.zip"
+
+                print(f"[DOWNLOAD PAGE] Paquete descargado: {len(package_bytes)} bytes")
+
+                return rx.download(
+                    data=package_b64,
+                    filename=filename,
+                )
+            else:
+                return rx.toast.error(
+                    "No se pudo descargar el paquete",
+                    position="bottom-right",
+                    duration=5000,
+                )
+
+        except Exception as exc:
+            print(f"[DOWNLOAD PAGE] Error: {exc}")
+            self.dl_downloading = False
+            return rx.toast.error(
+                f"Error descargando: {str(exc)}",
+                position="bottom-right",
+                duration=5000,
+            )
 
     # ========================================================================
     # MODAL DE JOB - Prompt Builder para Análisis de Documentación
@@ -6978,6 +7655,110 @@ def evolucion_entrenamiento_panel() -> rx.Component:
                 ),
             ),
 
+            # Botón de Entrenar Modelo Autónomo (solo si RAG completado)
+            rx.cond(
+                State.ent_evo_rag_completed,
+                rx.vstack(
+                    rx.separator(margin_y="1em"),
+                    rx.callout(
+                        rx.vstack(
+                            rx.hstack(
+                                rx.icon("check-circle", size=20, color="#10b981"),
+                                rx.text(
+                                    "Entrenamiento RAG completado exitosamente",
+                                    font_weight="bold",
+                                ),
+                                spacing="2",
+                                align_items="center",
+                            ),
+                            rx.text(
+                                "Ahora puedes iniciar el entrenamiento autónomo para generar un modelo fine-tuned.",
+                                color=COLORS["muted"],
+                            ),
+                            rx.button(
+                                rx.hstack(
+                                    rx.icon("rocket", size=18),
+                                    rx.text("Entrenar Modelo Autónomo", font_weight="bold"),
+                                    spacing="2",
+                                ),
+                                on_click=State.ent_open_autonomous_modal,
+                                size="3",
+                                color_scheme="orange",
+                                variant="solid",
+                                style={"font_weight": "bold", "margin_top": "0.5em"},
+                            ),
+                            spacing="2",
+                            width="100%",
+                        ),
+                        icon="zap",
+                        color_scheme="green",
+                        size="2",
+                    ),
+                    spacing="2",
+                    width="100%",
+                ),
+                rx.fragment(),
+            ),
+
+            # Botón de Descargar Modelo (solo si autónomo completado)
+            rx.cond(
+                State.ent_evo_autonomous_completed,
+                rx.vstack(
+                    rx.separator(margin_y="1em"),
+                    rx.callout(
+                        rx.vstack(
+                            rx.hstack(
+                                rx.icon("check-circle", size=20, color="#10b981"),
+                                rx.text(
+                                    "Modelo autónomo generado exitosamente",
+                                    font_weight="bold",
+                                ),
+                                spacing="2",
+                                align_items="center",
+                            ),
+                            rx.text(
+                                "El modelo GGUF está listo para descargar. El paquete incluye el modelo cuantizado, Modelfile e instrucciones de uso.",
+                                color=COLORS["muted"],
+                            ),
+                            rx.hstack(
+                                rx.button(
+                                    rx.hstack(
+                                        rx.icon("download", size=18),
+                                        rx.text("Descargar Modelo GGUF", font_weight="bold"),
+                                        spacing="2",
+                                    ),
+                                    on_click=State.ent_download_autonomous_package,
+                                    size="3",
+                                    color_scheme="green",
+                                    variant="solid",
+                                    style={"font_weight": "bold"},
+                                ),
+                                rx.badge(
+                                    rx.hstack(
+                                        rx.icon("package", size=14),
+                                        rx.text("ZIP Package", font_size="0.85em"),
+                                        spacing="1",
+                                    ),
+                                    color_scheme="blue",
+                                    variant="surface",
+                                ),
+                                spacing="2",
+                                margin_top="0.5em",
+                                align_items="center",
+                            ),
+                            spacing="2",
+                            width="100%",
+                        ),
+                        icon="package-check",
+                        color_scheme="green",
+                        size="2",
+                    ),
+                    spacing="2",
+                    width="100%",
+                ),
+                rx.fragment(),
+            ),
+
             # Timeline de fases
             rx.box(
                 rx.foreach(
@@ -7002,14 +7783,497 @@ def evolucion_entrenamiento_panel() -> rx.Component:
     )
 
 
+def _ent_autonomous_confirmation_modal() -> rx.Component:
+    """Modal de confirmación para iniciar entrenamiento autónomo."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            # Título
+            rx.dialog.title(
+                rx.hstack(
+                    rx.icon("zap", size=24, color="#f59e0b"),
+                    rx.text("Iniciar Entrenamiento Autónomo", font_weight="bold"),
+                    spacing="2",
+                    align_items="center",
+                ),
+            ),
+
+            # Contenido
+            rx.vstack(
+                # Descripción
+                rx.text(
+                    "El entrenamiento autónomo procesará las fases 6-9:",
+                    font_weight="bold",
+                    margin_top="1em",
+                ),
+                rx.vstack(
+                    rx.hstack(
+                        rx.icon("check-circle", size=16, color="#10b981"),
+                        rx.text("Fase 6: Generación de Dataset"),
+                        spacing="2",
+                    ),
+                    rx.hstack(
+                        rx.icon("check-circle", size=16, color="#10b981"),
+                        rx.text("Fases 7-8: Fine-tuning con LoRA"),
+                        spacing="2",
+                    ),
+                    rx.hstack(
+                        rx.icon("check-circle", size=16, color="#10b981"),
+                        rx.text("Fase 9: Exportación a GGUF"),
+                        spacing="2",
+                    ),
+                    spacing="1",
+                    padding_left="0.5em",
+                ),
+
+                # Training mode
+                rx.separator(margin_y="1em"),
+                rx.hstack(
+                    rx.text("Modo actual:", font_weight="bold"),
+                    rx.badge(
+                        State.ent_auto_modal_training_mode.upper(),
+                        color_scheme=rx.cond(
+                            State.ent_auto_modal_training_mode == "simulation",
+                            "blue",
+                            rx.cond(
+                                State.ent_auto_modal_training_mode == "test",
+                                "orange",
+                                "red",
+                            ),
+                        ),
+                        variant="solid",
+                        size="2",
+                    ),
+                    spacing="2",
+                    align_items="center",
+                ),
+
+                # Advertencias según modo
+                rx.cond(
+                    State.ent_auto_modal_training_mode == "simulation",
+                    rx.callout(
+                        rx.vstack(
+                            rx.text("Modo simulación:", font_weight="bold"),
+                            rx.text("Solo se generará el dataset (Fase 6). Las fases 7-9 se omitirán."),
+                            spacing="1",
+                        ),
+                        icon="info",
+                        color_scheme="blue",
+                        size="1",
+                    ),
+                    rx.cond(
+                        State.ent_auto_modal_training_mode == "test",
+                        rx.callout(
+                            rx.vstack(
+                                rx.text("Modo prueba:", font_weight="bold"),
+                                rx.text("Se ejecutará un entrenamiento ligero (~20-40 min)."),
+                                spacing="1",
+                            ),
+                            icon="alert-triangle",
+                            color_scheme="orange",
+                            size="1",
+                        ),
+                        rx.callout(
+                            rx.vstack(
+                                rx.text("Modo producción:", font_weight="bold"),
+                                rx.text("Se ejecutará un entrenamiento completo (~1-2 horas)."),
+                                spacing="1",
+                            ),
+                            icon="alert-circle",
+                            color_scheme="red",
+                            size="1",
+                        ),
+                    ),
+                ),
+
+                spacing="2",
+                width="100%",
+            ),
+
+            # Botones
+            rx.flex(
+                rx.dialog.close(
+                    rx.button(
+                        "Cancelar",
+                        on_click=State.ent_close_autonomous_modal,
+                        color_scheme="gray",
+                        variant="soft",
+                    ),
+                ),
+                rx.button(
+                    rx.hstack(
+                        rx.icon("rocket", size=16),
+                        rx.text("Iniciar Entrenamiento"),
+                        spacing="2",
+                    ),
+                    on_click=State.ent_confirm_autonomous_training,
+                    color_scheme="orange",
+                    style={"font_weight": "bold"},
+                ),
+                spacing="3",
+                margin_top="1.5em",
+                justify="end",
+            ),
+
+            style={
+                "max_width": "500px",
+                "padding": "1.5em",
+            },
+        ),
+        open=State.ent_auto_modal_open,
+    )
+
+
 def entrenamientos_full_panel() -> rx.Component:
     """Panel completo de Entrenamientos: visor + evolución."""
     return rx.vstack(
         entrenamientos_panel(),
         evolucion_entrenamiento_panel(),
         _ent_params_modal(),
+        _ent_autonomous_confirmation_modal(),
         width="100%",
         spacing="2",
+    )
+
+
+def descargas_panel() -> rx.Component:
+    """Panel de Descargas de modelos GGUF entrenados."""
+    return rx.vstack(
+        # Título
+        rx.heading("Descargas de Modelos", size="7", margin_bottom="1em"),
+
+        # Sección de validación OTP (solo para identity_type_id 1 o 2)
+        rx.cond(
+            (State.identity_type_id == 1) | (State.identity_type_id == 2),
+            rx.cond(
+                ~State.dl_otp_validated,
+                rx.card(
+                    rx.vstack(
+                        rx.hstack(
+                            rx.icon("shield-check", size=24, color=COLORS["primary"]),
+                            rx.heading("Validación de Identidad", size="5"),
+                            spacing="2",
+                            align_items="center",
+                        ),
+                        rx.text(
+                            "Por seguridad, necesitamos validar tu identidad antes de acceder a las descargas.",
+                            color=COLORS["muted"],
+                        ),
+                        rx.separator(margin_y="1em"),
+
+                        # Solicitar OTP
+                        rx.hstack(
+                            rx.button(
+                                rx.hstack(
+                                    rx.icon("send", size=16),
+                                    rx.text("Enviar Código OTP"),
+                                    spacing="2",
+                                ),
+                                on_click=State.dl_request_otp,
+                                loading=State.dl_otp_loading,
+                                color_scheme="blue",
+                                size="2",
+                            ),
+                            rx.text(
+                                "Se enviará un código a tu móvil",
+                                font_size="0.9em",
+                                color=COLORS["muted"],
+                            ),
+                            spacing="3",
+                            align_items="center",
+                        ),
+
+                        # Ingresar código OTP
+                        rx.vstack(
+                            rx.text("Código OTP:", font_weight="bold"),
+                            rx.input(
+                                placeholder="Ingrese el código de 6 dígitos",
+                                value=State.dl_otp_code,
+                                on_change=State.dl_set_otp_code,
+                                max_length=6,
+                                size="3",
+                                width="100%",
+                            ),
+                            rx.cond(
+                                State.dl_otp_error != "",
+                                rx.text(
+                                    State.dl_otp_error,
+                                    color="red",
+                                    font_size="0.9em",
+                                ),
+                            ),
+                            rx.button(
+                                "Validar Código",
+                                on_click=State.dl_validate_otp,
+                                loading=State.dl_otp_loading,
+                                color_scheme="green",
+                                size="3",
+                                width="100%",
+                            ),
+                            spacing="2",
+                            width="100%",
+                            margin_top="1em",
+                        ),
+
+                        spacing="3",
+                        width="100%",
+                    ),
+                    size="3",
+                ),
+                rx.fragment(),  # OTP ya validado, mostrar contenido principal
+            ),
+            rx.fragment(),  # No requiere OTP (identity_type_id distinto de 1 y 2)
+        ),
+
+        # Contenido principal (selectores y lista de paquetes)
+        rx.cond(
+            State.dl_otp_validated | ((State.identity_type_id != 1) & (State.identity_type_id != 2)),
+            rx.vstack(
+                # Selectores de organización, proyecto y versión
+                rx.card(
+                    rx.vstack(
+                        rx.hstack(
+                            rx.icon("filter", size=20, color=COLORS["primary"]),
+                            rx.heading("Filtros", size="4"),
+                            spacing="2",
+                            align_items="center",
+                        ),
+
+                        # Selector de organización
+                        rx.vstack(
+                            rx.text("Organización:", font_weight="bold"),
+                            rx.select(
+                                State.dl_organization_options,
+                                placeholder="Seleccione organización",
+                                on_change=State.dl_set_selected_org,
+                                size="3",
+                                width="100%",
+                            ),
+                            spacing="1",
+                            width="100%",
+                        ),
+
+                        # Selector de proyecto
+                        rx.cond(
+                            State.dl_selected_org_id > 0,
+                            rx.vstack(
+                                rx.text("Proyecto:", font_weight="bold"),
+                                rx.select(
+                                    State.dl_project_options,
+                                    placeholder="Seleccione proyecto",
+                                    on_change=State.dl_set_selected_project,
+                                    size="3",
+                                    width="100%",
+                                ),
+                                spacing="1",
+                                width="100%",
+                            ),
+                        ),
+
+                        # Selector de versión
+                        rx.cond(
+                            State.dl_selected_project_id > 0,
+                            rx.vstack(
+                                rx.text("Versión:", font_weight="bold"),
+                                rx.select(
+                                    State.dl_version_options,
+                                    placeholder="Seleccione versión",
+                                    on_change=State.dl_set_selected_version,
+                                    size="3",
+                                    width="100%",
+                                ),
+                                spacing="1",
+                                width="100%",
+                            ),
+                        ),
+
+                        spacing="3",
+                        width="100%",
+                    ),
+                    size="2",
+                ),
+
+                # Lista de paquetes disponibles
+                rx.cond(
+                    State.dl_loading_packages,
+                    rx.card(
+                        rx.hstack(
+                            rx.spinner(size="3"),
+                            rx.text("Cargando paquetes disponibles..."),
+                            spacing="3",
+                            align_items="center",
+                            padding="2em",
+                        ),
+                        size="2",
+                    ),
+                    rx.cond(
+                        State.dl_packages.length() > 0,
+                        rx.vstack(
+                            rx.hstack(
+                                rx.icon("package", size=20, color=COLORS["primary"]),
+                                rx.heading("Paquetes Disponibles", size="4"),
+                                rx.badge(
+                                    f"{State.dl_packages.length()} paquetes",
+                                    color_scheme="blue",
+                                ),
+                                spacing="2",
+                                align_items="center",
+                            ),
+
+                            # Lista de paquetes
+                            rx.foreach(
+                                State.dl_packages,
+                                lambda pkg: rx.card(
+                                    rx.vstack(
+                                        # Información del paquete
+                                        rx.hstack(
+                                            rx.icon("file-archive", size=24, color="#f59e0b"),
+                                            rx.vstack(
+                                                rx.text(
+                                                    pkg["package_filename"],
+                                                    font_weight="bold",
+                                                    font_size="1.1em",
+                                                ),
+                                                rx.hstack(
+                                                    rx.badge(
+                                                        f"Entrenamiento #{pkg['id_entrenamiento']}",
+                                                        color_scheme="blue",
+                                                        variant="surface",
+                                                    ),
+                                                    rx.badge(
+                                                        pkg["training_mode"].upper(),
+                                                        color_scheme=rx.cond(
+                                                            pkg["training_mode"] == "simulation",
+                                                            "gray",
+                                                            rx.cond(
+                                                                pkg["training_mode"] == "test",
+                                                                "orange",
+                                                                "red",
+                                                            ),
+                                                        ),
+                                                        variant="solid",
+                                                    ),
+                                                    rx.badge(
+                                                        f"{pkg['gguf_quantization']}",
+                                                        color_scheme="purple",
+                                                        variant="surface",
+                                                    ),
+                                                    spacing="2",
+                                                ),
+                                                spacing="1",
+                                                align_items="start",
+                                            ),
+                                            spacing="3",
+                                            align_items="center",
+                                            flex="1",
+                                        ),
+
+                                        # Información adicional
+                                        rx.grid(
+                                            rx.vstack(
+                                                rx.text("Tamaño:", font_size="0.85em", color=COLORS["muted"]),
+                                                rx.text(
+                                                    f"{pkg['package_size_mb']:.1f} MB",
+                                                    font_weight="bold",
+                                                ),
+                                                spacing="0",
+                                            ),
+                                            rx.vstack(
+                                                rx.text("Dataset:", font_size="0.85em", color=COLORS["muted"]),
+                                                rx.text(
+                                                    f"{pkg['dataset_size']} ejemplos",
+                                                    font_weight="bold",
+                                                ),
+                                                spacing="0",
+                                            ),
+                                            rx.vstack(
+                                                rx.text("Generado:", font_size="0.85em", color=COLORS["muted"]),
+                                                rx.text(
+                                                    pkg["package_generated_at"][:10],
+                                                    font_weight="bold",
+                                                ),
+                                                spacing="0",
+                                            ),
+                                            columns="3",
+                                            spacing="4",
+                                            width="100%",
+                                        ),
+
+                                        rx.separator(margin_y="0.5em"),
+
+                                        # Botón de descarga
+                                        rx.button(
+                                            rx.hstack(
+                                                rx.icon("download", size=16),
+                                                rx.text("Descargar Paquete", font_weight="bold"),
+                                                spacing="2",
+                                            ),
+                                            on_click=lambda: State.dl_download_package(pkg["id_entrenamiento"]),
+                                            loading=State.dl_downloading,
+                                            color_scheme="green",
+                                            size="3",
+                                            width="100%",
+                                        ),
+
+                                        spacing="3",
+                                        width="100%",
+                                    ),
+                                    size="2",
+                                    margin_bottom="1em",
+                                ),
+                            ),
+
+                            spacing="3",
+                            width="100%",
+                        ),
+                        # No hay paquetes
+                        rx.cond(
+                            State.dl_selected_version_id > 0,
+                            rx.card(
+                                rx.vstack(
+                                    rx.icon("inbox", size=48, color=COLORS["muted"]),
+                                    rx.text(
+                                        "No se encontraron paquetes disponibles",
+                                        font_size="1.1em",
+                                        color=COLORS["muted"],
+                                    ),
+                                    rx.text(
+                                        "Seleccione otra versión o complete un entrenamiento autónomo primero.",
+                                        font_size="0.9em",
+                                        color=COLORS["muted"],
+                                    ),
+                                    spacing="2",
+                                    align_items="center",
+                                    padding="3em",
+                                ),
+                                size="2",
+                            ),
+                            rx.card(
+                                rx.vstack(
+                                    rx.icon("filter", size=48, color=COLORS["muted"]),
+                                    rx.text(
+                                        "Seleccione los filtros para ver paquetes disponibles",
+                                        font_size="1.1em",
+                                        color=COLORS["muted"],
+                                    ),
+                                    spacing="2",
+                                    align_items="center",
+                                    padding="3em",
+                                ),
+                                size="2",
+                            ),
+                        ),
+                    ),
+                ),
+
+                spacing="3",
+                width="100%",
+            ),
+            rx.fragment(),
+        ),
+
+        spacing="4",
+        width="100%",
+        padding="2em",
     )
 
 
@@ -8283,6 +9547,7 @@ def internal_panel(active_item: str) -> rx.Component:
         ("estado_proyectos", "Estado de Proyectos"),
         ("analisis_documentacion", "Análisis de Documentación"),
         ("entrenamientos", "Entrenamientos"),
+        ("descargas", "Descargas"),
         ("analisis_resultados", "Análisis de Resultados"),
         ("crear_llm", "Crear LLM"),
         ("asistente", "Asistente"),
@@ -8303,15 +9568,19 @@ def internal_panel(active_item: str) -> rx.Component:
                     active_item == "entrenamientos",
                     entrenamientos_full_panel(),
                     rx.cond(
-                        active_item == "analisis_resultados",
-                        rx.text("Panel de análisis de resultados de entrenamiento.", color=COLORS["muted_foreground"]),
+                        active_item == "descargas",
+                        descargas_panel(),
                         rx.cond(
-                            active_item == "crear_llm",
-                            rx.text("Panel de creación y configuración de LLMs.", color=COLORS["muted_foreground"]),
+                            active_item == "analisis_resultados",
+                            rx.text("Panel de análisis de resultados de entrenamiento.", color=COLORS["muted_foreground"]),
                             rx.cond(
-                                active_item == "asistente",
-                                asistente_panel(),
-                                rx.text("Selecciona una opción del menú Internal.", color=COLORS["muted_foreground"]),
+                                active_item == "crear_llm",
+                                rx.text("Panel de creación y configuración de LLMs.", color=COLORS["muted_foreground"]),
+                                rx.cond(
+                                    active_item == "asistente",
+                                    asistente_panel(),
+                                    rx.text("Selecciona una opción del menú Internal.", color=COLORS["muted_foreground"]),
+                                ),
                             ),
                         ),
                     ),
@@ -9148,5 +10417,18 @@ except ImportError as e:
     traceback.print_exc()
 except Exception as e:
     print(f"❌ Error al registrar ruta /change_password: {e}")
+
+try:
+    from pages.model_downloads import model_downloads_page
+    app.add_page(model_downloads_page, route="/model_downloads", title="Myllm - Descargas de Modelos")
+    print("✅ Ruta /model_downloads registrada exitosamente")
+except ImportError as e:
+    print(f"⚠️ Warning: Could not import model_downloads_page: {e}")
+    import traceback
+    traceback.print_exc()
+except Exception as e:
+    print(f"❌ Error al registrar ruta /model_downloads: {e}")
+    import traceback
+    traceback.print_exc()
     import traceback
     traceback.print_exc()

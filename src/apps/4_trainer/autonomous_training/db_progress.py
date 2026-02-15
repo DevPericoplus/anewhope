@@ -366,6 +366,84 @@ class AutonomousProgressTracker:
             )
             conn.commit()
 
+    def get_progress(self) -> dict[str, Any]:
+        """Consulta el progreso actual del entrenamiento autónomo.
+
+        Returns:
+            Diccionario con:
+            - training_mode: Modo de entrenamiento
+            - subphases: Lista de subfases con status y duración
+            - summary: Resumen con totales
+        """
+        query = text("""
+            SELECT
+                subfase_key,
+                subfase_name,
+                status,
+                started_at,
+                completed_at,
+                duracion_segundos,
+                metrics,
+                error_message
+            FROM evoluciones_autonomas
+            WHERE id_entrenamiento = :id_ent
+            ORDER BY phase_key, subfase_key
+        """)
+
+        query_mode = text("""
+            SELECT training_mode
+            FROM entrenamientos_autonomos
+            WHERE id_entrenamiento = :id_ent
+        """)
+
+        with self.engine.connect() as conn:
+            # Obtener training_mode
+            result_mode = conn.execute(query_mode, {"id_ent": self.id_entrenamiento})
+            row_mode = result_mode.fetchone()
+            training_mode = row_mode[0] if row_mode else "unknown"
+
+            # Obtener subfases
+            result = conn.execute(query, {"id_ent": self.id_entrenamiento})
+            rows = result.fetchall()
+
+        subphases = []
+        total = len(rows)
+        completed = 0
+        in_progress = 0
+        failed = 0
+
+        for row in rows:
+            status = row[2]
+            if status == "completed":
+                completed += 1
+            elif status == "in_progress":
+                in_progress += 1
+            elif status == "failed":
+                failed += 1
+
+            subphases.append({
+                "subfase_key": row[0],
+                "subfase_name": row[1],
+                "status": status,
+                "started_at": row[3].isoformat() if row[3] else None,
+                "completed_at": row[4].isoformat() if row[4] else None,
+                "duracion_segundos": row[5],
+                "metrics": json.loads(row[6]) if row[6] else None,
+                "error_message": row[7],
+            })
+
+        return {
+            "training_mode": training_mode,
+            "subphases": subphases,
+            "summary": {
+                "total": total,
+                "completed": completed,
+                "in_progress": in_progress,
+                "failed": failed,
+                "progress_percent": (completed / total * 100) if total > 0 else 0,
+            },
+        }
+
     # =========================================================================
     # Context manager
     # =========================================================================

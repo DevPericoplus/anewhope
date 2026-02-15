@@ -1235,6 +1235,81 @@ def send_autonomous_training(
         ) from exc
 
 
+@app.get("/training/entrenamientos/{id_entrenamiento}/autonomous/progress")
+def get_autonomous_training_progress(
+    id_entrenamiento: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Consulta el progreso del entrenamiento autónomo (fases 6-9).
+
+    Returns:
+        Diccionario con success y data (subphases del entrenamiento autónomo)
+    """
+    try:
+        response = router.get_autonomous_training_progress(id_entrenamiento)
+        return response
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/training/entrenamientos/{id_entrenamiento}/autonomous/package")
+def download_autonomous_package(
+    id_entrenamiento: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> Response:
+    """Descarga el paquete ZIP del modelo autónomo generado.
+
+    Returns:
+        Response con el archivo ZIP
+    """
+    try:
+        response = router.download_autonomous_package(id_entrenamiento)
+
+        # Devolver el contenido como Response
+        return Response(
+            content=response.content,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": response.headers.get("Content-Disposition", "attachment"),
+            },
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/training/entrenamientos/autonomous/packages")
+def list_autonomous_packages(
+    id_organizacion: int | None = None,
+    id_proyecto: int | None = None,
+    id_version: int | None = None,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Lista los paquetes autónomos disponibles para descargar.
+
+    Args:
+        id_organizacion: Filtrar por organización (opcional)
+        id_proyecto: Filtrar por proyecto (opcional)
+        id_version: Filtrar por versión (opcional)
+
+    Returns:
+        Diccionario con success y lista de paquetes
+    """
+    try:
+        response = router.list_autonomous_packages(id_organizacion, id_proyecto, id_version)
+        return response
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
 # ============================================================================
 # Modelos Pydantic para Proyectos
 # ============================================================================

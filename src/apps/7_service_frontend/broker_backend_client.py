@@ -488,6 +488,77 @@ class BrokerBackendClient:
         data = self._request("POST", "/training/entrenamientos/autonomous", payload=payload)
         return dict(data or {})
 
+    def get_autonomous_training_progress(self, id_entrenamiento: int) -> dict[str, Any]:
+        """Consulta el progreso del entrenamiento autónomo (fases 6-9) vía broker.
+
+        Args:
+            id_entrenamiento: ID del entrenamiento autónomo a consultar
+
+        Returns:
+            Diccionario con success y data (subphases del entrenamiento autónomo)
+        """
+        data = self._request("GET", f"/training/entrenamientos/{id_entrenamiento}/autonomous/progress")
+        return dict(data or {})
+
+    def download_autonomous_package(self, id_entrenamiento: int) -> httpx.Response:
+        """Descarga el paquete ZIP del modelo autónomo generado vía broker.
+
+        Args:
+            id_entrenamiento: ID del entrenamiento autónomo
+
+        Returns:
+            httpx.Response con el contenido del archivo ZIP
+        """
+        url = f"{self._base_url}/training/entrenamientos/{id_entrenamiento}/autonomous/package"
+        headers = self._build_headers()
+
+        try:
+            response = self._client.request("GET", url, headers=headers, timeout=300.0)
+
+            if response.status_code >= 400:
+                raise BrokerBackendCommunicationError(
+                    f"Error descargando paquete: {response.status_code}"
+                )
+
+            return response
+
+        except httpx.RequestError as exc:
+            raise BrokerBackendCommunicationError(
+                "No se pudo descargar el paquete del broker"
+            ) from exc
+
+    def list_autonomous_packages(
+        self,
+        id_organizacion: int | None = None,
+        id_proyecto: int | None = None,
+        id_version: int | None = None,
+    ) -> dict[str, Any]:
+        """Lista los paquetes autónomos disponibles para descargar vía broker.
+
+        Args:
+            id_organizacion: Filtrar por organización (opcional)
+            id_proyecto: Filtrar por proyecto (opcional)
+            id_version: Filtrar por versión (opcional)
+
+        Returns:
+            Diccionario con success y lista de paquetes
+        """
+        params = {}
+        if id_organizacion is not None:
+            params["id_organizacion"] = id_organizacion
+        if id_proyecto is not None:
+            params["id_proyecto"] = id_proyecto
+        if id_version is not None:
+            params["id_version"] = id_version
+
+        query_string = "&".join(f"{k}={v}" for k, v in params.items())
+        path = "/training/entrenamientos/autonomous/packages"
+        if query_string:
+            path += f"?{query_string}"
+
+        data = self._request("GET", path)
+        return dict(data or {})
+
     def cancel_entrenamiento(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Cancela un entrenamiento en progreso via broker.
 

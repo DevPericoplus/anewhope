@@ -850,6 +850,97 @@ def _generate_modelfile(
     return template.render(**template_vars)
 
 
+def _generate_evaluation_report(
+    template_vars: dict[str, Any],
+) -> str:
+    """Renderiza la plantilla Jinja2 evaluacion_modelo.j2.
+
+    Args:
+        template_vars: Variables para la plantilla de evaluación.
+
+    Returns:
+        Contenido del informe de evaluación renderizado en Markdown.
+    """
+    env = Environment(
+        loader=FileSystemLoader(str(TEMPLATES_DIR)),
+        keep_trailing_newline=True,
+    )
+    template = env.get_template("evaluacion_modelo.j2")
+    return template.render(**template_vars)
+
+
+def _save_evaluation_report(
+    report_content: str,
+    id_org: int,
+    id_prj: int,
+    id_ver: int,
+) -> Path:
+    """Guarda el informe de evaluación en la ruta internal storage.
+
+    Construye la ruta según el formato:
+      {backend_ia_internal_storage}/{org_folder}/{prj_folder}/{ver_folder}/
+
+    Y el nombre del archivo según el formato:
+      año_mes_dia_hh_mm_informe_evaluacion.md
+
+    Args:
+        report_content: Contenido del informe en Markdown
+        id_org: ID de la organización
+        id_prj: ID del proyecto
+        id_ver: ID de la versión
+
+    Returns:
+        Path del archivo guardado
+
+    Raises:
+        Exception: Si hay error al guardar el archivo
+    """
+    # Obtener base path de internal storage
+    env_settings = _load_shared_module(
+        "env_settings_entrenamiento",
+        "2_shared_application/config/env_settings.py",
+    )
+    internal_base = env_settings.get_env_value(
+        "backend_ia_internal_storage",
+        "~/data/anewhope/files/trainer_server/internal",
+    )
+
+    # Obtener funciones de estructura de carpetas
+    _storage_structure = _load_shared_module(
+        "storage_structure_entrenamiento",
+        "2_shared_application/storage_access_structure.py",
+    )
+    org_folder = _storage_structure.get_folder_by_id_organization(id_org)
+    prj_folder = _storage_structure.get_folder_by_id_project(id_prj)
+    ver_folder = _storage_structure.get_folder_by_id_version(id_ver)
+
+    # Construir ruta completa
+    report_dir = (
+        Path(os.path.expanduser(internal_base))
+        / org_folder
+        / prj_folder
+        / ver_folder
+    )
+
+    # Crear directorio si no existe
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generar nombre del archivo con timestamp
+    now = datetime.now(timezone.utc)
+    filename = now.strftime("%Y_%m_%d_%H%M_informe_evaluacion.md")
+    report_path = report_dir / filename
+
+    # Guardar archivo
+    report_path.write_text(report_content, encoding="utf-8")
+
+    logger.info(
+        "[INFORME-EVALUACION] Informe guardado en: %s",
+        report_path,
+    )
+
+    return report_path
+
+
 def _phase_entrenamiento(
     broker: Any,
     id_entrenamiento: int,
@@ -1420,6 +1511,111 @@ def process_entrenamiento(data: dict[str, Any]) -> None:
         )
 
         # ============================================================
+        # FASE 6: GENERACIÓN DE INFORME DE EVALUACIÓN
+        # ============================================================
+        phase6_start = time.time()
+        logger.info("[ENTRENAMIENTO] Fase 6 - Generación de Informe de Evaluación")
+
+        try:
+            # Obtener carpetas
+            _storage_structure = _load_shared_module(
+                "storage_structure_entrenamiento",
+                "2_shared_application/storage_access_structure.py",
+            )
+            ver_folder = _storage_structure.get_folder_by_id_version(id_ver)
+
+            # Calcular tiempos de cada fase
+            tiempo_total_segundos = time.time() - start_time
+            tiempo_fase2 = _format_elapsed_time(time.time() - phase2_start) if 'phase2_start' in locals() else "0s"
+            tiempo_fase3 = _format_elapsed_time(time.time() - phase3_start) if 'phase3_start' in locals() else "0s"
+            tiempo_fase4 = _format_elapsed_time(time.time() - phase4_start) if 'phase4_start' in locals() else "0s"
+            tiempo_fase5 = _format_elapsed_time(time.time() - phase5_start)
+
+            # Preparar variables para la plantilla
+            template_vars = {
+                # Identificación
+                'nombre_organizacion': org_name,
+                'nombre_proyecto': prj_name,
+                'version_name': ver_folder,
+                'ver_folder': ver_folder,
+                'modelo_nombre': modelo_path,
+                'base_model': params.get('model_type', 'llama3.2:latest'),
+
+                # Parámetros de entrenamiento
+                'training_id': id_entrenamiento,
+                'sequence_number': numero_secuencia,
+                'training_mode': data.get('training_mode', 'production'),
+                'fecha_entrenamiento': datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
+                'temperatura': params.get('temperature', 0.7),
+                'top_k': params.get('top_k', 40),
+                'top_p': params.get('top_p', 0.9),
+                'num_ctx': params.get('num_ctx', 8192),
+                'num_predict': params.get('max_tokens', 2048),
+                'chunk_size': params.get('chunk_size', 512),
+                'chunk_overlap': params.get('chunk_overlap', 50),
+                'embedding_model': params.get('embedding_model', 'nomic-embed-text:latest'),
+
+                # Datos del entrenamiento
+                'num_documents': num_documents,
+                'num_chunks': len(chunks),
+                'num_archivos_texto': sum(
+                    len(v) for k, v in classified_files.items()
+                    if k in ['text', 'code']
+                ),
+                'num_archivos_binarios': sum(
+                    len(v) for k, v in classified_files.items()
+                    if k in ['pdf', 'docx']
+                ),
+                'total_kb': sum(
+                    Path(f).stat().st_size / 1024
+                    for files in classified_files.values()
+                    for f in files
+                    if Path(f).exists()
+                ),
+                'document_types': ', '.join(sorted(document_types)),
+                'collection_name': collection_name,
+
+                # Tiempos de ejecución
+                'duracion_total': _format_elapsed_time(tiempo_total_segundos),
+                'tiempo_validacion': tiempo_fase2,
+                'tiempo_preparacion': tiempo_fase3,
+                'tiempo_configuracion': tiempo_fase4,
+                'tiempo_entrenamiento': tiempo_fase5,
+            }
+
+            # Generar contenido del informe
+            report_content = _generate_evaluation_report(template_vars)
+            logger.info(
+                "[INFORME-EVALUACION] Informe generado: %d caracteres",
+                len(report_content),
+            )
+
+            # Guardar informe en disco
+            report_path = _save_evaluation_report(
+                report_content,
+                id_org,
+                id_prj,
+                id_ver,
+            )
+
+            logger.info(
+                "[ENTRENAMIENTO] Fase 6 completada en %s (informe=%s)",
+                _format_elapsed_time(time.time() - phase6_start),
+                report_path.name,
+            )
+
+        except Exception as exc:
+            logger.error(
+                "[INFORME-EVALUACION][ERROR] Error al generar informe: %s",
+                exc,
+                exc_info=True,
+            )
+            # No fallar el entrenamiento por error en el informe
+            logger.warning(
+                "[INFORME-EVALUACION] Continuando sin informe de evaluación"
+            )
+
+        # ============================================================
         # COMPLETADO - Notificar éxito
         # ============================================================
         broker.complete_entrenamiento(id_entrenamiento, modelo_path)
@@ -1644,6 +1840,111 @@ def process_entrenamiento_with_id(data: dict[str, Any]) -> None:
             _format_elapsed_time(time.time() - phase5_start),
             modelo_path,
         )
+
+        # ============================================================
+        # FASE 6: GENERACIÓN DE INFORME DE EVALUACIÓN
+        # ============================================================
+        phase6_start = time.time()
+        logger.info("[ENTRENAMIENTO] Fase 6 - Generación de Informe de Evaluación")
+
+        try:
+            # Obtener carpetas
+            _storage_structure = _load_shared_module(
+                "storage_structure_entrenamiento",
+                "2_shared_application/storage_access_structure.py",
+            )
+            ver_folder = _storage_structure.get_folder_by_id_version(id_ver)
+
+            # Calcular tiempos de cada fase
+            tiempo_total_segundos = time.time() - start_time
+            tiempo_fase2 = _format_elapsed_time(time.time() - phase2_start) if 'phase2_start' in locals() else "0s"
+            tiempo_fase3 = _format_elapsed_time(time.time() - phase3_start) if 'phase3_start' in locals() else "0s"
+            tiempo_fase4 = _format_elapsed_time(time.time() - phase4_start) if 'phase4_start' in locals() else "0s"
+            tiempo_fase5 = _format_elapsed_time(time.time() - phase5_start)
+
+            # Preparar variables para la plantilla
+            template_vars = {
+                # Identificación
+                'nombre_organizacion': org_name,
+                'nombre_proyecto': prj_name,
+                'version_name': ver_folder,
+                'ver_folder': ver_folder,
+                'modelo_nombre': modelo_path,
+                'base_model': params.get('model_type', 'llama3.2:latest'),
+
+                # Parámetros de entrenamiento
+                'training_id': id_entrenamiento,
+                'sequence_number': numero_secuencia,
+                'training_mode': data.get('training_mode', 'production'),
+                'fecha_entrenamiento': datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
+                'temperatura': params.get('temperature', 0.7),
+                'top_k': params.get('top_k', 40),
+                'top_p': params.get('top_p', 0.9),
+                'num_ctx': params.get('num_ctx', 8192),
+                'num_predict': params.get('max_tokens', 2048),
+                'chunk_size': params.get('chunk_size', 512),
+                'chunk_overlap': params.get('chunk_overlap', 50),
+                'embedding_model': params.get('embedding_model', 'nomic-embed-text:latest'),
+
+                # Datos del entrenamiento
+                'num_documents': num_documents,
+                'num_chunks': len(chunks),
+                'num_archivos_texto': sum(
+                    len(v) for k, v in classified_files.items()
+                    if k in ['text', 'code']
+                ),
+                'num_archivos_binarios': sum(
+                    len(v) for k, v in classified_files.items()
+                    if k in ['pdf', 'docx']
+                ),
+                'total_kb': sum(
+                    Path(f).stat().st_size / 1024
+                    for files in classified_files.values()
+                    for f in files
+                    if Path(f).exists()
+                ),
+                'document_types': ', '.join(sorted(document_types)),
+                'collection_name': collection_name,
+
+                # Tiempos de ejecución
+                'duracion_total': _format_elapsed_time(tiempo_total_segundos),
+                'tiempo_validacion': tiempo_fase2,
+                'tiempo_preparacion': tiempo_fase3,
+                'tiempo_configuracion': tiempo_fase4,
+                'tiempo_entrenamiento': tiempo_fase5,
+            }
+
+            # Generar contenido del informe
+            report_content = _generate_evaluation_report(template_vars)
+            logger.info(
+                "[INFORME-EVALUACION] Informe generado: %d caracteres",
+                len(report_content),
+            )
+
+            # Guardar informe en disco
+            report_path = _save_evaluation_report(
+                report_content,
+                id_org,
+                id_prj,
+                id_ver,
+            )
+
+            logger.info(
+                "[ENTRENAMIENTO] Fase 6 completada en %s (informe=%s)",
+                _format_elapsed_time(time.time() - phase6_start),
+                report_path.name,
+            )
+
+        except Exception as exc:
+            logger.error(
+                "[INFORME-EVALUACION][ERROR] Error al generar informe: %s",
+                exc,
+                exc_info=True,
+            )
+            # No fallar el entrenamiento por error en el informe
+            logger.warning(
+                "[INFORME-EVALUACION] Continuando sin informe de evaluación"
+            )
 
         # ============================================================
         # COMPLETADO - Notificar éxito

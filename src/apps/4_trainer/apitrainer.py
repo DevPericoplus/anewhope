@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated, Any, AsyncIterator
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 import importlib.util
@@ -43,6 +44,14 @@ _load_trainer_module("broker_client", _broker_client_path)
 
 _keras_embeddings_path = Path(__file__).resolve().parent / "keras_embeddings.py"
 _load_trainer_module("keras_embeddings", _keras_embeddings_path)
+
+# Cargar módulo de análisis de documentación
+_documentacion_service_path = Path(__file__).resolve().parent / "documentacion_service.py"
+_load_trainer_module("documentacion_service", _documentacion_service_path)
+
+# Cargar módulo de entrenamiento autónomo
+_autonomous_training_service_path = Path(__file__).resolve().parent / "autonomous_training_service.py"
+_load_trainer_module("autonomous_training_service", _autonomous_training_service_path)
 
 BackendTrainerBusinessError = _routertrainer.BackendTrainerBusinessError
 BackendTrainerPermissionError = _routertrainer.BackendTrainerPermissionError
@@ -1000,3 +1009,299 @@ def recibir_entrenamiento_autonomo(
         id_entrenamiento=request.id_entrenamiento,
         training_mode=training_mode,
     )
+
+
+@app.get("/trainer/entrenamientos/{id_entrenamiento}/autonomous/progress")
+def consultar_progreso_autonomo(
+    id_entrenamiento: int,
+    client_app: str = Depends(get_client_app),
+) -> dict[str, Any]:
+    """Consulta el progreso del entrenamiento autónomo (fases 6-9).
+
+    Args:
+        id_entrenamiento: ID del entrenamiento autónomo
+
+    Returns:
+        Diccionario con training_mode, subphases y summary
+    """
+    logger = logging.getLogger("trainer_api")
+    logger.info(
+        "[AUTONOMOUS PROGRESS] Consultando progreso para ent=%s client=%s",
+        id_entrenamiento,
+        client_app,
+    )
+
+    try:
+        # Construir DB URL
+        from autonomous_training_service import _get_db_url
+        from autonomous_training.db_progress import AutonomousProgressTracker
+
+        db_url = _get_db_url()
+
+        # Consultar progreso
+        with AutonomousProgressTracker(db_url, id_entrenamiento) as tracker:
+            progress_data = tracker.get_progress()
+
+        logger.info(
+            "[AUTONOMOUS PROGRESS] Progreso obtenido: %s/%s subfases completadas",
+            progress_data["summary"]["completed"],
+            progress_data["summary"]["total"],
+        )
+
+        return {
+            "success": True,
+            "data": progress_data,
+        }
+
+    except Exception as exc:
+        logger.error(
+            "[AUTONOMOUS PROGRESS] Error consultando progreso: %s",
+            exc,
+            exc_info=True,
+        )
+        return {
+            "success": False,
+            "error": str(exc),
+            "data": {
+                "training_mode": "unknown",
+                "subphases": [],
+                "summary": {
+                    "total": 0,
+                    "completed": 0,
+                    "in_progress": 0,
+                    "failed": 0,
+                    "progress_percent": 0,
+                },
+            },
+        }
+
+
+@app.get("/trainer/entrenamientos/{id_entrenamiento}/autonomous/package")
+def descargar_paquete_autonomo(
+    id_entrenamiento: int,
+    client_app: str = Depends(get_client_app),
+) -> FileResponse:
+    """Descarga el paquete ZIP del modelo autónomo generado.
+
+    Args:
+        id_entrenamiento: ID del entrenamiento autónomo
+
+    Returns:
+        FileResponse con el archivo ZIP del modelo
+    """
+    logger = logging.getLogger("trainer_api")
+    logger.info(
+        "[AUTONOMOUS DOWNLOAD] Descargando paquete para ent=%s client=%s",
+        id_entrenamiento,
+        client_app,
+    )
+
+    try:
+        # Construir DB URL
+        from autonomous_training_service import _get_db_url
+        from sqlalchemy import create_engine, text
+
+        db_url = _get_db_url()
+        engine = create_engine(db_url, pool_pre_ping=True)
+
+        # Consultar package_path de BD
+        query = text("""
+            SELECT package_path, package_size_mb
+            FROM entrenamientos_autonomos
+            WHERE id_entrenamiento = :id_ent
+        """)
+
+        with engine.connect() as conn:
+            result = conn.execute(query, {"id_ent": id_entrenamiento})
+            row = result.fetchone()
+
+        engine.dispose()
+
+        if not row or not row[0]:
+            logger.error(
+                "[AUTONOMOUS DOWNLOAD] No se encontró paquete para ent=%s",
+                id_entrenamiento,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No se encontró paquete para entrenamiento {id_entrenamiento}",
+            )
+
+        package_path = row[0]
+        package_size_mb = row[1] or 0
+
+        # Verificar que el archivo existe
+        from pathlib import Path
+        package_file = Path(package_path)
+
+        if not package_file.exists():
+            logger.error(
+                "[AUTONOMOUS DOWNLOAD] Archivo no existe: %s",
+                package_path,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"El archivo del paquete no existe en el servidor",
+            )
+
+        logger.info(
+            "[AUTONOMOUS DOWNLOAD] Enviando paquete: %s (%.2f MB)",
+            package_file.name,
+            package_size_mb,
+        )
+
+        # Devolver archivo para descarga
+        return FileResponse(
+            path=str(package_file),
+            media_type="application/zip",
+            filename=package_file.name,
+            headers={
+                "Content-Disposition": f'attachment; filename="{package_file.name}"',
+            },
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(
+            "[AUTONOMOUS DOWNLOAD] Error descargando paquete: %s",
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error descargando paquete: {str(exc)}",
+        ) from exc
+
+
+@app.get("/trainer/entrenamientos/autonomous/packages")
+def listar_paquetes_autonomos(
+    id_organizacion: int | None = None,
+    id_proyecto: int | None = None,
+    id_version: int | None = None,
+    client_app: str = Depends(get_client_app),
+) -> dict[str, Any]:
+    """Lista los paquetes autónomos disponibles para descargar.
+
+    Filtra por organización, proyecto y/o versión si se proporcionan.
+
+    Args:
+        id_organizacion: Filtrar por organización (opcional)
+        id_proyecto: Filtrar por proyecto (opcional)
+        id_version: Filtrar por versión (opcional)
+
+    Returns:
+        Diccionario con success y lista de paquetes
+    """
+    logger = logging.getLogger("trainer_api")
+    logger.info(
+        "[PACKAGES LIST] Listando paquetes org=%s prj=%s ver=%s client=%s",
+        id_organizacion,
+        id_proyecto,
+        id_version,
+        client_app,
+    )
+
+    try:
+        # Construir DB URL
+        from autonomous_training_service import _get_db_url
+        from sqlalchemy import create_engine, text
+
+        db_url = _get_db_url()
+        engine = create_engine(db_url, pool_pre_ping=True)
+
+        # Construir query con filtros opcionales
+        where_clauses = []
+        params = {}
+
+        if id_organizacion is not None:
+            where_clauses.append("e.id_organizacion = :org")
+            params["org"] = id_organizacion
+
+        if id_proyecto is not None:
+            where_clauses.append("e.id_proyecto = :prj")
+            params["prj"] = id_proyecto
+
+        if id_version is not None:
+            where_clauses.append("e.id_version = :ver")
+            params["ver"] = id_version
+
+        where_sql = " AND " + " AND ".join(where_clauses) if where_clauses else ""
+
+        query = text(f"""
+            SELECT
+                e.id AS id_entrenamiento,
+                e.id_organizacion,
+                e.id_proyecto,
+                e.id_version,
+                e.collection_name,
+                e.estado,
+                e.created_at,
+                ea.training_mode,
+                ea.package_path,
+                ea.package_size_mb,
+                ea.package_generated_at,
+                ea.dataset_size,
+                ea.gguf_quantization
+            FROM entrenamientos e
+            INNER JOIN entrenamientos_autonomos ea ON e.id = ea.id_entrenamiento
+            WHERE ea.package_path IS NOT NULL
+              AND ea.package_generated_at IS NOT NULL
+              {where_sql}
+            ORDER BY ea.package_generated_at DESC
+            LIMIT 100
+        """)
+
+        with engine.connect() as conn:
+            result = conn.execute(query, params)
+            rows = result.fetchall()
+
+        engine.dispose()
+
+        # Construir lista de paquetes
+        packages = []
+        for row in rows:
+            from pathlib import Path
+            package_file = Path(row[8]) if row[8] else None
+
+            packages.append({
+                "id_entrenamiento": row[0],
+                "id_organizacion": row[1],
+                "id_proyecto": row[2],
+                "id_version": row[3],
+                "collection_name": row[4],
+                "estado": row[5],
+                "created_at": row[6].isoformat() if row[6] else None,
+                "training_mode": row[7],
+                "package_path": row[8],
+                "package_size_mb": float(row[9]) if row[9] else 0,
+                "package_generated_at": row[10].isoformat() if row[10] else None,
+                "dataset_size": row[11],
+                "gguf_quantization": row[12],
+                "package_filename": package_file.name if package_file else "",
+                "package_exists": package_file.exists() if package_file else False,
+            })
+
+        logger.info(
+            "[PACKAGES LIST] Encontrados %s paquetes",
+            len(packages),
+        )
+
+        return {
+            "success": True,
+            "packages": packages,
+            "total": len(packages),
+        }
+
+    except Exception as exc:
+        logger.error(
+            "[PACKAGES LIST] Error listando paquetes: %s",
+            exc,
+            exc_info=True,
+        )
+        return {
+            "success": False,
+            "error": str(exc),
+            "packages": [],
+            "total": 0,
+        }

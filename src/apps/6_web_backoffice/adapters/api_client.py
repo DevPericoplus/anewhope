@@ -3458,6 +3458,127 @@ def send_autonomous_training_to_trainer(
     return response if isinstance(response, dict) else {}
 
 
+def get_autonomous_training_progress(
+    id_entrenamiento: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Consulta el progreso del entrenamiento autónomo (fases 6-9).
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core
+
+    Args:
+        id_entrenamiento: ID del entrenamiento autónomo a consultar.
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+
+    Returns:
+        Respuesta con success, data (subphases del entrenamiento autónomo)
+    """
+    headers: dict[str, str] = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "GET",
+        f"/training/entrenamientos/{id_entrenamiento}/autonomous/progress",
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
+def download_autonomous_package(
+    id_entrenamiento: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> bytes | None:
+    """Descarga el paquete ZIP del modelo autónomo generado.
+
+    Flujo: Backoffice → Middleware → Broker → Trainer
+
+    Args:
+        id_entrenamiento: ID del entrenamiento autónomo
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+
+    Returns:
+        Bytes del archivo ZIP o None si hay error
+    """
+    import httpx
+
+    middleware_url = _get_middleware_url()
+    url = f"{middleware_url}/training/entrenamientos/{id_entrenamiento}/autonomous/package"
+
+    headers: dict[str, str] = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    print(f"[BACKOFFICE API_CLIENT] Descargando paquete desde: {url}")
+
+    try:
+        with httpx.Client(timeout=300.0) as client:
+            response = client.get(url, headers=headers)
+
+            if response.status_code == 200:
+                print(f"[BACKOFFICE API_CLIENT] Paquete descargado: {len(response.content)} bytes")
+                return response.content
+            else:
+                print(f"[BACKOFFICE API_CLIENT] Error descargando: {response.status_code}")
+                return None
+
+    except Exception as exc:
+        print(f"[BACKOFFICE API_CLIENT] Excepción descargando paquete: {exc}")
+        return None
+
+
+def list_autonomous_packages(
+    id_organizacion: int | None = None,
+    id_proyecto: int | None = None,
+    id_version: int | None = None,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Lista los paquetes autónomos disponibles para descargar.
+
+    Flujo: Backoffice → Middleware → Broker → Trainer
+
+    Args:
+        id_organizacion: Filtrar por organización (opcional)
+        id_proyecto: Filtrar por proyecto (opcional)
+        id_version: Filtrar por versión (opcional)
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+
+    Returns:
+        Diccionario con success y lista de paquetes
+    """
+    params = {}
+    if id_organizacion is not None:
+        params["id_organizacion"] = id_organizacion
+    if id_proyecto is not None:
+        params["id_proyecto"] = id_proyecto
+    if id_version is not None:
+        params["id_version"] = id_version
+
+    query_string = "&".join(f"{k}={v}" for k, v in params.items())
+    path = "/training/entrenamientos/autonomous/packages"
+    if query_string:
+        path += f"?{query_string}"
+
+    headers: dict[str, str] = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware("GET", path, headers=headers)
+    return response if isinstance(response, dict) else {}
+
+
 def cancel_entrenamiento_training(
     payload: dict[str, Any],
     access_token: str = "",

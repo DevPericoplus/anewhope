@@ -8870,3 +8870,650 @@ Antes de hacer un commit:
 - [ ] Código revisado por lint (ruff/pylint)
 
 ---
+## 30. Sistema de Entrenamientos Autónomos y Descargas
+
+### 30.1. Arquitectura General
+
+El sistema de entrenamientos se divide en dos etapas secuenciales:
+
+1. **Entrenamiento RAG (Fases 2-5)**: Preparación del modelo base con ChromaDB y embeddings
+2. **Entrenamiento Autónomo (Fases 6-9)**: Fine-tuning LoRA y generación de modelo GGUF
+
+**CRÍTICO:** Ambas etapas son independientes pero secuenciales. El entrenamiento autónomo
+SOLO puede iniciarse después de completar exitosamente el entrenamiento RAG.
+
+### 30.2. Estructura de Tablas (Obligatorio)
+
+#### Tablas Principales
+
+```sql
+-- Registro principal del entrenamiento
+entrenamientos (
+  id, numero_secuencia, id_organizacion, id_proyecto, id_version,
+  estado, fase_actual, collection_name, modelo_path,
+  created_at, updated_at
+)
+
+-- Subfases del entrenamiento RAG (16 registros por entrenamiento)
+evoluciones_entrenamientos (
+  id, id_entrenamiento, phase_key, subfase_key, subfase_name,
+  status, duracion_segundos, error_message,
+  created_at, updated_at
+)
+
+-- Registro del entrenamiento autónomo (1 registro por entrenamiento)
+entrenamientos_autonomos (
+  id_entrenamiento PRIMARY KEY,
+  training_mode, dataset_path, dataset_size,
+  lora_adapters_path, gguf_path, gguf_quantization,
+  package_path, package_size_mb, package_generated_at,
+  created_at, updated_at
+)
+
+-- Subfases del entrenamiento autónomo (5 o 20 registros según modo)
+evoluciones_autonomas (
+  id, id_entrenamiento, phase_key, subfase_key, subfase_name,
+  status, duracion_segundos, error_message,
+  created_at, updated_at
+)
+```
+
+#### Reglas de Integridad
+
+1. ✅ **Foreign Keys:** Todas las tablas secundarias DEBEN tener FK a `entrenamientos(id)`
+2. ✅ **Subfases RAG:** SIEMPRE 16 subfases (2.1-2.4, 3.1-3.3, 4.1-4.4, 5.1-5.5)
+3. ✅ **Subfases Autónomas:** 5 (simulation) o 20 (test/production) subfases
+4. ✅ **Estados válidos:** 'pending', 'in_progress', 'completed', 'failed'
+5. ✅ **Training modes:** 'simulation', 'test', 'production'
+
+### 30.3. Flujo de Datos y Endpoints
+
+#### Arquitectura de Capas
+
+```
+Backoffice (Reflex) ──► Middleware (FastAPI) ──► Broker (FastAPI) ──► Trainer (FastAPI)
+       │                       │                       │                      │
+       │                       │                       │                      ▼
+       │                       │                       │                 MariaDB
+       │                       │                       │                (updates)
+       │                       │                       │                      │
+       └───────────────── Polling cada 2s ◄────────────────────────────────────┘
+                        (GET /autonomous/progress)
+```
+
+#### Endpoints Obligatorios
+
+**REGLA:** Cada endpoint DEBE implementarse en todas las capas con el mismo path relativo.
+
+| Endpoint | Capas | Método | Descripción |
+|----------|-------|--------|-------------|
+| `/training/entrenamientos` | M, B, T | POST | Iniciar entrenamiento RAG |
+| `/training/progress` | M, B, C | PATCH | Actualizar progreso de subfases |
+| `/training/entrenamientos/{id}/complete` | M, B, C | PATCH | Marcar entrenamiento como completado |
+| `/training/entrenamientos/{id}/autonomous` | M, B, T | POST | Iniciar entrenamiento autónomo |
+| `/training/entrenamientos/{id}/autonomous/progress` | M, B, T | GET | Consultar progreso autónomo |
+| `/training/entrenamientos/autonomous/packages` | M, B, T | GET | Listar paquetes disponibles |
+| `/training/entrenamientos/{id}/autonomous/package` | M, B, T | GET | Descargar paquete ZIP |
+
+**Leyenda:** M=Middleware, B=Broker, T=Trainer, C=Core
+
+#### Validación de Permisos (Middleware)
+
+```python
+# OBLIGATORIO en todos los endpoints de entrenamiento
+@app.post("/training/entrenamientos")
+async def crear_entrenamiento(
+    request: Request,
+    data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    # 1. Validar permiso training_create
+    if not current_user.get("can_training_create"):
+        raise HTTPException(403, "Sin permisos para crear entrenamientos")
+
+    # 2. Enrutar al broker
+    response = await broker_client.post("/training/entrenamientos", data)
+
+    # 3. Devolver respuesta
+    return response
+
+# Para endpoints de descarga: validar training_read
+```
+
+### 30.4. Nombres de Archivos y Paths (CRÍTICO)
+
+#### Convención de Nomenclatura
+
+**REGLA OBLIGATORIA:** Todos los archivos generados DEBEN seguir la estructura ORG/PRJ/VER.
+
+```
+backend_ia_internal_storage/
+└── models/
+    └── ORG{id:05d}/              # Ejemplo: ORG00001
+        └── PRJ{id:05d}/           # Ejemplo: PRJ00001
+            └── v{id:03d}/         # Ejemplo: v002
+                ├── Modelfile_ENT{id}              (RAG: Fase 5)
+                └── exports/
+                    └── ENT{id}/
+                        └── ENT{id}_modelo_autonomo.zip  (Autónomo: Fase 9)
+                            ├── ENT{id}_model_q4_k_m.gguf
+                            ├── Modelfile
+                            └── README.md
+```
+
+#### Funciones de Path (Obligatorias)
+
+```python
+def build_internal_model_path(
+    org_id: int,
+    prj_id: int,
+    ver_id: int,
+    ent_id: int
+) -> Path:
+    """Construye path para modelo interno."""
+    base = get_env_value("backend_ia_internal_storage")
+    return Path(base) / "models" / f"ORG{org_id:05d}" / f"PRJ{prj_id:05d}" / f"v{ver_id:03d}"
+
+def build_package_path(
+    org_id: int,
+    prj_id: int,
+    ver_id: int,
+    ent_id: int
+) -> Path:
+    """Construye path completo para paquete ZIP."""
+    model_path = build_internal_model_path(org_id, prj_id, ver_id, ent_id)
+    return model_path / "exports" / f"ENT{ent_id}" / f"ENT{ent_id}_modelo_autonomo.zip"
+```
+
+**IMPORTANTE:** NUNCA hardcodear paths. Siempre usar funciones helpers.
+
+### 30.5. Training Modes (Configuración)
+
+#### Configuración del Modo
+
+El `training_mode` se define en `.envglobal` en la raíz del proyecto:
+
+```yaml
+# .envglobal
+current_environment: macbook
+training_mode: simulation  # o 'test' o 'production'
+```
+
+#### Características por Modo
+
+| training_mode | Fases | Tiempo | Genera ZIP | Uso |
+|---------------|-------|--------|------------|-----|
+| `simulation` | 6 | 2-5 min | ❌ No | Testing rápido, desarrollo |
+| `test` | 6-9 | 20-40 min | ✅ Sí (~4-8GB) | Validación pre-producción |
+| `production` | 6-9 | 53-135 min | ✅ Sí (completo) | Modelos finales |
+
+#### Lectura del Training Mode
+
+```python
+def _get_training_mode() -> str:
+    """Obtiene training_mode del .envglobal."""
+    from pathlib import Path
+    import yaml
+
+    base_path = Path(__file__).resolve().parents[2]
+    envglobal_path = base_path / ".envglobal"
+
+    training_mode = "simulation"  # default
+
+    if envglobal_path.exists():
+        with open(envglobal_path) as f:
+            config = yaml.safe_load(f)
+            training_mode = config.get("training_mode", "simulation")
+
+    return training_mode
+```
+
+**OBLIGATORIO:** Validar que el training_mode es uno de: 'simulation', 'test', 'production'
+
+### 30.6. Conexión a Base de Datos (URL Encoding)
+
+#### Problema Común: Caracteres Especiales en Password
+
+Si la password contiene caracteres especiales (@, #, %, etc.), la URL de conexión
+DEBE encodear correctamente:
+
+```python
+def _get_db_url() -> str:
+    """Construye URL de MariaDB con URL encoding correcto."""
+    from urllib.parse import quote_plus
+
+    db_user = get_protected_value("mariadb_admin_user")
+    db_pass = get_protected_value("mariadb_admin_password")
+    db_host = get_env_value("mariadb_host", "localhost")
+    db_name = get_env_value("mariadb_projects_database", "myllm_projects_db")
+
+    # CRÍTICO: Encodear user y password
+    db_user_encoded = quote_plus(db_user)
+    db_pass_encoded = quote_plus(db_pass)
+
+    return f"mysql+pymysql://{db_user_encoded}:{db_pass_encoded}@{db_host}/{db_name}"
+```
+
+**IMPORTANTE:** Sin URL encoding, passwords con '@' causarán errores de conexión.
+
+### 30.7. Polling y Actualización en Tiempo Real
+
+#### Background Event en Reflex
+
+```python
+@rx.event(background=True)
+async def ent_poll_training_progress(self) -> None:
+    """Polling automático cada 2 segundos.
+
+    CRÍTICO:
+    - DEBE ser @rx.event(background=True)
+    - DEBE usar yield para actualizar UI
+    - DEBE tener control de parada (is_polling flag)
+    """
+    while self.ent_evo_is_polling:
+        try:
+            # 1. Consultar API
+            progress = await api_client.get_autonomous_training_progress(
+                self.ent_evo_id_entrenamiento
+            )
+
+            # 2. Actualizar estado (yield es OBLIGATORIO)
+            yield State.set_autonomous_progress(progress)
+
+        except Exception as e:
+            logger.error(f"Error polling: {e}")
+            yield State.set_polling_error(str(e))
+
+        # 3. Esperar 2 segundos
+        await asyncio.sleep(2)
+```
+
+#### Reglas del Polling
+
+1. ✅ **Background:** Siempre usar `@rx.event(background=True)`
+2. ✅ **Yield:** OBLIGATORIO para actualizar UI desde background task
+3. ✅ **Control de parada:** Usar flag boolean para detener polling
+4. ✅ **Intervalo:** 2 segundos es óptimo (no sobrecargar)
+5. ✅ **Error handling:** Capturar excepciones y no detener el polling
+6. ✅ **Cleanup:** Detener polling cuando el entrenamiento termina
+
+### 30.8. Validación OTP en Descargas
+
+#### Flujo de Validación
+
+```python
+# Paso 1: Verificar identity_type_id
+if user["identity_type_id"] in (1, 2):  # SuperAdmin, OrgAdmin
+    # Mostrar sección de OTP
+    show_otp_validation = True
+
+# Paso 2: Enviar OTP
+@rx.event
+def dl_request_otp(self):
+    """Envía código OTP al móvil del usuario."""
+    response = api_client.send_otp(user_id=self.current_user_id)
+    if response["success"]:
+        return rx.toast.success("Código OTP enviado por SMS")
+
+# Paso 3: Validar OTP
+@rx.event
+def dl_validate_otp(self):
+    """Valida código OTP ingresado."""
+    response = api_client.validate_otp(
+        user_id=self.current_user_id,
+        otp_code=self.dl_otp_code
+    )
+    if response["success"]:
+        self.dl_otp_validated = True
+        return rx.toast.success("Código OTP validado correctamente")
+```
+
+**IMPORTANTE:** La validación OTP es OBLIGATORIA para `identity_type_id` 1 o 2.
+
+### 30.9. Filtros Cascada en Selectores
+
+#### Implementación de Selectores
+
+```python
+# Selector de Organización (solo Backoffice)
+@rx.event
+async def dl_load_organizations(self):
+    """Carga organizaciones según asignaciones del usuario."""
+    # En Backoffice: mostrar según user_organization_roles
+    orgs = await api_client.get_user_organizations(self.current_user_id)
+    self.dl_organizations = orgs
+
+# Selector de Proyecto (carga automática)
+@rx.event
+async def dl_set_selected_org(self, org_id: str):
+    """Al seleccionar org, cargar proyectos automáticamente."""
+    self.dl_selected_org_id = int(org_id)
+    self.dl_selected_project_id = 0
+    self.dl_selected_version_id = 0
+
+    # Cargar proyectos de la org
+    projects = await api_client.get_projects(org_id=self.dl_selected_org_id)
+    self.dl_projects = projects
+
+# Selector de Versión (carga automática)
+@rx.event
+async def dl_set_selected_project(self, project_id: str):
+    """Al seleccionar proyecto, cargar versiones automáticamente."""
+    self.dl_selected_project_id = int(project_id)
+    self.dl_selected_version_id = 0
+
+    # Cargar versiones del proyecto
+    versions = await api_client.get_versions(project_id=self.dl_selected_project_id)
+    self.dl_versions = versions
+
+# Cargar paquetes (al seleccionar versión)
+@rx.event
+async def dl_set_selected_version(self, version_id: str):
+    """Al seleccionar versión, cargar paquetes disponibles."""
+    self.dl_selected_version_id = int(version_id)
+
+    # Cargar paquetes
+    await self.dl_load_packages()
+```
+
+**REGLA:** Cada selector DEBE resetear los selectores dependientes cuando cambia.
+
+### 30.10. Descarga de Archivos (Streaming)
+
+#### Endpoint de Descarga en Trainer
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from pathlib import Path
+
+@app.get("/trainer/entrenamientos/{id_entrenamiento}/autonomous/package")
+def descargar_paquete_autonomo(
+    id_entrenamiento: int,
+    client_app: str = Depends(get_client_app)
+) -> FileResponse:
+    """Descarga paquete ZIP del modelo GGUF.
+
+    CRÍTICO:
+    - Verificar que el archivo existe
+    - Usar FileResponse para streaming
+    - Incluir headers correctos (Content-Disposition)
+    - Manejar errores (archivo no encontrado)
+    """
+    # 1. Obtener package_path de la BD
+    package_path = get_package_path_from_db(id_entrenamiento)
+
+    if not package_path:
+        raise HTTPException(404, "No se encontró paquete para entrenamiento {id}")
+
+    # 2. Verificar que el archivo existe
+    package_file = Path(package_path)
+    if not package_file.exists():
+        raise HTTPException(404, f"Archivo no encontrado: {package_path}")
+
+    # 3. Devolver FileResponse
+    return FileResponse(
+        path=str(package_file),
+        filename=package_file.name,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{package_file.name}"'
+        }
+    )
+```
+
+#### Descarga desde Backoffice
+
+```python
+@rx.event
+async def dl_download_package(self, id_entrenamiento: int):
+    """Descarga paquete desde el backoffice."""
+    self.dl_downloading = True
+
+    try:
+        # 1. Obtener bytes del paquete
+        package_bytes = await api_client.download_autonomous_package(id_entrenamiento)
+
+        # 2. Preparar para descarga en navegador
+        filename = f"ENT{id_entrenamiento}_modelo_autonomo.zip"
+
+        # 3. Trigger descarga usando rx.download
+        return rx.download(data=package_bytes, filename=filename)
+
+    except Exception as e:
+        return rx.toast.error(f"Error descargando: {e}")
+
+    finally:
+        self.dl_downloading = False
+```
+
+**IMPORTANTE:** Usar `rx.download()` para trigger descarga en navegador desde Reflex.
+
+### 30.11. Manejo de Errores (OBLIGATORIO)
+
+#### En Endpoints
+
+```python
+@app.post("/trainer/entrenamientos")
+async def crear_entrenamiento(data: dict) -> dict:
+    """PATRÓN OBLIGATORIO: Try/Except en todos los endpoints."""
+    logger = logging.getLogger("trainer_api")
+
+    try:
+        logger.info(f"[ENTRENAMIENTO] Iniciando entrenamiento {data}")
+
+        # Lógica del endpoint
+        result = process_training(data)
+
+        logger.info(f"[ENTRENAMIENTO] Completado exitosamente")
+        return {"success": True, "data": result}
+
+    except ValueError as e:
+        logger.error(f"[ENTRENAMIENTO] Error de validación: {e}")
+        raise HTTPException(400, f"Datos inválidos: {e}")
+
+    except Exception as e:
+        logger.error(f"[ENTRENAMIENTO] Error inesperado: {e}", exc_info=True)
+        raise HTTPException(500, f"Error interno: {e}")
+```
+
+#### Logging Obligatorio
+
+1. ✅ **INFO:** Inicio y fin de operaciones importantes
+2. ✅ **ERROR:** Todos los errores con `exc_info=True`
+3. ✅ **DEBUG:** Detalles de proceso (opcional en producción)
+4. ✅ **Prefijo:** Usar `[COMPONENTE]` para facilitar búsqueda en logs
+
+### 30.12. Testing de Entrenamientos
+
+#### Tests Obligatorios
+
+```python
+import pytest
+from unittest.mock import patch, MagicMock
+
+def test_crear_entrenamiento_rag(monkeypatch):
+    """Test de creación de entrenamiento RAG."""
+    # 1. Mock de servicios externos
+    monkeypatch.setenv("STORAGE_MODE", "mock")
+
+    # 2. Mock de base de datos
+    mock_db = MagicMock()
+    mock_db.execute.return_value.scalar.return_value = 1
+
+    with patch("trainer.get_db_connection", return_value=mock_db):
+        # 3. Ejecutar función
+        result = crear_entrenamiento(
+            id_organizacion=1,
+            id_proyecto=1,
+            id_version=2
+        )
+
+        # 4. Verificar resultado
+        assert result["success"] is True
+        assert result["id_entrenamiento"] == 1
+
+        # 5. Verificar que se crearon 16 subfases
+        assert mock_db.execute.call_count >= 16
+
+def test_endpoint_descarga_package_not_found(client):
+    """Test de descarga de paquete inexistente."""
+    response = client.get("/trainer/entrenamientos/999/autonomous/package")
+
+    assert response.status_code == 404
+    assert "No se encontró paquete" in response.json()["detail"]
+
+def test_polling_progress_updates(monkeypatch):
+    """Test de polling de progreso."""
+    mock_progress = {
+        "training_mode": "test",
+        "subphases": [{"subfase_key": "6.1", "status": "completed"}],
+        "summary": {"total": 20, "completed": 1}
+    }
+
+    with patch("api_client.get_autonomous_training_progress", return_value=mock_progress):
+        # Simular polling
+        progress = poll_training_progress(id_entrenamiento=1)
+
+        assert progress["training_mode"] == "test"
+        assert len(progress["subphases"]) == 1
+```
+
+### 30.13. Checklist de Implementación
+
+Antes de considerar completa una funcionalidad de entrenamientos:
+
+#### Backend (Trainer/Broker/Middleware/Core)
+
+- [ ] Endpoints implementados en todas las capas necesarias
+- [ ] Validación de permisos en Middleware
+- [ ] Foreign keys y constraints en tablas
+- [ ] Logging INFO en inicio/fin de operaciones
+- [ ] Logging ERROR con exc_info=True
+- [ ] Try/Except en todos los endpoints
+- [ ] URL encoding de passwords en conexiones DB
+- [ ] Paths usando funciones helper (no hardcoded)
+- [ ] Verificación de existencia de archivos antes de usar
+- [ ] Response con formato consistente (success, data/error)
+
+#### Frontend (Backoffice)
+
+- [ ] State variables con prefijos claros (ent_, dl_, etc.)
+- [ ] Background events con @rx.event(background=True)
+- [ ] Yield en background tasks para actualizar UI
+- [ ] Control de parada en polling (flag boolean)
+- [ ] Error handling en todos los handlers
+- [ ] Toasts de feedback (success/error)
+- [ ] Loading states durante operaciones async
+- [ ] Validación OTP si identity_type_id in (1, 2)
+- [ ] Selectores en cascada con reseteo de dependientes
+- [ ] Descarga usando rx.download() con bytes
+
+#### Base de Datos
+
+- [ ] Tablas creadas con schema correcto
+- [ ] Foreign keys configuradas
+- [ ] Índices en columnas de búsqueda frecuente
+- [ ] Migración SQL documentada
+- [ ] Verificación de integridad referencial
+
+#### Documentación
+
+- [ ] README.md actualizado con nueva funcionalidad
+- [ ] AGENTS.md con reglas específicas
+- [ ] Docstrings en español en todas las funciones
+- [ ] Comentarios en código complejo
+- [ ] Ejemplos de uso en documentación
+
+#### Testing
+
+- [ ] Tests unitarios con coverage > 80%
+- [ ] Tests de integración para endpoints
+- [ ] Tests E2E documentados
+- [ ] Mocks de servicios externos (STORAGE_MODE=mock)
+- [ ] Verificación de casos de error
+
+### 30.14. Problemas Comunes y Soluciones
+
+#### Problema 1: Import Error `_build_db_url`
+
+**Error:** `cannot import name '_build_db_url' from 'autonomous_training_service'`
+
+**Causa:** Nombre incorrecto de función (debería ser `_get_db_url`)
+
+**Solución:**
+```python
+# ❌ INCORRECTO
+from autonomous_training_service import _build_db_url
+db_url = _build_db_url()
+
+# ✅ CORRECTO
+from autonomous_training_service import _get_db_url
+db_url = _get_db_url()
+```
+
+#### Problema 2: Error de Conexión DB con Password
+
+**Error:** `Can't connect to MySQL server on 'dminP@ss@localhost'`
+
+**Causa:** Password contiene '@' sin encodear
+
+**Solución:** Ver sección 30.6 (URL Encoding)
+
+#### Problema 3: Polling No Actualiza UI
+
+**Error:** Background task corre pero UI no se actualiza
+
+**Causa:** Falta `yield` en background event
+
+**Solución:**
+```python
+# ❌ INCORRECTO
+async def poll_progress(self):
+    while True:
+        progress = await api.get_progress()
+        self.progress = progress  # No actualiza UI
+
+# ✅ CORRECTO
+async def poll_progress(self):
+    while True:
+        progress = await api.get_progress()
+        yield State.set_progress(progress)  # yield es OBLIGATORIO
+```
+
+#### Problema 4: Archivo ZIP No Se Descarga
+
+**Error:** Descarga no inicia en navegador
+
+**Causa:** No usar `rx.download()` o formato incorrecto
+
+**Solución:**
+```python
+# ✅ CORRECTO
+package_bytes = await api_client.download_package(id)
+return rx.download(data=package_bytes, filename="modelo.zip")
+```
+
+#### Problema 5: Servicios con Código Desactualizado
+
+**Error:** Endpoints devuelven 404 después de agregar nuevos
+
+**Causa:** Servicios no reiniciados después de cambios en código
+
+**Solución:**
+```bash
+# Reiniciar servicios modificados
+cd src/apps/4_trainer && ./run.sh
+cd src/apps/8_service_backend && ./run.sh
+cd src/apps/7_service_frontend && ./run.sh
+```
+
+### 30.15. Referencias
+
+- **README.md:** Sección "Sistema de Entrenamientos y Descargas de Modelos LLM"
+- **TESTING_E2E_ENTRENAMIENTOS.md:** Documento completo de testing E2E
+- **GUIA_TESTING_MANUAL.md:** Guía paso a paso para testing de UI
+- **src/apps/4_trainer/AUTONOMOUS_TRAINING_SYSTEM.md:** Documentación técnica del trainer
+- **src/apps/4_trainer/autonomous_training/:** Código del sistema autónomo
+
+---

@@ -578,6 +578,64 @@ class BrokerBackendRouter:
                 "No se pudo enviar la solicitud de entrenamiento autónomo al trainer"
             ) from exc
 
+    def get_autonomous_training_progress(self, id_entrenamiento: int) -> dict[str, Any]:
+        """Consulta el progreso del entrenamiento autónomo (fases 6-9).
+
+        Args:
+            id_entrenamiento: ID del entrenamiento autónomo a consultar
+
+        Returns:
+            Diccionario con success y data (subphases del entrenamiento autónomo)
+        """
+        client = self._ensure_trainer_client()
+        try:
+            return client.get_autonomous_training_progress(id_entrenamiento)
+        except TrainerBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo consultar el progreso del entrenamiento autónomo"
+            ) from exc
+
+    def download_autonomous_package(self, id_entrenamiento: int):
+        """Descarga el paquete ZIP del modelo autónomo generado.
+
+        Args:
+            id_entrenamiento: ID del entrenamiento autónomo
+
+        Returns:
+            httpx.Response con el contenido del archivo ZIP
+        """
+        client = self._ensure_trainer_client()
+        try:
+            return client.download_autonomous_package(id_entrenamiento)
+        except TrainerBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo descargar el paquete del modelo autónomo"
+            ) from exc
+
+    def list_autonomous_packages(
+        self,
+        id_organizacion: int | None = None,
+        id_proyecto: int | None = None,
+        id_version: int | None = None,
+    ) -> dict[str, Any]:
+        """Lista los paquetes autónomos disponibles para descargar.
+
+        Args:
+            id_organizacion: Filtrar por organización (opcional)
+            id_proyecto: Filtrar por proyecto (opcional)
+            id_version: Filtrar por versión (opcional)
+
+        Returns:
+            Diccionario con success y lista de paquetes
+        """
+        client = self._ensure_trainer_client()
+        try:
+            return client.list_autonomous_packages(id_organizacion, id_proyecto, id_version)
+        except TrainerBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo listar los paquetes autónomos"
+            ) from exc
+
     # ========================================================================
     # Gestión de Proyectos (enrutados a Backend Core)
     # ========================================================================

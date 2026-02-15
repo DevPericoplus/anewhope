@@ -4427,3 +4427,16 @@ except Exception as e:
     print(f"❌ Error al registrar ruta /change_password: {e}")
     import traceback
     traceback.print_exc()
+
+try:
+    from pages.model_downloads import model_downloads_page
+    app.add_page(model_downloads_page, route="/model_downloads", title="Myllm - Descargas de Modelos")
+    print("✅ Ruta /model_downloads registrada exitosamente")
+except ImportError as e:
+    print(f"⚠️ Warning: Could not import model_downloads_page: {e}")
+    import traceback
+    traceback.print_exc()
+except Exception as e:
+    print(f"❌ Error al registrar ruta /model_downloads: {e}")
+    import traceback
+    traceback.print_exc()

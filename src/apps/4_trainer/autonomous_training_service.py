@@ -91,12 +91,18 @@ def _get_db_url() -> str:
     Returns:
         URL de conexión: mysql+pymysql://user:pass@host/database
     """
+    from urllib.parse import quote_plus
+
     db_user = get_protected_value("mariadb_admin_user")
     db_pass = get_protected_value("mariadb_admin_password")
     db_host = get_env_value("mariadb_host", "localhost")
     db_name = get_env_value("mariadb_projects_database", "myllm_projects_db")
 
-    return f"mysql+pymysql://{db_user}:{db_pass}@{db_host}/{db_name}"
+    # URL-encode user and password to handle special characters like @
+    db_user_encoded = quote_plus(db_user)
+    db_pass_encoded = quote_plus(db_pass)
+
+    return f"mysql+pymysql://{db_user_encoded}:{db_pass_encoded}@{db_host}/{db_name}"
 
 
 def _get_training_mode() -> str:
