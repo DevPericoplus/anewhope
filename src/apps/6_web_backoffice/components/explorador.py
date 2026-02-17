@@ -162,6 +162,7 @@ class ExploradorState(SharedSessionState):
 
     # Contexto de proyecto actual
     id_proyecto: int = 0
+    id_organizacion: int = 0  # Alias para organization_id (mantener compatibilidad)
 
     # Estados de todas las versiones del proyecto
     # Estructura: {"v001": {state, protected, size, final_c, final_i}, "v002": {...}}
@@ -230,24 +231,52 @@ class ExploradorState(SharedSessionState):
     # Métodos de Inicialización (A IMPLEMENTAR EN PASO 6.4b)
     # ========================================================================
 
-    def init_page(self, project_id: int):
+    def init_page(
+        self,
+        project_id: int = 0,
+        user_id: int = 0,
+        identity_type_id: int = 0,
+        org_id: int = 0,
+        access_token: str = "",
+        session_token: str = "",
+    ):
         """Inicializa el explorador para un proyecto (con todas sus versiones).
 
         Args:
-            project_id: ID del proyecto
+            project_id: ID del proyecto a cargar (con todas sus versiones)
+            user_id: ID del usuario (opcional, si no se pasa intenta obtenerlo del state)
+            identity_type_id: Tipo de identidad del usuario (opcional)
+            org_id: ID de la organización (opcional)
+            access_token: Token de acceso (opcional)
+            session_token: Token de sesión (opcional)
         """
         logger.info(
             "Inicializando explorador: project_id=%s, user_id=%s",
             project_id,
-            self.user_id,
+            user_id if user_id > 0 else self.user_id,
         )
 
-        # Guardar contexto
-        self.id_proyecto = project_id
+        # Actualizar contexto si se proporcionan los parámetros
+        if project_id > 0:
+            self.id_proyecto = project_id
+        if user_id > 0:
+            self.user_id = user_id
+        if identity_type_id > 0:
+            self.identity_type_id = identity_type_id
+        if org_id > 0:
+            self.organization_id = org_id
+            self.id_organizacion = org_id  # Mantener ambas sincronizadas
+        if access_token:
+            self.access_token = access_token
+        if session_token:
+            self.session_token = session_token
 
         # Cargar datos desde APIs (todas las versiones del proyecto)
         # load_from_api() ya llama internamente a interpretacion_estados()
-        self.load_from_api()
+        if self.id_proyecto > 0 and self.access_token and self.session_token:
+            self.load_from_api()
+        else:
+            logger.warning("Faltan parámetros para cargar desde API")
 
         logger.info("Explorador inicializado correctamente")
         yield  # Actualizar UI
@@ -316,19 +345,21 @@ class ExploradorState(SharedSessionState):
         - prj_folder: "PRJ{id_proyecto:05d}"      (ej: "PRJ00001")
         """
         try:
-            # Construir nombres de carpetas
-            org_folder = f"ORG{str(self.organization_id).zfill(5)}"
+            # Construir nombres de carpetas - usar la variable que esté establecida
+            org_id_to_use = self.id_organizacion if self.id_organizacion > 0 else self.organization_id
+            org_folder = f"ORG{str(org_id_to_use).zfill(5)}"
             prj_folder = f"PRJ{str(self.id_proyecto).zfill(5)}"
 
             logger.info(
-                "Cargando todas las versiones del proyecto: org=%s, prj=%s",
+                "Cargando todas las versiones del proyecto: org=%s, prj=%s (org_id=%s)",
                 org_folder,
                 prj_folder,
+                org_id_to_use,
             )
 
             # Usar el adaptador que carga todas las versiones
             response = fmanagement_list_all_project_versions(
-                org_id=self.organization_id,
+                org_id=org_id_to_use,
                 project_id=self.id_proyecto,
                 org_folder=org_folder,
                 prj_folder=prj_folder,
@@ -1324,7 +1355,7 @@ class ExploradorState(SharedSessionState):
                 depth=depth,
                 parent_id=parent_id,
                 is_expanded=depth < 1,
-                has_children=is_dir and "items" in item and len(item["items"]) > 0,
+                has_children=is_dir and "items" in item and item["items"] is not None and len(item["items"]) > 0,
                 is_visible=True,
                 item_type="folder" if is_dir else "file",
                 is_protected=is_protected,
@@ -1335,8 +1366,8 @@ class ExploradorState(SharedSessionState):
 
             self.items.append(new_item)
 
-            # Recursión para hijos
-            if is_dir and "items" in item:
+            # Recursión para hijos (solo si items no es None)
+            if is_dir and "items" in item and item["items"] is not None:
                 self._flatten_recursive(item["items"], depth + 1, item_id)
 
     def _update_visibility(self):

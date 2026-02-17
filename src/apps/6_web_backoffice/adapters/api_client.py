@@ -1365,6 +1365,68 @@ def get_project_versions(
         return {"versiones": [], "total": 0}
 
 
+def create_project(
+    nombre: str,
+    descripcion: str,
+    id_organizacion: int,
+    id_flujo: int = 1,
+    active: bool = True,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Crea un nuevo proyecto.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+
+    Args:
+        nombre: Nombre del proyecto
+        descripcion: Descripción del proyecto
+        id_organizacion: ID de la organización
+        id_flujo: ID del flujo de trabajo (default: 1 = Propuesta Cliente)
+        active: Si el proyecto está activo (default: True)
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+
+    Returns:
+        {"success": bool, "project_id": int, "nombre": str, "mensaje": str | None}
+    """
+    url = f"{_get_middleware_base_url()}/projects"
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+
+    payload = json.dumps({
+        "nombre": nombre,
+        "descripcion": descripcion,
+        "id_organizacion": id_organizacion,
+        "id_flujo": id_flujo,
+        "active": active,
+    }).encode("utf-8")
+
+    request = urllib.request.Request(url, data=payload, headers=request_headers, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        error_msg = f"Error HTTP desde middleware: {exc.code}"
+        try:
+            error_payload = exc.read().decode("utf-8")
+            error_msg = f"{error_msg} - {error_payload}"
+        except Exception:
+            pass
+        print(error_msg)
+        return {"success": False, "mensaje": error_msg}
+    except Exception as exc:
+        print(f"Error creando proyecto: {exc}")
+        return {"success": False, "mensaje": str(exc)}
+
+
 def create_project_version(
     project_id: int,
     organization_id: int,
@@ -1373,15 +1435,15 @@ def create_project_version(
 ) -> dict[str, Any]:
     """
     Crea una nueva versión para un proyecto.
-    
+
     Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
-    
+
     Args:
         project_id: ID del proyecto
         organization_id: ID de la organización
         access_token: Token de acceso JWT
         session_token: Token de sesión JWT
-        
+
     Returns:
         {"success": bool, "version": VersionDto | None, "mensaje": str | None}
     """
@@ -1996,8 +2058,9 @@ def fmanagement_list_all_project_versions(
                     try:
                         version_id = int(version_name[1:])  # Convertir "v001" a 1
 
-                        # Calcular tamaño total de esta versión
-                        version_size = _calculate_structure_size(version_item.get("items", []))
+                        # Calcular tamaño total de esta versión (manejar None)
+                        version_items = version_item.get("items") or []
+                        version_size = _calculate_structure_size(version_items)
 
                         # Actualizar size_bytes en la BD
                         update_result = update_version_state(

@@ -21,6 +21,7 @@ from adapters.api_client import (
     actualizar_tecnologia,
     asignar_tecnologia,
     create_organization_user,
+    create_project,
     create_project_version,
     create_version_full,
     ensure_valid_tokens,
@@ -42,6 +43,7 @@ from adapters.api_client import (
     update_user_status,
 )
 from pages.flujos import FlujosState, flujos_diagram, load_flujos_content
+from pages.model_downloads import ModelDownloadState, model_downloads_panel
 from pages.organizacion import load_organizacion_content
 from pages.proyecciones import load_proyecciones_content
 from pages.tecnologias import load_tecnologias_content
@@ -249,7 +251,15 @@ class State(SharedSessionState):
     create_user_error: str = ""
     create_user_success: str = ""
     is_creating_user: bool = False
-    
+
+    # Estado del modal de creación de proyecto
+    show_create_project_modal: bool = False
+    new_project_name: str = ""
+    new_project_description: str = ""
+    create_project_error: str = ""
+    create_project_success: str = ""
+    is_creating_project: bool = False
+
     # Estado para gestión de tickets de soporte
     org_tickets: list[dict] = []  # Lista de tickets de la organización
     
@@ -1330,10 +1340,77 @@ class State(SharedSessionState):
             print(f"[ERROR] load_org_projects: {type(e).__name__}: {e}")
             self.org_projects = []
     
+    def open_create_project_modal(self):
+        """Abre el modal para crear un nuevo proyecto."""
+        self.new_project_name = ""
+        self.new_project_description = ""
+        self.create_project_error = ""
+        self.create_project_success = ""
+        self.show_create_project_modal = True
+
+    def close_create_project_modal(self):
+        """Cierra el modal de creación de proyecto."""
+        self.show_create_project_modal = False
+        self.create_project_error = ""
+        self.create_project_success = ""
+
+    def set_new_project_name(self, value: str):
+        """Actualiza el nombre del nuevo proyecto."""
+        self.new_project_name = value
+
+    def set_new_project_description(self, value: str):
+        """Actualiza la descripción del nuevo proyecto."""
+        self.new_project_description = value
+
+    def save_new_project(self):
+        """Guarda el nuevo proyecto con el flujo 'Propuesta Cliente' (id_flujo=1)."""
+        # Validaciones
+        if not self.new_project_name.strip():
+            self.create_project_error = "El nombre del proyecto es obligatorio"
+            return
+
+        self.create_project_error = ""
+        self.is_creating_project = True
+
+        # Obtener organization_id de la sesión
+        org_id = self.organization_id
+        if org_id <= 0 and self.access_token:
+            org_id = self._extract_org_id_from_token(self.access_token)
+
+        if org_id <= 0:
+            self.create_project_error = "No se pudo determinar la organización"
+            self.is_creating_project = False
+            return
+
+        # Llamar al API para crear el proyecto con id_flujo=1 (Propuesta Cliente)
+        result = create_project(
+            nombre=self.new_project_name.strip(),
+            descripcion=self.new_project_description.strip(),
+            id_organizacion=org_id,
+            id_flujo=1,  # IMPORTANTE: Siempre crear con "Propuesta Cliente"
+            active=True,
+            access_token=self.access_token,
+            session_token=self.session_token,
+        )
+
+        self.is_creating_project = False
+
+        if result.get("success"):
+            self.create_project_success = f"Proyecto '{self.new_project_name}' creado exitosamente con estado 'Propuesta Cliente'"
+            # Limpiar campos
+            self.new_project_name = ""
+            self.new_project_description = ""
+            # Cerrar modal
+            self.show_create_project_modal = False
+            # Recargar lista de proyectos
+            self.load_org_projects()
+        else:
+            self.create_project_error = result.get("mensaje", "Error al crear el proyecto")
+
     def create_project(self):
         """Abre el formulario para crear un nuevo proyecto."""
-        # TODO: Implementar navegación a formulario de creación
-        print("[DEBUG] Crear proyecto solicitado")
+        # Mantener este método por compatibilidad con el botón existente
+        self.open_create_project_modal()
     
     def lock_project(self, project_id: int):
         """Bloquea un proyecto (active=false).
@@ -1731,8 +1808,13 @@ class State(SharedSessionState):
 
                 # Inicializar explorador con el proyecto (mostrará todas las versiones)
                 if self.proyecciones_project_id > 0:
-                    return ExploradorState.reload_project(
-                        project_id=self.proyecciones_project_id
+                    return ExploradorState.init_page(
+                        project_id=self.proyecciones_project_id,
+                        user_id=self.user_id,
+                        identity_type_id=self.identity_type_id,
+                        org_id=self.organization_id,
+                        access_token=self.access_token,
+                        session_token=self.session_token,
                     )
 
     def create_new_version(self):
@@ -1768,9 +1850,15 @@ class State(SharedSessionState):
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
-            
+
+            print(f"[DEBUG] Resultado de create_version_full: {result}")
+            print(f"[DEBUG] Tipo de result: {type(result)}")
+            print(f"[DEBUG] Keys en result: {result.keys() if isinstance(result, dict) else 'N/A'}")
+            print(f"[DEBUG] version_id en result: {result.get('version_id') if isinstance(result, dict) else 'N/A'}")
+
             if result.get("success"):
                 new_version_id = result.get("version_id", 0)
+                print(f"[DEBUG] new_version_id extraído: {new_version_id} (tipo: {type(new_version_id)})")
                 self.proyecciones_success = f"✅ Versión {version_name} creada correctamente (ID: {new_version_id})"
                 # Recargar versiones
                 self.load_proyecciones_versions()
@@ -1779,11 +1867,17 @@ class State(SharedSessionState):
                 self.proyecciones_version_folder = version_name
 
                 # Recargar explorador del proyecto (mostrará todas las versiones incluyendo la nueva)
-                return ExploradorState.reload_project(
-                    project_id=self.proyecciones_project_id
+                yield ExploradorState.init_page(
+                    project_id=self.proyecciones_project_id,
+                    user_id=self.user_id,
+                    identity_type_id=self.identity_type_id,
+                    org_id=self.organization_id,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
                 )
             else:
-                self.proyecciones_error = result.get("mensaje", "Error al crear versión")
+                # El backend devuelve "message", no "mensaje"
+                self.proyecciones_error = result.get("message") or result.get("mensaje") or "Error al crear versión"
         except Exception as e:
             print(f"[ERROR] Error creando versión completa: {type(e).__name__}: {e}")
             self.proyecciones_error = f"Error creando versión: {e}"
@@ -3607,6 +3701,48 @@ class State(SharedSessionState):
         self.ent_modal_open = False
         self.ent_modal_warnings = []
 
+    def ent_open_modal_with_params(self, version_data: dict, params: dict):
+        """Abre el modal de entrenamiento con parámetros y datos de versión pre-cargados.
+
+        Usado para reentrenamiento desde Análisis de Resultados.
+        """
+        print(f"[DEBUG MODAL] ent_open_modal_with_params LLAMADO")
+        print(f"[DEBUG MODAL] version_data: {version_data}")
+        print(f"[DEBUG MODAL] params keys: {list(params.keys())}")
+
+        self.ent_modal_loading = False
+        self.ent_modal_warnings = []
+        self.ent_send_error = ""
+
+        # Cargar datos de la versión
+        self.ent_modal_version_data = version_data
+
+        # Flags informativos
+        self.ent_modal_es_primer = False
+        self.ent_modal_es_reentrenamiento = True
+
+        # Cargar todos los parámetros
+        self.ent_modal_chunk_size = str(params.get('chunk_size', 1000))
+        self.ent_modal_chunk_overlap = str(params.get('chunk_overlap', 200))
+        self.ent_modal_temperature = str(params.get('temperature', 0.7))
+        self.ent_modal_max_tokens = str(params.get('max_tokens', 2048))
+        self.ent_modal_distance_metric = params.get('distance_metric', 'cosine')
+        self.ent_modal_top_k = str(params.get('top_k', 5))
+        self.ent_modal_learning_rate = str(params.get('learning_rate', 0.001))
+        self.ent_modal_batch_size = str(params.get('batch_size', 32))
+        self.ent_modal_epochs = str(params.get('epochs', 10))
+        self.ent_modal_embedding_dimension = str(params.get('embedding_dimension', 768))
+        self.ent_modal_sequence_length = str(params.get('sequence_length', 512))
+        self.ent_modal_hidden_units = str(params.get('hidden_units', 256))
+        self.ent_modal_dropout_rate = str(params.get('dropout_rate', 0.1))
+        self.ent_modal_loss_function = params.get('loss_function', 'categorical_crossentropy')
+        self.ent_modal_optimizer = params.get('optimizer', 'adam')
+        self.ent_modal_model_type = params.get('model_type', 'llama3.2:latest')
+
+        # Abrir el modal
+        self.ent_modal_open = True
+        print(f"[DEBUG MODAL] ✅ Modal abierto (ent_modal_open = {self.ent_modal_open})")
+
     def _ent_validate_params(self):
         """Ejecuta validaciones no bloqueantes sobre los parámetros.
 
@@ -3736,13 +3872,17 @@ class State(SharedSessionState):
         """
         from adapters.api_client import send_entrenamiento_to_trainer
 
+        print(f"[DEBUG] ent_send_to_trainer_from_modal LLAMADO")
+        print(f"[DEBUG] ent_modal_version_data: {self.ent_modal_version_data}")
+
         # Ejecutar validaciones (warnings, no bloqueo)
         self._ent_validate_params()
 
         version_data = self.ent_modal_version_data
         if not version_data:
+            print(f"[DEBUG] ERROR: No hay version_data")
             self.ent_send_error = "No hay versión seleccionada"
-            return
+            return []
 
         state_id = version_data.get("state_id", 0)
         self.ent_sending_state_id = state_id
@@ -5576,6 +5716,118 @@ def create_user_modal() -> rx.Component:
     )
 
 
+def create_project_modal() -> rx.Component:
+    """Modal para crear un nuevo proyecto."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title(
+                rx.hstack(
+                    rx.icon("folder-plus", size=24, color=COLORS["primary"]),
+                    rx.text("Crear Nuevo Proyecto", font_weight="bold", font_size="1.3em"),
+                    spacing="3",
+                    align="center",
+                ),
+            ),
+            rx.dialog.description(
+                rx.text(
+                    "Complete los datos del nuevo proyecto. Se creará automáticamente con el estado 'Propuesta Cliente'.",
+                    color=COLORS["muted_foreground"],
+                    font_size="0.95em",
+                ),
+            ),
+            rx.vstack(
+                # Campo: Nombre del proyecto
+                rx.vstack(
+                    rx.text("Nombre del proyecto", font_weight="bold", color=COLORS["foreground"]),
+                    rx.input(
+                        placeholder="Ingrese el nombre del proyecto",
+                        value=State.new_project_name,
+                        on_change=State.set_new_project_name,
+                        width="100%",
+                        background_color=COLORS["input"],
+                        color=COLORS["foreground"],
+                        border=f"1px solid {COLORS['border']}",
+                    ),
+                    width="100%",
+                    spacing="1",
+                    align_items="flex-start",
+                ),
+                # Campo: Descripción
+                rx.vstack(
+                    rx.text("Descripción (opcional)", font_weight="bold", color=COLORS["foreground"]),
+                    rx.text_area(
+                        placeholder="Descripción del proyecto",
+                        value=State.new_project_description,
+                        on_change=State.set_new_project_description,
+                        width="100%",
+                        min_height="100px",
+                        background_color=COLORS["input"],
+                        color=COLORS["foreground"],
+                        border=f"1px solid {COLORS['border']}",
+                    ),
+                    width="100%",
+                    spacing="1",
+                    align_items="flex-start",
+                ),
+                # Mensaje de error
+                rx.cond(
+                    State.create_project_error != "",
+                    rx.text(
+                        State.create_project_error,
+                        color="red",
+                        font_size="0.9em",
+                    ),
+                ),
+                # Mensaje de éxito
+                rx.cond(
+                    State.create_project_success != "",
+                    rx.text(
+                        State.create_project_success,
+                        color=COLORS["primary"],
+                        font_size="0.9em",
+                        font_weight="bold",
+                    ),
+                ),
+                width="100%",
+                spacing="3",
+                padding_y="1em",
+            ),
+            # Botones de acción
+            rx.hstack(
+                rx.button(
+                    rx.icon("x", size=18, color=COLORS["foreground"]),
+                    rx.text("Cancelar", color=COLORS["foreground"]),
+                    on_click=State.close_create_project_modal,
+                    variant="outline",
+                    size="3",
+                    color_scheme="gray",
+                ),
+                rx.button(
+                    rx.cond(
+                        State.is_creating_project,
+                        rx.spinner(size="2"),
+                        rx.icon("save", size=18, color="black"),
+                    ),
+                    rx.text("Guardar", font_weight="bold", color="black"),
+                    on_click=State.save_new_project,
+                    background_color=COLORS["primary"],
+                    size="3",
+                    disabled=State.is_creating_project,
+                    _hover={"background_color": "#e67e00", "cursor": "pointer"},
+                ),
+                spacing="3",
+                justify="end",
+                width="100%",
+            ),
+            background_color=COLORS["card"],
+            border=f"1px solid {COLORS['border']}",
+            padding="1.5em",
+            max_width="500px",
+        ),
+        open=State.show_create_project_modal,
+    )
+
+
 def users_management_panel() -> rx.Component:
     """Panel de gestión de usuarios de la organización."""
     return rx.vstack(
@@ -5725,6 +5977,8 @@ def project_row(project: dict) -> rx.Component:
 def projects_management_panel() -> rx.Component:
     """Panel de gestión de proyectos de la organización."""
     return rx.vstack(
+        # Modal de creación de proyecto
+        create_project_modal(),
         rx.hstack(
             rx.icon("folder-kanban", size=28, color=COLORS["primary"]),
             rx.heading("Gestión de Proyectos", size="6", color=COLORS["primary"]),
@@ -10111,6 +10365,12 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
         rx.cond(
             rx.cond(is_logged_in, active_item == "informes", False),
             informes_panel(),
+            rx.box(height="0"),
+        ),
+        # Panel de descargas: visible solo en menú "descargas"
+        rx.cond(
+            rx.cond(is_logged_in, active_item == "descargas", False),
+            model_downloads_panel(),
             rx.box(height="0"),
         ),
         rx.cond(

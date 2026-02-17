@@ -122,7 +122,7 @@ class FmanagementClient:
         basepath: str = "default",
     ) -> dict[str, Any]:
         """Crea una nueva carpeta.
-        
+
         Endpoint: POST /fmo/createfolder
         """
         params = {
@@ -134,11 +134,17 @@ class FmanagementClient:
             "subfolders": subfolders,
             "identity_type_id": identity_type_id,
         }
-        
+
+        self._logger.info(f"[FmanagementClient] POST /fmo/createfolder con params: {params}")
+
         try:
             with httpx.Client(base_url=self.base_url, timeout=self.timeout) as client:
                 response = client.post("/fmo/createfolder", params=params)
-            return self._handle_response(response)
+
+            self._logger.info(f"[FmanagementClient] Respuesta de /fmo/createfolder: status={response.status_code}")
+            result = self._handle_response(response)
+            self._logger.info(f"[FmanagementClient] Resultado parseado: {result}")
+            return result
         except Exception as e:
             self._logger.error(f"Error en create_folder: {e}")
             return {"error": str(e)}
@@ -443,6 +449,9 @@ class FmanagementClient:
         )
 
         # Crear carpeta raíz de la versión
+        self._logger.info(
+            f"[FmanagementClient] Creando carpeta raíz: {orgpath}/{prjpath}/{versionpath}"
+        )
         result = self.create_folder(
             orgpath=orgpath,
             prjpath=prjpath,
@@ -453,7 +462,10 @@ class FmanagementClient:
             basepath=basepath,
         )
 
+        self._logger.info(f"[FmanagementClient] Resultado create_folder raíz: {result}")
+
         if "error" in result:
+            self._logger.error(f"[FmanagementClient] Error creando carpeta raíz: {result.get('error')}")
             return result
 
         # Crear subcarpetas base

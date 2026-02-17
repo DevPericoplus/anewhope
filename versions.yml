@@ -1,0 +1,8 @@
+# Versions of software used
+version_frontend: 0.7.1
+version_backoffice: 0.7.1
+version_middleware: 0.7.1
+version_broker: 0.7.1
+version_backend_core: 0.7.1
+version_backend_ia: 0.7.1
+version_fmanagement: 0.7.1

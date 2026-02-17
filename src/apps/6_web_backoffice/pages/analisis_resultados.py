@@ -53,6 +53,21 @@ class EstadisticaSerie(TypedDict):
     resumen: str
 
 
+class SubfaseProgreso(TypedDict):
+    """Subfase del entrenamiento."""
+    key: str
+    name: str
+    status: str
+    tiempo: str
+
+
+class FaseProgreso(TypedDict):
+    """Fase del entrenamiento."""
+    key: str
+    name: str
+    subfases: list[SubfaseProgreso]
+
+
 class AnalisisResultadosState(rx.State):
     """Estado para la página de análisis de resultados."""
 
@@ -87,6 +102,13 @@ class AnalisisResultadosState(rx.State):
     # Estadísticas
     estadisticas_series: list[EstadisticaSerie] = []
     estadisticas_error: str = ""
+
+    # Modal de progreso de reentrenamiento
+    show_progress_modal: bool = False
+    progress_training_id: int = 0
+    progress_training_seq: int = 0
+    progress_phases: list[FaseProgreso] = []
+    progress_polling_active: bool = False
 
     @rx.var
     def org_options(self) -> list[str]:
@@ -572,19 +594,81 @@ Overall Quality: {round(overall_quality * 100, 1)}%"""
         self.show_suggestions_modal = False
         self.suggestions_data = None
 
+    def cerrar_modal_progreso(self):
+        """Cierra el modal de progreso."""
+        self.show_progress_modal = False
+        self.progress_polling_active = False
+        self.progress_phases = []
+
+    def _init_progress_phases(self):
+        """Inicializa las fases del entrenamiento."""
+        self.progress_phases = [
+            {"key": "2", "name": "Validación", "subfases": [
+                {"key": "2.1", "name": "Verificar directorio", "status": "pending", "tiempo": ""},
+                {"key": "2.2", "name": "Escaneo de archivos", "status": "pending", "tiempo": ""},
+                {"key": "2.3", "name": "Clasificación por tipo", "status": "pending", "tiempo": ""},
+                {"key": "2.4", "name": "Validación de contenido", "status": "pending", "tiempo": ""},
+            ]},
+            {"key": "3", "name": "Preparación", "subfases": [
+                {"key": "3.1", "name": "Carga de documentos", "status": "pending", "tiempo": ""},
+                {"key": "3.2", "name": "Chunking", "status": "pending", "tiempo": ""},
+                {"key": "3.3", "name": "Generación de embeddings", "status": "pending", "tiempo": ""},
+            ]},
+            {"key": "4", "name": "Configuración", "subfases": [
+                {"key": "4.1", "name": "Conexión ChromaDB", "status": "pending", "tiempo": ""},
+                {"key": "4.2", "name": "Crear colección", "status": "pending", "tiempo": ""},
+                {"key": "4.3", "name": "Inserción de documentos", "status": "pending", "tiempo": ""},
+                {"key": "4.4", "name": "Verificación de integridad", "status": "pending", "tiempo": ""},
+            ]},
+            {"key": "5", "name": "Entrenamiento", "subfases": [
+                {"key": "5.1", "name": "Obtener nombres", "status": "pending", "tiempo": ""},
+                {"key": "5.2", "name": "Generar Modelfile", "status": "pending", "tiempo": ""},
+                {"key": "5.3", "name": "Guardar Modelfile", "status": "pending", "tiempo": ""},
+                {"key": "5.4", "name": "Registrar en Ollama", "status": "pending", "tiempo": ""},
+                {"key": "5.5", "name": "Test de verificación", "status": "pending", "tiempo": ""},
+            ]},
+        ]
+
     @rx.event(background=True)
-    async def preparar_reentrenamiento(self, id_sugerencia: int):
-        """Prepara el reentrenamiento con parámetros sugeridos."""
+    async def poll_training_progress(self):
+        """Polling del progreso del entrenamiento."""
+        import asyncio
+        import sys
+
+        # Wait for training_id to be set (max 5 seconds)
+        for i in range(10):
+            async with self:
+                training_id = self.progress_training_id
+                if training_id > 0:
+                    break
+            print(f"[POLLING PROGRESS] Esperando training_id... intento {i+1}", file=sys.stderr, flush=True)
+            await asyncio.sleep(0.5)
+
         async with self:
+            training_id = self.progress_training_id
+
+        print(f"[POLLING PROGRESS] Iniciando polling para training_id={training_id}", file=sys.stderr, flush=True)
+
+        if training_id == 0:
+            print(f"[POLLING PROGRESS] ❌ training_id sigue en 0, abortando", file=sys.stderr, flush=True)
+            return
+
+        while True:
+            async with self:
+                if not self.progress_polling_active:
+                    print(f"[POLLING PROGRESS] Detenido por polling_active=False", file=sys.stderr, flush=True)
+                    break
+
+                training_id = self.progress_training_id
+
             try:
                 parent_state = await self.get_state(SharedSessionState)
                 access_token = parent_state.access_token
                 session_token = parent_state.session_token
 
-                # Obtener parámetros sugeridos del backend
                 async with httpx.AsyncClient() as client:
                     response = await client.get(
-                        f"{CORE_URL}/analysis/suggestions/{id_sugerencia}/params",
+                        f"{CORE_URL}/training/entrenamientos/{training_id}/progress",
                         headers={
                             "Authorization": f"Bearer {access_token}",
                             "X-Session-Token": session_token
@@ -593,18 +677,167 @@ Overall Quality: {round(overall_quality * 100, 1)}%"""
                     )
 
                     if response.status_code == 200:
-                        self.retrain_params = response.json()
-                        self.id_sugerencia_to_apply = id_sugerencia
-                        self.show_retrain_modal = True
-                        self.show_suggestions_modal = False  # Cerrar modal de sugerencias
+                        data = response.json()
+                        estado = data.get('estado', '')
+                        phases_data = data.get('phases', {})
+
+                        print(f"[POLLING PROGRESS] Estado={estado}, Fases={len(phases_data)}", file=sys.stderr, flush=True)
+
+                        async with self:
+                            # Actualizar subfases
+                            for phase in self.progress_phases:
+                                phase_key = phase['key']
+                                if phase_key in phases_data:
+                                    phase_info = phases_data[phase_key]
+                                    for subfase in phase['subfases']:
+                                        subfase_key = subfase['key']
+                                        if subfase_key in phase_info.get('subfases', {}):
+                                            subfase_info = phase_info['subfases'][subfase_key]
+                                            subfase['status'] = subfase_info.get('status', 'pending')
+                                            subfase['tiempo'] = subfase_info.get('elapsed_time', '')
+
+                            # Si está completado o en error, detener polling
+                            if estado in ['completado', 'error', 'cancelado']:
+                                self.progress_polling_active = False
+
+                        yield
+
                     else:
-                        self.message = f"Error obteniendo parámetros: {response.status_code}"
-                        self.message_type = "error"
+                        print(f"[POLLING PROGRESS] Error status={response.status_code}", file=sys.stderr, flush=True)
 
             except Exception as e:
-                logger.error(f"Error preparando reentrenamiento: {e}")
+                print(f"[POLLING PROGRESS] Exception: {e}", file=sys.stderr, flush=True)
+
+            await asyncio.sleep(2)
+
+    def iniciar_reentrenamiento(self, id_sugerencia: int):
+        """Inicia el proceso de reentrenamiento (wrapper para encadenar eventos)."""
+        # Launch training first, then start polling
+        return [
+            type(self).reentrenar_directo(id_sugerencia),
+            type(self).poll_training_progress,
+        ]
+
+    @rx.event(background=True)
+    async def reentrenar_directo(self, id_sugerencia: int):
+        """Lanza reentrenamiento directamente con los parámetros sugeridos."""
+        import sys
+
+        print(f"\n[REENTRENAR DIRECTO] Iniciando con id_sugerencia={id_sugerencia}", file=sys.stderr, flush=True)
+
+        async with self:
+            try:
+                parent_state = await self.get_state(SharedSessionState)
+                access_token = parent_state.access_token
+                session_token = parent_state.session_token
+
+                # Obtener parámetros sugeridos
+                async with httpx.AsyncClient() as client:
+                    # Get params
+                    response_params = await client.get(
+                        f"{CORE_URL}/analysis/suggestions/{id_sugerencia}/params",
+                        headers={
+                            "Authorization": f"Bearer {access_token}",
+                            "X-Session-Token": session_token
+                        },
+                        timeout=30.0
+                    )
+
+                    if response_params.status_code != 200:
+                        self.message = f"Error obteniendo parámetros: {response_params.status_code}"
+                        self.message_type = "error"
+                        return
+
+                    params = response_params.json()
+
+                    # Get metadata (org/project/version)
+                    response_meta = await client.get(
+                        f"{CORE_URL}/analysis/suggestions/{id_sugerencia}",
+                        headers={
+                            "Authorization": f"Bearer {access_token}",
+                            "X-Session-Token": session_token
+                        },
+                        timeout=10.0
+                    )
+
+                    if response_meta.status_code != 200:
+                        self.message = f"Error obteniendo metadata: {response_meta.status_code}"
+                        self.message_type = "error"
+                        return
+
+                    metadata = response_meta.json()
+
+                    # Preparar payload para el trainer
+                    payload = {
+                        "id_organizacion": metadata['id_organizacion'],
+                        "id_proyecto": metadata['id_proyecto'],
+                        "id_version": metadata['id_version'],
+                        "params": {
+                            "chunk_size": params['chunk_size'],
+                            "chunk_overlap": params['chunk_overlap'],
+                            "temperature": params['temperature'],
+                            "max_tokens": params['max_tokens'],
+                            "distance_metric": params['distance_metric'],
+                            "top_k": params['top_k'],
+                            "learning_rate": params['learning_rate'],
+                            "batch_size": params['batch_size'],
+                            "epochs": params['epochs'],
+                            "embedding_dimension": params['embedding_dimension'],
+                            "sequence_length": params['sequence_length'],
+                            "hidden_units": params['hidden_units'],
+                            "dropout_rate": params['dropout_rate'],
+                            "loss_function": params['loss_function'],
+                            "optimizer": params['optimizer'],
+                            "model_type": params.get('model_type', 'llama3.2:latest')
+                        }
+                    }
+
+                    print(f"[REENTRENAR DIRECTO] Enviando entrenamiento al middleware", file=sys.stderr, flush=True)
+
+                    # Enviar al middleware
+                    response_train = await client.post(
+                        f"{MIDDLEWARE_URL}/training/entrenamientos",
+                        headers={
+                            "Authorization": f"Bearer {access_token}",
+                            "X-Session-Token": session_token
+                        },
+                        json=payload,
+                        timeout=30.0
+                    )
+
+                    print(f"[REENTRENAR DIRECTO] Response status: {response_train.status_code}", file=sys.stderr, flush=True)
+
+                    if response_train.status_code in [200, 201]:
+                        result = response_train.json()
+                        id_ent = result.get('id_entrenamiento', 0)
+                        seq = result.get('numero_secuencia', 0)
+                        self.message = f"✅ Entrenamiento #{seq} iniciado correctamente (ID: {id_ent})"
+                        self.message_type = "success"
+                        print(f"[REENTRENAR DIRECTO] ✅ Entrenamiento iniciado: ID={id_ent}, SEQ={seq}", file=sys.stderr, flush=True)
+
+                        # Abrir modal de progreso
+                        self.progress_training_id = id_ent
+                        self.progress_training_seq = seq
+                        self.show_progress_modal = True
+                        self.progress_polling_active = True
+
+                        # Inicializar fases
+                        self._init_progress_phases()
+
+                        # Trigger a UI update
+                        yield
+                    else:
+                        error_text = response_train.text
+                        self.message = f"❌ Error enviando entrenamiento: {response_train.status_code}"
+                        self.message_type = "error"
+                        print(f"[REENTRENAR DIRECTO] ❌ Error: {self.message}", file=sys.stderr, flush=True)
+                        yield
+
+            except Exception as e:
+                logger.error(f"Error en reentrenar_directo: {e}", exc_info=True)
                 self.message = f"Error: {str(e)}"
                 self.message_type = "error"
+                print(f"[REENTRENAR DIRECTO] ❌ Excepción: {e}", file=sys.stderr, flush=True)
 
     def cerrar_modal_reentrenar(self):
         """Cierra el modal de reentrenamiento."""
@@ -875,7 +1108,7 @@ def training_row(training: dict) -> rx.Component:
                     rx.button(
                         rx.icon("play", size=16),
                         "Reentrenar",
-                        on_click=lambda: AnalisisResultadosState.preparar_reentrenamiento(training['id']),
+                        on_click=lambda: AnalisisResultadosState.iniciar_reentrenamiento(training['id_sugerencia']),
                         size="1",
                         color_scheme="green",
                     ),
@@ -1229,7 +1462,7 @@ def suggestions_modal() -> rx.Component:
                         rx.button(
                             rx.icon("play", margin_right="0.5em"),
                             "Reentrenar con estos parámetros",
-                            on_click=lambda: AnalisisResultadosState.preparar_reentrenamiento(
+                            on_click=lambda: AnalisisResultadosState.iniciar_reentrenamiento(
                                 AnalisisResultadosState.suggestions_data['id']
                             ),
                             color_scheme="green",
@@ -1247,6 +1480,128 @@ def suggestions_modal() -> rx.Component:
             padding="2em",
         ),
         open=AnalisisResultadosState.show_suggestions_modal,
+    )
+
+
+def render_subfase(subfase: dict) -> rx.Component:
+    """Renderiza una subfase individual."""
+    return rx.hstack(
+        rx.cond(
+            subfase['status'] == 'completed',
+            rx.icon("check-circle", size=14, color="#10b981"),
+            rx.cond(
+                subfase['status'] == 'in_progress',
+                rx.spinner(size="1"),
+                rx.icon("circle", size=14, color=COLORS["border"]),
+            ),
+        ),
+        rx.text(
+            f"{subfase['key']} - {subfase['name']}",
+            font_size="0.9em",
+            color=rx.cond(
+                subfase['status'] == 'completed',
+                COLORS["success"],
+                rx.cond(
+                    subfase['status'] == 'in_progress',
+                    COLORS["primary"],
+                    COLORS["muted_foreground"],
+                ),
+            ),
+        ),
+        rx.cond(
+            subfase.get('tiempo', '') != '',
+            rx.text(
+                subfase.get('tiempo', ''),
+                font_size="0.8em",
+                color=COLORS["muted_foreground"],
+            ),
+            rx.fragment(),
+        ),
+        spacing="2",
+        align_items="center",
+        padding_left="1.5em",
+    )
+
+
+def render_phase(phase: dict) -> rx.Component:
+    """Renderiza una fase con sus subfases."""
+    return rx.vstack(
+        rx.hstack(
+            rx.icon("chevron-right", size=16, color=COLORS["primary"]),
+            rx.text(
+                f"Fase {phase['key']}: {phase['name']}",
+                font_weight="bold",
+                font_size="1em",
+            ),
+            spacing="2",
+        ),
+        rx.vstack(
+            rx.foreach(
+                phase['subfases'],
+                render_subfase,
+            ),
+            spacing="1",
+            width="100%",
+        ),
+        spacing="2",
+        width="100%",
+        margin_bottom="1em",
+    )
+
+
+def progress_modal() -> rx.Component:
+    """Modal que muestra el progreso del reentrenamiento en tiempo real."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title(
+                rx.hstack(
+                    rx.icon("activity", size=24, color=COLORS["primary"]),
+                    rx.text("Progreso del Entrenamiento", font_weight="bold"),
+                    spacing="2",
+                    align_items="center",
+                ),
+            ),
+            rx.vstack(
+                # Info del entrenamiento
+                rx.hstack(
+                    rx.badge(
+                        f"Entrenamiento #{AnalisisResultadosState.progress_training_seq}",
+                        color_scheme="blue",
+                        size="2",
+                    ),
+                    rx.badge(
+                        f"ID: {AnalisisResultadosState.progress_training_id}",
+                        color_scheme="purple",
+                        size="2",
+                    ),
+                    spacing="2",
+                ),
+
+                rx.separator(margin_y="1em"),
+
+                # Fases y subfases
+                rx.foreach(
+                    AnalisisResultadosState.progress_phases,
+                    render_phase,
+                ),
+
+                rx.separator(margin_y="1em"),
+
+                # Botón cerrar
+                rx.button(
+                    "Cerrar",
+                    on_click=AnalisisResultadosState.cerrar_modal_progreso,
+                    size="2",
+                    color_scheme="gray",
+                ),
+
+                spacing="3",
+                width="100%",
+            ),
+            max_width="600px",
+            padding="1.5em",
+        ),
+        open=AnalisisResultadosState.show_progress_modal,
     )
 
 
@@ -1284,6 +1639,9 @@ def analisis_resultados_page() -> rx.Component:
 
         # Modal de sugerencias
         suggestions_modal(),
+
+        # Modal de progreso de reentrenamiento
+        progress_modal(),
 
         padding="2em",
         max_width="1400px",

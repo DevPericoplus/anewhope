@@ -288,21 +288,18 @@ class InformesState(rx.State):
             import traceback
             traceback.print_exc()
 
-    @rx.event(background=True)
-    async def set_proyecto(self, proyecto_nombre: str):
+    def set_proyecto(self, proyecto_nombre: str):
         """Cambia el proyecto seleccionado."""
-        async with self:
-            self.selected_proyecto_nombre = proyecto_nombre
-            if proyecto_nombre == "Todos":
-                self.selected_proyecto_id = 0
-            else:
-                # Buscar el ID del proyecto por nombre
-                for p in self.proyectos:
-                    if p["nombre"] == proyecto_nombre:
-                        self.selected_proyecto_id = p["id"]
-                        break
-
-        await self.load_versiones()
+        self.selected_proyecto_nombre = proyecto_nombre
+        if proyecto_nombre == "Todos":
+            self.selected_proyecto_id = 0
+        else:
+            # Buscar el ID del proyecto por nombre
+            for p in self.proyectos:
+                if p["nombre"] == proyecto_nombre:
+                    self.selected_proyecto_id = p["id"]
+                    break
+        return InformesState.load_versiones
 
     @rx.event(background=True)
     async def set_version(self, version_nombre: str):

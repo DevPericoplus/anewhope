@@ -100,7 +100,7 @@ Para realizar esta auditoría documental, se han planteado las siguientes pregun
 | **Total de archivos** | {{ total_files }} |
 | **Tamaño total analizado** | {{ total_kb }} KB |
 
-### Ruta de origen (storage externo)
+### Ruta de origen (storage externo - ruta relativa)
 
 ```
 {{ ruta_external }}
@@ -145,8 +145,8 @@ El análisis automatizado del directorio **`{{ ver_folder }}`** del proyecto **{
 | **Modelo de IA** | `{{ modelo_nombre }}` |
 | **Tiempo de procesamiento IA** | {{ tiempo_ollama }} |
 | **Tiempo total del proceso** | {{ tiempo_total }} |
-| **Ruta del informe generado** | `{{ ruta_salida }}` |
-| **Ruta del almacenamiento interno** | `{{ ruta_internal }}` |
+| **Archivo de informe generado** | `{{ ruta_salida }}` |
+| **Ruta relativa almacenamiento** | `{{ ruta_internal }}` |
 | **Estado al finalizar** | {{ estado_nombre }} |
 
 ---

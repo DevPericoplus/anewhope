@@ -38,6 +38,7 @@ from adapters.api_client import (
     update_user_status,
 )
 from pages.flujos import FlujosState, flujos_diagram, load_flujos_content
+from pages.model_downloads import ModelDownloadState, model_downloads_panel
 from pages.organizacion import load_organizacion_content
 from pages.proyecciones import load_proyecciones_content
 from pages.tecnologias import load_tecnologias_content
@@ -1366,7 +1367,9 @@ class State(SharedSessionState):
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
-            
+
+            print(f"[DEBUG] Resultado de create_version_full: {result}")
+
             if result.get("success"):
                 new_version_id = result.get("version_id", 0)
                 self.proyecciones_success = f"✅ Versión {version_name} creada correctamente (ID: {new_version_id})"
@@ -1377,7 +1380,7 @@ class State(SharedSessionState):
                 self.proyecciones_version_folder = version_name
 
                 # Inicializar explorador con el proyecto (mostrará todas las versiones)
-                return ExploradorState.init_page(
+                yield ExploradorState.init_page(
                     project_id=self.proyecciones_project_id,
                     user_id=self.user_id,
                     identity_type_id=self.identity_type_id,
@@ -1386,7 +1389,8 @@ class State(SharedSessionState):
                     session_token=self.session_token,
                 )
             else:
-                self.proyecciones_error = result.get("mensaje", "Error al crear versión")
+                # El backend devuelve "message", no "mensaje"
+                self.proyecciones_error = result.get("message") or result.get("mensaje") or "Error al crear versión"
         except Exception as e:
             print(f"[ERROR] Error creando versión completa: {type(e).__name__}: {e}")
             self.proyecciones_error = f"Error creando versión: {e}"
@@ -3903,6 +3907,12 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
         rx.cond(
             rx.cond(is_logged_in, active_item == "informes", False),
             informes_panel(),
+            rx.box(height="0"),
+        ),
+        # Panel de descargas: visible solo en menú "descargas"
+        rx.cond(
+            rx.cond(is_logged_in, active_item == "descargas", False),
+            model_downloads_panel(),
             rx.box(height="0"),
         ),
         # Paneles de métricas: visibles solo en menú "inicio"

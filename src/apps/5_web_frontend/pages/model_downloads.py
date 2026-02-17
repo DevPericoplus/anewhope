@@ -5,8 +5,14 @@ import logging
 from pathlib import Path
 import httpx
 import os
+import importlib.util
 
 logger = logging.getLogger(__name__)
+
+# Importar SharedSessionState desde el módulo compartido del frontend
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from web_frontend.shared_state import SharedSessionState
+sys.path.pop(0)
 
 # Importar el adaptador para hacer llamadas HTTP
 try:
@@ -65,7 +71,7 @@ COLORS = {
 }
 
 
-class ModelDownloadState(rx.State):
+class ModelDownloadState(SharedSessionState):
     """Estado para la página de descargas de modelos."""
 
     # Lista de modelos disponibles
@@ -104,11 +110,13 @@ class ModelDownloadState(rx.State):
             self.error_message = ""
 
         try:
-            # Obtener token de sesión
-            access_token = self.router.session.client_token
-            if not access_token:
+            # Obtener tokens de sesión (heredados de SharedSessionState)
+            access_token = self.access_token
+            session_token = self.session_token
+
+            if not session_token:
                 async with self:
-                    self.models_error = "No hay sesión activa. Por favor, inicie sesión."
+                    self.models_error = "Token de sesión no proporcionado"
                     self.models_loading = False
                 return
 
@@ -120,14 +128,19 @@ class ModelDownloadState(rx.State):
             # El middleware automáticamente filtrará por la organización del usuario si no se especifica
             params = {}
 
+            headers = {
+                "Content-Type": "application/json",
+                "X-Session-Token": session_token,
+            }
+
+            if access_token:
+                headers["Authorization"] = f"Bearer {access_token}"
+
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(
                     url,
                     params=params,
-                    headers={
-                        "Authorization": f"Bearer {access_token}",
-                        "Content-Type": "application/json"
-                    }
+                    headers=headers
                 )
 
             if response.status_code == 200:
@@ -183,11 +196,13 @@ class ModelDownloadState(rx.State):
             return
 
         try:
-            # Obtener token de sesión
-            access_token = self.router.session.client_token
-            if not access_token:
+            # Obtener tokens de sesión (heredados de SharedSessionState)
+            access_token = self.access_token
+            session_token = self.session_token
+
+            if not session_token:
                 async with self:
-                    self.otp_error = "No hay sesión activa"
+                    self.otp_error = "Token de sesión no proporcionado"
                 return
 
             # Llamar al endpoint de solicitud de OTP
@@ -200,14 +215,19 @@ class ModelDownloadState(rx.State):
                 "version_id": model["version_id"]
             }
 
+            headers = {
+                "Content-Type": "application/json",
+                "X-Session-Token": session_token,
+            }
+
+            if access_token:
+                headers["Authorization"] = f"Bearer {access_token}"
+
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
                     url,
                     json=payload,
-                    headers={
-                        "Authorization": f"Bearer {access_token}",
-                        "Content-Type": "application/json"
-                    }
+                    headers=headers
                 )
 
             if response.status_code == 200:
@@ -217,9 +237,9 @@ class ModelDownloadState(rx.State):
 
                 # Enviar SMS con el OTP
                 if _send_message_by_sms and otp and phone:
-                    message = f"Tu código OTP para descargar el modelo es: {otp}"
-                    sms_result = _send_message_by_sms(phone, message)
-                    if sms_result.get("success"):
+                    # send_message_by_sms retorna un booleano (True/False)
+                    sms_result = _send_message_by_sms(otp, phone)
+                    if sms_result:
                         async with self:
                             self.otp_requested = True
                             self.otp_phone = phone
@@ -227,7 +247,7 @@ class ModelDownloadState(rx.State):
                         logger.info(f"SMS enviado a {phone}")
                     else:
                         async with self:
-                            self.otp_error = f"Error al enviar SMS: {sms_result.get('message')}"
+                            self.otp_error = "No se pudo enviar el SMS"
                 else:
                     async with self:
                         self.otp_error = "No se pudo enviar el SMS (servicio no disponible)"
@@ -267,11 +287,13 @@ class ModelDownloadState(rx.State):
             return
 
         try:
-            # Obtener token de sesión
-            access_token = self.router.session.client_token
-            if not access_token:
+            # Obtener tokens de sesión (heredados de SharedSessionState)
+            access_token = self.access_token
+            session_token = self.session_token
+
+            if not session_token:
                 async with self:
-                    self.otp_error = "No hay sesión activa"
+                    self.otp_error = "Token de sesión no proporcionado"
                     self.download_in_progress = False
                 return
 
@@ -286,14 +308,19 @@ class ModelDownloadState(rx.State):
                 "otp": otp
             }
 
+            headers = {
+                "Content-Type": "application/json",
+                "X-Session-Token": session_token,
+            }
+
+            if access_token:
+                headers["Authorization"] = f"Bearer {access_token}"
+
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
                     url,
                     json=payload,
-                    headers={
-                        "Authorization": f"Bearer {access_token}",
-                        "Content-Type": "application/json"
-                    }
+                    headers=headers
                 )
 
             if response.status_code == 200:
@@ -305,16 +332,26 @@ class ModelDownloadState(rx.State):
                 # Construir URL de descarga
                 download_url = f"{fmanagement_url}/models/download?filename={filename}&token={download_token}"
 
-                async with self:
-                    self.success_message = f"OTP validado. Descargando {filename}..."
-                    self.download_in_progress = False
-                    self.show_otp_modal = False
-                    # En Reflex, podemos usar rx.download para descargar el archivo
-                    # pero necesitamos usar JavaScript para esto
                 logger.info(f"Token de descarga obtenido: {download_url}")
 
-                # Usar JavaScript para descargar el archivo
-                yield rx.download(download_url)
+                # Usar JavaScript para iniciar la descarga (mismo patrón que explorador)
+                download_script = f"""
+                (function() {{
+                    const link = document.createElement('a');
+                    link.href = '{download_url}';
+                    link.download = '{filename}';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }})();
+                """
+
+                async with self:
+                    self.success_message = f"Descargando {filename}..."
+                    self.download_in_progress = False
+                    self.show_otp_modal = False
+
+                return rx.call_script(download_script)
 
             else:
                 error_detail = response.json().get("detail", "Error desconocido")
@@ -469,6 +506,78 @@ def otp_modal() -> rx.Component:
     )
 
 
+def model_downloads_panel() -> rx.Component:
+    """Panel de descargas de modelos para integrar en el info_panel."""
+    return rx.vstack(
+        # Toolbar con filtros y botón de refrescar
+        rx.hstack(
+            rx.button(
+                rx.icon("refresh_cw"),
+                " Refrescar",
+                on_click=ModelDownloadState.load_models,
+                color_scheme="blue",
+                loading=ModelDownloadState.models_loading,
+            ),
+            spacing="3",
+            width="100%",
+            justify="end",
+        ),
+        # Mensajes de éxito/error
+        rx.cond(
+            ModelDownloadState.success_message,
+            rx.callout(
+                ModelDownloadState.success_message,
+                icon="check_circle",
+                color_scheme="green",
+            ),
+        ),
+        rx.cond(
+            ModelDownloadState.models_error,
+            rx.callout(
+                ModelDownloadState.models_error,
+                icon="alert_circle",
+                color_scheme="red",
+            ),
+        ),
+        # Lista de modelos
+        rx.cond(
+            ModelDownloadState.models_loading,
+            rx.center(
+                rx.spinner(size="3"),
+                padding="2rem",
+            ),
+            rx.cond(
+                ModelDownloadState.models,
+                rx.grid(
+                    rx.foreach(
+                        ModelDownloadState.models,
+                        model_card,
+                    ),
+                    columns="3",
+                    spacing="4",
+                    width="100%",
+                ),
+                rx.center(
+                    rx.vstack(
+                        rx.icon("inbox", size=48, color=COLORS["muted_foreground"]),
+                        rx.text(
+                            "No hay modelos disponibles",
+                            color=COLORS["muted_foreground"],
+                            size="3",
+                        ),
+                        spacing="2",
+                    ),
+                    padding="4rem",
+                ),
+            ),
+        ),
+        # Modal de OTP
+        otp_modal(),
+        spacing="5",
+        width="100%",
+    )
+
+
 def model_downloads_page() -> rx.Component:
     """Página principal de descargas de modelos."""
     return rx.box(
@@ -484,74 +593,11 @@ def model_downloads_page() -> rx.Component:
                 size="3",
             ),
             rx.divider(),
-            # Toolbar con filtros y botón de refrescar
-            rx.hstack(
-                rx.button(
-                    rx.icon("refresh_cw"),
-                    " Refrescar",
-                    on_click=ModelDownloadState.load_models,
-                    color_scheme="blue",
-                    loading=ModelDownloadState.models_loading,
-                ),
-                spacing="3",
-                width="100%",
-                justify="end",
-            ),
-            # Mensajes de éxito/error
-            rx.cond(
-                ModelDownloadState.success_message,
-                rx.callout(
-                    ModelDownloadState.success_message,
-                    icon="check_circle",
-                    color_scheme="green",
-                ),
-            ),
-            rx.cond(
-                ModelDownloadState.models_error,
-                rx.callout(
-                    ModelDownloadState.models_error,
-                    icon="alert_circle",
-                    color_scheme="red",
-                ),
-            ),
-            # Lista de modelos
-            rx.cond(
-                ModelDownloadState.models_loading,
-                rx.center(
-                    rx.spinner(size="3"),
-                    padding="2rem",
-                ),
-                rx.cond(
-                    ModelDownloadState.models,
-                    rx.grid(
-                        rx.foreach(
-                            ModelDownloadState.models,
-                            model_card,
-                        ),
-                        columns="3",
-                        spacing="4",
-                        width="100%",
-                    ),
-                    rx.center(
-                        rx.vstack(
-                            rx.icon("inbox", size=48, color=COLORS["muted_foreground"]),
-                            rx.text(
-                                "No hay modelos disponibles",
-                                color=COLORS["muted_foreground"],
-                                size="3",
-                            ),
-                            spacing="2",
-                        ),
-                        padding="4rem",
-                    ),
-                ),
-            ),
+            model_downloads_panel(),
             spacing="5",
             width="100%",
             padding="2rem",
         ),
-        # Modal de OTP
-        otp_modal(),
         style={
             "background": COLORS["background"],
             "min_height": "100vh",

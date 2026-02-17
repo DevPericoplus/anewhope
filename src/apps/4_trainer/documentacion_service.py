@@ -602,9 +602,9 @@ def process_documentacion(data: dict[str, Any]) -> None:
             "org_folder": org_folder,
             "prj_folder": prj_folder,
             "ver_folder": ver_folder,
-            "ruta_external": str(version_path),
-            "ruta_internal": internal_base,
-            "ruta_salida": str(output_path),
+            "ruta_external": f"{org_folder}/{prj_folder}/{ver_folder}",  # Solo ruta relativa, no path completo
+            "ruta_internal": f"{org_folder}/{prj_folder}/{ver_folder}",  # Solo ruta relativa, no path completo
+            "ruta_salida": os.path.basename(str(output_path)),  # Solo filename, no path completo
             # Estadísticas de archivos
             "num_text": num_text,
             "num_binary": num_binary,

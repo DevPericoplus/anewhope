@@ -146,20 +146,27 @@ class InformesState(rx.State):
 
     async def load_versiones(self):
         """Carga las versiones del proyecto seleccionado."""
-        if self.selected_proyecto_id == 0:
-            self.versiones = []
+        async with self:
+            proyecto_id = self.selected_proyecto_id
+
+        if proyecto_id == 0:
+            async with self:
+                self.versiones = []
             return
 
         try:
             # Obtener tokens de sesión del MainState
             from web_frontend.web_frontend import State as MainState
-            main_state = await self.get_state(MainState)
+            async with self:
+                main_state = await self.get_state(MainState)
+                access_token = main_state.access_token
+                session_token = main_state.session_token
 
             # Llamar a la API para obtener versiones
             response = get_project_versions(
-                project_id=self.selected_proyecto_id,
-                access_token=main_state.access_token,
-                session_token=main_state.session_token,
+                project_id=proyecto_id,
+                access_token=access_token,
+                session_token=session_token,
             )
 
             # Procesar respuesta
@@ -176,10 +183,11 @@ class InformesState(rx.State):
             for v in versiones:
                 print(f"[DEBUG INFORMES FRONTEND]   - {v['folder_name']} (ID: {v['id']})")
 
-            self.versiones = versiones
-            # Resetear selección de versión
-            self.selected_version_id = 0
-            self.selected_version_nombre = "Todas"
+            async with self:
+                self.versiones = versiones
+                # Resetear selección de versión
+                self.selected_version_id = 0
+                self.selected_version_nombre = "Todas"
 
         except Exception as e:
             print(f"[ERROR INFORMES FRONTEND] Error al cargar versiones: {e}")

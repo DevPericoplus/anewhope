@@ -3544,10 +3544,11 @@ class BackendCoreRouter:
                 # Crear estructura en fmanagement
                 try:
                     self._logger.info(
-                        "[backend-core] Creando estructura en fmanagement: %s/%s/%s",
+                        "[backend-core] Creando estructura en fmanagement: %s/%s/%s (clone_from=%s)",
                         org_folder,
                         prj_folder,
                         version_folder,
+                        clone_from_folder,
                     )
 
                     # Llamar a fmanagement para crear la versión
@@ -3558,6 +3559,11 @@ class BackendCoreRouter:
                         identity_type_id=identity_type_id,
                         clone_from=clone_from_folder,
                         iduser=user_id,
+                    )
+
+                    self._logger.info(
+                        "[backend-core] Resultado de fmanagement.create_version: %s",
+                        fm_result
                     )
 
                     if fm_result.get("error"):
@@ -3584,7 +3590,18 @@ class BackendCoreRouter:
                     fm_result = {"error": str(e)}
 
                 # PASO 4: Crear estado inicial en la tabla estado
-                # Inicializar todos los estados del flujo de trabajo en FALSE
+                # Obtener el id_flujo del proyecto para establecer el estado inicial correcto
+                proyecto_result = conn.execute(
+                    text("SELECT id_flujo FROM proyectos WHERE id = :project_id"),
+                    {"project_id": project_id},
+                )
+                proyecto_row = proyecto_result.fetchone()
+                id_flujo = proyecto_row[0] if proyecto_row else 1
+
+                # Si el proyecto tiene id_flujo=1 (Propuesta Cliente), establecer propuesta_cliente=1
+                # Todos los demás estados del flujo de trabajo se inicializan en FALSE
+                propuesta_cliente_value = 1 if id_flujo == 1 else 0
+
                 # IMPORTANTE: usar version_db_id (id autoincremental) no version_id (número de versión)
                 conn.execute(
                     text("""
@@ -3596,14 +3613,21 @@ class BackendCoreRouter:
                             aprobacion_calidad, generacion_llm, notificacion_descarga
                         ) VALUES (
                             :org_id, :project_id, :version_db_id,
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+                            :propuesta_cliente, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
                         )
                     """),
                     {
                         "org_id": org_id,
                         "project_id": project_id,
                         "version_db_id": version_db_id,
+                        "propuesta_cliente": propuesta_cliente_value,
                     },
+                )
+
+                self._logger.info(
+                    "[backend-core] Estado inicial creado con propuesta_cliente=%s (id_flujo=%s)",
+                    propuesta_cliente_value,
+                    id_flujo,
                 )
 
                 # PASO 5: Registrar cambio en la tabla cambios

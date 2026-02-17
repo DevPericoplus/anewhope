@@ -1538,7 +1538,7 @@ def process_entrenamiento(data: dict[str, Any]) -> None:
                 'nombre_proyecto': prj_name,
                 'version_name': ver_folder,
                 'ver_folder': ver_folder,
-                'modelo_nombre': modelo_path,
+                'modelo_nombre': os.path.basename(modelo_path),  # Solo filename, no ruta completa
                 'base_model': params.get('model_type', 'llama3.2:latest'),
 
                 # Parámetros de entrenamiento
@@ -1869,7 +1869,7 @@ def process_entrenamiento_with_id(data: dict[str, Any]) -> None:
                 'nombre_proyecto': prj_name,
                 'version_name': ver_folder,
                 'ver_folder': ver_folder,
-                'modelo_nombre': modelo_path,
+                'modelo_nombre': os.path.basename(modelo_path),  # Solo filename, no ruta completa
                 'base_model': params.get('model_type', 'llama3.2:latest'),
 
                 # Parámetros de entrenamiento

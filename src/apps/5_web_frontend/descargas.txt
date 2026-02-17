@@ -1,1 +1,1 @@
-Pediente
+Descarga de modelos en formato zip por cada version procesada.

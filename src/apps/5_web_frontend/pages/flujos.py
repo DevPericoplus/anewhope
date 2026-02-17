@@ -272,6 +272,8 @@ class FlujosState(rx.State):
             or self.selected_version_id <= 0
         ):
             return
+        # FIX: estado.id_version almacena el PRIMARY KEY de versiones.id, no el número de versión
+        # Por eso usamos un subquery para obtener el id correcto
         rows = _run_mysql_query(
             "SELECT propuesta_cliente, revision_interna, propuesta_mejoras, "
             "aceptacion_cliente, aceptacion_interna, entrenamiento_inicial, "
@@ -280,7 +282,7 @@ class FlujosState(rx.State):
             "FROM estado "
             f"WHERE id_organizacion = {int(self.organization_id)} "
             f"AND id_proyecto = {int(self.selected_project_id)} "
-            f"AND id_version = {int(self.selected_version_id)} "
+            f"AND id_version = (SELECT id FROM versiones WHERE id_proyecto = {int(self.selected_project_id)} AND id_version = {int(self.selected_version_id)}) "
             "LIMIT 1"
         )
         if not rows or len(rows[0]) < 12:

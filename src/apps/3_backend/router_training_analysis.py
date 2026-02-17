@@ -34,6 +34,7 @@ class TrainingListResponse(BaseModel):
     loss_final: Optional[float]
     accuracy_validacion: Optional[float]
     tiene_sugerencias: bool
+    id_sugerencia: Optional[int] = None  # ID de las sugerencias si existen
 
 
 class GenerateSuggestionsResponse(BaseModel):
@@ -125,7 +126,8 @@ def list_trainings_for_analysis(
                 params_nombre=t['params_nombre'],
                 loss_final=float(t['loss_final']) if t['loss_final'] else None,
                 accuracy_validacion=float(t['accuracy_validacion']) if t['accuracy_validacion'] else None,
-                tiene_sugerencias=t['tiene_sugerencias'] is not None
+                tiene_sugerencias=t['tiene_sugerencias'] is not None,
+                id_sugerencia=int(t['tiene_sugerencias']) if t['tiene_sugerencias'] else None
             ))
 
         db.close()
@@ -364,6 +366,52 @@ def apply_suggestions(id_sugerencia: int, request: ApplySuggestionsRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/suggestions/{id_sugerencia}")
+def get_suggestion_metadata(id_sugerencia: int):
+    """
+    Obtiene la metadata completa de una sugerencia.
+
+    Path params:
+        - id_sugerencia: ID de las sugerencias
+    """
+    try:
+        db = get_db_connection()
+        cursor = db.cursor(dictionary=True)
+
+        # Obtener sugerencias con datos del entrenamiento
+        cursor.execute("""
+            SELECT
+                js.id,
+                js.id_job_entrenamiento,
+                js.id_entrenamiento,
+                e.id_organizacion,
+                e.id_proyecto,
+                e.id_version,
+                js.confianza_score,
+                js.mejora_esperada_pct,
+                js.created_at
+            FROM jobs_entrenamientos_sugeridos js
+            JOIN jobs_entrenamientos je ON js.id_job_entrenamiento = je.id
+            JOIN entrenamientos e ON js.id_entrenamiento = e.id
+            WHERE js.id = %s
+        """, (id_sugerencia,))
+        data = cursor.fetchone()
+
+        cursor.close()
+        db.close()
+
+        if not data:
+            raise HTTPException(status_code=404, detail="Sugerencia no encontrada")
+
+        return data
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error obteniendo metadata de sugerencia: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/suggestions/{id_sugerencia}/params")
 def get_suggested_params(id_sugerencia: int):
     """
@@ -408,6 +456,7 @@ def get_suggested_params(id_sugerencia: int):
             'max_tokens': int(data['max_tokens_sugerido'] or data['max_tokens']),
             'loss_function': data['loss_function_sugerido'] or data['loss_function'],
             'optimizer': data['optimizer_sugerido'] or data['optimizer'],
+            'model_type': data.get('model_type', 'llama3.2:latest'),  # Modelo base Ollama
         }
 
     except HTTPException:
