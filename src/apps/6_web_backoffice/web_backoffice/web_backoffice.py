@@ -75,6 +75,16 @@ get_folder_by_id_organization = _storage_module.get_folder_by_id_organization
 get_folder_by_id_project = _storage_module.get_folder_by_id_project
 get_folder_by_id_version = _storage_module.get_folder_by_id_version
 
+# Importar version_reader usando importlib
+_version_reader_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "utils" / "version_reader.py"
+_version_spec = importlib.util.spec_from_file_location("version_reader", _version_reader_path)
+_version_module = importlib.util.module_from_spec(_version_spec)
+_version_spec.loader.exec_module(_version_module)
+get_version = _version_module.get_version
+
+# Obtener versión del backoffice
+APP_VERSION = get_version("backoffice")
+
 # Importar org_selector_helpers usando importlib (el directorio tiene número)
 _org_selector_helpers_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "reflex_shared" / "org_selector_helpers.py"
 _org_helpers_spec = importlib.util.spec_from_file_location("org_selector_helpers", _org_selector_helpers_path)
@@ -10818,17 +10828,26 @@ def footer() -> rx.Component:
         ),
         rx.divider(margin_y="1em"),
         rx.box(
-            rx.text(
-                "© 2025 Myllm. Todos los derechos reservados.",
-                color=COLORS["muted_foreground"],
-                font_size="1.25em",
-                text_align="center",
+            rx.hstack(
+                # Versión en la esquina inferior izquierda
+                rx.text(
+                    f"Version: {APP_VERSION}",
+                    color=COLORS["muted_foreground"],
+                    font_size="1.1em",
+                ),
+                rx.spacer(),
+                # Copyright en el centro
+                rx.text(
+                    "© 2025 Myllm. Todos los derechos reservados.",
+                    color=COLORS["muted_foreground"],
+                    font_size="1.25em",
+                ),
+                rx.spacer(),
+                width="100%",
+                align_items="center",
             ),
             width="100%",
             padding="1em",
-            display="flex",
-            justify_content="center",
-            align_items="center",
         ),
         background_color=COLORS["card"],
         border_top=f"1px solid {COLORS['border']}",

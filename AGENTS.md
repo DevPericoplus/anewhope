@@ -9517,3 +9517,361 @@ cd src/apps/7_service_frontend && ./run.sh
 - **src/apps/4_trainer/autonomous_training/:** Código del sistema autónomo
 
 ---
+
+## 31. Sistema de Control de Versiones
+
+### 31.1. Descripción General
+
+El proyecto utiliza un sistema de versionado semántico centralizado que gestiona las versiones de todas las aplicaciones desde un único archivo `versions.yml`.
+
+### 31.2. Archivo versions.yml
+
+**Ubicación:** Raíz del proyecto (`/versions.yml`)
+
+**Formato:**
+```yaml
+version_frontend: 0.7.1
+version_backoffice: 0.7.1
+version_middleware: 0.7.1
+version_broker: 0.7.1
+version_backend_core: 0.7.1
+version_backend_ia: 0.7.1
+version_fmanagement: 0.7.1
+```
+
+### 31.3. Nomenclatura: version.subversion.fix
+
+**Formato:** `X.Y.Z` donde:
+- **X (version/major):** Cambios importantes que rompen compatibilidad
+- **Y (subversion/minor):** Nuevas funcionalidades sin romper compatibilidad
+- **Z (fix/patch):** Correcciones de bugs y mejoras menores
+
+**Ejemplos:**
+- `0.7.1 → 0.7.2`: Fix (corrección de bug)
+- `0.7.2 → 0.8.0`: Subversion (nueva funcionalidad)
+- `0.8.0 → 1.0.0`: Version (cambio importante)
+
+### 31.4. Cuándo Incrementar Versiones
+
+#### Fix (Patch) - Tercer Dígito
+
+**Incrementar cuando:**
+- Corrección de bugs
+- Mejoras de rendimiento
+- Refactorización interna sin cambios de API
+- Actualizaciones de documentación
+- Correcciones de typos en UI
+
+**NO requiere TAG en Git**
+
+**Ejemplo:**
+```yaml
+# Antes
+version_frontend: 0.7.1
+
+# Después de fix
+version_frontend: 0.7.2
+```
+
+#### Subversion (Minor) - Segundo Dígito
+
+**Incrementar cuando:**
+- Nueva funcionalidad agregada
+- Mejoras significativas a funcionalidades existentes
+- Cambios en la UI (nuevas páginas, componentes)
+- Nuevos endpoints en APIs
+- Integraciones con servicios externos
+
+**Requiere TAG en Git**
+
+**Ejemplo:**
+```yaml
+# Antes
+version_frontend: 0.7.2
+
+# Después de nueva funcionalidad
+version_frontend: 0.8.0  # El fix se resetea a 0
+```
+
+**Comandos Git:**
+```bash
+git add versions.yml [otros archivos]
+git commit -m "feat(frontend): add model downloads with OTP authentication"
+git tag -a v0.8.0-frontend -m "Release frontend 0.8.0 - Model Downloads"
+git push origin main
+git push origin v0.8.0-frontend
+```
+
+#### Version (Major) - Primer Dígito
+
+**Incrementar cuando:**
+- Cambios que rompen compatibilidad con versiones anteriores
+- Refactorización importante de arquitectura
+- Cambio de tecnologías core
+- Nueva versión mayor del sistema completo
+
+**Requiere TAG en Git + Release Notes**
+
+**Ejemplo:**
+```yaml
+# Antes
+version_frontend: 0.8.5
+
+# Después de cambio importante
+version_frontend: 1.0.0  # Subversion y fix se resetean a 0
+```
+
+**Comandos Git:**
+```bash
+git add versions.yml [otros archivos]
+git commit -m "feat!: migrate to new architecture (BREAKING CHANGE)"
+git tag -a v1.0.0-frontend -m "Release frontend 1.0.0 - New Architecture"
+git push origin main
+git push origin v1.0.0-frontend
+```
+
+### 31.5. Convención de TAGs en Git
+
+**Para aplicaciones individuales:**
+```
+v{version}-{app_name}
+```
+
+**Ejemplos:**
+- `v0.8.0-frontend`: Release del frontend
+- `v0.8.0-backoffice`: Release del backoffice
+- `v1.0.0-backend_core`: Release del backend core
+
+**Para releases del sistema completo:**
+```
+v{version}
+```
+
+**Ejemplo:**
+- `v1.0.0`: Release completo del sistema (todas las apps)
+
+**Mensaje del TAG:**
+```bash
+git tag -a v0.8.0-frontend -m "Release frontend 0.8.0
+
+Nueva funcionalidad:
+- Sistema de descargas de modelos con autenticación OTP
+- Integración con SMS vía Infobip
+- UI mejorada en página de Descargas
+
+Correcciones:
+- Fix en manejo de tokens de sesión
+- Mejoras de rendimiento en carga de modelos
+"
+```
+
+### 31.6. Workflow de Actualización de Versiones
+
+#### Paso 1: Determinar Tipo de Cambio
+
+Analizar los cambios realizados:
+- **¿Rompe compatibilidad?** → Version (major)
+- **¿Nueva funcionalidad?** → Subversion (minor)
+- **¿Solo correcciones?** → Fix (patch)
+
+#### Paso 2: Actualizar versions.yml
+
+Editar el archivo y cambiar la versión correspondiente:
+
+```yaml
+# Antes
+version_frontend: 0.7.1
+
+# Después (ejemplo: nueva funcionalidad)
+version_frontend: 0.8.0
+```
+
+#### Paso 3: Commit de Cambios
+
+**Formato de mensaje de commit:**
+```
+<type>(<scope>): <description>
+
+[optional body]
+[optional footer]
+```
+
+**Types:**
+- `feat`: Nueva funcionalidad (minor)
+- `fix`: Corrección de bug (patch)
+- `feat!`: Cambio con breaking change (major)
+- `refactor`: Refactorización
+- `docs`: Solo documentación
+- `chore`: Cambios de build, configuración
+
+**Ejemplos:**
+```bash
+# Fix
+git commit -m "fix(frontend): resolve session token error in downloads"
+
+# Subversion
+git commit -m "feat(frontend): add OTP authentication for model downloads"
+
+# Version (major)
+git commit -m "feat!(frontend): migrate to new state management architecture
+
+BREAKING CHANGE: All state classes must now inherit from SharedSessionState
+"
+```
+
+#### Paso 4: Crear TAG (solo minor y major)
+
+**Para subversion (minor):**
+```bash
+git tag -a v0.8.0-frontend -m "Release frontend 0.8.0 - [descripción breve]"
+git push origin v0.8.0-frontend
+```
+
+**Para version (major):**
+```bash
+git tag -a v1.0.0-frontend -m "Release frontend 1.0.0 - [descripción breve]"
+git push origin v1.0.0-frontend
+
+# Opcional: Crear release en GitHub con notes detalladas
+```
+
+### 31.7. Lectura de Versiones en Código
+
+**Módulo:** `src/2_shared_application/utils/version_reader.py`
+
+**Uso básico:**
+```python
+from utils.version_reader import get_version
+
+# Obtener versión
+version = get_version("frontend")  # "0.7.1"
+
+# Obtener información detallada
+info = get_version_info("frontend")
+# {'version': '0.7.1', 'major': 0, 'minor': 7, 'patch': 1}
+
+# Obtener todas las versiones
+all_versions = get_all_versions()
+# {'version_frontend': '0.7.1', 'version_backoffice': '0.7.1', ...}
+```
+
+**Aplicaciones que cargan versión al inicio:**
+- Frontend: Muestra en footer "Version: X.Y.Z"
+- Backoffice: Muestra en footer "Version: X.Y.Z"
+- Backend Core: Registra en logs al inicio
+- Trainer: Registra en logs al inicio
+
+### 31.8. Sincronización con fmanagement
+
+**Contexto:** fmanagement está en repositorio separado (`~/develop/fmanagement/`)
+
+**Proceso de sincronización:**
+
+1. **Copiar versions.yml:**
+   ```bash
+   cp /Users/administrator/develop/anewhope/versions.yml \
+      /Users/administrator/develop/fmanagement/versions.yml
+   ```
+
+2. **Copiar version_reader.py:**
+   ```bash
+   cp /Users/administrator/develop/anewhope/src/2_shared_application/utils/version_reader.py \
+      /Users/administrator/develop/fmanagement/src/utils/version_reader.py
+   ```
+
+3. **Usar en fmanagement:**
+   ```python
+   from src.utils.version_reader import get_version
+   
+   APP_VERSION = get_version("fmanagement")
+   print(f"fmanagement version: {APP_VERSION}")
+   ```
+
+**Recomendación:** Crear script de sincronización automática.
+
+### 31.9. Reglas para Agentes AI
+
+Cuando un agente AI (como Claude) hace cambios al código:
+
+1. **Después de implementar un fix:**
+   - NO actualizar versions.yml
+   - Usuario decidirá cuándo incrementar versión
+
+2. **Después de implementar nueva funcionalidad:**
+   - Sugerir al usuario incrementar subversion
+   - Proponer mensaje de commit
+   - Recordar crear TAG
+
+3. **Después de cambio major:**
+   - Alertar sobre breaking change
+   - Sugerir incrementar version major
+   - Proponer release notes
+
+4. **Al documentar cambios:**
+   - Incluir en commit message qué versión se recomienda
+   - Listar cambios para release notes
+
+**Ejemplo de respuesta del agente:**
+```
+✅ Cambios completados: Sistema de descargas de modelos con OTP
+
+📋 Recomendación de versión:
+- Tipo: Subversion (minor) - nueva funcionalidad
+- Cambio sugerido: frontend 0.7.1 → 0.8.0
+
+📝 Mensaje de commit sugerido:
+feat(frontend): add model downloads with OTP authentication
+
+Implementa sistema completo de descargas de modelos:
+- Autenticación con OTP vía SMS
+- Integración con fmanagement
+- UI en página Descargas con modal OTP
+
+🏷️ TAG sugerido:
+git tag -a v0.8.0-frontend -m "Release frontend 0.8.0 - Model Downloads"
+```
+
+### 31.10. Troubleshooting
+
+#### Problema: Version no se muestra en UI
+
+**Causa:** Módulo version_reader no cargado o cache de Reflex
+
+**Solución:**
+```bash
+# Limpiar cache y reiniciar
+cd src/apps/5_web_frontend
+./run.sh --clean
+```
+
+#### Problema: Error al importar version_reader
+
+**Causa:** PyYAML no instalado
+
+**Solución:**
+```bash
+# Activar virtualenv e instalar
+source .venv_frontend313/bin/activate
+pip install pyyaml==6.0.2
+```
+
+#### Problema: versions.yml no encontrado
+
+**Causa:** Ruta relativa incorrecta
+
+**Solución:**
+Verificar que `version_reader.py` calcula correctamente la ruta:
+```python
+project_root = current_file.parent.parent.parent.parent
+versions_file = project_root / "versions.yml"
+```
+
+### 31.11. Referencias
+
+- **README.md:** Sección "Sistema de Versiones"
+- **versions.yml:** Archivo de versiones en raíz del proyecto
+- **src/2_shared_application/utils/version_reader.py:** Módulo de lectura
+- **Conventional Commits:** https://www.conventionalcommits.org/
+
+---
+

@@ -37,6 +37,106 @@ Proyecto para gestionar infraestructura, aplicaciones y flujos de personalizaci�
 - `infrastructure/`: scripts y utilidades adicionales (pendiente de completar).
 - `test/`: pruebas heredadas o de exploración.
 
+## Sistema de Versiones
+
+El proyecto utiliza un sistema de versionado semántico centralizado en el archivo `versions.yml` ubicado en la raíz del proyecto.
+
+### Nomenclatura de Versiones
+
+Todas las aplicaciones siguen el formato **`version.subversion.fix`** (ejemplo: `0.7.1`):
+
+- **version** (major): Cambios importantes que rompen compatibilidad
+- **subversion** (minor): Nuevas funcionalidades sin romper compatibilidad
+- **fix** (patch): Correcciones de bugs y mejoras menores
+
+### Archivo `versions.yml`
+
+Contiene las versiones actuales de todas las aplicaciones del sistema:
+
+```yaml
+# Versions of software used
+version_frontend: 0.7.1
+version_backoffice: 0.7.1
+version_middleware: 0.7.1
+version_broker: 0.7.1
+version_backend_core: 0.7.1
+version_backend_ia: 0.7.1
+version_fmanagement: 0.7.1
+```
+
+### Cómo Leer Versiones en el Código
+
+Utiliza el módulo `version_reader` ubicado en `src/2_shared_application/utils/version_reader.py`:
+
+```python
+from utils.version_reader import get_version
+
+# Obtener versión de una aplicación
+version = get_version("frontend")  # Retorna "0.7.1"
+version = get_version("backend_core")  # Retorna "0.7.1"
+
+# Obtener información detallada
+info = get_version_info("frontend")
+# {'version': '0.7.1', 'major': 0, 'minor': 7, 'patch': 1}
+```
+
+### Visualización de Versiones
+
+- **Frontend y Backoffice**: Muestran la versión en la esquina inferior izquierda del footer (formato: "Version: 0.7.1")
+- **APIs y Servicios**: Cargan la versión al inicio y la registran en los logs
+
+### Gestión de Versiones con Git
+
+Cuando se incrementa una versión (major o minor), se debe crear un TAG en Git:
+
+```bash
+# Ejemplo: actualizar frontend a versión 0.8.0
+# 1. Actualizar versions.yml
+# 2. Commit de los cambios
+git add versions.yml
+git commit -m "chore: bump frontend version to 0.8.0"
+
+# 3. Crear TAG
+git tag -a v0.8.0-frontend -m "Release frontend 0.8.0 - [descripción de cambios]"
+
+# 4. Push del TAG
+git push origin v0.8.0-frontend
+```
+
+**Convención de TAGs:**
+- `v{version}-{app}` para versiones específicas (ej: `v0.8.0-frontend`)
+- `v{version}` para releases del sistema completo (ej: `v1.0.0`)
+
+### Cuándo Incrementar Versiones
+
+**Fix (patch) - ej: 0.7.1 → 0.7.2:**
+- Corrección de bugs
+- Mejoras de rendimiento
+- Cambios de documentación
+- No requiere TAG en Git
+
+**Subversion (minor) - ej: 0.7.1 → 0.8.0:**
+- Nuevas funcionalidades
+- Mejoras significativas
+- Cambios en la UI
+- **Requiere TAG en Git**
+
+**Version (major) - ej: 0.7.1 → 1.0.0:**
+- Cambios que rompen compatibilidad
+- Refactorización importante
+- Nueva arquitectura
+- **Requiere TAG en Git**
+
+### Sincronización con fmanagement
+
+El proyecto `fmanagement` está en un repositorio separado (`~/develop/fmanagement/`) pero comparte el sistema de versiones:
+
+1. Copiar manualmente el archivo `versions.yml` a fmanagement
+2. Usar el mismo `version_reader.py` para leer la versión
+3. Mantener sincronizadas las versiones entre ambos proyectos
+
+**Nota**: Se recomienda crear un script de sincronización automática en el futuro.
+
 ## Configuración por entorno
 
 ### Estructura de configuración
