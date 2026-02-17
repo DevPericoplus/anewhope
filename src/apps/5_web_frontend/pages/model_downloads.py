@@ -1,5 +1,5 @@
 import reflex as rx
-from typing import Optional, Any
+from typing import Any
 import sys
 import logging
 from pathlib import Path
@@ -14,9 +14,23 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from web_frontend.shared_state import SharedSessionState
 sys.path.pop(0)
 
+# Importar org_selector_helpers usando importlib (el directorio tiene número)
+_org_selector_helpers_path = (
+    Path(__file__).resolve().parents[3]
+    / "2_shared_application"
+    / "reflex_shared"
+    / "org_selector_helpers.py"
+)
+_org_helpers_spec = importlib.util.spec_from_file_location(
+    "org_selector_helpers_fe", _org_selector_helpers_path
+)
+_org_helpers_module = importlib.util.module_from_spec(_org_helpers_spec)
+_org_helpers_spec.loader.exec_module(_org_helpers_module)
+load_projects_for_selector = _org_helpers_module.load_projects_for_selector
+load_versions_for_selector = _org_helpers_module.load_versions_for_selector
+
 # Importar el adaptador para hacer llamadas HTTP
 try:
-    import importlib.util
     adapter_path = Path(__file__).parent.parent / "adapters" / "api_client.py"
     if adapter_path.exists():
         spec = importlib.util.spec_from_file_location("api_client", adapter_path)
@@ -36,7 +50,6 @@ except Exception as e:
 # Cargar módulo de SMS
 _send_message_by_sms = None
 try:
-    import importlib.util
     common_security_path = (
         Path(__file__).parent.parent.parent.parent
         / "2_shared_application"
@@ -74,13 +87,21 @@ COLORS = {
 class ModelDownloadState(SharedSessionState):
     """Estado para la página de descargas de modelos."""
 
-    # Lista de modelos disponibles
+    # Lista completa de modelos del middleware (sin filtrar)
+    all_models_unfiltered: list[dict[str, Any]] = []
+
+    # Lista de modelos filtrados (se muestra en la UI)
     models: list[dict[str, Any]] = []
     models_loading: bool = False
     models_error: str = ""
 
-    # Filtros (en frontend solo se muestran modelos de la propia organización)
-    selected_organization_id: int | None = None
+    # Selectores de proyecto y versión
+    dl_projects: list[dict[str, Any]] = []
+    dl_versions: list[dict[str, Any]] = []
+    dl_selected_project_id: int = 0
+    dl_selected_project_name: str = ""
+    dl_selected_version_id: int = 0
+    dl_selected_version_name: str = ""
 
     # Estado del proceso de descarga
     selected_model: dict[str, Any] = {}
@@ -95,22 +116,125 @@ class ModelDownloadState(SharedSessionState):
     success_message: str = ""
     error_message: str = ""
 
+    @rx.var
+    def dl_project_options(self) -> list[str]:
+        """Opciones del selector de proyecto."""
+        return [p.get("name", "") for p in self.dl_projects if p.get("name")]
+
+    @rx.var
+    def dl_version_options(self) -> list[str]:
+        """Opciones del selector de versión."""
+        return [v.get("nombre", "") for v in self.dl_versions if v.get("nombre")]
+
     def on_mount(self):
         """Se ejecuta cuando la página se monta."""
         logger.info("ModelDownloadState montado")
-        # Cargar modelos al montar la página
-        return self.load_models()
+        return [self.init_selectors(), self.load_models()]
+
+    def init_selectors(self):
+        """Inicializa los selectores cargando proyectos de la organización del usuario."""
+        if self.organization_id <= 0:
+            return
+
+        try:
+            projects, _ = load_projects_for_selector(
+                user_id=self.user_id,
+                identity_type_id=self.identity_type_id,
+                organization_id=self.organization_id,
+            )
+            self.dl_projects = projects
+            self.dl_versions = []
+            self.dl_selected_project_id = 0
+            self.dl_selected_project_name = ""
+            self.dl_selected_version_id = 0
+            self.dl_selected_version_name = ""
+        except Exception as exc:
+            logger.error("Error cargando proyectos para selector: %s", exc)
+
+    def dl_set_selected_project(self, project_name: str):
+        """Establece el proyecto seleccionado y carga sus versiones."""
+        self.dl_selected_project_name = project_name
+        self.dl_selected_version_name = ""
+        self.dl_selected_version_id = 0
+        self.dl_versions = []
+
+        # Buscar el ID correspondiente al nombre
+        project_id = 0
+        for proj in self.dl_projects:
+            if proj.get("name") == project_name:
+                project_id = proj.get("id", 0)
+                break
+
+        self.dl_selected_project_id = project_id
+
+        if self.dl_selected_project_id > 0:
+            self._load_versions()
+
+        # Filtrar modelos por proyecto (sin versión)
+        self._filter_models()
+
+    def _load_versions(self):
+        """Carga las versiones del proyecto seleccionado."""
+        if self.dl_selected_project_id == 0:
+            return
+
+        try:
+            versions, _ = load_versions_for_selector(
+                organization_id=self.organization_id,
+                project_id=self.dl_selected_project_id,
+            )
+            self.dl_versions = [
+                {
+                    "id": v.get("version_id", 0),
+                    "nombre": f"v{v.get('version_id', 0):03d}",
+                }
+                for v in versions
+                if v.get("version_id", 0) > 0
+            ]
+        except Exception as exc:
+            logger.error("Error cargando versiones para selector: %s", exc)
+
+    def dl_set_selected_version(self, version_name: str):
+        """Establece la versión seleccionada y filtra modelos."""
+        self.dl_selected_version_name = version_name
+
+        # Buscar el ID correspondiente al nombre
+        version_id = 0
+        for ver in self.dl_versions:
+            if ver.get("nombre") == version_name:
+                version_id = ver.get("id", 0)
+                break
+
+        self.dl_selected_version_id = version_id
+        self._filter_models()
+
+    def _filter_models(self):
+        """Filtra modelos según proyecto y versión seleccionados."""
+        filtered = list(self.all_models_unfiltered)
+
+        if self.dl_selected_project_id > 0:
+            filtered = [
+                m for m in filtered
+                if m.get("project_id") == self.dl_selected_project_id
+            ]
+
+        if self.dl_selected_version_id > 0:
+            filtered = [
+                m for m in filtered
+                if m.get("version_id") == self.dl_selected_version_id
+            ]
+
+        self.models = filtered
 
     @rx.event(background=True)
     async def load_models(self):
-        """Carga la lista de modelos disponibles."""
+        """Carga la lista de modelos disponibles desde el middleware."""
         async with self:
             self.models_loading = True
             self.models_error = ""
             self.error_message = ""
 
         try:
-            # Obtener tokens de sesión (heredados de SharedSessionState)
             access_token = self.access_token
             session_token = self.session_token
 
@@ -120,13 +244,11 @@ class ModelDownloadState(SharedSessionState):
                     self.models_loading = False
                 return
 
-            # Llamar al endpoint de middleware
             middleware_url = os.getenv("MIDDLEWARE_BASE_URL", "http://localhost:8007")
             url = f"{middleware_url}/models/list"
 
-            # En frontend, usar la organización del usuario (no puede ver otras)
-            # El middleware automáticamente filtrará por la organización del usuario si no se especifica
-            params = {}
+            # En frontend, el middleware filtra automáticamente por organización del usuario
+            params: dict[str, Any] = {}
 
             headers = {
                 "Content-Type": "application/json",
@@ -137,31 +259,29 @@ class ModelDownloadState(SharedSessionState):
                 headers["Authorization"] = f"Bearer {access_token}"
 
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(
-                    url,
-                    params=params,
-                    headers=headers
-                )
+                response = await client.get(url, params=params, headers=headers)
 
             if response.status_code == 200:
                 data = response.json()
+                all_models = data.get("models", [])
                 async with self:
-                    self.models = data.get("models", [])
+                    self.all_models_unfiltered = all_models
+                    self._filter_models()
                     self.success_message = data.get("message", "Modelos cargados exitosamente")
                     self.models_loading = False
-                logger.info(f"Modelos cargados: {len(self.models)}")
+                logger.info("Modelos cargados: %d", len(all_models))
             else:
                 error_detail = response.json().get("detail", "Error desconocido")
                 async with self:
                     self.models_error = f"Error al cargar modelos: {error_detail}"
                     self.models_loading = False
-                logger.error(f"Error al cargar modelos: {response.status_code} - {error_detail}")
+                logger.error("Error al cargar modelos: %s - %s", response.status_code, error_detail)
 
         except Exception as e:
             async with self:
                 self.models_error = f"Error de conexión: {str(e)}"
                 self.models_loading = False
-            logger.error(f"Excepción al cargar modelos: {e}", exc_info=True)
+            logger.error("Excepción al cargar modelos: %s", e, exc_info=True)
 
     def open_otp_modal(self, model: dict[str, Any]):
         """Abre el modal para solicitar OTP."""
@@ -398,9 +518,12 @@ def model_card(model: dict[str, Any]) -> rx.Component:
                 size="2",
             ),
             rx.button(
+                rx.icon("download", size=16),
                 "Descargar con OTP",
                 on_click=lambda: ModelDownloadState.open_otp_modal(model),
                 color_scheme="green",
+                size="3",
+                style={"font_weight": "bold", "color": "black"},
                 width="100%",
             ),
             spacing="3",
@@ -509,28 +632,75 @@ def otp_modal() -> rx.Component:
 def model_downloads_panel() -> rx.Component:
     """Panel de descargas de modelos para integrar en el info_panel."""
     return rx.vstack(
-        # Toolbar con filtros y botón de refrescar
-        rx.hstack(
-            rx.button(
-                rx.icon("refresh_cw"),
-                " Refrescar",
-                on_click=ModelDownloadState.load_models,
-                color_scheme="blue",
-                loading=ModelDownloadState.models_loading,
+        # Selectores de proyecto y versión
+        rx.card(
+            rx.vstack(
+                rx.text(
+                    "Filtrar por proyecto y versión",
+                    size="3",
+                    weight="bold",
+                    color=COLORS["foreground"],
+                ),
+                rx.hstack(
+                    # Selector de proyecto
+                    rx.vstack(
+                        rx.text(
+                            "Proyecto",
+                            size="2",
+                            color=COLORS["muted_foreground"],
+                        ),
+                        rx.select(
+                            ModelDownloadState.dl_project_options,
+                            placeholder="Seleccione un proyecto",
+                            value=ModelDownloadState.dl_selected_project_name,
+                            on_change=ModelDownloadState.dl_set_selected_project,
+                            width="250px",
+                        ),
+                        spacing="1",
+                    ),
+                    # Selector de versión
+                    rx.vstack(
+                        rx.text(
+                            "Versión",
+                            size="2",
+                            color=COLORS["muted_foreground"],
+                        ),
+                        rx.select(
+                            ModelDownloadState.dl_version_options,
+                            placeholder="Seleccione una versión",
+                            value=ModelDownloadState.dl_selected_version_name,
+                            on_change=ModelDownloadState.dl_set_selected_version,
+                            width="180px",
+                        ),
+                        spacing="1",
+                    ),
+                    # Botón de refrescar
+                    rx.box(
+                        rx.button(
+                            rx.icon("refresh_cw", size=16),
+                            "Refrescar",
+                            on_click=ModelDownloadState.load_models,
+                            color_scheme="green",
+                            size="3",
+                            style={"font_weight": "bold", "color": "black"},
+                            loading=ModelDownloadState.models_loading,
+                        ),
+                        padding_top="1.3rem",
+                    ),
+                    spacing="4",
+                    width="100%",
+                    align="end",
+                ),
+                spacing="3",
+                width="100%",
             ),
-            spacing="3",
-            width="100%",
-            justify="end",
+            style={
+                "background": COLORS["secondary"],
+                "padding": "1rem",
+                "border_radius": "8px",
+            },
         ),
-        # Mensajes de éxito/error
-        rx.cond(
-            ModelDownloadState.success_message,
-            rx.callout(
-                ModelDownloadState.success_message,
-                icon="check_circle",
-                color_scheme="green",
-            ),
-        ),
+        # Mensajes de error
         rx.cond(
             ModelDownloadState.models_error,
             rx.callout(
@@ -561,9 +731,22 @@ def model_downloads_panel() -> rx.Component:
                     rx.vstack(
                         rx.icon("inbox", size=48, color=COLORS["muted_foreground"]),
                         rx.text(
-                            "No hay modelos disponibles",
+                            "No hay modelos disponibles para el filtro seleccionado",
                             color=COLORS["muted_foreground"],
                             size="3",
+                        ),
+                        rx.cond(
+                            ModelDownloadState.dl_selected_project_id > 0,
+                            rx.text(
+                                "Pruebe a seleccionar otro proyecto o versión",
+                                color=COLORS["muted_foreground"],
+                                size="2",
+                            ),
+                            rx.text(
+                                "Seleccione un proyecto para filtrar los modelos",
+                                color=COLORS["muted_foreground"],
+                                size="2",
+                            ),
                         ),
                         spacing="2",
                     ),

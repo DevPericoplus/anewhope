@@ -242,6 +242,7 @@ class InformesState(rx.State):
         """Carga las versiones del proyecto seleccionado."""
         async with self:
             proyecto_id = self.selected_proyecto_id
+            org_id = self.selected_org_id
 
         if proyecto_id == 0:
             async with self:
@@ -256,9 +257,12 @@ class InformesState(rx.State):
                 access_token = main_state.access_token
                 session_token = main_state.session_token
 
+            print(f"[DEBUG INFORMES] Cargando versiones para proyecto {proyecto_id} con org_id={org_id}")
+
             # Llamar a la API para obtener versiones
             response = get_project_versions(
                 project_id=proyecto_id,
+                organization_id=org_id,
                 access_token=access_token,
                 session_token=session_token,
             )

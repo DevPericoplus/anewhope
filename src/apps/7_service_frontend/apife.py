@@ -8,6 +8,9 @@ import importlib.util
 import os
 import sys
 from pathlib import Path
+
+# Logger a nivel de módulo para uso en endpoints
+logger = logging.getLogger(__name__)
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from typing import Annotated, Any, AsyncIterator
@@ -1103,13 +1106,6 @@ class TrainingStatusResponse(BaseModel):
     metrics: dict[str, Any] = Field(default_factory=dict)
     started_at: str | None = None
     finished_at: str | None = None
-
-
-class ModelListResponse(BaseModel):
-    """Respuesta con lista de modelos."""
-
-    models: list[dict[str, Any]] = Field(default_factory=list)
-    total: int = 0
 
 
 class ModelMetricsResponse(BaseModel):
@@ -3887,6 +3883,7 @@ def list_available_model_packages_endpoint(
     Returns:
         Lista de modelos con información de org/proyecto/versión/archivo
     """
+    _logger = logging.getLogger(__name__)
     try:
         # Verificar que el usuario tiene identity_type_id (es admin)
         if session.identity_type_id is None:
@@ -3915,7 +3912,7 @@ def list_available_model_packages_endpoint(
             detail=str(exc),
         ) from exc
     except Exception as exc:
-        logger.error("Error listando modelos: %s", str(exc))
+        _logger.error("Error listando modelos: %s", str(exc))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al listar modelos"
@@ -4060,4 +4057,92 @@ def validate_model_download_otp_endpoint(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al validar OTP"
+        ) from exc
+
+
+@app.get("/models/download/direct", tags=["models"])
+def download_model_direct_endpoint(
+    organization_id: int,
+    project_id: int,
+    version_id: int,
+    filename: str,
+    session: SessionContext = Depends(get_session_context),
+):
+    """Descarga directa de modelo para administradores (backoffice).
+
+    Solo accesible para SuperAdmin (identity_type_id=1).
+    No requiere OTP. Lee el fichero desde el sistema de archivos internal.
+
+    Args:
+        organization_id: ID de organización
+        project_id: ID de proyecto
+        version_id: ID de versión
+        filename: Nombre del archivo ZIP
+
+    Returns:
+        Archivo ZIP para descarga
+    """
+    from fastapi.responses import FileResponse
+    from pathlib import Path
+
+    _logger = logging.getLogger(__name__)
+
+    try:
+        _logger.info(
+            "[MODELS DIRECT] Inicio descarga directa: org=%s prj=%s ver=%s file=%s identity=%s",
+            organization_id, project_id, version_id, filename, session.identity_type_id,
+        )
+
+        # Solo SuperAdmin puede descargar directamente sin OTP
+        if session.identity_type_id != 1:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Solo SuperAdmin puede usar descarga directa",
+            )
+
+        # Construir ruta al archivo
+        base_path = os.getenv("BACKEND_IA_INTERNAL_STORAGE")
+        if not base_path:
+            base_path = "~/data/anewhope/files/backend_server/internal"
+
+        base_path = Path(os.path.expanduser(base_path))
+        org_folder = f"ORG{organization_id:05d}"
+        prj_folder = f"PRJ{project_id:05d}"
+        ver_folder = f"v{version_id:03d}"
+
+        file_path = base_path / org_folder / prj_folder / ver_folder / filename
+
+        _logger.info(
+            "[MODELS DIRECT] Ruta construida: %s (exists=%s)",
+            file_path,
+            file_path.exists(),
+        )
+
+        if not file_path.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Archivo no encontrado: {filename}",
+            )
+
+        # Validar que el archivo está dentro del directorio base (seguridad)
+        try:
+            file_path.resolve().relative_to(base_path.resolve())
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ruta de archivo no válida",
+            )
+
+        return FileResponse(
+            path=str(file_path),
+            filename=filename,
+            media_type="application/zip",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _logger.error("[MODELS DIRECT] Error inesperado: %s: %s", type(exc).__name__, exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error interno: {type(exc).__name__}: {exc}",
         ) from exc

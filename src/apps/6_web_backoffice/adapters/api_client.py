@@ -273,7 +273,7 @@ def _request_middleware(
 
     request = urllib.request.Request(url, data=body, headers=request_headers, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
+        with urllib.request.urlopen(request, timeout=30) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         # Si es 401 (Unauthorized) y no es el endpoint de refresh, intentar renovar tokens
@@ -3574,7 +3574,7 @@ def download_autonomous_package(
     """
     import httpx
 
-    middleware_url = _get_middleware_url()
+    middleware_url = _get_middleware_base_url()
     url = f"{middleware_url}/training/entrenamientos/{id_entrenamiento}/autonomous/package"
 
     headers: dict[str, str] = {}
@@ -3598,6 +3598,60 @@ def download_autonomous_package(
 
     except Exception as exc:
         print(f"[BACKOFFICE API_CLIENT] Excepción descargando paquete: {exc}")
+        return None
+
+
+def download_model_direct(
+    organization_id: int,
+    project_id: int,
+    version_id: int,
+    filename: str,
+    access_token: str = "",
+    session_token: str = "",
+) -> bytes | None:
+    """Descarga directa de modelo para SuperAdmin (sin OTP).
+
+    Usa el endpoint /models/download/direct del middleware que lee
+    el fichero desde el sistema de archivos internal.
+
+    Args:
+        organization_id: ID de organización
+        project_id: ID de proyecto
+        version_id: ID de versión
+        filename: Nombre del archivo ZIP
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+
+    Returns:
+        Bytes del archivo ZIP o None si hay error
+    """
+    import httpx
+
+    middleware_url = _get_middleware_base_url()
+    url = f"{middleware_url}/models/download/direct"
+    params = {
+        "organization_id": organization_id,
+        "project_id": project_id,
+        "version_id": version_id,
+        "filename": filename,
+    }
+
+    headers: dict[str, str] = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    try:
+        with httpx.Client(timeout=300.0) as client:
+            response = client.get(url, params=params, headers=headers)
+
+            if response.status_code == 200:
+                return response.content
+            else:
+                return None
+
+    except Exception:
         return None
 
 
@@ -3634,6 +3688,38 @@ def list_autonomous_packages(
     path = "/training/entrenamientos/autonomous/packages"
     if query_string:
         path += f"?{query_string}"
+
+    headers: dict[str, str] = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware("GET", path, headers=headers)
+    return response if isinstance(response, dict) else {}
+
+
+def list_models_from_filesystem(
+    organization_id: int | None = None,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Lista los modelos disponibles escaneando el sistema de archivos.
+
+    Usa el endpoint /models/list del middleware que escanea las carpetas
+    internal/ORG*/PRJ*/v*/*.zip para encontrar paquetes de modelos.
+
+    Args:
+        organization_id: Filtrar por organización (opcional)
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+
+    Returns:
+        Diccionario con success, models y message
+    """
+    path = "/models/list"
+    if organization_id is not None:
+        path += f"?organization_id={organization_id}"
 
     headers: dict[str, str] = {}
     if access_token:

@@ -41,12 +41,11 @@ config = rx.Config(
     # Aumentar lock_expiration para operaciones largas
     redis_lock_expiration=REDIS_LOCK_EXPIRATION,
     
-    # Configuración de servidor
+    # Configuración de servidor (copiada del frontend que funciona)
     env=rx.Env.PROD,
     frontend_port=3200,  # Puerto estático fijo para backoffice (evita conflictos con nginx)
     backend_port=8006,
     api_url="https://tfmmyllm.ai:8443",
-    deploy_url="https://tfmmyllm.ai:8443",
     backend_host="0.0.0.0",
     
     disable_plugins=["reflex.plugins.sitemap.SitemapPlugin"],

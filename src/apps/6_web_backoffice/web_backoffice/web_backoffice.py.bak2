@@ -93,8 +93,6 @@ _org_helpers_spec = importlib.util.spec_from_file_location("org_selector_helpers
 _org_helpers_module = importlib.util.module_from_spec(_org_helpers_spec)
 _org_helpers_spec.loader.exec_module(_org_helpers_module)
 load_organizations_for_selector = _org_helpers_module.load_organizations_for_selector
-load_projects_for_selector = _org_helpers_module.load_projects_for_selector
-load_versions_for_selector = _org_helpers_module.load_versions_for_selector
 find_org_id_by_name = _org_helpers_module.find_org_id_by_name
 
 # Importar db_query_helper para acceso a myllm_projects_db (plantillas de jobs)
@@ -822,8 +820,6 @@ class State(SharedSessionState):
                 self.proyecciones_project_id = 0
                 self.proyecciones_project_name = ""
                 self.proyecciones_versions = []
-        if menu == "descargas":
-            return self.dl_init_page()
 
     def set_internal_menu(self, menu: str):
         """Set active menu item for internal tools."""
@@ -4917,31 +4913,30 @@ class State(SharedSessionState):
 
     def dl_init_page(self):
         """Inicializa la página de Descargas cargando organizaciones si es necesario."""
-        # En backoffice siempre cargar organizaciones (sin OTP requerido)
-        if len(self.dl_organizations) == 0:
-            return self.dl_load_organizations()
+        # Si no requiere OTP o ya está validado, cargar organizaciones
+        if (self.identity_type_id not in [1, 2]) or self.dl_otp_validated:
+            if len(self.dl_organizations) == 0:
+                return self.dl_load_organizations()
 
     def dl_load_organizations(self):
         """Carga las organizaciones disponibles según asignaciones del usuario."""
-        try:
-            orgs, default_id = load_organizations_for_selector(
-                user_id=self.user_id,
-                identity_type_id=self.identity_type_id,
-                session_org_id=self.organization_id,
-            )
-            self.dl_organizations = orgs
+        from adapters.api_client import get_user_assigned_organizations
 
-            # Auto-seleccionar si solo hay una organización
-            if len(self.dl_organizations) == 1:
-                self.dl_selected_org_id = self.dl_organizations[0]["id"]
-                self.dl_selected_org_name = self.dl_organizations[0].get("name", "")
-                return self.dl_load_projects()
-            elif default_id > 0:
-                for org in self.dl_organizations:
-                    if org.get("id") == default_id:
-                        self.dl_selected_org_id = default_id
-                        self.dl_selected_org_name = org.get("name", "")
-                        return self.dl_load_projects()
+        try:
+            response = get_user_assigned_organizations(
+                user_id=self.user_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if response.get("success"):
+                self.dl_organizations = response.get("organizations", [])
+
+                # Auto-seleccionar si solo hay una organización
+                if len(self.dl_organizations) == 1:
+                    self.dl_selected_org_id = self.dl_organizations[0]["id"]
+                    self.dl_selected_org_name = self.dl_organizations[0].get("name", "")
+                    yield self.dl_load_projects()
 
         except Exception as exc:
             print(f"[DOWNLOAD] Error cargando organizaciones: {exc}")
@@ -4972,28 +4967,26 @@ class State(SharedSessionState):
 
     def dl_load_projects(self):
         """Carga los proyectos de la organización seleccionada."""
+        from adapters.api_client import get_organization_projects
+
         if self.dl_selected_org_id == 0:
             return
 
         try:
-            projects, default_id = load_projects_for_selector(
-                user_id=self.user_id,
-                identity_type_id=self.identity_type_id,
+            response = get_organization_projects(
                 organization_id=self.dl_selected_org_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
             )
-            self.dl_projects = projects
 
-            # Auto-seleccionar si solo hay un proyecto
-            if len(self.dl_projects) == 1:
-                self.dl_selected_project_id = self.dl_projects[0]["id"]
-                self.dl_selected_project_name = self.dl_projects[0].get("name", "")
-                return self.dl_load_versions()
-            elif default_id > 0:
-                for prj in self.dl_projects:
-                    if prj.get("id") == default_id:
-                        self.dl_selected_project_id = default_id
-                        self.dl_selected_project_name = prj.get("name", "")
-                        return self.dl_load_versions()
+            if response.get("success"):
+                self.dl_projects = response.get("projects", [])
+
+                # Auto-seleccionar si solo hay un proyecto
+                if len(self.dl_projects) == 1:
+                    self.dl_selected_project_id = self.dl_projects[0]["id"]
+                    self.dl_selected_project_name = self.dl_projects[0].get("name", "")
+                    yield self.dl_load_versions()
 
         except Exception as exc:
             print(f"[DOWNLOAD] Error cargando proyectos: {exc}")
@@ -5021,23 +5014,21 @@ class State(SharedSessionState):
 
     def dl_load_versions(self):
         """Carga las versiones del proyecto seleccionado."""
+        from adapters.api_client import get_project_versions
+
         if self.dl_selected_project_id == 0:
             return
 
         try:
-            versions, default_id = load_versions_for_selector(
-                organization_id=self.dl_selected_org_id,
+            response = get_project_versions(
                 project_id=self.dl_selected_project_id,
+                organization_id=self.dl_selected_org_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
             )
-            # Mapear al formato esperado por dl_version_options (clave "nombre") y dl_set_selected_version (clave "id")
-            self.dl_versions = [
-                {
-                    "id": v.get("version_id", 0),
-                    "nombre": f"v{v.get('version_id', 0):03d}",
-                }
-                for v in versions
-                if v.get("version_id", 0) > 0
-            ]
+
+            if response.get("success"):
+                self.dl_versions = response.get("versions", [])
 
         except Exception as exc:
             print(f"[DOWNLOAD] Error cargando versiones: {exc}")
@@ -5061,21 +5052,18 @@ class State(SharedSessionState):
             return self.dl_load_packages()
 
     def dl_load_packages(self):
-        """Carga los paquetes disponibles escaneando el sistema de archivos.
-
-        Usa el endpoint /models/list del middleware que escanea las carpetas
-        internal/ORG*/PRJ*/v*/*.zip y filtra por proyecto y versión seleccionados.
-        """
-        from adapters.api_client import list_models_from_filesystem
-        from datetime import datetime
+        """Carga los paquetes disponibles para la selección actual."""
+        from adapters.api_client import list_autonomous_packages
 
         self.dl_loading_packages = True
         self.dl_error = ""
         self.dl_packages = []
 
         try:
-            response = list_models_from_filesystem(
-                organization_id=self.dl_selected_org_id if self.dl_selected_org_id > 0 else None,
+            response = list_autonomous_packages(
+                id_organizacion=self.dl_selected_org_id if self.dl_selected_org_id > 0 else None,
+                id_proyecto=self.dl_selected_project_id if self.dl_selected_project_id > 0 else None,
+                id_version=self.dl_selected_version_id if self.dl_selected_version_id > 0 else None,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
@@ -5083,54 +5071,7 @@ class State(SharedSessionState):
             self.dl_loading_packages = False
 
             if response.get("success"):
-                models = response.get("models", [])
-
-                # Filtrar por proyecto y versión seleccionados
-                filtered = []
-                for m in models:
-                    if self.dl_selected_project_id > 0:
-                        if m.get("project_id", 0) != self.dl_selected_project_id:
-                            continue
-                    if self.dl_selected_version_id > 0:
-                        if m.get("version_id", 0) != self.dl_selected_version_id:
-                            continue
-                    filtered.append(m)
-
-                # Mapear al formato PackageDict esperado por la UI
-                packages = []
-                for idx, m in enumerate(filtered):
-                    created_ts = m.get("created_at", 0)
-                    if isinstance(created_ts, (int, float)) and created_ts > 0:
-                        gen_date = datetime.fromtimestamp(created_ts).strftime("%Y-%m-%d %H:%M")
-                    else:
-                        gen_date = "—"
-
-                    size_mb = 0.0
-                    raw_size = m.get("file_size_mb", "0")
-                    try:
-                        size_mb = float(raw_size)
-                    except (ValueError, TypeError):
-                        size_mb = 0.0
-
-                    packages.append({
-                        "id_entrenamiento": idx + 1,
-                        "package_filename": m.get("filename", "modelo.zip"),
-                        "training_mode": "production",
-                        "created_at": gen_date,
-                        "file_size_mb": size_mb,
-                        "ollama_model_name": m.get("filename", "").replace(".zip", ""),
-                        "gguf_quantization": "n/a",
-                        "package_size_mb": size_mb,
-                        "dataset_size": 0,
-                        "package_generated_at": gen_date,
-                        # Campos extra para la descarga por fichero
-                        "_relative_path": m.get("relative_path", ""),
-                        "_organization_id": m.get("organization_id", 0),
-                        "_project_id": m.get("project_id", 0),
-                        "_version_id": m.get("version_id", 0),
-                    })
-
-                self.dl_packages = packages
+                self.dl_packages = response.get("packages", [])
 
                 if len(self.dl_packages) == 0:
                     yield rx.toast.info(
@@ -5139,9 +5080,9 @@ class State(SharedSessionState):
                         duration=3000,
                     )
             else:
-                self.dl_error = response.get("detail", response.get("error", "Error cargando paquetes"))
+                self.dl_error = response.get("error", "Error cargando paquetes")
                 yield rx.toast.error(
-                    f"Error cargando paquetes: {self.dl_error}",
+                    "Error cargando paquetes",
                     position="bottom-right",
                     duration=5000,
                 )
@@ -5157,41 +5098,17 @@ class State(SharedSessionState):
             )
 
     def dl_download_package(self, id_entrenamiento: int):
-        """Descarga un paquete específico usando el índice del paquete.
+        """Descarga un paquete específico."""
+        from adapters.api_client import download_autonomous_package
+        import base64
 
-        Busca el paquete en dl_packages por id_entrenamiento (índice secuencial)
-        y descarga directamente del sistema de archivos vía middleware.
-        """
-        from adapters.api_client import download_model_direct
+        print(f"[DOWNLOAD PAGE] Descargando paquete {id_entrenamiento}")
 
         self.dl_downloading = True
 
-        # Buscar el paquete en la lista por id_entrenamiento (índice secuencial)
-        pkg = None
-        for p in self.dl_packages:
-            if p.get("id_entrenamiento") == id_entrenamiento:
-                pkg = p
-                break
-
-        if not pkg:
-            self.dl_downloading = False
-            return rx.toast.error(
-                "Paquete no encontrado en la lista",
-                position="bottom-right",
-                duration=5000,
-            )
-
-        org_id = pkg.get("_organization_id", self.dl_selected_org_id)
-        prj_id = pkg.get("_project_id", self.dl_selected_project_id)
-        ver_id = pkg.get("_version_id", self.dl_selected_version_id)
-        filename = pkg.get("package_filename", "modelo.zip")
-
         try:
-            package_bytes = download_model_direct(
-                organization_id=org_id,
-                project_id=prj_id,
-                version_id=ver_id,
-                filename=filename,
+            package_bytes = download_autonomous_package(
+                id_entrenamiento=id_entrenamiento,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
@@ -5199,8 +5116,14 @@ class State(SharedSessionState):
             self.dl_downloading = False
 
             if package_bytes:
+                # Convertir a base64 para trigger download
+                package_b64 = base64.b64encode(package_bytes).decode('utf-8')
+                filename = f"ENT{id_entrenamiento}_modelo_autonomo.zip"
+
+                print(f"[DOWNLOAD PAGE] Paquete descargado: {len(package_bytes)} bytes")
+
                 return rx.download(
-                    data=package_bytes,
+                    data=package_b64,
                     filename=filename,
                 )
             else:
@@ -9000,8 +8923,26 @@ def descargas_panel() -> rx.Component:
                                                 ),
                                                 rx.hstack(
                                                     rx.badge(
-                                                        "Modelo LLM",
-                                                        color_scheme="green",
+                                                        f"Entrenamiento #{pkg['id_entrenamiento']}",
+                                                        color_scheme="blue",
+                                                        variant="surface",
+                                                    ),
+                                                    rx.badge(
+                                                        pkg["training_mode"].upper(),
+                                                        color_scheme=rx.cond(
+                                                            pkg["training_mode"] == "simulation",
+                                                            "gray",
+                                                            rx.cond(
+                                                                pkg["training_mode"] == "test",
+                                                                "orange",
+                                                                "red",
+                                                            ),
+                                                        ),
+                                                        variant="solid",
+                                                    ),
+                                                    rx.badge(
+                                                        f"{pkg['gguf_quantization']}",
+                                                        color_scheme="purple",
                                                         variant="surface",
                                                     ),
                                                     spacing="2",
@@ -9019,7 +8960,15 @@ def descargas_panel() -> rx.Component:
                                             rx.vstack(
                                                 rx.text("Tamaño:", font_size="0.85em", color=COLORS["muted"]),
                                                 rx.text(
-                                                    f"{pkg['package_size_mb']:.2f} MB",
+                                                    f"{pkg['package_size_mb']:.1f} MB",
+                                                    font_weight="bold",
+                                                ),
+                                                spacing="0",
+                                            ),
+                                            rx.vstack(
+                                                rx.text("Dataset:", font_size="0.85em", color=COLORS["muted"]),
+                                                rx.text(
+                                                    f"{pkg['dataset_size']} ejemplos",
                                                     font_weight="bold",
                                                 ),
                                                 spacing="0",
@@ -9027,12 +8976,12 @@ def descargas_panel() -> rx.Component:
                                             rx.vstack(
                                                 rx.text("Generado:", font_size="0.85em", color=COLORS["muted"]),
                                                 rx.text(
-                                                    pkg["package_generated_at"],
+                                                    pkg["package_generated_at"][:10],
                                                     font_weight="bold",
                                                 ),
                                                 spacing="0",
                                             ),
-                                            columns="2",
+                                            columns="3",
                                             spacing="4",
                                             width="100%",
                                         ),
@@ -9051,7 +9000,6 @@ def descargas_panel() -> rx.Component:
                                             color_scheme="green",
                                             size="3",
                                             width="100%",
-                                            style={"font_weight": "bold", "color": "black"},
                                         ),
 
                                         spacing="3",
@@ -10626,12 +10574,12 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             informes_panel(),
             rx.box(height="0"),
         ),
-        # Panel de descargas con selectores de organización, proyecto y versión
-        rx.cond(
-            rx.cond(is_logged_in, active_item == "descargas", False),
-            descargas_panel(),
-            rx.box(height="0"),
-        ),
+        # Panel de descargas eliminado (ahora se usa descargas_panel() en info_panel)
+        # rx.cond(
+        #     rx.cond(is_logged_in, active_item == "descargas", False),
+        #     model_downloads_panel(),
+        #     rx.box(height="0"),
+        # ),
         rx.cond(
             rx.cond(
                 is_logged_in,

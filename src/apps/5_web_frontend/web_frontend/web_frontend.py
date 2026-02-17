@@ -363,6 +363,11 @@ class State(SharedSessionState):
         if menu == "proyecciones":
             self.load_org_projects()  # Para el selector de proyectos
             self.reset_proyecciones_state()  # Limpiar estado anterior
+        if menu == "descargas":
+            return [
+                ModelDownloadState.init_selectors,
+                ModelDownloadState.load_models,
+            ]
 
     # ========== Gestión de Usuarios de la Organización ==========
     
