@@ -43,5 +43,23 @@
     "modification_date": "",
     "id_modifier_user": 1,
     "active": true
+  },
+  {
+    "id_user": 59,
+    "id_organization": 8,
+    "identity_type_id": 2,
+    "create_date": "17/02/26-12:26",
+    "modification_date": "",
+    "id_modifier_user": 1,
+    "active": true
+  },
+  {
+    "id_user": 60,
+    "id_organization": 8,
+    "identity_type_id": 5,
+    "create_date": "17/02/26-13:25",
+    "modification_date": "",
+    "id_modifier_user": 1,
+    "active": true
   }
 ]

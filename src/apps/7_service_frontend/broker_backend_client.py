@@ -175,17 +175,18 @@ class BrokerBackendClient:
         return dict(data or {})
 
     def update_user_status(
-        self, user_id: int, active: bool, requester_org_id: int
+        self, user_id: int, active: bool, requester_org_id: int, requester_identity_type_id: int = 0
     ) -> dict[str, Any]:
         """Actualiza el estado activo/inactivo de un usuario.
-        
+
         Flujo: Middleware → Broker → Backend Core → MariaDB
-        
+
         Args:
             user_id: ID del usuario a modificar
             active: True para habilitar, False para deshabilitar
             requester_org_id: ID de la organización del solicitante
-        
+            requester_identity_type_id: Tipo de identidad del solicitante (1=SuperAdmin)
+
         Returns:
             Diccionario con user_id, active y message
         """
@@ -193,9 +194,9 @@ class BrokerBackendClient:
             "PATCH",
             f"/users/{user_id}/status",
             payload={
-                "user_id": user_id,
                 "active": active,
                 "requester_org_id": requester_org_id,
+                "requester_identity_type_id": requester_identity_type_id,
             },
         )
         return dict(data or {})

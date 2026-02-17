@@ -242,30 +242,33 @@ class BrokerBackendRouter:
             raise BrokerBusinessError("No se pudo crear usuario en core") from exc
 
     def update_user_status(
-        self, user_id: int, active: bool, requester_org_id: int
+        self, user_id: int, active: bool, requester_org_id: int, requester_identity_type_id: int = 0
     ) -> dict[str, Any]:
         """Actualiza el estado activo/inactivo de un usuario en backend core.
-        
+
         Args:
             user_id: ID del usuario a modificar
             active: True para habilitar, False para deshabilitar
             requester_org_id: ID de la organización del solicitante (para validación)
-        
+            requester_identity_type_id: Tipo de identidad del solicitante (1=SuperAdmin)
+
         Returns:
             Diccionario con user_id, active y message
         """
         try:
             self._logger.info(
-                "[%s] Actualizando estado usuario user_id=%s active=%s org_id=%s",
+                "[%s] Actualizando estado usuario user_id=%s active=%s org_id=%s identity_type_id=%s",
                 self._client_app,
                 user_id,
                 active,
                 requester_org_id,
+                requester_identity_type_id,
             )
             return self._core_client.update_user_status(
                 user_id=user_id,
                 active=active,
                 requester_org_id=requester_org_id,
+                requester_identity_type_id=requester_identity_type_id,
             )
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(

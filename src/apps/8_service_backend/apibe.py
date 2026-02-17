@@ -101,9 +101,9 @@ class UserCreateResponse(BaseModel):
 class UserStatusUpdateRequest(BaseModel):
     """Request para actualizar estado activo de un usuario."""
 
-    user_id: int
     active: bool
     requester_org_id: int
+    requester_identity_type_id: int = 0
 
 
 class UserStatusUpdateResponse(BaseModel):
@@ -656,6 +656,7 @@ def update_user_status(
             user_id=user_id,
             active=payload.active,
             requester_org_id=payload.requester_org_id,
+            requester_identity_type_id=payload.requester_identity_type_id,
         )
         return UserStatusUpdateResponse(**response)
     except BrokerBusinessError as exc:

@@ -580,39 +580,41 @@ class BackendCoreRouter:
         }
 
     def update_user_status(
-        self, user_id: int, active: bool, requester_org_id: int
+        self, user_id: int, active: bool, requester_org_id: int, requester_identity_type_id: int = 0
     ) -> dict[str, Any]:
         """Actualiza el estado activo/inactivo de un usuario en MariaDB.
-        
+
         Este es el destino final del flujo:
         Frontend → Middleware → Broker → Backend Core (aquí) → MariaDB
-        
+
         Args:
             user_id: ID del usuario a modificar
             active: True para habilitar, False para deshabilitar
             requester_org_id: ID de la organización del solicitante (para validación)
-        
+            requester_identity_type_id: Tipo de identidad del solicitante (1=SuperAdmin)
+
         Returns:
             Diccionario con user_id, active y message
-        
+
         Raises:
             BackendCoreBusinessError: Si el usuario no existe o no pertenece a la org
         """
         # Cargar usuarios
         users = self.list_users()
-        
+
         # Buscar el usuario
         target_user = None
         for user in users:
             if user.user_id == user_id:
                 target_user = user
                 break
-        
+
         if target_user is None:
             raise BackendCoreBusinessError(f"Usuario con ID {user_id} no encontrado")
-        
-        # Validar que pertenece a la misma organización
-        if target_user.organization_id != requester_org_id:
+
+        # Validar permisos: SuperAdmin (identity_type_id=1) puede modificar cualquier usuario
+        # Otros usuarios solo pueden modificar usuarios de su misma organización
+        if requester_identity_type_id != 1 and target_user.organization_id != requester_org_id:
             raise BackendCoreBusinessError(
                 "No tiene permisos para modificar usuarios de otra organización"
             )
@@ -3590,44 +3592,11 @@ class BackendCoreRouter:
                     fm_result = {"error": str(e)}
 
                 # PASO 4: Crear estado inicial en la tabla estado
-                # Obtener el id_flujo del proyecto para establecer el estado inicial correcto
-                proyecto_result = conn.execute(
-                    text("SELECT id_flujo FROM proyectos WHERE id = :project_id"),
-                    {"project_id": project_id},
-                )
-                proyecto_row = proyecto_result.fetchone()
-                id_flujo = proyecto_row[0] if proyecto_row else 1
-
-                # Si el proyecto tiene id_flujo=1 (Propuesta Cliente), establecer propuesta_cliente=1
-                # Todos los demás estados del flujo de trabajo se inicializan en FALSE
-                propuesta_cliente_value = 1 if id_flujo == 1 else 0
-
-                # IMPORTANTE: usar version_db_id (id autoincremental) no version_id (número de versión)
-                conn.execute(
-                    text("""
-                        INSERT INTO estado (
-                            id_organizacion, id_proyecto, id_version,
-                            propuesta_cliente, revision_interna, propuesta_mejoras,
-                            aceptacion_cliente, aceptacion_interna, entrenamiento_inicial,
-                            evaluacion_entrenamiento, reentrenamiento, optimizacion,
-                            aprobacion_calidad, generacion_llm, notificacion_descarga
-                        ) VALUES (
-                            :org_id, :project_id, :version_db_id,
-                            :propuesta_cliente, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-                        )
-                    """),
-                    {
-                        "org_id": org_id,
-                        "project_id": project_id,
-                        "version_db_id": version_db_id,
-                        "propuesta_cliente": propuesta_cliente_value,
-                    },
-                )
-
+                # NOTA: Los triggers trg_versiones_after_insert y trg_estado_version_after_insert
+                # se encargan automáticamente de crear los registros en estado_version y estado.
+                # Por lo tanto, NO necesitamos hacer INSERT manual aquí.
                 self._logger.info(
-                    "[backend-core] Estado inicial creado con propuesta_cliente=%s (id_flujo=%s)",
-                    propuesta_cliente_value,
-                    id_flujo,
+                    "[backend-core] Estado inicial será creado automáticamente por triggers"
                 )
 
                 # PASO 5: Registrar cambio en la tabla cambios
@@ -3657,15 +3626,86 @@ class BackendCoreRouter:
                 conn.commit()
 
                 self._logger.info(
-                    "[backend-core] Versión %s creada exitosamente",
+                    "[backend-core] Versión %s creada exitosamente (version_db_id=%s)",
                     version_id,
+                    version_db_id,
                 )
+
+                # Consultar la versión y estado creados para retornarlos completos
+                self._logger.info("[backend-core] Consultando versión con id=%s", version_db_id)
+                version_result = conn.execute(
+                    text("""
+                        SELECT id, id_proyecto, id_version, fecha_lanzamiento, descripcion,
+                               creado_at, actualizado_at, id_organizacion
+                        FROM versiones
+                        WHERE id = :version_db_id
+                    """),
+                    {"version_db_id": version_db_id},
+                )
+                version_row = version_result.fetchone()
+                self._logger.info("[backend-core] version_row obtenida: %s", version_row)
+
+                self._logger.info("[backend-core] Consultando estado con id_version=%s (versiones.id)", version_db_id)
+                estado_result = conn.execute(
+                    text("""
+                        SELECT id, id_organizacion, id_proyecto, id_version,
+                               propuesta_cliente, revision_interna, propuesta_mejoras,
+                               aceptacion_cliente, aceptacion_interna, entrenamiento_inicial,
+                               evaluacion_entrenamiento, reentrenamiento, optimizacion,
+                               aprobacion_calidad, generacion_llm, notificacion_descarga,
+                               creado_at, actualizado_at
+                        FROM estado
+                        WHERE id_version = :version_db_id
+                    """),
+                    {"version_db_id": version_db_id},
+                )
+                estado_row = estado_result.fetchone()
+                self._logger.info("[backend-core] estado_row obtenida: %s", estado_row)
+
+                # Construir objetos de respuesta
+                version_dict = None
+                if version_row:
+                    version_dict = {
+                        "id": version_row[0],
+                        "id_proyecto": version_row[1],
+                        "id_version": version_row[2],
+                        "fecha_lanzamiento": version_row[3].isoformat() if version_row[3] else None,
+                        "descripcion": version_row[4],
+                        "creado_at": version_row[5].isoformat() if version_row[5] else None,
+                        "actualizado_at": version_row[6].isoformat() if version_row[6] else None,
+                        "id_organizacion": version_row[7],
+                    }
+
+                estado_dict = None
+                if estado_row:
+                    estado_dict = {
+                        "id": estado_row[0],
+                        "id_organizacion": estado_row[1],
+                        "id_proyecto": estado_row[2],
+                        "id_version": estado_row[3],
+                        "propuesta_cliente": bool(estado_row[4]),
+                        "revision_interna": bool(estado_row[5]),
+                        "propuesta_mejoras": bool(estado_row[6]),
+                        "aceptacion_cliente": bool(estado_row[7]),
+                        "aceptacion_interna": bool(estado_row[8]),
+                        "entrenamiento_inicial": bool(estado_row[9]),
+                        "evaluacion_entrenamiento": bool(estado_row[10]),
+                        "reentrenamiento": bool(estado_row[11]),
+                        "optimizacion": bool(estado_row[12]),
+                        "aprobacion_calidad": bool(estado_row[13]),
+                        "generacion_llm": bool(estado_row[14]),
+                        "notificacion_descarga": bool(estado_row[15]),
+                        "creado_at": estado_row[16].isoformat() if estado_row[16] else None,
+                        "actualizado_at": estado_row[17].isoformat() if estado_row[17] else None,
+                    }
 
                 return {
                     "success": True,
                     "message": f"Versión {version_folder} creada correctamente",
                     "version_id": version_id,
                     "version_folder": version_folder,
+                    "version": version_dict,
+                    "state": estado_dict,
                     "fmanagement_result": fm_result,
                 }
 

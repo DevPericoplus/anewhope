@@ -2535,30 +2535,31 @@ class RouterMiddleware:
         self._store_manage_roles(manage_roles_path, entries)
 
     def update_user_active_status(
-        self, user_id: int, active: bool, requester_org_id: int
+        self, user_id: int, active: bool, requester_org_id: int, requester_identity_type_id: int = 0
     ) -> dict[str, Any]:
         """
         Actualiza el estado activo/inactivo de un usuario.
-        
+
         FLUJO CORRECTO (según arquitectura):
         Frontend/Backoffice → Middleware (aquí) → Broker → Backend Core → MariaDB
-        
+
         Args:
             user_id: ID del usuario a modificar
             active: True para habilitar, False para deshabilitar
             requester_org_id: ID de la organización del usuario que solicita el cambio
-        
+            requester_identity_type_id: Tipo de identidad del usuario (1=SuperAdmin permite todo)
+
         Returns:
             Diccionario con user_id, active y message
-        
+
         Raises:
             BusinessRuleError: Si hay error en el flujo o el usuario no existe
         """
         storage_mode = self._get_storage_mode()
-        
+
         if storage_mode == "mock":
             # Solo JSON, sin pasar por broker/backend core
-            return self._update_user_status_mock_only(user_id, active, requester_org_id)
+            return self._update_user_status_mock_only(user_id, active, requester_org_id, requester_identity_type_id)
         
         # Modo db_only o mock_and_db: enviar al broker → backend core → MariaDB
         try:
@@ -2587,22 +2588,24 @@ class RouterMiddleware:
             raise BusinessRuleError(f"Error actualizando usuario: {e}") from e
 
     def _update_user_status_mock_only(
-        self, user_id: int, active: bool, requester_org_id: int
+        self, user_id: int, active: bool, requester_org_id: int, requester_identity_type_id: int = 0
     ) -> dict[str, Any]:
         """Actualiza estado solo en JSON (modo mock)."""
         users_path = self._get_users_file_path()
         all_users = self._load_users(users_path)
-        
+
         target_user = None
         for user in all_users:
             if user.user_id == user_id:
                 target_user = user
                 break
-        
+
         if target_user is None:
             raise BusinessRuleError(f"Usuario con ID {user_id} no encontrado")
-        
-        if target_user.organization_id != requester_org_id:
+
+        # Validar permisos: SuperAdmin (identity_type_id=1) puede modificar cualquier usuario
+        # Otros usuarios solo pueden modificar usuarios de su misma organización
+        if requester_identity_type_id != 1 and target_user.organization_id != requester_org_id:
             raise BusinessRuleError(
                 "No tiene permisos para modificar usuarios de otra organización"
             )
@@ -4206,7 +4209,15 @@ class RouterMiddleware:
         )
 
         try:
-            return self._broker_client.create_version_full(project_id, request_data)
+            backend_response = self._broker_client.create_version_full(project_id, request_data)
+
+            # Transformar respuesta del backend al formato esperado por el middleware
+            return {
+                "success": backend_response.get("success", False),
+                "version": backend_response.get("version"),
+                "state": backend_response.get("state"),
+                "mensaje": backend_response.get("message"),  # Transformar 'message' a 'mensaje'
+            }
         except BrokerBackendCommunicationError as exc:
             raise BusinessRuleError(
                 f"No se pudo crear versión completa: {exc}"

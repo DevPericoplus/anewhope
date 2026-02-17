@@ -806,13 +806,17 @@ async def get_organization_users_endpoint(
         Lista de usuarios con user_id, user_name y active
     """
     try:
-        # Validar que el usuario pertenece a la organización solicitada
-        if session.organization_id != organization_id:
+        # Validar acceso:
+        # - SuperAdmin (identity_type_id=1) puede ver cualquier organización
+        # - Otros usuarios solo pueden ver su propia organización
+        # Nota: El control de asignaciones se hace en el selector del backoffice,
+        # aquí solo validamos que sea SuperAdmin o que esté viendo su org propia
+        if session.identity_type_id != 1 and session.organization_id != organization_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No tiene permisos para ver usuarios de esta organización",
             )
-        
+
         users = router.get_organization_users(organization_id, identity_type_id, active_only)
         ip_address, user_agent = _get_request_metadata(http_request)
         router.log_activity_action(
@@ -867,10 +871,12 @@ async def update_user_status_endpoint(
     
     try:
         # Validar que el usuario a modificar pertenece a la misma organización
+        # (SuperAdmin puede modificar usuarios de cualquier organización)
         result = router.update_user_active_status(
             user_id=user_id,
             active=request.active,
             requester_org_id=session.organization_id,
+            requester_identity_type_id=session.identity_type_id,
         )
         
         ip_address, user_agent = _get_request_metadata(http_request)
@@ -2908,19 +2914,35 @@ def get_tecnologias_asignadas_org_endpoint(
 )
 def get_project_versions_endpoint(
     project_id: int,
+    org_id: int,
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
     session: Annotated[SessionContext, Depends(get_session_context)],
 ) -> VersionesListResponse:
-    """Obtiene todas las versiones de un proyecto."""
+    """Obtiene todas las versiones de un proyecto.
+
+    Args:
+        project_id: ID del proyecto
+        org_id: ID de la organización (del selector en backoffice)
+    """
     _logger = logging.getLogger(__name__)
+
+    # Validación de permisos: SuperAdmin puede ver cualquier org, otros solo la suya
+    if session.identity_type_id != 1 and org_id != session.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tiene permisos para ver versiones de esta organización",
+        )
+
     _logger.info(
-        "[middleware] Consultando versiones proyecto=%s org=%s",
+        "[middleware] Consultando versiones proyecto=%s org=%s (session_org=%s, identity=%s)",
         project_id,
+        org_id,
         session.organization_id,
+        session.identity_type_id,
     )
 
     try:
-        response = router.get_project_versions(project_id, session.organization_id, session)
+        response = router.get_project_versions(project_id, org_id, session)
         return VersionesListResponse(**response)
     except BusinessRuleError as exc:
         raise HTTPException(
@@ -2949,7 +2971,8 @@ def create_project_version_endpoint(
     )
 
     # Validar que el proyecto pertenece a la organización del usuario
-    if request.id_organizacion != session.organization_id:
+    # EXCEPCIÓN: SuperAdmin (identity_type_id=1) puede crear versiones en cualquier organización
+    if session.identity_type_id != 1 and request.id_organizacion != session.organization_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tiene permisos para crear versiones en esta organización",
@@ -3113,7 +3136,8 @@ def create_version_full_endpoint(
     )
 
     # Validar que el proyecto pertenece a la organización del usuario
-    if request.id_organizacion != session.organization_id:
+    # EXCEPCIÓN: SuperAdmin (identity_type_id=1) puede crear versiones en cualquier organización
+    if session.identity_type_id != 1 and request.id_organizacion != session.organization_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tiene permisos para crear versiones en esta organización",

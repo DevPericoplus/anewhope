@@ -315,17 +315,18 @@ class ExploradorState(SharedSessionState):
             access_token: Token de acceso
             session_token: Token de sesión
         """
-        logger.info(f"Recargando explorador para proyecto {project_id}...")
+        print(f"[DEBUG EXPLORADOR] Recargando explorador para proyecto {project_id} con org_id={org_id}")
 
         # Actualizar IDs y tokens
         self.id_proyecto = project_id
-        self.organization_id = org_id
+        self.id_organizacion = org_id  # Usar alias en lugar de organization_id heredado
+        print(f"[DEBUG EXPLORADOR] id_organizacion establecido a: {self.id_organizacion}")
         self.access_token = access_token
         self.session_token = session_token
 
         # Cargar desde API
         if self.access_token and self.session_token and self.id_proyecto > 0:
-            logger.info(f"Cargando proyecto {self.id_proyecto} desde API")
+            print(f"[DEBUG EXPLORADOR] Cargando proyecto {self.id_proyecto} desde API con org_id={self.id_organizacion}")
             self.load_from_api()
         else:
             logger.warning("Tokens no disponibles, no se puede cargar desde API")
@@ -396,13 +397,16 @@ class ExploradorState(SharedSessionState):
 
         Obtiene los estados desde version_states tabla vía API del backend.
         """
+        print(f"[DEBUG EXPLORADOR] load_all_version_states() - project_id={self.id_proyecto}, id_organizacion={self.id_organizacion}")
         try:
             # Obtener versiones del proyecto
             versions_response = get_project_versions(
                 project_id=self.id_proyecto,
+                organization_id=self.id_organizacion,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
+            print(f"[DEBUG EXPLORADOR] get_project_versions() llamado con org_id={self.id_organizacion}")
 
             versiones = versions_response.get("versiones", [])
 

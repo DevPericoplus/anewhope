@@ -22,6 +22,7 @@ from adapters.api_client import (
     asignar_tecnologia,
     create_organization_user,
     create_project,
+    create_project_assignment,
     create_project_version,
     create_version_full,
     ensure_valid_tokens,
@@ -30,6 +31,7 @@ from adapters.api_client import (
     get_organization_users,
     get_project_versions,
     get_proyecto_tecnologia,
+    get_roles,
     get_tecnologias,
     get_tecnologias_asignadas_org,
     get_user_permissions,
@@ -283,6 +285,16 @@ class State(SharedSessionState):
     selected_ticket_respuesta: str = ""
     ticket_modal_error: str = ""
     ticket_modal_success: str = ""
+
+    # Estado del modal de asignación de usuario a proyecto
+    show_assign_user_modal: bool = False
+    assign_user_id: int = 0
+    assign_user_name: str = ""
+    assign_selected_project_id: int = 0
+    assign_selected_role_id: int = 0
+    assign_error: str = ""
+    assign_success: str = ""
+    assign_roles: list[dict] = []  # Lista de roles disponibles
     is_updating_ticket: bool = False
     
     # Estado para gestión de tecnologías
@@ -579,7 +591,7 @@ class State(SharedSessionState):
     @rx.var
     def projects_for_tech_select(self) -> list[str]:
         """Lista de proyectos activos para el selector de tecnologías.
-        
+
         Muestra solo el nombre del proyecto (igual que en frontend).
         """
         if not self.org_projects:
@@ -589,7 +601,35 @@ class State(SharedSessionState):
             for p in self.org_projects
             if p.get("active", True) and p.get("existe", True) and p.get("name", p.get("nombre"))
         ]
-    
+
+    @rx.var
+    def assign_project_names(self) -> list[str]:
+        """Lista de nombres de proyectos para el selector de asignación."""
+        if not self.org_projects:
+            return []
+        return [
+            p.get("name", p.get("nombre", "Sin nombre"))
+            for p in self.org_projects
+            if p.get("name", p.get("nombre"))
+        ]
+
+    @rx.var
+    def assign_role_names(self) -> list[str]:
+        """Lista de nombres de roles para el selector de asignación.
+
+        Solo muestra roles de usuarios regulares (Editor=3, Lector=4, Auditor=5).
+        No permite crear más administradores ni asignar roles de agentes.
+        """
+        if not self.assign_roles:
+            return []
+        # Solo roles permitidos: Editor (3), Lector (4), Auditor (5)
+        allowed_role_ids = [3, 4, 5]
+        return [
+            r.get("identity_type_name", "Sin nombre")
+            for r in self.assign_roles
+            if r.get("identity_type_id") in allowed_role_ids and r.get("identity_type_name")
+        ]
+
     @rx.var
     def selected_tech_project_name(self) -> str:
         """Nombre del proyecto seleccionado para tecnologías."""
@@ -1122,7 +1162,7 @@ class State(SharedSessionState):
             self.org_users = []
             return
         
-        # Llamar al middleware para obtener usuarios reales
+        # Llamar al middleware para obtener usuarios reales de la organización
         # BACKOFFICE: active_only=False para ver TODOS los usuarios (activos e inactivos)
         # Esto permite reactivar usuarios que fueron borrados lógicamente
         users = get_organization_users(
@@ -1132,17 +1172,44 @@ class State(SharedSessionState):
             identity_type_id=5,  # Solo auditores (usuarios de organización)
             active_only=False,   # Backoffice muestra todos para poder reactivarlos
         )
-        
+
         # Transformar al formato esperado por la UI
-        # Estructura: {"user_id": int, "user_name": str, "active": bool}
-        self.org_users = [
+        # Estructura: {"user_id": int, "user_name": str, "active": bool, "is_internal": bool}
+        org_users_list = [
             {
                 "user_id": user.get("user_id", 0),
                 "user_name": user.get("user_name", ""),
                 "active": user.get("active", True),
+                "is_internal": False,  # Usuarios propios de la organización
             }
             for user in users
         ]
+
+        # Cargar también usuarios internos (staff) asignados a esta organización
+        # Solo si el usuario logueado es SuperAdmin o Admin de Org
+        if self.identity_type_id in (1, 2):
+            try:
+                from adapters.api_client import get_organization_assignments
+                assignments = get_organization_assignments(
+                    organization_id=org_id,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+                # Agregar usuarios internos a la lista
+                for assignment in assignments:
+                    if assignment.get("active", False):
+                        org_users_list.append({
+                            "user_id": assignment.get("user_id", 0),
+                            "user_name": assignment.get("user_name", ""),
+                            "active": True,
+                            "is_internal": True,  # Usuario interno (staff)
+                            "role_name": assignment.get("role_name", ""),
+                        })
+            except Exception as e:
+                print(f"[DEBUG] No se pudieron cargar usuarios internos: {e}")
+                # No es crítico, continuar sin usuarios internos
+
+        self.org_users = org_users_list
     
     def create_user(self):
         """Abre el modal para crear un nuevo usuario."""
@@ -1268,10 +1335,105 @@ class State(SharedSessionState):
             print(f"[ERROR] Error deshabilitando usuario: {e}")
     
     def assign_user_to_projects(self, user_id: int):
-        """Asigna un usuario a proyectos."""
-        # TODO: Implementar modal de asignación
-        print(f"[DEBUG] Asignar usuario a proyectos: {user_id}")
-    
+        """Abre el modal para asignar un usuario a proyectos."""
+        print(f"[DEBUG] Abrir modal de asignación para usuario: {user_id}")
+
+        # Buscar el nombre del usuario
+        user_name = ""
+        for user in self.org_users:
+            if user["user_id"] == user_id:
+                user_name = user["user_name"]
+                break
+
+        # Cargar roles disponibles
+        try:
+            print(f"[DEBUG] Cargando roles...")
+            roles = get_roles(
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            print(f"[DEBUG] Roles cargados: {len(roles) if roles else 0}")
+            if roles and len(roles) > 0:
+                print(f"[DEBUG] Primer rol: {roles[0]}")
+            self.assign_roles = roles if roles else []
+        except Exception as e:
+            print(f"[ERROR] Error cargando roles: {e}")
+            import traceback
+            traceback.print_exc()
+            self.assign_roles = []
+
+        # Configurar estado del modal
+        self.assign_user_id = user_id
+        self.assign_user_name = user_name
+        self.assign_selected_project_id = 0
+        self.assign_selected_role_id = 0
+        self.assign_error = ""
+        self.assign_success = ""
+        self.show_assign_user_modal = True
+
+    def close_assign_user_modal(self):
+        """Cierra el modal de asignación."""
+        self.show_assign_user_modal = False
+        self.assign_error = ""
+        self.assign_success = ""
+
+    def set_assign_project(self, project_name: str):
+        """Establece el proyecto seleccionado para asignación."""
+        for project in self.org_projects:
+            if project.get("name") == project_name or project.get("nombre") == project_name:
+                self.assign_selected_project_id = project.get("id", 0)
+                break
+
+    def set_assign_role(self, role_name: str):
+        """Establece el rol seleccionado para asignación."""
+        for role in self.assign_roles:
+            if role.get("identity_type_name") == role_name:
+                self.assign_selected_role_id = role.get("identity_type_id", 0)
+                break
+
+    def confirm_assign_user(self):
+        """Confirma la asignación del usuario al proyecto con el rol seleccionado."""
+        if self.assign_selected_project_id == 0:
+            self.assign_error = "Debe seleccionar un proyecto"
+            return
+
+        if self.assign_selected_role_id == 0:
+            self.assign_error = "Debe seleccionar un rol"
+            return
+
+        try:
+            print(f"[DEBUG] Asignando usuario {self.assign_user_id} al proyecto {self.assign_selected_project_id} con rol {self.assign_selected_role_id}")
+            result = create_project_assignment(
+                user_id=self.assign_user_id,
+                organization_id=self.bo_selected_org_id,  # Usar la organización del selector
+                project_id=self.assign_selected_project_id,
+                role_id=self.assign_selected_role_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if result.get("success"):
+                self.assign_success = f"Usuario asignado correctamente al proyecto"
+                self.assign_error = ""
+                # Cerrar el modal después de 1 segundo
+                # (En Reflex no hay un sleep directo, pero el usuario verá el mensaje)
+            else:
+                error_msg = result.get("error", "Error al asignar usuario")
+                # Asegurar que el error sea string
+                if isinstance(error_msg, bool):
+                    error_msg = result.get("detail", "Error al asignar usuario")
+                self.assign_error = str(error_msg)
+                self.assign_success = ""
+        except Exception as e:
+            print(f"[ERROR] Error asignando usuario: {e}")
+            error_str = str(e)
+            # Extraer el mensaje real del error si está en el formato "Error HTTP..."
+            if "El usuario debe tener" in error_str:
+                self.assign_error = "El usuario debe tener un rol en la organización antes de asignarlo a proyectos"
+            else:
+                self.assign_error = f"Error al asignar usuario: {error_str}"
+            self.assign_success = ""
+
     def remove_user_from_projects(self, user_id: int):
         """Quita un usuario de proyectos."""
         # TODO: Implementar modal de desasignación
@@ -1759,7 +1921,7 @@ class State(SharedSessionState):
                 self.proyecciones_project_name = value
 
                 # Generar carpetas formateadas
-                self.proyecciones_org_folder = get_folder_by_id_organization(self.organization_id)
+                self.proyecciones_org_folder = get_folder_by_id_organization(self.bo_selected_org_id)
                 self.proyecciones_prj_folder = get_folder_by_id_project(self.proyecciones_project_id)
 
                 # Cargar versiones del proyecto
@@ -1768,7 +1930,7 @@ class State(SharedSessionState):
                 # Inicializar explorador con el nuevo proyecto (mostrará todas las versiones)
                 return ExploradorState.reload_project_with_tokens(
                     project_id=self.proyecciones_project_id,
-                    org_id=self.organization_id,
+                    org_id=self.bo_selected_org_id,
                     access_token=self.access_token,
                     session_token=self.session_token
                 )
@@ -1787,6 +1949,7 @@ class State(SharedSessionState):
         try:
             result = get_project_versions(
                 project_id=self.proyecciones_project_id,
+                organization_id=self.bo_selected_org_id,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
@@ -4823,6 +4986,7 @@ class State(SharedSessionState):
         try:
             response = get_project_versions(
                 project_id=self.dl_selected_project_id,
+                organization_id=self.dl_selected_org_id,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
@@ -5509,10 +5673,17 @@ def user_row(user: dict) -> rx.Component:
         # Información del usuario a la izquierda (solo muestra user_name)
         rx.hstack(
             rx.text(user["user_name"], font_weight="bold", font_size="1.1em", color=COLORS["foreground"]),
+            # Badge de estado (Activo/Inactivo)
             rx.cond(
                 user["active"],
                 rx.badge("Activo", color_scheme="green", variant="soft", size="3"),
                 rx.badge("Inactivo", color_scheme="red", variant="soft", size="3"),
+            ),
+            # Badge de "Staff" si es usuario interno
+            rx.cond(
+                user.get("is_internal", False),
+                rx.badge("Staff", color_scheme="blue", variant="solid", size="3"),
+                rx.fragment(),
             ),
             spacing="3",
             align="center",
@@ -5520,33 +5691,55 @@ def user_row(user: dict) -> rx.Component:
         # Acciones a la derecha (usan user_id internamente)
         # SEGURIDAD: Solo se muestran si el usuario tiene permisos de gestión
         # (identity_type_id in 1, 2, 10 - SuperAdmin, Admin Org, Agente Admin)
+        # Para usuarios internos (Staff), solo se muestran botones de asignación
         rx.cond(
             State.can_manage_org_users,
             rx.hstack(
-                rx.tooltip(
-                    rx.icon_button(
-                        rx.icon("user-round-check", size=22),
-                        variant="ghost",
-                        size="2",
-                        color_scheme="green",
-                        cursor="pointer",
-                        on_click=State.enable_user(user["user_id"]),
-                        _hover={"color": "#22c55e", "background_color": COLORS["border"]},
+                # Botones de gestión (enable/disable/delete) solo para usuarios NO internos
+                rx.cond(
+                    ~user.get("is_internal", False),
+                    rx.hstack(
+                        rx.tooltip(
+                            rx.icon_button(
+                                rx.icon("user-round-check", size=22),
+                                variant="ghost",
+                                size="2",
+                                color_scheme="green",
+                                cursor="pointer",
+                                on_click=State.enable_user(user["user_id"]),
+                                _hover={"color": "#22c55e", "background_color": COLORS["border"]},
+                            ),
+                            content="Habilitar usuario",
+                        ),
+                        rx.tooltip(
+                            rx.icon_button(
+                                rx.icon("user-round-x", size=22),
+                                variant="ghost",
+                                size="2",
+                                color_scheme="red",
+                                cursor="pointer",
+                                on_click=State.disable_user(user["user_id"]),
+                                _hover={"color": "#ef4444", "background_color": COLORS["border"]},
+                            ),
+                            content="Deshabilitar usuario",
+                        ),
+                        rx.tooltip(
+                            rx.icon_button(
+                                rx.icon("trash-2", size=22),
+                                variant="ghost",
+                                size="2",
+                                color_scheme="gray",
+                                cursor="pointer",
+                                on_click=State.delete_user(user["user_id"]),
+                                _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
+                            ),
+                            content="Borrar usuario",
+                        ),
+                        spacing="1",
                     ),
-                    content="Habilitar usuario",
+                    rx.fragment(),
                 ),
-                rx.tooltip(
-                    rx.icon_button(
-                        rx.icon("user-round-x", size=22),
-                        variant="ghost",
-                        size="2",
-                        color_scheme="red",
-                        cursor="pointer",
-                        on_click=State.disable_user(user["user_id"]),
-                        _hover={"color": "#ef4444", "background_color": COLORS["border"]},
-                    ),
-                    content="Deshabilitar usuario",
-                ),
+                # Botones de asignación de proyectos (siempre visibles para todos los usuarios)
                 rx.tooltip(
                     rx.icon_button(
                         rx.icon("folder-plus", size=22),
@@ -5570,18 +5763,6 @@ def user_row(user: dict) -> rx.Component:
                         _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
                     ),
                     content="Quitar usuario de proyectos",
-                ),
-                rx.tooltip(
-                    rx.icon_button(
-                        rx.icon("trash-2", size=22),
-                        variant="ghost",
-                        size="2",
-                        color_scheme="gray",
-                        cursor="pointer",
-                        on_click=State.delete_user(user["user_id"]),
-                        _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
-                    ),
-                    content="Borrar usuario",
                 ),
                 spacing="1",
             ),
@@ -5726,6 +5907,115 @@ def create_user_modal() -> rx.Component:
     )
 
 
+def assign_user_to_project_modal() -> rx.Component:
+    """Modal para asignar un usuario a un proyecto."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title(
+                rx.hstack(
+                    rx.icon("user-check", size=24, color=COLORS["primary"]),
+                    rx.text("Asignar Usuario a Proyecto", font_weight="bold", font_size="1.3em"),
+                    spacing="3",
+                    align="center",
+                ),
+            ),
+            rx.dialog.description(
+                rx.text(
+                    f"Asignar usuario '{State.assign_user_name}' a un proyecto con un rol específico.",
+                    color=COLORS["muted_foreground"],
+                    font_size="0.95em",
+                ),
+            ),
+            rx.vstack(
+                # Selector de proyecto
+                rx.vstack(
+                    rx.text("Proyecto", font_weight="bold", color=COLORS["foreground"]),
+                    rx.select(
+                        State.assign_project_names,
+                        placeholder="Seleccione un proyecto",
+                        on_change=State.set_assign_project,
+                        width="100%",
+                        size="3",
+                        style={
+                            "backgroundColor": COLORS["input"],
+                            "color": COLORS["foreground"],
+                            "borderColor": COLORS["border"],
+                        },
+                    ),
+                    width="100%",
+                    spacing="1",
+                    align_items="flex-start",
+                ),
+                # Selector de rol
+                rx.vstack(
+                    rx.text("Rol", font_weight="bold", color=COLORS["foreground"]),
+                    rx.select(
+                        State.assign_role_names,
+                        placeholder="Seleccione un rol",
+                        on_change=State.set_assign_role,
+                        width="100%",
+                        size="3",
+                        style={
+                            "backgroundColor": COLORS["input"],
+                            "color": COLORS["foreground"],
+                            "borderColor": COLORS["border"],
+                        },
+                    ),
+                    width="100%",
+                    spacing="1",
+                    align_items="flex-start",
+                ),
+                # Mensaje de error
+                rx.cond(
+                    State.assign_error != "",
+                    rx.text(
+                        State.assign_error,
+                        color="red",
+                        font_size="0.9em",
+                    ),
+                ),
+                # Mensaje de éxito
+                rx.cond(
+                    State.assign_success != "",
+                    rx.text(
+                        State.assign_success,
+                        color="green",
+                        font_size="0.9em",
+                    ),
+                ),
+                # Botones
+                rx.hstack(
+                    rx.dialog.close(
+                        rx.button(
+                            "Cancelar",
+                            variant="soft",
+                            color_scheme="gray",
+                            on_click=State.close_assign_user_modal,
+                        ),
+                    ),
+                    rx.button(
+                        "Asignar",
+                        on_click=State.confirm_assign_user,
+                        background_color=COLORS["primary"],
+                        color="black",
+                        _hover={"background_color": "#e67e00"},
+                    ),
+                    spacing="3",
+                    justify="end",
+                    width="100%",
+                ),
+                spacing="4",
+                width="100%",
+            ),
+            background_color=COLORS["card"],
+            border=f"1px solid {COLORS['border']}",
+            padding="1.5em",
+            max_width="450px",
+        ),
+        open=State.show_assign_user_modal,
+    )
+
+
 def create_project_modal() -> rx.Component:
     """Modal para crear un nuevo proyecto."""
     return rx.dialog.root(
@@ -5843,6 +6133,8 @@ def users_management_panel() -> rx.Component:
     return rx.vstack(
         # Modal de creación de usuario
         create_user_modal(),
+        # Modal de asignación de usuario a proyecto
+        assign_user_to_project_modal(),
         rx.hstack(
             rx.icon("users", size=28, color=COLORS["primary"]),
             rx.heading("Gestión de Usuarios", size="6", color=COLORS["primary"]),

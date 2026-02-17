@@ -132,6 +132,7 @@ class UserStatusUpdateRequest(BaseModel):
 
     active: bool
     requester_org_id: int
+    requester_identity_type_id: int = 0
 
 
 class UserStatusUpdateResponse(BaseModel):
@@ -566,6 +567,7 @@ def update_user_status(
             user_id=user_id,
             active=payload.active,
             requester_org_id=payload.requester_org_id,
+            requester_identity_type_id=payload.requester_identity_type_id,
         )
         return UserStatusUpdateResponse(**response)
     except BackendCoreBusinessError as exc:
@@ -1422,6 +1424,8 @@ class CreateVersionFullResponse(BaseModel):
     message: str
     version_id: int | None
     version_folder: str | None
+    version: dict | None = None
+    state: dict | None = None
     fmanagement_result: dict | None
 
 
