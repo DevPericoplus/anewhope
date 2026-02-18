@@ -488,12 +488,15 @@ class AnalisisResultadosState(rx.State):
                                 series = []
                                 for analisis in analisis_list:
                                     numero_secuencia = analisis.get('numero_secuencia', 0)
+                                    fecha_fin = analisis.get('fecha_fin', '')
                                     metricas = analisis.get('metricas', {})
 
                                     rag_quality = float(metricas.get('rag_quality_score', 0))
                                     response_quality = float(metricas.get('response_quality_score', 0))
                                     generation_quality = float(metricas.get('generation_quality_score', 0))
                                     overall_quality = float(metricas.get('overall_quality_score', 0))
+
+                                    fecha_label = f" ({fecha_fin[:10]})" if fecha_fin else ""
 
                                     puntos = [
                                         {"clave": "RAG", "valor": round(rag_quality * 100, 1), "valor_grafico": round(rag_quality * 100, 1)},
@@ -509,12 +512,11 @@ Overall Quality: {round(overall_quality * 100, 1)}%"""
 
                                     series.append({
                                         "referencia": str(numero_secuencia),
-                                        "titulo": f"Entrenamiento Secuencia #{numero_secuencia}",
+                                        "fecha_fin": fecha_fin or "",
+                                        "titulo": f"Secuencia #{numero_secuencia}{fecha_label}",
                                         "series": puntos,
                                         "resumen": resumen
                                     })
-
-                                series.sort(key=lambda x: int(x["referencia"]))
                                 self.estadisticas_series = series
                                 self.estadisticas_error = ""
                             else:

@@ -6975,11 +6975,13 @@ class BackendCoreRouter:
                     a.hallucination_rate,
                     a.citation_accuracy,
                     a.overall_quality_score,
-                    a.fecha_analisis
+                    a.fecha_analisis,
+                    e.id AS id_entrenamiento,
+                    e.fecha_fin
                 FROM job_entrenamientos_analisis a
                 INNER JOIN entrenamientos e ON a.id_entrenamiento = e.id
                 WHERE {where_sql}
-                ORDER BY a.numero_secuencia ASC
+                ORDER BY e.fecha_fin DESC, a.numero_secuencia DESC
             """)
 
             with self._get_projects_db_connection() as conn:
@@ -7035,6 +7037,8 @@ class BackendCoreRouter:
                     "numero_secuencia": row[1],
                     "nombre_modelo": row[2],
                     "fecha_analisis": row[23].isoformat() if row[23] else None,
+                    "id_entrenamiento": row[24],
+                    "fecha_fin": row[25].isoformat() if row[25] else None,
                     "metricas": {
                         "rag_quality_score": rag_quality_score,
                         "response_quality_score": response_quality_score,
