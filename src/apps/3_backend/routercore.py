@@ -4142,7 +4142,24 @@ class BackendCoreRouter:
 
         engine = create_engine(dsn)
         with engine.connect() as conn:
-            # Check for duplicate
+            project_row = conn.execute(
+                text("SELECT id, id_organizacion FROM proyectos WHERE id = :pid"),
+                {"pid": project_id},
+            ).fetchone()
+            if not project_row:
+                raise BackendCoreBusinessError(
+                    f"El proyecto {project_id} no existe"
+                )
+            if project_row.id_organizacion != organization_id:
+                self._logger.warning(
+                    "[ASSIGNMENTS] Org mismatch: project=%s belongs to org=%s, requested org=%s",
+                    project_id, project_row.id_organizacion, organization_id,
+                )
+                raise BackendCoreBusinessError(
+                    f"El proyecto {project_id} pertenece a la organización "
+                    f"{project_row.id_organizacion}, no a la {organization_id}"
+                )
+
             existing = conn.execute(
                 text("""
                     SELECT pr.id, pr.id_rol, pr.active,
@@ -4152,9 +4169,10 @@ class BackendCoreRouter:
                     LEFT JOIN proyectos_roles_base prb ON pr.id_rol = prb.id
                     LEFT JOIN myllm_core_db.users u ON pr.id_usuario = u.user_id
                     WHERE pr.id_usuario = :user_id
-                      AND id_proyecto = :project_id
+                      AND pr.id_organizacion = :org_id
+                      AND pr.id_proyecto = :project_id
                 """),
-                {"user_id": user_id, "project_id": project_id},
+                {"user_id": user_id, "org_id": organization_id, "project_id": project_id},
             ).fetchone()
 
             if existing:

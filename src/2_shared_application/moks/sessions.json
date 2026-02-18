@@ -630,27 +630,34 @@
       "organization_id": 1,
       "identity_type_id": 1,
       "tokens": {
-        "access_token_jti": "7c147fe0-15a8-4e0a-b242-6de8387d149a",
-        "session_token_jti": "a47a413c-4bd3-4768-aa2e-848fe22cb8e6"
+        "access_token_jti": "2a0c8090-5871-4637-af72-fe06cb4881e9",
+        "session_token_jti": "3fc825b6-3a09-4717-bc57-e8f00f18bca3"
       },
       "status": "active",
       "created_at": "2026-02-18T02:16:24.047309Z",
-      "last_activity": "2026-02-18T02:16:32.346164Z",
+      "last_activity": "2026-02-18T02:21:06.443977Z",
       "expires_at": "2026-02-18T03:01:24Z",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "session_id": "c59e3733-ff2e-4e7d-a0ae-79df6a541882",
+      "user_id": 1,
+      "organization_id": 1,
+      "identity_type_id": 1,
+      "tokens": {
+        "access_token_jti": "bcbb4c2f-6e4a-42ba-8e30-29d70ae91c48",
+        "session_token_jti": "9c842819-cd76-4518-9cee-c076e0decc9d"
+      },
+      "status": "active",
+      "created_at": "2026-02-18T02:36:05.835483Z",
+      "last_activity": "2026-02-18T02:46:37.779466Z",
+      "expires_at": "2026-02-18T03:21:05Z",
       "ip_address": "127.0.0.1",
       "user_agent": "Python-urllib/3.13"
     }
   ],
   "auth_logs": [
-    {
-      "timestamp": "2026-02-04T11:31:32.798951Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "aafee2b1-91d8-4f9b-a65c-5e21d4d7c7da",
-      "user_agent": "Python-urllib/3.13"
-    },
     {
       "timestamp": "2026-02-04T11:39:03.849815Z",
       "user_name": "adminone",
@@ -5182,6 +5189,15 @@
       "status": "success",
       "ip_address": "127.0.0.1",
       "session_id": "981036ea-4fb1-4388-9944-af11c5a36338",
+      "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-18T02:36:05.845536Z",
+      "user_name": "adminone",
+      "event": "login_success",
+      "status": "success",
+      "ip_address": "127.0.0.1",
+      "session_id": "c59e3733-ff2e-4e7d-a0ae-79df6a541882",
       "user_agent": "Python-urllib/3.13"
     }
   ]

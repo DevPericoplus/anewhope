@@ -2568,19 +2568,19 @@ class State(SharedSessionState):
 
     def set_selected_org_for_project_from_str(self, val: str):
         """Converts string to int for selected_org_for_project."""
-        print(f"[DEBUG ASSIGNMENTS] *** set_selected_org_for_project_from_str LLAMADO con val={val}")
         self.selected_org_for_project = int(val) if val else 0
-        print(f"[DEBUG ASSIGNMENTS] *** selected_org_for_project={self.selected_org_for_project}")
-        # Cargar proyectos de esta organización
+        self.selected_project_assign = 0
+        self.selected_project_role = 0
         if self.selected_org_for_project > 0:
-            print(f"[DEBUG ASSIGNMENTS] *** Llamando a load_projects_for_org({self.selected_org_for_project})")
             self.load_projects_for_org(self.selected_org_for_project)
         else:
-            print(f"[DEBUG ASSIGNMENTS] *** NO se llama a load_projects_for_org porque selected_org_for_project={self.selected_org_for_project}")
+            self.assignments_projects = []
 
     def set_selected_project_assign_from_str(self, val: str):
         """Converts string to int for selected_project_assign."""
         self.selected_project_assign = int(val) if val else 0
+        if self.selected_project_assign > 0:
+            self.load_project_assignments()
 
     def set_selected_project_role_from_str(self, val: str):
         """Converts string to int for selected_project_role."""
