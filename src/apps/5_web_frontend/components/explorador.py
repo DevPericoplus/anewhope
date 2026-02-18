@@ -1620,6 +1620,7 @@ class ExploradorState(rx.State):
             # Obtener versiones del proyecto
             versions_response = get_project_versions(
                 project_id=self.id_proyecto,
+                organization_id=self.id_organizacion,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )

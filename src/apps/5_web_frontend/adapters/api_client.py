@@ -1525,6 +1525,7 @@ def get_tecnologias_asignadas_org(
 
 def get_project_versions(
     project_id: int,
+    organization_id: int = 0,
     access_token: str = "",
     session_token: str = "",
 ) -> dict[str, Any]:
@@ -1535,6 +1536,7 @@ def get_project_versions(
     
     Args:
         project_id: ID del proyecto
+        organization_id: ID de la organización (requerido por el middleware)
         access_token: Token de acceso JWT
         session_token: Token de sesión JWT
         
@@ -1547,7 +1549,7 @@ def get_project_versions(
     
     response = _request_middleware(
         "GET",
-        f"/proyectos/{project_id}/versiones",
+        f"/proyectos/{project_id}/versiones?org_id={organization_id}",
         headers=headers,
     )
     
@@ -2088,6 +2090,7 @@ def fmanagement_list_all_project_versions(
     # 1. Obtener lista de versiones del proyecto
     versions_response = get_project_versions(
         project_id=project_id,
+        organization_id=org_id,
         access_token=access_token,
         session_token=session_token,
     )

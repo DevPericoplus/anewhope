@@ -3655,6 +3655,55 @@ def download_model_direct(
         return None
 
 
+def request_model_download_otp(
+    organization_id: int,
+    project_id: int,
+    version_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Solicita OTP para descargar modelo vía SMS.
+
+    Llama al endpoint /models/download/request-otp del middleware.
+    Solo accesible para SuperAdmin (1) y Admin Organización (2).
+
+    Returns:
+        Diccionario con otp y phone_number, o error.
+    """
+    payload = {
+        "organization_id": organization_id,
+        "project_id": project_id,
+        "version_id": version_id,
+    }
+    headers = _build_auth_headers(access_token, session_token)
+    return _request_middleware("POST", "/models/download/request-otp", payload=payload, headers=headers)
+
+
+def validate_model_download_otp(
+    organization_id: int,
+    project_id: int,
+    version_id: int,
+    otp: str,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Valida OTP y obtiene token de descarga del modelo.
+
+    Llama al endpoint /models/download/validate-otp del middleware.
+
+    Returns:
+        Diccionario con download_token y fmanagement_url, o error.
+    """
+    payload = {
+        "organization_id": organization_id,
+        "project_id": project_id,
+        "version_id": version_id,
+        "otp": otp,
+    }
+    headers = _build_auth_headers(access_token, session_token)
+    return _request_middleware("POST", "/models/download/validate-otp", payload=payload, headers=headers)
+
+
 def list_autonomous_packages(
     id_organizacion: int | None = None,
     id_proyecto: int | None = None,

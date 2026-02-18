@@ -148,6 +148,7 @@ class InformesState(rx.State):
         """Carga las versiones del proyecto seleccionado."""
         async with self:
             proyecto_id = self.selected_proyecto_id
+            org_id = self.organization_id
 
         if proyecto_id == 0:
             async with self:
@@ -162,9 +163,10 @@ class InformesState(rx.State):
                 access_token = main_state.access_token
                 session_token = main_state.session_token
 
-            # Llamar a la API para obtener versiones
+            # Llamar a la API para obtener versiones (incluir org_id requerido por middleware)
             response = get_project_versions(
                 project_id=proyecto_id,
+                organization_id=org_id,
                 access_token=access_token,
                 session_token=session_token,
             )

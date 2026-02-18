@@ -4849,14 +4849,18 @@ class RouterMiddleware:
 
         phone_number = str(user_record.user_mobile).strip()
 
+        # Enmascarar teléfono para UI (ej: "***456")
+        phone_masked = "***" + phone_number[-3:] if len(phone_number) >= 3 else "***"
+
         self._logger.info(
-            "OTP solicitado para descarga modelo: user_id=%s org_id=%s prj_id=%s ver_id=%s",
-            session.user_id, organization_id, project_id, version_id
+            "OTP solicitado para descarga modelo: user_id=%s org_id=%s prj_id=%s ver_id=%s phone=%s",
+            session.user_id, organization_id, project_id, version_id, phone_masked,
         )
 
         return {
             "otp": user_otp,
             "phone_number": phone_number,
+            "phone_masked": phone_masked,
         }
 
     def validate_model_download_otp(

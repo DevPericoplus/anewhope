@@ -67,18 +67,19 @@ try:
 except Exception as e:
     logger.error(f"Error al cargar módulo de SMS: {e}")
 
-# Colores del tema
+# Colores del tema (textos oscuros para contraste en paneles gris claro)
 COLORS = {
     "background": "#1a1a1a",
     "card": "#6B6B6B",
-    "foreground": "#f2f2f5",
+    "foreground": "#15803d",       # Verde oscuro - headings y labels
+    "text": "#2d3748",             # Gris oscuro - texto principal
     "primary": "#22c55e",
     "secondary": "#383854",
     "border": "#000000",
     "input": "#383854",
-    "muted_foreground": "#E0E0E0",
-    "accent": "#22c55e",
-    "success": "#22c55e",
+    "muted_foreground": "#4a5568", # Gris medio - textos secundarios
+    "accent": "#15803d",           # Verde oscuro - acentos
+    "success": "#15803d",
     "error": "#ef4444",
     "warning": "#f59e0b",
 }
@@ -115,6 +116,11 @@ class ModelDownloadState(SharedSessionState):
     # Mensajes
     success_message: str = ""
     error_message: str = ""
+
+    @rx.var
+    def can_download_models(self) -> bool:
+        """Solo SuperAdmin (1) y Admin Organización (2) pueden descargar modelos."""
+        return self.identity_type_id in (1, 2)
 
     @rx.var
     def dl_project_options(self) -> list[str]:
@@ -284,14 +290,23 @@ class ModelDownloadState(SharedSessionState):
             logger.error("Excepción al cargar modelos: %s", e, exc_info=True)
 
     def open_otp_modal(self, model: dict[str, Any]):
-        """Abre el modal para solicitar OTP."""
+        """Abre el modal para solicitar OTP (solo SuperAdmin y Admin Org)."""
+        # Validación de seguridad: solo identity_type_id 1 (SuperAdmin) y 2 (Admin Org)
+        if self.identity_type_id not in (1, 2):
+            self.error_message = "No tiene permisos para descargar modelos"
+            logger.warning(
+                "Intento de descarga sin permisos: user_id=%s identity_type_id=%s",
+                self.user_id, self.identity_type_id,
+            )
+            return
+
         self.selected_model = model
         self.show_otp_modal = True
         self.otp_requested = False
         self.otp_code = ""
         self.otp_error = ""
         self.error_message = ""
-        logger.info(f"Modal OTP abierto para modelo: {model.get('filename')}")
+        logger.info("Modal OTP abierto para modelo: %s", model.get("filename"))
 
     def close_otp_modal(self):
         """Cierra el modal de OTP."""
@@ -514,26 +529,33 @@ def model_card(model: dict[str, Any]) -> rx.Component:
             ),
             rx.text(
                 f"Tamaño: {model['file_size_mb']} MB",
-                color=COLORS["muted_foreground"],
+                color=COLORS["text"],
                 size="2",
+                font_weight="bold",
             ),
-            rx.button(
-                rx.icon("download", size=16),
-                "Descargar con OTP",
-                on_click=lambda: ModelDownloadState.open_otp_modal(model),
-                color_scheme="green",
-                size="3",
-                style={"font_weight": "bold", "color": "black"},
-                width="100%",
+            # Solo SuperAdmin (1) y Admin Organización (2) pueden descargar
+            rx.cond(
+                ModelDownloadState.can_download_models,
+                rx.button(
+                    rx.icon("download", size=16),
+                    "Descargar con OTP",
+                    on_click=lambda: ModelDownloadState.open_otp_modal(model),
+                    color_scheme="green",
+                    size="3",
+                    style={"font_weight": "bold", "color": "black"},
+                    width="100%",
+                ),
+                rx.text(
+                    "Solo administradores pueden descargar modelos",
+                    color=COLORS["muted_foreground"],
+                    size="1",
+                    font_style="italic",
+                ),
             ),
             spacing="3",
             align="start",
         ),
-        style={
-            "background": COLORS["card"],
-            "padding": "1rem",
-            "border_radius": "8px",
-        },
+        size="2",
     )
 
 
@@ -550,8 +572,9 @@ def otp_modal() -> rx.Component:
                     ModelDownloadState.selected_model,
                     rx.text(
                         f"Archivo: {ModelDownloadState.selected_model['filename']}",
-                        color=COLORS["muted_foreground"],
+                        color=COLORS["text"],
                         size="2",
+                        font_weight="bold",
                     ),
                 ),
                 rx.cond(
@@ -560,7 +583,7 @@ def otp_modal() -> rx.Component:
                     rx.vstack(
                         rx.text(
                             "Se enviará un código OTP por SMS a su teléfono registrado.",
-                            color=COLORS["foreground"],
+                            color=COLORS["text"],
                         ),
                         rx.button(
                             "Enviar OTP por SMS",
@@ -577,17 +600,14 @@ def otp_modal() -> rx.Component:
                             f"SMS enviado a {ModelDownloadState.otp_phone}",
                             color=COLORS["success"],
                             size="2",
+                            font_weight="bold",
                         ),
                         rx.input(
                             placeholder="Ingrese el código OTP de 4 dígitos",
                             value=ModelDownloadState.otp_code,
                             on_change=ModelDownloadState.set_otp_code,
                             max_length=4,
-                            style={
-                                "background": COLORS["input"],
-                                "color": COLORS["foreground"],
-                                "width": "100%",
-                            },
+                            width="100%",
                         ),
                         rx.button(
                             "Validar y Descargar",
@@ -620,7 +640,6 @@ def otp_modal() -> rx.Component:
                 width="100%",
             ),
             style={
-                "background": COLORS["background"],
                 "padding": "2rem",
                 "max_width": "500px",
             },
@@ -647,7 +666,8 @@ def model_downloads_panel() -> rx.Component:
                         rx.text(
                             "Proyecto",
                             size="2",
-                            color=COLORS["muted_foreground"],
+                            color=COLORS["accent"],
+                            font_weight="bold",
                         ),
                         rx.select(
                             ModelDownloadState.dl_project_options,
@@ -663,7 +683,8 @@ def model_downloads_panel() -> rx.Component:
                         rx.text(
                             "Versión",
                             size="2",
-                            color=COLORS["muted_foreground"],
+                            color=COLORS["accent"],
+                            font_weight="bold",
                         ),
                         rx.select(
                             ModelDownloadState.dl_version_options,
@@ -694,11 +715,7 @@ def model_downloads_panel() -> rx.Component:
                 spacing="3",
                 width="100%",
             ),
-            style={
-                "background": COLORS["secondary"],
-                "padding": "1rem",
-                "border_radius": "8px",
-            },
+            size="2",
         ),
         # Mensajes de error
         rx.cond(
@@ -772,7 +789,7 @@ def model_downloads_page() -> rx.Component:
             ),
             rx.text(
                 "Descargue modelos entrenados de forma segura con validación OTP",
-                color=COLORS["muted_foreground"],
+                color=COLORS["text"],
                 size="3",
             ),
             rx.divider(),
@@ -781,8 +798,4 @@ def model_downloads_page() -> rx.Component:
             width="100%",
             padding="2rem",
         ),
-        style={
-            "background": COLORS["background"],
-            "min_height": "100vh",
-        },
     )

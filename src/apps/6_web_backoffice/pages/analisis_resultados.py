@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 MIDDLEWARE_URL = "http://localhost:8007"
 CORE_URL = "http://localhost:8003"
 
-# Colores del tema
+# Colores del tema (alineados con backoffice naranja)
 COLORS = {
     "background": "#0A0A0A",
     "card": "#1A1A1A",
@@ -992,7 +992,7 @@ Overall Quality: {round(overall_quality * 100, 1)}%"""
 def filtros_section() -> rx.Component:
     """Sección de filtros de búsqueda."""
     return rx.box(
-        rx.heading("Filtros de Búsqueda", size="6", margin_bottom="1em"),
+        rx.heading("Filtros de Búsqueda", size="6", margin_bottom="1em", color="#E8913A"),
         rx.hstack(
             rx.box(
                 rx.text("Organización", size="2", color=COLORS["muted_foreground"]),
@@ -1043,28 +1043,29 @@ def filtros_section() -> rx.Component:
 
 def training_row(training: dict) -> rx.Component:
     """Fila de la tabla de entrenamientos."""
+    _cell_color = "white"
     return rx.table.row(
-        rx.table.cell(training['numero_secuencia']),
+        rx.table.cell(rx.text(training['numero_secuencia'], color=_cell_color)),
         rx.table.cell(
             rx.cond(
                 training['fecha_fin'],
-                training['fecha_fin'],
-                "En progreso"
+                rx.text(training['fecha_fin'], color=_cell_color),
+                rx.text("En progreso", color=_cell_color),
             )
         ),
-        rx.table.cell(training['estado']),
+        rx.table.cell(rx.text(training['estado'], color=_cell_color)),
         rx.table.cell(
             rx.cond(
                 training['loss_final'],
-                training['loss_final'],
-                "N/A"
+                rx.text(training['loss_final'], color=_cell_color),
+                rx.text("N/A", color=_cell_color),
             )
         ),
         rx.table.cell(
             rx.cond(
                 training['accuracy_validacion'],
-                training['accuracy_validacion'],
-                "N/A"
+                rx.text(training['accuracy_validacion'], color=_cell_color),
+                rx.text("N/A", color=_cell_color),
             )
         ),
         rx.table.cell(
@@ -1123,7 +1124,7 @@ def training_row(training: dict) -> rx.Component:
 def entrenamientos_table() -> rx.Component:
     """Tabla de entrenamientos."""
     return rx.box(
-        rx.heading("Entrenamientos Completados", size="6", margin_bottom="1em"),
+        rx.heading("Entrenamientos Completados", size="6", margin_bottom="1em", color="#E8913A"),
         rx.cond(
             AnalisisResultadosState.loading_entrenamientos,
             rx.spinner(),
@@ -1132,13 +1133,13 @@ def entrenamientos_table() -> rx.Component:
                 rx.table.root(
                     rx.table.header(
                         rx.table.row(
-                            rx.table.column_header_cell("Secuencia"),
-                            rx.table.column_header_cell("Fecha"),
-                            rx.table.column_header_cell("Estado"),
-                            rx.table.column_header_cell("Loss Final"),
-                            rx.table.column_header_cell("Accuracy"),
-                            rx.table.column_header_cell("Sugerencias"),
-                            rx.table.column_header_cell("Acciones"),
+                            rx.table.column_header_cell("Secuencia", style={"color": "white"}),
+                            rx.table.column_header_cell("Fecha", style={"color": "white"}),
+                            rx.table.column_header_cell("Estado", style={"color": "white"}),
+                            rx.table.column_header_cell("Loss Final", style={"color": "white"}),
+                            rx.table.column_header_cell("Accuracy", style={"color": "white"}),
+                            rx.table.column_header_cell("Sugerencias", style={"color": "white"}),
+                            rx.table.column_header_cell("Acciones", style={"color": "white"}),
                         )
                     ),
                     rx.table.body(
@@ -1161,7 +1162,7 @@ def entrenamientos_table() -> rx.Component:
 def estadisticas_panel() -> rx.Component:
     """Panel de estadísticas con gráficos de evolución de métricas."""
     return rx.box(
-        rx.heading("Estadísticas", size="6", margin_bottom="1em"),
+        rx.heading("Estadísticas", size="6", margin_bottom="1em", color="#E8913A"),
         rx.text(
             "Visualiza las puntuaciones clave generadas durante la evaluación de modelos.",
             color=COLORS["muted_foreground"],
@@ -1608,7 +1609,7 @@ def progress_modal() -> rx.Component:
 def analisis_resultados_page() -> rx.Component:
     """Página principal de análisis de resultados."""
     return rx.box(
-        rx.heading("Análisis de Resultados", size="8", margin_bottom="1em"),
+        rx.heading("Análisis de Resultados", size="8", margin_bottom="1em", color="#E8913A"),
         rx.text(
             "Analiza resultados de entrenamientos y recibe sugerencias automáticas para optimizar hiperparámetros",
             color=COLORS["muted_foreground"],

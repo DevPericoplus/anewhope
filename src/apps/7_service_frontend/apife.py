@@ -137,6 +137,7 @@ class ModelDownloadOtpResponse(BaseModel):
     success: bool
     otp: str | None = None
     phone_number: str | None = None
+    phone_masked: str | None = None
     message: str | None = None
 
 
@@ -3943,15 +3944,19 @@ def request_model_download_otp_endpoint(
         OTP y teléfono para envío de SMS
     """
     try:
-        # Verificar que el usuario tiene identity_type_id (es admin)
-        if session.identity_type_id is None:
+        # SECURITY BY DESIGN: Solo SuperAdmin (1) y Admin Organización (2)
+        if session.identity_type_id not in (1, 2):
+            _logger.warning(
+                "Intento de solicitar OTP descarga sin permisos: user_id=%s identity_type_id=%s",
+                session.user_id, session.identity_type_id,
+            )
             raise HTTPException(
                 status_code=403,
-                detail="Solo administradores pueden descargar modelos"
+                detail="Solo SuperAdmin y Administradores de Organización pueden descargar modelos"
             )
 
-        # Verificar permisos de organización (solo admin global puede otras orgs)
-        if session.identity_type_id != 1:  # No es admin global
+        # Verificar permisos de organización (solo SuperAdmin puede otras orgs)
+        if session.identity_type_id == 2:
             if request.organization_id != session.organization_id:
                 raise HTTPException(
                     status_code=403,
@@ -3969,6 +3974,7 @@ def request_model_download_otp_endpoint(
             success=True,
             otp=otp_data["otp"],
             phone_number=otp_data["phone_number"],
+            phone_masked=otp_data.get("phone_masked", ""),
             message="OTP generado. Envíe el SMS al usuario."
         )
     except HTTPException:
@@ -3979,7 +3985,7 @@ def request_model_download_otp_endpoint(
             detail=str(exc),
         ) from exc
     except Exception as exc:
-        logger.error("Error solicitando OTP: %s", str(exc))
+        _logger.error("Error solicitando OTP: %s", str(exc))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al solicitar OTP"
@@ -3995,6 +4001,7 @@ def validate_model_download_otp_endpoint(
     """Valida OTP y genera token de descarga de modelo.
 
     Security:
+        - Solo SuperAdmin (1) y Admin Organización (2)
         - Valida el código OTP del usuario
         - Genera token JWT para descarga en fmanagement
         - Rota el OTP del usuario (como en login)
@@ -4011,15 +4018,19 @@ def validate_model_download_otp_endpoint(
         Token JWT para descarga directa desde fmanagement
     """
     try:
-        # Verificar que el usuario tiene identity_type_id (es admin)
-        if session.identity_type_id is None:
+        # SECURITY BY DESIGN: Solo SuperAdmin (1) y Admin Organización (2)
+        if session.identity_type_id not in (1, 2):
+            _logger.warning(
+                "Intento de validar OTP descarga sin permisos: user_id=%s identity_type_id=%s",
+                session.user_id, session.identity_type_id,
+            )
             raise HTTPException(
                 status_code=403,
-                detail="Solo administradores pueden descargar modelos"
+                detail="Solo SuperAdmin y Administradores de Organización pueden descargar modelos"
             )
 
         # Verificar permisos de organización
-        if session.identity_type_id != 1:  # No es admin global
+        if session.identity_type_id == 2:
             if request.organization_id != session.organization_id:
                 raise HTTPException(
                     status_code=403,
@@ -4068,10 +4079,10 @@ def download_model_direct_endpoint(
     filename: str,
     session: SessionContext = Depends(get_session_context),
 ):
-    """Descarga directa de modelo para administradores (backoffice).
+    """Descarga directa de modelo para administradores autorizados.
 
-    Solo accesible para SuperAdmin (identity_type_id=1).
-    No requiere OTP. Lee el fichero desde el sistema de archivos internal.
+    Accesible para SuperAdmin (1) y Admin Organización (2).
+    Debe llamarse después de validar OTP en /models/download/validate-otp.
 
     Args:
         organization_id: ID de organización
@@ -4093,11 +4104,22 @@ def download_model_direct_endpoint(
             organization_id, project_id, version_id, filename, session.identity_type_id,
         )
 
-        # Solo SuperAdmin puede descargar directamente sin OTP
-        if session.identity_type_id != 1:
+        # SECURITY BY DESIGN: Solo SuperAdmin (1) y Admin Organización (2)
+        if session.identity_type_id not in (1, 2):
+            _logger.warning(
+                "Intento de descarga directa sin permisos: user_id=%s identity_type_id=%s",
+                session.user_id, session.identity_type_id,
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Solo SuperAdmin puede usar descarga directa",
+                detail="Solo SuperAdmin y Administradores de Organización pueden descargar modelos",
+            )
+
+        # Admin Org solo puede descargar modelos de su organización
+        if session.identity_type_id == 2 and organization_id != session.organization_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tiene permisos para descargar modelos de otra organización",
             )
 
         # Construir ruta al archivo

@@ -112,6 +112,24 @@ _env_settings_bo = importlib.util.module_from_spec(_env_settings_spec)
 _env_settings_spec.loader.exec_module(_env_settings_bo)
 get_env_value = _env_settings_bo.get_env_value
 
+# Cargar módulo de SMS para envío de OTP
+_send_message_by_sms = None
+try:
+    _common_security_path = (
+        Path(__file__).resolve().parents[3]
+        / "2_shared_application"
+        / "security"
+        / "common_security.py"
+    )
+    if _common_security_path.exists():
+        _sec_spec = importlib.util.spec_from_file_location("common_security_bo", _common_security_path)
+        if _sec_spec and _sec_spec.loader:
+            _sec_module = importlib.util.module_from_spec(_sec_spec)
+            _sec_spec.loader.exec_module(_sec_module)
+            _send_message_by_sms = getattr(_sec_module, "send_message_by_sms", None)
+except Exception as _sec_exc:
+    logging.getLogger(__name__).error("Error al cargar módulo de SMS: %s", _sec_exc)
+
 
 # TypedDict para tipado de fases y subfases del entrenamiento
 class SubfaseDict(TypedDict):
@@ -236,6 +254,19 @@ class State(SharedSessionState):
     dl_loading_packages: bool = False
     dl_downloading: bool = False
     dl_error: str = ""
+
+    # Estado del modal OTP para descargas
+    dl_show_otp_modal: bool = False
+    dl_otp_code: str = ""
+    dl_otp_phone: str = ""
+    dl_otp_requested: bool = False
+    dl_otp_error: str = ""
+    dl_otp_pkg_id: int = 0
+
+    @rx.var
+    def can_download_models(self) -> bool:
+        """Solo SuperAdmin (1) y Admin Organización (2) pueden descargar."""
+        return self.identity_type_id in (1, 2)
 
     @rx.var
     def dl_organization_options(self) -> list[str]:
@@ -2671,6 +2702,8 @@ class State(SharedSessionState):
             self.load_project_assignments()
         elif tab == "job_templates":
             self.load_jt_data()
+        elif tab == "prompts":
+            self.load_prompts()
 
     def load_org_assignments(self):
         """Loads organization assignments for selected org."""
@@ -3691,6 +3724,8 @@ class State(SharedSessionState):
 
     def _ad_load_jobs(self):
         """Carga los jobs de análisis de documentación para org/proyecto/versión."""
+        import json as _json
+
         if self.ad_version_id <= 0:
             self.ad_jobs = []
             return
@@ -3709,7 +3744,8 @@ class State(SharedSessionState):
                         j.iniciado_en,
                         j.completado_en,
                         j.error,
-                        j.created_at
+                        j.created_at,
+                        j.configuracion
                     FROM jobs j
                     INNER JOIN jobs_estados jest   ON j.id_estado = jest.id
                     INNER JOIN jobs_templates jt   ON j.id_template = jt.id
@@ -3726,8 +3762,20 @@ class State(SharedSessionState):
                     "prj_id": self.ad_project_id,
                     "ver_id": self.ad_version_id,
                 }).fetchall()
-                self.ad_jobs = [
-                    {
+                result_jobs = []
+                for r in rows:
+                    # Parsear configuracion JSON
+                    config_raw = r[13]
+                    config_dict: dict = {}
+                    if config_raw:
+                        try:
+                            if isinstance(config_raw, str):
+                                config_dict = _json.loads(config_raw)
+                            elif isinstance(config_raw, dict):
+                                config_dict = config_raw
+                        except (ValueError, TypeError):
+                            config_dict = {}
+                    result_jobs.append({
                         "id": r[0],
                         "nombre": r[1],
                         "descripcion": r[2] or "",
@@ -3741,9 +3789,13 @@ class State(SharedSessionState):
                         "completado_en": str(r[10]) if r[10] else "-",
                         "error": r[11] or "",
                         "created_at": str(r[12]) if r[12] else "",
-                    }
-                    for r in rows
-                ]
+                        "sel_identidad": config_dict.get("sel_identidad", ""),
+                        "sel_contexto": config_dict.get("sel_contexto", ""),
+                        "sel_solicitud": config_dict.get("sel_solicitud", ""),
+                        "sel_modalidad": config_dict.get("sel_modalidad", ""),
+                        "prompt_final_guardado": config_dict.get("prompt_final", ""),
+                    })
+                self.ad_jobs = result_jobs
             print(f"[AD] Jobs cargados: {len(self.ad_jobs)}")
         except Exception as e:
             print(f"[ERROR AD] _ad_load_jobs: {e}")
@@ -5157,16 +5209,19 @@ class State(SharedSessionState):
             )
 
     def dl_download_package(self, id_entrenamiento: int):
-        """Descarga un paquete específico usando el índice del paquete.
+        """Abre el modal OTP para verificar identidad antes de descargar.
 
-        Busca el paquete en dl_packages por id_entrenamiento (índice secuencial)
-        y descarga directamente del sistema de archivos vía middleware.
+        Solo accesible para SuperAdmin (1) y Admin Organización (2).
         """
-        from adapters.api_client import download_model_direct
+        # Validación de seguridad
+        if self.identity_type_id not in (1, 2):
+            return rx.toast.error(
+                "No tiene permisos para descargar modelos",
+                position="bottom-right",
+                duration=5000,
+            )
 
-        self.dl_downloading = True
-
-        # Buscar el paquete en la lista por id_entrenamiento (índice secuencial)
+        # Buscar paquete
         pkg = None
         for p in self.dl_packages:
             if p.get("id_entrenamiento") == id_entrenamiento:
@@ -5174,19 +5229,136 @@ class State(SharedSessionState):
                 break
 
         if not pkg:
-            self.dl_downloading = False
             return rx.toast.error(
                 "Paquete no encontrado en la lista",
                 position="bottom-right",
                 duration=5000,
             )
 
-        org_id = pkg.get("_organization_id", self.dl_selected_org_id)
-        prj_id = pkg.get("_project_id", self.dl_selected_project_id)
-        ver_id = pkg.get("_version_id", self.dl_selected_version_id)
-        filename = pkg.get("package_filename", "modelo.zip")
+        # Guardar el ID del paquete y abrir modal OTP
+        self.dl_otp_pkg_id = id_entrenamiento
+        self.dl_otp_code = ""
+        self.dl_otp_requested = False
+        self.dl_otp_error = ""
+        self.dl_otp_phone = ""
+        self.dl_show_otp_modal = True
+
+    def dl_close_otp_modal(self):
+        """Cierra el modal OTP de descarga."""
+        self.dl_show_otp_modal = False
+        self.dl_otp_code = ""
+        self.dl_otp_requested = False
+        self.dl_otp_error = ""
+        self.dl_otp_phone = ""
+        self.dl_otp_pkg_id = 0
+
+    def dl_request_otp(self):
+        """Solicita OTP vía SMS para autorizar la descarga del modelo.
+
+        Flujo:
+        1. Llama al middleware para obtener OTP y teléfono del usuario
+        2. Envía el SMS directamente a Infobip con el OTP
+        3. Muestra confirmación al usuario
+        """
+        from adapters.api_client import request_model_download_otp
+
+        self.dl_otp_error = ""
+
+        org_id = self.dl_selected_org_id
+        prj_id = self.dl_selected_project_id
+        ver_id = self.dl_selected_version_id
 
         try:
+            # Paso 1: Obtener OTP y teléfono del middleware
+            result = request_model_download_otp(
+                organization_id=org_id,
+                project_id=prj_id,
+                version_id=ver_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if not result.get("success"):
+                self.dl_otp_error = result.get("message", "Error al solicitar OTP")
+                return
+
+            otp = result.get("otp", "")
+            phone_number = result.get("phone_number", "")
+            phone_masked = result.get("phone_masked", "")
+
+            if not otp or not phone_number:
+                self.dl_otp_error = "No se pudieron obtener los datos de OTP"
+                return
+
+            # Paso 2: Enviar SMS directamente a Infobip
+            if _send_message_by_sms is None:
+                self.dl_otp_error = "Función de envío de SMS no disponible"
+                return
+
+            sms_sent = _send_message_by_sms(otp, phone_number)
+            if sms_sent:
+                self.dl_otp_requested = True
+                self.dl_otp_phone = phone_masked or ("***" + phone_number[-3:] if len(phone_number) >= 3 else "***")
+                return rx.toast.success(
+                    f"Código OTP enviado a {self.dl_otp_phone}",
+                    position="bottom-right",
+                    duration=5000,
+                )
+            else:
+                self.dl_otp_error = "No se pudo enviar el SMS. Intente de nuevo."
+
+        except Exception as exc:
+            self.dl_otp_error = f"Error: {str(exc)}"
+
+    def dl_validate_otp_and_download(self):
+        """Valida el OTP y descarga el modelo si es correcto."""
+        from adapters.api_client import (
+            download_model_direct,
+            validate_model_download_otp,
+        )
+
+        self.dl_otp_error = ""
+
+        if not self.dl_otp_code or len(self.dl_otp_code.strip()) < 4:
+            self.dl_otp_error = "Introduzca el código OTP recibido"
+            return
+
+        org_id = self.dl_selected_org_id
+        prj_id = self.dl_selected_project_id
+        ver_id = self.dl_selected_version_id
+
+        try:
+            # Validar OTP en el middleware
+            result = validate_model_download_otp(
+                organization_id=org_id,
+                project_id=prj_id,
+                version_id=ver_id,
+                otp=self.dl_otp_code.strip(),
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if not result.get("success"):
+                self.dl_otp_error = result.get("message", "OTP incorrecto")
+                return
+
+            # OTP validado - proceder con la descarga
+            self.dl_downloading = True
+
+            # Buscar paquete
+            pkg = None
+            for p in self.dl_packages:
+                if p.get("id_entrenamiento") == self.dl_otp_pkg_id:
+                    pkg = p
+                    break
+
+            if not pkg:
+                self.dl_downloading = False
+                self.dl_otp_error = "Paquete no encontrado"
+                return
+
+            filename = pkg.get("package_filename", "modelo.zip")
+
             package_bytes = download_model_direct(
                 organization_id=org_id,
                 project_id=prj_id,
@@ -5197,6 +5369,7 @@ class State(SharedSessionState):
             )
 
             self.dl_downloading = False
+            self.dl_show_otp_modal = False
 
             if package_bytes:
                 return rx.download(
@@ -5211,13 +5384,8 @@ class State(SharedSessionState):
                 )
 
         except Exception as exc:
-            print(f"[DOWNLOAD PAGE] Error: {exc}")
             self.dl_downloading = False
-            return rx.toast.error(
-                f"Error descargando: {str(exc)}",
-                position="bottom-right",
-                duration=5000,
-            )
+            self.dl_otp_error = f"Error: {str(exc)}"
 
     # ========================================================================
     # MODAL DE JOB - Prompt Builder para Análisis de Documentación
@@ -5244,7 +5412,11 @@ class State(SharedSessionState):
         return [p["name"] for p in self.ad_prompts_modalidad]
 
     def ad_open_job_modal(self, job_id: int):
-        """Abre el modal con los datos del job y carga los 4 tipos de prompts."""
+        """Abre el modal con los datos del job y carga los 4 tipos de prompts.
+
+        Si el job tiene selecciones de prompts guardadas (en configuracion),
+        las restaura en los selectores y reconstruye el prompt final.
+        """
         # Buscar el job
         for j in self.ad_jobs:
             if j["id"] == job_id:
@@ -5273,12 +5445,33 @@ class State(SharedSessionState):
                 print(f"[ERROR AD MODAL] cargando prompts {category}: {e}")
                 setattr(self, attr, [])
 
-        # Limpiar selecciones previas
-        self.ad_sel_identidad = ""
-        self.ad_sel_contexto = ""
-        self.ad_sel_solicitud = ""
-        self.ad_sel_modalidad = ""
-        self.ad_prompt_final = ""
+        # Restaurar selecciones guardadas del job (si existen)
+        saved_identidad = self.ad_modal_job.get("sel_identidad", "")
+        saved_contexto = self.ad_modal_job.get("sel_contexto", "")
+        saved_solicitud = self.ad_modal_job.get("sel_solicitud", "")
+        saved_modalidad = self.ad_modal_job.get("sel_modalidad", "")
+
+        # Validar que los nombres guardados existen en las listas cargadas
+        identidad_names = [p.get("name", "") for p in self.ad_prompts_identidades]
+        contexto_names = [p.get("name", "") for p in self.ad_prompts_contexto]
+        solicitud_names = [p.get("name", "") for p in self.ad_prompts_solicitudes]
+        modalidad_names = [p.get("name", "") for p in self.ad_prompts_modalidad]
+
+        self.ad_sel_identidad = saved_identidad if saved_identidad in identidad_names else ""
+        self.ad_sel_contexto = saved_contexto if saved_contexto in contexto_names else ""
+        self.ad_sel_solicitud = saved_solicitud if saved_solicitud in solicitud_names else ""
+        self.ad_sel_modalidad = saved_modalidad if saved_modalidad in modalidad_names else ""
+
+        # Restaurar prompt final guardado o recomponer con las selecciones
+        saved_prompt = self.ad_modal_job.get("prompt_final_guardado", "")
+        if saved_prompt and (self.ad_sel_identidad or self.ad_sel_contexto
+                            or self.ad_sel_solicitud or self.ad_sel_modalidad):
+            self.ad_prompt_final = saved_prompt
+        elif self.ad_sel_identidad or self.ad_sel_contexto or self.ad_sel_solicitud or self.ad_sel_modalidad:
+            self._ad_compose_prompt()
+        else:
+            self.ad_prompt_final = ""
+
         self.ad_trainer_ack = False
         self.ad_trainer_sending = False
         self.ad_trainer_error = ""
@@ -5380,6 +5573,30 @@ class State(SharedSessionState):
 
         return nombre_tiene_metadatos and prompt_menciones >= 2
 
+    def _ad_save_prompt_config(self):
+        """Persiste las selecciones de prompts y el prompt final en el campo configuracion del job."""
+        import json as _json
+
+        job_id = self.ad_modal_job.get("id", 0)
+        if job_id <= 0:
+            return
+
+        config_data = {
+            "sel_identidad": self.ad_sel_identidad,
+            "sel_contexto": self.ad_sel_contexto,
+            "sel_solicitud": self.ad_sel_solicitud,
+            "sel_modalidad": self.ad_sel_modalidad,
+            "prompt_final": self.ad_prompt_final,
+        }
+        try:
+            engine = self._get_projects_writer_engine()
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "UPDATE jobs SET configuracion = :config WHERE id = :job_id"
+                ), {"config": _json.dumps(config_data, ensure_ascii=False), "job_id": job_id})
+        except Exception as e:
+            print(f"[ERROR AD] Guardando configuracion de prompts: {e}")
+
     def ad_send_to_trainer(self):
         """Envía los datos del modal al endpoint apropiado del trainer.
 
@@ -5401,6 +5618,9 @@ class State(SharedSessionState):
         self.ad_trainer_sending = True
         self.ad_trainer_error = ""
         self.ad_trainer_ack = False
+
+        # Persistir selecciones de prompts en la BD antes de enviar
+        self._ad_save_prompt_config()
 
         payload = {
             "id_job": self.ad_modal_job.get("id", 0),
@@ -5769,7 +5989,7 @@ def user_action_button(icon: str, tooltip: str, on_click, color: str = COLORS["m
             rx.icon(icon, size=22),
             variant="ghost",
             size="2",
-            color_scheme="gray",
+            color_scheme="yellow",
             cursor="pointer",
             on_click=on_click,
             _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
@@ -5850,7 +6070,7 @@ def user_row(user: dict) -> rx.Component:
                                 rx.icon("trash-2", size=22),
                                 variant="ghost",
                                 size="2",
-                                color_scheme="gray",
+                                color_scheme="yellow",
                                 cursor="pointer",
                                 on_click=State.delete_user(user["user_id"]),
                                 _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
@@ -5867,7 +6087,7 @@ def user_row(user: dict) -> rx.Component:
                         rx.icon("folder-plus", size=22),
                         variant="ghost",
                         size="2",
-                        color_scheme="gray",
+                        color_scheme="yellow",
                         cursor="pointer",
                         on_click=State.assign_user_to_projects(user["user_id"]),
                         _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
@@ -5879,7 +6099,7 @@ def user_row(user: dict) -> rx.Component:
                         rx.icon("folder-minus", size=22),
                         variant="ghost",
                         size="2",
-                        color_scheme="gray",
+                        color_scheme="yellow",
                         cursor="pointer",
                         on_click=State.remove_user_from_projects(user["user_id"]),
                         _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
@@ -6379,7 +6599,7 @@ def project_row(project: dict) -> rx.Component:
                     rx.icon("headset", size=22),
                     variant="ghost",
                     size="2",
-                    color_scheme="gray",
+                    color_scheme="yellow",
                     cursor="pointer",
                     on_click=State.request_project_support(project["id"]),
                     _hover={"color": COLORS["primary"], "background_color": COLORS["border"]},
@@ -7401,8 +7621,8 @@ def _prompts_management_tab() -> rx.Component:
                                 rx.foreach(
                                     State.prompts_list,
                                     lambda p: rx.table.row(
-                                        rx.table.cell(p["name"]),
-                                        rx.table.cell(p.get("description", "-")),
+                                        rx.table.cell(rx.text(p["name"], color="white")),
+                                        rx.table.cell(rx.text(p.get("description", "-"), color="white")),
                                         rx.table.cell(
                                             rx.cond(p["active"], rx.badge("Activo", color_scheme="green"), rx.badge("Inactivo", color_scheme="gray")),
                                         ),
@@ -7446,12 +7666,13 @@ def _prompts_management_tab() -> rx.Component:
 
 def _ad_job_row(job: rx.Var) -> rx.Component:
     """Fila de la tabla de jobs de análisis de documentación."""
+    _cell_color = "white"
     return rx.table.row(
-        rx.table.cell(job["id"]),
+        rx.table.cell(rx.text(job["id"], color=_cell_color)),
         rx.table.cell(
-            rx.text(job["nombre"], font_weight="bold", color=COLORS["foreground"]),
+            rx.text(job["nombre"], font_weight="bold", color=_cell_color),
         ),
-        rx.table.cell(job["template_nombre"]),
+        rx.table.cell(rx.text(job["template_nombre"], color=_cell_color)),
         rx.table.cell(
             rx.badge(
                 job["estado_nombre"],
@@ -7460,10 +7681,10 @@ def _ad_job_row(job: rx.Var) -> rx.Component:
                 style={"color": "black", "backgroundColor": job["estado_color"]},
             ),
         ),
-        rx.table.cell(job["modelo_nombre"]),
-        rx.table.cell(job["salida_nombre"]),
-        rx.table.cell(job["programado_para"]),
-        rx.table.cell(job["created_at"]),
+        rx.table.cell(rx.text(job["modelo_nombre"], color=_cell_color)),
+        rx.table.cell(rx.text(job["salida_nombre"], color=_cell_color)),
+        rx.table.cell(rx.text(job["programado_para"], color=_cell_color)),
+        rx.table.cell(rx.text(job["created_at"], color=_cell_color)),
         rx.table.cell(
             rx.hstack(
                 rx.cond(
@@ -7729,9 +7950,10 @@ def _ad_job_modal() -> rx.Component:
                 rx.button(
                     "Salir",
                     on_click=State.ad_close_modal,
-                    color_scheme="gray",
+                    color_scheme="orange",
                     size="3",
                     variant="outline",
+                    style={"color": COLORS["primary"]},
                 ),
                 width="100%",
                 align_items="center",
@@ -7753,10 +7975,10 @@ def _ent_version_row(item: dict) -> rx.Component:
     """Fila de la tabla de versiones pendientes de entrenamiento."""
     return rx.table.row(
         rx.table.cell(
-            rx.text(item["organization_name"], font_weight="500"),
+            rx.text(item["organization_name"], font_weight="500", color="white"),
         ),
         rx.table.cell(
-            rx.text(item["proyecto_nombre"]),
+            rx.text(item["proyecto_nombre"], color="white"),
         ),
         rx.table.cell(
             rx.badge(
@@ -8143,10 +8365,10 @@ def _ent_params_modal() -> rx.Component:
                         rx.dialog.close(
                             rx.button(
                                 "Cancelar",
-                                color_scheme="gray",
+                                color_scheme="orange",
                                 size="2",
                                 variant="soft",
-                                style={"font_weight": "bold", "color": "black"},
+                                style={"font_weight": "bold", "color": COLORS["primary"]},
                             ),
                         ),
                         rx.button(
@@ -8251,7 +8473,7 @@ def entrenamientos_panel() -> rx.Component:
                 rx.text(
                     rx.text.strong("Versiones preparadas para entrenamiento inicial"),
                     font_size="1.1em",
-                    color=COLORS["foreground"],
+                    color=COLORS["primary"],
                     margin_bottom="0.5em",
                 ),
                 rx.table.root(
@@ -8937,9 +9159,19 @@ def entrenamientos_full_panel() -> rx.Component:
 
 def descargas_panel() -> rx.Component:
     """Panel de Descargas de modelos GGUF entrenados."""
+    # Colores oscuros para contraste en paneles gris claro
+    _heading_color = "#c2410c"   # Naranja oscuro - headings
+    _text_color = "#2d3748"      # Gris oscuro - texto principal
+    _label_color = "#9a3412"     # Naranja más oscuro - labels
+
     return rx.vstack(
         # Título
-        rx.heading("Descargas de Modelos", size="7", margin_bottom="1em"),
+        rx.heading(
+            "Descargas de Modelos",
+            size="7",
+            color=_heading_color,
+            margin_bottom="1em",
+        ),
 
         # Barra de selectores horizontal (Organización → Proyecto → Versión)
         org_project_version_selector_bar(
@@ -8963,7 +9195,10 @@ def descargas_panel() -> rx.Component:
             rx.card(
                 rx.hstack(
                     rx.spinner(size="3"),
-                    rx.text("Cargando paquetes disponibles..."),
+                    rx.text(
+                        "Cargando paquetes disponibles...",
+                        color=_text_color,
+                    ),
                     spacing="3",
                     align_items="center",
                     padding="2em",
@@ -8973,142 +9208,446 @@ def descargas_panel() -> rx.Component:
             rx.cond(
                 State.dl_packages.length() > 0,
                 rx.vstack(
-                            rx.hstack(
-                                rx.icon("package", size=20, color=COLORS["primary"]),
-                                rx.heading("Paquetes Disponibles", size="4"),
-                                rx.badge(
-                                    f"{State.dl_packages.length()} paquetes",
-                                    color_scheme="blue",
-                                ),
-                                spacing="2",
-                                align_items="center",
-                            ),
+                    rx.hstack(
+                        rx.icon("package", size=20, color=_heading_color),
+                        rx.heading(
+                            "Paquetes Disponibles",
+                            size="4",
+                            color=_heading_color,
+                        ),
+                        rx.badge(
+                            f"{State.dl_packages.length()} paquetes",
+                            color_scheme="orange",
+                        ),
+                        spacing="2",
+                        align_items="center",
+                    ),
 
-                            # Lista de paquetes
-                            rx.foreach(
-                                State.dl_packages,
-                                lambda pkg: rx.card(
+                    # Lista de paquetes
+                    rx.foreach(
+                        State.dl_packages,
+                        lambda pkg: rx.card(
+                            rx.vstack(
+                                # Información del paquete
+                                rx.hstack(
+                                    rx.icon("file-archive", size=24, color="#c2410c"),
                                     rx.vstack(
-                                        # Información del paquete
+                                        rx.text(
+                                            pkg["package_filename"],
+                                            font_weight="bold",
+                                            font_size="1.1em",
+                                            color=_text_color,
+                                        ),
                                         rx.hstack(
-                                            rx.icon("file-archive", size=24, color="#f59e0b"),
-                                            rx.vstack(
-                                                rx.text(
-                                                    pkg["package_filename"],
-                                                    font_weight="bold",
-                                                    font_size="1.1em",
-                                                ),
-                                                rx.hstack(
-                                                    rx.badge(
-                                                        "Modelo LLM",
-                                                        color_scheme="green",
-                                                        variant="surface",
-                                                    ),
-                                                    spacing="2",
-                                                ),
-                                                spacing="1",
-                                                align_items="start",
+                                            rx.badge(
+                                                "Modelo LLM",
+                                                color_scheme="orange",
+                                                variant="surface",
                                             ),
-                                            spacing="3",
-                                            align_items="center",
-                                            flex="1",
+                                            spacing="2",
                                         ),
+                                        spacing="1",
+                                        align_items="start",
+                                    ),
+                                    spacing="3",
+                                    align_items="center",
+                                    flex="1",
+                                ),
 
-                                        # Información adicional
-                                        rx.grid(
-                                            rx.vstack(
-                                                rx.text("Tamaño:", font_size="0.85em", color=COLORS["muted"]),
-                                                rx.text(
-                                                    f"{pkg['package_size_mb']:.2f} MB",
-                                                    font_weight="bold",
-                                                ),
-                                                spacing="0",
-                                            ),
-                                            rx.vstack(
-                                                rx.text("Generado:", font_size="0.85em", color=COLORS["muted"]),
-                                                rx.text(
-                                                    pkg["package_generated_at"],
-                                                    font_weight="bold",
-                                                ),
-                                                spacing="0",
-                                            ),
-                                            columns="2",
-                                            spacing="4",
-                                            width="100%",
+                                # Información adicional
+                                rx.grid(
+                                    rx.vstack(
+                                        rx.text(
+                                            "Tamaño:",
+                                            font_size="0.85em",
+                                            color=_label_color,
+                                            font_weight="bold",
                                         ),
-
-                                        rx.separator(margin_y="0.5em"),
-
-                                        # Botón de descarga
-                                        rx.button(
-                                            rx.hstack(
-                                                rx.icon("download", size=16),
-                                                rx.text("Descargar Paquete", font_weight="bold"),
-                                                spacing="2",
-                                            ),
-                                            on_click=lambda: State.dl_download_package(pkg["id_entrenamiento"]),
-                                            loading=State.dl_downloading,
-                                            color_scheme="green",
-                                            size="3",
-                                            width="100%",
-                                            style={"font_weight": "bold", "color": "black"},
+                                        rx.text(
+                                            f"{pkg['package_size_mb']:.2f} MB",
+                                            font_weight="bold",
+                                            color=_text_color,
                                         ),
+                                        spacing="0",
+                                    ),
+                                    rx.vstack(
+                                        rx.text(
+                                            "Generado:",
+                                            font_size="0.85em",
+                                            color=_label_color,
+                                            font_weight="bold",
+                                        ),
+                                        rx.text(
+                                            pkg["package_generated_at"],
+                                            font_weight="bold",
+                                            color=_text_color,
+                                        ),
+                                        spacing="0",
+                                    ),
+                                    columns="2",
+                                    spacing="4",
+                                    width="100%",
+                                ),
 
-                                        spacing="3",
+                                rx.separator(margin_y="0.5em"),
+
+                                # Botón de descarga (solo SuperAdmin y Admin Org)
+                                rx.cond(
+                                    State.can_download_models,
+                                    rx.button(
+                                        rx.hstack(
+                                            rx.icon("shield-check", size=16),
+                                            rx.text("Descargar con OTP", font_weight="bold"),
+                                            spacing="2",
+                                        ),
+                                        on_click=lambda: State.dl_download_package(pkg["id_entrenamiento"]),
+                                        loading=State.dl_downloading,
+                                        color_scheme="orange",
+                                        size="3",
+                                        width="100%",
+                                        style={"font_weight": "bold", "color": "black"},
+                                    ),
+                                    rx.text(
+                                        "Solo administradores pueden descargar modelos",
+                                        color="#9a3412",
+                                        font_size="0.85em",
+                                        font_style="italic",
+                                        text_align="center",
                                         width="100%",
                                     ),
-                                    size="2",
-                                    margin_bottom="1em",
                                 ),
-                            ),
 
+                                spacing="3",
+                                width="100%",
+                            ),
+                            size="2",
+                            margin_bottom="1em",
+                        ),
+                    ),
+
+                    spacing="3",
+                    width="100%",
+                ),
+                # No hay paquetes
+                rx.cond(
+                    State.dl_selected_version_id > 0,
+                    rx.card(
+                        rx.vstack(
+                            rx.icon("inbox", size=48, color=_label_color),
+                            rx.text(
+                                "No se encontraron paquetes disponibles",
+                                font_size="1.1em",
+                                color=_text_color,
+                                font_weight="bold",
+                            ),
+                            rx.text(
+                                "Seleccione otra versión o complete un entrenamiento autónomo primero.",
+                                font_size="0.9em",
+                                color=_label_color,
+                            ),
+                            spacing="2",
+                            align_items="center",
+                            padding="3em",
+                        ),
+                        size="2",
+                    ),
+                    rx.card(
+                        rx.vstack(
+                            rx.icon("filter", size=48, color=_label_color),
+                            rx.text(
+                                "Seleccione los filtros para ver paquetes disponibles",
+                                font_size="1.1em",
+                                color=_text_color,
+                                font_weight="bold",
+                            ),
+                            spacing="2",
+                            align_items="center",
+                            padding="3em",
+                        ),
+                        size="2",
+                    ),
+                ),
+            ),
+        ),
+
+        # Modal OTP para validación de descarga
+        rx.dialog.root(
+            rx.dialog.content(
+                rx.dialog.title(
+                    rx.hstack(
+                        rx.icon("shield-check", size=24, color="#c2410c"),
+                        rx.text(
+                            "Verificación OTP para Descarga",
+                            font_weight="bold",
+                            color="#c2410c",
+                        ),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                ),
+                rx.dialog.description(
+                    rx.text(
+                        "Se requiere verificación OTP para autorizar la descarga del modelo.",
+                        color="#2d3748",
+                        size="2",
+                    ),
+                ),
+
+                rx.vstack(
+                    # Paso 1: Solicitar OTP
+                    rx.cond(
+                        ~State.dl_otp_requested,
+                        rx.vstack(
+                            rx.text(
+                                "Pulse el botón para recibir un código de verificación por SMS.",
+                                color="#2d3748",
+                                size="2",
+                            ),
+                            rx.button(
+                                rx.hstack(
+                                    rx.icon("smartphone", size=16),
+                                    rx.text("Solicitar Código OTP", font_weight="bold"),
+                                    spacing="2",
+                                ),
+                                on_click=State.dl_request_otp,
+                                color_scheme="orange",
+                                size="3",
+                                width="100%",
+                                style={"font_weight": "bold", "color": "black"},
+                            ),
                             spacing="3",
                             width="100%",
                         ),
-                        # No hay paquetes
-                        rx.cond(
-                            State.dl_selected_version_id > 0,
-                            rx.card(
-                                rx.vstack(
-                                    rx.icon("inbox", size=48, color=COLORS["muted"]),
-                                    rx.text(
-                                        "No se encontraron paquetes disponibles",
-                                        font_size="1.1em",
-                                        color=COLORS["muted"],
-                                    ),
-                                    rx.text(
-                                        "Seleccione otra versión o complete un entrenamiento autónomo primero.",
-                                        font_size="0.9em",
-                                        color=COLORS["muted"],
-                                    ),
-                                    spacing="2",
-                                    align_items="center",
-                                    padding="3em",
-                                ),
+                        # Paso 2: Introducir OTP y validar
+                        rx.vstack(
+                            rx.text(
+                                rx.text.strong("Código enviado a: "),
+                                State.dl_otp_phone,
+                                color="#2d3748",
                                 size="2",
                             ),
-                            rx.card(
-                                rx.vstack(
-                                    rx.icon("filter", size=48, color=COLORS["muted"]),
-                                    rx.text(
-                                        "Seleccione los filtros para ver paquetes disponibles",
-                                        font_size="1.1em",
-                                        color=COLORS["muted"],
-                                    ),
-                                    spacing="2",
-                                    align_items="center",
-                                    padding="3em",
-                                ),
-                                size="2",
+                            rx.input(
+                                placeholder="Introduzca el código OTP",
+                                value=State.dl_otp_code,
+                                on_change=State.set_dl_otp_code,
+                                type="text",
+                                max_length=8,
+                                size="3",
+                                width="100%",
+                                style={
+                                    "text_align": "center",
+                                    "font_size": "1.2em",
+                                    "letter_spacing": "0.3em",
+                                },
                             ),
+                            rx.button(
+                                rx.hstack(
+                                    rx.icon("download", size=16),
+                                    rx.text("Validar y Descargar", font_weight="bold"),
+                                    spacing="2",
+                                ),
+                                on_click=State.dl_validate_otp_and_download,
+                                loading=State.dl_downloading,
+                                color_scheme="orange",
+                                size="3",
+                                width="100%",
+                                style={"font_weight": "bold", "color": "black"},
+                            ),
+                            rx.button(
+                                "Reenviar código",
+                                on_click=State.dl_request_otp,
+                                variant="ghost",
+                                size="2",
+                                color="#9a3412",
+                            ),
+                            spacing="3",
+                            width="100%",
                         ),
                     ),
+
+                    # Mensaje de error
+                    rx.cond(
+                        State.dl_otp_error != "",
+                        rx.callout(
+                            State.dl_otp_error,
+                            icon="alert_triangle",
+                            color_scheme="red",
+                            size="1",
+                            width="100%",
+                        ),
+                        rx.fragment(),
+                    ),
+
+                    spacing="4",
+                    width="100%",
+                    padding_top="1em",
                 ),
+
+                rx.dialog.close(
+                    rx.button(
+                        "Cancelar",
+                        variant="soft",
+                        color_scheme="gray",
+                        size="2",
+                        on_click=State.dl_close_otp_modal,
+                    ),
+                ),
+
+                style={"max_width": "450px"},
+            ),
+            open=State.dl_show_otp_modal,
+        ),
+
+        # Modal OTP para autorizar descarga
+        _otp_modal(),
 
         spacing="4",
         width="100%",
         padding="2em",
         on_mount=State.dl_init_page,
+    )
+
+
+def _otp_modal() -> rx.Component:
+    """Modal de validación OTP para autorizar descarga de modelos."""
+    _heading_color = "#c2410c"
+    _text_color = "#2d3748"
+    _label_color = "#9a3412"
+
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title(
+                rx.hstack(
+                    rx.icon("shield-check", size=24, color=_heading_color),
+                    rx.text(
+                        "Verificación de Seguridad",
+                        font_weight="bold",
+                        color=_heading_color,
+                    ),
+                    spacing="2",
+                    align_items="center",
+                ),
+            ),
+            rx.dialog.description(
+                rx.text(
+                    "Para descargar el modelo es necesario verificar su identidad mediante código OTP enviado por SMS.",
+                    color=_text_color,
+                    font_size="0.95em",
+                ),
+            ),
+            rx.separator(margin_y="1em"),
+
+            # Paso 1: Solicitar OTP
+            rx.cond(
+                ~State.dl_otp_requested,
+                rx.vstack(
+                    rx.text(
+                        "Pulse el botón para recibir un código de verificación en su teléfono móvil registrado.",
+                        color=_text_color,
+                        font_size="0.9em",
+                    ),
+                    rx.button(
+                        rx.hstack(
+                            rx.icon("smartphone", size=16),
+                            rx.text("Solicitar código OTP", font_weight="bold"),
+                            spacing="2",
+                        ),
+                        on_click=State.dl_request_otp,
+                        color_scheme="orange",
+                        size="3",
+                        width="100%",
+                        style={"font_weight": "bold", "color": "black"},
+                    ),
+                    spacing="3",
+                    width="100%",
+                ),
+                # Paso 2: Introducir OTP recibido
+                rx.vstack(
+                    rx.hstack(
+                        rx.icon("check-circle", size=18, color="#16a34a"),
+                        rx.text(
+                            rx.cond(
+                                State.dl_otp_phone != "",
+                                f"Código enviado a {State.dl_otp_phone}",
+                                "Código OTP enviado por SMS",
+                            ),
+                            color="#16a34a",
+                            font_weight="bold",
+                            font_size="0.9em",
+                        ),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    rx.text(
+                        "Introduzca el código recibido:",
+                        color=_label_color,
+                        font_weight="bold",
+                        font_size="0.9em",
+                    ),
+                    rx.input(
+                        placeholder="Código OTP",
+                        value=State.dl_otp_code,
+                        on_change=State.set_dl_otp_code,
+                        type="text",
+                        max_length=8,
+                        size="3",
+                        width="100%",
+                        style={"text_align": "center", "font_size": "1.2em", "letter_spacing": "0.3em"},
+                    ),
+                    rx.button(
+                        rx.hstack(
+                            rx.icon("download", size=16),
+                            rx.text("Validar y Descargar", font_weight="bold"),
+                            spacing="2",
+                        ),
+                        on_click=State.dl_validate_otp_and_download,
+                        loading=State.dl_downloading,
+                        color_scheme="orange",
+                        size="3",
+                        width="100%",
+                        style={"font_weight": "bold", "color": "black"},
+                    ),
+                    rx.button(
+                        "Reenviar código",
+                        on_click=State.dl_request_otp,
+                        variant="ghost",
+                        size="2",
+                        color=_label_color,
+                    ),
+                    spacing="3",
+                    width="100%",
+                ),
+            ),
+
+            # Mensaje de error
+            rx.cond(
+                State.dl_otp_error != "",
+                rx.callout(
+                    State.dl_otp_error,
+                    icon="alert_triangle",
+                    color_scheme="red",
+                    margin_top="1em",
+                ),
+                rx.fragment(),
+            ),
+
+            rx.separator(margin_y="1em"),
+
+            # Botón cerrar
+            rx.dialog.close(
+                rx.button(
+                    "Cancelar",
+                    variant="soft",
+                    color_scheme="gray",
+                    size="2",
+                    on_click=State.dl_close_otp_modal,
+                    style={"font_weight": "bold", "color": "black"},
+                ),
+            ),
+
+            max_width="450px",
+        ),
+        open=State.dl_show_otp_modal,
     )
 
 
@@ -9370,14 +9909,14 @@ def analisis_documentacion_panel() -> rx.Component:
                     rx.table.root(
                         rx.table.header(
                             rx.table.row(
-                                rx.table.column_header_cell("ID"),
-                                rx.table.column_header_cell("Nombre"),
-                                rx.table.column_header_cell("Plantilla"),
-                                rx.table.column_header_cell("Estado"),
-                                rx.table.column_header_cell("Modelo"),
-                                rx.table.column_header_cell("Salida"),
-                                rx.table.column_header_cell("Programado"),
-                                rx.table.column_header_cell("Creado"),
+                                rx.table.column_header_cell("ID", style={"color": "white"}),
+                                rx.table.column_header_cell("Nombre", style={"color": "white"}),
+                                rx.table.column_header_cell("Plantilla", style={"color": "white"}),
+                                rx.table.column_header_cell("Estado", style={"color": "white"}),
+                                rx.table.column_header_cell("Modelo", style={"color": "white"}),
+                                rx.table.column_header_cell("Salida", style={"color": "white"}),
+                                rx.table.column_header_cell("Programado", style={"color": "white"}),
+                                rx.table.column_header_cell("Creado", style={"color": "white"}),
                                 rx.table.column_header_cell(""),
                             ),
                         ),
@@ -10547,22 +11086,21 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             rx.box(height="0"),
         ),
         # Contenido: markdown para todas las secciones (públicas e internas)
-        # NOTA: Backoffice usa tamaños estándar (sin zoom) para mayor densidad de información
-        # El frontend usa tamaños aumentados (+15%) para mejor legibilidad de usuarios finales
+        # Backoffice usa tamaños aumentados para legibilidad de textos y emojis
         rx.cond(
             content_text != "",
             rx.markdown(
                 content_text,
                 component_map={
-                    "h1": lambda text: rx.heading(text, size="5", color=COLORS["primary"], margin_bottom="0.4em"),
-                    "h2": lambda text: rx.heading(text, size="4", color=COLORS["primary"], margin_top="0.8em", margin_bottom="0.4em"),
-                    "h3": lambda text: rx.heading(text, size="3", color=COLORS["primary"], margin_top="0.6em", margin_bottom="0.3em"),
-                    "p": lambda text: rx.text(text, color=COLORS["muted_foreground"], font_size="1em", line_height="1.5", margin_bottom="0.5em"),
-                    "li": lambda text: rx.list_item(rx.text(text, color=COLORS["muted_foreground"], font_size="1em", line_height="1.4")),
+                    "h1": lambda text: rx.heading(text, size="8", color=COLORS["primary"], margin_bottom="0.5em"),
+                    "h2": lambda text: rx.heading(text, size="6", color=COLORS["primary"], margin_top="1em", margin_bottom="0.5em"),
+                    "h3": lambda text: rx.heading(text, size="5", color=COLORS["primary"], margin_top="0.8em", margin_bottom="0.4em"),
+                    "p": lambda text: rx.text(text, color=COLORS["muted_foreground"], font_size="1.15em", line_height="1.6", margin_bottom="0.6em"),
+                    "li": lambda text: rx.list_item(rx.text(text, color=COLORS["muted_foreground"], font_size="1.15em", line_height="1.5")),
                     "strong": lambda text: rx.text(text, font_weight="bold", color=COLORS["foreground"], as_="span"),
                     "em": lambda text: rx.text(text, font_style="italic", as_="span"),
                     "blockquote": lambda text: rx.box(
-                        rx.text(text, color=COLORS["primary"], font_style="italic", font_size="1em"),
+                        rx.text(text, color=COLORS["primary"], font_style="italic", font_size="1.15em"),
                         border_left=f"4px solid {COLORS['primary']}",
                         padding_left="1em",
                         margin_y="1em",
