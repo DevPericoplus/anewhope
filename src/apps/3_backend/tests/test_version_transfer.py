@@ -66,8 +66,8 @@ class TestVersionTransferEndpoint:
         response = VersionTransferResponse(
             status="success",
             message="Version transferred successfully to trainer",
-            source_path="/data/files/external/ORG00001/PRJ00001/v001",
-            destination_path="/data/files/trainer/ORG00001/PRJ00001/v001",
+            source_path="/data/external/ORG00001/PRJ00001/v001",
+            destination_path="/data/external/ORG00001/PRJ00001/v001",
             bytes_transferred=1024,
             files_transferred=5,
         )
@@ -105,8 +105,8 @@ class TestVersionTransferRouter:
         client.request_json.return_value = {
             "status": "success",
             "message": "Version transferred successfully to trainer",
-            "source_path": "/data/files/external/ORG00001/PRJ00001/v001",
-            "destination_path": "/data/files/trainer/ORG00001/PRJ00001/v001",
+            "source_path": "/data/external/ORG00001/PRJ00001/v001",
+            "destination_path": "/data/external/ORG00001/PRJ00001/v001",
             "bytes_transferred": 2048,
             "files_transferred": 10,
         }
@@ -214,16 +214,16 @@ class TestStoragePathConfiguration:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Verifica que las variables de entorno se cargan correctamente."""
-        monkeypatch.setenv("BACKEND_CORE_BASE_STORAGE", "/data/files/external")
-        monkeypatch.setenv("BACKEND_IA_BASE_STORAGE", "/data/files/trainer")
+        monkeypatch.setenv("BACKEND_CORE_BASE_STORAGE", "/data/external")
+        monkeypatch.setenv("BACKEND_IA_BASE_STORAGE", "/data/external")
         monkeypatch.setenv("TRANSFER_MODE", "local")
 
         core_storage = os.environ.get("BACKEND_CORE_BASE_STORAGE")
         ia_storage = os.environ.get("BACKEND_IA_BASE_STORAGE")
         transfer_mode = os.environ.get("TRANSFER_MODE")
 
-        assert core_storage == "/data/files/external"
-        assert ia_storage == "/data/files/trainer"
+        assert core_storage == "/data/external"
+        assert ia_storage == "/data/external"
         assert transfer_mode == "local"
 
     def test_default_storage_paths(
@@ -238,8 +238,8 @@ class TestStoragePathConfiguration:
 
         # Las rutas por defecto deben incluir el home del usuario
         home = os.environ.get("HOME", "/home/user")
-        default_core = os.environ.get("BACKEND_CORE_BASE_STORAGE", f"{home}/data/files/external")
-        default_ia = os.environ.get("BACKEND_IA_BASE_STORAGE", f"{home}/data/files/trainer")
+        default_core = os.environ.get("BACKEND_CORE_BASE_STORAGE", f"{home}/data/external")
+        default_ia = os.environ.get("BACKEND_IA_BASE_STORAGE", f"{home}/data/external")
 
         assert "external" in default_core
         assert "trainer" in default_ia

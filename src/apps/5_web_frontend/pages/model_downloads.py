@@ -460,33 +460,39 @@ class ModelDownloadState(SharedSessionState):
 
             if response.status_code == 200:
                 data = response.json()
-                download_token = data.get("download_token")
-                fmanagement_url = data.get("fmanagement_url", "http://localhost:1666")
+                download_token = data.get("download_token", "")
                 filename = model.get("filename")
 
-                # Construir URL de descarga
-                download_url = f"{fmanagement_url}/models/download?filename={filename}&token={download_token}"
+                logger.info(
+                    "OTP validado, descargando modelo server-side: org=%s prj=%s ver=%s",
+                    model['organization_id'], model['project_id'], model['version_id'],
+                )
 
-                logger.info(f"Token de descarga obtenido: {download_url}")
+                # Descargar el archivo server-side via middleware (sin exponer URLs)
+                from urllib.parse import quote
+                dl_url = (
+                    f"{middleware_url}/models/download/direct"
+                    f"?token={quote(download_token)}"
+                    f"&filename={quote(filename)}"
+                )
 
-                # Usar JavaScript para iniciar la descarga (mismo patrón que explorador)
-                download_script = f"""
-                (function() {{
-                    const link = document.createElement('a');
-                    link.href = '{download_url}';
-                    link.download = '{filename}';
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                }})();
-                """
+                async with httpx.AsyncClient(timeout=60.0) as dl_client:
+                    dl_response = await dl_client.get(dl_url)
 
-                async with self:
-                    self.success_message = f"Descargando {filename}..."
-                    self.download_in_progress = False
-                    self.show_otp_modal = False
+                if dl_response.status_code == 200:
+                    import base64
+                    file_b64 = base64.b64encode(dl_response.content).decode("utf-8")
 
-                return rx.call_script(download_script)
+                    async with self:
+                        self.success_message = f"Descargando {filename}..."
+                        self.download_in_progress = False
+                        self.show_otp_modal = False
+
+                    return rx.download(data=file_b64, filename=filename)
+                else:
+                    async with self:
+                        self.otp_error = f"Error descargando archivo: {dl_response.status_code}"
+                        self.download_in_progress = False
 
             else:
                 error_detail = response.json().get("detail", "Error desconocido")

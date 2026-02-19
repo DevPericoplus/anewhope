@@ -1746,3 +1746,75 @@ class BrokerBackendRouter:
             raise BrokerBusinessError(
                 f"Error consultando progreso: {str(exc)}"
             ) from exc
+
+    # ========================================================================
+    # INFORMES
+    # ========================================================================
+
+    def list_informe_files(
+        self, org_id: int, project_id: int, version_id: int
+    ) -> dict[str, Any]:
+        """Lista archivos markdown de informes para una versión."""
+        self._logger.info(
+            "[%s] Listando informes org=%s project=%s version=%s",
+            self._client_app, org_id, project_id, version_id,
+        )
+        try:
+            return self._core_client.list_informe_files(org_id, project_id, version_id)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error listando informes: {str(exc)}"
+            ) from exc
+
+    def get_informe_content(
+        self, org_id: int, project_id: int, version_id: int, display_name: str
+    ) -> dict[str, Any]:
+        """Obtiene el contenido de un archivo markdown de informe."""
+        self._logger.info(
+            "[%s] Obteniendo informe org=%s project=%s version=%s file=%s",
+            self._client_app, org_id, project_id, version_id, display_name,
+        )
+        try:
+            return self._core_client.get_informe_content(
+                org_id, project_id, version_id, display_name
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error obteniendo informe: {str(exc)}"
+            ) from exc
+
+    # ========================================================================
+    # MODEL PACKAGES
+    # ========================================================================
+
+    def list_model_packages(
+        self, org_id: int | None = None
+    ) -> dict[str, Any]:
+        """Lista paquetes ZIP de modelos disponibles para descarga."""
+        self._logger.info(
+            "[%s] Listando paquetes de modelos org=%s",
+            self._client_app, org_id,
+        )
+        try:
+            return self._core_client.list_model_packages(org_id)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error listando paquetes de modelos: {str(exc)}"
+            ) from exc
+
+    def download_model_package(
+        self, org_id: int, project_id: int, version_id: int, filename: str
+    ) -> bytes:
+        """Descarga un paquete ZIP de modelo."""
+        self._logger.info(
+            "[%s] Descargando modelo org=%s prj=%s ver=%s file=%s",
+            self._client_app, org_id, project_id, version_id, filename,
+        )
+        try:
+            return self._core_client.download_model_package(
+                org_id, project_id, version_id, filename
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error descargando modelo: {str(exc)}"
+            ) from exc

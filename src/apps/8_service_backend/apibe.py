@@ -3828,3 +3828,108 @@ async def get_training_progress_endpoint(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
+
+
+# ============================================================================
+# Informes - Archivos markdown de reportes
+# ============================================================================
+
+
+@app.get(
+    "/informes/{org_id}/{project_id}/{version_id}/files",
+    tags=["informes"],
+)
+def list_informe_files_endpoint(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Lista archivos markdown de informes para una versión.
+
+    Flujo: Middleware → Broker → Backend Core → Filesystem
+    """
+    try:
+        return router.list_informe_files(org_id, project_id, version_id)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get(
+    "/informes/{org_id}/{project_id}/{version_id}/content",
+    tags=["informes"],
+)
+def get_informe_content_endpoint(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    file: str = "",
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Obtiene el contenido de un archivo markdown de informe.
+
+    Flujo: Middleware → Broker → Backend Core → Filesystem
+    """
+    if not file:
+        raise HTTPException(status_code=400, detail="Parámetro 'file' es requerido")
+    try:
+        return router.get_informe_content(org_id, project_id, version_id, file)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ============================================================================
+# MODEL PACKAGES - Paquetes ZIP de modelos para descarga
+# ============================================================================
+
+
+@app.get(
+    "/models/packages",
+    tags=["models"],
+)
+def list_model_packages_endpoint(
+    org_id: int | None = None,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Lista paquetes ZIP de modelos disponibles para descarga.
+
+    Flujo: Middleware → Broker → Backend Core → Filesystem
+    """
+    try:
+        return router.list_model_packages(org_id)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get(
+    "/models/packages/download",
+    tags=["models"],
+)
+def download_model_package_endpoint(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    filename: str,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+):
+    """Descarga un paquete ZIP de modelo.
+
+    Flujo: Middleware → Broker → Backend Core → Filesystem
+    """
+    try:
+        content = router.download_model_package(org_id, project_id, version_id, filename)
+        return Response(
+            content=content,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

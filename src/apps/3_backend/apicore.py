@@ -3686,3 +3686,145 @@ async def get_analysis_metrics_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+# ============================================================================
+# Informes - Archivos markdown de reportes
+# ============================================================================
+
+
+class InformeFileDto(BaseModel):
+    """Información de un archivo de informe."""
+
+    filename: str
+    display_name: str
+
+
+class InformesListResponse(BaseModel):
+    """Respuesta con lista de archivos de informes."""
+
+    archivos: list[InformeFileDto]
+    total: int
+
+
+class InformeContentResponse(BaseModel):
+    """Respuesta con contenido de un informe."""
+
+    content: str
+    display_name: str
+
+
+@app.get(
+    "/informes/{org_id}/{project_id}/{version_id}/files",
+    response_model=InformesListResponse,
+    tags=["informes"],
+)
+def list_informe_files(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> InformesListResponse:
+    """Lista archivos markdown de informes para una versión.
+
+    Flujo: Frontend/Backoffice → Middleware → Broker → Backend Core → Filesystem
+    """
+    try:
+        result = router.list_informe_files(org_id, project_id, version_id)
+        return InformesListResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get(
+    "/informes/{org_id}/{project_id}/{version_id}/content",
+    response_model=InformeContentResponse,
+    tags=["informes"],
+)
+def get_informe_content(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    file: str = "",
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> InformeContentResponse:
+    """Obtiene el contenido de un archivo markdown de informe.
+
+    Args:
+        file: display_name del archivo (sin extensión .md)
+
+    Flujo: Frontend/Backoffice → Middleware → Broker → Backend Core → Filesystem
+    """
+    if not file:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Parámetro 'file' es requerido",
+        )
+    try:
+        result = router.get_informe_content(org_id, project_id, version_id, file)
+        return InformeContentResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# Model Packages - Paquetes ZIP de modelos para descarga
+# ============================================================================
+
+
+@app.get(
+    "/models/packages",
+    tags=["models"],
+)
+def list_model_packages(
+    org_id: int | None = None,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Lista paquetes ZIP de modelos disponibles para descarga.
+
+    Flujo: Frontend/Backoffice → Middleware → Broker → Backend Core → Filesystem
+    """
+    try:
+        return router.list_model_packages(org_id)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get(
+    "/models/packages/download",
+    tags=["models"],
+)
+def download_model_package(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    filename: str,
+    router: BackendCoreRouter = Depends(get_router_core),
+):
+    """Descarga un paquete ZIP de modelo desde el filesystem del backend core.
+
+    Flujo: Frontend/Backoffice → Middleware → Broker → Backend Core → Filesystem
+    """
+    from fastapi.responses import FileResponse
+
+    try:
+        file_path = router.get_model_package_path(org_id, project_id, version_id, filename)
+        return FileResponse(
+            path=str(file_path),
+            filename=filename,
+            media_type="application/zip",
+        )
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc

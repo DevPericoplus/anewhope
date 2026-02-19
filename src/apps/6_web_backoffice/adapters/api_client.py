@@ -1995,7 +1995,7 @@ def fmanagement_list_all_project_versions(
         logger.warning(f"No se encontraron versiones para el proyecto {project_id}")
         return {
             "status": "success",
-            "path": f"/data/files/external/{org_folder}/{prj_folder}",
+            "path": f"/data/external/{org_folder}/{prj_folder}",
             "items": [{
                 "name": prj_folder,
                 "is_dir": True,
@@ -4016,3 +4016,88 @@ def check_chromadb_health() -> dict:
     chroma_host = os.environ.get("CHROMA_HOST", "localhost")
     chroma_port = os.environ.get("CHROMA_PORT", "8100")
     return check_service_health(f"http://{chroma_host}:{chroma_port}/api/v2/heartbeat")
+
+
+def list_informe_files(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Lista los archivos markdown de informes para una versión.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → filesystem
+
+    Args:
+        org_id: ID de la organización
+        project_id: ID del proyecto
+        version_id: ID de la versión
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+
+    Returns:
+        {"archivos": [{"filename": str, "display_name": str}], "total": int}
+    """
+    url = f"{_get_middleware_base_url()}/informes/{org_id}/{project_id}/{version_id}/files"
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+
+    request = urllib.request.Request(url, headers=request_headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        logger.error(f"Error listando informes: {exc}")
+        return {"archivos": [], "total": 0}
+
+
+def get_informe_content(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    display_name: str,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Obtiene el contenido de un archivo markdown de informe.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → filesystem
+
+    Args:
+        org_id: ID de la organización
+        project_id: ID del proyecto
+        version_id: ID de la versión
+        display_name: Nombre del archivo a leer
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+
+    Returns:
+        {"content": str, "display_name": str}
+    """
+    from urllib.parse import quote
+    url = f"{_get_middleware_base_url()}/informes/{org_id}/{project_id}/{version_id}/content?file={quote(display_name)}"
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+
+    request = urllib.request.Request(url, headers=request_headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        logger.error(f"Error obteniendo contenido informe: {exc}")
+        return {"content": "", "display_name": ""}

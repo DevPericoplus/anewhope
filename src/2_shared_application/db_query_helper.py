@@ -152,6 +152,10 @@ def _run_mysql_cli_query(
 
     cmd = [
         settings["cli_path"],
+        "-h",
+        settings["host"],
+        "-P",
+        settings["port"],
         "-u",
         user,
         f"-p{password}",

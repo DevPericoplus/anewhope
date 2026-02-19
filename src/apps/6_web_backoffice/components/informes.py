@@ -6,7 +6,7 @@ import reflex as rx
 import importlib.util
 import re
 from pathlib import Path
-from adapters.api_client import get_project_versions
+from adapters.api_client import get_project_versions, list_informe_files, get_informe_content
 
 # Importar módulos de 2_shared_application usando importlib (directorio con número)
 _shared_app_dir = Path(__file__).resolve().parents[3] / "2_shared_application"
@@ -47,34 +47,6 @@ def _load_cambios_adapter():
     spec = importlib.util.spec_from_file_location("cambios_adapter", adapter_path)
     if spec is None or spec.loader is None:
         raise ImportError("No se pudo cargar el módulo cambios_adapter")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def _load_storage_structure():
-    """Carga dinámicamente el módulo storage_access_structure."""
-    storage_path = (
-        Path(__file__).resolve().parents[3]
-        / "2_shared_application/storage_access_structure.py"
-    )
-    spec = importlib.util.spec_from_file_location("storage_access_structure", storage_path)
-    if spec is None or spec.loader is None:
-        raise ImportError("No se pudo cargar el módulo storage_access_structure")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def _load_informes_manager():
-    """Carga dinámicamente el módulo informes_manager."""
-    manager_path = (
-        Path(__file__).resolve().parents[3]
-        / "2_shared_application/informes_manager.py"
-    )
-    spec = importlib.util.spec_from_file_location("informes_manager", manager_path)
-    if spec is None or spec.loader is None:
-        raise ImportError("No se pudo cargar el módulo informes_manager")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -322,7 +294,7 @@ class InformesState(rx.State):
         await self.load_archivos()
 
     async def load_archivos(self):
-        """Carga los archivos markdown de la versión seleccionada."""
+        """Carga los archivos markdown de la versión seleccionada via API."""
         async with self:
             version_id = self.selected_version_id
             org_id = self.selected_org_id
@@ -336,21 +308,28 @@ class InformesState(rx.State):
             return
 
         try:
-            informes_manager = _load_informes_manager()
+            # Obtener tokens de sesión del MainState
+            from web_backoffice.web_backoffice import State as MainState
+            async with self:
+                main_state = await self.get_state(MainState)
+                access_token = main_state.access_token
+                session_token = main_state.session_token
 
-            # Debug: Mostrar IDs que se van a usar
-            print(f"[DEBUG INFORMES] Llamando list_markdown_files con:")
+            print(f"[DEBUG INFORMES] Llamando list_informe_files API con:")
             print(f"[DEBUG INFORMES]   org_id={org_id}")
             print(f"[DEBUG INFORMES]   project_id={project_id}")
             print(f"[DEBUG INFORMES]   version_id={version_id}")
 
-            # Listar archivos en la carpeta de versión
-            archivos = informes_manager.list_markdown_files(
+            # Llamar a la API para listar archivos
+            response = list_informe_files(
                 org_id=org_id,
                 project_id=project_id,
-                version_id=version_id
+                version_id=version_id,
+                access_token=access_token,
+                session_token=session_token,
             )
 
+            archivos = response.get("archivos", [])
             print(f"[DEBUG INFORMES] Archivos obtenidos: {len(archivos)}")
             for a in archivos:
                 print(f"[DEBUG INFORMES]   - {a['display_name']}")
@@ -409,7 +388,7 @@ class InformesState(rx.State):
         return enriched_content
 
     async def load_markdown_content(self):
-        """Carga el contenido markdown del archivo seleccionado."""
+        """Carga el contenido markdown del archivo seleccionado via API."""
         async with self:
             archivo_nombre = self.selected_archivo_nombre
             org_id = self.selected_org_id
@@ -422,14 +401,23 @@ class InformesState(rx.State):
             return
 
         try:
-            informes_manager = _load_informes_manager()
+            # Obtener tokens de sesión del MainState
+            from web_backoffice.web_backoffice import State as MainState
+            async with self:
+                main_state = await self.get_state(MainState)
+                access_token = main_state.access_token
+                session_token = main_state.session_token
 
-            content = informes_manager.get_markdown_content_by_name(
+            response = get_informe_content(
                 org_id=org_id,
                 project_id=project_id,
                 version_id=version_id,
-                display_name=archivo_nombre
+                display_name=archivo_nombre,
+                access_token=access_token,
+                session_token=session_token,
             )
+
+            content = response.get("content", "")
 
             if content:
                 # Enriquecer con emojis

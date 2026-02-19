@@ -4073,98 +4073,204 @@ def validate_model_download_otp_endpoint(
 
 @app.get("/models/download/direct", tags=["models"])
 def download_model_direct_endpoint(
-    organization_id: int,
-    project_id: int,
-    version_id: int,
+    token: str,
     filename: str,
-    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
 ):
-    """Descarga directa de modelo para administradores autorizados.
+    """Descarga de modelo autenticada por token JWT (sin headers de sesión).
 
-    Accesible para SuperAdmin (1) y Admin Organización (2).
-    Debe llamarse después de validar OTP en /models/download/validate-otp.
+    El token se genera tras validar OTP en /models/download/validate-otp.
+    Se usa como query param para permitir descarga directa via <a href>.
 
-    Args:
-        organization_id: ID de organización
-        project_id: ID de proyecto
-        version_id: ID de versión
-        filename: Nombre del archivo ZIP
-
-    Returns:
-        Archivo ZIP para descarga
+    Flujo: Frontend/Backoffice → Middleware → Broker → Backend Core → Filesystem
     """
-    from fastapi.responses import FileResponse
-    from pathlib import Path
+    import jwt as pyjwt
 
     _logger = logging.getLogger(__name__)
 
     try:
-        _logger.info(
-            "[MODELS DIRECT] Inicio descarga directa: org=%s prj=%s ver=%s file=%s identity=%s",
-            organization_id, project_id, version_id, filename, session.identity_type_id,
-        )
-
-        # SECURITY BY DESIGN: Solo SuperAdmin (1) y Admin Organización (2)
-        if session.identity_type_id not in (1, 2):
-            _logger.warning(
-                "Intento de descarga directa sin permisos: user_id=%s identity_type_id=%s",
-                session.user_id, session.identity_type_id,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Solo SuperAdmin y Administradores de Organización pueden descargar modelos",
-            )
-
-        # Admin Org solo puede descargar modelos de su organización
-        if session.identity_type_id == 2 and organization_id != session.organization_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tiene permisos para descargar modelos de otra organización",
-            )
-
-        # Construir ruta al archivo
-        base_path = os.getenv("BACKEND_IA_INTERNAL_STORAGE")
-        if not base_path:
-            base_path = "~/data/anewhope/files/backend_server/internal"
-
-        base_path = Path(os.path.expanduser(base_path))
-        org_folder = f"ORG{organization_id:05d}"
-        prj_folder = f"PRJ{project_id:05d}"
-        ver_folder = f"v{version_id:03d}"
-
-        file_path = base_path / org_folder / prj_folder / ver_folder / filename
-
-        _logger.info(
-            "[MODELS DIRECT] Ruta construida: %s (exists=%s)",
-            file_path,
-            file_path.exists(),
-        )
-
-        if not file_path.exists():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Archivo no encontrado: {filename}",
-            )
-
-        # Validar que el archivo está dentro del directorio base (seguridad)
+        # Validar el token JWT de descarga
+        jwt_settings = get_jwt_settings()
         try:
-            file_path.resolve().relative_to(base_path.resolve())
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Ruta de archivo no válida",
+            claims = pyjwt.decode(
+                token,
+                jwt_settings.access_secret,
+                algorithms=[jwt_settings.algorithm],
             )
+        except pyjwt.ExpiredSignatureError:
+            raise HTTPException(status_code=401, detail="Token de descarga expirado")
+        except pyjwt.InvalidTokenError:
+            raise HTTPException(status_code=401, detail="Token de descarga inválido")
 
-        return FileResponse(
-            path=str(file_path),
-            filename=filename,
+        # Verificar que es un token de descarga de modelo
+        if claims.get("operation") != "download_model":
+            raise HTTPException(status_code=403, detail="Token no válido para descarga de modelo")
+
+        organization_id = claims.get("organization_id")
+        project_id = claims.get("project_id")
+        version_id = claims.get("version_id")
+        identity_type_id = claims.get("identity_type_id")
+
+        _logger.info(
+            "[MODELS DIRECT] Descarga con token: org=%s prj=%s ver=%s file=%s identity=%s",
+            organization_id, project_id, version_id, filename, identity_type_id,
+        )
+
+        # SECURITY: Solo SuperAdmin (1) y Admin Organización (2)
+        if identity_type_id not in (1, 2):
+            raise HTTPException(status_code=403, detail="Sin permisos para descargar modelos")
+
+        # Construir SessionContext mínimo para el broker
+        session = SessionContext(
+            user_id=claims.get("user_id", 0),
+            organization_id=organization_id,
+            identity_type_id=identity_type_id,
+            access_payload=claims,
+            session_payload=claims,
+            access_token="",
+            session_token="",
+        )
+
+        # Obtener archivo via cadena API: Middleware → Broker → Backend Core → Filesystem
+        content = router.download_model_package(
+            session, organization_id, project_id, version_id, filename
+        )
+
+        return Response(
+            content=content,
             media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
     except HTTPException:
         raise
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        _logger.error("[MODELS DIRECT] Error inesperado: %s: %s", type(exc).__name__, exc, exc_info=True)
+        _logger.error("[MODELS DIRECT] Error: %s: %s", type(exc).__name__, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ========================================================================
+# ENDPOINTS DE INFORMES
+# ========================================================================
+
+
+class InformeFileDto(BaseModel):
+    """Archivo de informe."""
+
+    filename: str
+    display_name: str
+
+
+class InformesListResponse(BaseModel):
+    """Respuesta con lista de archivos de informes."""
+
+    archivos: list[InformeFileDto]
+    total: int
+
+
+class InformeContentResponse(BaseModel):
+    """Respuesta con el contenido de un informe."""
+
+    content: str
+    display_name: str
+
+
+@app.get(
+    "/informes/{org_id}/{project_id}/{version_id}/files",
+    response_model=InformesListResponse,
+    tags=["informes"],
+)
+def list_informe_files_endpoint(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> InformesListResponse:
+    """Lista los archivos markdown de informes para una versión.
+
+    Args:
+        org_id: ID de la organización
+        project_id: ID del proyecto
+        version_id: ID de la versión
+    """
+    _logger = logging.getLogger(__name__)
+
+    # Validación de permisos: SuperAdmin puede ver cualquier org, otros solo la suya
+    if session.identity_type_id != 1 and org_id != session.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tiene permisos para ver informes de esta organización",
+        )
+
+    _logger.info(
+        "[middleware] Listando informes org=%s proyecto=%s version=%s",
+        org_id, project_id, version_id,
+    )
+
+    try:
+        response = router.list_informe_files(org_id, project_id, version_id, session)
+        return InformesListResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        _logger.error("Error listando informes: %s", str(exc))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error interno: {type(exc).__name__}: {exc}",
+            detail="Error interno al listar informes",
+        ) from exc
+
+
+@app.get(
+    "/informes/{org_id}/{project_id}/{version_id}/content",
+    response_model=InformeContentResponse,
+    tags=["informes"],
+)
+def get_informe_content_endpoint(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    file: str,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> InformeContentResponse:
+    """Obtiene el contenido de un archivo markdown de informe.
+
+    Args:
+        org_id: ID de la organización
+        project_id: ID del proyecto
+        version_id: ID de la versión
+        file: Nombre del archivo (display_name)
+    """
+    _logger = logging.getLogger(__name__)
+
+    # Validación de permisos: SuperAdmin puede ver cualquier org, otros solo la suya
+    if session.identity_type_id != 1 and org_id != session.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tiene permisos para ver informes de esta organización",
+        )
+
+    _logger.info(
+        "[middleware] Obteniendo contenido informe org=%s proyecto=%s version=%s file=%s",
+        org_id, project_id, version_id, file,
+    )
+
+    try:
+        response = router.get_informe_content(org_id, project_id, version_id, file, session)
+        return InformeContentResponse(**response)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        _logger.error("Error obteniendo contenido informe: %s", str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al obtener contenido del informe",
         ) from exc

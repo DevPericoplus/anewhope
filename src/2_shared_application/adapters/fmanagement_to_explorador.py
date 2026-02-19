@@ -113,7 +113,7 @@ def convert_fmanagement_to_explorador(
     }
 
     # Construir respuesta final
-    base_path = f"/data/files/external/{org_folder or f'ORG{str(org_id).zfill(5)}'}/{prj_folder or f'PRJ{str(project_id).zfill(5)}'}"
+    base_path = f"/data/external/{org_folder or f'ORG{str(org_id).zfill(5)}'}/{prj_folder or f'PRJ{str(project_id).zfill(5)}'}"
 
     return {
         "status": "success",
@@ -284,7 +284,7 @@ def convert_multiple_versions_to_explorador(
     }
 
     # Construir respuesta final
-    base_path = f"/data/files/external/{org_folder or f'ORG{str(org_id).zfill(5)}'}/{prj_folder or f'PRJ{str(project_id).zfill(5)}'}"
+    base_path = f"/data/external/{org_folder or f'ORG{str(org_id).zfill(5)}'}/{prj_folder or f'PRJ{str(project_id).zfill(5)}'}"
 
     return {
         "status": "success",

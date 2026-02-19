@@ -17,14 +17,14 @@ services:
       # Modo de almacenamiento
       STORAGE_MODE: ${STORAGE_MODE:-db_only}
       # Almacenamiento de versiones replicadas
-      BACKEND_IA_BASE_STORAGE: ${BACKEND_IA_BASE_STORAGE:-/data/files/trainer}
+      BACKEND_IA_BASE_STORAGE: ${BACKEND_IA_BASE_STORAGE:-/data/external}
       # Fmanagement (para operaciones de ficheros)
       FMANAGEMENT_BASE_URL: ${FMANAGEMENT_BASE_URL:-http://backend.anewhope.aws:1666}
       # Ollama (IA local) - comunicación directa según ADR
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://localhost:11434}
     volumes:
       # Volumen para recibir versiones replicadas desde backend
-      - trainer-data:/data/files/trainer
+      - trainer-data:/data/external
     ports:
       - "8004:8004"
     networks:
@@ -65,9 +65,9 @@ services:
     container_name: keras-service
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-dev}
-      BACKEND_IA_BASE_STORAGE: ${BACKEND_IA_BASE_STORAGE:-/data/files/trainer}
+      BACKEND_IA_BASE_STORAGE: ${BACKEND_IA_BASE_STORAGE:-/data/external}
     volumes:
-      - trainer-data:/data/files/trainer
+      - trainer-data:/data/external
     command: ["sleep", "infinity"]
     networks:
       - trainer-network# ====================

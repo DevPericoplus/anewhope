@@ -138,11 +138,21 @@ class SeguimientoState(rx.State):
     async def _get_db_engine(self):
         """Crea el engine de la base de datos para myllm_projects_db."""
         try:
-            # Crear engine para myllm_projects_db
-            DB_USER = "myllm_admin"
-            DB_PASS = "Us3r%40dminP%40ss"  # URL-encoded
-            DB_HOST = "localhost"
-            engine = create_engine(f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}/myllm_projects_db")
+            # Leer configuración de BD desde protected_values
+            env_settings_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "config" / "env_settings.py"
+            spec = importlib.util.spec_from_file_location("env_settings_seg", env_settings_path)
+            env_mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(env_mod)
+            protected = env_mod.load_protected_settings()
+
+            import os
+            from urllib.parse import quote_plus
+            DB_HOST = os.environ.get("MARIADB_HOST", str(protected.get("mariadb_host", "localhost")))
+            DB_PORT = os.environ.get("MARIADB_PORT", str(protected.get("mariadb_port", 3306)))
+            DB_USER = protected.get("mariadb_admin_user", "myllm_admin")
+            DB_PASS = quote_plus(protected.get("mariadb_admin_password", ""))
+            DB_NAME = protected.get("mariadb_ai_database", "myllm_projects_db")
+            engine = create_engine(f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
             return engine
         except Exception as e:
             print(f"Error creando engine: {e}")

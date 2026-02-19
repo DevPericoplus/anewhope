@@ -7,7 +7,7 @@ import importlib.util
 import re
 from pathlib import Path
 from sqlalchemy import create_engine
-from adapters.api_client import get_project_versions
+from adapters.api_client import get_project_versions, list_informe_files, get_informe_content
 
 # Colores del tema
 COLORS = {
@@ -31,34 +31,6 @@ def _load_cambios_adapter():
     spec = importlib.util.spec_from_file_location("cambios_adapter", adapter_path)
     if spec is None or spec.loader is None:
         raise ImportError("No se pudo cargar el módulo cambios_adapter")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def _load_storage_structure():
-    """Carga dinámicamente el módulo storage_access_structure."""
-    storage_path = (
-        Path(__file__).resolve().parents[3]
-        / "2_shared_application/storage_access_structure.py"
-    )
-    spec = importlib.util.spec_from_file_location("storage_access_structure", storage_path)
-    if spec is None or spec.loader is None:
-        raise ImportError("No se pudo cargar el módulo storage_access_structure")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def _load_informes_manager():
-    """Carga dinámicamente el módulo informes_manager."""
-    manager_path = (
-        Path(__file__).resolve().parents[3]
-        / "2_shared_application/informes_manager.py"
-    )
-    spec = importlib.util.spec_from_file_location("informes_manager", manager_path)
-    if spec is None or spec.loader is None:
-        raise ImportError("No se pudo cargar el módulo informes_manager")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -105,10 +77,21 @@ class InformesState(rx.State):
     async def _get_db_engine(self):
         """Crea el engine de la base de datos para myllm_projects_db."""
         try:
-            DB_USER = "myllm_admin"
-            DB_PASS = "Us3r%40dminP%40ss"  # URL-encoded
-            DB_HOST = "localhost"
-            engine = create_engine(f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}/myllm_projects_db")
+            # Leer configuración de BD desde protected_values
+            env_settings_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "config" / "env_settings.py"
+            spec = importlib.util.spec_from_file_location("env_settings_inf", env_settings_path)
+            env_mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(env_mod)
+            protected = env_mod.load_protected_settings()
+
+            import os
+            from urllib.parse import quote_plus
+            DB_HOST = os.environ.get("MARIADB_HOST", str(protected.get("mariadb_host", "localhost")))
+            DB_PORT = os.environ.get("MARIADB_PORT", str(protected.get("mariadb_port", 3306)))
+            DB_USER = protected.get("mariadb_admin_user", "myllm_admin")
+            DB_PASS = quote_plus(protected.get("mariadb_admin_password", ""))
+            DB_NAME = protected.get("mariadb_ai_database", "myllm_projects_db")
+            engine = create_engine(f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
             return engine
         except Exception as e:
             print(f"[ERROR INFORMES FRONTEND] Error creando engine: {e}")
@@ -223,7 +206,7 @@ class InformesState(rx.State):
         return InformesState.load_archivos
 
     async def load_archivos(self):
-        """Carga los archivos markdown de la versión seleccionada."""
+        """Carga los archivos markdown de la versión seleccionada via API."""
         if self.selected_version_id == 0:
             self.archivos = []
             self.selected_archivo_nombre = ""
@@ -231,21 +214,27 @@ class InformesState(rx.State):
             return
 
         try:
-            informes_manager = _load_informes_manager()
+            # Obtener tokens de sesión del MainState
+            from web_frontend.web_frontend import State as MainState
+            main_state = await self.get_state(MainState)
+            access_token = main_state.access_token
+            session_token = main_state.session_token
 
-            # Debug: Mostrar IDs que se van a usar
-            print(f"[DEBUG INFORMES FRONTEND] Llamando list_markdown_files con:")
+            print(f"[DEBUG INFORMES FRONTEND] Llamando list_informe_files API con:")
             print(f"[DEBUG INFORMES FRONTEND]   org_id={self.organization_id}")
             print(f"[DEBUG INFORMES FRONTEND]   project_id={self.selected_proyecto_id}")
             print(f"[DEBUG INFORMES FRONTEND]   version_id={self.selected_version_id}")
 
-            # Listar archivos en la carpeta de versión
-            archivos = informes_manager.list_markdown_files(
+            # Llamar a la API para listar archivos
+            response = list_informe_files(
                 org_id=self.organization_id,
                 project_id=self.selected_proyecto_id,
-                version_id=self.selected_version_id
+                version_id=self.selected_version_id,
+                access_token=access_token,
+                session_token=session_token,
             )
 
+            archivos = response.get("archivos", [])
             print(f"[DEBUG INFORMES FRONTEND] Archivos obtenidos: {len(archivos)}")
             for a in archivos:
                 print(f"[DEBUG INFORMES FRONTEND]   - {a['display_name']}")
@@ -298,20 +287,28 @@ class InformesState(rx.State):
         return enriched_content
 
     async def load_markdown_content(self):
-        """Carga el contenido markdown del archivo seleccionado."""
+        """Carga el contenido markdown del archivo seleccionado via API."""
         if not self.selected_archivo_nombre:
             self.markdown_content = ""
             return
 
         try:
-            informes_manager = _load_informes_manager()
+            # Obtener tokens de sesión del MainState
+            from web_frontend.web_frontend import State as MainState
+            main_state = await self.get_state(MainState)
+            access_token = main_state.access_token
+            session_token = main_state.session_token
 
-            content = informes_manager.get_markdown_content_by_name(
+            response = get_informe_content(
                 org_id=self.organization_id,
                 project_id=self.selected_proyecto_id,
                 version_id=self.selected_version_id,
-                display_name=self.selected_archivo_nombre
+                display_name=self.selected_archivo_nombre,
+                access_token=access_token,
+                session_token=session_token,
             )
+
+            content = response.get("content", "")
 
             if content:
                 # Enriquecer con emojis

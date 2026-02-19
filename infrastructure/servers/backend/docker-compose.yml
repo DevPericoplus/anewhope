@@ -73,7 +73,7 @@ services:
       STORAGE_MODE: ${STORAGE_MODE:-db_only}
       # Fmanagement
       FMANAGEMENT_BASE_URL: ${FMANAGEMENT_BASE_URL:-http://fmanagement:1666}
-      FMANAGEMENT_BASE_PATH: ${FMANAGEMENT_BASE_PATH:-/data/files/external}
+      FMANAGEMENT_BASE_PATH: ${FMANAGEMENT_BASE_PATH:-/data/external}
       # MariaDB
       MARIADB_HOST: mariadb
       MARIADB_PORT: "3306"
@@ -110,8 +110,8 @@ services:
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-dev}
       # Rutas de almacenamiento
-      BACKEND_CORE_BASE_STORAGE: ${BACKEND_CORE_BASE_STORAGE:-/data/files/external}
-      BACKEND_IA_BASE_STORAGE: ${BACKEND_IA_BASE_STORAGE:-/data/files/trainer}
+      BACKEND_CORE_BASE_STORAGE: ${BACKEND_CORE_BASE_STORAGE:-/data/external}
+      BACKEND_IA_BASE_STORAGE: ${BACKEND_IA_BASE_STORAGE:-/data/external}
       # Transferencia de versiones
       TRANSFER_MODE: ${TRANSFER_MODE:-remote}
       TRAINER_SSH_HOST: ${TRAINER_SSH_HOST}
@@ -122,7 +122,7 @@ services:
       MIDDLEWARE_BASE_URL: ${MIDDLEWARE_BASE_URL}
       CORE_BACKEND_BASE_URL: ${CORE_BACKEND_BASE_URL:-http://backend_core:8003}
     volumes:
-      - ${BACKEND_CORE_BASE_STORAGE:-/data/files/external}:/data/files/external
+      - ${BACKEND_CORE_BASE_STORAGE:-/data/external}:/data/external
       - ${TRAINER_SSH_KEY_PATH:-/opt/anewhope/keys/rsync_key}:${TRAINER_SSH_KEY_PATH:-/opt/anewhope/keys/rsync_key}:ro
     ports:
       - "1666:1666"

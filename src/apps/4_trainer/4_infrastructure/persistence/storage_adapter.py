@@ -47,7 +47,7 @@ def load_fmanagement_settings() -> FmanagementSettings:
     """Carga configuración de fmanagement desde entorno."""
 
     base_url = os.environ.get("FMANAGEMENT_BASE_URL", "http://localhost:1666")
-    base_path = os.environ.get("FMANAGEMENT_BASE_PATH", "/data/files/external")
+    base_path = os.environ.get("FMANAGEMENT_BASE_PATH", "/data/external")
     return FmanagementSettings(
         base_url=base_url.rstrip("/"),
         base_path=base_path,

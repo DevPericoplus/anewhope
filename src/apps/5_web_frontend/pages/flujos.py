@@ -87,6 +87,10 @@ def _run_mysql_query(query: str) -> list[list[str]]:
     settings = _load_projects_db_settings()
     cmd = [
         settings["cli_path"],
+        "-h",
+        settings["host"],
+        "-P",
+        settings["port"],
         "-u",
         settings["user"],
         f"-p{settings['password']}",

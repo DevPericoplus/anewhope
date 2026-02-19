@@ -1104,3 +1104,61 @@ class CoreBackendClient:
             f"/training/entrenamientos/{id_entrenamiento}/progress"
         )
         return dict(data or {})
+
+    # ========================================================================
+    # INFORMES
+    # ========================================================================
+
+    def list_informe_files(
+        self, org_id: int, project_id: int, version_id: int
+    ) -> dict[str, Any]:
+        """Lista archivos markdown de informes para una versión."""
+        data = self._request(
+            "GET",
+            f"/informes/{org_id}/{project_id}/{version_id}/files",
+        )
+        return dict(data or {})
+
+    def get_informe_content(
+        self, org_id: int, project_id: int, version_id: int, display_name: str
+    ) -> dict[str, Any]:
+        """Obtiene el contenido de un archivo markdown de informe."""
+        from urllib.parse import quote
+        data = self._request(
+            "GET",
+            f"/informes/{org_id}/{project_id}/{version_id}/content?file={quote(display_name)}",
+        )
+        return dict(data or {})
+
+    # ========================================================================
+    # MODEL PACKAGES
+    # ========================================================================
+
+    def list_model_packages(self, org_id: int | None = None) -> dict[str, Any]:
+        """Lista paquetes ZIP de modelos disponibles para descarga."""
+        params = f"?org_id={org_id}" if org_id is not None else ""
+        data = self._request(
+            "GET",
+            f"/models/packages{params}",
+        )
+        return dict(data or {})
+
+    def download_model_package(
+        self, org_id: int, project_id: int, version_id: int, filename: str
+    ) -> bytes:
+        """Descarga un paquete ZIP de modelo desde backend core."""
+        from urllib.parse import quote
+        url = (
+            f"{self._base_url}/models/packages/download"
+            f"?org_id={org_id}&project_id={project_id}"
+            f"&version_id={version_id}&filename={quote(filename)}"
+        )
+        headers: dict[str, str] = {"X-Client-App": self._client_app}
+        try:
+            response = self._client.get(url, headers=headers, timeout=60.0)
+            response.raise_for_status()
+            return response.content
+        except Exception as exc:
+            raise CoreBackendCommunicationError(
+                f"Error descargando modelo del backend core: {exc}"
+            ) from exc

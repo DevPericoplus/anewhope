@@ -72,7 +72,7 @@ def load_fmanagement_settings() -> FmanagementSettings:
     """
 
     base_url = _env_settings.get_env_value("FMANAGEMENT_BASE_URL", "http://localhost:1666")
-    base_path = _env_settings.get_env_value("FMANAGEMENT_BASE_PATH", "/data/files/external")
+    base_path = _env_settings.get_env_value("FMANAGEMENT_BASE_PATH", "/data/external")
     return FmanagementSettings(
         base_url=base_url.rstrip("/"),
         base_path=base_path,

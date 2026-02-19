@@ -2101,7 +2101,7 @@ def fmanagement_list_all_project_versions(
         logger.warning(f"No se encontraron versiones para el proyecto {project_id}")
         return {
             "status": "success",
-            "path": f"/data/files/external/{org_folder}/{prj_folder}",
+            "path": f"/data/external/{org_folder}/{prj_folder}",
             "items": [{
                 "name": prj_folder,
                 "is_dir": True,
@@ -2736,3 +2736,72 @@ def fmanagement_get_properties(
         payload=payload,
     )
     return dict(response) if isinstance(response, dict) else {"success": False}
+
+
+def list_informe_files(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Lista los archivos markdown de informes para una versión.
+
+    Flujo: Frontend → Middleware → Broker → Backend Core → filesystem
+
+    Args:
+        org_id: ID de la organización
+        project_id: ID del proyecto
+        version_id: ID de la versión
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+
+    Returns:
+        {"archivos": [{"filename": str, "display_name": str}], "total": int}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+
+    response = _request_middleware(
+        "GET",
+        f"/informes/{org_id}/{project_id}/{version_id}/files",
+        headers=headers,
+    )
+
+    return dict(response) if isinstance(response, dict) else {"archivos": [], "total": 0}
+
+
+def get_informe_content(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    display_name: str,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Obtiene el contenido de un archivo markdown de informe.
+
+    Flujo: Frontend → Middleware → Broker → Backend Core → filesystem
+
+    Args:
+        org_id: ID de la organización
+        project_id: ID del proyecto
+        version_id: ID de la versión
+        display_name: Nombre del archivo a leer
+        access_token: Token de acceso JWT
+        session_token: Token de sesión JWT
+
+    Returns:
+        {"content": str, "display_name": str}
+    """
+    from urllib.parse import quote
+    headers = _build_auth_headers(access_token, session_token)
+
+    response = _request_middleware(
+        "GET",
+        f"/informes/{org_id}/{project_id}/{version_id}/content?file={quote(display_name)}",
+        headers=headers,
+    )
+
+    return dict(response) if isinstance(response, dict) else {"content": "", "display_name": ""}

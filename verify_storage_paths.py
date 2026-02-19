@@ -60,8 +60,8 @@ def verify_backend_core_config():
 
     if not fmanagement_base_path:
         print_step("⚠ fmanagement_base_path no configurado en env.yaml", "warning")
-        print_step("  Backend Core usará fallback: /data/files/external", "warning")
-        fmanagement_base_path = "/data/files/external"
+        print_step("  Backend Core usará fallback: /data/external", "warning")
+        fmanagement_base_path = "/data/external"
 
     return {
         "fmanagement_base_path": fmanagement_base_path,
@@ -113,8 +113,8 @@ def verify_filesystem():
     paths_to_check = [
         "~/data/anewhope/files/backend_server/external",
         "~/data/anewhope/files/trainer_server/external",
-        "~/data/files/external",
-        "~/data/files/trainer",
+        "/data/external",
+        "/data/internal",
     ]
 
     results = {}

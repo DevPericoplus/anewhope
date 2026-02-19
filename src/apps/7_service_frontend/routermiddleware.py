@@ -4704,6 +4704,8 @@ class RouterMiddleware:
     ) -> list[dict[str, Any]]:
         """Lista modelos disponibles para descarga.
 
+        Delega al Backend Core via Broker para escanear el filesystem.
+
         Args:
             session: Contexto de sesión del usuario
             organization_id: ID de organización (None = todas para admin global)
@@ -4711,100 +4713,45 @@ class RouterMiddleware:
         Returns:
             Lista de modelos con información de org/proyecto/versión/archivo
         """
-        import os
-        from pathlib import Path
+        self._configure_broker_security(session)
 
-        # Obtener path de almacenamiento interno
-        base_path = os.getenv("BACKEND_IA_INTERNAL_STORAGE")
-        if not base_path:
-            base_path = "~/data/anewhope/files/backend_server/internal"
+        self._logger.info(
+            "[middleware] Listando paquetes de modelos org=%s user_id=%s",
+            organization_id, session.user_id,
+        )
 
-        # Expandir tilde siempre (por si viene de variable de entorno)
-        base_path = Path(os.path.expanduser(base_path))
-        models = []
+        try:
+            result = self._broker_client.list_model_packages(organization_id)
+            return result.get("models", [])
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudieron obtener paquetes de modelos: {exc}"
+            ) from exc
 
-        self._logger.info(f"[MODELS] Scanning base_path: {base_path}, exists: {base_path.exists()}")
-        self._logger.info(f"[MODELS] organization_id: {organization_id}, session.identity_type_id: {session.identity_type_id}")
+    def download_model_package(
+        self,
+        session: SessionContext,
+        organization_id: int,
+        project_id: int,
+        version_id: int,
+        filename: str,
+    ) -> bytes:
+        """Descarga un paquete ZIP de modelo via broker → backend core."""
+        self._configure_broker_security(session)
 
-        # Si organization_id es None, listar todas las organizaciones (solo admin global)
-        if organization_id is None:
-            if session.identity_type_id != 1:
-                raise BusinessRuleError("Solo administradores globales pueden listar todas las organizaciones")
+        self._logger.info(
+            "[middleware] Descargando modelo org=%s prj=%s ver=%s file=%s user=%s",
+            organization_id, project_id, version_id, filename, session.user_id,
+        )
 
-            # Listar todas las carpetas ORG*
-            if base_path.exists():
-                org_dirs = list(base_path.glob("ORG*"))
-                self._logger.info(f"[MODELS] Found {len(org_dirs)} ORG directories")
-                for org_dir in org_dirs:
-                    if org_dir.is_dir():
-                        try:
-                            org_id = int(org_dir.name.replace("ORG", ""))
-                            self._logger.info(f"[MODELS] Scanning org_id: {org_id}")
-                            org_models = self._scan_organization_models(base_path, org_id)
-                            self._logger.info(f"[MODELS] Found {len(org_models)} models in org {org_id}")
-                            models.extend(org_models)
-                        except ValueError:
-                            continue
-        else:
-            # Listar solo la organización especificada
-            models = self._scan_organization_models(base_path, organization_id)
-
-        return models
-
-    def _scan_organization_models(self, base_path: Path, org_id: int) -> list[dict[str, Any]]:
-        """Escanea modelos de una organización específica.
-
-        Args:
-            base_path: Path base de almacenamiento
-            org_id: ID de organización
-
-        Returns:
-            Lista de modelos encontrados
-        """
-        models = []
-        org_folder = f"ORG{org_id:05d}"
-        org_path = base_path / org_folder
-
-        if not org_path.exists():
-            return models
-
-        # Iterar por proyectos
-        for prj_dir in org_path.glob("PRJ*"):
-            if not prj_dir.is_dir():
-                continue
-
-            try:
-                prj_id = int(prj_dir.name.replace("PRJ", ""))
-            except ValueError:
-                continue
-
-            # Iterar por versiones
-            for ver_dir in prj_dir.glob("v*"):
-                if not ver_dir.is_dir():
-                    continue
-
-                try:
-                    ver_id = int(ver_dir.name.replace("v", ""))
-                except ValueError:
-                    continue
-
-                # Buscar archivos ZIP
-                for zip_file in ver_dir.glob("*.zip"):
-                    file_stat = zip_file.stat()
-                    file_size_bytes = file_stat.st_size
-                    file_size_mb = file_size_bytes / (1024 * 1024)
-                    models.append({
-                        "organization_id": org_id,
-                        "project_id": prj_id,
-                        "version_id": ver_id,
-                        "filename": zip_file.name,
-                        "file_size": file_size_bytes,
-                        "file_size_mb": f"{file_size_mb:.2f}",
-                        "created_at": int(file_stat.st_mtime),
-                        "relative_path": str(zip_file.relative_to(base_path)),
-                    })
-
-        return models
+        try:
+            return self._broker_client.download_model_package(
+                organization_id, project_id, version_id, filename
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"Error descargando modelo: {exc}"
+            ) from exc
 
     def request_model_download_otp(
         self,
@@ -4927,3 +4874,46 @@ class RouterMiddleware:
         )
 
         return token_data
+
+    # ========================================================================
+    # INFORMES
+    # ========================================================================
+
+    def list_informe_files(
+        self, org_id: int, project_id: int, version_id: int, session: "SessionContext"
+    ) -> dict[str, Any]:
+        """Lista archivos markdown de informes para una versión."""
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Listando informes org=%s project=%s version=%s user_id=%s",
+            org_id, project_id, version_id, session.user_id,
+        )
+
+        try:
+            return self._broker_client.list_informe_files(org_id, project_id, version_id)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudieron obtener informes: {exc}"
+            ) from exc
+
+    def get_informe_content(
+        self, org_id: int, project_id: int, version_id: int,
+        display_name: str, session: "SessionContext"
+    ) -> dict[str, Any]:
+        """Obtiene el contenido de un archivo markdown de informe."""
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Obteniendo informe org=%s project=%s version=%s file=%s user_id=%s",
+            org_id, project_id, version_id, display_name, session.user_id,
+        )
+
+        try:
+            return self._broker_client.get_informe_content(
+                org_id, project_id, version_id, display_name
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo obtener informe: {exc}"
+            ) from exc

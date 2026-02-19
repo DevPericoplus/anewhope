@@ -7077,3 +7077,182 @@ class BackendCoreRouter:
         except Exception as exc:
             logger.error(f"Error obteniendo métricas de análisis: {exc}")
             raise BackendCoreBusinessError(f"Error obteniendo métricas: {str(exc)}") from exc
+
+    # ========================================================================
+    # Informes - Archivos markdown de reportes
+    # ========================================================================
+
+    def list_informe_files(
+        self, org_id: int, project_id: int, version_id: int
+    ) -> dict[str, Any]:
+        """Lista archivos markdown de informes para una versión.
+
+        Lee del filesystem local en backend_core_internal_storage.
+        """
+        try:
+            _informes_path = Path(__file__).resolve().parents[2] / "2_shared_application" / "informes_manager.py"
+            spec = importlib.util.spec_from_file_location("informes_manager_core", _informes_path)
+            if spec is None or spec.loader is None:
+                raise BackendCoreBusinessError("No se pudo cargar informes_manager")
+            informes_mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(informes_mod)
+
+            archivos = informes_mod.list_markdown_files(org_id, project_id, version_id)
+            return {
+                "archivos": [
+                    {"filename": a["filename"], "display_name": a["display_name"]}
+                    for a in archivos
+                ],
+                "total": len(archivos),
+            }
+        except BackendCoreBusinessError:
+            raise
+        except Exception as exc:
+            self._logger.error(f"Error listando archivos de informes: {exc}")
+            raise BackendCoreBusinessError(f"Error listando informes: {str(exc)}") from exc
+
+    def get_informe_content(
+        self, org_id: int, project_id: int, version_id: int, display_name: str
+    ) -> dict[str, Any]:
+        """Obtiene el contenido de un archivo markdown de informe."""
+        try:
+            _informes_path = Path(__file__).resolve().parents[2] / "2_shared_application" / "informes_manager.py"
+            spec = importlib.util.spec_from_file_location("informes_manager_core", _informes_path)
+            if spec is None or spec.loader is None:
+                raise BackendCoreBusinessError("No se pudo cargar informes_manager")
+            informes_mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(informes_mod)
+
+            content = informes_mod.get_markdown_content_by_name(
+                org_id, project_id, version_id, display_name
+            )
+            if content is None:
+                raise BackendCoreBusinessError(
+                    f"Informe '{display_name}' no encontrado"
+                )
+            return {"content": content, "display_name": display_name}
+        except BackendCoreBusinessError:
+            raise
+        except Exception as exc:
+            self._logger.error(f"Error obteniendo contenido de informe: {exc}")
+            raise BackendCoreBusinessError(f"Error leyendo informe: {str(exc)}") from exc
+
+    # ========================================================================
+    # Model Packages - Paquetes ZIP de modelos para descarga
+    # ========================================================================
+
+    def list_model_packages(
+        self, org_id: int | None = None
+    ) -> dict[str, Any]:
+        """Lista paquetes ZIP de modelos disponibles para descarga.
+
+        Escanea el filesystem local en backend_core_internal_storage buscando
+        archivos .zip organizados por ORG/PRJ/version.
+        """
+        try:
+            _informes_path = Path(__file__).resolve().parents[2] / "2_shared_application" / "informes_manager.py"
+            spec = importlib.util.spec_from_file_location("informes_manager_core_models", _informes_path)
+            if spec is None or spec.loader is None:
+                raise BackendCoreBusinessError("No se pudo cargar informes_manager")
+            informes_mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(informes_mod)
+
+            base_path = Path(informes_mod.get_backend_storage_path())
+            models: list[dict[str, Any]] = []
+
+            self._logger.info(f"[MODELS] Scanning base_path: {base_path}, exists: {base_path.exists()}")
+
+            if not base_path.exists():
+                return {"models": models, "total": 0}
+
+            # Determinar qué directorios ORG escanear
+            if org_id is not None:
+                org_folders = [base_path / f"ORG{org_id:05d}"]
+            else:
+                org_folders = sorted(base_path.glob("ORG*"))
+
+            for org_dir in org_folders:
+                if not org_dir.is_dir():
+                    continue
+                try:
+                    oid = int(org_dir.name.replace("ORG", ""))
+                except ValueError:
+                    continue
+
+                for prj_dir in org_dir.glob("PRJ*"):
+                    if not prj_dir.is_dir():
+                        continue
+                    try:
+                        pid = int(prj_dir.name.replace("PRJ", ""))
+                    except ValueError:
+                        continue
+
+                    for ver_dir in prj_dir.glob("v*"):
+                        if not ver_dir.is_dir():
+                            continue
+                        try:
+                            vid = int(ver_dir.name.replace("v", ""))
+                        except ValueError:
+                            continue
+
+                        for zip_file in ver_dir.glob("*.zip"):
+                            file_stat = zip_file.stat()
+                            file_size_bytes = file_stat.st_size
+                            file_size_mb = file_size_bytes / (1024 * 1024)
+                            models.append({
+                                "organization_id": oid,
+                                "project_id": pid,
+                                "version_id": vid,
+                                "filename": zip_file.name,
+                                "file_size": file_size_bytes,
+                                "file_size_mb": f"{file_size_mb:.2f}",
+                                "created_at": int(file_stat.st_mtime),
+                                "relative_path": str(zip_file.relative_to(base_path)),
+                            })
+
+            self._logger.info(f"[MODELS] Found {len(models)} model packages")
+            return {"models": models, "total": len(models)}
+
+        except BackendCoreBusinessError:
+            raise
+        except Exception as exc:
+            self._logger.error(f"Error listando paquetes de modelos: {exc}")
+            raise BackendCoreBusinessError(f"Error listando modelos: {str(exc)}") from exc
+
+    def get_model_package_path(
+        self, org_id: int, project_id: int, version_id: int, filename: str
+    ) -> Path:
+        """Obtiene el path absoluto a un paquete ZIP de modelo.
+
+        Valida que el archivo existe y está dentro del directorio base.
+        """
+        try:
+            _informes_path = Path(__file__).resolve().parents[2] / "2_shared_application" / "informes_manager.py"
+            spec = importlib.util.spec_from_file_location("informes_manager_core_dl", _informes_path)
+            if spec is None or spec.loader is None:
+                raise BackendCoreBusinessError("No se pudo cargar informes_manager")
+            informes_mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(informes_mod)
+
+            base_path = Path(informes_mod.get_backend_storage_path())
+            org_folder = f"ORG{org_id:05d}"
+            prj_folder = f"PRJ{project_id:05d}"
+            ver_folder = f"v{version_id:03d}"
+
+            file_path = base_path / org_folder / prj_folder / ver_folder / filename
+
+            self._logger.info(f"[MODELS DL] Path: {file_path}, exists: {file_path.exists()}")
+
+            if not file_path.exists():
+                raise BackendCoreBusinessError(f"Archivo no encontrado: {filename}")
+
+            # Validar que está dentro del directorio base (seguridad)
+            file_path.resolve().relative_to(base_path.resolve())
+
+            return file_path
+
+        except BackendCoreBusinessError:
+            raise
+        except Exception as exc:
+            self._logger.error(f"Error obteniendo path de modelo: {exc}")
+            raise BackendCoreBusinessError(f"Error accediendo modelo: {str(exc)}") from exc

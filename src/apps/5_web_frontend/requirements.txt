@@ -9,3 +9,7 @@ PyJWT==2.11.0
 # Redis para sesión compartida (compatible con Reflex 0.8.25)
 redis==5.2.1
 hiredis==2.3.2
+
+# Acceso directo a MariaDB (seguimiento, informes, explorador)
+SQLAlchemy==2.0.46
+pymysql==1.1.2
