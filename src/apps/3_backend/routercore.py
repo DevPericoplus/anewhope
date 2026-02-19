@@ -3251,9 +3251,14 @@ class BackendCoreRouter:
         )
 
         try:
-            # Importar cliente fmanagement
+            # Importar cliente fmanagement (añadir directorio al path)
+            import sys
+            from pathlib import Path
+            _backend_root = Path(__file__).parent
+            sys.path.insert(0, str(_backend_root))
             from clients.fmanagement_client import FmanagementClient
-            
+            sys.path.pop(0)
+
             # Obtener configuración de fmanagement
             fmanagement_config = load_fmanagement_settings()
             base_url = fmanagement_config.base_url

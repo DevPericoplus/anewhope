@@ -2,13 +2,14 @@
 # Basado en la imagen oficial de Redis 8.4.0
 # https://hub.docker.com/_/redis
 
-FROM redis:8.4.0-bookworm
+ARG REDIS_VERSION=8.4.0
+FROM redis:${REDIS_VERSION}-bookworm
 
 # Metadata
 LABEL maintainer="DevOps Team <ops@company.com>"
 LABEL environment="development"
 LABEL service="redis"
-LABEL version="8.4.0"
+LABEL version="${REDIS_VERSION}"
 
 # Crear directorios necesarios
 RUN mkdir -p /var/lib/redis /var/log/redis && \

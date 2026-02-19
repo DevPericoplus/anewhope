@@ -3,13 +3,14 @@
 # https://hub.docker.com/_/redis
 # IMPORTANTE: Esta configuración debe ser idéntica a producción
 
-FROM redis:8.4.0-bookworm
+ARG REDIS_VERSION=8.4.0
+FROM redis:${REDIS_VERSION}-bookworm
 
 # Metadata
 LABEL maintainer="DevOps Team <ops@company.com>"
 LABEL environment="pre-production"
 LABEL service="redis"
-LABEL version="8.4.0"
+LABEL version="${REDIS_VERSION}"
 
 # Crear directorios necesarios con permisos estrictos
 RUN mkdir -p /var/lib/redis /var/log/redis && \

@@ -3,13 +3,14 @@
 # https://hub.docker.com/_/redis
 # CRÍTICO: Máxima seguridad y estabilidad
 
-FROM redis:8.4.0-bookworm
+ARG REDIS_VERSION=8.4.0
+FROM redis:${REDIS_VERSION}-bookworm
 
 # Metadata
 LABEL maintainer="DevOps Team <ops@company.com>"
 LABEL environment="production"
 LABEL service="redis"
-LABEL version="8.4.0"
+LABEL version="${REDIS_VERSION}"
 LABEL security="high"
 
 # Crear directorios necesarios con permisos máximamente restrictivos

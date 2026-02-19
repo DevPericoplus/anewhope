@@ -5755,16 +5755,14 @@ def login_panel() -> rx.Component:
                     ),
                     spacing="1",
                 ),
-                rx.button(
+                rx.text(
                     "Solicitar código OTP",
                     on_click=State.request_login_otp,
-                    background_color="transparent",
                     color=COLORS["primary"],
                     width="100%",
                     text_align="left",
-                    padding="0",
                     font_size="1.1em",
-                    justify_content="flex-start",
+                    cursor="pointer",
                     _hover={"text_decoration": "underline"},
                 ),
                 rx.vstack(
@@ -5784,7 +5782,7 @@ def login_panel() -> rx.Component:
                 ),
                 spacing="2",
             ),
-            rx.button(
+            rx.box(
                 "Iniciar Sesión",
                 on_click=State.user_login,
                 background_color=COLORS["primary"],
@@ -5792,6 +5790,11 @@ def login_panel() -> rx.Component:
                 width="100%",
                 font_weight="bold",
                 font_size="1.1em",
+                padding="0.6em",
+                border_radius="0.5em",
+                text_align="center",
+                cursor="pointer",
+                _hover={"opacity": "0.9"},
             ),
             rx.text(
                 State.login_error,
@@ -5845,7 +5848,7 @@ def sidebar_menu(is_logged_in: bool) -> rx.Component:
             rx.vstack(
                 rx.foreach(
                     menu_items,
-                    lambda item: rx.button(
+                    lambda item: rx.box(
                         item.title(),
                         on_click=lambda _, i=item: State.set_user_menu(i),
                         background_color=rx.cond(
@@ -5855,12 +5858,10 @@ def sidebar_menu(is_logged_in: bool) -> rx.Component:
                         ),
                         color=rx.cond(
                             (State.user_active_menu == item) & (State.internal_active_menu == ""),
-                            "black",
+                            "white",
                             COLORS["foreground"]
                         ),
                         width="100%",
-                        justify_content="flex-start",
-                        border="none",
                         padding="0.75em",
                         border_radius="0.5em",
                         cursor="pointer",
@@ -5910,7 +5911,7 @@ def internal_menu(is_logged_in: bool) -> rx.Component:
                         item == "asignaciones",
                         rx.cond(
                             State.identity_type_id == 1,
-                            rx.button(
+                            rx.box(
                                 rx.match(
                                     item,
                                     ("crear_llm", "Sistema"),
@@ -5924,12 +5925,10 @@ def internal_menu(is_logged_in: bool) -> rx.Component:
                                 ),
                                 color=rx.cond(
                                     State.internal_active_menu == item,
-                                    "black",
+                                    "white",
                                     COLORS["foreground"]
                                 ),
                                 width="100%",
-                                justify_content="flex-start",
-                                border="none",
                                 padding="0.75em",
                                 border_radius="0.5em",
                                 cursor="pointer",
@@ -5941,7 +5940,7 @@ def internal_menu(is_logged_in: bool) -> rx.Component:
                             rx.fragment(),  # No mostrar nada si no es super admin
                         ),
                         # Para cualquier otro item, siempre mostrar
-                        rx.button(
+                        rx.box(
                             rx.match(
                                 item,
                                 ("crear_llm", "Sistema"),
@@ -5955,12 +5954,10 @@ def internal_menu(is_logged_in: bool) -> rx.Component:
                             ),
                             color=rx.cond(
                                 State.internal_active_menu == item,
-                                "black",
+                                "white",
                                 COLORS["foreground"]
                             ),
                             width="100%",
-                            justify_content="flex-start",
-                            border="none",
                             padding="0.75em",
                             border_radius="0.5em",
                             cursor="pointer",
@@ -11767,6 +11764,10 @@ def user_portal() -> rx.Component:
 
 # Crear la aplicación
 app = rx.App(
+    theme=rx.theme(
+        appearance="dark",
+        accent_color="orange",
+    ),
     style={
         "font_family": "Inter, system-ui, sans-serif",
     },

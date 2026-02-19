@@ -42,10 +42,12 @@ config = rx.Config(
     redis_lock_expiration=REDIS_LOCK_EXPIRATION,
     
     # Configuración de servidor
-    env=rx.Env.PROD,
+    # Modo Reflex: "dev" = Vite dev server, "prod" = build estático con sirv
+    # En dev/pre usamos "dev" para renderizado idéntico al macbook
+    env=rx.Env.PROD if env_settings.get_env_value("reflex_env_mode", "dev") == "prod" else rx.Env.DEV,
     frontend_port=3100,  # Puerto estático fijo para frontend (evita conflictos con nginx)
     backend_port=8005,
-    api_url="https://tfmmyllm.ai",
+    api_url=env_settings.get_env_value("frontend_api_url", "http://localhost:8005"),
     backend_host="0.0.0.0",
     
     disable_plugins=["reflex.plugins.sitemap.SitemapPlugin"],

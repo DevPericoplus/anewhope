@@ -41,11 +41,13 @@ config = rx.Config(
     # Aumentar lock_expiration para operaciones largas
     redis_lock_expiration=REDIS_LOCK_EXPIRATION,
     
-    # Configuración de servidor (copiada del frontend que funciona)
-    env=rx.Env.PROD,
+    # Configuración de servidor
+    # Modo Reflex: "dev" = Vite dev server, "prod" = build estático con sirv
+    # En dev/pre usamos "dev" para renderizado idéntico al macbook
+    env=rx.Env.PROD if env_settings.get_env_value("reflex_env_mode", "dev") == "prod" else rx.Env.DEV,
     frontend_port=3200,  # Puerto estático fijo para backoffice (evita conflictos con nginx)
     backend_port=8006,
-    api_url="https://tfmmyllm.ai:8443",
+    api_url=env_settings.get_env_value("backoffice_api_url", "http://localhost:8006"),
     backend_host="0.0.0.0",
     
     disable_plugins=["reflex.plugins.sitemap.SitemapPlugin"],

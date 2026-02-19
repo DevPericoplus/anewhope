@@ -1,4 +1,6 @@
 # Versions of software used
+
+# App versions
 version_frontend: 0.7.1
 version_backoffice: 0.7.1
 version_middleware: 0.7.1
@@ -6,3 +8,12 @@ version_broker: 0.7.1
 version_backend_core: 0.7.1
 version_backend_ia: 0.7.1
 version_fmanagement: 0.7.1
+
+# Infrastructure versions
+python_version: "3.13"
+python_trainer_version: "3.12"
+go_version: "1.23"
+redis_version: "8.4.0"
+mariadb_version: "10.6"
+nginx_version: "latest"
+node_version: "20"

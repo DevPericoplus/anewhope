@@ -9875,3 +9875,233 @@ versions_file = project_root / "versions.yml"
 
 ---
 
+## 32. Infraestructura de Despliegue con Ansible (OBLIGATORIO)
+
+### 32.1. Repositorios del sistema
+
+El despliegue se gestiona desde 4 repositorios coordinados:
+
+| Repositorio | Ruta local | Propósito |
+|-------------|-----------|-----------|
+| **anh_ansible** | `/Users/administrator/develop/anh_ansible` | Roles de Ansible reutilizables |
+| **anh_ansible_environments** | `/Users/administrator/develop/anh_ansible_environments` | Playbooks de despliegue por entorno |
+| **myllm_apps (anewhope)** | `/Users/administrator/develop/anewhope` | Aplicaciones + configuración |
+| **fmanagement** | `/Users/administrator/develop/fmanagement` | API Go de ficheros |
+
+### 32.2. Servidores del sistema
+
+| Servidor | Rol | IP (dev) | FQDN (dev) | Playbook |
+|----------|-----|----------|------------|----------|
+| **util01** | Gestión centralizada | 192.168.0.240 | util01.house.loc | `util01.yml` |
+| **frontend** | Apps web + Redis + Nginx | 192.168.0.241 | frontend.house.loc | `frontend.yml` |
+| **backend** | MariaDB + APIs + fmanagement | 192.168.0.242 | backend.house.loc | `backend.yml` |
+| **trainer** | Ollama + ChromaDB + IA | 192.168.0.243 | trainer.house.loc | `trainer.yml` |
+
+### 32.3. Estructura de despliegue en servidores (CRÍTICO)
+
+**OBLIGATORIO:** Todas las aplicaciones se instalan bajo `/opt/anewhope/` y los
+datos de runtime bajo `/data/`.
+
+```
+/opt/anewhope/
+├── app/                                    # Código fuente (raíz del proyecto)
+│   ├── .envglobal                          # current_environment: <deploy_env>
+│   ├── src/
+│   │   ├── 1_shared_domain/                # Entidades de dominio (TODAS las apps)
+│   │   ├── 2_shared_application/           # Capa aplicación (TODAS las apps)
+│   │   │   ├── adapters/
+│   │   │   ├── config/env_settings.py
+│   │   │   ├── moks/                       # Solo dev/pre (eliminado en pro)
+│   │   │   ├── services/
+│   │   │   └── ...
+│   │   └── apps/
+│   │       └── <solo las apps del servidor>
+│   └── infrastructure/
+│       └── environments/<deploy_env>/
+│           ├── env.yaml
+│           ├── protected_values.py         # Modo 0600
+│           └── fmanagement_paths.yml
+├── venvs/                                  # Un venv aislado por aplicación
+│   ├── frontend/     (Python 3.13)
+│   ├── backoffice/   (Python 3.13)
+│   ├── middleware/    (Python 3.13)
+│   ├── backend_core/ (Python 3.13)
+│   ├── broker/       (Python 3.13)
+│   └── trainer/      (Python 3.12)
+├── fmanagement/                            # Solo en servidor backend
+│   ├── fmanagement                         # Binario Go
+│   └── fmanagement_paths.yml
+└── keys/                                   # Claves SSH para rsync
+    └── rsync_key
+```
+
+**Distribución de apps por servidor:**
+
+| Servidor | Apps en `/opt/anewhope/app/src/apps/` | Venvs |
+|----------|--------------------------------------|-------|
+| **frontend** | `5_web_frontend/`, `6_web_backoffice/`, `7_service_frontend/` | frontend, backoffice, middleware |
+| **backend** | `3_backend/`, `8_service_backend/` | backend_core, broker |
+| **trainer** | `4_trainer/` | trainer |
+
+**Capas compartidas (en TODOS los servidores):**
+- `src/1_shared_domain/` - Entidades de dominio
+- `src/2_shared_application/` - Servicios, adapters, config, DTOs, interfaces
+
+### 32.4. PYTHONPATH y servicios systemd (CRÍTICO)
+
+Todas las aplicaciones necesitan `PYTHONPATH=/opt/anewhope/app` para importar
+código compartido (`from src.1_shared_domain...`, `from src.2_shared_application...`).
+
+**Plantilla systemd para apps FastAPI** (`anewhope-app.service.j2`):
+```ini
+[Service]
+User=anewhope
+WorkingDirectory=/opt/anewhope/app
+Environment=PYTHONPATH=/opt/anewhope/app
+Environment=ENVIRONMENT=<deploy_env>
+ExecStart=/opt/anewhope/venvs/<app>/bin/python -m <app_module>
+StandardOutput=append:/data/<servicio>/logs/console.log
+```
+
+**Plantilla systemd para apps Reflex** (`anewhope-reflex.service.j2`):
+```ini
+[Service]
+User=anewhope
+WorkingDirectory=/opt/anewhope/app/src/apps/<app_dir>
+Environment=PYTHONPATH=/opt/anewhope/app
+Environment=ENVIRONMENT=<deploy_env>
+ExecStart=/opt/anewhope/venvs/<app>/bin/reflex run --env prod --backend-port <port>
+StandardOutput=append:/data/<servicio>/logs/console.log
+```
+
+**Servicios por servidor:**
+
+| Servidor | Servicio systemd | Módulo/Comando | Puerto |
+|----------|-----------------|----------------|--------|
+| **frontend** | `anewhope-middleware` | `python -m src.apps.7_service_frontend.main` | 8007 |
+| **frontend** | `anewhope-frontend` | `reflex run --env prod --backend-port 8005` | 8005 |
+| **frontend** | `anewhope-backoffice` | `reflex run --env prod --backend-port 8006` | 8006 |
+| **backend** | `anewhope-backend-core` | `python -m src.apps.3_backend.main` | 8003 |
+| **backend** | `anewhope-broker` | `python -m src.apps.8_service_backend.main` | 8008 |
+| **backend** | `fmanagement` | `/opt/anewhope/fmanagement/fmanagement` | 1666 |
+| **trainer** | `anewhope-trainer` | `python -m src.apps.4_trainer.main` | 8004 |
+| **trainer** | `ollama` | `/usr/local/bin/ollama serve` | 11434 |
+
+### 32.5. Roles de Ansible
+
+Los roles viven en `anh_ansible/roles/` y se referencian desde `anh_ansible_environments/ansible.cfg`:
+
+```ini
+roles_path = ../anh_ansible/roles/
+```
+
+| Rol | Servidor destino | Descripción |
+|-----|------------------|-------------|
+| `ollama` | trainer | Instalación nativa de Ollama en Oracle Linux 10 |
+| `nginx` | frontend | Servidor web + reverse proxy + SSL |
+| `mariadb` | backend | Base de datos relacional |
+| `python3-venv` | todos | Entornos virtuales Python |
+| `chronyd` | util01 | Sincronización NTP |
+| `bind` | util01 | DNS autoritativo |
+| `postfix` | util01 | Servidor de correo |
+
+### 32.6. Variable deploy_env (CRÍTICO)
+
+**OBLIGATORIO:** Todos los playbooks reciben `deploy_env` dinámicamente:
+
+```bash
+ansible-playbook -i env/dev/host frontend.yml -e deploy_env=dev
+```
+
+Valores válidos: `dev`, `pre`, `pro` (macbook no se despliega con Ansible).
+
+### 32.7. Tags de despliegue
+
+| Tag | Descripción | Uso |
+|-----|-------------|-----|
+| `native` | Instalación directa sin contenedores | `--tags native` |
+| `docker` | Contenedores Docker individuales | `--tags docker` |
+| `docker-compose` | Docker Compose por servidor | `--tags docker-compose` |
+
+### 32.8. Despliegue de código fuente (OBLIGATORIO)
+
+Los playbooks usan `ansible.posix.synchronize` para copiar código al servidor:
+
+1. **`src/1_shared_domain/`** → Se copia a TODOS los servidores
+2. **`src/2_shared_application/`** → Se copia a TODOS los servidores (sin `tests/`)
+3. **Apps específicas** → Solo al servidor correspondiente (sin `tests/`, `logs/`, `__pycache__/`)
+4. **Configuración** → `env.yaml`, `protected_values.py`, `fmanagement_paths.yml`
+5. **`.envglobal`** → Se genera con `current_environment: <deploy_env>`
+6. **Moks** → Se eliminan en producción (`deploy_env == 'pro'`)
+
+### 32.9. Integración de variables
+
+Los playbooks cargan variables desde anewhope:
+
+```yaml
+vars_files:
+  - "env/{{ deploy_env }}/frontend.yml"
+  - ../anewhope/infrastructure/environments/{{ deploy_env }}/env.yaml
+  - ../anewhope/infrastructure/environments/{{ deploy_env }}/fmanagement_paths.yml
+```
+
+### 32.10. Distribución de datos con tar.gz
+
+| Servidor | Carpeta origen (macbook) | Destino |
+|----------|--------------------------|---------|
+| frontend | `~/data/anewhope/files/frontend_server/` | `/data/` |
+| backend | `~/data/anewhope/files/backend_server/` | `/data/` |
+| trainer | `~/data/anewhope/files/trainer_server/` | `/data/` |
+
+### 32.11. Replicación rsync
+
+| Dirección | Contenido | Trigger | Frecuencia |
+|-----------|-----------|---------|------------|
+| Backend → Trainer | `external/` (docs clientes) | Bajo demanda (fmanagement) | Manual |
+| Trainer → Backend | `internal/models/`, `internal/reports/` | Cron automático | 5 min |
+
+### 32.12. Ollama en Oracle Linux 10
+
+**Rol Ansible:** `anh_ansible/roles/ollama/`
+- Instalación nativa via `curl -fsSL https://ollama.com/install.sh | sh`
+- Crea usuario `ollama` y servicio systemd
+- Descarga modelos de la tabla `jobs_modelos`
+- Escucha en puerto 11434
+
+### 32.13. Nginx y SSL (servidor frontend)
+
+| Entorno | SSL | Dominio |
+|---------|-----|---------|
+| macbook | Auto-firmado | tfmmyllm.ai |
+| dev | Auto-firmado | house.loc |
+| pre/pro | Let's Encrypt (certbot) | getmyllm.com |
+
+### 32.14. Reglas obligatorias de despliegue
+
+1. ✅ **NUNCA** desplegar sin usar los playbooks de Ansible
+2. ✅ **SIEMPRE** pasar `-e deploy_env=<entorno>` al ejecutar playbooks
+3. ✅ **SIEMPRE** verificar sincronización de `fmanagement_paths.yml` antes de desplegar
+4. ✅ **SIEMPRE** ejecutar desde util01 (tiene acceso SSH a todos los servidores)
+5. ✅ **NUNCA** editar `/opt/anewhope/` ni `/data/` manualmente en servidores
+6. ✅ **Oracle Linux 10** es el SO de todos los servidores (excepto macbook)
+7. ✅ **Ollama** se instala siempre en nativo (no Docker) en trainer
+8. ✅ **Código compartido** (`1_shared_domain/`, `2_shared_application/`) se copia a TODOS los servidores
+9. ✅ **Cada app** tiene su propio venv con su `requirements.txt`
+10. ✅ **PYTHONPATH** debe apuntar a `/opt/anewhope/app` en todos los servicios
+11. ✅ **Trainer usa Python 3.12** (no 3.13) por compatibilidad con TensorFlow/Keras
+12. ✅ **Los modelos Ollama** se descargan según la tabla `jobs_modelos`
+
+### 32.15. Checklist de nuevo despliegue
+
+- [ ] Verificar que util01 tiene los 4 repositorios actualizados
+- [ ] Verificar que `env/<deploy_env>/` tiene variables de todos los servidores
+- [ ] Verificar sincronización de `fmanagement_paths.yml`
+- [ ] Crear tar.gz de las carpetas `*_server` si hay datos nuevos
+- [ ] Ejecutar playbook con tag `native` primero para setup base
+- [ ] Verificar que todos los servicios systemd están `active (running)`
+- [ ] Probar conectividad: frontend → middleware → broker → core
+- [ ] Verificar que Ollama tiene todos los modelos descargados en trainer
+- [ ] Verificar que los logs se escriben en `/data/<servicio>/logs/`
+
+---
+

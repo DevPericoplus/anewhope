@@ -7152,9 +7152,126 @@ GRANT SELECT ON myllm_projects_db.ticket_interacciones TO 'myllm_reader'@'localh
 FLUSH PRIVILEGES;
 ```
 
+## Infraestructura de Despliegue con Ansible
+
+El sistema se despliega usando Ansible gestionado desde 4 repositorios coordinados.
+
+### Repositorios del sistema
+
+| Repositorio | Ruta local | Propósito |
+|-------------|-----------|-----------|
+| **anh_ansible** | `/Users/administrator/develop/anh_ansible` | Roles de Ansible reutilizables |
+| **anh_ansible_environments** | `/Users/administrator/develop/anh_ansible_environments` | Playbooks y planes de despliegue por entorno |
+| **myllm_apps (anewhope)** | `/Users/administrator/develop/anewhope` | Aplicaciones Python + configuración por entorno |
+| **fmanagement** | `/Users/administrator/develop/fmanagement` | API Go de gestión de ficheros |
+
+### Servidores y planes de despliegue
+
+| Servidor | IP (dev) | FQDN (dev) | Playbook | Servicios |
+|----------|----------|------------|----------|-----------|
+| **util01** | 192.168.0.240 | util01.house.loc | `util01.yml` | Ansible, DNS (BIND), NTP, Postfix, Docker |
+| **frontend** | 192.168.0.241 | frontend.house.loc | `frontend.yml` | Redis, Nginx, Frontend, Backoffice, Middleware |
+| **backend** | 192.168.0.242 | backend.house.loc | `backend.yml` | MariaDB, Backend Core, Broker, fmanagement |
+| **trainer** | 192.168.0.243 | trainer.house.loc | `trainer.yml` | Ollama (nativo), ChromaDB, Trainer (Backend IA) |
+
+### Roles de Ansible disponibles
+
+| Rol | Descripción | Servidor destino |
+|-----|-------------|------------------|
+| `nginx` | Servidor web + reverse proxy | frontend |
+| `redis` | Cache y sesiones compartidas (dentro del playbook) | frontend |
+| `mariadb` | Base de datos relacional | backend |
+| `ollama` | LLM runner nativo para Oracle Linux 10 | trainer |
+| `python3-venv` | Entornos virtuales Python | frontend, backend, trainer |
+| `chronyd` | Sincronización NTP | util01 |
+| `bind` | DNS autoritativo | util01 |
+| `postfix` | Servidor de correo | util01 |
+
+### Variable dinámica `deploy_env`
+
+Se pasa al ejecutar ansible-playbook para seleccionar el entorno:
+
+```bash
+ansible-playbook -i env/dev/host frontend.yml -e deploy_env=dev
+ansible-playbook -i env/pre/host backend.yml -e deploy_env=pre
+ansible-playbook -i env/pro/host trainer.yml -e deploy_env=pro
+```
+
+### Tags de despliegue
+
+| Tag | Descripción | Ejemplo |
+|-----|-------------|---------|
+| `native` | Instalación directa en servidor (sin contenedores) | `--tags native` |
+| `docker` | Despliegue con contenedores Docker individuales | `--tags docker` |
+| `docker-compose` | Despliegue con docker-compose por servidor | `--tags docker-compose` |
+
+### Distribución de datos con tar.gz
+
+Cada servidor recibe su carpeta de datos comprimida en `/data`:
+
+| Servidor | Carpeta origen (macbook) | Destino |
+|----------|--------------------------|---------|
+| frontend | `~/data/anewhope/files/frontend_server/` | `/data/` |
+| backend | `~/data/anewhope/files/backend_server/` | `/data/` |
+| trainer | `~/data/anewhope/files/trainer_server/` | `/data/` |
+
+### Replicación rsync entre servidores
+
+| Dirección | Contenido | Trigger | Intervalo |
+|-----------|-----------|---------|-----------|
+| Backend → Trainer | `/data/external/` (contenido de clientes) | Bajo demanda (fmanagement `transferversion`) | Manual |
+| Trainer → Backend | `/data/internal/models/`, `/data/internal/reports/` | Automático (cron) | 5 minutos |
+
+### Configuración de Nginx (servidor frontend)
+
+| Entorno | Certificado SSL | Dominio público |
+|---------|----------------|-----------------|
+| macbook | Auto-firmado (tfmmyllm.ai) | tfmmyllm.ai |
+| dev | Auto-firmado (house.loc) | house.loc |
+| pre | Let's Encrypt | getmyllm.com |
+| pro | Let's Encrypt | getmyllm.com |
+
+### Despliegue de Ollama (servidor trainer)
+
+Ollama se instala nativamente en Oracle Linux 10 usando el rol `anh_ansible/roles/ollama`.
+
+Los modelos a descargar se obtienen de la tabla `myllm_projects_db.jobs_modelos`:
+
+| Modelo | Tag | Familia | Tamaño aprox. |
+|--------|-----|---------|---------------|
+| gemma3:4b | 4b | gemma | 3.3 GB |
+| llama-pro:latest | latest | llama | 4.7 GB |
+| qwen2.5:7b | 7b | qwen | 4.7 GB |
+| deepseek-coder:6.7b | 6.7b | deepseek-coder | 3.8 GB |
+| qwen2.5-coder:1.5b-base | 1.5b-base | qwen-coder | 986 MB |
+| nomic-embed-text:latest | latest | nomic | 274 MB |
+| llama3.1:8b | 8b | llama | 4.9 GB |
+| deepseek-r1:1.5b | 1.5b | deepseek | 1.1 GB |
+| deepseek-r1:8b | 8b | deepseek | 5.2 GB |
+
+### Integración con ficheros de configuración
+
+Los playbooks cargan automáticamente las variables desde anewhope:
+
+```yaml
+vars_files:
+  - "env/{{ deploy_env }}/frontend.yml"
+  - ../anewhope/infrastructure/environments/{{ deploy_env }}/env.yaml
+  - ../anewhope/infrastructure/environments/{{ deploy_env }}/protected_values.py
+  - ../anewhope/infrastructure/environments/{{ deploy_env }}/fmanagement_paths.yml
+```
+
+### Servidor util01 (gestión centralizada)
+
+El servidor util01 actúa como nodo de despliegue centralizado:
+- Contiene los 4 repositorios clonados
+- Tiene Ansible instalado
+- Accede a todos los servidores por SSH (usuario `ansible`, clave RSA)
+- Ejecuta los playbooks para desplegar en frontend, backend y trainer
+
 ## Roles y automatización (referencia)
 
-Los roles Ansible importados se encuentran en el repositorio `anh_ansible`. Incluyen BIND, NTPD, NTPDATE, MariaDB, Nginx, Postfix, entre otros, y sirven como apoyo para el despliegue de la plataforma.
+Los roles Ansible importados se encuentran en el repositorio `anh_ansible`. Incluyen BIND, NTPD, NTPDATE, MariaDB, Nginx, Postfix, Ollama, entre otros, y sirven como apoyo para el despliegue de la plataforma.
 
 ### Sistema de Permisos del Explorador
 
