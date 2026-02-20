@@ -175,7 +175,7 @@ El proyecto soporta configuración personalizada por entorno usando cuatro nivel
 
 | Entorno | Descripción | Plataforma | Dominio interno | Dominio público |
 |---------|-------------|------------|-----------------|-----------------|
-| `macbook` | Desarrollo local | macOS 14.8.1 | localhost | localhost |
+| `macbook` | Desarrollo local | macOS 14.8.1 | tfmmyllm.ai | tfmmyllm.ai |
 | `dev` | Desarrollo en servidor | Oracle Linux 10 (VirtualBox) | house.loc | house.loc |
 | `pre` | Preproducción | Oracle Linux 10 (AWS) | anewhope.aws | getmyllm.com |
 | `pro` | Producción | Oracle Linux 10 (AWS) | anewhope.aws | getmyllm.com |
@@ -183,6 +183,26 @@ El proyecto soporta configuración personalizada por entorno usando cuatro nivel
 **Nota sobre dominios en pre/pro:**
 - **Dominio público (`getmyllm.com`):** Utilizado solo por nginx para exponer el frontend al exterior.
 - **Dominio interno (`anewhope.aws`):** Utilizado para la comunicación entre servicios dentro de AWS.
+
+**Convención de hostnames (IMPORTANTE):**
+
+Todos los entornos, incluido macbook, usan nombres de servidor con dominio en lugar de `localhost`.
+Esto garantiza coherencia entre entornos y evita errores de configuración al desplegar.
+
+| Entorno | Formato hostname | Ejemplo |
+|---------|-----------------|---------|
+| `macbook` | `<servidor>.tfmmyllm.ai` | `backend.tfmmyllm.ai:8003` |
+| `dev` | `<servidor>.house.loc` | `backend.house.loc:8003` |
+| `pre/pro` | `<servidor>.anewhope.aws` | `backend.anewhope.aws:8003` |
+
+En macbook, los hostnames resuelven a `127.0.0.1` mediante entradas en `/etc/hosts`:
+```
+127.0.0.1 frontend.tfmmyllm.ai
+127.0.0.1 backend.tfmmyllm.ai
+127.0.0.1 trainer.tfmmyllm.ai
+```
+
+**No usar `localhost` en ficheros de configuración.** Usar siempre el hostname del entorno correspondiente.
 
 ### Arquitectura de dominios y Vite allowedHosts
 

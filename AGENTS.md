@@ -1024,13 +1024,31 @@ la comunicación entre servicios según el entorno de despliegue.
 
 | Entorno | Dominio interno | Dominio público | Formato FQDN interno |
 |---------|-----------------|-----------------|----------------------|
-| macbook | localhost | localhost | `localhost` |
+| macbook | tfmmyllm.ai | tfmmyllm.ai | `<servidor>.tfmmyllm.ai` |
 | dev | house.loc | house.loc | `<servidor>.house.loc` |
 | pre | anewhope.aws | getmyllm.com | `<servidor>.anewhope.aws` |
 | pro | anewhope.aws | getmyllm.com | `<servidor>.anewhope.aws` |
 
 **Nota pre/pro:** El dominio público `getmyllm.com` solo lo usa nginx para exponer el frontend.
 Los servicios internos se comunican usando el dominio interno `anewhope.aws`.
+
+**⚠️ REGLA CRÍTICA - Prohibido usar `localhost` en configuración:**
+
+**NUNCA** usar `localhost` en ficheros de configuración (`env.yaml`, `protected_values.py`, `fmanagement_paths.yml`, `.env`).
+Todos los entornos, incluido macbook, deben usar nombres de servidor con dominio.
+
+| Entorno | Hostname backend | Hostname frontend | Hostname trainer |
+|---------|-----------------|-------------------|------------------|
+| macbook | `backend.tfmmyllm.ai` | `frontend.tfmmyllm.ai` | `trainer.tfmmyllm.ai` |
+| dev | `backend.house.loc` | `frontend.house.loc` | `trainer.house.loc` |
+| pre/pro | `backend.anewhope.aws` | `frontend.anewhope.aws` | `trainer.anewhope.aws` |
+
+En macbook los hostnames resuelven a `127.0.0.1` vía `/etc/hosts`. Esto permite que los ficheros
+de configuración sean coherentes entre entornos y evita errores al desplegar código que funciona
+en local pero falla en servidores donde los servicios corren en máquinas separadas.
+
+**Excepción:** Los valores por defecto (fallback) en código Python pueden usar `localhost` como último recurso,
+pero los ficheros de configuración de entorno NUNCA deben contener `localhost`.
 
 ### Patrón de carga de URLs de servicio en código
 
@@ -10090,6 +10108,8 @@ vars_files:
 10. ✅ **PYTHONPATH** debe apuntar a `/opt/anewhope/app` en todos los servicios
 11. ✅ **Trainer usa Python 3.12** (no 3.13) por compatibilidad con TensorFlow/Keras
 12. ✅ **Los modelos Ollama** se descargan según la tabla `jobs_modelos`
+13. ✅ **NUNCA** usar `localhost` en ficheros de configuración de entorno (`env.yaml`, `protected_values.py`, `fmanagement_paths.yml`). Usar siempre hostnames con dominio del entorno (`*.tfmmyllm.ai`, `*.house.loc`, `*.anewhope.aws`)
+14. ✅ **SIEMPRE** verificar que `protected_values.py` contiene todas las variables de URLs de servicios (`core_backend_base_url`, `broker_backend_base_url`, `trainer_backend_base_url`)
 
 ### 32.15. Checklist de nuevo despliegue
 

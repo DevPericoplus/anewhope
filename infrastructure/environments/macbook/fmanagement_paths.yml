@@ -11,8 +11,8 @@
 # Configuración de permisos
 # --------------------------------------------------------------------------
 permissions_source: mock
-middleware_base_url: http://localhost:8007
-core_backend_base_url: http://localhost:8003
+middleware_base_url: http://frontend.tfmmyllm.ai:8007
+core_backend_base_url: http://backend.tfmmyllm.ai:8003
 
 # --------------------------------------------------------------------------
 # Rutas base de almacenamiento - External (contenido de clientes)

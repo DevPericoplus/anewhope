@@ -1693,3 +1693,103 @@ def get_tecnologias(state) -> dict[str, Any]:
 - **Trigger:** Si se detectan problemas de sincronización de relojes o race conditions
 - **Acción:** Evaluar si añadir temporizador como backup
 - **Responsable:** @frontend-visionary
+
+---
+
+# ADR-007: Estandarización de hostnames - Eliminación de localhost en configuraciones
+
+## Estado
+
+**Aceptada**
+
+## Contexto
+
+El entorno macbook (desarrollo local) utilizaba `localhost` como hostname en todos los ficheros
+de configuración (`env.yaml`, `protected_values.py`, `fmanagement_paths.yml`, `.env`), mientras que
+los entornos dev, pre y pro usaban hostnames con dominio (`*.house.loc`, `*.anewhope.aws`).
+
+Esta inconsistencia causaba errores recurrentes al desplegar en servidores:
+
+1. **Problema del trainer:** El broker en `backend.house.loc` intentaba conectar al trainer en
+   `localhost:8004` porque `protected_values.py` no contenía `trainer_backend_base_url` y el código
+   hacía fallback a `http://localhost:8004`. En el entorno dev, el trainer corre en una máquina
+   separada (`trainer.house.loc`), por lo que la conexión fallaba con `Connection refused`.
+
+2. **Problema de Análisis Resultados:** La página `analisis_resultados.py` del backoffice tenía
+   `CORE_URL = "http://localhost:8003"` hardcodeado. En dev, el backoffice corre en `frontend.house.loc`
+   pero el core está en `backend.house.loc`, haciendo que los selectores no cargaran datos.
+
+3. **Patrón general:** Cualquier servicio que use `localhost` como URL de otro servicio funcionará
+   en macbook (donde todo corre en la misma máquina) pero fallará en entornos donde los servicios
+   están distribuidos en diferentes servidores.
+
+## Decisión
+
+### 1. Crear entradas en `/etc/hosts` del macbook
+
+Se añaden entradas que resuelven los hostnames de servicio a `127.0.0.1`:
+
+```
+127.0.0.1 frontend.tfmmyllm.ai
+127.0.0.1 backend.tfmmyllm.ai
+127.0.0.1 trainer.tfmmyllm.ai
+```
+
+### 2. Reemplazar `localhost` por hostnames con dominio en toda la configuración macbook
+
+Ficheros actualizados:
+- `infrastructure/environments/macbook/env.yaml`
+- `infrastructure/environments/macbook/protected_values.py`
+- `infrastructure/environments/macbook/fmanagement_paths.yml`
+- `fmanagement/env/macbook/.env`
+- `fmanagement/env/macbook/fmanagement_paths.yml`
+
+### 3. Convención de hostnames por entorno
+
+| Entorno | Hostname backend | Hostname frontend | Hostname trainer | Dominio |
+|---------|-----------------|-------------------|------------------|---------|
+| macbook | `backend.tfmmyllm.ai` | `frontend.tfmmyllm.ai` | `trainer.tfmmyllm.ai` | `tfmmyllm.ai` |
+| dev | `backend.house.loc` | `frontend.house.loc` | `trainer.house.loc` | `house.loc` |
+| pre | `backend.anewhope.aws` | `frontend.anewhope.aws` | `trainer.anewhope.aws` | `anewhope.aws` |
+| pro | `backend.anewhope.aws` | `frontend.anewhope.aws` | `trainer.anewhope.aws` | `anewhope.aws` |
+
+### 4. Regla obligatoria
+
+**NUNCA** usar `localhost` en ficheros de configuración de entorno. Los valores por defecto
+(fallback) en código Python pueden usar `localhost` como último recurso, pero los ficheros
+de configuración SIEMPRE deben usar hostnames con dominio.
+
+## Consecuencias
+
+### Positivas
+
+- **Coherencia entre entornos:** Los ficheros de configuración de macbook ahora siguen el mismo
+  patrón que dev/pre/pro, facilitando la detección temprana de problemas de conectividad.
+- **Detección temprana de errores:** Si un servicio no está configurado correctamente, fallará
+  igual en macbook que en dev, en lugar de funcionar en local y fallar al desplegar.
+- **Simplificación de código:** Las URLs de servicio no necesitan lógica especial para macbook.
+
+### Negativas
+
+- **Dependencia de /etc/hosts:** El macbook necesita entradas en `/etc/hosts` para resolver
+  los hostnames. Sin estas entradas, ningún servicio conectará.
+- **Requisito único:** Este cambio es un requisito previo para desarrollar en macbook. Debe
+  documentarse en el onboarding de nuevos desarrolladores.
+
+## Alternativas Consideradas
+
+1. **Mantener localhost en macbook:** Descartada. La inconsistencia entre entornos causa errores
+   recurrentes difíciles de diagnosticar que solo aparecen al desplegar.
+
+2. **Usar variables de entorno para todas las URLs:** Parcialmente implementada. Las variables
+   de `env.yaml` y `protected_values.py` ya cubren esto, pero el problema era que algunos
+   ficheros y código tenían `localhost` hardcodeado.
+
+## Fecha de Decisión
+
+- **2026-02-20**: Estandarización de hostnames tras resolver errores de conectividad en dev
+
+## Participantes
+
+- @infra-architect (configuración de entornos)
+- @backend-engineer (corrección de URLs en broker y backoffice)

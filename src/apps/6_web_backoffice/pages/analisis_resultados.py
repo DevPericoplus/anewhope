@@ -13,7 +13,9 @@ import reflex as rx
 import httpx
 import logging
 import importlib
+import importlib.util
 import sys
+from pathlib import Path
 from typing import Optional, TypedDict
 
 # Importar SharedSessionState para acceder a tokens sin importación circular
@@ -21,9 +23,35 @@ from web_backoffice.shared_state import SharedSessionState
 
 logger = logging.getLogger(__name__)
 
-# Configuración
-MIDDLEWARE_URL = "http://localhost:8007"
-CORE_URL = "http://localhost:8003"
+
+def _load_env_settings():
+    """Carga el módulo de configuración compartida."""
+    module_path = (
+        Path(__file__).resolve().parents[4]
+        / "src/2_shared_application/config/env_settings.py"
+    )
+    spec = importlib.util.spec_from_file_location("env_settings_analisis", module_path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# Configuración - resolución dinámica desde entorno
+try:
+    _env_settings = _load_env_settings()
+    MIDDLEWARE_URL = (
+        _env_settings.get_env_value("MIDDLEWARE_BASE_URL", "http://localhost:8007")
+        if _env_settings else "http://localhost:8007"
+    )
+    CORE_URL = (
+        _env_settings.get_protected_value("core_backend_base_url", "http://localhost:8003")
+        if _env_settings else "http://localhost:8003"
+    )
+except Exception:
+    MIDDLEWARE_URL = "http://localhost:8007"
+    CORE_URL = "http://localhost:8003"
 
 
 def _build_pat_version(id_org: int, id_proj: int, id_ver: int) -> str:
