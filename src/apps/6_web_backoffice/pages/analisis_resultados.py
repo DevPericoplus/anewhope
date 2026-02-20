@@ -725,9 +725,10 @@ Overall Quality: {round(overall_quality * 100, 1)}%"""
                     )
 
                     if response.status_code == 200:
-                        data = response.json()
-                        estado = data.get('estado', '')
-                        phases_data = data.get('phases', {})
+                        response_data = response.json()
+                        inner_data = response_data.get('data', {}) or {}
+                        estado = inner_data.get('estado', '')
+                        phases_data = inner_data.get('phases', {})
 
                         print(f"[POLLING PROGRESS] Estado={estado}, Fases={len(phases_data)}", file=sys.stderr, flush=True)
 

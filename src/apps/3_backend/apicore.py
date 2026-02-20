@@ -493,8 +493,12 @@ logger = logging.getLogger(__name__)
 
 # Importar y registrar router de análisis de entrenamientos
 try:
-    from router_training_analysis import router as analysis_router
-    app.include_router(analysis_router)
+    _backend_dir = str(Path(__file__).resolve().parent)
+    if _backend_dir not in sys.path:
+        sys.path.insert(0, _backend_dir)
+    _analysis_router_path = Path(__file__).resolve().parent / "router_training_analysis.py"
+    _analysis_module = _load_backend_module("router_training_analysis", _analysis_router_path)
+    app.include_router(_analysis_module.router)
     logger.info("✅ Router de análisis de entrenamientos registrado")
 except Exception as e:
     logger.warning(f"⚠️ No se pudo registrar router de análisis: {e}")

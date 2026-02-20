@@ -6864,6 +6864,11 @@ class BackendCoreRouter:
         from sqlalchemy import text
 
         try:
+            # Obtener estado del entrenamiento
+            estado_query = text("""
+                SELECT estado FROM entrenamientos WHERE id = :id_ent
+            """)
+
             query = text("""
                 SELECT
                     phase_key,
@@ -6879,6 +6884,12 @@ class BackendCoreRouter:
             """)
 
             with self._get_projects_db_connection() as conn:
+                estado_result = conn.execute(
+                    estado_query, {"id_ent": id_entrenamiento}
+                )
+                estado_row = estado_result.fetchone()
+                estado = estado_row[0] if estado_row else "desconocido"
+
                 result = conn.execute(query, {"id_ent": id_entrenamiento})
                 rows = result.fetchall()
 
@@ -6919,6 +6930,7 @@ class BackendCoreRouter:
             return {
                 "success": True,
                 "data": {
+                    "estado": estado,
                     "phases": phases,
                     "last_update": last_phase,
                 },
