@@ -3879,7 +3879,9 @@ class RouterMiddleware:
             raise BusinessRuleError(f"Sesión sin user_id válido: {session.user_id}")
 
         # Añadir datos de la sesión al payload
-        payload["id_organizacion"] = session.organization_id
+        # Si el payload ya trae id_organizacion (desde backoffice selector), respetar ese valor
+        if not payload.get("id_organizacion"):
+            payload["id_organizacion"] = session.organization_id
         payload["cliente_id"] = session.user_id
 
         self._logger.info(

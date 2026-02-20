@@ -238,8 +238,6 @@ class State(SharedSessionState):
 
     # Estado para página Descargas (dl_ prefix)
     dl_otp_validated: bool = False
-    dl_otp_code: str = ""
-    dl_otp_error: str = ""
     dl_otp_loading: bool = False
     dl_selected_org_id: int = 0
     dl_selected_org_name: str = ""
@@ -247,9 +245,9 @@ class State(SharedSessionState):
     dl_selected_project_name: str = ""
     dl_selected_version_id: int = 0
     dl_selected_version_name: str = ""
-    dl_organizations: list = []
-    dl_projects: list = []
-    dl_versions: list = []
+    dl_organizations: list[dict] = []
+    dl_projects: list[dict] = []
+    dl_versions: list[dict] = []
     dl_packages: list[PackageDict] = []
     dl_loading_packages: bool = False
     dl_downloading: bool = False
@@ -310,7 +308,17 @@ class State(SharedSessionState):
 
     # Estado para gestión de tickets de soporte
     org_tickets: list[dict] = []  # Lista de tickets de la organización
-    
+
+    # Estado del modal de solicitud de soporte (crear ticket desde proyecto)
+    show_support_modal: bool = False
+    support_project_id: int = 0
+    support_project_name: str = ""
+    support_titulo: str = ""
+    support_consulta: str = ""
+    support_error: str = ""
+    support_success: str = ""
+    is_creating_support: bool = False
+
     # Estado del modal de gestión de ticket
     show_ticket_modal: bool = False
     selected_ticket_id: int = 0
@@ -332,7 +340,10 @@ class State(SharedSessionState):
     assign_success: str = ""
     assign_roles: list[dict] = []  # Lista de roles disponibles
     is_updating_ticket: bool = False
-    
+
+    # Estado para panel de asignaciones de proyectos (solo lectura, en página Organización)
+    org_project_assignments: list[dict] = []  # [{proyecto_nombre, usuario_nombre, rol_nombre}]
+
     # Estado para gestión de tecnologías
     tecnologias_list: list[dict] = []  # Lista de tecnologías disponibles
     selected_tech_project_id: int = 0  # Proyecto seleccionado
@@ -613,6 +624,7 @@ class State(SharedSessionState):
             self.load_org_users()
             self.load_org_projects()
             self.load_org_tickets()
+            self.load_org_project_assignments()
         elif current_menu == "tecnologias":
             self.load_org_projects()
             self.load_tecnologias_asignadas()
@@ -844,6 +856,7 @@ class State(SharedSessionState):
                 self.load_org_users()
                 self.load_org_projects()
                 self.load_org_tickets()
+                self.load_org_project_assignments()
             elif menu == "tecnologias":
                 self.load_org_projects()
                 self.load_tecnologias()
@@ -865,6 +878,10 @@ class State(SharedSessionState):
         # Resetear panel de evolución al navegar a entrenamientos
         if menu == "entrenamientos":
             self.ent_evo_reset()
+
+        # Inicializar Descargas al navegar (cargar organizaciones)
+        if menu == "descargas":
+            self.dl_init_page()
 
         # Log de navegación
         if self.is_logged_in and self.user_id > 0:
@@ -1179,9 +1196,9 @@ class State(SharedSessionState):
     
     def load_org_users(self):
         """Carga los usuarios de la organización actual desde la base de datos.
-        
+
         Filtra por:
-        - organization_id del usuario logueado
+        - bo_selected_org_id (organización seleccionada en el selector)
         - identity_type_id = 5 (auditores/usuarios base)
         """
         # Asegurar que identity_type_id está cargado desde el token si no está en el estado
@@ -1189,11 +1206,9 @@ class State(SharedSessionState):
             extracted_identity = self._extract_identity_type_id_from_token(self.access_token)
             if extracted_identity > 0:
                 self.identity_type_id = extracted_identity
-        
-        # Obtener organization_id de la sesión
-        org_id = self.organization_id
-        if org_id <= 0 and self.access_token:
-            org_id = self._extract_org_id_from_token(self.access_token)
+
+        # Usar la organización del selector del backoffice
+        org_id = self.bo_selected_org_id
         
         if org_id <= 0:
             # Si no hay organización, mostrar lista vacía
@@ -1284,17 +1299,15 @@ class State(SharedSessionState):
         
         self.create_user_error = ""
         self.is_creating_user = True
-        
-        # Obtener organization_id de la sesión
-        org_id = self.organization_id
-        if org_id <= 0 and self.access_token:
-            org_id = self._extract_org_id_from_token(self.access_token)
-        
+
+        # Usar la organización del selector del backoffice
+        org_id = self.bo_selected_org_id
+
         if org_id <= 0:
-            self.create_user_error = "No se pudo determinar la organización"
+            self.create_user_error = "Seleccione una organización primero"
             self.is_creating_user = False
             return
-        
+
         # Llamar al API para crear el usuario
         result = create_organization_user(
             organization_id=org_id,
@@ -1335,42 +1348,30 @@ class State(SharedSessionState):
     def enable_user(self, user_id: int):
         """Habilita un usuario de la organización."""
         try:
-            print(f"[DEBUG] Habilitar usuario: {user_id}")
-            result = update_user_status(
+            update_user_status(
                 user_id=user_id,
                 active=True,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
-            print(f"[DEBUG] Resultado: {result}")
-            
-            # Actualizar estado local
-            for user in self.org_users:
-                if user["user_id"] == user_id:
-                    user["active"] = True
-            self.org_users = self.org_users.copy()
         except Exception as e:
             print(f"[ERROR] Error habilitando usuario: {e}")
-    
+        finally:
+            self.load_org_users()
+
     def disable_user(self, user_id: int):
         """Deshabilita un usuario de la organización."""
         try:
-            print(f"[DEBUG] Deshabilitar usuario: {user_id}")
-            result = update_user_status(
+            update_user_status(
                 user_id=user_id,
                 active=False,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
-            print(f"[DEBUG] Resultado: {result}")
-            
-            # Actualizar estado local
-            for user in self.org_users:
-                if user["user_id"] == user_id:
-                    user["active"] = False
-            self.org_users = self.org_users.copy()
         except Exception as e:
             print(f"[ERROR] Error deshabilitando usuario: {e}")
+        finally:
+            self.load_org_users()
     
     def assign_user_to_projects(self, user_id: int):
         """Abre el modal para asignar un usuario a proyectos."""
@@ -1453,8 +1454,7 @@ class State(SharedSessionState):
             if result.get("success"):
                 self.assign_success = f"Usuario asignado correctamente al proyecto"
                 self.assign_error = ""
-                # Cerrar el modal después de 1 segundo
-                # (En Reflex no hay un sleep directo, pero el usuario verá el mensaje)
+                self.load_org_project_assignments()
             else:
                 error_msg = result.get("error", "Error al asignar usuario")
                 # Asegurar que el error sea string
@@ -1471,6 +1471,57 @@ class State(SharedSessionState):
             else:
                 self.assign_error = f"Error al asignar usuario: {error_str}"
             self.assign_success = ""
+
+    def load_org_project_assignments(self):
+        """Carga todas las asignaciones activas de usuarios a proyectos de la organización.
+
+        Itera sobre los usuarios de la org y consulta sus roles en proyectos.
+        Resultado en org_project_assignments: [{proyecto_nombre, usuario_nombre, rol_nombre}]
+        """
+        from adapters.api_client import get_user_project_roles
+
+        org_id = self.bo_selected_org_id
+        if org_id <= 0:
+            self.org_project_assignments = []
+            return
+
+        try:
+            assignments = []
+            rol_nombres = {3: "Editor", 4: "Lector", 5: "Auditor"}
+
+            existing_project_ids = {
+                p.get("id") for p in self.org_projects if p.get("existe", True)
+            }
+
+            for user in self.org_users:
+                user_id = user.get("user_id", 0)
+                user_name = user.get("user_name", "Sin nombre")
+                if user_id <= 0:
+                    continue
+
+                response = get_user_project_roles(
+                    user_id=user_id,
+                    organization_id=org_id,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+
+                for role in response.get("roles", []):
+                    project_id = role.get("id_proyecto", 0)
+                    if role.get("active", False) and project_id in existing_project_ids:
+                        assignments.append({
+                            "proyecto_nombre": role.get("proyecto_nombre", "Sin proyecto"),
+                            "usuario_nombre": user_name,
+                            "rol_nombre": rol_nombres.get(role.get("id_rol", 0), "Desconocido"),
+                        })
+
+            self.org_project_assignments = sorted(
+                assignments,
+                key=lambda x: (x["proyecto_nombre"], x["usuario_nombre"]),
+            )
+        except Exception as e:
+            print(f"[ERROR] load_org_project_assignments: {e}")
+            self.org_project_assignments = []
 
     def remove_user_from_projects(self, user_id: int):
         """Quita un usuario de proyectos."""
@@ -1511,19 +1562,18 @@ class State(SharedSessionState):
     
     def load_org_projects(self):
         """Carga los proyectos de la organización actual desde la base de datos.
-        
+
         En el backoffice se cargan TODOS los proyectos (incluyendo borrados lógicos)
         para permitir su recuperación.
         """
         try:
-            org_id = self.organization_id
-            if org_id <= 0 and self.access_token:
-                org_id = self._extract_org_id_from_token(self.access_token)
-            
+            # Usar la organización del selector del backoffice
+            org_id = self.bo_selected_org_id
+
             if org_id <= 0:
                 self.org_projects = []
                 return
-            
+
             # En backoffice incluimos todos los proyectos (include_deleted=True)
             projects = get_organization_projects(
                 organization_id=org_id,
@@ -1582,13 +1632,11 @@ class State(SharedSessionState):
         self.create_project_error = ""
         self.is_creating_project = True
 
-        # Obtener organization_id de la sesión
-        org_id = self.organization_id
-        if org_id <= 0 and self.access_token:
-            org_id = self._extract_org_id_from_token(self.access_token)
+        # Usar la organización del selector del backoffice
+        org_id = self.bo_selected_org_id
 
         if org_id <= 0:
-            self.create_project_error = "No se pudo determinar la organización"
+            self.create_project_error = "Seleccione una organización primero"
             self.is_creating_project = False
             return
 
@@ -1623,113 +1671,141 @@ class State(SharedSessionState):
         self.open_create_project_modal()
     
     def lock_project(self, project_id: int):
-        """Bloquea un proyecto (active=false).
-        
-        IMPORTANTE: Este es un bloqueo LÓGICO, no un borrado físico.
-        El proyecto permanece en la base de datos pero con active=false.
-        """
-        print(f"[DEBUG] Bloqueando proyecto: {project_id}")
+        """Bloquea un proyecto (active=false)."""
         try:
             result = update_project_status(
                 project_id=project_id,
-                active=False,  # Bloquear = active=false
+                active=False,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
             if result.get("success"):
-                # Actualizar estado local
-                for project in self.org_projects:
-                    if project["id"] == project_id:
-                        project["active"] = False
-                self.org_projects = self.org_projects.copy()
-                print(f"[DEBUG] Proyecto {project_id} bloqueado correctamente")
-            else:
-                print(f"[ERROR] No se pudo bloquear proyecto: {result}")
+                self.load_org_projects()
         except Exception as e:
             print(f"[ERROR] lock_project: {type(e).__name__}: {e}")
-    
+
     def unlock_project(self, project_id: int):
-        """Desbloquea un proyecto (active=true).
-        
-        IMPORTANTE: Reactiva un proyecto bloqueado.
-        """
-        print(f"[DEBUG] Desbloqueando proyecto: {project_id}")
+        """Desbloquea un proyecto (active=true)."""
         try:
             result = update_project_status(
                 project_id=project_id,
-                active=True,  # Desbloquear = active=true
+                active=True,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
             if result.get("success"):
-                # Actualizar estado local
-                for project in self.org_projects:
-                    if project["id"] == project_id:
-                        project["active"] = True
-                self.org_projects = self.org_projects.copy()
-                print(f"[DEBUG] Proyecto {project_id} desbloqueado correctamente")
-            else:
-                print(f"[ERROR] No se pudo desbloquear proyecto: {result}")
+                self.load_org_projects()
         except Exception as e:
             print(f"[ERROR] unlock_project: {type(e).__name__}: {e}")
-    
+
     def delete_project(self, project_id: int):
-        """Borrado LÓGICO de un proyecto (existe=false).
-        
-        IMPORTANTE: Este es un BORRADO LÓGICO usando el campo 'existe'.
-        El proyecto permanece en la BD pero con existe=false.
-        Puede recuperarse con "Recuperar proyecto".
-        """
-        print(f"[DEBUG] Borrando proyecto (lógico): {project_id}")
+        """Borrado lógico de un proyecto (existe=false)."""
         try:
             result = update_project_existence(
                 project_id=project_id,
-                existe=False,  # Borrado lógico
+                existe=False,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
             if result.get("success"):
-                # Actualizar estado local
-                for project in self.org_projects:
-                    if project["id"] == project_id:
-                        project["existe"] = False
-                self.org_projects = self.org_projects.copy()
-                print(f"[DEBUG] Proyecto {project_id} borrado lógicamente")
-            else:
-                print(f"[ERROR] No se pudo borrar proyecto: {result}")
+                self.load_org_projects()
         except Exception as e:
             print(f"[ERROR] delete_project: {type(e).__name__}: {e}")
-    
+
     def restore_project(self, project_id: int):
-        """Recupera un proyecto borrado lógicamente (existe=true).
-        
-        IMPORTANTE: Recupera un proyecto que fue borrado lógicamente.
-        Pone existe=true en la BD.
-        """
-        print(f"[DEBUG] Recuperando proyecto: {project_id}")
+        """Recupera un proyecto borrado lógicamente (existe=true)."""
         try:
             result = update_project_existence(
                 project_id=project_id,
-                existe=True,  # Recuperar
+                existe=True,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
             if result.get("success"):
-                # Actualizar estado local
-                for project in self.org_projects:
-                    if project["id"] == project_id:
-                        project["existe"] = True
-                self.org_projects = self.org_projects.copy()
-                print(f"[DEBUG] Proyecto {project_id} recuperado")
-            else:
-                print(f"[ERROR] No se pudo recuperar proyecto: {result}")
+                self.load_org_projects()
         except Exception as e:
             print(f"[ERROR] restore_project: {type(e).__name__}: {e}")
     
     def request_project_support(self, project_id: int):
-        """Solicita soporte para un proyecto."""
-        # TODO: Implementar formulario de soporte
-        print(f"[DEBUG] Solicitar soporte para proyecto: {project_id}")
+        """Abre el modal para solicitar soporte para un proyecto."""
+        project_name = ""
+        for project in self.org_projects:
+            if project.get("id") == project_id:
+                project_name = project.get("name", "")
+                break
+
+        self.support_project_id = project_id
+        self.support_project_name = project_name
+        self.support_titulo = ""
+        self.support_consulta = ""
+        self.support_error = ""
+        self.support_success = ""
+        self.is_creating_support = False
+        self.show_support_modal = True
+
+    def close_support_modal(self):
+        """Cierra el modal de solicitud de soporte."""
+        self.show_support_modal = False
+        self.support_project_id = 0
+        self.support_project_name = ""
+        self.support_titulo = ""
+        self.support_consulta = ""
+        self.support_error = ""
+        self.support_success = ""
+        self.is_creating_support = False
+
+    def set_support_titulo(self, value: str):
+        """Establece el motivo del ticket."""
+        self.support_titulo = value
+
+    def set_support_consulta(self, value: str):
+        """Establece el texto de la consulta."""
+        self.support_consulta = value
+
+    def save_support_ticket(self):
+        """Envía el ticket de soporte.
+
+        Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+        """
+        from adapters.api_client import create_support_ticket
+
+        if not self.support_titulo.strip():
+            self.support_error = "El motivo es obligatorio"
+            return
+        if not self.support_consulta.strip():
+            self.support_error = "La consulta es obligatoria"
+            return
+
+        self.support_error = ""
+        self.is_creating_support = True
+
+        try:
+            result = create_support_ticket(
+                titulo=self.support_titulo,
+                consulta=self.support_consulta,
+                id_proyecto=self.support_project_id if self.support_project_id > 0 else None,
+                id_organizacion=self.bo_selected_org_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            print(f"[DEBUG] Resultado crear ticket: {result}")
+
+            if result.get("success"):
+                self.support_success = f"Ticket #{result.get('ticket_id', '')} creado correctamente"
+                self.support_titulo = ""
+                self.support_consulta = ""
+                self.close_support_modal()
+                # Recargar tickets
+                self.load_org_tickets()
+            else:
+                self.support_error = result.get("error", result.get("mensaje", "Error al crear el ticket"))
+        except Exception as e:
+            self.support_error = f"Error: {e}"
+            print(f"[ERROR] Error creando ticket: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            self.is_creating_support = False
 
     # ========== Gestión de Tickets de Soporte ==========
     
@@ -1739,14 +1815,13 @@ class State(SharedSessionState):
         Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
         """
         try:
-            org_id = self.organization_id
-            if org_id <= 0 and self.access_token:
-                org_id = self._extract_org_id_from_token(self.access_token)
-            
+            # Usar la organización del selector del backoffice
+            org_id = self.bo_selected_org_id
+
             if org_id <= 0:
                 self.org_tickets = []
                 return
-            
+
             tickets = get_organization_tickets(
                 organization_id=org_id,
                 access_token=self.access_token,
@@ -1909,14 +1984,13 @@ class State(SharedSessionState):
         Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
         """
         try:
-            org_id = self.organization_id
-            if org_id <= 0 and self.access_token:
-                org_id = self._extract_org_id_from_token(self.access_token)
-            
+            # Usar la organización del selector del backoffice
+            org_id = self.bo_selected_org_id
+
             if org_id <= 0:
                 self.tecnologias_asignadas_list = []
                 return
-            
+
             result = get_tecnologias_asignadas_org(
                 org_id=org_id,
                 access_token=self.access_token,
@@ -2023,7 +2097,7 @@ class State(SharedSessionState):
                         project_id=self.proyecciones_project_id,
                         user_id=self.user_id,
                         identity_type_id=self.identity_type_id,
-                        org_id=self.organization_id,
+                        org_id=self.bo_selected_org_id,
                         access_token=self.access_token,
                         session_token=self.session_token,
                     )
@@ -2033,21 +2107,21 @@ class State(SharedSessionState):
         if self.proyecciones_project_id <= 0:
             self.proyecciones_error = "Selecciona un proyecto primero"
             return
-        
+
         self.is_loading_versions = True
         self.proyecciones_error = ""
         self.proyecciones_success = ""
         yield  # Actualizar UI
-        
+
         try:
             # Generar nombre de versión (V001, V002, etc.)
             existing_versions = len(self.proyecciones_versions)
             version_name = f"V{existing_versions + 1:03d}"
-            
+
             # Llamar al endpoint atómico create_version_full
             result = create_version_full(
                 project_id=self.proyecciones_project_id,
-                organization_id=self.organization_id,
+                organization_id=self.bo_selected_org_id,
                 version_name=version_name,
                 user_id=self.user_id,
                 user_name=self.user_name,
@@ -2082,7 +2156,7 @@ class State(SharedSessionState):
                     project_id=self.proyecciones_project_id,
                     user_id=self.user_id,
                     identity_type_id=self.identity_type_id,
-                    org_id=self.organization_id,
+                    org_id=self.bo_selected_org_id,
                     access_token=self.access_token,
                     session_token=self.session_token,
                 )
@@ -4969,12 +5043,14 @@ class State(SharedSessionState):
 
     def dl_init_page(self):
         """Inicializa la página de Descargas cargando organizaciones si es necesario."""
+        print(f"[DL] dl_init_page called, dl_organizations len={len(self.dl_organizations)}, user_id={self.user_id}")
         # En backoffice siempre cargar organizaciones (sin OTP requerido)
         if len(self.dl_organizations) == 0:
-            return self.dl_load_organizations()
+            self.dl_load_organizations()
 
     def dl_load_organizations(self):
         """Carga las organizaciones disponibles según asignaciones del usuario."""
+        print(f"[DL] dl_load_organizations user_id={self.user_id} identity_type_id={self.identity_type_id} session_org_id={self.organization_id}")
         try:
             orgs, default_id = load_organizations_for_selector(
                 user_id=self.user_id,
@@ -4982,25 +5058,36 @@ class State(SharedSessionState):
                 session_org_id=self.organization_id,
             )
             self.dl_organizations = orgs
+            print(f"[DL] orgs loaded: {len(orgs)}, default_id={default_id}")
+            for o in orgs:
+                print(f"[DL]   org: {o}")
 
             # Auto-seleccionar si solo hay una organización
             if len(self.dl_organizations) == 1:
                 self.dl_selected_org_id = self.dl_organizations[0]["id"]
                 self.dl_selected_org_name = self.dl_organizations[0].get("name", "")
-                return self.dl_load_projects()
+                print(f"[DL] auto-select single org: id={self.dl_selected_org_id} name={self.dl_selected_org_name}")
+                self.dl_load_projects()
             elif default_id > 0:
                 for org in self.dl_organizations:
                     if org.get("id") == default_id:
                         self.dl_selected_org_id = default_id
                         self.dl_selected_org_name = org.get("name", "")
-                        return self.dl_load_projects()
+                        print(f"[DL] auto-select default org: id={self.dl_selected_org_id} name={self.dl_selected_org_name}")
+                        self.dl_load_projects()
+                        break
+            else:
+                print(f"[DL] no auto-select (orgs={len(self.dl_organizations)}, default_id={default_id})")
 
         except Exception as exc:
-            print(f"[DOWNLOAD] Error cargando organizaciones: {exc}")
+            print(f"[DL] ERROR cargando orgs: {exc}")
+            import traceback
+            traceback.print_exc()
             self.dl_error = "Error cargando organizaciones"
 
     def dl_set_selected_org(self, org_name: str):
         """Establece la organización seleccionada por nombre y carga sus proyectos."""
+        print(f"[DL] dl_set_selected_org org_name={org_name}")
         self.dl_selected_org_name = org_name
         self.dl_selected_project_name = ""
         self.dl_selected_version_name = ""
@@ -5018,12 +5105,14 @@ class State(SharedSessionState):
         self.dl_projects = []
         self.dl_versions = []
         self.dl_packages = []
+        print(f"[DL] org_id={org_id}, calling dl_load_projects")
 
         if self.dl_selected_org_id > 0:
-            return self.dl_load_projects()
+            self.dl_load_projects()
 
     def dl_load_projects(self):
         """Carga los proyectos de la organización seleccionada."""
+        print(f"[DL] dl_load_projects org_id={self.dl_selected_org_id}")
         if self.dl_selected_org_id == 0:
             return
 
@@ -5034,25 +5123,32 @@ class State(SharedSessionState):
                 organization_id=self.dl_selected_org_id,
             )
             self.dl_projects = projects
+            print(f"[DL] projects loaded: {len(projects)}, default_id={default_id}")
+            for p in projects:
+                print(f"[DL]   project: {p}")
 
             # Auto-seleccionar si solo hay un proyecto
             if len(self.dl_projects) == 1:
                 self.dl_selected_project_id = self.dl_projects[0]["id"]
                 self.dl_selected_project_name = self.dl_projects[0].get("name", "")
-                return self.dl_load_versions()
+                self.dl_load_versions()
             elif default_id > 0:
                 for prj in self.dl_projects:
                     if prj.get("id") == default_id:
                         self.dl_selected_project_id = default_id
                         self.dl_selected_project_name = prj.get("name", "")
-                        return self.dl_load_versions()
+                        self.dl_load_versions()
+                        break
 
         except Exception as exc:
-            print(f"[DOWNLOAD] Error cargando proyectos: {exc}")
+            print(f"[DL] ERROR cargando proyectos: {exc}")
+            import traceback
+            traceback.print_exc()
             self.dl_error = "Error cargando proyectos"
 
     def dl_set_selected_project(self, project_name: str):
         """Establece el proyecto seleccionado por nombre y carga sus versiones."""
+        print(f"[DL] dl_set_selected_project project_name={project_name}")
         self.dl_selected_project_name = project_name
         self.dl_selected_version_name = ""
 
@@ -5073,6 +5169,7 @@ class State(SharedSessionState):
 
     def dl_load_versions(self):
         """Carga las versiones del proyecto seleccionado."""
+        print(f"[DL] dl_load_versions project_id={self.dl_selected_project_id} org_id={self.dl_selected_org_id}")
         if self.dl_selected_project_id == 0:
             return
 
@@ -5312,6 +5409,7 @@ class State(SharedSessionState):
 
     def dl_validate_otp_and_download(self):
         """Valida el OTP y descarga el modelo si es correcto."""
+        import base64
         from adapters.api_client import (
             download_model_direct,
             validate_model_download_otp,
@@ -5342,6 +5440,12 @@ class State(SharedSessionState):
                 self.dl_otp_error = result.get("message", "OTP incorrecto")
                 return
 
+            # Extraer download_token de la validación
+            download_token = result.get("download_token", "")
+            if not download_token:
+                self.dl_otp_error = "No se obtuvo token de descarga"
+                return
+
             # OTP validado - proceder con la descarga
             self.dl_downloading = True
 
@@ -5360,9 +5464,7 @@ class State(SharedSessionState):
             filename = pkg.get("package_filename", "modelo.zip")
 
             package_bytes = download_model_direct(
-                organization_id=org_id,
-                project_id=prj_id,
-                version_id=ver_id,
+                download_token=download_token,
                 filename=filename,
                 access_token=self.access_token,
                 session_token=self.session_token,
@@ -5372,8 +5474,9 @@ class State(SharedSessionState):
             self.dl_show_otp_modal = False
 
             if package_bytes:
+                file_b64 = base64.b64encode(package_bytes).decode("utf-8")
                 return rx.download(
-                    data=package_bytes,
+                    data=file_b64,
                     filename=filename,
                 )
             else:
@@ -6615,11 +6718,139 @@ def project_row(project: dict) -> rx.Component:
     )
 
 
+def support_ticket_modal() -> rx.Component:
+    """Modal para crear un ticket de soporte desde un proyecto."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title(
+                rx.hstack(
+                    rx.icon("headset", size=24, color=COLORS["primary"]),
+                    rx.text("Solicitud de Soporte", font_weight="bold", font_size="1.3em"),
+                    spacing="3",
+                    align="center",
+                ),
+            ),
+            rx.dialog.description(
+                rx.text(
+                    "Crear ticket de soporte",
+                    color=COLORS["muted_foreground"],
+                    font_size="0.9em",
+                ),
+            ),
+            rx.vstack(
+                # Proyecto asociado (informativo)
+                rx.cond(
+                    State.support_project_name != "",
+                    rx.hstack(
+                        rx.text("Proyecto:", font_weight="bold", color=COLORS["foreground"]),
+                        rx.badge(State.support_project_name, color_scheme="blue", variant="soft"),
+                        spacing="2",
+                        align="center",
+                    ),
+                ),
+                # Campo motivo
+                rx.vstack(
+                    rx.text("Motivo *", font_weight="bold", color=COLORS["foreground"]),
+                    rx.input(
+                        value=State.support_titulo,
+                        on_change=State.set_support_titulo,
+                        placeholder="Describe brevemente el motivo de la consulta",
+                        width="100%",
+                        background_color=COLORS["input"],
+                        color=COLORS["foreground"],
+                        border=f"1px solid {COLORS['border']}",
+                    ),
+                    width="100%",
+                    spacing="1",
+                    align_items="flex-start",
+                ),
+                # Campo consulta
+                rx.vstack(
+                    rx.text("Consulta *", font_weight="bold", color=COLORS["foreground"]),
+                    rx.text_area(
+                        value=State.support_consulta,
+                        on_change=State.set_support_consulta,
+                        placeholder="Describe detalladamente tu consulta o problema...",
+                        width="100%",
+                        min_height="120px",
+                        background_color=COLORS["input"],
+                        color=COLORS["foreground"],
+                        border=f"1px solid {COLORS['border']}",
+                    ),
+                    width="100%",
+                    spacing="1",
+                    align_items="flex-start",
+                ),
+                # Info: Estado y prioridad automáticos
+                rx.hstack(
+                    rx.badge("Estado: Abierto", color_scheme="green", variant="soft"),
+                    rx.badge("Prioridad: Media", color_scheme="yellow", variant="soft"),
+                    spacing="2",
+                    align="center",
+                ),
+                rx.text(
+                    "El equipo de soporte revisará tu consulta lo antes posible.",
+                    color=COLORS["muted_foreground"],
+                    font_size="0.85em",
+                    font_style="italic",
+                ),
+                # Mensaje de error
+                rx.cond(
+                    State.support_error != "",
+                    rx.text(State.support_error, color="red", font_size="0.9em"),
+                ),
+                # Mensaje de éxito
+                rx.cond(
+                    State.support_success != "",
+                    rx.text(State.support_success, color=COLORS["primary"], font_size="0.9em", font_weight="bold"),
+                ),
+                width="100%",
+                spacing="3",
+                padding_y="1em",
+            ),
+            # Botones de acción
+            rx.hstack(
+                rx.button(
+                    rx.icon("x", size=18, color=COLORS["foreground"]),
+                    rx.text("Cancelar", color=COLORS["foreground"]),
+                    on_click=State.close_support_modal,
+                    variant="outline",
+                    size="3",
+                    color_scheme="gray",
+                ),
+                rx.button(
+                    rx.cond(
+                        State.is_creating_support,
+                        rx.spinner(size="2"),
+                        rx.icon("send", size=18, color="black"),
+                    ),
+                    rx.text("Enviar", font_weight="bold", color="black"),
+                    on_click=State.save_support_ticket,
+                    disabled=State.is_creating_support,
+                    color_scheme="green",
+                    variant="solid",
+                    size="3",
+                ),
+                spacing="3",
+                justify="end",
+                width="100%",
+            ),
+            background_color=COLORS["card"],
+            border=f"1px solid {COLORS['border']}",
+            padding="1.5em",
+            max_width="550px",
+        ),
+        open=State.show_support_modal,
+    )
+
+
 def projects_management_panel() -> rx.Component:
     """Panel de gestión de proyectos de la organización."""
     return rx.vstack(
         # Modal de creación de proyecto
         create_project_modal(),
+        # Modal de solicitud de soporte
+        support_ticket_modal(),
         rx.hstack(
             rx.icon("folder-kanban", size=28, color=COLORS["primary"]),
             rx.heading("Gestión de Proyectos", size="6", color=COLORS["primary"]),
@@ -6906,6 +7137,117 @@ def tickets_management_panel() -> rx.Component:
     )
 
 
+def org_project_assignment_row(assignment: dict) -> rx.Component:
+    """Fila de asignación de proyecto (solo lectura)."""
+    return rx.hstack(
+        rx.hstack(
+            rx.icon("folder", size=18, color=COLORS["primary"]),
+            rx.text(
+                assignment["proyecto_nombre"],
+                font_weight="bold",
+                color=COLORS["foreground"],
+                font_size="1em",
+            ),
+            spacing="2",
+            align="center",
+            width="35%",
+        ),
+        rx.hstack(
+            rx.icon("user", size=18, color=COLORS["muted_foreground"]),
+            rx.text(
+                assignment["usuario_nombre"],
+                color=COLORS["foreground"],
+                font_size="0.95em",
+            ),
+            spacing="2",
+            align="center",
+            width="35%",
+        ),
+        rx.badge(
+            assignment["rol_nombre"],
+            color_scheme=rx.cond(
+                assignment["rol_nombre"] == "Editor",
+                "blue",
+                rx.cond(
+                    assignment["rol_nombre"] == "Lector",
+                    "green",
+                    "orange",
+                ),
+            ),
+            size="2",
+        ),
+        width="100%",
+        padding="0.75em 1em",
+        background_color=COLORS["input"],
+        border_radius="0.5em",
+        justify="between",
+        align="center",
+    )
+
+
+def org_project_assignments_panel() -> rx.Component:
+    """Panel de asignaciones de usuarios a proyectos (solo lectura)."""
+    return rx.vstack(
+        rx.hstack(
+            rx.icon("users-round", size=28, color=COLORS["primary"]),
+            rx.heading("Asignaciones de Proyectos", size="6", color=COLORS["primary"]),
+            rx.spacer(),
+            rx.button(
+                rx.hstack(
+                    rx.icon("refresh-cw", size=16),
+                    rx.text("Actualizar"),
+                    spacing="2",
+                ),
+                on_click=State.load_org_project_assignments,
+                size="2",
+                variant="outline",
+                color=COLORS["primary"],
+                border_color=COLORS["primary"],
+            ),
+            spacing="3",
+            align="center",
+            width="100%",
+        ),
+        rx.text(
+            "Vista de solo lectura - Se actualiza al asignar usuarios",
+            color=COLORS["muted_foreground"],
+            font_size="0.85em",
+            font_style="italic",
+        ),
+        rx.cond(
+            State.org_project_assignments.length() > 0,
+            rx.vstack(
+                rx.hstack(
+                    rx.text("Proyecto", font_weight="bold", color=COLORS["muted_foreground"], width="35%"),
+                    rx.text("Usuario", font_weight="bold", color=COLORS["muted_foreground"], width="35%"),
+                    rx.text("Rol", font_weight="bold", color=COLORS["muted_foreground"]),
+                    width="100%",
+                    padding="0.5em 1em",
+                ),
+                rx.foreach(
+                    State.org_project_assignments,
+                    org_project_assignment_row,
+                ),
+                width="100%",
+                spacing="2",
+            ),
+            rx.text(
+                "No hay asignaciones de usuarios a proyectos",
+                color=COLORS["muted_foreground"],
+                font_style="italic",
+                padding="1em",
+            ),
+        ),
+        width="100%",
+        padding="1.5em",
+        background_color=COLORS["card"],
+        border=f"1px solid {COLORS['border']}",
+        border_radius="0.5em",
+        spacing="3",
+        align_items="flex-start",
+    )
+
+
 def organization_management_panels() -> rx.Component:
     """Paneles de gestión de usuarios, proyectos y tickets para la sección Organización."""
     return rx.vstack(
@@ -6917,6 +7259,7 @@ def organization_management_panels() -> rx.Component:
         ),
         users_management_panel(),
         projects_management_panel(),
+        org_project_assignments_panel(),
         tickets_management_panel(),
         width="100%",
         spacing="4",
@@ -9186,6 +9529,20 @@ def descargas_panel() -> rx.Component:
             version_placeholder="Seleccione versión",
         ),
 
+        # DEBUG: Estado de selectores (temporal)
+        rx.box(
+            rx.text(
+                State.dl_debug_info,
+                color="#ff6600",
+                font_size="0.8em",
+            ),
+            padding="0.5em",
+            border="1px dashed #ff6600",
+            border_radius="0.3em",
+            margin_bottom="1em",
+            width="100%",
+        ),
+
         # Lista de paquetes disponibles
         rx.cond(
             State.dl_loading_packages,
@@ -10940,7 +11297,7 @@ def internal_panel(active_item: str) -> rx.Component:
                     entrenamientos_full_panel(),
                     rx.cond(
                         active_item == "descargas",
-                        descargas_panel(),
+                        model_downloads_panel(),
                         rx.cond(
                             active_item == "analisis_resultados",
                             analisis_resultados_page(),
@@ -11164,7 +11521,7 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
         # Panel de descargas con selectores de organización, proyecto y versión
         rx.cond(
             rx.cond(is_logged_in, active_item == "descargas", False),
-            descargas_panel(),
+            model_downloads_panel(),
             rx.box(height="0"),
         ),
         rx.cond(

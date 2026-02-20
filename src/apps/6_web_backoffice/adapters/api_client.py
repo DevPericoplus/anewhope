@@ -996,6 +996,64 @@ def get_organization_tickets(
     return []
 
 
+def create_support_ticket(
+    titulo: str,
+    consulta: str,
+    id_proyecto: int | None = None,
+    id_organizacion: int | None = None,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """
+    Crea un nuevo ticket de soporte.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+
+    El ticket se crea con:
+    - estado: "abierto" (automático)
+    - prioridad: "media" (automático)
+    - cliente_id: usuario de la sesión (automático)
+
+    Args:
+        titulo: Motivo del ticket (obligatorio)
+        consulta: Texto de la consulta (obligatorio)
+        id_proyecto: ID del proyecto relacionado (opcional)
+        id_organizacion: ID de la organización del selector del backoffice
+        access_token: Token JWT de acceso
+        session_token: Token de sesión
+
+    Returns:
+        {"success": True, "ticket_id": int} o {"success": False, "error": str}
+    """
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    payload: dict[str, Any] = {
+        "titulo": titulo.strip(),
+        "consulta": consulta.strip(),
+    }
+    if id_proyecto:
+        payload["id_proyecto"] = id_proyecto
+    if id_organizacion:
+        payload["id_organizacion"] = id_organizacion
+
+    response = _request_middleware("POST", "/tickets", payload=payload, headers=headers)
+
+    if isinstance(response, dict):
+        if response.get("success") or response.get("ticket_id"):
+            return {
+                "success": True,
+                "ticket_id": response.get("ticket_id", 0),
+                "mensaje": response.get("mensaje", "Ticket creado"),
+            }
+        return {"success": False, "error": response.get("detail", response.get("error", "Error desconocido"))}
+
+    return {"success": False, "error": "Respuesta inválida del servidor"}
+
+
 def update_ticket_status(
     ticket_id: int,
     estado: str | None = None,
@@ -1414,7 +1472,18 @@ def create_project(
     request = urllib.request.Request(url, data=payload, headers=request_headers, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
-            return json.loads(response.read().decode("utf-8"))
+            result = json.loads(response.read().decode("utf-8"))
+            # La API devuelve ProjectCreateResponse sin campo "success",
+            # así que lo construimos a partir de project_id (igual que frontend)
+            if result.get("project_id") or result.get("id"):
+                project_id = result.get("project_id") or result.get("id")
+                return {
+                    "success": True,
+                    "project_id": project_id,
+                    "nombre": result.get("nombre", nombre),
+                    "mensaje": f"Proyecto creado exitosamente (ID: {project_id})",
+                }
+            return {"success": False, "mensaje": result.get("detail", "Respuesta inesperada del servidor")}
     except urllib.error.HTTPError as exc:
         error_msg = f"Error HTTP desde middleware: {exc.code}"
         try:
@@ -2977,6 +3046,27 @@ def validate_org_prerequisite(
     return response if isinstance(response, dict) else {}
 
 
+def get_user_project_roles(
+    user_id: int,
+    organization_id: int,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Obtiene los roles de un usuario en proyectos de una organización."""
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "GET",
+        f"/users/{user_id}/project-roles?organization_id={organization_id}",
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
 def get_project_assignments(
     project_id: int,
     access_token: str | None = None,
@@ -3602,39 +3692,34 @@ def download_autonomous_package(
 
 
 def download_model_direct(
-    organization_id: int,
-    project_id: int,
-    version_id: int,
+    download_token: str,
     filename: str,
     access_token: str = "",
     session_token: str = "",
 ) -> bytes | None:
-    """Descarga directa de modelo para SuperAdmin (sin OTP).
+    """Descarga directa de modelo tras validar OTP.
 
-    Usa el endpoint /models/download/direct del middleware que lee
-    el fichero desde el sistema de archivos internal.
+    Usa el endpoint /models/download/direct del middleware con el
+    download_token obtenido de validate-otp.
 
     Args:
-        organization_id: ID de organización
-        project_id: ID de proyecto
-        version_id: ID de versión
-        filename: Nombre del archivo ZIP
-        access_token: Token de acceso JWT
-        session_token: Token de sesión JWT
+        download_token: Token de descarga obtenido tras validar OTP.
+        filename: Nombre del archivo ZIP.
+        access_token: Token de acceso JWT.
+        session_token: Token de sesión JWT.
 
     Returns:
-        Bytes del archivo ZIP o None si hay error
+        Bytes del archivo ZIP o None si hay error.
     """
     import httpx
+    from urllib.parse import quote
 
     middleware_url = _get_middleware_base_url()
-    url = f"{middleware_url}/models/download/direct"
-    params = {
-        "organization_id": organization_id,
-        "project_id": project_id,
-        "version_id": version_id,
-        "filename": filename,
-    }
+    url = (
+        f"{middleware_url}/models/download/direct"
+        f"?token={quote(download_token)}"
+        f"&filename={quote(filename)}"
+    )
 
     headers: dict[str, str] = {}
     if access_token:
@@ -3644,7 +3729,7 @@ def download_model_direct(
 
     try:
         with httpx.Client(timeout=300.0) as client:
-            response = client.get(url, params=params, headers=headers)
+            response = client.get(url, headers=headers)
 
             if response.status_code == 200:
                 return response.content

@@ -1839,6 +1839,7 @@ class TicketCreateRequest(BaseModel):
     titulo: str
     consulta: str
     id_proyecto: int | None = None
+    id_organizacion: int | None = None
 
 
 class TicketUpdateRequest(BaseModel):

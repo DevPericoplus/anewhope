@@ -277,6 +277,45 @@ class SharedSessionState(rx.State):
         self.last_activity = ""
         self.current_app = "frontend"
     
+    @staticmethod
+    def _load_env_settings():
+        """Carga env_settings.py dinámicamente."""
+        import importlib.util
+        from pathlib import Path
+        env_settings_path = Path(__file__).resolve().parent.parent / "config" / "env_settings.py"
+        spec = importlib.util.spec_from_file_location("env_settings_nav", env_settings_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def _get_nav_urls(self) -> dict:
+        """
+        Obtiene las URLs de navegación entre apps desde env_settings.py.
+
+        Prioridad: frontend_nav_url / backoffice_nav_url (URLs de navegación)
+        Fallback:  frontend_api_url / backoffice_api_url (URLs de API)
+
+        En dev/pro/pre, las api_url ya son las URLs públicas del navegador.
+        En macbook, las api_url apuntan a localhost, por lo que se usan las nav_url.
+        """
+        try:
+            env_settings = self._load_env_settings()
+            frontend = env_settings.get_env_value(
+                "frontend_nav_url",
+                env_settings.get_env_value("frontend_api_url", "https://localhost"),
+            )
+            backoffice = env_settings.get_env_value(
+                "backoffice_nav_url",
+                env_settings.get_env_value("backoffice_api_url", "https://localhost:8443"),
+            )
+            return {"frontend": frontend, "backoffice": backoffice}
+        except Exception as e:
+            print(f"[NAV URLS] Error al cargar configuración: {e}, usando defaults")
+            return {
+                "frontend": "https://localhost",
+                "backoffice": "https://localhost:8443",
+            }
+
     def _get_redis_config(self) -> dict:
         """
         Obtiene la configuración de Redis desde env_settings.py
@@ -535,8 +574,10 @@ class SharedSessionState(rx.State):
             "org_id": str(self.organization_id),
         })
 
-        print(f"[APP SWITCH] Redirigiendo a backoffice con session_id={self.session_id}")
-        return rx.redirect(f"https://tfmmyllm.ai:8443?{params}")
+        nav_urls = self._get_nav_urls()
+        backoffice_url = nav_urls["backoffice"]
+        print(f"[APP SWITCH] Redirigiendo a backoffice ({backoffice_url}) con session_id={self.session_id}")
+        return rx.redirect(f"{backoffice_url}?{params}")
 
     def go_to_frontend(self):
         """
@@ -559,8 +600,10 @@ class SharedSessionState(rx.State):
             "org_id": str(self.organization_id),
         })
 
-        redirect_url = f"https://tfmmyllm.ai?{params}"
-        print(f"[APP SWITCH] Redirigiendo a frontend con session_id={self.session_id}")
+        nav_urls = self._get_nav_urls()
+        frontend_url = nav_urls["frontend"]
+        redirect_url = f"{frontend_url}?{params}"
+        print(f"[APP SWITCH] Redirigiendo a frontend ({frontend_url}) con session_id={self.session_id}")
 
         return rx.redirect(redirect_url)
     

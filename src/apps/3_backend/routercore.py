@@ -648,16 +648,18 @@ class BackendCoreRouter:
     def _update_user_active_in_db(self, user_id: int, active: bool) -> None:
         """Actualiza el campo active en la base de datos MariaDB."""
         try:
+            from urllib.parse import quote_plus
             from sqlalchemy import create_engine, text
-            
-            # Obtener DSN desde la configuración de MariaDB
-            mariadb_config = load_mariadb_settings()
-            dsn = mariadb_config.get("writer_dsn", "")
-            
-            if not dsn:
-                self._logger.warning("No hay DSN configurado para actualizar en BD")
-                return
-            
+
+            settings = load_mariadb_settings()
+            host = settings.get("host", "localhost")
+            port = settings.get("port", "3306")
+            user = settings.get("writer_user", "")
+            password = quote_plus(settings.get("writer_password", ""))
+            database = settings.get("core_database", "myllm_core_db")
+
+            dsn = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
+
             engine = create_engine(dsn)
             with engine.connect() as conn:
                 conn.execute(
@@ -754,15 +756,18 @@ class BackendCoreRouter:
     def _update_user_password_in_db(self, email: str, new_password: str, new_otp: str) -> None:
         """Actualiza contraseña y OTP en MariaDB."""
         try:
+            from urllib.parse import quote_plus
             from sqlalchemy import create_engine, text
-            
-            mariadb_config = load_mariadb_settings()
-            dsn = mariadb_config.get("writer_dsn", "")
-            
-            if not dsn:
-                self._logger.warning("No hay DSN configurado para actualizar contraseña en BD")
-                return
-            
+
+            settings = load_mariadb_settings()
+            host = settings.get("host", "localhost")
+            port = settings.get("port", "3306")
+            user = settings.get("writer_user", "")
+            password = quote_plus(settings.get("writer_password", ""))
+            database = settings.get("core_database", "myllm_core_db")
+
+            dsn = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
+
             engine = create_engine(dsn)
             with engine.connect() as conn:
                 conn.execute(
@@ -2115,28 +2120,27 @@ class BackendCoreRouter:
                 },
             )
 
-            # Registrar cambio SIEMPRE (con o sin proyecto)
-            tipo_cambio = "Solicitud soporte proyecto" if id_proyecto else "Solicitud soporte organización"
-            descripcion = f"Ticket #{ticket_id}: {titulo[:50]}"
-
-            conn.execute(
-                text("""
-                    CALL sp_registrar_cambio_proyecto(
-                        :p_id_proyecto,
-                        :p_id_organizacion,
-                        :p_tipo_cambio,
-                        :p_descripcion,
-                        :p_id_usuario
-                    )
-                """),
-                {
-                    "p_id_proyecto": id_proyecto,  # Puede ser NULL
-                    "p_id_organizacion": id_organizacion,
-                    "p_tipo_cambio": tipo_cambio,
-                    "p_descripcion": descripcion,
-                    "p_id_usuario": cliente_id,
-                },
-            )
+            # Registrar cambio solo si hay proyecto asociado
+            # (la tabla cambios requiere id_proyecto NOT NULL)
+            if id_proyecto:
+                conn.execute(
+                    text("""
+                        CALL sp_registrar_cambio_proyecto(
+                            :p_id_proyecto,
+                            :p_id_organizacion,
+                            :p_tipo_cambio,
+                            :p_descripcion,
+                            :p_id_usuario
+                        )
+                    """),
+                    {
+                        "p_id_proyecto": id_proyecto,
+                        "p_id_organizacion": id_organizacion,
+                        "p_tipo_cambio": "Solicitud soporte proyecto",
+                        "p_descripcion": f"Ticket #{ticket_id}: {titulo[:50]}",
+                        "p_id_usuario": cliente_id,
+                    },
+                )
 
             conn.commit()
             return ticket_id
@@ -4128,15 +4132,13 @@ class BackendCoreRouter:
                 "assignments_create", identity_type_id
             )
 
-        # Validate prerequisite
+        # Check org prerequisite (informational, not blocking)
         prerequisite = self.validate_org_prerequisite(user_id, organization_id)
         if not prerequisite["has_org_role"]:
-            self._logger.warning(
-                "[ASSIGNMENTS] Prerequisite failed: user=%s has no active role in org=%s",
+            self._logger.info(
+                "[ASSIGNMENTS] User %s has no record in asignaciones_organizaciones_internas for org=%s, "
+                "proceeding with project assignment anyway (user belongs to org via users list)",
                 user_id, organization_id,
-            )
-            raise BackendCoreBusinessError(
-                "El usuario debe tener un rol activo en la organización antes de asignarlo a proyectos"
             )
 
         from sqlalchemy import create_engine, text
