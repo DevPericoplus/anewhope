@@ -2811,9 +2811,17 @@ class BackendCoreRouter:
                 text("""
                     SELECT
                         id, id_organizacion, id_proyecto, id_version,
-                        state, protected, size_bytes, final_c, final_i,
-                        created_at, updated_at
-                    FROM version_states
+                        state, state_internal, protected, size,
+                        final_c, final_i, revision_interna, propuesta_mejoras,
+                        entrenamiento_inicial_solicitado, entrenamiento_inicial_completado,
+                        entrenamiento_inicial_fecha,
+                        evaluacion_entrenamiento, reentrenamiento, optimizacion,
+                        control_calidad_aprobado,
+                        generacion_llm_solicitada, generacion_llm_completada,
+                        generacion_llm_fecha, ruta_fichero_modelo,
+                        notificacion_descarga_enviada, notificacion_descarga_fecha,
+                        updated_by, created_at, updated_at
+                    FROM estado_version
                     WHERE id_proyecto = :project_id
                       AND id_version = :version_id
                       AND id_organizacion = :org_id
@@ -2837,18 +2845,37 @@ class BackendCoreRouter:
                     "data": None,
                 }
 
+            # Mapear row a dict usando _mapping para acceso por nombre
+            r = row._mapping if hasattr(row, '_mapping') else row
             state_data = {
-                "id": row[0],
-                "id_organizacion": row[1],
-                "id_proyecto": row[2],
-                "id_version": row[3],
-                "state": row[4],
-                "protected": bool(row[5]),
-                "size": row[6],
-                "final_c": bool(row[7]),
-                "final_i": bool(row[8]),
-                "created_at": row[9].isoformat() if row[9] else None,
-                "updated_at": row[10].isoformat() if row[10] else None,
+                "id": r["id"],
+                "id_organizacion": r["id_organizacion"],
+                "id_proyecto": r["id_proyecto"],
+                "id_version": r["id_version"],
+                "state": r["state"],
+                "state_internal": r["state_internal"],
+                "protected": bool(r["protected"]),
+                "size": r["size"],
+                "final_c": bool(r["final_c"]),
+                "final_i": bool(r["final_i"]),
+                "revision_interna": bool(r["revision_interna"]),
+                "propuesta_mejoras": bool(r["propuesta_mejoras"]),
+                "entrenamiento_inicial_solicitado": bool(r["entrenamiento_inicial_solicitado"]),
+                "entrenamiento_inicial_completado": bool(r["entrenamiento_inicial_completado"]),
+                "entrenamiento_inicial_fecha": r["entrenamiento_inicial_fecha"].isoformat() if r["entrenamiento_inicial_fecha"] else None,
+                "evaluacion_entrenamiento": bool(r["evaluacion_entrenamiento"]),
+                "reentrenamiento": bool(r["reentrenamiento"]),
+                "optimizacion": bool(r["optimizacion"]),
+                "control_calidad_aprobado": bool(r["control_calidad_aprobado"]),
+                "generacion_llm_solicitada": bool(r["generacion_llm_solicitada"]),
+                "generacion_llm_completada": bool(r["generacion_llm_completada"]),
+                "generacion_llm_fecha": r["generacion_llm_fecha"].isoformat() if r["generacion_llm_fecha"] else None,
+                "ruta_fichero_modelo": r["ruta_fichero_modelo"],
+                "notificacion_descarga_enviada": bool(r["notificacion_descarga_enviada"]),
+                "notificacion_descarga_fecha": r["notificacion_descarga_fecha"].isoformat() if r["notificacion_descarga_fecha"] else None,
+                "updated_by": r["updated_by"],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+                "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
             }
 
             return {

@@ -985,12 +985,17 @@ class CoreBackendClient:
     def update_generation_phase(
         self,
         state_id: int,
-        generacion_completada: bool,
-        user_id: int,
-        identity_type_id: int,
+        generacion_completada: bool | None = None,
+        user_id: int = 0,
+        identity_type_id: int = 0,
+        generacion_solicitada: bool | None = None,
     ) -> dict[str, Any]:
         """Updates generation phase."""
-        payload = {"generacion_completada": generacion_completada}
+        payload = {}
+        if generacion_completada is not None:
+            payload["generacion_completada"] = generacion_completada
+        if generacion_solicitada is not None:
+            payload["generacion_solicitada"] = generacion_solicitada
         data = self._request(
             "PATCH",
             f"/project-version-states/{state_id}/generation?user_id={user_id}&identity_type_id={identity_type_id}",

@@ -2008,10 +2008,27 @@ class VersionStateDto(BaseModel):
     id_proyecto: int
     id_version: int
     state: str  # "Abierta", "Bloqueada", "Protegida", "Final"
+    state_internal: str | None = None
     protected: bool
     size: int  # Changed from size_bytes to match backend/broker
     final_c: bool
     final_i: bool
+    revision_interna: bool = False
+    propuesta_mejoras: bool = False
+    entrenamiento_inicial_solicitado: bool = False
+    entrenamiento_inicial_completado: bool = False
+    entrenamiento_inicial_fecha: str | None = None
+    evaluacion_entrenamiento: bool = False
+    reentrenamiento: bool = False
+    optimizacion: bool = False
+    control_calidad_aprobado: bool = False
+    generacion_llm_solicitada: bool = False
+    generacion_llm_completada: bool = False
+    generacion_llm_fecha: str | None = None
+    ruta_fichero_modelo: str | None = None
+    notificacion_descarga_enviada: bool = False
+    notificacion_descarga_fecha: str | None = None
+    updated_by: int | None = None
     created_at: str
     updated_at: str
 

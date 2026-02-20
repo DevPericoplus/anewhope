@@ -41,21 +41,37 @@ class VersionEventType(str, Enum):
 
 class VersionStateDto(BaseModel):
     """DTO para el estado completo de una versión."""
-    
+
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: int = Field(..., description="ID del registro")
     id_organizacion: int = Field(..., description="ID de la organización")
     id_proyecto: int = Field(..., description="ID del proyecto")
     id_version: int = Field(..., description="Número de versión")
     state: VersionState = Field(default=VersionState.ABIERTA, description="Estado actual")
+    state_internal: Optional[str] = Field(None, description="Estado interno del flujo")
     protected: bool = Field(default=False, description="Si está protegida (no editable)")
-    size_bytes: int = Field(default=0, description="Tamaño total en bytes")
-    final_c: bool = Field(default=False, description="Cliente solicitó entrenamiento")
-    final_i: bool = Field(default=False, description="Interno confirmó preparación")
+    size: int = Field(default=0, alias="size_bytes", description="Tamaño total en bytes")
+    final_c: bool = Field(default=False, description="Aceptación cliente")
+    final_i: bool = Field(default=False, description="Aceptación interna")
+    revision_interna: bool = Field(default=False, description="Revisión interna en curso")
+    propuesta_mejoras: bool = Field(default=False, description="Propuesta de mejoras generada")
+    entrenamiento_inicial_solicitado: bool = Field(default=False, description="Entrenamiento solicitado")
+    entrenamiento_inicial_completado: bool = Field(default=False, description="Entrenamiento completado")
+    entrenamiento_inicial_fecha: Optional[str] = Field(None, description="Fecha completado entrenamiento")
+    evaluacion_entrenamiento: bool = Field(default=False, description="Evaluación en curso")
+    reentrenamiento: bool = Field(default=False, description="Reentrenamiento en curso")
+    optimizacion: bool = Field(default=False, description="Optimización en curso")
+    control_calidad_aprobado: bool = Field(default=False, description="Control calidad aprobado")
+    generacion_llm_solicitada: bool = Field(default=False, description="Generación LLM solicitada")
+    generacion_llm_completada: bool = Field(default=False, description="Generación LLM completada")
+    generacion_llm_fecha: Optional[str] = Field(None, description="Fecha generación LLM")
+    ruta_fichero_modelo: Optional[str] = Field(None, description="Ruta del fichero modelo")
+    notificacion_descarga_enviada: bool = Field(default=False, description="Notificación enviada")
+    notificacion_descarga_fecha: Optional[str] = Field(None, description="Fecha notificación")
+    updated_by: Optional[int] = Field(None, description="Usuario que actualizó")
     created_at: datetime = Field(..., description="Fecha de creación")
     updated_at: datetime = Field(..., description="Última actualización")
-    updated_by_user_id: Optional[int] = Field(None, description="Usuario que actualizó")
 
 
 class CreateVersionStateRequest(BaseModel):

@@ -1537,14 +1537,16 @@ class BrokerBackendRouter:
     def update_generation_phase(
         self,
         state_id: int,
-        generacion_completada: bool,
+        generacion_completada: bool | None,
         user_id: int,
         identity_type_id: int,
+        generacion_solicitada: bool | None = None,
     ) -> dict[str, Any]:
         """Updates generation phase."""
         try:
             return self._core_client.update_generation_phase(
-                state_id, generacion_completada, user_id, identity_type_id
+                state_id, generacion_completada, user_id, identity_type_id,
+                generacion_solicitada=generacion_solicitada,
             )
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(

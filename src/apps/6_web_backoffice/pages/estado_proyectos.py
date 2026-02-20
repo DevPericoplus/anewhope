@@ -11,149 +11,20 @@ Características:
 - Visualización de progreso (%)
 - Validación de transiciones según reglas de negocio
 
-Arquitectura DDD:
-- Consulta tabla estado_version (migración 008)
-- Usa campos extendidos para gestión completa
-- Preparado para integrar ProjectVersionStateService (Task #31-32)
+Arquitectura:
+- Flujo: Backoffice → Middleware (8007) → Broker (8008) → Backend Core (8003) → MariaDB
+- Usa API client (adapters/api_client.py) para todas las consultas
+- No accede directamente a la base de datos
 """
 
-from pathlib import Path
 from typing import Any, AsyncGenerator
 
-import importlib.util
 import logging
-import os
-import subprocess
-import sys
 
 import reflex as rx
 
 
 logger = logging.getLogger(__name__)
-
-
-# ============================================================================
-# Configuración y helpers de base de datos
-# ============================================================================
-
-
-def _load_projects_db_settings() -> dict[str, str]:
-    """Carga credenciales y nombre de base de datos para proyectos."""
-    env_settings = _load_env_settings_module("estado_proyectos_env_settings")
-    protected = env_settings.load_protected_settings()
-
-    return {
-        "host": os.environ.get("MARIADB_HOST", str(protected.get("mariadb_host", ""))),
-        "port": os.environ.get(
-            "MARIADB_PORT", str(protected.get("mariadb_port", 3306))
-        ),
-        "database": os.environ.get(
-            "MARIADB_PROJECTS_DATABASE",
-            str(protected.get("mariadb_ai_database", "myllm_projects_db")),
-        ),
-        "user": os.environ.get(
-            "MARIADB_READER_USER", protected.get("mariadb_reader_user", "")
-        ),
-        "password": os.environ.get(
-            "MARIADB_READER_PASSWORD",
-            protected.get("mariadb_reader_password", ""),
-        ),
-        "cli_path": os.environ.get(
-            "MARIADB_CLI_PATH", protected.get("mariadb_cli_path", "")
-        ),
-    }
-
-
-def _load_env_settings_module(module_name: str) -> Any:
-    """Carga el módulo de configuración compartida."""
-    module_path = (
-        Path(__file__).resolve().parents[4]
-        / "src/2_shared_application/config/env_settings.py"
-    )
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("No se pudo cargar el módulo de configuración")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-def _run_mysql_query(query: str) -> list[list[str]]:
-    """Ejecuta una consulta SQL y devuelve filas."""
-    settings = _load_projects_db_settings()
-    cmd = [
-        settings["cli_path"],
-        "-u",
-        settings["user"],
-        f"-p{settings['password']}",
-        "--database",
-        settings["database"],
-        "-N",
-        "-B",
-        "-e",
-        query,
-    ]
-    try:
-        result = subprocess.run(
-            cmd,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        logger.error(
-            "Error al consultar base de datos: %s",
-            exc.stderr.strip() if exc.stderr else exc,
-        )
-        return []
-    rows: list[list[str]] = []
-    for line in result.stdout.splitlines():
-        if not line.strip():
-            continue
-        rows.append(line.split("\t"))
-    return rows
-
-
-def _run_mysql_update(query: str) -> bool:
-    """Ejecuta un UPDATE/INSERT SQL y retorna éxito."""
-    settings = _load_projects_db_settings()
-    # Usar writer user para modificaciones
-    user = os.environ.get(
-        "MARIADB_WRITER_USER",
-        settings.get("user", ""),  # Fallback a reader si no hay writer
-    )
-    password = os.environ.get(
-        "MARIADB_WRITER_PASSWORD",
-        settings.get("password", ""),
-    )
-
-    cmd = [
-        settings["cli_path"],
-        "-u",
-        user,
-        f"-p{password}",
-        "--database",
-        settings["database"],
-        "-N",
-        "-B",
-        "-e",
-        query,
-    ]
-    try:
-        subprocess.run(
-            cmd,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        return True
-    except subprocess.CalledProcessError as exc:
-        logger.error(
-            "Error al actualizar base de datos: %s",
-            exc.stderr.strip() if exc.stderr else exc,
-        )
-        return False
 
 
 # ============================================================================
@@ -168,6 +39,10 @@ class EstadoProyectosState(rx.State):
     user_id: int = 0
     organization_id: int = 0
     identity_type_id: int = 0
+
+    # Tokens de sesión para API
+    access_token: str = ""
+    session_token: str = ""
 
     # Listas de datos
     organizations: list[dict[str, Any]] = []
@@ -191,29 +66,39 @@ class EstadoProyectosState(rx.State):
     # Inicialización
     # ========================================================================
 
-    async def initialize_from_session(
+    def ep_receive_data(
         self,
         user_id: int,
         organization_id: int,
         identity_type_id: int,
+        access_token: str,
+        session_token: str,
+        organizations: list,
+        selected_org_id: int,
+        projects: list,
+        selected_project_id: int,
+        versions: list,
+        selected_version_id: int,
+        current_state: dict,
     ) -> None:
-        """Inicializa la página desde la sesión del usuario.
+        """Recibe todos los datos precargados desde el main State.
 
-        DEPRECATED: Use on_page_load instead.
-
-        Args:
-            user_id: ID del usuario autenticado
-            organization_id: ID de organización del usuario
-            identity_type_id: Tipo de identidad (1=SuperAdmin, 2=Admin, etc.)
+        Llamado como evento encadenado desde State.ep_init_page().
+        Los datos ya fueron cargados via API en el main State (con tokens disponibles).
         """
-        async with self:
-            self.user_id = user_id
-            self.organization_id = organization_id
-            self.identity_type_id = identity_type_id
-
-        await self._load_organizations()
-        await self._load_projects()
-        await self._load_versions()
+        self.user_id = user_id
+        self.organization_id = organization_id
+        self.identity_type_id = identity_type_id
+        self.access_token = access_token
+        self.session_token = session_token
+        self.organizations = organizations
+        self.selected_org_id = selected_org_id
+        self.projects = projects
+        self.selected_project_id = selected_project_id
+        self.versions = versions
+        self.selected_version_id = selected_version_id
+        self.current_state = current_state
+        print(f"[EP] ep_receive_data: orgs={len(organizations)}, projects={len(projects)}, versions={len(versions)}, state={'SET' if current_state else 'EMPTY'}")
 
     # ========================================================================
     # Propiedades computadas
@@ -336,40 +221,42 @@ class EstadoProyectosState(rx.State):
     # ========================================================================
 
     async def _load_organizations(self) -> None:
-        """Carga organizaciones según permisos del usuario."""
+        """Carga organizaciones via API (Middleware → Broker → Backend)."""
         async with self:
-            is_super_admin = self.is_super_admin
-            user_id = self.user_id
             organization_id = self.organization_id
             selected_org_id = self.selected_org_id
+            access_token = self.access_token
+            session_token = self.session_token
 
-        if is_super_admin:
-            # SuperAdmin ve todas las organizaciones
-            rows = _run_mysql_query(
-                "SELECT organization_id, organization_name "
-                "FROM myllm_core_db.organizations "
-                "ORDER BY organization_name"
+        print(f"[DEBUG ESTADO_PROYECTOS] _load_organizations: access_token={'SET' if access_token else 'EMPTY'}, session_token={'SET' if session_token else 'EMPTY'}")
+
+        try:
+            from adapters.api_client import get_all_organizations
+
+            orgs_data = get_all_organizations(
+                access_token=access_token,
+                session_token=session_token,
             )
-        else:
-            # Otros usuarios: filtrar por asignaciones
-            rows = _run_mysql_query(
-                "SELECT DISTINCT o.organization_id, o.organization_name "
-                "FROM myllm_core_db.organizations o "
-                "INNER JOIN asignaciones_organizaciones_internas aoi "
-                "ON o.organization_id = aoi.id_organizacion "
-                f"WHERE aoi.id_usuario = {user_id} "
-                "AND aoi.active = 1 "
-                "ORDER BY o.organization_name"
-            )
+            print(f"[DEBUG ESTADO_PROYECTOS] _load_organizations: API returned {len(orgs_data)} orgs")
+            if orgs_data:
+                print(f"[DEBUG ESTADO_PROYECTOS] _load_organizations: first org: {orgs_data[0]}")
+        except Exception as e:
+            logger.error("Error cargando organizaciones: %s", e)
+            print(f"[DEBUG ESTADO_PROYECTOS] _load_organizations: EXCEPTION: {e}")
+            orgs_data = []
 
         organizations = [
-            {"id": int(row[0]), "name": row[1]} for row in rows if len(row) >= 2
+            {
+                "id": int(org.get("organization_id", org.get("id", 0))),
+                "name": org.get("organization_name", org.get("name", "")),
+            }
+            for org in orgs_data
+            if org.get("organization_id", org.get("id", 0))
         ]
 
         # Seleccionar organización por defecto
         if organizations:
             if selected_org_id == 0:
-                # Preferir organización del usuario
                 if organization_id > 0:
                     selected_org_id = organization_id
                 else:
@@ -381,11 +268,11 @@ class EstadoProyectosState(rx.State):
                 self.selected_org_id = selected_org_id
 
     async def _load_projects(self) -> None:
-        """Carga proyectos de la organización seleccionada."""
+        """Carga proyectos via API (Middleware → Broker → Backend)."""
         async with self:
             org_id = self.selected_org_id
-            is_super_admin = self.is_super_admin
-            user_id = self.user_id
+            access_token = self.access_token
+            session_token = self.session_token
 
         if org_id <= 0:
             async with self:
@@ -393,28 +280,26 @@ class EstadoProyectosState(rx.State):
                 self.selected_project_id = 0
             return
 
-        if is_super_admin:
-            # SuperAdmin ve todos los proyectos de la organización
-            rows = _run_mysql_query(
-                "SELECT id, nombre "
-                "FROM proyectos "
-                f"WHERE id_organizacion = {org_id} "
-                "ORDER BY nombre"
+        try:
+            from adapters.api_client import get_organization_projects
+
+            projects_data = get_organization_projects(
+                organization_id=org_id,
+                access_token=access_token,
+                session_token=session_token,
+                include_deleted=False,
             )
-        else:
-            # Otros usuarios: filtrar por asignaciones
-            rows = _run_mysql_query(
-                "SELECT DISTINCT p.id, p.nombre "
-                "FROM proyectos p "
-                "LEFT JOIN proyectos_roles pr "
-                "ON p.id = pr.id_proyecto "
-                f"WHERE p.id_organizacion = {org_id} "
-                f"AND (pr.id_usuario = {user_id} AND pr.active = 1) "
-                "ORDER BY p.nombre"
-            )
+        except Exception as e:
+            logger.error("Error cargando proyectos: %s", e)
+            projects_data = []
 
         projects = [
-            {"id": int(row[0]), "name": row[1]} for row in rows if len(row) >= 2
+            {
+                "id": int(p.get("id", 0)),
+                "name": p.get("name", p.get("nombre", "")),
+            }
+            for p in projects_data
+            if p.get("active", True) and p.get("existe", True)
         ]
 
         async with self:
@@ -426,10 +311,12 @@ class EstadoProyectosState(rx.State):
                     self.selected_project_id = projects[0]["id"]
 
     async def _load_versions(self) -> None:
-        """Carga versiones del proyecto seleccionado."""
+        """Carga versiones via API (Middleware → Broker → Backend)."""
         async with self:
             org_id = self.selected_org_id
             project_id = self.selected_project_id
+            access_token = self.access_token
+            session_token = self.session_token
 
         if org_id <= 0 or project_id <= 0:
             async with self:
@@ -437,98 +324,119 @@ class EstadoProyectosState(rx.State):
                 self.selected_version_id = 0
             return
 
-        rows = _run_mysql_query(
-            "SELECT v.id_version, ev.state_internal, ev.created_at "
-            "FROM versiones v "
-            "INNER JOIN estado_version ev "
-            "ON v.id_organizacion = ev.id_organizacion "
-            "AND v.id_proyecto = ev.id_proyecto "
-            "AND v.id_version = ev.id_version "
-            f"WHERE v.id_organizacion = {org_id} "
-            f"AND v.id_proyecto = {project_id} "
-            "ORDER BY v.id_version DESC"
-        )
+        try:
+            from adapters.api_client import get_project_versions
+
+            result = get_project_versions(
+                project_id=project_id,
+                organization_id=org_id,
+                access_token=access_token,
+                session_token=session_token,
+            )
+            versions_data = result.get("versiones", [])
+        except Exception as e:
+            logger.error("Error cargando versiones: %s", e)
+            versions_data = []
 
         versions = [
             {
-                "version_id": int(row[0]),
-                "state_internal": row[1] if len(row) > 1 else "",
-                "created_at": row[2] if len(row) > 2 else "",
+                "version_id": int(v.get("id_version", 0)),
+                "state_internal": v.get("state_internal", ""),
+                "created_at": v.get("created_at", ""),
             }
-            for row in rows
-            if row
+            for v in versions_data
+            if v.get("id_version", 0)
         ]
 
         async with self:
             self.versions = versions
-            # Seleccionar primera versión por defecto
             if self.versions and self.selected_version_id == 0:
                 self.selected_version_id = self.versions[0]["version_id"]
 
     async def _load_current_state(self) -> None:
-        """Carga el estado completo de la versión seleccionada."""
+        """Carga estado de versión via API (Middleware → Broker → Backend)."""
         async with self:
-            org_id = self.selected_org_id
             project_id = self.selected_project_id
             version_id = self.selected_version_id
 
-        if org_id <= 0 or project_id <= 0 or version_id <= 0:
+        # Obtener tokens frescos desde SharedSessionState
+        from web_backoffice.shared_state import SharedSessionState
+
+        async with self:
+            session_state = await self.get_state(SharedSessionState)
+
+        if session_state and session_state.access_token:
+            access_token = session_state.access_token
+            session_token = session_state.session_token
+        else:
+            # Fallback a tokens de la página
+            async with self:
+                access_token = self.access_token
+                session_token = self.session_token
+
+        if project_id <= 0 or version_id <= 0:
             async with self:
                 self.current_state = {}
             return
 
-        rows = _run_mysql_query(
-            "SELECT "
-            "id, state, state_internal, protected, size, "
-            "final_c, final_i, "
-            "revision_interna, propuesta_mejoras, "
-            "entrenamiento_inicial_solicitado, entrenamiento_inicial_completado, "
-            "entrenamiento_inicial_fecha, "
-            "evaluacion_entrenamiento, reentrenamiento, optimizacion, "
-            "control_calidad_aprobado, "
-            "generacion_llm_solicitada, generacion_llm_completada, "
-            "generacion_llm_fecha, ruta_fichero_modelo, "
-            "notificacion_descarga_enviada, notificacion_descarga_fecha, "
-            "created_at, updated_at, updated_by "
-            "FROM estado_version "
-            f"WHERE id_organizacion = {org_id} "
-            f"AND id_proyecto = {project_id} "
-            f"AND id_version = {version_id} "
-            "LIMIT 1"
-        )
+        try:
+            from adapters.api_client import get_version_state
 
-        if not rows or not rows[0]:
+            result = get_version_state(
+                project_id=project_id,
+                version_id=version_id,
+                access_token=access_token,
+                session_token=session_token,
+            )
+        except Exception as e:
+            logger.error("Error cargando estado de versión: %s", e)
             async with self:
                 self.current_state = {}
             return
 
-        row = rows[0]
+        if not result.get("success") and not result.get("data"):
+            async with self:
+                self.current_state = {}
+            return
+
+        state = result.get("data", result.get("state", result))
+
+        # Normalizar booleanos (la API puede devolver bool o int/str)
+        def to_bool(val: Any) -> bool:
+            if isinstance(val, bool):
+                return val
+            if isinstance(val, int):
+                return val == 1
+            if isinstance(val, str):
+                return val in ("1", "true", "True")
+            return False
+
         state_data = {
-            "id": int(row[0]) if row[0] else 0,
-            "state": row[1] if len(row) > 1 else "",
-            "state_internal": row[2] if len(row) > 2 else "",
-            "protected": row[3] == "1" if len(row) > 3 else False,
-            "size": int(row[4]) if len(row) > 4 and row[4] else 0,
-            "final_c": row[5] == "1" if len(row) > 5 else False,
-            "final_i": row[6] == "1" if len(row) > 6 else False,
-            "revision_interna": row[7] == "1" if len(row) > 7 else False,
-            "propuesta_mejoras": row[8] == "1" if len(row) > 8 else False,
-            "entrenamiento_inicial_solicitado": row[9] == "1" if len(row) > 9 else False,
-            "entrenamiento_inicial_completado": row[10] == "1" if len(row) > 10 else False,
-            "entrenamiento_inicial_fecha": row[11] if len(row) > 11 else None,
-            "evaluacion_entrenamiento": row[12] == "1" if len(row) > 12 else False,
-            "reentrenamiento": row[13] == "1" if len(row) > 13 else False,
-            "optimizacion": row[14] == "1" if len(row) > 14 else False,
-            "control_calidad_aprobado": row[15] == "1" if len(row) > 15 else False,
-            "generacion_llm_solicitada": row[16] == "1" if len(row) > 16 else False,
-            "generacion_llm_completada": row[17] == "1" if len(row) > 17 else False,
-            "generacion_llm_fecha": row[18] if len(row) > 18 else None,
-            "ruta_fichero_modelo": row[19] if len(row) > 19 else None,
-            "notificacion_descarga_enviada": row[20] == "1" if len(row) > 20 else False,
-            "notificacion_descarga_fecha": row[21] if len(row) > 21 else None,
-            "created_at": row[22] if len(row) > 22 else None,
-            "updated_at": row[23] if len(row) > 23 else None,
-            "updated_by": int(row[24]) if len(row) > 24 and row[24] and row[24] != "NULL" else None,
+            "id": int(state.get("id", 0)),
+            "state": state.get("state", ""),
+            "state_internal": state.get("state_internal", ""),
+            "protected": to_bool(state.get("protected", False)),
+            "size": int(state.get("size", 0)),
+            "final_c": to_bool(state.get("final_c", False)),
+            "final_i": to_bool(state.get("final_i", False)),
+            "revision_interna": to_bool(state.get("revision_interna", False)),
+            "propuesta_mejoras": to_bool(state.get("propuesta_mejoras", False)),
+            "entrenamiento_inicial_solicitado": to_bool(state.get("entrenamiento_inicial_solicitado", False)),
+            "entrenamiento_inicial_completado": to_bool(state.get("entrenamiento_inicial_completado", False)),
+            "entrenamiento_inicial_fecha": state.get("entrenamiento_inicial_fecha"),
+            "evaluacion_entrenamiento": to_bool(state.get("evaluacion_entrenamiento", False)),
+            "reentrenamiento": to_bool(state.get("reentrenamiento", False)),
+            "optimizacion": to_bool(state.get("optimizacion", False)),
+            "control_calidad_aprobado": to_bool(state.get("control_calidad_aprobado", False)),
+            "generacion_llm_solicitada": to_bool(state.get("generacion_llm_solicitada", False)),
+            "generacion_llm_completada": to_bool(state.get("generacion_llm_completada", False)),
+            "generacion_llm_fecha": state.get("generacion_llm_fecha"),
+            "ruta_fichero_modelo": state.get("ruta_fichero_modelo"),
+            "notificacion_descarga_enviada": to_bool(state.get("notificacion_descarga_enviada", False)),
+            "notificacion_descarga_fecha": state.get("notificacion_descarga_fecha"),
+            "created_at": state.get("created_at"),
+            "updated_at": state.get("updated_at"),
+            "updated_by": int(state["updated_by"]) if state.get("updated_by") else None,
         }
 
         async with self:
@@ -784,7 +692,7 @@ class EstadoProyectosState(rx.State):
         """Alterna el valor de un campo booleano usando la API."""
         async with self:
             can_edit = self.can_edit
-            current_state = self.current_state
+            current_state = self.current_state.copy()
 
         if not can_edit:
             async with self:
@@ -802,6 +710,13 @@ class EstadoProyectosState(rx.State):
                 self.error_message = "Estado inválido"
             return
 
+        # Feedback visual inmediato: invertir el valor del campo en el state
+        current_value = current_state.get(field_name, False)
+        new_value = not current_value
+        async with self:
+            self.current_state = {**current_state, field_name: new_value}
+        yield
+
         # Obtener tokens de sesión
         from web_backoffice.shared_state import SharedSessionState
 
@@ -811,6 +726,8 @@ class EstadoProyectosState(rx.State):
         if not session_state:
             async with self:
                 self.error_message = "No se pudo obtener sesión"
+                self.current_state = current_state  # Revertir
+            yield
             return
 
         access_token = session_state.access_token
@@ -818,43 +735,36 @@ class EstadoProyectosState(rx.State):
 
         try:
             # Mapeo de campos a fases y funciones API
+            # Usar new_value (ya calculado arriba) para el campo que cambió
+            # y current_state para los campos que no cambiaron
             if field_name in ("final_c", "final_i", "revision_interna", "propuesta_mejoras"):
-                # Fase de propuesta
+                # Fase de propuesta - enviar todos los campos juntos
                 from adapters.api_client import update_proposal_phase
 
-                final_c = current_state.get("final_c", False)
-                final_i = current_state.get("final_i", False)
-                revision_interna = current_state.get("revision_interna", False)
-                propuesta_mejoras = current_state.get("propuesta_mejoras", False)
-
-                # Alternar el campo específico
-                if field_name == "final_c":
-                    final_c = not final_c
-                elif field_name == "final_i":
-                    final_i = not final_i
-                elif field_name == "revision_interna":
-                    revision_interna = not revision_interna
-                elif field_name == "propuesta_mejoras":
-                    propuesta_mejoras = not propuesta_mejoras
+                proposal_vals = {
+                    "final_c": current_state.get("final_c", False),
+                    "final_i": current_state.get("final_i", False),
+                    "revision_interna": current_state.get("revision_interna", False),
+                    "propuesta_mejoras": current_state.get("propuesta_mejoras", False),
+                }
+                proposal_vals[field_name] = new_value
 
                 result = update_proposal_phase(
                     state_id=state_id,
-                    aceptacion_cliente=final_c,
-                    aceptacion_interna=final_i,
+                    aceptacion_cliente=proposal_vals["final_c"],
+                    aceptacion_interna=proposal_vals["final_i"],
                     access_token=access_token,
                     session_token=session_token,
-                    revision_interna=revision_interna,
-                    propuesta_mejoras=propuesta_mejoras,
+                    revision_interna=proposal_vals["revision_interna"],
+                    propuesta_mejoras=proposal_vals["propuesta_mejoras"],
                 )
 
             elif field_name == "entrenamiento_inicial_completado":
-                # Fase de entrenamiento
                 from adapters.api_client import update_training_phase
 
-                current_value = current_state.get(field_name, False)
                 result = update_training_phase(
                     state_id=state_id,
-                    completado=not current_value,
+                    completado=new_value,
                     access_token=access_token,
                     session_token=session_token,
                 )
@@ -865,68 +775,53 @@ class EstadoProyectosState(rx.State):
                 "optimizacion",
                 "control_calidad_aprobado",
             ):
-                # Fase de evaluación
+                # Fase de evaluación - enviar todos los 4 campos juntos
                 from adapters.api_client import update_evaluation_phase
 
-                # Leer valores actuales de current_state
-                evaluacion_entrenamiento = current_state.get("evaluacion_entrenamiento", False)
-                reentrenamiento = current_state.get("reentrenamiento", False)
-                optimizacion = current_state.get("optimizacion", False)
-                calidad_aprobada = current_state.get("control_calidad_aprobado", False)
+                eval_vals = {
+                    "evaluacion_entrenamiento": current_state.get("evaluacion_entrenamiento", False),
+                    "reentrenamiento": current_state.get("reentrenamiento", False),
+                    "optimizacion": current_state.get("optimizacion", False),
+                    "control_calidad_aprobado": current_state.get("control_calidad_aprobado", False),
+                }
+                eval_vals[field_name] = new_value
 
-                # Alternar el campo específico
-                if field_name == "evaluacion_entrenamiento":
-                    evaluacion_entrenamiento = not evaluacion_entrenamiento
-                elif field_name == "reentrenamiento":
-                    reentrenamiento = not reentrenamiento
-                elif field_name == "optimizacion":
-                    optimizacion = not optimizacion
-                elif field_name == "control_calidad_aprobado":
-                    calidad_aprobada = not calidad_aprobada
-
-                # Pasar evaluacion_entrenamiento como "evaluacion" para compatibilidad con el endpoint
                 result = update_evaluation_phase(
                     state_id=state_id,
-                    evaluacion=evaluacion_entrenamiento,
-                    reentrenamiento=reentrenamiento,
-                    optimizacion=optimizacion,
-                    calidad_aprobada=calidad_aprobada,
+                    evaluacion=eval_vals["evaluacion_entrenamiento"],
+                    reentrenamiento=eval_vals["reentrenamiento"],
+                    optimizacion=eval_vals["optimizacion"],
+                    calidad_aprobada=eval_vals["control_calidad_aprobado"],
                     access_token=access_token,
                     session_token=session_token,
                 )
 
-            elif field_name in ("generacion_llm_completada", "generacion_llm_solicitada"):
-                # Fase de generación
+            elif field_name == "generacion_llm_completada":
                 from adapters.api_client import update_generation_phase
 
-                # Leer solo el campo que vamos a cambiar
-                current_value = current_state.get(field_name, False)
-                new_value = not current_value
+                result = update_generation_phase(
+                    state_id=state_id,
+                    generacion_completada=new_value,
+                    access_token=access_token,
+                    session_token=session_token,
+                )
 
-                # Pasar solo el campo que cambió
-                if field_name == "generacion_llm_completada":
-                    result = update_generation_phase(
-                        state_id=state_id,
-                        generacion_completada=new_value,
-                        access_token=access_token,
-                        session_token=session_token,
-                    )
-                else:  # generacion_llm_solicitada
-                    result = update_generation_phase(
-                        state_id=state_id,
-                        access_token=access_token,
-                        session_token=session_token,
-                        generacion_solicitada=new_value,
-                    )
+            elif field_name == "generacion_llm_solicitada":
+                from adapters.api_client import update_generation_phase
+
+                result = update_generation_phase(
+                    state_id=state_id,
+                    access_token=access_token,
+                    session_token=session_token,
+                    generacion_solicitada=new_value,
+                )
 
             elif field_name == "notificacion_descarga_enviada":
-                # Fase de notificación
                 from adapters.api_client import update_notification_phase
 
-                current_value = current_state.get(field_name, False)
                 result = update_notification_phase(
                     state_id=state_id,
-                    notificacion_enviada=not current_value,
+                    notificacion_enviada=new_value,
                     access_token=access_token,
                     session_token=session_token,
                 )
@@ -934,26 +829,28 @@ class EstadoProyectosState(rx.State):
             else:
                 async with self:
                     self.error_message = f"Campo {field_name} no soportado"
+                    self.current_state = current_state  # Revertir
+                yield
                 return
 
-            # Verificar resultado
+            # Verificar resultado y recargar desde BD
             if result.get("success"):
-                async with self:
-                    self.success_message = f"Campo {field_name} actualizado correctamente"
-                yield  # Propagar mensaje de éxito
-
                 await self._load_current_state()  # Recargar para ver cambios de triggers
-                yield  # Propagar estado actualizado a la UI
+                yield
             else:
-                detail = result.get("detail", "Error desconocido")
+                detail = result.get("detail", result.get("error", "Error desconocido"))
+                print(f"[EP] toggle_field ERROR: field={field_name} result={result}")
                 async with self:
-                    self.error_message = f"Error al actualizar: {detail}"
-                yield  # Propagar mensaje de error
+                    self.error_message = f"Error al actualizar {field_name}: {detail}"
+                    self.current_state = current_state  # Revertir al estado anterior
+                yield
 
         except Exception as e:
+            print(f"[EP] toggle_field EXCEPTION: field={field_name} error={e}")
             async with self:
                 self.error_message = f"Error en la actualización: {str(e)}"
-            yield  # Propagar mensaje de error
+                self.current_state = current_state  # Revertir al estado anterior
+            yield
 
     def clear_messages(self) -> None:
         """Limpia mensajes de error/éxito."""
@@ -962,33 +859,49 @@ class EstadoProyectosState(rx.State):
 
     @rx.event(background=True)
     async def on_page_load(self) -> AsyncGenerator[None, None]:
-        """Se ejecuta cuando se carga la página."""
-        # Obtener datos de sesión desde SharedSessionState
-        from web_backoffice.shared_state import SharedSessionState
+        """Carga datos iniciales via API.
 
-        # Inicializar con datos de sesión
+        Los tokens y datos de sesión deben estar ya en el state
+        (puestos por init_from_main_state desde set_internal_menu).
+        """
         async with self:
-            session_state = await self.get_state(SharedSessionState)
+            has_user = self.user_id > 0
+            has_tokens = bool(self.access_token)
+            print(f"[DEBUG ESTADO_PROYECTOS] on_page_load: user_id={self.user_id}, has_tokens={has_tokens}")
 
-        if session_state:
+        if not has_user or not has_tokens:
+            # Fallback: intentar obtener tokens de SharedSessionState
+            from web_backoffice.shared_state import SharedSessionState
+
             async with self:
-                self.user_id = session_state.user_id
-                self.organization_id = session_state.organization_id
-                self.identity_type_id = session_state.identity_type_id
+                session_state = await self.get_state(SharedSessionState)
+                if session_state and session_state.access_token:
+                    self.user_id = session_state.user_id
+                    self.organization_id = session_state.organization_id
+                    self.identity_type_id = session_state.identity_type_id
+                    self.access_token = session_state.access_token
+                    self.session_token = session_state.session_token
+                    has_user = self.user_id > 0
+                    has_tokens = bool(self.access_token)
+                    print(f"[DEBUG ESTADO_PROYECTOS] on_page_load fallback: user_id={self.user_id}, has_tokens={has_tokens}")
             yield
 
-            # Cargar datos iniciales
-            await self._load_organizations()
-            yield
+        if not has_user or not has_tokens:
+            print("[DEBUG ESTADO_PROYECTOS] on_page_load: no user/tokens, skipping load")
+            return
 
-            await self._load_projects()
-            yield
+        # Cargar datos iniciales
+        await self._load_organizations()
+        yield
 
-            await self._load_versions()
-            yield
+        await self._load_projects()
+        yield
 
-            await self._load_current_state()
-            yield
+        await self._load_versions()
+        yield
+
+        await self._load_current_state()
+        yield
 
 
 # ============================================================================
@@ -1390,7 +1303,7 @@ def _toggle_field(field_name: str, label: str, emoji: str) -> rx.Component:
         rx.text(label, font_size="1.1em", color="#e2e8f0"),
         rx.spacer(),
         rx.switch(
-            checked=EstadoProyectosState.current_state.get(field_name, False),
+            checked=EstadoProyectosState.current_state[field_name],
             on_change=lambda _: EstadoProyectosState.toggle_field(field_name),
             disabled=~EstadoProyectosState.can_edit,
         ),

@@ -883,21 +883,177 @@ class State(SharedSessionState):
         if menu == "descargas":
             self.dl_init_page()
 
+        # Inicializar Estado de Proyectos al navegar
+        if menu == "estado_proyectos":
+            return self.ep_init_page()
+
         # Log de navegación
         if self.is_logged_in and self.user_id > 0:
             activity_log.log_navigation(self.user_id, f"internal:{menu}")
 
-        # NOTA: Cargas de datos comentadas temporalmente para evitar bloqueos
-        # Las páginas deben cargar sus propios datos cuando se renderizan
-        # if menu == "asistente":
-        #     print("[DEBUG] Loading Asistente data...")
-        #     self.check_ollama_health()
-        #     self.load_ollama_models()
-        #     print("[DEBUG] Asistente data loading complete")
-        # if menu == "asignaciones":
-        #     print("[DEBUG] Loading Asignaciones data...")
-        #     self.load_assignments_data()
-        #     print("[DEBUG] Asignaciones data loading complete")
+    # ========== Página Estado de Proyectos (ep_ prefix) ==========
+
+    def ep_init_page(self):
+        """Inicializa Estado de Proyectos: copia tokens y carga organizaciones."""
+        print(f"[EP] ep_init_page: user_id={self.user_id}, access_token={'SET' if self.access_token else 'EMPTY'}")
+
+        # Asegurar que los tokens son válidos (renovar si expiraron)
+        if not self.ensure_tokens_valid():
+            print("[EP] ep_init_page: tokens no válidos, no se puede cargar")
+            return
+
+        print(f"[EP] ep_init_page: tokens válidos, procediendo con carga")
+
+        from pages.estado_proyectos import EstadoProyectosState
+
+        # Cargar organizaciones directamente con los tokens del main State
+        try:
+            from adapters.api_client import get_all_organizations
+
+            orgs_data = get_all_organizations(
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            print(f"[EP] ep_init_page: API returned {len(orgs_data)} orgs")
+            if orgs_data:
+                print(f"[EP] ep_init_page: first org: {orgs_data[0]}")
+        except Exception as e:
+            print(f"[EP] ep_init_page: EXCEPTION: {e}")
+            orgs_data = []
+
+        organizations = [
+            {
+                "id": int(org.get("organization_id", org.get("id", 0))),
+                "name": org.get("organization_name", org.get("name", "")),
+            }
+            for org in orgs_data
+            if org.get("organization_id", org.get("id", 0))
+        ]
+
+        # Cargar proyectos del primer org (o la org del usuario)
+        selected_org_id = self.organization_id if self.organization_id > 0 else (organizations[0]["id"] if organizations else 0)
+
+        projects = []
+        if selected_org_id > 0:
+            try:
+                from adapters.api_client import get_organization_projects
+
+                projects_data = get_organization_projects(
+                    organization_id=selected_org_id,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                    include_deleted=False,
+                )
+                projects = [
+                    {
+                        "id": int(p.get("id", 0)),
+                        "name": p.get("name", p.get("nombre", "")),
+                    }
+                    for p in projects_data
+                    if p.get("active", True) and p.get("existe", True)
+                ]
+                print(f"[EP] ep_init_page: {len(projects)} projects for org {selected_org_id}")
+            except Exception as e:
+                print(f"[EP] ep_init_page: projects EXCEPTION: {e}")
+
+        # Cargar versiones del primer proyecto
+        selected_project_id = projects[0]["id"] if projects else 0
+        versions = []
+        if selected_project_id > 0 and selected_org_id > 0:
+            try:
+                from adapters.api_client import get_project_versions
+
+                result = get_project_versions(
+                    project_id=selected_project_id,
+                    organization_id=selected_org_id,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+                versions_data = result.get("versiones", [])
+                versions = [
+                    {
+                        "version_id": int(v.get("id_version", 0)),
+                        "state_internal": v.get("state_internal", ""),
+                        "created_at": v.get("created_at", ""),
+                    }
+                    for v in versions_data
+                    if v.get("id_version", 0)
+                ]
+                print(f"[EP] ep_init_page: {len(versions)} versions for project {selected_project_id}")
+            except Exception as e:
+                print(f"[EP] ep_init_page: versions EXCEPTION: {e}")
+
+        # Cargar estado de la primera versión
+        selected_version_id = versions[0]["version_id"] if versions else 0
+        current_state = {}
+        if selected_project_id > 0 and selected_version_id > 0:
+            try:
+                from adapters.api_client import get_version_state
+
+                result = get_version_state(
+                    project_id=selected_project_id,
+                    version_id=selected_version_id,
+                    access_token=self.access_token,
+                    session_token=self.session_token,
+                )
+                state = result.get("data", result.get("state", result))
+                if state and result.get("success", True):
+                    def to_bool(val):
+                        if isinstance(val, bool):
+                            return val
+                        if isinstance(val, int):
+                            return val == 1
+                        if isinstance(val, str):
+                            return val in ("1", "true", "True")
+                        return False
+
+                    current_state = {
+                        "id": int(state.get("id", 0)),
+                        "state": state.get("state", ""),
+                        "state_internal": state.get("state_internal", ""),
+                        "protected": to_bool(state.get("protected", False)),
+                        "size": int(state.get("size", 0)),
+                        "final_c": to_bool(state.get("final_c", False)),
+                        "final_i": to_bool(state.get("final_i", False)),
+                        "revision_interna": to_bool(state.get("revision_interna", False)),
+                        "propuesta_mejoras": to_bool(state.get("propuesta_mejoras", False)),
+                        "entrenamiento_inicial_solicitado": to_bool(state.get("entrenamiento_inicial_solicitado", False)),
+                        "entrenamiento_inicial_completado": to_bool(state.get("entrenamiento_inicial_completado", False)),
+                        "entrenamiento_inicial_fecha": state.get("entrenamiento_inicial_fecha"),
+                        "evaluacion_entrenamiento": to_bool(state.get("evaluacion_entrenamiento", False)),
+                        "reentrenamiento": to_bool(state.get("reentrenamiento", False)),
+                        "optimizacion": to_bool(state.get("optimizacion", False)),
+                        "control_calidad_aprobado": to_bool(state.get("control_calidad_aprobado", False)),
+                        "generacion_llm_solicitada": to_bool(state.get("generacion_llm_solicitada", False)),
+                        "generacion_llm_completada": to_bool(state.get("generacion_llm_completada", False)),
+                        "generacion_llm_fecha": state.get("generacion_llm_fecha"),
+                        "ruta_fichero_modelo": state.get("ruta_fichero_modelo"),
+                        "notificacion_descarga_enviada": to_bool(state.get("notificacion_descarga_enviada", False)),
+                        "notificacion_descarga_fecha": state.get("notificacion_descarga_fecha"),
+                        "created_at": state.get("created_at"),
+                        "updated_at": state.get("updated_at"),
+                        "updated_by": int(state["updated_by"]) if state.get("updated_by") else None,
+                    }
+                    print(f"[EP] ep_init_page: state loaded, state_internal={current_state.get('state_internal')}")
+            except Exception as e:
+                print(f"[EP] ep_init_page: state EXCEPTION: {e}")
+
+        # Usar yield para retornar un evento que actualice el EstadoProyectosState
+        # En su lugar, devolvemos el evento con los datos
+        return EstadoProyectosState.ep_receive_data(
+            self.user_id,
+            self.organization_id,
+            self.identity_type_id,
+            self.access_token,
+            self.session_token,
+            organizations,
+            selected_org_id,
+            projects,
+            selected_project_id,
+            versions,
+            selected_version_id,
+            current_state,
+        )
 
     # ========== Página Asistente (Ollama) ==========
 
