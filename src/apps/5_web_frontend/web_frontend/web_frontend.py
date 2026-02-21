@@ -1663,10 +1663,19 @@ class State(SharedSessionState):
     
     def user_login(self):
         """Handle user portal login."""
-        if not self.user_username or not self.user_password or not self.user_otp:
-            self.login_error = "Debe ingresar usuario, contraseña y OTP"
+        if not self.user_username or not self.user_password:
+            self.login_error = "Debe ingresar usuario y contraseña"
             activity_log.warning(f"LOGIN ATTEMPT | incomplete credentials | user={self.user_username or 'empty'}")
             return
+
+        # Si no hay OTP, verificar si el usuario es exempt
+        if not self.user_otp:
+            response = request_login_otp(self.user_username, self.user_password)
+            if response.get("success") and response.get("otp_exempt"):
+                self.user_otp = "0000"
+            else:
+                self.login_error = "Debe solicitar el código OTP primero"
+                return
 
         activity_log.log_middleware_request("/auth/login", "POST")
         response = login_user(self.user_username, self.user_password, self.user_otp)
