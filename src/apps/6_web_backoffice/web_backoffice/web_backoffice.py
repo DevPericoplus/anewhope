@@ -1058,14 +1058,11 @@ class State(SharedSessionState):
     # ========== Página Asistente (Ollama) ==========
 
     def check_ollama_health(self):
-        """Verifica si Ollama está disponible en el trainer."""
+        """Verifica si Ollama está disponible en el trainer (conexion directa)."""
         try:
-            from adapters.api_client import check_ollama_health
+            from adapters.api_client import check_ollama_health_direct
 
-            result = check_ollama_health(
-                access_token=self.access_token,
-                session_token=self.session_token,
-            )
+            result = check_ollama_health_direct()
 
             if result and result.get("status") == "healthy":
                 self.asistente_ollama_available = True
@@ -1078,49 +1075,23 @@ class State(SharedSessionState):
             self.asistente_ollama_status = f"❌ Error: {str(e)}"
 
     def load_ollama_models(self):
-        """Carga la lista de modelos disponibles en Ollama."""
+        """Carga la lista de modelos disponibles desde jobs_modelos (BD directa)."""
         try:
-            from adapters.api_client import get_ollama_models
+            engine = self._get_projects_engine()
+            with engine.connect() as conn:
+                rows = conn.execute(text(
+                    "SELECT nombre FROM jobs_modelos WHERE activo = 1 ORDER BY nombre"
+                )).fetchall()
+                model_names = [r[0] for r in rows if r[0] and r[0].strip()]
 
-            result = get_ollama_models(
-                access_token=self.access_token,
-                session_token=self.session_token,
-            )
-
-            print(f"[DEBUG] Ollama models result: {result}")
-            print(f"[DEBUG] Type of result: {type(result)}")
-
-            if result and "models" in result:
-                models_list = result["models"]
-                print(f"[DEBUG] Models list length: {len(models_list)}")
-
-                # Extraer nombres de modelos
-                model_names = []
-                for i, model in enumerate(models_list):
-                    name = model.get("name", "")
-                    print(f"[DEBUG] Model {i}: name='{name}', type={type(name)}")
-                    if name and name.strip():  # Verificar que no esté vacío ni solo espacios
-                        model_names.append(name)
-
-                self.asistente_models = model_names
-                print(f"[DEBUG] Final model names: {self.asistente_models}")
-
-                if self.asistente_models:
-                    self.asistente_selected_model = self.asistente_models[0]
-                    print(f"[DEBUG] Selected model: '{self.asistente_selected_model}'")
-                else:
-                    self.asistente_error = "No se encontraron modelos con nombre válido"
-                    print("[DEBUG] No valid model names found")
+            self.asistente_models = model_names
+            if self.asistente_models:
+                self.asistente_selected_model = self.asistente_models[0]
             else:
-                self.asistente_models = []
-                self.asistente_error = f"Respuesta inválida del servidor"
-                print(f"[DEBUG] Invalid result structure")
+                self.asistente_error = "No se encontraron modelos activos en BD"
         except Exception as e:
             self.asistente_models = []
             self.asistente_error = f"Error cargando modelos: {str(e)}"
-            print(f"[ERROR] Exception loading models: {e}")
-            import traceback
-            traceback.print_exc()
 
     def set_asistente_model(self, model: str):
         """Cambia el modelo seleccionado."""
@@ -2548,6 +2519,9 @@ class State(SharedSessionState):
             self.dl_selected_version_id = 0
             self.dl_selected_version_name = ""
             self.dl_packages = []
+        elif self.user_active_menu == "asistente":
+            self.check_ollama_health()
+            self.load_ollama_models()
 
         # Iniciar loop de renovación automática de tokens en background
         return State.auto_renew_tokens_loop
@@ -7721,7 +7695,7 @@ def asistente_panel() -> rx.Component:
             ),
             rx.button(
                 rx.icon("refresh-cw", size=16),
-                on_click=State.check_ollama_health,
+                on_click=[State.check_ollama_health, State.load_ollama_models],
                 size="1",
                 variant="soft",
                 background_color=COLORS["primary"],
