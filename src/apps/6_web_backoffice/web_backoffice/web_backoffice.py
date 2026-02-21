@@ -887,6 +887,11 @@ class State(SharedSessionState):
         if menu == "estado_proyectos":
             return self.ep_init_page()
 
+        # Inicializar Asistente al navegar (health check + modelos)
+        if menu == "asistente":
+            self.check_ollama_health()
+            self.load_ollama_models()
+
         # Log de navegación
         if self.is_logged_in and self.user_id > 0:
             activity_log.log_navigation(self.user_id, f"internal:{menu}")
@@ -2519,9 +2524,6 @@ class State(SharedSessionState):
             self.dl_selected_version_id = 0
             self.dl_selected_version_name = ""
             self.dl_packages = []
-        elif self.user_active_menu == "asistente":
-            self.check_ollama_health()
-            self.load_ollama_models()
 
         # Iniciar loop de renovación automática de tokens en background
         return State.auto_renew_tokens_loop
