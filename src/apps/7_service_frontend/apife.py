@@ -3344,8 +3344,13 @@ def generate_file_token_endpoint(
             ttl_seconds=300,  # 5 minutos
         )
 
-        # Obtener URL de fmanagement desde configuración del entorno
-        fmanagement_url = get_env_value("fmanagement_base_url", "http://localhost:1666")
+        # URL de fmanagement para el navegador: usar proxy público si existe
+        _frontend_api = get_env_value("frontend_api_url", "")
+        fmanagement_url = (
+            f"{_frontend_api}/fmanagement"
+            if _frontend_api
+            else get_env_value("fmanagement_base_url", "http://localhost:1666")
+        )
 
         return GenerateFileTokenResponse(
             success=True,
@@ -4065,8 +4070,13 @@ def validate_model_download_otp_endpoint(
             otp=request.otp
         )
 
-        # Obtener URL de fmanagement
-        fmanagement_url = get_env_value("fmanagement_base_url", "http://localhost:1666")
+        # URL de fmanagement para el navegador: usar proxy público si existe
+        _frontend_api = get_env_value("frontend_api_url", "")
+        fmanagement_url = (
+            f"{_frontend_api}/fmanagement"
+            if _frontend_api
+            else get_env_value("fmanagement_base_url", "http://localhost:1666")
+        )
 
         return ModelDownloadValidateOtpResponse(
             success=True,
