@@ -1335,13 +1335,10 @@ class State(SharedSessionState):
             self.sys_chromadb_status = f"❌ Error: {str(e)}"
 
     def check_ollama_service(self):
-        """Verifica el estado de Ollama."""
+        """Verifica el estado de Ollama (conexion directa, sin middleware/auth)."""
         try:
-            from adapters.api_client import check_ollama_health
-            result = check_ollama_health(
-                access_token=self.access_token,
-                session_token=self.session_token,
-            )
+            from adapters.api_client import check_ollama_health_direct
+            result = check_ollama_health_direct()
             self.sys_ollama_available = result.get("status") == "healthy"
             self.sys_ollama_status = "✅ Activo" if self.sys_ollama_available else "❌ Inactivo"
         except Exception as e:

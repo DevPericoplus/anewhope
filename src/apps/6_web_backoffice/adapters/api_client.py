@@ -4111,6 +4111,27 @@ def check_trainer_health() -> dict:
     return check_service_health(f"{trainer_base_url}/docs")
 
 
+def check_ollama_health_direct() -> dict:
+    """Verifica el estado de Ollama mediante conexion directa (sin middleware/auth).
+
+    Deriva el host del trainer desde env.yaml (trainer_base_url) y conecta
+    al puerto 11434 de Ollama.
+    """
+    try:
+        trainer_base_url = _env_settings.get_env_value(
+            "trainer_base_url", "http://localhost:8004"
+        )
+        # Extraer host del trainer_base_url (http://trainer.house.loc:8004 -> trainer.house.loc)
+        from urllib.parse import urlparse
+        parsed = urlparse(trainer_base_url)
+        ollama_host = parsed.hostname or "localhost"
+        ollama_port = os.environ.get("OLLAMA_PORT", "11434")
+        ollama_url = f"http://{ollama_host}:{ollama_port}/api/tags"
+        return check_service_health(ollama_url)
+    except Exception as exc:
+        return {"status": "error", "detail": str(exc)}
+
+
 def check_chromadb_health() -> dict:
     """Verifica el estado de ChromaDB."""
     chroma_host = os.environ.get("CHROMA_HOST", "localhost")
