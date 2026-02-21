@@ -7722,19 +7722,11 @@ def asistente_panel() -> rx.Component:
             ),
             rx.cond(
                 (State.asistente_models.length() > 0) & (State.asistente_selected_model != ""),
-                rx.select.root(
-                    rx.select.trigger(
-                        placeholder="Selecciona un modelo...",
-                        style={"backgroundColor": COLORS["input"], "color": COLORS["foreground"], "borderColor": COLORS["border"]},
-                    ),
-                    rx.select.content(
-                        rx.foreach(
-                            State.asistente_models,
-                            lambda model: rx.select.item(model, value=model),
-                        ),
-                    ),
+                rx.select(
+                    State.asistente_models,
                     value=State.asistente_selected_model,
                     on_change=State.set_asistente_model,
+                    placeholder="Selecciona un modelo...",
                     size="3",
                     width="100%",
                 ),
