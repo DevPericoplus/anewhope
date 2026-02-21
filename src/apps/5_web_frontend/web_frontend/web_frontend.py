@@ -402,6 +402,7 @@ class State(SharedSessionState):
                 access_token=self.access_token,
                 session_token=self.session_token,
                 identity_type_id=5,  # Solo auditores (usuarios de organización)
+                active_only=False,  # Mostrar también usuarios deshabilitados
             )
             
             # Transformar al formato esperado por la UI
