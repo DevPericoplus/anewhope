@@ -21,7 +21,7 @@ from typing import Optional, TypedDict
 # Importar SharedSessionState para acceder a tokens sin importación circular
 from web_backoffice.shared_state import SharedSessionState
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("backoffice")
 
 
 def _load_env_settings():
@@ -762,10 +762,15 @@ Overall Quality: {round(overall_quality * 100, 1)}%"""
     def iniciar_reentrenamiento(self, id_sugerencia: int):
         """Inicia el proceso de reentrenamiento.
 
-        Lanza reentrenar_directo que internamente arrancará el polling
-        una vez que se confirme el éxito del envío al trainer.
+        Prepara la UI (cierra modal de sugerencias, muestra modal de progreso)
+        y lanza el background event que ejecuta el reentrenamiento real.
         """
-        return type(self).reentrenar_directo(id_sugerencia)
+        logger.info("[REENTRENAR] iniciar_reentrenamiento llamado con id_sugerencia=%s", id_sugerencia)
+        self.show_suggestions_modal = False
+        self.message = f"Preparando reentrenamiento..."
+        self.message_type = "info"
+        self.id_sugerencia_to_apply = id_sugerencia
+        return [type(self).reentrenar_directo(id_sugerencia)]
 
     @rx.event(background=True)
     async def reentrenar_directo(self, id_sugerencia: int):
@@ -774,166 +779,201 @@ Overall Quality: {round(overall_quality * 100, 1)}%"""
         Flujo: Backoffice → Middleware → Broker → Trainer
         Usa la misma función send_entrenamiento_to_trainer que la página Entrenamientos.
         """
-        print(f"\n[REENTRENAR DIRECTO] Iniciando con id_sugerencia={id_sugerencia}", file=sys.stderr, flush=True)
+        logger.info("[REENTRENAR DIRECTO] Iniciando con id_sugerencia=%s", id_sugerencia)
 
+        # Leer tokens del state
         async with self:
-            try:
-                parent_state = await self.get_state(SharedSessionState)
-                access_token = parent_state.access_token
-                session_token = parent_state.session_token
+            parent_state = await self.get_state(SharedSessionState)
+            access_token = parent_state.access_token
+            session_token = parent_state.session_token
 
-                async with httpx.AsyncClient() as client:
-                    # Obtener parámetros sugeridos
-                    response_params = await client.get(
-                        f"{CORE_URL}/analysis/suggestions/{id_sugerencia}/params",
-                        headers={
-                            "Authorization": f"Bearer {access_token}",
-                            "X-Session-Token": session_token,
-                        },
-                        timeout=30.0,
-                    )
+        if not access_token:
+            async with self:
+                self.message = "No hay sesión activa"
+                self.message_type = "error"
+            return
 
-                    if response_params.status_code != 200:
+        # Obtener parámetros y metadata fuera del lock
+        try:
+            async with httpx.AsyncClient() as client:
+                response_params = await client.get(
+                    f"{CORE_URL}/analysis/suggestions/{id_sugerencia}/params",
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "X-Session-Token": session_token,
+                    },
+                    timeout=30.0,
+                )
+
+                if response_params.status_code != 200:
+                    async with self:
                         self.message = f"Error obteniendo parámetros: {response_params.status_code}"
                         self.message_type = "error"
-                        return
+                    return
 
-                    params = response_params.json()
+                params = response_params.json()
 
-                    # Obtener metadata (org/project/version)
-                    response_meta = await client.get(
-                        f"{CORE_URL}/analysis/suggestions/{id_sugerencia}",
-                        headers={
-                            "Authorization": f"Bearer {access_token}",
-                            "X-Session-Token": session_token,
-                        },
-                        timeout=10.0,
-                    )
+                response_meta = await client.get(
+                    f"{CORE_URL}/analysis/suggestions/{id_sugerencia}",
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "X-Session-Token": session_token,
+                    },
+                    timeout=10.0,
+                )
 
-                    if response_meta.status_code != 200:
+                if response_meta.status_code != 200:
+                    async with self:
                         self.message = f"Error obteniendo metadata: {response_meta.status_code}"
                         self.message_type = "error"
-                        return
+                    return
 
-                    metadata = response_meta.json()
+                metadata = response_meta.json()
 
-                # Construir pat_version usando helpers compartidos
-                helpers_mod = importlib.import_module(
-                    "src.2_shared_application.storage_access_structure"
-                )
-                env_mod = importlib.import_module(
-                    "src.2_shared_application.config.env_settings"
-                )
+        except Exception as e:
+            logger.error("[REENTRENAR] Error HTTP: %s", e, exc_info=True)
+            async with self:
+                self.message = f"Error de conexión: {str(e)}"
+                self.message_type = "error"
+            return
 
-                base_storage = env_mod.get_env_value(
-                    "backend_ia_base_storage",
-                    "~/data/anewhope/files/trainer_server/external",
-                )
-                org_folder = helpers_mod.get_folder_by_id_organization(
-                    metadata["id_organizacion"]
-                )
-                prj_folder = helpers_mod.get_folder_by_id_project(
-                    metadata["id_proyecto"]
-                )
-                ver_folder = helpers_mod.get_folder_by_id_version(
-                    metadata["id_version"]
-                )
-                pat_version = f"{base_storage}/{org_folder}/{prj_folder}/{ver_folder}"
+        # Construir pat_version usando helpers compartidos
+        try:
+            helpers_mod = importlib.import_module(
+                "src.2_shared_application.storage_access_structure"
+            )
+            env_mod = importlib.import_module(
+                "src.2_shared_application.config.env_settings"
+            )
 
-                # Payload con params top-level (igual que ent_send_to_trainer_from_modal)
-                payload = {
-                    "id_organizacion": metadata["id_organizacion"],
-                    "id_proyecto": metadata["id_proyecto"],
-                    "id_version": metadata["id_version"],
-                    "pat_version": pat_version,
-                    "learning_rate": float(params.get("learning_rate", 0.001)),
-                    "batch_size": int(params.get("batch_size", 32)),
-                    "epochs": int(params.get("epochs", 10)),
-                    "embedding_dimension": int(params.get("embedding_dimension", 384)),
-                    "sequence_length": int(params.get("sequence_length", 512)),
-                    "hidden_units": int(params.get("hidden_units", 256)),
-                    "dropout_rate": float(params.get("dropout_rate", 0.2)),
-                    "chunk_size": int(params.get("chunk_size", 500)),
-                    "chunk_overlap": int(params.get("chunk_overlap", 50)),
-                    "temperature": float(params.get("temperature", 0.7)),
-                    "max_tokens": int(params.get("max_tokens", 2048)),
-                    "distance_metric": str(params.get("distance_metric", "cosine")),
-                    "top_k": int(params.get("top_k", 5)),
-                    "loss_function": str(params.get("loss_function", "categorical_crossentropy")),
-                    "optimizer": str(params.get("optimizer", "adam")),
-                    "model_type": str(params.get("model_type", "llama3.2:latest")),
-                }
+            base_storage = env_mod.get_env_value(
+                "backend_ia_base_storage",
+                "~/data/anewhope/files/trainer_server/external",
+            )
+            org_folder = helpers_mod.get_folder_by_id_organization(
+                metadata["id_organizacion"]
+            )
+            prj_folder = helpers_mod.get_folder_by_id_project(
+                metadata["id_proyecto"]
+            )
+            ver_folder = helpers_mod.get_folder_by_id_version(
+                metadata["id_version"]
+            )
+            pat_version = f"{base_storage}/{org_folder}/{prj_folder}/{ver_folder}"
 
-                print(f"[REENTRENAR DIRECTO] Enviando al middleware con pat_version={pat_version}", file=sys.stderr, flush=True)
+            payload = {
+                "id_organizacion": metadata["id_organizacion"],
+                "id_proyecto": metadata["id_proyecto"],
+                "id_version": metadata["id_version"],
+                "pat_version": pat_version,
+                "learning_rate": float(params.get("learning_rate", 0.001)),
+                "batch_size": int(params.get("batch_size", 32)),
+                "epochs": int(params.get("epochs", 10)),
+                "embedding_dimension": int(params.get("embedding_dimension", 384)),
+                "sequence_length": int(params.get("sequence_length", 512)),
+                "hidden_units": int(params.get("hidden_units", 256)),
+                "dropout_rate": float(params.get("dropout_rate", 0.2)),
+                "chunk_size": int(params.get("chunk_size", 500)),
+                "chunk_overlap": int(params.get("chunk_overlap", 50)),
+                "temperature": float(params.get("temperature", 0.7)),
+                "max_tokens": int(params.get("max_tokens", 2048)),
+                "distance_metric": str(params.get("distance_metric", "cosine")),
+                "top_k": int(params.get("top_k", 5)),
+                "loss_function": str(params.get("loss_function", "categorical_crossentropy")),
+                "optimizer": str(params.get("optimizer", "adam")),
+                "model_type": str(params.get("model_type", "llama3.2:latest")),
+            }
 
-                # Enviar usando la misma función del api_client
-                api_client_mod = importlib.import_module("adapters.api_client")
-                result = api_client_mod.send_entrenamiento_to_trainer(
-                    payload=payload,
-                    access_token=access_token,
-                    session_token=session_token,
-                )
+            logger.info("[REENTRENAR] Enviando al middleware con pat_version=%s", pat_version)
 
-                if result.get("success"):
-                    id_ent = result.get("id_entrenamiento", 0)
-                    seq = result.get("numero_secuencia", 0)
-                    self.message = f"Reentrenamiento #{seq} iniciado correctamente (ID: {id_ent})"
-                    self.message_type = "success"
-                    logger.info("[REENTRENAR] Entrenamiento iniciado: ID=%s SEQ=%s", id_ent, seq)
+            api_client_mod = importlib.import_module("adapters.api_client")
+            result = api_client_mod.send_entrenamiento_to_trainer(
+                payload=payload,
+                access_token=access_token,
+                session_token=session_token,
+            )
 
-                    self.progress_training_id = id_ent
-                    self.progress_training_seq = seq
-                    self.show_progress_modal = True
-                    self.progress_polling_active = True
-                    self._init_progress_phases()
-                    yield
-
-                    # Polling inline: consultar progreso hasta completar
-                    from adapters.api_client import get_training_progress
-                    import asyncio
-
-                    while self.progress_polling_active:
-                        try:
-                            progress = get_training_progress(
-                                id_entrenamiento=id_ent,
-                                access_token=access_token,
-                                session_token=session_token,
-                            )
-                            if progress.get("success") and progress.get("data"):
-                                data = progress["data"]
-                                estado = data.get("estado", "")
-                                phases_data = data.get("phases", {})
-
-                                for phase in self.progress_phases:
-                                    phase_key = phase["key"]
-                                    if phase_key in phases_data:
-                                        phase_info = phases_data[phase_key]
-                                        for subfase in phase["subfases"]:
-                                            subfase_key = subfase["key"]
-                                            if subfase_key in phase_info.get("subfases", {}):
-                                                sf_info = phase_info["subfases"][subfase_key]
-                                                subfase["status"] = sf_info.get("status", "pending")
-                                                subfase["tiempo"] = sf_info.get("elapsed_time", "")
-
-                                if estado in ("completado", "error", "cancelado"):
-                                    self.progress_polling_active = False
-
-                                yield
-                        except Exception as poll_exc:
-                            logger.warning("[REENTRENAR POLL] Error: %s", poll_exc)
-
-                        await asyncio.sleep(2)
-
-                else:
-                    self.message = f"Error enviando entrenamiento: {result.get('message', 'desconocido')}"
-                    self.message_type = "error"
-                    logger.error("[REENTRENAR] Error: %s", self.message)
-                    yield
-
-            except Exception as e:
-                logger.error("Error en reentrenar_directo: %s", e, exc_info=True)
+        except Exception as e:
+            logger.error("[REENTRENAR] Error preparando payload: %s", e, exc_info=True)
+            async with self:
                 self.message = f"Error: {str(e)}"
                 self.message_type = "error"
+            return
+
+        if result.get("success"):
+            id_ent = result.get("id_entrenamiento", 0)
+            seq = result.get("numero_secuencia", 0)
+            logger.info("[REENTRENAR] Entrenamiento iniciado: ID=%s SEQ=%s", id_ent, seq)
+
+            async with self:
+                self.message = f"Reentrenamiento #{seq} iniciado (ID: {id_ent})"
+                self.message_type = "success"
+                self.progress_training_id = id_ent
+                self.progress_training_seq = seq
+                self.show_progress_modal = True
+                self.progress_polling_active = True
+                self._init_progress_phases()
+            yield
+
+            # Polling: consultar progreso hasta completar
+            import asyncio
+            from adapters.api_client import get_training_progress
+
+            while True:
+                async with self:
+                    if not self.progress_polling_active:
+                        break
+
+                try:
+                    progress = get_training_progress(
+                        id_entrenamiento=id_ent,
+                        access_token=access_token,
+                        session_token=session_token,
+                    )
+                    if progress.get("success") and progress.get("data"):
+                        data = progress["data"]
+                        estado = data.get("estado", "")
+                        phases_data = data.get("phases", {})
+                        logger.info("[REENTRENAR POLL] estado=%s, phases=%s", estado, list(phases_data.keys()) if phases_data else "none")
+
+                        async with self:
+                            for phase in self.progress_phases:
+                                phase_key = phase["key"]
+                                if phase_key in phases_data:
+                                    phase_info = phases_data[phase_key]
+                                    for subfase in phase["subfases"]:
+                                        subfase_key = subfase["key"]
+                                        if subfase_key in phase_info.get("subfases", {}):
+                                            sf_info = phase_info["subfases"][subfase_key]
+                                            subfase["status"] = sf_info.get("status", "pending")
+                                            subfase["tiempo"] = sf_info.get("elapsed_time", "")
+
+                            if estado in ("completado", "error", "cancelado"):
+                                self.progress_polling_active = False
+                                if estado == "completado":
+                                    self.message = f"Entrenamiento completado exitosamente"
+                                    self.message_type = "success"
+                                elif estado == "error":
+                                    self.message = f"Entrenamiento finalizado con error"
+                                    self.message_type = "error"
+                                else:
+                                    self.message = f"Entrenamiento cancelado"
+                                    self.message_type = "warning"
+                                logger.info("[REENTRENAR POLL] Training terminado: estado=%s", estado)
+
+                        yield
+                    elif progress.get("error"):
+                        logger.warning("[REENTRENAR POLL] Error en respuesta: %s", progress.get("detail", "desconocido"))
+                except Exception as poll_exc:
+                    logger.warning("[REENTRENAR POLL] Excepción: %s", poll_exc)
+
+                await asyncio.sleep(2)
+
+        else:
+            async with self:
+                self.message = f"Error enviando entrenamiento: {result.get('message', 'desconocido')}"
+                self.message_type = "error"
+                logger.error("[REENTRENAR] Error: %s", self.message)
 
     def cerrar_modal_reentrenar(self):
         """Cierra el modal de reentrenamiento."""
