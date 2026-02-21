@@ -153,7 +153,7 @@ class ModelDownloadState(SharedSessionState):
             # Cargar proyectos y modelos para la org seleccionada
             if self.dl_selected_org_id > 0:
                 self._load_projects()
-                return self.load_models()
+                return type(self).load_models
         except Exception as exc:
             logger.error("Error inicializando selectores: %s", exc)
 
@@ -181,7 +181,7 @@ class ModelDownloadState(SharedSessionState):
 
         if self.dl_selected_org_id > 0:
             self._load_projects()
-            return self.load_models()
+            return type(self).load_models
 
     def _load_projects(self):
         """Carga los proyectos de la organización seleccionada."""
