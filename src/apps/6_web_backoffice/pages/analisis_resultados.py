@@ -223,6 +223,7 @@ class AnalisisResultadosState(rx.State):
 
     def on_org_select(self, value: str):
         """Handler para selección de organización."""
+        logger.info("[ANALISIS] on_org_select | value=%s", value)
         if value == "Seleccione...":
             yield AnalisisResultadosState.on_org_change("0")
         else:
@@ -249,6 +250,7 @@ class AnalisisResultadosState(rx.State):
 
     def on_version_select(self, value: str):
         """Handler para selección de versión."""
+        logger.info("[ANALISIS] on_version_select | value=%s", value)
         if value == "Seleccione...":
             yield AnalisisResultadosState.on_version_change("0")
         else:
@@ -464,6 +466,8 @@ class AnalisisResultadosState(rx.State):
     @rx.event(background=True)
     async def buscar_entrenamientos(self):
         """Busca entrenamientos según los filtros."""
+        logger.info("[ANALISIS] buscar_entrenamientos | org=%s, project=%s, version=%s",
+                     self.selected_org_id, self.selected_project_id, self.selected_version_id)
         async with self:
             self.loading_entrenamientos = True
             self.entrenamientos = []
@@ -495,6 +499,7 @@ class AnalisisResultadosState(rx.State):
 
                     if response.status_code == 200:
                         self.entrenamientos = response.json()
+                        logger.info("[ANALISIS] buscar_entrenamientos resultado | count=%d", len(self.entrenamientos))
                         self.message = f"Se encontraron {len(self.entrenamientos)} entrenamientos"
                         self.message_type = "success"
 
@@ -568,6 +573,7 @@ Overall Quality: {round(overall_quality * 100, 1)}%"""
     @rx.event(background=True)
     async def generar_sugerencias(self, id_entrenamiento: int):
         """Genera sugerencias para un entrenamiento."""
+        logger.info("[ANALISIS] generar_sugerencias | id_entrenamiento=%d", id_entrenamiento)
         async with self:
             self.loading_suggestions = True
             self.message = ""
@@ -604,6 +610,7 @@ Overall Quality: {round(overall_quality * 100, 1)}%"""
     @rx.event(background=True)
     async def ver_sugerencias(self, id_entrenamiento: int):
         """Muestra las sugerencias de un entrenamiento."""
+        logger.info("[ANALISIS] ver_sugerencias | id_entrenamiento=%d", id_entrenamiento)
         async with self:
             self.loading_suggestions = True
             self.selected_training_id = id_entrenamiento
@@ -983,6 +990,7 @@ Overall Quality: {round(overall_quality * 100, 1)}%"""
     @rx.event(background=True)
     async def analizar_modelo(self, id_entrenamiento: int):
         """Lanza análisis del modelo generado."""
+        logger.info("[ANALISIS] analizar_modelo | id_entrenamiento=%d", id_entrenamiento)
         async with self:
             self.loading_suggestions = True  # Reutilizar loading
             self.message = ""

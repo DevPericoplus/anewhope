@@ -7,7 +7,7 @@ import httpx
 import os
 import importlib.util
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("backoffice")
 
 # Importar SharedSessionState desde el módulo compartido del backoffice
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -126,6 +126,7 @@ class ModelDownloadState(SharedSessionState):
 
     def on_mount(self):
         """Se ejecuta cuando la página se monta."""
+        logger.info("[DESCARGAS] on_mount")
         return self.init_selectors()
 
     def init_selectors(self):
@@ -158,6 +159,7 @@ class ModelDownloadState(SharedSessionState):
 
     def dl_set_selected_org(self, org_name: str):
         """Establece la organización seleccionada y recarga proyectos/modelos."""
+        logger.info("[DESCARGAS] change_organization | org_name=%s", org_name)
         self.dl_selected_org_name = org_name
         self.dl_selected_project_name = ""
         self.dl_selected_version_name = ""
@@ -204,6 +206,7 @@ class ModelDownloadState(SharedSessionState):
 
     def dl_set_selected_project(self, project_name: str):
         """Establece el proyecto seleccionado y carga sus versiones."""
+        logger.info("[DESCARGAS] change_project | project_name=%s", project_name)
         self.dl_selected_project_name = project_name
         self.dl_selected_version_name = ""
         self.dl_selected_version_id = 0
@@ -247,6 +250,7 @@ class ModelDownloadState(SharedSessionState):
 
     def dl_set_selected_version(self, version_name: str):
         """Establece la versión seleccionada y filtra modelos."""
+        logger.info("[DESCARGAS] change_version | version_name=%s", version_name)
         self.dl_selected_version_name = version_name
 
         # Buscar el ID correspondiente al nombre
@@ -363,6 +367,7 @@ class ModelDownloadState(SharedSessionState):
     @rx.event(background=True)
     async def request_otp(self):
         """Solicita el OTP para descarga."""
+        logger.info("[DESCARGAS] request_otp | solicitando OTP")
         async with self:
             self.otp_error = ""
             self.error_message = ""
@@ -418,21 +423,24 @@ class ModelDownloadState(SharedSessionState):
                         async with self:
                             self.otp_error = "No se pudo enviar el SMS"
                 else:
+                    logger.warning("[DESCARGAS] request_otp | SMS no disponible")
                     async with self:
                         self.otp_error = "No se pudo enviar el SMS (servicio no disponible)"
             else:
                 error_detail = response.json().get("detail", "Error desconocido")
+                logger.warning("[DESCARGAS] request_otp | error API: %s", error_detail)
                 async with self:
                     self.otp_error = f"Error al solicitar OTP: {error_detail}"
 
         except Exception as e:
             async with self:
                 self.otp_error = f"Error de conexión: {str(e)}"
-            logger.error("Excepción al solicitar OTP: %s", e, exc_info=True)
+            logger.error("[DESCARGAS] request_otp error: %s", e, exc_info=True)
 
     @rx.event(background=True)
     async def validate_otp_and_download(self):
         """Valida el OTP e inicia la descarga del modelo."""
+        logger.info("[DESCARGAS] validate_otp_and_download | iniciando descarga")
         async with self:
             self.download_in_progress = True
             self.otp_error = ""
@@ -525,7 +533,7 @@ class ModelDownloadState(SharedSessionState):
             async with self:
                 self.otp_error = f"Error de conexión: {str(e)}"
                 self.download_in_progress = False
-            logger.error("Excepción al validar OTP: %s", e, exc_info=True)
+            logger.error("[DESCARGAS] validate_otp_and_download error: %s", e, exc_info=True)
 
 
 def model_card(model: dict[str, Any]) -> rx.Component:

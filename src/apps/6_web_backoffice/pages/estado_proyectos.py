@@ -24,7 +24,7 @@ import logging
 import reflex as rx
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("backoffice")
 
 
 # ============================================================================
@@ -228,6 +228,7 @@ class EstadoProyectosState(rx.State):
             access_token = self.access_token
             session_token = self.session_token
 
+        logger.info("[ESTADO-PRJ] _load_organizations | tokens=%s", "SET" if access_token else "EMPTY")
         print(f"[DEBUG ESTADO_PROYECTOS] _load_organizations: access_token={'SET' if access_token else 'EMPTY'}, session_token={'SET' if session_token else 'EMPTY'}")
 
         try:
@@ -241,7 +242,7 @@ class EstadoProyectosState(rx.State):
             if orgs_data:
                 print(f"[DEBUG ESTADO_PROYECTOS] _load_organizations: first org: {orgs_data[0]}")
         except Exception as e:
-            logger.error("Error cargando organizaciones: %s", e)
+            logger.error("[ESTADO-PRJ] _load_organizations error: %s", e)
             print(f"[DEBUG ESTADO_PROYECTOS] _load_organizations: EXCEPTION: {e}")
             orgs_data = []
 
@@ -290,7 +291,7 @@ class EstadoProyectosState(rx.State):
                 include_deleted=False,
             )
         except Exception as e:
-            logger.error("Error cargando proyectos: %s", e)
+            logger.error("[ESTADO-PRJ] _load_projects error: %s", e)
             projects_data = []
 
         projects = [
@@ -335,7 +336,7 @@ class EstadoProyectosState(rx.State):
             )
             versions_data = result.get("versiones", [])
         except Exception as e:
-            logger.error("Error cargando versiones: %s", e)
+            logger.error("[ESTADO-PRJ] _load_versions error: %s", e)
             versions_data = []
 
         versions = [
@@ -389,7 +390,7 @@ class EstadoProyectosState(rx.State):
                 session_token=session_token,
             )
         except Exception as e:
-            logger.error("Error cargando estado de versión: %s", e)
+            logger.error("[ESTADO-PRJ] _load_current_state error: %s", e)
             async with self:
                 self.current_state = {}
             return
@@ -456,6 +457,7 @@ class EstadoProyectosState(rx.State):
                     org_id = org["id"]
                     break
 
+            logger.info("[ESTADO-PRJ] set_organization | org_name=%s, org_id=%d", org_name, org_id)
             self.selected_org_id = org_id
             self.selected_project_id = 0
             self.selected_version_id = 0
@@ -484,6 +486,7 @@ class EstadoProyectosState(rx.State):
                     project_id = proj["id"]
                     break
 
+            logger.info("[ESTADO-PRJ] set_project | project_name=%s, project_id=%d", project_name, project_id)
             self.selected_project_id = project_id
             self.selected_version_id = 0
             self.current_state = {}
@@ -506,6 +509,7 @@ class EstadoProyectosState(rx.State):
         except ValueError:
             version_id = 0
 
+        logger.info("[ESTADO-PRJ] set_version | version_id=%d", version_id)
         async with self:
             self.selected_version_id = version_id
         yield
@@ -690,6 +694,7 @@ class EstadoProyectosState(rx.State):
     @rx.event(background=True)
     async def toggle_field(self, field_name: str) -> AsyncGenerator[None, None]:
         """Alterna el valor de un campo booleano usando la API."""
+        logger.info("[ESTADO-PRJ] toggle_field | field=%s", field_name)
         async with self:
             can_edit = self.can_edit
             current_state = self.current_state.copy()
@@ -839,6 +844,7 @@ class EstadoProyectosState(rx.State):
                 yield
             else:
                 detail = result.get("detail", result.get("error", "Error desconocido"))
+                logger.error("[ESTADO-PRJ] toggle_field error | field=%s, result=%s", field_name, result)
                 print(f"[EP] toggle_field ERROR: field={field_name} result={result}")
                 async with self:
                     self.error_message = f"Error al actualizar {field_name}: {detail}"
@@ -846,6 +852,7 @@ class EstadoProyectosState(rx.State):
                 yield
 
         except Exception as e:
+            logger.error("[ESTADO-PRJ] toggle_field exception | field=%s: %s", field_name, e)
             print(f"[EP] toggle_field EXCEPTION: field={field_name} error={e}")
             async with self:
                 self.error_message = f"Error en la actualización: {str(e)}"
@@ -864,6 +871,7 @@ class EstadoProyectosState(rx.State):
         Los tokens y datos de sesión deben estar ya en el state
         (puestos por init_from_main_state desde set_internal_menu).
         """
+        logger.info("[ESTADO-PRJ] on_page_load")
         async with self:
             has_user = self.user_id > 0
             has_tokens = bool(self.access_token)

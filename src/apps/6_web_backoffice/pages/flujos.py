@@ -58,7 +58,7 @@ def load_flujos_content() -> str:
         return "Flujos operativos y procesos automatizados."
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("backoffice")
 
 
 FLOW_HEADING_MARGIN = "0.6em"
@@ -164,6 +164,7 @@ class FlujosState(rx.State):
     @rx.event(background=True)
     async def play_startup_flow(self) -> AsyncGenerator[None, None]:
         """Ejecuta la animación secuencial al cargar el diagrama."""
+        logger.info("[FLUJOS] play_startup_flow | iniciando animacion")
 
         async with self:
             self.display_state = dict.fromkeys(
@@ -220,6 +221,7 @@ class FlujosState(rx.State):
 
     def set_organization(self, org_name: str) -> list[rx.EventHandler]:
         """Cambia la organización seleccionada y recarga proyectos."""
+        logger.info("[FLUJOS] set_organization | org_name=%s", org_name)
         new_org_id = find_org_id_by_name(self.organizations, org_name)
         if new_org_id > 0:
             self.selected_org_id = new_org_id
@@ -232,6 +234,7 @@ class FlujosState(rx.State):
 
     def set_project(self, project_name: str) -> list[rx.EventHandler]:
         """Actualiza el proyecto activo y recarga versiones."""
+        logger.info("[FLUJOS] set_project | project_name=%s", project_name)
         new_id = find_project_id_by_name(self.projects, project_name)
         if new_id > 0:
             self.selected_project_id = new_id
@@ -242,6 +245,7 @@ class FlujosState(rx.State):
 
     def set_version(self, version_value: str) -> list[rx.EventHandler]:
         """Actualiza la versión activa y recarga el estado."""
+        logger.info("[FLUJOS] set_version | version=%s", version_value)
 
         try:
             self.selected_version_id = int(version_value)
@@ -314,6 +318,10 @@ class FlujosState(rx.State):
             or self.selected_version_id <= 0
         ):
             return
+        logger.info(
+            "[FLUJOS] _refresh_estado | org=%d, project=%d, version=%d",
+            self.selected_org_id, self.selected_project_id, self.selected_version_id,
+        )
         rows = run_projects_db_query(
             "SELECT "
             "1 as propuesta_cliente, "

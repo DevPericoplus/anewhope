@@ -45,8 +45,7 @@ from adapters.api_client import (
 # Configuración de Logging (DEBE IR ANTES de importar permisos)
 # ============================================================================
 
-logger = logging.getLogger("ExploradorBackoffice")
-logger.setLevel(logging.INFO)
+logger = logging.getLogger("backoffice")
 
 # ============================================================================
 # Importar sistema de permisos desde capa compartida

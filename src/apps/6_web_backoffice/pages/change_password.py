@@ -5,7 +5,7 @@ import random
 import logging
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("backoffice")
 
 # Agregar el path para importar módulos del dominio
 domain_entities_path = Path(__file__).parent.parent.parent.parent / "1_shared_domain" / "entities"
