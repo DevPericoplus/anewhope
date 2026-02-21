@@ -505,42 +505,30 @@ class State(SharedSessionState):
     def enable_user(self, user_id: int):
         """Habilita un usuario de la organización."""
         try:
-            print(f"[DEBUG] Habilitar usuario: {user_id}")
-            result = update_user_status(
+            update_user_status(
                 user_id=user_id,
                 active=True,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
-            print(f"[DEBUG] Resultado: {result}")
-            
-            # Actualizar estado local
-            for user in self.org_users:
-                if user["user_id"] == user_id:
-                    user["active"] = True
-            self.org_users = self.org_users.copy()
         except Exception as e:
             print(f"[ERROR] Error habilitando usuario: {e}")
-    
+        finally:
+            self.load_org_users()
+
     def disable_user(self, user_id: int):
         """Deshabilita un usuario de la organización."""
         try:
-            print(f"[DEBUG] Deshabilitar usuario: {user_id}")
-            result = update_user_status(
+            update_user_status(
                 user_id=user_id,
                 active=False,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
-            print(f"[DEBUG] Resultado: {result}")
-            
-            # Actualizar estado local
-            for user in self.org_users:
-                if user["user_id"] == user_id:
-                    user["active"] = False
-            self.org_users = self.org_users.copy()
         except Exception as e:
             print(f"[ERROR] Error deshabilitando usuario: {e}")
+        finally:
+            self.load_org_users()
     
     def load_project_roles_base(self):
         """Carga el catálogo maestro de roles base desde la API.
@@ -1027,96 +1015,47 @@ class State(SharedSessionState):
             self.create_project_error = result.get("error", "Error al crear el proyecto")
     
     def lock_project(self, project_id: int):
-        """Bloquea un proyecto (active=false).
-        
-        IMPORTANTE: Este es un bloqueo LÓGICO, no un borrado físico.
-        El proyecto permanece en la base de datos pero con active=false.
-        
-        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
-        """
-        print(f"[DEBUG] Bloqueando proyecto: {project_id}")
+        """Bloquea un proyecto (active=false)."""
         try:
             result = update_project_status(
                 project_id=project_id,
-                active=False,  # Bloquear = active=false
+                active=False,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
-            print(f"[DEBUG] Resultado: {result}")
-            
-            # Solo actualizar estado local si la operación fue exitosa
             if result.get("success"):
-                for project in self.org_projects:
-                    if project["id"] == project_id:
-                        project["active"] = False
-                self.org_projects = self.org_projects.copy()
-                print(f"[DEBUG] Proyecto {project_id} bloqueado correctamente")
-            else:
-                print(f"[ERROR] No se pudo bloquear proyecto: {result}")
+                self.load_org_projects()
         except Exception as e:
-            print(f"[ERROR] Error bloqueando proyecto: {e}")
-    
+            print(f"[ERROR] lock_project: {type(e).__name__}: {e}")
+
     def unlock_project(self, project_id: int):
-        """Desbloquea un proyecto (active=true).
-        
-        IMPORTANTE: Reactiva un proyecto bloqueado.
-        
-        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
-        """
-        print(f"[DEBUG] Desbloqueando proyecto: {project_id}")
+        """Desbloquea un proyecto (active=true)."""
         try:
             result = update_project_status(
                 project_id=project_id,
-                active=True,  # Desbloquear = active=true
+                active=True,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
-            print(f"[DEBUG] Resultado: {result}")
-            
-            # Solo actualizar estado local si la operación fue exitosa
             if result.get("success"):
-                for project in self.org_projects:
-                    if project["id"] == project_id:
-                        project["active"] = True
-                self.org_projects = self.org_projects.copy()
-                print(f"[DEBUG] Proyecto {project_id} desbloqueado correctamente")
-            else:
-                print(f"[ERROR] No se pudo desbloquear proyecto: {result}")
+                self.load_org_projects()
         except Exception as e:
-            print(f"[ERROR] Error desbloqueando proyecto: {e}")
-    
+            print(f"[ERROR] unlock_project: {type(e).__name__}: {e}")
+
     def delete_project(self, project_id: int):
-        """Borra lógicamente un proyecto (existe=false).
-        
-        IMPORTANTE: Este es un BORRADO LÓGICO, no físico.
-        El proyecto permanece en la BD pero con existe=false.
-        
-        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
-        
-        Al borrar un proyecto:
-        1. Se quita del panel "Gestión de Proyectos"
-        2. Se recargan las asignaciones para que no aparezca en "Asignaciones de Proyectos"
-        """
-        print(f"[DEBUG] Borrando proyecto (lógico): {project_id}")
+        """Borrado lógico de un proyecto (existe=false)."""
         try:
             result = update_project_status(
                 project_id=project_id,
-                existe=False,  # Borrado lógico
+                existe=False,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
-            print(f"[DEBUG] Resultado: {result}")
-            
-            # Solo quitar de la lista local si la operación fue exitosa
             if result.get("success"):
-                self.org_projects = [p for p in self.org_projects if p["id"] != project_id]
-                # Recargar asignaciones para que no muestre el proyecto borrado
+                self.load_org_projects()
                 self.load_project_assignments()
-                print(f"[DEBUG] Proyecto {project_id} borrado lógicamente")
-            else:
-                print(f"[ERROR] No se pudo borrar proyecto: {result}")
         except Exception as e:
-            print(f"[ERROR] Error borrando proyecto: {e}")
+            print(f"[ERROR] delete_project: {type(e).__name__}: {e}")
     
     def request_project_support(self, project_id: int):
         """Abre el modal para solicitar soporte para un proyecto."""
