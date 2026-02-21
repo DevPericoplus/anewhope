@@ -4020,6 +4020,21 @@ def check_sms_api_health() -> dict:
     sms_api_url = os.environ.get("SMS_API_URL", "")
 
     if not sms_api_url:
+        # Fallback: obtener URL desde protected_values via common_security
+        try:
+            _cs_path = (
+                Path(__file__).resolve().parents[4]
+                / "src" / "2_shared_application" / "security" / "common_security.py"
+            )
+            _cs_spec = importlib.util.spec_from_file_location("common_security_sms_check", _cs_path)
+            if _cs_spec and _cs_spec.loader:
+                _cs_mod = importlib.util.module_from_spec(_cs_spec)
+                _cs_spec.loader.exec_module(_cs_mod)
+                sms_api_url, _, _ = _cs_mod.get_sms_api_credentials()
+        except Exception:
+            pass
+
+    if not sms_api_url:
         return {"status": "error", "detail": "No configurado"}
 
     try:
