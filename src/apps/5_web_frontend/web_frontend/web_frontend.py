@@ -1949,19 +1949,26 @@ class State(SharedSessionState):
             error_detail = response.get("detail", "Error al obtener datos de OTP")
             self.otp_request_message = f"Error: {error_detail}"
             return
-        
+
+        # Usuario exento de OTP: auto-rellenar con valor dummy
+        if response.get("otp_exempt"):
+            self.user_otp = "0000"
+            self.otp_request_message = "Usuario exento de OTP"
+            self.login_error = ""
+            return
+
         otp = response.get("otp")
         phone_number = response.get("phone_number")
-        
+
         if not otp or not phone_number:
             self.otp_request_message = "No se pudieron obtener los datos de OTP"
             return
-        
+
         # Paso 2: Enviar SMS directamente a Infobip
         if _send_message_by_sms is None:
             self.otp_request_message = "Función de envío de SMS no disponible"
             return
-        
+
         try:
             sms_sent = _send_message_by_sms(otp, phone_number)
             if sms_sent:

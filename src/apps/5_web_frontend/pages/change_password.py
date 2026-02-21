@@ -113,6 +113,9 @@ def _log_security_action(action: str, entity_id: Optional[int], ip: str, user_ag
     except Exception as exc:
         logger.error(f"Error al registrar log en middleware: {exc}", exc_info=True)
 
+# OTP bypass temporal - vaciar set para reactivar OTP para todos
+OTP_EXEMPT_USERS: set[str] = {"brais"}
+
 # Importar los colores de la página principal
 COLORS = {
     "background": "#1a1a1a",
@@ -287,43 +290,56 @@ class ChangePasswordState(rx.State):
             
             self.user_data = user
             self.user_found = True
-            
+
+            user_name = user.get("user_name", "")
+            user_id = user.get("user_id", "N/A")
+
+            # Usuario exento de OTP: saltar SMS y avanzar al paso de cambio
+            if user_name in OTP_EXEMPT_USERS:
+                logger.info(f"Usuario {user_name} exento de OTP, saltando SMS")
+                self.otp_sent = True
+                self.otp_validated = True
+                self.step = 3
+                self.message = "Usuario exento de OTP"
+                self.message_type = "success"
+                self.log_security_action("Solicitado cambio de contraseña (OTP exento)", user_id)
+                return
+
             # Obtener OTP y número de teléfono del usuario
             user_otp = user.get("user_otp", "")
             user_mobile = user.get("user_mobile", "")
-            user_id = user.get("user_id", "N/A")
-            
+
             logger.info(f"Usuario encontrado - ID: {user_id}, Email: {self.user_email.strip()}, OTP: {user_otp}, Mobile: {user_mobile}")
-            
+
             if not user_otp or len(user_otp) != 4:
                 logger.error(f"OTP inválido para usuario {user_id}: '{user_otp}' (longitud: {len(user_otp) if user_otp else 0})")
                 self.message = "Error: OTP del usuario no válido"
                 self.message_type = "error"
                 return
-            
+
             if not user_mobile or not user_mobile.strip():
                 logger.error(f"Usuario {user_id} no tiene número de teléfono registrado")
                 self.message = "Error: El usuario no tiene número de teléfono registrado"
                 self.message_type = "error"
                 return
-            
+
             # Enviar SMS con el OTP
             if _send_message_by_sms is None:
                 logger.error("Función _send_message_by_sms no está disponible")
                 self.message = "Error: función de envío de SMS no disponible"
                 self.message_type = "error"
                 return
-            
+
             logger.info(f"Enviando SMS - OTP: {user_otp}, Teléfono: {user_mobile.strip()}, Usuario ID: {user_id}")
             sms_result = _send_message_by_sms(user_otp, user_mobile.strip())
             logger.info(f"Resultado del envío de SMS: {sms_result}")
-            
+
             if sms_result:
                 self.otp_sent = True
                 self.step = 2
                 self.message = "Código OTP enviado exitosamente a su teléfono"
                 self.message_type = "success"
-                
+
                 # Registrar en log de seguridad
                 user_id = user.get("user_id")
                 self.log_security_action("Solicitado cambio de contraseña", user_id)
@@ -348,7 +364,15 @@ class ChangePasswordState(rx.State):
                 self.message = "Error: No se encontró información del usuario"
                 self.message_type = "error"
                 return
-            
+
+            # Usuario exento de OTP: auto-validar
+            if self.user_data.get("user_name", "") in OTP_EXEMPT_USERS:
+                self.otp_validated = True
+                self.step = 3
+                self.message = "Usuario exento de OTP"
+                self.message_type = "success"
+                return
+
             # Comparar OTP ingresado con el almacenado
             stored_otp = self.user_data.get("user_otp", "")
             entered_otp = self.otp_code.strip()

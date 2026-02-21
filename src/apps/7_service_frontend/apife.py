@@ -107,6 +107,7 @@ class LoginOtpResponse(BaseModel):
     success: bool
     otp: str | None = None  # Código OTP de 4 dígitos
     phone_number: str | None = None  # Teléfono en formato internacional (+34...)
+    otp_exempt: bool = False  # True si el usuario está exento de OTP
 
 
 class RefreshTokenResponse(BaseModel):
@@ -551,6 +552,7 @@ async def request_login_otp_endpoint(
             success=result.get("success", False),
             otp=result.get("otp"),
             phone_number=result.get("phone_number"),
+            otp_exempt=result.get("otp_exempt", False),
         )
     except BusinessRuleError as exc:
         raise HTTPException(

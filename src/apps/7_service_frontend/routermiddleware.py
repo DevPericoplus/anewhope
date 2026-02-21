@@ -1338,6 +1338,13 @@ class RouterMiddleware:
             raise BusinessRuleError("No se pudo descifrar la contraseña")
         return decrypted_bytes.decode("utf-8")
 
+    # OTP bypass temporal - vaciar set para reactivar OTP para todos
+    OTP_EXEMPT_USERS: set[str] = {"brais"}
+
+    def _is_otp_exempt(self, user_name: str) -> bool:
+        """Comprueba si el usuario está exento de OTP."""
+        return user_name in self.OTP_EXEMPT_USERS
+
     def _rotate_otp(self, user: UserDto) -> str:
         """Genera y actualiza el OTP del usuario."""
 
@@ -1433,6 +1440,21 @@ class RouterMiddleware:
             self._store_sessions_data(sessions_path, sessions_data)
             raise BusinessRuleError("Usuario o credenciales inválidas")
 
+        # Usuario exento de OTP: devolver sin datos de teléfono/OTP
+        if self._is_otp_exempt(user_name):
+            self._append_auth_log(
+                sessions_data,
+                user_name=user_name,
+                event="otp_request",
+                status="success",
+                error_code=None,
+                details="Usuario exento de OTP",
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            self._store_sessions_data(sessions_path, sessions_data)
+            return {"success": True, "otp_exempt": True}
+
         user_otp = str(user_record.user_otp)
         if len(user_otp) != 4 or not user_otp.isdigit():
             self._append_auth_log(
@@ -1465,7 +1487,7 @@ class RouterMiddleware:
         # Devolver datos al frontend para que envíe el SMS directamente
         # El frontend es responsable de enviar el SMS a la API externa (Infobip)
         phone_number = str(user_record.user_mobile).strip()
-        
+
         self._append_auth_log(
             sessions_data,
             user_name=user_name,
@@ -1477,7 +1499,7 @@ class RouterMiddleware:
             user_agent=user_agent,
         )
         self._store_sessions_data(sessions_path, sessions_data)
-        
+
         return {
             "success": True,
             "otp": user_otp,
@@ -1558,32 +1580,33 @@ class RouterMiddleware:
             self._store_sessions_data(sessions_path, sessions_data)
             raise BusinessRuleError("Usuario o credenciales inválidas")
 
-        if str(user_record.user_otp) != str(otp):
-            self._append_auth_log(
-                sessions_data,
-                user_name=user_name,
-                event="login_attempt",
-                status="failed",
-                error_code="INVALID_OTP",
-                details="OTP inválido",
-                ip_address=ip_address,
-                user_agent=user_agent,
-            )
-            if self._count_recent_failed_attempts(sessions_data, user_name) >= 3:
-                user_record.blocked = True
+        if not self._is_otp_exempt(user_name):
+            if str(user_record.user_otp) != str(otp):
                 self._append_auth_log(
                     sessions_data,
                     user_name=user_name,
-                    event="login_blocked",
-                    status="blocked",
-                    error_code="TOO_MANY_ATTEMPTS",
-                    details="Usuario bloqueado por intentos fallidos",
+                    event="login_attempt",
+                    status="failed",
+                    error_code="INVALID_OTP",
+                    details="OTP inválido",
                     ip_address=ip_address,
                     user_agent=user_agent,
                 )
-                self._store_users(users_path, users)
-            self._store_sessions_data(sessions_path, sessions_data)
-            raise BusinessRuleError("OTP inválido")
+                if self._count_recent_failed_attempts(sessions_data, user_name) >= 3:
+                    user_record.blocked = True
+                    self._append_auth_log(
+                        sessions_data,
+                        user_name=user_name,
+                        event="login_blocked",
+                        status="blocked",
+                        error_code="TOO_MANY_ATTEMPTS",
+                        details="Usuario bloqueado por intentos fallidos",
+                        ip_address=ip_address,
+                        user_agent=user_agent,
+                    )
+                    self._store_users(users_path, users)
+                self._store_sessions_data(sessions_path, sessions_data)
+                raise BusinessRuleError("OTP inválido")
 
         self._logger.info(
             "Login exitoso user_id=%s org_id=%s",
@@ -4787,6 +4810,10 @@ class RouterMiddleware:
         if not user_record.active or user_record.blocked:
             raise BusinessRuleError("Usuario bloqueado o inactivo")
 
+        # Usuario exento de OTP: saltar envío de SMS
+        if self._is_otp_exempt(user_record.user_name):
+            return {"otp_exempt": True, "phone_masked": "N/A"}
+
         # Verificar que tiene teléfono
         if not user_record.user_mobile:
             raise BusinessRuleError("No hay teléfono asociado al usuario")
@@ -4846,14 +4873,15 @@ class RouterMiddleware:
         if not user_record.active or user_record.blocked:
             raise BusinessRuleError("Usuario bloqueado o inactivo")
 
-        # Validar OTP
-        user_otp = str(user_record.user_otp)
-        if user_otp != otp:
-            self._logger.warning(
-                "OTP inválido para descarga modelo: user_id=%s expected=%s got=%s",
-                session.user_id, user_otp, otp
-            )
-            raise BusinessRuleError("OTP inválido")
+        # Validar OTP (saltar para usuarios exentos)
+        if not self._is_otp_exempt(user_record.user_name):
+            user_otp = str(user_record.user_otp)
+            if user_otp != otp:
+                self._logger.warning(
+                    "OTP inválido para descarga modelo: user_id=%s expected=%s got=%s",
+                    session.user_id, user_otp, otp
+                )
+                raise BusinessRuleError("OTP inválido")
 
         # Generar token de descarga
         # Usar "internal" como relative_path para indicar almacenamiento interno
