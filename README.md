@@ -410,6 +410,8 @@ El servidor trainer alberga los siguientes servicios:
 | Keras | 3.13.2 | API de alto nivel para redes neuronales |
 | ChromaDB | 1.5.0 | Base de datos vectorial para búsqueda semántica (RAG) |
 | Ollama | 0.4.7 | Cliente Python para interacción con modelos LLM locales |
+| python-docx | 1.1.2 | Extracción de texto de archivos `.docx` durante el chunking (fase 3 del entrenamiento RAG) |
+| pypdf | 6.7.0 | Extracción de texto de archivos `.pdf` durante el chunking (fase 3 del entrenamiento RAG) |
 
 **Flujo de comunicación:**
 ```
@@ -7288,6 +7290,76 @@ El servidor util01 actúa como nodo de despliegue centralizado:
 - Tiene Ansible instalado
 - Accede a todos los servidores por SSH (usuario `ansible`, clave RSA)
 - Ejecuta los playbooks para desplegar en frontend, backend y trainer
+
+### Proxy Squid en util01 (acceso a internet para servidores internos)
+
+Los servidores `frontend`, `backend` y `trainer` están ubicados en una subred privada (10.0.2.0/24) de la VPC de AWS sin acceso directo a internet. Para que estos servidores puedan descargar paquetes del sistema (dnf), dependencias Python (pip), modelos de IA y otros recursos externos, se utiliza un proxy Squid instalado en `util01`.
+
+**Arquitectura de red:**
+
+```
+Internet ← util01 (10.0.1.96, subred pública) ← Squid :3128
+                                                    ↑
+                         frontend (10.0.2.180) ─────┤
+                         backend  (10.0.2.77)  ─────┤
+                         trainer  (10.0.2.194) ─────┘
+                         (subred privada 10.0.2.0/24)
+```
+
+**Configuración del proxy:**
+
+| Componente | Detalle |
+|------------|---------|
+| Servidor proxy | util01 (10.0.1.96) |
+| Puerto | 3128 |
+| Software | Squid |
+| Redes permitidas | 10.0.0.0/8 |
+| Security Group | `anewhope-pre-util` (regla TCP 3128 desde 10.0.0.0/16) |
+
+**Configuración en servidores cliente:**
+
+El proxy se configura automáticamente durante el despliegue Ansible (tag `proxy`) en tres niveles:
+
+1. **DNF** (`/etc/dnf/dnf.conf`): Permite instalar y actualizar paquetes del sistema operativo.
+2. **Shell** (`/etc/profile.d/proxy.sh`): Variables `HTTP_PROXY`, `HTTPS_PROXY` y `NO_PROXY` para sesiones de terminal, scripts y herramientas como `pip`, `curl`, `wget`.
+3. **Systemd** (`/etc/systemd/system.conf.d/10-proxy.conf`): Variables de entorno para servicios gestionados por systemd.
+
+**Variables de entorno aplicadas:**
+
+```bash
+HTTP_PROXY=http://10.0.1.96:3128
+HTTPS_PROXY=http://10.0.1.96:3128
+NO_PROXY=localhost,127.0.0.1,10.0.0.0/8,169.254.169.254,.anewhope.aws
+```
+
+El `NO_PROXY` excluye el tráfico interno (comunicación entre servicios vía `*.anewhope.aws`) y el servicio de metadatos de AWS (169.254.169.254).
+
+**Despliegue del proxy:**
+
+```bash
+# 1. Instalar Squid en util01
+./deploy_custom.sh --env pre --server util01 --tags squid --yes
+
+# 2. Configurar proxy en los servidores cliente
+./deploy_custom.sh --env pre --server backend --tags proxy --yes
+./deploy_custom.sh --env pre --server trainer --tags proxy --yes
+./deploy_custom.sh --env pre --server frontend --tags proxy --yes
+```
+
+**Verificación:**
+
+```bash
+# Desde cualquier servidor de la subred privada:
+ssh pre-trainer "source /etc/profile.d/proxy.sh && curl -s -o /dev/null -w '%{http_code}' https://google.com"
+# Resultado esperado: 301
+
+# Verificar que dnf descarga paquetes:
+ssh pre-backend "sudo dnf check-update --refresh 2>&1 | head -5"
+```
+
+**Rol Ansible:** `roles/squid-proxy/` en el repositorio `anh_ansible_environments`.
+
+**Configuración de la variable:** `proxy_url` y `proxy_no_proxy` en `infrastructure/environments/pre/env.yaml`.
 
 ## Roles y automatización (referencia)
 
