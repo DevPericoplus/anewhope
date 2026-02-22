@@ -119,7 +119,7 @@ def get_backend_storage_path() -> str:
 
     Returns:
         Path expandido del directorio de storage interno (donde se sincronizan los informes)
-        Ejemplo: /Users/administrator/data/anewhope/files/backend_server/internal
+        Ejemplo: /data/internal
     """
     storage_path = _read_env_yaml("backend_core_internal_storage")
 
@@ -133,8 +133,30 @@ def get_backend_storage_path() -> str:
     return expanded_path
 
 
+def get_backend_reports_path() -> str:
+    """Obtiene el path base de almacenamiento de informes del backend core.
+
+    Returns:
+        Path expandido del directorio de reports
+        Ejemplo: /data/internal/reports
+    """
+    storage_path = _read_env_yaml("backend_core_reports_storage")
+
+    if not storage_path:
+        # Fallback: usar internal_storage + /reports
+        base = get_backend_storage_path()
+        if base:
+            return os.path.join(base, "reports")
+        logger.error("No se encontró backend_core_reports_storage en configuración")
+        return ""
+
+    expanded_path = os.path.expanduser(storage_path)
+    logger.info(f"Path de reports: {expanded_path}")
+    return expanded_path
+
+
 def build_version_path(org_id: int, project_id: int, version_id: int) -> str:
-    """Construye el path completo a una carpeta de versión.
+    """Construye el path completo a una carpeta de versión de informes.
 
     Args:
         org_id: ID de la organización
@@ -142,14 +164,14 @@ def build_version_path(org_id: int, project_id: int, version_id: int) -> str:
         version_id: ID de la versión
 
     Returns:
-        Path completo a la carpeta de versión
-        Ejemplo: /Users/.../internal/ORG00001/PRJ00001/v001
+        Path completo a la carpeta de versión dentro de reports
+        Ejemplo: /data/internal/reports/ORG00001/PRJ00001/v001
     """
     storage_module = _get_storage_module()
 
-    base_path = get_backend_storage_path()
+    base_path = get_backend_reports_path()
     if not base_path:
-        logger.error("No se pudo obtener base_path")
+        logger.error("No se pudo obtener base_path de reports")
         return ""
 
     org_folder = storage_module.get_folder_by_id_organization(org_id)
