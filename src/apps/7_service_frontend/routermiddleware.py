@@ -4598,6 +4598,20 @@ class RouterMiddleware:
         except BrokerBackendCommunicationError as exc:
             raise BusinessRuleError("No se pudo obtener organizaciones") from exc
 
+    def get_accessible_organizations(
+        self, user_id: int, identity_type_id: int, session: SessionContext
+    ) -> list[dict[str, Any]]:
+        """Returns organizations accessible to a user."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.get_accessible_organizations(
+                user_id, identity_type_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                "No se pudo obtener organizaciones accesibles"
+            ) from exc
+
     def list_roles(self, session: SessionContext) -> list[dict[str, Any]]:
         """Lista todos los roles."""
         self._configure_broker_security(session)

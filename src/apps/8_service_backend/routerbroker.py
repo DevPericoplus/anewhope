@@ -1397,6 +1397,19 @@ class BrokerBackendRouter:
                 "No se pudo obtener organizaciones"
             ) from exc
 
+    def get_accessible_organizations(
+        self, user_id: int, identity_type_id: int
+    ) -> list[dict[str, Any]]:
+        """Returns organizations accessible to a user."""
+        try:
+            return self._core_client.get_accessible_organizations(
+                user_id, identity_type_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                "No se pudo obtener organizaciones accesibles"
+            ) from exc
+
     def list_roles(self) -> list[dict[str, Any]]:
         """Lista todos los roles."""
         try:

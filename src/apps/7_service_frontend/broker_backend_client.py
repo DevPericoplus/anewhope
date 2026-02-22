@@ -1215,6 +1215,16 @@ class BrokerBackendClient:
         data = self._request("GET", "/assignments/organizations")
         return list(data or [])
 
+    def get_accessible_organizations(
+        self, user_id: int, identity_type_id: int
+    ) -> list[dict[str, Any]]:
+        """Returns organizations accessible to a user."""
+        data = self._request(
+            "GET",
+            f"/assignments/accessible-organizations?user_id={user_id}&identity_type_id={identity_type_id}",
+        )
+        return list(data or [])
+
     def list_roles(self) -> list[dict[str, Any]]:
         """Lista todos los roles."""
         data = self._request("GET", "/assignments/roles")

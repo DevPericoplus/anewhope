@@ -3355,6 +3355,22 @@ def list_organizations_for_assignments_endpoint(
         ) from exc
 
 
+@app.get("/assignments/accessible-organizations", tags=["assignments"])
+def get_accessible_organizations_endpoint(
+    user_id: int,
+    identity_type_id: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> list[dict[str, Any]]:
+    """Returns organizations accessible to a user based on identity type."""
+    try:
+        return router.get_accessible_organizations(user_id, identity_type_id)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
 @app.get("/assignments/roles", tags=["assignments"])
 def list_roles_for_assignments_endpoint(
     router: BrokerBackendRouter = Depends(get_router_broker),

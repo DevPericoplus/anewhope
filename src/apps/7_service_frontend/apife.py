@@ -3770,6 +3770,25 @@ def list_organizations_endpoint(
         ) from exc
 
 
+@app.get("/assignments/accessible-organizations", tags=["assignments"])
+def get_accessible_organizations_endpoint(
+    user_id: int,
+    identity_type_id: int,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> list[dict[str, Any]]:
+    """Returns organizations accessible to a user based on identity type."""
+    try:
+        return router.get_accessible_organizations(
+            user_id, identity_type_id, session
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
 @app.get("/assignments/internal-users", tags=["assignments"])
 def get_internal_users_endpoint(
     session: SessionContext = Depends(get_session_context),
