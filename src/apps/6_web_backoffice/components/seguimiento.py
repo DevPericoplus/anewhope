@@ -112,7 +112,7 @@ class SeguimientoState(rx.State):
     @rx.var
     def seg_org_names(self) -> list[str]:
         """Nombres de organizaciones para el selector."""
-        return [o["name"] for o in self.seg_organizations]
+        return [o["name"] for o in self.seg_organizations if o.get("name")]
 
     @rx.var
     def seg_selected_org_display(self) -> str:
@@ -125,7 +125,7 @@ class SeguimientoState(rx.State):
     @rx.var
     def seg_project_names(self) -> list[str]:
         """Nombres de proyectos para el selector."""
-        return [p["name"] for p in self.seg_projects]
+        return [p["name"] for p in self.seg_projects if p.get("name")]
 
     @rx.var
     def seg_selected_project_display(self) -> str:

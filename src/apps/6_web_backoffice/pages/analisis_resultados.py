@@ -161,6 +161,7 @@ class AnalisisResultadosState(rx.State):
         return ["Seleccione..."] + [
             org['organization_name']
             for org in self.organizaciones
+            if org.get('organization_name')
         ]
 
     @rx.var
@@ -169,19 +170,17 @@ class AnalisisResultadosState(rx.State):
         return ["Seleccione..."] + [
             proj['nombre']
             for proj in self.proyectos
+            if proj.get('nombre')
         ]
 
     @rx.var
     def version_options(self) -> list[str]:
         """Opciones para el select de versiones."""
-        logger.info(f"version_options called - versiones count: {len(self.versiones)}")
-        if self.versiones:
-            logger.info(f"First version: {self.versiones[0]}")
         options = ["Seleccione..."] + [
             ver['version_folder']
             for ver in self.versiones
+            if ver.get('version_folder')
         ]
-        logger.info(f"version_options result: {options}")
         return options
 
     @rx.var

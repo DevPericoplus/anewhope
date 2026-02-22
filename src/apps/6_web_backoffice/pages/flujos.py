@@ -114,7 +114,7 @@ class FlujosState(rx.State):
     @rx.var
     def organization_names(self) -> list[str]:
         """Nombres de organizaciones para el selector."""
-        return [org["name"] for org in self.organizations]
+        return [org["name"] for org in self.organizations if org.get("name")]
 
     @rx.var
     def selected_org_display(self) -> str:
@@ -128,7 +128,7 @@ class FlujosState(rx.State):
     @rx.var
     def project_names(self) -> list[str]:
         """Nombres de proyectos para el selector."""
-        return [proj["name"] for proj in self.projects]
+        return [proj["name"] for proj in self.projects if proj.get("name")]
 
     @rx.var
     def selected_project_display(self) -> str:
@@ -142,7 +142,7 @@ class FlujosState(rx.State):
     @rx.var
     def versions_as_strings(self) -> list[str]:
         """Expone las versiones como strings para el selector."""
-        return [str(version) for version in self.versions]
+        return [str(version) for version in self.versions if version]
 
     @rx.var
     def selected_version_value(self) -> str:

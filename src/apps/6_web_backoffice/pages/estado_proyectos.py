@@ -128,17 +128,17 @@ class EstadoProyectosState(rx.State):
     @rx.var
     def organization_names(self) -> list[str]:
         """Nombres de organizaciones para selector."""
-        return [org["name"] for org in self.organizations]
+        return [org["name"] for org in self.organizations if org.get("name")]
 
     @rx.var
     def project_names(self) -> list[str]:
         """Nombres de proyectos para selector."""
-        return [proj["name"] for proj in self.projects]
+        return [proj["name"] for proj in self.projects if proj.get("name")]
 
     @rx.var
     def version_numbers(self) -> list[str]:
         """Números de versión para selector."""
-        return [str(v["version_id"]) for v in self.versions]
+        return [str(v["version_id"]) for v in self.versions if v.get("version_id")]
 
     @rx.var
     def selected_version_display(self) -> str:

@@ -77,24 +77,24 @@ class InformesState(rx.State):
     @rx.var
     def org_names(self) -> list[str]:
         """Nombres de organizaciones para el selector."""
-        return [org["nombre"] for org in self.organizaciones]
+        return [org["nombre"] for org in self.organizaciones if org.get("nombre")]
 
     @rx.var
     def proyecto_names(self) -> list[str]:
         """Nombres de proyectos para el selector."""
-        return ["Todos"] + [p["nombre"] for p in self.proyectos]
+        return ["Todos"] + [p["nombre"] for p in self.proyectos if p.get("nombre")]
 
     @rx.var
     def version_names(self) -> list[str]:
         """Nombres de versiones con formato vXXX."""
-        return ["Todas"] + [v['folder_name'] for v in self.versiones]
+        return ["Todas"] + [v['folder_name'] for v in self.versiones if v.get('folder_name')]
 
     @rx.var
     def archivo_names(self) -> list[str]:
         """Nombres de archivos para el selector."""
         if not self.archivos:
             return ["Sin informes disponibles"]
-        return [a["display_name"] for a in self.archivos]
+        return [a["display_name"] for a in self.archivos if a.get("display_name")]
 
     async def _get_db_engine(self):
         """Crea el engine de la base de datos para myllm_projects_db (centralizado)."""
