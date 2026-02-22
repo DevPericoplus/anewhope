@@ -397,14 +397,31 @@ def get_session_context(
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
     access_token: Annotated[str | None, Header(alias="Authorization")] = None,
     session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+    organization_override: Annotated[str | None, Header(alias="X-Organization-Id")] = None,
 ) -> SessionContext:
-    """Valida la sesión y retorna el contexto."""
+    """Valida la sesión y retorna el contexto.
+
+    Si el header X-Organization-Id está presente (backoffice admin gestionando
+    otra organización), se reemplaza el organization_id de la sesión.
+    """
+    from dataclasses import replace as _dc_replace
 
     try:
         access_value = _extract_bearer_token(access_token)
         if session_token is None:
             raise TokenValidationError("Token de sesión no proporcionado")
-        return router.validate_session(access_value, session_token)
+        session = router.validate_session(access_value, session_token)
+
+        # Override org_id para backoffice admin gestionando otra organización
+        if organization_override:
+            try:
+                override_id = int(organization_override)
+                if override_id > 0 and override_id != session.organization_id:
+                    session = _dc_replace(session, organization_id=override_id)
+            except (ValueError, TypeError):
+                pass  # Header inválido, ignorar
+
+        return session
     except TokenExpiredError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -2217,6 +2234,7 @@ class GenerateFileTokenRequest(BaseModel):
     version_id: int
     operation: str  # "upload" o "download"
     relative_path: str = ""  # Ruta relativa dentro de la versión
+    organization_id: int = 0  # Override org (backoffice admin managing other orgs)
 
 
 class GenerateFileTokenResponse(BaseModel):
@@ -3646,6 +3664,8 @@ def generate_file_token_endpoint(
             )
 
         # Generar token temporal
+        # Si se proporciona organization_id (backoffice admin), usar ese en vez del de sesión
+        override_org_id = request.organization_id if request.organization_id > 0 else 0
         token_data = router.generate_file_operation_token(
             session=session,
             project_id=request.project_id,
@@ -3653,6 +3673,7 @@ def generate_file_token_endpoint(
             operation=request.operation,
             relative_path=request.relative_path,
             ttl_seconds=300,  # 5 minutos
+            override_organization_id=override_org_id,
         )
 
         # URL de fmanagement para el navegador: usar proxy público según el cliente
@@ -4517,6 +4538,57 @@ def download_model_direct_endpoint(
     except Exception as exc:
         _logger.error("[MODELS DIRECT] Error: %s: %s", type(exc).__name__, exc, exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/models/download/session", tags=["models"])
+def download_model_session_endpoint(
+    organization_id: int,
+    project_id: int,
+    version_id: int,
+    filename: str,
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+):
+    """Descarga directa de modelo autenticada por sesión (sin OTP).
+
+    Permite descargar ficheros de modelo (Modelfile, ZIP) directamente
+    usando la autenticación de sesión estándar.
+
+    Security:
+        - Solo SuperAdmin (1) y Admin Organización (2)
+    """
+    _logger = logging.getLogger(__name__)
+
+    try:
+        if session.identity_type_id not in (1, 2):
+            raise HTTPException(
+                status_code=403,
+                detail="Sin permisos para descargar modelos",
+            )
+
+        _logger.info(
+            "[MODELS SESSION] Descarga: org=%s prj=%s ver=%s file=%s user=%s",
+            organization_id, project_id, version_id, filename, session.user_id,
+        )
+
+        content = router.download_model_package(
+            session, organization_id, project_id, version_id, filename
+        )
+
+        media = "application/zip" if filename.endswith(".zip") else "application/octet-stream"
+
+        return Response(
+            content=content,
+            media_type=media,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except HTTPException:
+        raise
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        _logger.error("[MODELS SESSION] Error: %s: %s", type(exc).__name__, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error descargando modelo") from exc
 
 
 # ========================================================================

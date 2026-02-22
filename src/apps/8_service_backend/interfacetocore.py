@@ -1265,6 +1265,59 @@ class CoreBackendClient:
         return dict(data or {})
 
     # ========================================================================
+    # Entrenamiento Autónomo (fases 6-9)
+    # ========================================================================
+
+    async def initialize_autonomous_training(
+        self, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Inicializa registro de entrenamiento autónomo en Backend Core."""
+        data = self._request("POST", "/training/autonomous/init", payload=payload)
+        return dict(data or {})
+
+    async def update_autonomous_metadata(
+        self, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Actualiza metadatos de entrenamiento autónomo en Backend Core."""
+        data = self._request("PATCH", "/training/autonomous/metadata", payload=payload)
+        return dict(data or {})
+
+    async def get_autonomous_progress(
+        self, id_entrenamiento: int
+    ) -> dict[str, Any]:
+        """Consulta el progreso del entrenamiento autónomo (fases 6-9)."""
+        data = self._request(
+            "GET",
+            f"/training/autonomous/{id_entrenamiento}/progress"
+        )
+        return dict(data or {})
+
+    async def list_autonomous_packages(
+        self,
+        id_organizacion: int | None = None,
+        id_proyecto: int | None = None,
+        id_version: int | None = None,
+    ) -> dict[str, Any]:
+        """Lista paquetes autónomos disponibles desde Backend Core."""
+        params = {}
+        if id_organizacion is not None:
+            params["id_organizacion"] = id_organizacion
+        if id_proyecto is not None:
+            params["id_proyecto"] = id_proyecto
+        if id_version is not None:
+            params["id_version"] = id_version
+
+        # Build query string
+        query_parts = [f"{k}={v}" for k, v in params.items()]
+        query_string = "&".join(query_parts)
+        path = "/training/autonomous/packages"
+        if query_string:
+            path = f"{path}?{query_string}"
+
+        data = self._request("GET", path)
+        return dict(data or {})
+
+    # ========================================================================
     # INFORMES
     # ========================================================================
 

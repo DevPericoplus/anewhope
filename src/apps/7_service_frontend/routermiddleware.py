@@ -955,6 +955,7 @@ class RouterMiddleware:
         operation: str,
         relative_path: str = "",
         ttl_seconds: int = 300,
+        override_organization_id: int = 0,
     ) -> dict[str, Any]:
         """Genera un token JWT temporal para operaciones de archivo (upload/download).
 
@@ -965,6 +966,8 @@ class RouterMiddleware:
             operation: Tipo de operación ("upload" o "download")
             relative_path: Ruta relativa dentro de la versión
             ttl_seconds: Tiempo de vida del token en segundos (default: 5 minutos)
+            override_organization_id: Si > 0, usar esta org en vez de la de sesión
+                (para backoffice admin gestionando otras organizaciones)
 
         Returns:
             Dict con el token y metadata
@@ -973,9 +976,11 @@ class RouterMiddleware:
         exp = now + ttl_seconds
         jti = str(uuid.uuid4())
 
+        org_id = override_organization_id if override_organization_id > 0 else session.organization_id
+
         payload = {
             "user_id": session.user_id,
-            "organization_id": session.organization_id,
+            "organization_id": org_id,
             "identity_type_id": session.identity_type_id,
             "project_id": project_id,
             "version_id": version_id,

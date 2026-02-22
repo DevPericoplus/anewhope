@@ -403,6 +403,21 @@ class AutonomousTrainingResponse(BaseModel):
     training_mode: str = ""
 
 
+class AutonomousInitRequest(BaseModel):
+    """Payload para inicializar entrenamiento autónomo."""
+
+    id_entrenamiento: int
+    training_mode: str = "simulation"
+
+
+class AutonomousMetadataUpdate(BaseModel):
+    """Payload para actualizar metadatos de entrenamiento autónomo."""
+
+    id_entrenamiento: int
+    metadata_type: str    # "dataset", "lora", "gguf", "package"
+    data: dict[str, Any]
+
+
 def _configure_logging() -> None:
     """Configura logging del broker backend con salida a console.log."""
 
@@ -1236,18 +1251,58 @@ def send_autonomous_training(
         ) from exc
 
 
+@app.post("/training/autonomous/init")
+async def initialize_autonomous_training(
+    request: AutonomousInitRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Inicializa registro de entrenamiento autónomo.
+
+    Flujo: Trainer → Broker → Backend Core → MariaDB
+    """
+    try:
+        response = await router.initialize_autonomous_training(request.model_dump())
+        return response
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/training/autonomous/metadata")
+async def update_autonomous_metadata(
+    request: AutonomousMetadataUpdate,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Actualiza metadatos de entrenamiento autónomo.
+
+    Flujo: Trainer → Broker → Backend Core → MariaDB
+    """
+    try:
+        response = await router.update_autonomous_metadata(request.model_dump())
+        return response
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
 @app.get("/training/entrenamientos/{id_entrenamiento}/autonomous/progress")
-def get_autonomous_training_progress(
+async def get_autonomous_training_progress(
     id_entrenamiento: int,
     router: BrokerBackendRouter = Depends(get_router_broker),
 ) -> dict[str, Any]:
     """Consulta el progreso del entrenamiento autónomo (fases 6-9).
 
+    Flujo: Backoffice → Broker → Backend Core → MariaDB
+
     Returns:
         Diccionario con success y data (subphases del entrenamiento autónomo)
     """
     try:
-        response = router.get_autonomous_training_progress(id_entrenamiento)
+        response = await router.get_autonomous_training_progress(id_entrenamiento)
         return response
     except BrokerBusinessError as exc:
         raise HTTPException(
@@ -1285,13 +1340,15 @@ def download_autonomous_package(
 
 
 @app.get("/training/entrenamientos/autonomous/packages")
-def list_autonomous_packages(
+async def list_autonomous_packages(
     id_organizacion: int | None = None,
     id_proyecto: int | None = None,
     id_version: int | None = None,
     router: BrokerBackendRouter = Depends(get_router_broker),
 ) -> dict[str, Any]:
     """Lista los paquetes autónomos disponibles para descargar.
+
+    Flujo: Backoffice → Broker → Backend Core → MariaDB
 
     Args:
         id_organizacion: Filtrar por organización (opcional)
@@ -1302,7 +1359,9 @@ def list_autonomous_packages(
         Diccionario con success y lista de paquetes
     """
     try:
-        response = router.list_autonomous_packages(id_organizacion, id_proyecto, id_version)
+        response = await router.list_autonomous_packages(
+            id_organizacion, id_proyecto, id_version
+        )
         return response
     except BrokerBusinessError as exc:
         raise HTTPException(
@@ -3907,12 +3966,13 @@ class TrainingProgressNotification(BaseModel):
     """Notificación de progreso de entrenamiento desde el trainer."""
 
     id_entrenamiento: int
-    phase_key: str          # Clave de la fase principal (ej: "3")
-    subfase_key: str        # Clave de la subfase (ej: "3.2")
+    phase_key: str          # Clave de la fase principal (ej: "3" o "6")
+    subfase_key: str        # Clave de la subfase (ej: "3.2" o "6.1")
     subfase_name: str       # Nombre legible (ej: "Chunking")
-    status: str             # "in_progress", "completed", "error"
+    status: str             # "in_progress", "completed", "error", "failed"
     elapsed_time: str = ""  # Tiempo empleado (ej: "2m 15s")
     error_message: str = ""
+    metrics: str = ""       # JSON de métricas opcionales (fases autónomas)
 
 
 class TrainingParamsResponse(BaseModel):

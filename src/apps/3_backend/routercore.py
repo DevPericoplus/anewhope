@@ -7367,12 +7367,13 @@ class BackendCoreRouter:
     ) -> dict[str, Any]:
         """Recibe y almacena notificaciones de progreso del entrenamiento.
 
-        Guarda el progreso en la tabla evoluciones_entrenamientos para que
-        el backoffice pueda consultar el estado actualizado en tiempo real.
+        Guarda el progreso en la tabla correspondiente según la fase:
+        - Fases 2-5 (RAG): evoluciones_entrenamientos
+        - Fases 6-9 (Autónomo): evoluciones_autonomas
 
         Args:
             payload: Diccionario con id_entrenamiento, phase_key, subfase_key,
-                    subfase_name, status, elapsed_time, error_message.
+                    subfase_name, status, elapsed_time, error_message, metrics.
 
         Returns:
             Diccionario con success y message.
@@ -7387,6 +7388,7 @@ class BackendCoreRouter:
         status = payload.get("status", "")
         elapsed_time = payload.get("elapsed_time", "")
         error_message = payload.get("error_message", "")
+        metrics = payload.get("metrics", "")
 
         self._logger.info(
             "[TRAINING-PROGRESS] id=%s, subfase=%s (%s), status=%s, time=%s",
@@ -7397,44 +7399,95 @@ class BackendCoreRouter:
             elapsed_time,
         )
 
+        # Determinar tabla destino según la fase
+        phase_num = int(phase_key) if phase_key.isdigit() else 0
+        is_autonomous = phase_num >= 6
+
         # Convertir elapsed_time a segundos
         duracion_segundos = self._parse_elapsed_time_to_seconds(elapsed_time)
 
         try:
-            # Usar UPSERT: INSERT ... ON DUPLICATE KEY UPDATE
-            query = text("""
-                INSERT INTO evoluciones_entrenamientos
-                    (id_entrenamiento, phase_key, subfase_key, subfase_name, status,
-                     fecha_inicio, fecha_fin, duracion_segundos, error_mensaje)
-                VALUES
-                    (:id_ent, :phase, :subfase, :name, :status,
-                     :fecha_inicio, :fecha_fin, :duracion, :error)
-                ON DUPLICATE KEY UPDATE
-                    status = VALUES(status),
-                    fecha_fin = VALUES(fecha_fin),
-                    duracion_segundos = VALUES(duracion_segundos),
-                    error_mensaje = VALUES(error_mensaje),
-                    updated_at = CURRENT_TIMESTAMP
-            """)
-
             # Calcular fechas según el status
             now = datetime.now()
             fecha_inicio = now if status == "in_progress" else None
-            fecha_fin = now if status in ("completed", "error") else None
+            fecha_fin = now if status in ("completed", "error", "failed") else None
 
-            with self._get_projects_db_writer_connection() as conn:
-                conn.execute(query, {
-                    "id_ent": id_entrenamiento,
-                    "phase": phase_key,
-                    "subfase": subfase_key,
-                    "name": subfase_name,
-                    "status": status,
-                    "fecha_inicio": fecha_inicio,
-                    "fecha_fin": fecha_fin,
-                    "duracion": duracion_segundos,
-                    "error": error_message if error_message else None,
-                })
-                conn.commit()
+            if is_autonomous:
+                # Fases 6-9: tabla evoluciones_autonomas
+                query = text("""
+                    INSERT INTO evoluciones_autonomas
+                        (id_entrenamiento, phase_key, subfase_key, subfase_name,
+                         status, started_at, completed_at, duracion_segundos,
+                         metrics, error_message, created_at, updated_at)
+                    VALUES
+                        (:id_ent, :phase, :subfase, :name,
+                         :status, :fecha_inicio, :fecha_fin, :duracion,
+                         :metrics, :error, NOW(), NOW())
+                    ON DUPLICATE KEY UPDATE
+                        status = VALUES(status),
+                        started_at = CASE
+                            WHEN VALUES(started_at) IS NOT NULL THEN VALUES(started_at)
+                            ELSE started_at
+                        END,
+                        completed_at = VALUES(completed_at),
+                        duracion_segundos = CASE
+                            WHEN VALUES(completed_at) IS NOT NULL
+                            THEN TIMESTAMPDIFF(SECOND, started_at, VALUES(completed_at))
+                            ELSE duracion_segundos
+                        END,
+                        metrics = CASE
+                            WHEN VALUES(metrics) IS NOT NULL AND VALUES(metrics) != ''
+                            THEN VALUES(metrics)
+                            ELSE metrics
+                        END,
+                        error_message = VALUES(error_message),
+                        updated_at = NOW()
+                """)
+
+                with self._get_projects_db_writer_connection() as conn:
+                    conn.execute(query, {
+                        "id_ent": id_entrenamiento,
+                        "phase": phase_key,
+                        "subfase": subfase_key,
+                        "name": subfase_name,
+                        "status": status,
+                        "fecha_inicio": fecha_inicio,
+                        "fecha_fin": fecha_fin,
+                        "duracion": duracion_segundos,
+                        "metrics": metrics if metrics else None,
+                        "error": error_message if error_message else None,
+                    })
+                    conn.commit()
+            else:
+                # Fases 2-5: tabla evoluciones_entrenamientos
+                query = text("""
+                    INSERT INTO evoluciones_entrenamientos
+                        (id_entrenamiento, phase_key, subfase_key, subfase_name, status,
+                         fecha_inicio, fecha_fin, duracion_segundos, error_mensaje)
+                    VALUES
+                        (:id_ent, :phase, :subfase, :name, :status,
+                         :fecha_inicio, :fecha_fin, :duracion, :error)
+                    ON DUPLICATE KEY UPDATE
+                        status = VALUES(status),
+                        fecha_fin = VALUES(fecha_fin),
+                        duracion_segundos = VALUES(duracion_segundos),
+                        error_mensaje = VALUES(error_mensaje),
+                        updated_at = CURRENT_TIMESTAMP
+                """)
+
+                with self._get_projects_db_writer_connection() as conn:
+                    conn.execute(query, {
+                        "id_ent": id_entrenamiento,
+                        "phase": phase_key,
+                        "subfase": subfase_key,
+                        "name": subfase_name,
+                        "status": status,
+                        "fecha_inicio": fecha_inicio,
+                        "fecha_fin": fecha_fin,
+                        "duracion": duracion_segundos,
+                        "error": error_message if error_message else None,
+                    })
+                    conn.commit()
 
             return {
                 "success": True,
@@ -7585,6 +7638,389 @@ class BackendCoreRouter:
             parts.append(f"{secs}s")
 
         return " ".join(parts)
+
+    # ========================================================================
+    # Entrenamiento Autónomo (fases 6-9)
+    # ========================================================================
+
+    async def initialize_autonomous_training(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Crea el registro inicial en entrenamientos_autonomos.
+
+        Args:
+            payload: Diccionario con id_entrenamiento y training_mode.
+
+        Returns:
+            Diccionario con success y message.
+        """
+        from sqlalchemy import text
+
+        id_entrenamiento = payload.get("id_entrenamiento", 0)
+        training_mode = payload.get("training_mode", "simulation")
+
+        self._logger.info(
+            "[AUTONOMOUS-INIT] id=%s, mode=%s",
+            id_entrenamiento,
+            training_mode,
+        )
+
+        try:
+            query = text("""
+                INSERT INTO entrenamientos_autonomos
+                    (id_entrenamiento, training_mode, created_at, updated_at)
+                VALUES
+                    (:id_ent, :mode, NOW(), NOW())
+                ON DUPLICATE KEY UPDATE
+                    training_mode = VALUES(training_mode),
+                    updated_at = NOW()
+            """)
+
+            with self._get_projects_db_writer_connection() as conn:
+                conn.execute(query, {
+                    "id_ent": id_entrenamiento,
+                    "mode": training_mode,
+                })
+                conn.commit()
+
+            return {
+                "success": True,
+                "message": f"Entrenamiento autónomo inicializado: {id_entrenamiento}",
+            }
+
+        except Exception as exc:
+            self._logger.error(
+                "[AUTONOMOUS-INIT] Error: %s", exc
+            )
+            return {
+                "success": False,
+                "message": f"Error inicializando entrenamiento autónomo: {str(exc)}",
+            }
+
+    async def update_autonomous_metadata(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Actualiza metadatos en entrenamientos_autonomos según tipo.
+
+        Args:
+            payload: Diccionario con id_entrenamiento, metadata_type y data.
+                metadata_type: "dataset", "lora", "gguf" o "package"
+                data: Campos específicos según tipo.
+
+        Returns:
+            Diccionario con success y message.
+        """
+        import json
+        from sqlalchemy import text
+
+        id_entrenamiento = payload.get("id_entrenamiento", 0)
+        metadata_type = payload.get("metadata_type", "")
+        data = payload.get("data", {})
+
+        self._logger.info(
+            "[AUTONOMOUS-METADATA] id=%s, type=%s",
+            id_entrenamiento,
+            metadata_type,
+        )
+
+        try:
+            if metadata_type == "dataset":
+                query = text("""
+                    UPDATE entrenamientos_autonomos
+                    SET dataset_path = :path,
+                        dataset_size = :size,
+                        dataset_generated_at = NOW(),
+                        updated_at = NOW()
+                    WHERE id_entrenamiento = :id_ent
+                """)
+                params = {
+                    "path": data.get("dataset_path", ""),
+                    "size": data.get("dataset_size", 0),
+                    "id_ent": id_entrenamiento,
+                }
+
+            elif metadata_type == "lora":
+                query = text("""
+                    UPDATE entrenamientos_autonomos
+                    SET lora_adapters_path = :path,
+                        lora_config = :config,
+                        lora_training_time_seconds = :time,
+                        lora_final_loss = :loss,
+                        lora_completed_at = NOW(),
+                        updated_at = NOW()
+                    WHERE id_entrenamiento = :id_ent
+                """)
+                lora_config = data.get("lora_config", {})
+                params = {
+                    "path": data.get("lora_path", ""),
+                    "config": json.dumps(lora_config) if isinstance(lora_config, dict) else str(lora_config),
+                    "time": data.get("training_time", 0),
+                    "loss": data.get("final_loss"),
+                    "id_ent": id_entrenamiento,
+                }
+
+            elif metadata_type == "gguf":
+                query = text("""
+                    UPDATE entrenamientos_autonomos
+                    SET gguf_path = :path,
+                        gguf_size_mb = :size,
+                        gguf_quantization = :quant,
+                        gguf_generated_at = NOW(),
+                        updated_at = NOW()
+                    WHERE id_entrenamiento = :id_ent
+                """)
+                params = {
+                    "path": data.get("gguf_path", ""),
+                    "size": data.get("gguf_size_mb", 0),
+                    "quant": data.get("quantization", "q8_0"),
+                    "id_ent": id_entrenamiento,
+                }
+
+            elif metadata_type == "package":
+                query = text("""
+                    UPDATE entrenamientos_autonomos
+                    SET package_path = :path,
+                        package_size_mb = :size,
+                        package_generated_at = NOW(),
+                        updated_at = NOW()
+                    WHERE id_entrenamiento = :id_ent
+                """)
+                params = {
+                    "path": data.get("package_path", ""),
+                    "size": data.get("package_size_mb", 0),
+                    "id_ent": id_entrenamiento,
+                }
+
+            else:
+                return {
+                    "success": False,
+                    "message": f"metadata_type no válido: {metadata_type}",
+                }
+
+            with self._get_projects_db_writer_connection() as conn:
+                conn.execute(query, params)
+                conn.commit()
+
+            return {
+                "success": True,
+                "message": f"Metadata '{metadata_type}' actualizada para ent={id_entrenamiento}",
+            }
+
+        except Exception as exc:
+            self._logger.error(
+                "[AUTONOMOUS-METADATA] Error: %s", exc
+            )
+            return {
+                "success": False,
+                "message": f"Error actualizando metadata autónoma: {str(exc)}",
+            }
+
+    async def get_autonomous_progress(
+        self,
+        id_entrenamiento: int,
+    ) -> dict[str, Any]:
+        """Obtiene el progreso del entrenamiento autónomo (fases 6-9).
+
+        Args:
+            id_entrenamiento: ID del entrenamiento a consultar.
+
+        Returns:
+            Diccionario con training_mode, subphases y summary.
+        """
+        import json
+        from sqlalchemy import text
+
+        try:
+            query_mode = text("""
+                SELECT training_mode
+                FROM entrenamientos_autonomos
+                WHERE id_entrenamiento = :id_ent
+            """)
+
+            query = text("""
+                SELECT
+                    subfase_key,
+                    subfase_name,
+                    status,
+                    started_at,
+                    completed_at,
+                    duracion_segundos,
+                    metrics,
+                    error_message
+                FROM evoluciones_autonomas
+                WHERE id_entrenamiento = :id_ent
+                ORDER BY phase_key, subfase_key
+            """)
+
+            with self._get_projects_db_connection() as conn:
+                result_mode = conn.execute(
+                    query_mode, {"id_ent": id_entrenamiento}
+                )
+                row_mode = result_mode.fetchone()
+                training_mode = row_mode[0] if row_mode else "unknown"
+
+                result = conn.execute(query, {"id_ent": id_entrenamiento})
+                rows = result.fetchall()
+
+            subphases = []
+            completed = 0
+            in_progress = 0
+            failed = 0
+
+            for row in rows:
+                row_status = row[2]
+                if row_status == "completed":
+                    completed += 1
+                elif row_status == "in_progress":
+                    in_progress += 1
+                elif row_status == "failed":
+                    failed += 1
+
+                subphases.append({
+                    "subfase_key": row[0],
+                    "subfase_name": row[1],
+                    "status": row_status,
+                    "started_at": row[3].isoformat() if row[3] else None,
+                    "completed_at": row[4].isoformat() if row[4] else None,
+                    "duracion_segundos": row[5],
+                    "metrics": json.loads(row[6]) if row[6] else None,
+                    "error_message": row[7],
+                })
+
+            total = len(subphases)
+
+            return {
+                "success": True,
+                "data": {
+                    "training_mode": training_mode,
+                    "subphases": subphases,
+                    "summary": {
+                        "total": total,
+                        "completed": completed,
+                        "in_progress": in_progress,
+                        "failed": failed,
+                        "progress_percent": (
+                            completed / total * 100
+                        ) if total > 0 else 0,
+                    },
+                },
+            }
+
+        except Exception as exc:
+            self._logger.error(
+                "[AUTONOMOUS-PROGRESS] Error consultando BD: %s", exc
+            )
+            return {
+                "success": False,
+                "message": f"Error consultando progreso autónomo: {str(exc)}",
+                "data": None,
+            }
+
+    async def list_autonomous_packages(
+        self,
+        filters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Lista paquetes autónomos completados con filtros opcionales.
+
+        Args:
+            filters: Diccionario con id_organizacion, id_proyecto, id_version.
+
+        Returns:
+            Diccionario con success y lista de paquetes.
+        """
+        from sqlalchemy import text
+
+        filters = filters or {}
+
+        try:
+            where_clauses = []
+            params: dict[str, Any] = {}
+
+            if filters.get("id_organizacion") is not None:
+                where_clauses.append("e.id_organizacion = :org")
+                params["org"] = filters["id_organizacion"]
+
+            if filters.get("id_proyecto") is not None:
+                where_clauses.append("e.id_proyecto = :prj")
+                params["prj"] = filters["id_proyecto"]
+
+            if filters.get("id_version") is not None:
+                where_clauses.append("e.id_version = :ver")
+                params["ver"] = filters["id_version"]
+
+            where_sql = (
+                " AND " + " AND ".join(where_clauses)
+                if where_clauses
+                else ""
+            )
+
+            query = text(f"""
+                SELECT
+                    e.id AS id_entrenamiento,
+                    e.id_organizacion,
+                    e.id_proyecto,
+                    e.id_version,
+                    e.collection_name,
+                    e.estado,
+                    e.created_at,
+                    ea.training_mode,
+                    ea.package_path,
+                    ea.package_size_mb,
+                    ea.package_generated_at,
+                    ea.dataset_size,
+                    ea.gguf_quantization
+                FROM entrenamientos e
+                INNER JOIN entrenamientos_autonomos ea
+                    ON e.id = ea.id_entrenamiento
+                WHERE ea.package_path IS NOT NULL
+                  AND ea.package_generated_at IS NOT NULL
+                  {where_sql}
+                ORDER BY ea.package_generated_at DESC
+                LIMIT 100
+            """)
+
+            with self._get_projects_db_connection() as conn:
+                result = conn.execute(query, params)
+                rows = result.fetchall()
+
+            packages = []
+            for row in rows:
+                packages.append({
+                    "id_entrenamiento": row[0],
+                    "id_organizacion": row[1],
+                    "id_proyecto": row[2],
+                    "id_version": row[3],
+                    "collection_name": row[4],
+                    "estado": row[5],
+                    "created_at": row[6].isoformat() if row[6] else None,
+                    "training_mode": row[7],
+                    "package_path": row[8],
+                    "package_size_mb": float(row[9]) if row[9] else 0,
+                    "package_generated_at": (
+                        row[10].isoformat() if row[10] else None
+                    ),
+                    "dataset_size": row[11],
+                    "gguf_quantization": row[12],
+                })
+
+            return {
+                "success": True,
+                "packages": packages,
+                "total": len(packages),
+            }
+
+        except Exception as exc:
+            self._logger.error(
+                "[AUTONOMOUS-PACKAGES] Error consultando BD: %s", exc
+            )
+            return {
+                "success": False,
+                "packages": [],
+                "total": 0,
+                "message": f"Error listando paquetes: {str(exc)}",
+            }
 
     def _build_dsn(self, settings: dict, database: str) -> str:
         """Construye DSN para SQLAlchemy."""
@@ -7819,18 +8255,21 @@ class BackendCoreRouter:
             spec.loader.exec_module(informes_mod)
 
             base_path = Path(informes_mod.get_backend_storage_path())
+            models_path = base_path / "models"
             models: list[dict[str, Any]] = []
 
-            self._logger.info(f"[MODELS] Scanning base_path: {base_path}, exists: {base_path.exists()}")
+            self._logger.info(
+                f"[MODELS] Scanning models_path: {models_path}, exists: {models_path.exists()}"
+            )
 
-            if not base_path.exists():
+            if not models_path.exists():
                 return {"models": models, "total": 0}
 
             # Determinar qué directorios ORG escanear
             if org_id is not None:
-                org_folders = [base_path / f"ORG{org_id:05d}"]
+                org_folders = [models_path / f"ORG{org_id:05d}"]
             else:
-                org_folders = sorted(base_path.glob("ORG*"))
+                org_folders = sorted(models_path.glob("ORG*"))
 
             for org_dir in org_folders:
                 if not org_dir.is_dir():
@@ -7856,19 +8295,26 @@ class BackendCoreRouter:
                         except ValueError:
                             continue
 
-                        for zip_file in ver_dir.glob("*.zip"):
-                            file_stat = zip_file.stat()
+                        for model_file in ver_dir.iterdir():
+                            if model_file.is_dir():
+                                continue
+                            name = model_file.name
+                            if not (name.endswith(".zip") or name.startswith("Modelfile_")):
+                                continue
+                            file_stat = model_file.stat()
                             file_size_bytes = file_stat.st_size
                             file_size_mb = file_size_bytes / (1024 * 1024)
                             models.append({
                                 "organization_id": oid,
                                 "project_id": pid,
                                 "version_id": vid,
-                                "filename": zip_file.name,
+                                "filename": name,
                                 "file_size": file_size_bytes,
                                 "file_size_mb": f"{file_size_mb:.2f}",
                                 "created_at": int(file_stat.st_mtime),
-                                "relative_path": str(zip_file.relative_to(base_path)),
+                                "relative_path": str(
+                                    model_file.relative_to(models_path)
+                                ),
                             })
 
             self._logger.info(f"[MODELS] Found {len(models)} model packages")
@@ -7896,11 +8342,12 @@ class BackendCoreRouter:
             spec.loader.exec_module(informes_mod)
 
             base_path = Path(informes_mod.get_backend_storage_path())
+            models_path = base_path / "models"
             org_folder = f"ORG{org_id:05d}"
             prj_folder = f"PRJ{project_id:05d}"
             ver_folder = f"v{version_id:03d}"
 
-            file_path = base_path / org_folder / prj_folder / ver_folder / filename
+            file_path = models_path / org_folder / prj_folder / ver_folder / filename
 
             self._logger.info(f"[MODELS DL] Path: {file_path}, exists: {file_path.exists()}")
 

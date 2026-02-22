@@ -3743,12 +3743,28 @@ class TrainingProgressNotification(BaseModel):
     """Notificación de progreso de entrenamiento desde el trainer."""
 
     id_entrenamiento: int
-    phase_key: str          # Clave de la fase principal (ej: "3")
-    subfase_key: str        # Clave de la subfase (ej: "3.2")
+    phase_key: str          # Clave de la fase principal (ej: "3" o "6")
+    subfase_key: str        # Clave de la subfase (ej: "3.2" o "6.1")
     subfase_name: str       # Nombre legible (ej: "Chunking")
-    status: str             # "in_progress", "completed", "error"
+    status: str             # "in_progress", "completed", "error", "failed"
     elapsed_time: str = ""  # Tiempo empleado (ej: "2m 15s")
     error_message: str = ""
+    metrics: str = ""       # JSON de métricas opcionales (fases autónomas)
+
+
+class AutonomousInitRequest(BaseModel):
+    """Payload para inicializar entrenamiento autónomo."""
+
+    id_entrenamiento: int
+    training_mode: str = "simulation"  # simulation, test, production
+
+
+class AutonomousMetadataUpdate(BaseModel):
+    """Payload para actualizar metadatos de entrenamiento autónomo."""
+
+    id_entrenamiento: int
+    metadata_type: str    # "dataset", "lora", "gguf", "package"
+    data: dict[str, Any]  # Campos específicos según tipo
 
 
 class EntrenamientoRegisterRequest(BaseModel):
@@ -4082,6 +4098,113 @@ async def get_training_progress_endpoint(
     """
     try:
         result = await router.get_training_progress(id_entrenamiento)
+        return result
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# Entrenamiento Autónomo (fases 6-9)
+# ============================================================================
+
+
+@app.post("/training/autonomous/init", tags=["training"])
+async def initialize_autonomous_training_endpoint(
+    payload: AutonomousInitRequest,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Inicializa registro de entrenamiento autónomo.
+
+    Crea el registro en entrenamientos_autonomos vinculado al entrenamiento
+    existente.
+
+    Flujo: Trainer → Broker → Backend Core → MariaDB
+    """
+    try:
+        result = await router.initialize_autonomous_training(payload.model_dump())
+        return result
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/training/autonomous/metadata", tags=["training"])
+async def update_autonomous_metadata_endpoint(
+    payload: AutonomousMetadataUpdate,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Actualiza metadatos de entrenamiento autónomo.
+
+    Recibe actualizaciones de dataset_info, lora_info, gguf_info o package_info
+    según el metadata_type.
+
+    Flujo: Trainer → Broker → Backend Core → MariaDB
+    """
+    try:
+        result = await router.update_autonomous_metadata(payload.model_dump())
+        return result
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/training/autonomous/{id_entrenamiento}/progress", tags=["training"])
+async def get_autonomous_progress_endpoint(
+    id_entrenamiento: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Consulta el progreso del entrenamiento autónomo (fases 6-9).
+
+    Args:
+        id_entrenamiento: ID del entrenamiento a consultar.
+
+    Returns:
+        Diccionario con training_mode, subphases y summary.
+    """
+    try:
+        result = await router.get_autonomous_progress(id_entrenamiento)
+        return result
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/training/autonomous/packages", tags=["training"])
+async def list_autonomous_packages_endpoint(
+    id_organizacion: int | None = None,
+    id_proyecto: int | None = None,
+    id_version: int | None = None,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Lista paquetes autónomos disponibles para descargar.
+
+    Args:
+        id_organizacion: Filtrar por organización (opcional).
+        id_proyecto: Filtrar por proyecto (opcional).
+        id_version: Filtrar por versión (opcional).
+
+    Returns:
+        Diccionario con success y lista de paquetes.
+    """
+    try:
+        filters = {}
+        if id_organizacion is not None:
+            filters["id_organizacion"] = id_organizacion
+        if id_proyecto is not None:
+            filters["id_proyecto"] = id_proyecto
+        if id_version is not None:
+            filters["id_version"] = id_version
+
+        result = await router.list_autonomous_packages(filters)
         return result
     except BackendCoreBusinessError as exc:
         raise HTTPException(

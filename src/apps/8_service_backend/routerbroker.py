@@ -581,8 +581,57 @@ class BrokerBackendRouter:
                 "No se pudo enviar la solicitud de entrenamiento autónomo al trainer"
             ) from exc
 
-    def get_autonomous_training_progress(self, id_entrenamiento: int) -> dict[str, Any]:
-        """Consulta el progreso del entrenamiento autónomo (fases 6-9).
+    async def initialize_autonomous_training(
+        self, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Inicializa registro de entrenamiento autónomo via Backend Core.
+
+        Args:
+            payload: Diccionario con id_entrenamiento y training_mode.
+
+        Returns:
+            Diccionario con success y message.
+        """
+        self._logger.info(
+            "[%s] Inicializando entrenamiento autónomo: ent=%s",
+            self._client_app,
+            payload.get("id_entrenamiento"),
+        )
+        try:
+            return await self._core_client.initialize_autonomous_training(payload)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error inicializando entrenamiento autónomo: {str(exc)}"
+            ) from exc
+
+    async def update_autonomous_metadata(
+        self, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Actualiza metadatos de entrenamiento autónomo via Backend Core.
+
+        Args:
+            payload: Diccionario con id_entrenamiento, metadata_type y data.
+
+        Returns:
+            Diccionario con success y message.
+        """
+        self._logger.info(
+            "[%s] Actualizando metadata autónoma: ent=%s type=%s",
+            self._client_app,
+            payload.get("id_entrenamiento"),
+            payload.get("metadata_type"),
+        )
+        try:
+            return await self._core_client.update_autonomous_metadata(payload)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error actualizando metadata autónoma: {str(exc)}"
+            ) from exc
+
+    async def get_autonomous_training_progress(
+        self, id_entrenamiento: int
+    ) -> dict[str, Any]:
+        """Consulta el progreso del entrenamiento autónomo (fases 6-9) via Backend Core.
 
         Args:
             id_entrenamiento: ID del entrenamiento autónomo a consultar
@@ -590,10 +639,14 @@ class BrokerBackendRouter:
         Returns:
             Diccionario con success y data (subphases del entrenamiento autónomo)
         """
-        client = self._ensure_trainer_client()
+        self._logger.info(
+            "[%s] Consultando progreso autónomo: ent=%s",
+            self._client_app,
+            id_entrenamiento,
+        )
         try:
-            return client.get_autonomous_training_progress(id_entrenamiento)
-        except TrainerBackendCommunicationError as exc:
+            return await self._core_client.get_autonomous_progress(id_entrenamiento)
+        except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(
                 "No se pudo consultar el progreso del entrenamiento autónomo"
             ) from exc
@@ -615,13 +668,13 @@ class BrokerBackendRouter:
                 "No se pudo descargar el paquete del modelo autónomo"
             ) from exc
 
-    def list_autonomous_packages(
+    async def list_autonomous_packages(
         self,
         id_organizacion: int | None = None,
         id_proyecto: int | None = None,
         id_version: int | None = None,
     ) -> dict[str, Any]:
-        """Lista los paquetes autónomos disponibles para descargar.
+        """Lista los paquetes autónomos disponibles via Backend Core.
 
         Args:
             id_organizacion: Filtrar por organización (opcional)
@@ -631,10 +684,18 @@ class BrokerBackendRouter:
         Returns:
             Diccionario con success y lista de paquetes
         """
-        client = self._ensure_trainer_client()
+        self._logger.info(
+            "[%s] Listando paquetes autónomos: org=%s prj=%s ver=%s",
+            self._client_app,
+            id_organizacion,
+            id_proyecto,
+            id_version,
+        )
         try:
-            return client.list_autonomous_packages(id_organizacion, id_proyecto, id_version)
-        except TrainerBackendCommunicationError as exc:
+            return await self._core_client.list_autonomous_packages(
+                id_organizacion, id_proyecto, id_version
+            )
+        except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(
                 "No se pudo listar los paquetes autónomos"
             ) from exc
