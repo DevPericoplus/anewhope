@@ -3301,43 +3301,15 @@ class State(SharedSessionState):
     def load_jt_catalogs(self):
         """Carga los catálogos necesarios para el formulario de plantillas de jobs."""
         try:
-            engine = self._get_projects_engine()
-            with engine.connect() as conn:
-                # Cargar tipos
-                rows = conn.execute(text(
-                    "SELECT id, clave, nombre, pagina_backoffice FROM jobs_tipos WHERE activo = 1 ORDER BY id"
-                )).fetchall()
-                self.jt_tipos = [
-                    {"id": r[0], "clave": r[1], "nombre": r[2], "pagina": r[3]}
-                    for r in rows
-                ]
-
-                # Cargar estados
-                rows = conn.execute(text(
-                    "SELECT id, clave, nombre, color FROM jobs_estados WHERE activo = 1 ORDER BY id"
-                )).fetchall()
-                self.jt_estados = [
-                    {"id": r[0], "clave": r[1], "nombre": r[2], "color": r[3]}
-                    for r in rows
-                ]
-
-                # Cargar modelos
-                rows = conn.execute(text(
-                    "SELECT id, nombre, familia FROM jobs_modelos WHERE activo = 1 ORDER BY nombre"
-                )).fetchall()
-                self.jt_modelos = [
-                    {"id": r[0], "nombre": r[1], "familia": r[2]}
-                    for r in rows
-                ]
-
-                # Cargar salidas
-                rows = conn.execute(text(
-                    "SELECT id, clave, nombre FROM jobs_salidas WHERE activo = 1 ORDER BY id"
-                )).fetchall()
-                self.jt_salidas = [
-                    {"id": r[0], "clave": r[1], "nombre": r[2]}
-                    for r in rows
-                ]
+            from adapters.api_client import get_job_template_catalogs
+            result = get_job_template_catalogs(
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            self.jt_tipos = result.get("tipos", [])
+            self.jt_estados = result.get("estados", [])
+            self.jt_modelos = result.get("modelos", [])
+            self.jt_salidas = result.get("salidas", [])
 
             print(f"[JOB TEMPLATES] Catálogos cargados: tipos={len(self.jt_tipos)}, "
                   f"estados={len(self.jt_estados)}, modelos={len(self.jt_modelos)}, "
@@ -3349,54 +3321,11 @@ class State(SharedSessionState):
     def load_jt_list(self):
         """Carga la lista de plantillas de jobs con información de catálogos resuelta."""
         try:
-            engine = self._get_projects_engine()
-            with engine.connect() as conn:
-                rows = conn.execute(text("""
-                    SELECT
-                        jt.id,
-                        jt.nombre,
-                        jt.descripcion,
-                        jt.id_tipo,
-                        jtip.nombre       AS tipo_nombre,
-                        jtip.pagina_backoffice AS pagina,
-                        jt.es_programable,
-                        jt.activo,
-                        jt.id_estado_inicial,
-                        COALESCE(jest.nombre, '-')  AS estado_nombre,
-                        jt.id_modelo,
-                        COALESCE(jmod.nombre, '-')  AS modelo_nombre,
-                        jt.id_salida,
-                        COALESCE(jsal.nombre, '-')  AS salida_nombre,
-                        jt.acepta_entrada,
-                        jt.permite_hijos
-                    FROM jobs_templates jt
-                    INNER JOIN jobs_tipos jtip   ON jt.id_tipo = jtip.id
-                    LEFT  JOIN jobs_estados jest ON jt.id_estado_inicial = jest.id
-                    LEFT  JOIN jobs_modelos jmod ON jt.id_modelo = jmod.id
-                    LEFT  JOIN jobs_salidas jsal ON jt.id_salida = jsal.id
-                    ORDER BY jt.id DESC
-                """)).fetchall()
-                self.jt_list = [
-                    {
-                        "id": r[0],
-                        "nombre": r[1],
-                        "descripcion": r[2] or "",
-                        "id_tipo": r[3],
-                        "tipo_nombre": r[4],
-                        "pagina": r[5],
-                        "es_programable": bool(r[6]),
-                        "activo": bool(r[7]),
-                        "id_estado_inicial": r[8] or 0,
-                        "estado_nombre": r[9],
-                        "id_modelo": r[10] or 0,
-                        "modelo_nombre": r[11],
-                        "id_salida": r[12] or 0,
-                        "salida_nombre": r[13],
-                        "acepta_entrada": bool(r[14]),
-                        "permite_hijos": bool(r[15]),
-                    }
-                    for r in rows
-                ]
+            from adapters.api_client import get_job_templates
+            self.jt_list = get_job_templates(
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
             print(f"[JOB TEMPLATES] Plantillas cargadas: {len(self.jt_list)}")
         except Exception as e:
             print(f"[ERROR JOB TEMPLATES] load_jt_list: {type(e).__name__}: {e}")
@@ -3476,62 +3405,35 @@ class State(SharedSessionState):
             return
 
         try:
-            engine = self._get_projects_writer_engine()
-            with engine.begin() as conn:
-                if self.jt_form_mode == "create":
-                    conn.execute(text("""
-                        INSERT INTO jobs_templates
-                            (nombre, descripcion, id_tipo, es_programable,
-                             id_estado_inicial, id_modelo, id_salida,
-                             acepta_entrada, permite_hijos, activo)
-                        VALUES
-                            (:nombre, :descripcion, :id_tipo, :es_programable,
-                             :id_estado_inicial, :id_modelo, :id_salida,
-                             :acepta_entrada, :permite_hijos, 1)
-                    """), {
-                        "nombre": self.jt_nombre.strip(),
-                        "descripcion": self.jt_descripcion.strip() or None,
-                        "id_tipo": self.jt_id_tipo,
-                        "es_programable": 1 if self.jt_es_programable else 0,
-                        "id_estado_inicial": self.jt_id_estado_inicial if self.jt_id_estado_inicial > 0 else None,
-                        "id_modelo": self.jt_id_modelo if self.jt_id_modelo > 0 else None,
-                        "id_salida": self.jt_id_salida if self.jt_id_salida > 0 else None,
-                        "acepta_entrada": 1 if self.jt_acepta_entrada else 0,
-                        "permite_hijos": 1 if self.jt_permite_hijos else 0,
-                    })
-                    self.jt_success = f"Plantilla '{self.jt_nombre}' creada correctamente"
-                    print(f"[JOB TEMPLATES] Plantilla creada: {self.jt_nombre}")
-                else:
-                    conn.execute(text("""
-                        UPDATE jobs_templates SET
-                            nombre = :nombre,
-                            descripcion = :descripcion,
-                            id_tipo = :id_tipo,
-                            es_programable = :es_programable,
-                            id_estado_inicial = :id_estado_inicial,
-                            id_modelo = :id_modelo,
-                            id_salida = :id_salida,
-                            acepta_entrada = :acepta_entrada,
-                            permite_hijos = :permite_hijos
-                        WHERE id = :id
-                    """), {
-                        "id": self.jt_selected_id,
-                        "nombre": self.jt_nombre.strip(),
-                        "descripcion": self.jt_descripcion.strip() or None,
-                        "id_tipo": self.jt_id_tipo,
-                        "es_programable": 1 if self.jt_es_programable else 0,
-                        "id_estado_inicial": self.jt_id_estado_inicial if self.jt_id_estado_inicial > 0 else None,
-                        "id_modelo": self.jt_id_modelo if self.jt_id_modelo > 0 else None,
-                        "id_salida": self.jt_id_salida if self.jt_id_salida > 0 else None,
-                        "acepta_entrada": 1 if self.jt_acepta_entrada else 0,
-                        "permite_hijos": 1 if self.jt_permite_hijos else 0,
-                    })
-                    self.jt_success = f"Plantilla '{self.jt_nombre}' actualizada correctamente"
-                    print(f"[JOB TEMPLATES] Plantilla actualizada: id={self.jt_selected_id}")
+            from adapters.api_client import save_job_template
+            data = {
+                "nombre": self.jt_nombre.strip(),
+                "descripcion": self.jt_descripcion.strip() or "",
+                "id_tipo": self.jt_id_tipo,
+                "es_programable": self.jt_es_programable,
+                "id_estado_inicial": self.jt_id_estado_inicial if self.jt_id_estado_inicial > 0 else None,
+                "id_modelo": self.jt_id_modelo if self.jt_id_modelo > 0 else None,
+                "id_salida": self.jt_id_salida if self.jt_id_salida > 0 else None,
+                "acepta_entrada": self.jt_acepta_entrada,
+                "permite_hijos": self.jt_permite_hijos,
+            }
+            if self.jt_form_mode == "edit" and self.jt_selected_id > 0:
+                data["id"] = self.jt_selected_id
 
-            # Recargar lista y limpiar formulario
-            self.load_jt_list()
-            self.jt_clear_form()
+            result = save_job_template(
+                data=data,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if result.get("success"):
+                action = "actualizada" if self.jt_form_mode == "edit" else "creada"
+                self.jt_success = f"Plantilla '{self.jt_nombre}' {action} correctamente"
+                print(f"[JOB TEMPLATES] Plantilla {action}: {self.jt_nombre}")
+                self.load_jt_list()
+                self.jt_clear_form()
+            else:
+                self.jt_error = result.get("message", "Error desconocido")
         except Exception as e:
             print(f"[ERROR JOB TEMPLATES] jt_save_template: {type(e).__name__}: {e}")
             self.jt_error = f"Error guardando plantilla: {e}"
@@ -3541,25 +3443,21 @@ class State(SharedSessionState):
         self.jt_error = ""
         self.jt_success = ""
 
-        # Buscar el estado actual
-        current_active = True
-        for t in self.jt_list:
-            if t["id"] == template_id:
-                current_active = t["activo"]
-                break
-
         try:
-            engine = self._get_projects_writer_engine()
-            with engine.begin() as conn:
-                new_active = 0 if current_active else 1
-                conn.execute(text(
-                    "UPDATE jobs_templates SET activo = :activo WHERE id = :id"
-                ), {"activo": new_active, "id": template_id})
+            from adapters.api_client import toggle_job_template
+            result = toggle_job_template(
+                template_id=template_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
 
-            action = "activada" if new_active == 1 else "desactivada"
-            self.jt_success = f"Plantilla {action} correctamente"
-            print(f"[JOB TEMPLATES] Plantilla {template_id} {action}")
-            self.load_jt_list()
+            if result.get("success"):
+                action = "activada" if result.get("activo") else "desactivada"
+                self.jt_success = f"Plantilla {action} correctamente"
+                print(f"[JOB TEMPLATES] Plantilla {template_id} {action}")
+                self.load_jt_list()
+            else:
+                self.jt_error = result.get("message", "Error desconocido")
         except Exception as e:
             print(f"[ERROR JOB TEMPLATES] jt_toggle_active: {type(e).__name__}: {e}")
             self.jt_error = f"Error cambiando estado: {e}"

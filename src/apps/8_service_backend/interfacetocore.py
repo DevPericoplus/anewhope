@@ -1321,3 +1321,21 @@ class CoreBackendClient:
             raise CoreBackendCommunicationError(
                 f"Error descargando modelo del backend core: {exc}"
             ) from exc
+
+    # === JOB TEMPLATES ===
+
+    def get_job_template_catalogs(self) -> dict[str, Any]:
+        """Obtiene catálogos de job templates."""
+        return dict(self._request("GET", "/job-templates/catalogs") or {})
+
+    def get_job_templates(self) -> list[dict[str, Any]]:
+        """Lista plantillas de jobs."""
+        return list(self._request("GET", "/job-templates") or [])
+
+    def save_job_template(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Crea o actualiza una plantilla de job."""
+        return dict(self._request("POST", "/job-templates", payload=data) or {})
+
+    def toggle_job_template(self, template_id: int) -> dict[str, Any]:
+        """Activa/desactiva una plantilla de job."""
+        return dict(self._request("PATCH", f"/job-templates/{template_id}/toggle") or {})

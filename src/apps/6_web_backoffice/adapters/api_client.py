@@ -4582,3 +4582,141 @@ def get_informe_content(
     except Exception as exc:
         logger.error(f"Error obteniendo contenido informe: {exc}")
         return {"content": "", "display_name": ""}
+
+
+# ============================================================================
+# JOB TEMPLATES - Plantillas de jobs
+# ============================================================================
+
+
+def get_job_template_catalogs(
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Obtiene catálogos de job templates (tipos, estados, modelos, salidas).
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+
+    Returns:
+        {"tipos": [...], "estados": [...], "modelos": [...], "salidas": [...]}
+    """
+    url = f"{_get_middleware_base_url()}/job-templates/catalogs"
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+
+    request = urllib.request.Request(url, headers=request_headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        logger.error(f"Error obteniendo catálogos job templates: {exc}")
+        return {"tipos": [], "estados": [], "modelos": [], "salidas": []}
+
+
+def get_job_templates(
+    access_token: str = "",
+    session_token: str = "",
+) -> list[dict[str, Any]]:
+    """
+    Lista plantillas de jobs con información de catálogos resuelta.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+
+    Returns:
+        Lista de diccionarios con datos de cada plantilla
+    """
+    url = f"{_get_middleware_base_url()}/job-templates"
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+
+    request = urllib.request.Request(url, headers=request_headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        logger.error(f"Error obteniendo plantillas de jobs: {exc}")
+        return []
+
+
+def save_job_template(
+    data: dict[str, Any],
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Crea o actualiza una plantilla de job.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+
+    Args:
+        data: Diccionario con datos de la plantilla
+
+    Returns:
+        {"success": True, "id": int, "message": str}
+    """
+    url = f"{_get_middleware_base_url()}/job-templates"
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+
+    payload = json.dumps(data).encode("utf-8")
+    request = urllib.request.Request(url, data=payload, headers=request_headers, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        logger.error(f"Error guardando plantilla de job: {exc}")
+        return {"success": False, "message": str(exc)}
+
+
+def toggle_job_template(
+    template_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Activa o desactiva una plantilla de job.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+
+    Args:
+        template_id: ID de la plantilla
+
+    Returns:
+        {"success": True, "activo": bool, "message": str}
+    """
+    url = f"{_get_middleware_base_url()}/job-templates/{template_id}/toggle"
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+
+    request = urllib.request.Request(url, headers=request_headers, method="PATCH")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        logger.error(f"Error cambiando estado de plantilla: {exc}")
+        return {"success": False, "message": str(exc)}

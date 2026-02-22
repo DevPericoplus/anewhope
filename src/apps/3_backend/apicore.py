@@ -4261,3 +4261,54 @@ def download_model_package(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
+
+
+# ========================================================================
+# JOB TEMPLATES
+# ========================================================================
+
+
+@app.get("/job-templates/catalogs")
+def get_job_template_catalogs(
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Obtiene catálogos para plantillas de jobs."""
+    try:
+        return router.get_job_template_catalogs()
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/job-templates")
+def get_job_templates(
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> list[dict[str, Any]]:
+    """Lista plantillas de jobs."""
+    try:
+        return router.get_job_templates()
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/job-templates")
+def save_job_template(
+    data: dict[str, Any],
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Crea o actualiza una plantilla de job."""
+    try:
+        return router.save_job_template(data)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/job-templates/{template_id}/toggle")
+def toggle_job_template(
+    template_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Activa/desactiva una plantilla de job."""
+    try:
+        return router.toggle_job_template(template_id)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

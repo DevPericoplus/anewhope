@@ -2057,3 +2057,33 @@ class BrokerBackendRouter:
             raise BrokerBusinessError(
                 f"Error descargando modelo: {str(exc)}"
             ) from exc
+
+    # === JOB TEMPLATES ===
+
+    def get_job_template_catalogs(self) -> dict[str, Any]:
+        """Obtiene catálogos de job templates."""
+        try:
+            return self._core_client.get_job_template_catalogs()
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"Error obteniendo catálogos: {exc}") from exc
+
+    def get_job_templates(self) -> list[dict[str, Any]]:
+        """Lista plantillas de jobs."""
+        try:
+            return self._core_client.get_job_templates()
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"Error obteniendo plantillas: {exc}") from exc
+
+    def save_job_template(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Crea o actualiza una plantilla de job."""
+        try:
+            return self._core_client.save_job_template(data)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"Error guardando plantilla: {exc}") from exc
+
+    def toggle_job_template(self, template_id: int) -> dict[str, Any]:
+        """Activa/desactiva una plantilla de job."""
+        try:
+            return self._core_client.toggle_job_template(template_id)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"Error cambiando estado plantilla: {exc}") from exc

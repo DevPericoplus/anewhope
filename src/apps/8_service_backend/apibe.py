@@ -4336,3 +4336,74 @@ def download_model_package_endpoint(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ============================================================================
+# JOB TEMPLATES - Plantillas de jobs
+# ============================================================================
+
+
+@app.get(
+    "/job-templates/catalogs",
+    tags=["job-templates"],
+)
+def get_job_template_catalogs(
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Obtiene catálogos para plantillas de jobs (tipos, estados, modelos, salidas)."""
+    try:
+        return router.get_job_template_catalogs()
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get(
+    "/job-templates",
+    tags=["job-templates"],
+)
+def get_job_templates(
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> list[dict[str, Any]]:
+    """Lista plantillas de jobs con información de catálogos resuelta."""
+    try:
+        return router.get_job_templates()
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post(
+    "/job-templates",
+    tags=["job-templates"],
+)
+def save_job_template(
+    data: dict[str, Any],
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Crea o actualiza una plantilla de job."""
+    try:
+        return router.save_job_template(data)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.patch(
+    "/job-templates/{template_id}/toggle",
+    tags=["job-templates"],
+)
+def toggle_job_template(
+    template_id: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Activa o desactiva una plantilla de job."""
+    try:
+        return router.toggle_job_template(template_id)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

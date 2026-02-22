@@ -1657,3 +1657,25 @@ class BrokerBackendClient:
             raise BrokerBackendCommunicationError(
                 f"Error descargando modelo del broker: {exc}"
             ) from exc
+
+    # ========================================================================
+    # JOB TEMPLATES
+    # ========================================================================
+
+    def get_job_template_catalogs(self) -> dict[str, Any]:
+        """Obtiene catálogos de job templates (tipos, estados, modelos, salidas)."""
+        data = self._request("GET", "/job-templates/catalogs")
+        return dict(data or {})
+
+    def get_job_templates(self) -> list[dict[str, Any]]:
+        """Lista plantillas de jobs con información de catálogos resuelta."""
+        data = self._request("GET", "/job-templates")
+        return list(data or [])
+
+    def save_job_template(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Crea o actualiza una plantilla de job."""
+        return dict(self._request("POST", "/job-templates", payload=data) or {})
+
+    def toggle_job_template(self, template_id: int) -> dict[str, Any]:
+        """Activa o desactiva una plantilla de job."""
+        return dict(self._request("PATCH", f"/job-templates/{template_id}/toggle") or {})

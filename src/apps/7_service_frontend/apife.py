@@ -4643,3 +4643,153 @@ def get_informe_content_endpoint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al obtener contenido del informe",
         ) from exc
+
+
+# ============================================================================
+# JOB TEMPLATES - Plantillas de jobs (SuperAdmin only)
+# ============================================================================
+
+
+@app.get(
+    "/job-templates/catalogs",
+    tags=["job-templates"],
+)
+def get_job_template_catalogs_endpoint(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> dict[str, Any]:
+    """Obtiene catálogos para plantillas de jobs."""
+    _logger = logging.getLogger(__name__)
+
+    if session.identity_type_id != 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo SuperAdmin puede gestionar plantillas de jobs",
+        )
+
+    try:
+        return router.get_job_template_catalogs(session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        _logger.error("Error obteniendo catálogos job templates: %s", str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al obtener catálogos",
+        ) from exc
+
+
+@app.get(
+    "/job-templates",
+    tags=["job-templates"],
+)
+def get_job_templates_endpoint(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> list[dict[str, Any]]:
+    """Lista plantillas de jobs."""
+    _logger = logging.getLogger(__name__)
+
+    if session.identity_type_id != 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo SuperAdmin puede gestionar plantillas de jobs",
+        )
+
+    try:
+        return router.get_job_templates(session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        _logger.error("Error obteniendo plantillas de jobs: %s", str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al obtener plantillas",
+        ) from exc
+
+
+class JobTemplateSaveRequest(BaseModel):
+    """Payload para crear o actualizar una plantilla de job."""
+
+    id: int | None = None
+    nombre: str
+    descripcion: str | None = ""
+    id_tipo: int
+    es_programable: bool = False
+    id_estado_inicial: int | None = None
+    id_modelo: int | None = None
+    id_salida: int | None = None
+    acepta_entrada: bool = False
+    permite_hijos: bool = False
+
+
+@app.post(
+    "/job-templates",
+    tags=["job-templates"],
+)
+def save_job_template_endpoint(
+    data: JobTemplateSaveRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> dict[str, Any]:
+    """Crea o actualiza una plantilla de job."""
+    _logger = logging.getLogger(__name__)
+
+    if session.identity_type_id != 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo SuperAdmin puede gestionar plantillas de jobs",
+        )
+
+    try:
+        return router.save_job_template(data.model_dump(), session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        _logger.error("Error guardando plantilla de job: %s", str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al guardar plantilla",
+        ) from exc
+
+
+@app.patch(
+    "/job-templates/{template_id}/toggle",
+    tags=["job-templates"],
+)
+def toggle_job_template_endpoint(
+    template_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> dict[str, Any]:
+    """Activa o desactiva una plantilla de job."""
+    _logger = logging.getLogger(__name__)
+
+    if session.identity_type_id != 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo SuperAdmin puede gestionar plantillas de jobs",
+        )
+
+    try:
+        return router.toggle_job_template(template_id, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        _logger.error("Error cambiando estado de plantilla: %s", str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al cambiar estado de plantilla",
+        ) from exc

@@ -7917,3 +7917,140 @@ class BackendCoreRouter:
         except Exception as exc:
             self._logger.error(f"Error obteniendo path de modelo: {exc}")
             raise BackendCoreBusinessError(f"Error accediendo modelo: {str(exc)}") from exc
+
+    # ========================================================================
+    # JOB TEMPLATES - CRUD para plantillas de jobs
+    # ========================================================================
+
+    def get_job_template_catalogs(self) -> dict[str, Any]:
+        """Obtiene los catálogos para plantillas de jobs (tipos, estados, modelos, salidas)."""
+        from sqlalchemy import text
+        try:
+            with self._get_projects_db_connection() as conn:
+                tipos = conn.execute(text(
+                    "SELECT id, clave, nombre, pagina_backoffice FROM jobs_tipos WHERE activo = 1 ORDER BY id"
+                )).fetchall()
+                estados = conn.execute(text(
+                    "SELECT id, clave, nombre, color FROM jobs_estados WHERE activo = 1 ORDER BY id"
+                )).fetchall()
+                modelos = conn.execute(text(
+                    "SELECT id, nombre, familia FROM jobs_modelos WHERE activo = 1 ORDER BY nombre"
+                )).fetchall()
+                salidas = conn.execute(text(
+                    "SELECT id, clave, nombre FROM jobs_salidas WHERE activo = 1 ORDER BY id"
+                )).fetchall()
+
+            return {
+                "tipos": [{"id": r[0], "clave": r[1], "nombre": r[2], "pagina": r[3]} for r in tipos],
+                "estados": [{"id": r[0], "clave": r[1], "nombre": r[2], "color": r[3]} for r in estados],
+                "modelos": [{"id": r[0], "nombre": r[1], "familia": r[2]} for r in modelos],
+                "salidas": [{"id": r[0], "clave": r[1], "nombre": r[2]} for r in salidas],
+            }
+        except Exception as exc:
+            self._logger.error("Error cargando catálogos de jobs: %s", exc)
+            raise BackendCoreBusinessError(f"Error cargando catálogos: {exc}") from exc
+
+    def get_job_templates(self) -> list[dict[str, Any]]:
+        """Obtiene la lista de plantillas de jobs con catálogos resueltos."""
+        from sqlalchemy import text
+        try:
+            with self._get_projects_db_connection() as conn:
+                rows = conn.execute(text("""
+                    SELECT
+                        jt.id, jt.nombre, jt.descripcion, jt.id_tipo,
+                        jtip.nombre AS tipo_nombre, jtip.pagina_backoffice AS pagina,
+                        jt.es_programable, jt.activo, jt.id_estado_inicial,
+                        COALESCE(jest.nombre, '-') AS estado_nombre,
+                        jt.id_modelo, COALESCE(jmod.nombre, '-') AS modelo_nombre,
+                        jt.id_salida, COALESCE(jsal.nombre, '-') AS salida_nombre,
+                        jt.acepta_entrada, jt.permite_hijos
+                    FROM jobs_templates jt
+                    INNER JOIN jobs_tipos jtip ON jt.id_tipo = jtip.id
+                    LEFT JOIN jobs_estados jest ON jt.id_estado_inicial = jest.id
+                    LEFT JOIN jobs_modelos jmod ON jt.id_modelo = jmod.id
+                    LEFT JOIN jobs_salidas jsal ON jt.id_salida = jsal.id
+                    ORDER BY jt.id DESC
+                """)).fetchall()
+            return [
+                {
+                    "id": r[0], "nombre": r[1], "descripcion": r[2] or "",
+                    "id_tipo": r[3], "tipo_nombre": r[4], "pagina": r[5],
+                    "es_programable": bool(r[6]), "activo": bool(r[7]),
+                    "id_estado_inicial": r[8] or 0, "estado_nombre": r[9],
+                    "id_modelo": r[10] or 0, "modelo_nombre": r[11],
+                    "id_salida": r[12] or 0, "salida_nombre": r[13],
+                    "acepta_entrada": bool(r[14]), "permite_hijos": bool(r[15]),
+                }
+                for r in rows
+            ]
+        except Exception as exc:
+            self._logger.error("Error cargando plantillas de jobs: %s", exc)
+            raise BackendCoreBusinessError(f"Error cargando plantillas: {exc}") from exc
+
+    def save_job_template(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Crea o actualiza una plantilla de job."""
+        from sqlalchemy import text
+        try:
+            with self._get_projects_db_writer_connection() as conn:
+                template_id = data.get("id", 0)
+                params = {
+                    "nombre": data["nombre"],
+                    "descripcion": data.get("descripcion") or None,
+                    "id_tipo": data["id_tipo"],
+                    "es_programable": 1 if data.get("es_programable") else 0,
+                    "id_estado_inicial": data.get("id_estado_inicial") or None,
+                    "id_modelo": data.get("id_modelo") or None,
+                    "id_salida": data.get("id_salida") or None,
+                    "acepta_entrada": 1 if data.get("acepta_entrada") else 0,
+                    "permite_hijos": 1 if data.get("permite_hijos") else 0,
+                }
+                if template_id > 0:
+                    params["id"] = template_id
+                    conn.execute(text("""
+                        UPDATE jobs_templates SET
+                            nombre=:nombre, descripcion=:descripcion, id_tipo=:id_tipo,
+                            es_programable=:es_programable, id_estado_inicial=:id_estado_inicial,
+                            id_modelo=:id_modelo, id_salida=:id_salida,
+                            acepta_entrada=:acepta_entrada, permite_hijos=:permite_hijos
+                        WHERE id=:id
+                    """), params)
+                    conn.commit()
+                    return {"success": True, "message": f"Plantilla '{data['nombre']}' actualizada"}
+                else:
+                    conn.execute(text("""
+                        INSERT INTO jobs_templates
+                            (nombre, descripcion, id_tipo, es_programable,
+                             id_estado_inicial, id_modelo, id_salida,
+                             acepta_entrada, permite_hijos, activo)
+                        VALUES (:nombre, :descripcion, :id_tipo, :es_programable,
+                                :id_estado_inicial, :id_modelo, :id_salida,
+                                :acepta_entrada, :permite_hijos, 1)
+                    """), params)
+                    conn.commit()
+                    return {"success": True, "message": f"Plantilla '{data['nombre']}' creada"}
+        except Exception as exc:
+            self._logger.error("Error guardando plantilla de job: %s", exc)
+            raise BackendCoreBusinessError(f"Error guardando plantilla: {exc}") from exc
+
+    def toggle_job_template(self, template_id: int) -> dict[str, Any]:
+        """Activa o desactiva una plantilla de job."""
+        from sqlalchemy import text
+        try:
+            with self._get_projects_db_writer_connection() as conn:
+                row = conn.execute(text(
+                    "SELECT activo FROM jobs_templates WHERE id = :id"
+                ), {"id": template_id}).fetchone()
+                if not row:
+                    raise BackendCoreBusinessError(f"Plantilla {template_id} no encontrada")
+                new_active = 0 if row[0] else 1
+                conn.execute(text(
+                    "UPDATE jobs_templates SET activo = :activo WHERE id = :id"
+                ), {"activo": new_active, "id": template_id})
+                conn.commit()
+                action = "activada" if new_active else "desactivada"
+                return {"success": True, "activo": bool(new_active), "message": f"Plantilla {action}"}
+        except BackendCoreBusinessError:
+            raise
+        except Exception as exc:
+            self._logger.error("Error toggling plantilla: %s", exc)
+            raise BackendCoreBusinessError(f"Error cambiando estado: {exc}") from exc

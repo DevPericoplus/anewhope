@@ -5218,3 +5218,51 @@ class RouterMiddleware:
             raise BusinessRuleError(
                 f"No se pudo obtener informe: {exc}"
             ) from exc
+
+    # ========================================================================
+    # JOB TEMPLATES
+    # ========================================================================
+
+    def get_job_template_catalogs(self, session: "SessionContext") -> dict[str, Any]:
+        """Obtiene catálogos de job templates."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.get_job_template_catalogs()
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudieron obtener catálogos de job templates: {exc}"
+            ) from exc
+
+    def get_job_templates(self, session: "SessionContext") -> list[dict[str, Any]]:
+        """Lista plantillas de jobs."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.get_job_templates()
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudieron obtener plantillas de jobs: {exc}"
+            ) from exc
+
+    def save_job_template(
+        self, data: dict[str, Any], session: "SessionContext"
+    ) -> dict[str, Any]:
+        """Crea o actualiza una plantilla de job."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.save_job_template(data)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo guardar plantilla de job: {exc}"
+            ) from exc
+
+    def toggle_job_template(
+        self, template_id: int, session: "SessionContext"
+    ) -> dict[str, Any]:
+        """Activa o desactiva una plantilla de job."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.toggle_job_template(template_id)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo cambiar estado de plantilla: {exc}"
+            ) from exc
