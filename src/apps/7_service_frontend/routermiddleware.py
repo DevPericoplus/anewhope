@@ -4008,6 +4008,263 @@ class RouterMiddleware:
             raise BusinessRuleError(f"No se pudo añadir la respuesta: {exc}") from exc
 
     # ========================================================================
+    # GESTIÓN DE CONVERSACIONES Y CAMBIOS
+    # ========================================================================
+
+    def get_user_conversation(
+        self, user_id: int, org_id: int, session: SessionContext
+    ) -> dict[str, Any]:
+        """Busca conversación abierta de un usuario.
+
+        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+        """
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Buscando conversación user_id=%s org_id=%s",
+            user_id, org_id,
+        )
+
+        try:
+            return self._broker_client.get_user_conversation(user_id, org_id)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"Error buscando conversación: {exc}"
+            ) from exc
+
+    def create_conversation(
+        self, payload: dict[str, Any], session: SessionContext
+    ) -> dict[str, Any]:
+        """Crea una nueva conversación.
+
+        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+        """
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Creando conversación org=%s user=%s",
+            payload.get("id_organizacion"),
+            payload.get("id_usuario_cliente"),
+        )
+
+        try:
+            return self._broker_client.create_conversation(payload)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"Error creando conversación: {exc}"
+            ) from exc
+
+    def get_conversation_messages(
+        self, conversation_id: int, session: SessionContext
+    ) -> list[dict[str, Any]]:
+        """Obtiene los mensajes de una conversación.
+
+        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+        """
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Obteniendo mensajes conversación=%s",
+            conversation_id,
+        )
+
+        try:
+            return self._broker_client.get_conversation_messages(conversation_id)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"Error obteniendo mensajes: {exc}"
+            ) from exc
+
+    def send_conversation_message(
+        self, conversation_id: int, payload: dict[str, Any], session: SessionContext
+    ) -> dict[str, Any]:
+        """Envía un mensaje en una conversación.
+
+        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+        """
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Enviando mensaje en conversación=%s user=%s",
+            conversation_id, session.user_id,
+        )
+
+        try:
+            return self._broker_client.send_conversation_message(
+                conversation_id, payload
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"Error enviando mensaje: {exc}"
+            ) from exc
+
+    def mark_conversation_read(
+        self, conversation_id: int, tipo_lector: str, session: SessionContext
+    ) -> dict[str, Any]:
+        """Marca mensajes como leídos.
+
+        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+        """
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Marcando leídos conversación=%s tipo=%s",
+            conversation_id, tipo_lector,
+        )
+
+        try:
+            return self._broker_client.mark_conversation_read(
+                conversation_id, tipo_lector
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"Error marcando leídos: {exc}"
+            ) from exc
+
+    def get_cambios_calendar(
+        self,
+        org_id: int,
+        session: SessionContext,
+        mes: int | None = None,
+        anio: int | None = None,
+        proyecto_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Obtiene eventos del calendario.
+
+        Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+        """
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Consultando cambios org=%s mes=%s anio=%s proyecto=%s",
+            org_id, mes, anio, proyecto_id,
+        )
+
+        try:
+            return self._broker_client.get_cambios_calendar(
+                org_id, mes=mes, anio=anio, proyecto_id=proyecto_id
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"Error consultando cambios: {exc}"
+            ) from exc
+
+    # ========================================================================
+    # CONVERSACIONES - BACKOFFICE
+    # ========================================================================
+
+    def get_organization_conversations(
+        self, org_id: int, session: SessionContext, solo_activas: bool = True
+    ) -> list[dict[str, Any]]:
+        """Obtiene conversaciones de una organización."""
+        self._configure_broker_security(session)
+        self._logger.info(
+            "[middleware] Consultando conversaciones org=%s", org_id,
+        )
+        try:
+            return self._broker_client.get_organization_conversations(
+                org_id, solo_activas=solo_activas
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"Error consultando conversaciones org: {exc}"
+            ) from exc
+
+    def join_conversation(
+        self, conversation_id: int, payload: dict[str, Any], session: SessionContext
+    ) -> dict[str, Any]:
+        """Un usuario interno se une a una conversación."""
+        self._configure_broker_security(session)
+        self._logger.info(
+            "[middleware] Unirse a conversación %s", conversation_id,
+        )
+        try:
+            return self._broker_client.join_conversation(conversation_id, payload)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"Error uniéndose a conversación: {exc}"
+            ) from exc
+
+    def get_conversation_detail(
+        self, conversation_id: int, session: SessionContext
+    ) -> dict[str, Any]:
+        """Obtiene detalle de una conversación."""
+        self._configure_broker_security(session)
+        self._logger.info(
+            "[middleware] Consultando detalle conversación %s", conversation_id,
+        )
+        try:
+            return self._broker_client.get_conversation_detail(conversation_id)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"Error consultando detalle conversación: {exc}"
+            ) from exc
+
+    def update_conversation_priority(
+        self, conversation_id: int, payload: dict[str, Any], session: SessionContext
+    ) -> dict[str, Any]:
+        """Actualiza la prioridad de una conversación."""
+        self._configure_broker_security(session)
+        self._logger.info(
+            "[middleware] Actualizando prioridad conversación %s", conversation_id,
+        )
+        try:
+            return self._broker_client.update_conversation_priority(
+                conversation_id, payload
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"Error actualizando prioridad: {exc}"
+            ) from exc
+
+    def update_conversation_state(
+        self, conversation_id: int, payload: dict[str, Any], session: SessionContext
+    ) -> dict[str, Any]:
+        """Actualiza el estado de una conversación."""
+        self._configure_broker_security(session)
+        self._logger.info(
+            "[middleware] Actualizando estado conversación %s", conversation_id,
+        )
+        try:
+            return self._broker_client.update_conversation_state(
+                conversation_id, payload
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"Error actualizando estado: {exc}"
+            ) from exc
+
+    def get_ticket_details(
+        self, ticket_id: int, session: SessionContext
+    ) -> dict[str, Any]:
+        """Obtiene detalles de un ticket."""
+        self._configure_broker_security(session)
+        self._logger.info(
+            "[middleware] Consultando detalle ticket %s", ticket_id,
+        )
+        try:
+            return self._broker_client.get_ticket_details(ticket_id)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"Error consultando detalle ticket: {exc}"
+            ) from exc
+
+    def save_ticket_interaction(
+        self, ticket_id: int, payload: dict[str, Any], session: SessionContext
+    ) -> dict[str, Any]:
+        """Guarda interacción de ticket."""
+        self._configure_broker_security(session)
+        self._logger.info(
+            "[middleware] Guardando interacción ticket %s", ticket_id,
+        )
+        try:
+            return self._broker_client.save_ticket_interaction(ticket_id, payload)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"Error guardando interacción ticket: {exc}"
+            ) from exc
+
+    # ========================================================================
     # GESTIÓN DE TECNOLOGÍAS
     # ========================================================================
 

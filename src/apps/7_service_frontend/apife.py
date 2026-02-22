@@ -1900,6 +1900,35 @@ class TicketListResponse(BaseModel):
 
 
 # ============================================================================
+# MODELOS PARA CONVERSACIONES Y CAMBIOS
+# ============================================================================
+
+
+class ConversationCreateRequest(BaseModel):
+    """Payload para crear una conversación."""
+
+    id_organizacion: int
+    id_usuario_cliente: int
+    asunto: str = "Consulta sobre proyecto"
+    prioridad: str = "media"
+
+
+class ConversationMessageRequest(BaseModel):
+    """Payload para enviar un mensaje."""
+
+    id_usuario_emisor: int
+    tipo_emisor: str
+    texto_mensaje: str
+    id_ticket_referenciado: int | None = None
+
+
+class ConversationMarkReadRequest(BaseModel):
+    """Payload para marcar mensajes como leídos."""
+
+    tipo_lector: str
+
+
+# ============================================================================
 # DTOs para Tecnologías
 # ============================================================================
 
@@ -2779,6 +2808,287 @@ def add_ticket_response_endpoint(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# ENDPOINTS DE CONVERSACIONES Y CAMBIOS
+# ============================================================================
+
+
+@app.get("/conversations/user/{user_id}", tags=["conversations"])
+def get_user_conversation_endpoint(
+    user_id: int,
+    org_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> dict:
+    """Busca conversación abierta de un usuario."""
+    try:
+        return router.get_user_conversation(user_id, org_id, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/conversations", tags=["conversations"])
+def create_conversation_endpoint(
+    request: ConversationCreateRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> dict:
+    """Crea una nueva conversación."""
+    try:
+        return router.create_conversation(request.model_dump(), session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/conversations/{conversation_id}/messages", tags=["conversations"])
+def get_conversation_messages_endpoint(
+    conversation_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> list[dict]:
+    """Obtiene los mensajes de una conversación."""
+    try:
+        return router.get_conversation_messages(conversation_id, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/conversations/{conversation_id}/messages", tags=["conversations"])
+def send_conversation_message_endpoint(
+    conversation_id: int,
+    request: ConversationMessageRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> dict:
+    """Envía un mensaje en una conversación."""
+    try:
+        return router.send_conversation_message(
+            conversation_id, request.model_dump(), session
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/conversations/{conversation_id}/mark-read", tags=["conversations"])
+def mark_conversation_read_endpoint(
+    conversation_id: int,
+    request: ConversationMarkReadRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> dict:
+    """Marca mensajes como leídos."""
+    try:
+        return router.mark_conversation_read(
+            conversation_id, request.tipo_lector, session
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/cambios/organization/{org_id}", tags=["cambios"])
+def get_cambios_calendar_endpoint(
+    org_id: int,
+    mes: int | None = None,
+    anio: int | None = None,
+    proyecto_id: int | None = None,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)] = None,
+    session: Annotated[SessionContext, Depends(get_session_context)] = None,
+) -> list[dict]:
+    """Obtiene eventos del calendario."""
+    try:
+        return router.get_cambios_calendar(
+            org_id, session, mes=mes, anio=anio, proyecto_id=proyecto_id
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+# ============================================================================
+# CONVERSACIONES - BACKOFFICE (gestión por organización)
+# ============================================================================
+
+
+class JoinConversationMwRequest(BaseModel):
+    user_id: int
+
+
+class UpdatePriorityMwRequest(BaseModel):
+    prioridad: str
+
+
+class UpdateStateMwRequest(BaseModel):
+    estado: str
+    user_id: int
+
+
+class TicketInteractionMwRequest(BaseModel):
+    user_id: int
+    cliente_id: int
+    respuesta: str = ""
+    nuevo_estado: str = ""
+    estado_actual: str = ""
+    titulo_ticket: str = ""
+
+
+@app.get(
+    "/conversations/organization/{org_id}",
+    tags=["conversations"],
+)
+def get_organization_conversations_endpoint(
+    org_id: int,
+    solo_activas: bool = True,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)] = None,
+    session: Annotated[SessionContext, Depends(get_session_context)] = None,
+) -> list[dict]:
+    """Obtiene conversaciones de una organización (backoffice)."""
+    try:
+        return router.get_organization_conversations(
+            org_id, session, solo_activas=solo_activas
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc),
+        ) from exc
+
+
+@app.post(
+    "/conversations/{conversation_id}/join",
+    tags=["conversations"],
+)
+def join_conversation_endpoint(
+    conversation_id: int,
+    request: JoinConversationMwRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)] = None,
+    session: Annotated[SessionContext, Depends(get_session_context)] = None,
+) -> dict:
+    """Un usuario interno se une a una conversación."""
+    try:
+        return router.join_conversation(
+            conversation_id, request.model_dump(), session
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc),
+        ) from exc
+
+
+@app.get(
+    "/conversations/{conversation_id}/detail",
+    tags=["conversations"],
+)
+def get_conversation_detail_endpoint(
+    conversation_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)] = None,
+    session: Annotated[SessionContext, Depends(get_session_context)] = None,
+) -> dict:
+    """Obtiene detalle de una conversación."""
+    try:
+        return router.get_conversation_detail(conversation_id, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/conversations/{conversation_id}/priority",
+    tags=["conversations"],
+)
+def update_conversation_priority_endpoint(
+    conversation_id: int,
+    request: UpdatePriorityMwRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)] = None,
+    session: Annotated[SessionContext, Depends(get_session_context)] = None,
+) -> dict:
+    """Actualiza la prioridad de una conversación."""
+    try:
+        return router.update_conversation_priority(
+            conversation_id, request.model_dump(), session
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/conversations/{conversation_id}/state",
+    tags=["conversations"],
+)
+def update_conversation_state_endpoint(
+    conversation_id: int,
+    request: UpdateStateMwRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)] = None,
+    session: Annotated[SessionContext, Depends(get_session_context)] = None,
+) -> dict:
+    """Actualiza el estado de una conversación."""
+    try:
+        return router.update_conversation_state(
+            conversation_id, request.model_dump(), session
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc),
+        ) from exc
+
+
+@app.get(
+    "/tickets/{ticket_id}/details",
+    tags=["tickets"],
+)
+def get_ticket_details_endpoint(
+    ticket_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)] = None,
+    session: Annotated[SessionContext, Depends(get_session_context)] = None,
+) -> dict:
+    """Obtiene detalles de un ticket."""
+    try:
+        return router.get_ticket_details(ticket_id, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc),
+        ) from exc
+
+
+@app.post(
+    "/tickets/{ticket_id}/interactions",
+    tags=["tickets"],
+)
+def save_ticket_interaction_endpoint(
+    ticket_id: int,
+    request: TicketInteractionMwRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)] = None,
+    session: Annotated[SessionContext, Depends(get_session_context)] = None,
+) -> dict:
+    """Guarda interacción de ticket."""
+    try:
+        return router.save_ticket_interaction(
+            ticket_id, request.model_dump(), session
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc),
         ) from exc
 
 

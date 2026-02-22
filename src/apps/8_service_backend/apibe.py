@@ -2254,6 +2254,375 @@ def add_ticket_response(
 
 
 # ============================================================================
+# MODELOS PARA CONVERSACIONES Y CAMBIOS
+# ============================================================================
+
+
+class ConversationCreateRequest(BaseModel):
+    """Payload para crear una conversación."""
+
+    id_organizacion: int
+    id_usuario_cliente: int
+    asunto: str = "Consulta sobre proyecto"
+    prioridad: str = "media"
+
+
+class ConversationMessageRequest(BaseModel):
+    """Payload para enviar un mensaje."""
+
+    id_usuario_emisor: int
+    tipo_emisor: str
+    texto_mensaje: str
+    id_ticket_referenciado: int | None = None
+
+
+class ConversationMarkReadRequest(BaseModel):
+    """Payload para marcar mensajes como leídos."""
+
+    tipo_lector: str
+
+
+# ============================================================================
+# ENDPOINTS DE CONVERSACIONES Y CAMBIOS
+# ============================================================================
+
+
+@app.get("/conversations/user/{user_id}", tags=["conversations"])
+def get_user_conversation(
+    user_id: int,
+    org_id: int,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Busca conversación abierta de un usuario."""
+    headers = {
+        "Authorization": authorization or "",
+        "X-Session-Token": session_token or "",
+        "X-Client-App": client_app,
+    }
+    try:
+        return router.get_user_conversation(user_id, org_id, headers)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/conversations", tags=["conversations"])
+def create_conversation(
+    request: ConversationCreateRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Crea una nueva conversación."""
+    headers = {
+        "Authorization": authorization or "",
+        "X-Session-Token": session_token or "",
+        "X-Client-App": client_app,
+    }
+    try:
+        return router.create_conversation(request.model_dump(), headers)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/conversations/{conversation_id}/messages", tags=["conversations"])
+def get_conversation_messages(
+    conversation_id: int,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> list[dict[str, Any]]:
+    """Obtiene los mensajes de una conversación."""
+    headers = {
+        "Authorization": authorization or "",
+        "X-Session-Token": session_token or "",
+        "X-Client-App": client_app,
+    }
+    try:
+        return router.get_conversation_messages(conversation_id, headers)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/conversations/{conversation_id}/messages", tags=["conversations"])
+def send_conversation_message(
+    conversation_id: int,
+    request: ConversationMessageRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Envía un mensaje en una conversación."""
+    headers = {
+        "Authorization": authorization or "",
+        "X-Session-Token": session_token or "",
+        "X-Client-App": client_app,
+    }
+    try:
+        return router.send_conversation_message(
+            conversation_id, request.model_dump(), headers
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/conversations/{conversation_id}/mark-read", tags=["conversations"])
+def mark_conversation_read(
+    conversation_id: int,
+    request: ConversationMarkReadRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Marca mensajes como leídos."""
+    headers = {
+        "Authorization": authorization or "",
+        "X-Session-Token": session_token or "",
+        "X-Client-App": client_app,
+    }
+    try:
+        return router.mark_conversation_read(
+            conversation_id, request.model_dump(), headers
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/cambios/organization/{org_id}", tags=["cambios"])
+def get_cambios_calendar(
+    org_id: int,
+    mes: int | None = None,
+    anio: int | None = None,
+    proyecto_id: int | None = None,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> list[dict[str, Any]]:
+    """Obtiene eventos del calendario."""
+    headers = {
+        "Authorization": authorization or "",
+        "X-Session-Token": session_token or "",
+        "X-Client-App": client_app,
+    }
+    try:
+        return router.get_cambios_calendar(
+            org_id, headers, mes=mes, anio=anio, proyecto_id=proyecto_id
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ============================================================================
+# CONVERSACIONES - BACKOFFICE (gestión por organización)
+# ============================================================================
+
+
+class JoinConversationBrokerRequest(BaseModel):
+    user_id: int
+
+
+class UpdatePriorityBrokerRequest(BaseModel):
+    prioridad: str
+
+
+class UpdateStateBrokerRequest(BaseModel):
+    estado: str
+    user_id: int
+
+
+class TicketInteractionBrokerRequest(BaseModel):
+    user_id: int
+    cliente_id: int
+    respuesta: str = ""
+    nuevo_estado: str = ""
+    estado_actual: str = ""
+    titulo_ticket: str = ""
+
+
+@app.get(
+    "/conversations/organization/{org_id}",
+    tags=["conversations"],
+)
+def get_organization_conversations(
+    org_id: int,
+    solo_activas: bool = True,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> list[dict[str, Any]]:
+    """Obtiene conversaciones de una organización (backoffice)."""
+    headers = {
+        "Authorization": authorization or "",
+        "X-Session-Token": session_token or "",
+        "X-Client-App": client_app,
+    }
+    try:
+        return router.get_organization_conversations(
+            org_id, headers, solo_activas=solo_activas
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/conversations/{conversation_id}/join",
+    tags=["conversations"],
+)
+def join_conversation(
+    conversation_id: int,
+    request: JoinConversationBrokerRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Un usuario interno se une a una conversación."""
+    headers = {
+        "Authorization": authorization or "",
+        "X-Session-Token": session_token or "",
+        "X-Client-App": client_app,
+    }
+    try:
+        return router.join_conversation(
+            conversation_id, request.model_dump(), headers
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get(
+    "/conversations/{conversation_id}/detail",
+    tags=["conversations"],
+)
+def get_conversation_detail(
+    conversation_id: int,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Obtiene detalle de una conversación."""
+    headers = {
+        "Authorization": authorization or "",
+        "X-Session-Token": session_token or "",
+        "X-Client-App": client_app,
+    }
+    try:
+        return router.get_conversation_detail(conversation_id, headers)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch(
+    "/conversations/{conversation_id}/priority",
+    tags=["conversations"],
+)
+def update_conversation_priority(
+    conversation_id: int,
+    request: UpdatePriorityBrokerRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Actualiza la prioridad de una conversación."""
+    headers = {
+        "Authorization": authorization or "",
+        "X-Session-Token": session_token or "",
+        "X-Client-App": client_app,
+    }
+    try:
+        return router.update_conversation_priority(
+            conversation_id, request.model_dump(), headers
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch(
+    "/conversations/{conversation_id}/state",
+    tags=["conversations"],
+)
+def update_conversation_state(
+    conversation_id: int,
+    request: UpdateStateBrokerRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Actualiza el estado de una conversación."""
+    headers = {
+        "Authorization": authorization or "",
+        "X-Session-Token": session_token or "",
+        "X-Client-App": client_app,
+    }
+    try:
+        return router.update_conversation_state(
+            conversation_id, request.model_dump(), headers
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get(
+    "/tickets/{ticket_id}/details",
+    tags=["tickets"],
+)
+def get_ticket_details(
+    ticket_id: int,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Obtiene detalles de un ticket."""
+    headers = {
+        "Authorization": authorization or "",
+        "X-Session-Token": session_token or "",
+        "X-Client-App": client_app,
+    }
+    try:
+        return router.get_ticket_details(ticket_id, headers)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/tickets/{ticket_id}/interactions",
+    tags=["tickets"],
+)
+def save_ticket_interaction(
+    ticket_id: int,
+    request: TicketInteractionBrokerRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Guarda interacción de ticket."""
+    headers = {
+        "Authorization": authorization or "",
+        "X-Session-Token": session_token or "",
+        "X-Client-App": client_app,
+    }
+    try:
+        return router.save_ticket_interaction(
+            ticket_id, request.model_dump(), headers
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ============================================================================
 # ENDPOINTS DE TECNOLOGÍAS
 # ============================================================================
 

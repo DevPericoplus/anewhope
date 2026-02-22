@@ -847,6 +847,162 @@ class BrokerBackendClient:
         return dict(data or {})
 
     # ========================================================================
+    # GESTIÓN DE CONVERSACIONES Y CAMBIOS
+    # ========================================================================
+
+    def get_user_conversation(
+        self, user_id: int, org_id: int
+    ) -> dict[str, Any]:
+        """Busca conversación abierta de un usuario.
+
+        Returns:
+            {"found": bool, "id_conversacion": int}
+        """
+        data = self._request("GET", f"/conversations/user/{user_id}?org_id={org_id}")
+        return dict(data or {"found": False, "id_conversacion": 0})
+
+    def create_conversation(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Crea una nueva conversación.
+
+        Args:
+            payload: {"id_organizacion": int, "id_usuario_cliente": int, ...}
+
+        Returns:
+            {"success": True, "id_conversacion": int}
+        """
+        data = self._request("POST", "/conversations", payload=payload)
+        return dict(data or {})
+
+    def get_conversation_messages(self, conversation_id: int) -> list[dict[str, Any]]:
+        """Obtiene los mensajes de una conversación.
+
+        Returns:
+            Lista de mensajes
+        """
+        data = self._request("GET", f"/conversations/{conversation_id}/messages")
+        if isinstance(data, list):
+            return data
+        return data.get("messages", []) if data else []
+
+    def send_conversation_message(
+        self, conversation_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Envía un mensaje en una conversación.
+
+        Args:
+            payload: {"id_usuario_emisor": int, "tipo_emisor": str, "texto_mensaje": str}
+
+        Returns:
+            {"success": True, "id_mensaje": int}
+        """
+        data = self._request(
+            "POST", f"/conversations/{conversation_id}/messages", payload=payload
+        )
+        return dict(data or {})
+
+    def mark_conversation_read(
+        self, conversation_id: int, tipo_lector: str
+    ) -> dict[str, Any]:
+        """Marca mensajes como leídos.
+
+        Returns:
+            {"success": True}
+        """
+        data = self._request(
+            "POST",
+            f"/conversations/{conversation_id}/mark-read",
+            payload={"tipo_lector": tipo_lector},
+        )
+        return dict(data or {})
+
+    def get_cambios_calendar(
+        self,
+        org_id: int,
+        mes: int | None = None,
+        anio: int | None = None,
+        proyecto_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Obtiene eventos del calendario.
+
+        Returns:
+            Lista de eventos agrupados por día
+        """
+        params = []
+        if mes is not None:
+            params.append(f"mes={mes}")
+        if anio is not None:
+            params.append(f"anio={anio}")
+        if proyecto_id is not None:
+            params.append(f"proyecto_id={proyecto_id}")
+        qs = f"?{'&'.join(params)}" if params else ""
+        data = self._request("GET", f"/cambios/organization/{org_id}{qs}")
+        if isinstance(data, list):
+            return data
+        return []
+
+    # ========================================================================
+    # CONVERSACIONES - BACKOFFICE
+    # ========================================================================
+
+    def get_organization_conversations(
+        self, org_id: int, solo_activas: bool = True
+    ) -> list[dict[str, Any]]:
+        """Obtiene conversaciones de una organización."""
+        qs = f"?solo_activas={str(solo_activas).lower()}"
+        data = self._request("GET", f"/conversations/organization/{org_id}{qs}")
+        if isinstance(data, list):
+            return data
+        return []
+
+    def join_conversation(
+        self, conversation_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Un usuario interno se une a una conversación."""
+        data = self._request(
+            "POST", f"/conversations/{conversation_id}/join", payload=payload
+        )
+        return dict(data or {})
+
+    def get_conversation_detail(
+        self, conversation_id: int
+    ) -> dict[str, Any]:
+        """Obtiene detalle de una conversación."""
+        data = self._request("GET", f"/conversations/{conversation_id}/detail")
+        return dict(data or {})
+
+    def update_conversation_priority(
+        self, conversation_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Actualiza la prioridad de una conversación."""
+        data = self._request(
+            "PATCH", f"/conversations/{conversation_id}/priority", payload=payload
+        )
+        return dict(data or {})
+
+    def update_conversation_state(
+        self, conversation_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Actualiza el estado de una conversación."""
+        data = self._request(
+            "PATCH", f"/conversations/{conversation_id}/state", payload=payload
+        )
+        return dict(data or {})
+
+    def get_ticket_details(self, ticket_id: int) -> dict[str, Any]:
+        """Obtiene detalles de un ticket."""
+        data = self._request("GET", f"/tickets/{ticket_id}/details")
+        return dict(data or {})
+
+    def save_ticket_interaction(
+        self, ticket_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Guarda interacción de ticket."""
+        data = self._request(
+            "POST", f"/tickets/{ticket_id}/interactions", payload=payload
+        )
+        return dict(data or {})
+
+    # ========================================================================
     # GESTIÓN DE TECNOLOGÍAS
     # ========================================================================
 

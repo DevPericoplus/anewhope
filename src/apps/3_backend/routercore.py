@@ -2473,6 +2473,531 @@ class BackendCoreRouter:
             return 0
 
     # ========================================================================
+    # GESTIÓN DE CONVERSACIONES Y CAMBIOS (CALENDARIO)
+    # ========================================================================
+
+    def _get_projects_db_engine(self):
+        """Obtiene un engine SQLAlchemy para la BD de proyectos."""
+        from urllib.parse import quote_plus
+        from sqlalchemy import create_engine
+
+        settings = load_mariadb_settings()
+        host = settings.get("host", "localhost")
+        port = settings.get("port", "3306")
+        user = settings.get("writer_user", "")
+        password = quote_plus(settings.get("writer_password", ""))
+        database = settings.get("projects_database", "myllm_projects_db")
+
+        dsn = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
+        return create_engine(dsn)
+
+    def _load_conversaciones_adapter(self):
+        """Carga el adapter de conversaciones."""
+        import importlib.util as ilu
+        adapter_path = (
+            Path(__file__).resolve().parents[2]
+            / "2_shared_application/adapters/conversaciones_adapter.py"
+        )
+        spec = ilu.spec_from_file_location("conversaciones_adapter_core", adapter_path)
+        mod = ilu.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def _load_cambios_adapter(self):
+        """Carga el adapter de cambios."""
+        import importlib.util as ilu
+        adapter_path = (
+            Path(__file__).resolve().parents[2]
+            / "2_shared_application/adapters/cambios_adapter.py"
+        )
+        spec = ilu.spec_from_file_location("cambios_adapter_core", adapter_path)
+        mod = ilu.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def get_user_conversation(
+        self, user_id: int, org_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Busca conversación abierta de un usuario en una organización."""
+        self._logger.info(
+            "[%s] Buscando conversación user_id=%s org_id=%s",
+            headers.get("X-Client-App", "unknown"),
+            user_id,
+            org_id,
+        )
+        try:
+            from sqlalchemy import text as sa_text
+            engine = self._get_projects_db_engine()
+            with engine.connect() as conn:
+                query = sa_text("""
+                    SELECT id_conversacion
+                    FROM myllm_projects_db.conversaciones
+                    WHERE id_organizacion = :org_id
+                      AND id_usuario_cliente = :user_id
+                      AND estado IN ('abierta', 'en_curso')
+                    ORDER BY fecha_ultima_actualizacion DESC
+                    LIMIT 1
+                """)
+                result = conn.execute(
+                    query, {"org_id": org_id, "user_id": user_id}
+                ).fetchone()
+
+                if result:
+                    return {"found": True, "id_conversacion": result[0]}
+                return {"found": False, "id_conversacion": 0}
+        except Exception as exc:
+            self._logger.error("Error buscando conversación: %s", exc)
+            raise BackendCoreBusinessError(
+                f"Error buscando conversación: {exc}"
+            ) from exc
+
+    def create_conversation(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Crea una nueva conversación."""
+        self._logger.info(
+            "[%s] Creando conversación org_id=%s user_id=%s",
+            headers.get("X-Client-App", "unknown"),
+            payload.get("id_organizacion"),
+            payload.get("id_usuario_cliente"),
+        )
+        try:
+            adapter = self._load_conversaciones_adapter()
+            engine = self._get_projects_db_engine()
+            conv_id = adapter.crear_conversacion(
+                engine=engine,
+                id_organizacion=payload["id_organizacion"],
+                id_usuario_cliente=payload["id_usuario_cliente"],
+                asunto=payload.get("asunto", "Consulta sobre proyecto"),
+                prioridad=payload.get("prioridad", "media"),
+            )
+            return {"success": True, "id_conversacion": conv_id}
+        except Exception as exc:
+            self._logger.error("Error creando conversación: %s", exc)
+            raise BackendCoreBusinessError(
+                f"Error creando conversación: {exc}"
+            ) from exc
+
+    def get_conversation_messages(
+        self, conversation_id: int, headers: dict[str, str]
+    ) -> list[dict[str, Any]]:
+        """Obtiene los mensajes de una conversación."""
+        self._logger.info(
+            "[%s] Obteniendo mensajes conversación=%s",
+            headers.get("X-Client-App", "unknown"),
+            conversation_id,
+        )
+        try:
+            adapter = self._load_conversaciones_adapter()
+            engine = self._get_projects_db_engine()
+            mensajes = adapter.obtener_mensajes_conversacion(
+                engine=engine, id_conversacion=conversation_id
+            )
+            # Serializar datetimes
+            for msg in mensajes:
+                for key, val in msg.items():
+                    if hasattr(val, "isoformat"):
+                        msg[key] = val.isoformat()
+            return mensajes
+        except Exception as exc:
+            self._logger.error("Error obteniendo mensajes: %s", exc)
+            raise BackendCoreBusinessError(
+                f"Error obteniendo mensajes: {exc}"
+            ) from exc
+
+    def send_conversation_message(
+        self, conversation_id: int, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Envía un mensaje en una conversación."""
+        self._logger.info(
+            "[%s] Enviando mensaje en conversación=%s",
+            headers.get("X-Client-App", "unknown"),
+            conversation_id,
+        )
+        try:
+            adapter = self._load_conversaciones_adapter()
+            engine = self._get_projects_db_engine()
+            msg_id = adapter.enviar_mensaje(
+                engine=engine,
+                id_conversacion=conversation_id,
+                id_usuario_emisor=payload["id_usuario_emisor"],
+                tipo_emisor=payload["tipo_emisor"],
+                texto_mensaje=payload["texto_mensaje"],
+                id_ticket_referenciado=payload.get("id_ticket_referenciado"),
+            )
+            return {"success": True, "id_mensaje": msg_id}
+        except Exception as exc:
+            self._logger.error("Error enviando mensaje: %s", exc)
+            raise BackendCoreBusinessError(
+                f"Error enviando mensaje: {exc}"
+            ) from exc
+
+    def mark_conversation_read(
+        self, conversation_id: int, payload: dict[str, str], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Marca mensajes de una conversación como leídos."""
+        self._logger.info(
+            "[%s] Marcando leídos conversación=%s tipo=%s",
+            headers.get("X-Client-App", "unknown"),
+            conversation_id,
+            payload.get("tipo_lector"),
+        )
+        try:
+            adapter = self._load_conversaciones_adapter()
+            engine = self._get_projects_db_engine()
+            adapter.marcar_mensajes_como_leidos(
+                engine=engine,
+                id_conversacion=conversation_id,
+                tipo_lector=payload["tipo_lector"],
+            )
+            return {"success": True}
+        except Exception as exc:
+            self._logger.error("Error marcando leídos: %s", exc)
+            raise BackendCoreBusinessError(
+                f"Error marcando leídos: {exc}"
+            ) from exc
+
+    def get_cambios_calendar(
+        self,
+        org_id: int,
+        headers: dict[str, str],
+        mes: int | None = None,
+        anio: int | None = None,
+        proyecto_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Obtiene eventos del calendario agrupados por día."""
+        self._logger.info(
+            "[%s] Consultando cambios calendario org=%s mes=%s anio=%s proyecto=%s",
+            headers.get("X-Client-App", "unknown"),
+            org_id,
+            mes,
+            anio,
+            proyecto_id,
+        )
+        try:
+            adapter = self._load_cambios_adapter()
+            engine = self._get_projects_db_engine()
+            if mes and anio:
+                eventos = adapter.obtener_cambios_agrupados_por_dia(
+                    engine=engine,
+                    id_organizacion=org_id,
+                    mes=mes,
+                    anio=anio,
+                    id_proyecto=proyecto_id,
+                )
+            else:
+                # Sin mes/anio, devolver lista vacía
+                eventos = []
+            return eventos
+        except Exception as exc:
+            self._logger.error("Error consultando cambios: %s", exc)
+            raise BackendCoreBusinessError(
+                f"Error consultando cambios: {exc}"
+            ) from exc
+
+    # ========================================================================
+    # CONVERSACIONES - BACKOFFICE (gestión por organización)
+    # ========================================================================
+
+    def get_organization_conversations(
+        self, org_id: int, headers: dict[str, str], solo_activas: bool = True
+    ) -> list[dict[str, Any]]:
+        """Obtiene las conversaciones de una organización."""
+        self._logger.info(
+            "[%s] Consultando conversaciones org=%s solo_activas=%s",
+            headers.get("X-Client-App", "unknown"), org_id, solo_activas,
+        )
+        try:
+            adapter = self._load_conversaciones_adapter()
+            engine = self._get_projects_db_engine()
+            conversaciones = adapter.obtener_conversaciones_organizacion(
+                engine=engine, id_organizacion=org_id, solo_activas=solo_activas,
+            )
+            for conv in conversaciones:
+                for key, val in conv.items():
+                    if hasattr(val, "isoformat"):
+                        conv[key] = val.isoformat()
+            return conversaciones
+        except Exception as exc:
+            self._logger.error("Error consultando conversaciones org: %s", exc)
+            raise BackendCoreBusinessError(
+                f"Error consultando conversaciones: {exc}"
+            ) from exc
+
+    def join_conversation(
+        self, conversation_id: int, user_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Un usuario interno se une a una conversación."""
+        self._logger.info(
+            "[%s] Unirse a conversación %s user=%s",
+            headers.get("X-Client-App", "unknown"), conversation_id, user_id,
+        )
+        try:
+            adapter = self._load_conversaciones_adapter()
+            engine = self._get_projects_db_engine()
+            result = adapter.unirse_a_conversacion(
+                engine=engine,
+                id_conversacion=conversation_id,
+                id_usuario_interno=user_id,
+            )
+            return {"success": result}
+        except Exception as exc:
+            self._logger.error("Error unirse a conversación: %s", exc)
+            raise BackendCoreBusinessError(
+                f"Error uniéndose a conversación: {exc}"
+            ) from exc
+
+    def get_conversation_detail(
+        self, conversation_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Obtiene detalle de una conversación."""
+        self._logger.info(
+            "[%s] Consultando detalle conversación %s",
+            headers.get("X-Client-App", "unknown"), conversation_id,
+        )
+        try:
+            from sqlalchemy import text
+
+            engine = self._get_projects_db_engine()
+            with engine.connect() as conn:
+                query = text("""
+                    SELECT c.id_conversacion, c.asunto, c.estado, c.prioridad,
+                           c.id_usuario_cliente, c.fecha_creacion,
+                           c.mensajes_sin_leer_interno, c.total_mensajes
+                    FROM conversaciones c
+                    WHERE c.id_conversacion = :id_conv
+                """)
+                result = conn.execute(
+                    query, {"id_conv": conversation_id}
+                ).fetchone()
+                if not result:
+                    return {}
+                return {
+                    "id_conversacion": result[0],
+                    "asunto": result[1],
+                    "estado": result[2],
+                    "prioridad": result[3],
+                    "id_usuario_cliente": result[4],
+                    "fecha_creacion": result[5].isoformat() if result[5] else None,
+                    "mensajes_sin_leer": result[6],
+                    "total_mensajes": result[7],
+                }
+        except Exception as exc:
+            self._logger.error("Error consultando detalle conversación: %s", exc)
+            raise BackendCoreBusinessError(
+                f"Error consultando detalle: {exc}"
+            ) from exc
+
+    def update_conversation_priority(
+        self, conversation_id: int, prioridad: str, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Actualiza la prioridad de una conversación."""
+        self._logger.info(
+            "[%s] Actualizando prioridad conversación %s a %s",
+            headers.get("X-Client-App", "unknown"), conversation_id, prioridad,
+        )
+        try:
+            from sqlalchemy import text
+
+            engine = self._get_projects_db_engine()
+            with engine.connect() as conn:
+                query = text("""
+                    UPDATE conversaciones SET prioridad = :prioridad
+                    WHERE id_conversacion = :id_conv
+                """)
+                conn.execute(
+                    query, {"prioridad": prioridad, "id_conv": conversation_id}
+                )
+                conn.commit()
+            return {"success": True}
+        except Exception as exc:
+            self._logger.error("Error actualizando prioridad: %s", exc)
+            raise BackendCoreBusinessError(
+                f"Error actualizando prioridad: {exc}"
+            ) from exc
+
+    def update_conversation_state(
+        self,
+        conversation_id: int,
+        estado: str,
+        user_id: int,
+        headers: dict[str, str],
+    ) -> dict[str, Any]:
+        """Actualiza el estado de una conversación."""
+        self._logger.info(
+            "[%s] Actualizando estado conversación %s a %s",
+            headers.get("X-Client-App", "unknown"), conversation_id, estado,
+        )
+        try:
+            engine = self._get_projects_db_engine()
+            if estado == "cerrada":
+                adapter = self._load_conversaciones_adapter()
+                adapter.cerrar_conversacion(
+                    engine=engine,
+                    id_conversacion=conversation_id,
+                    cerrada_por=user_id,
+                )
+            else:
+                from sqlalchemy import text
+
+                with engine.connect() as conn:
+                    query = text("""
+                        UPDATE conversaciones SET estado = :estado
+                        WHERE id_conversacion = :id_conv
+                    """)
+                    conn.execute(
+                        query, {"estado": estado, "id_conv": conversation_id}
+                    )
+                    conn.commit()
+            return {"success": True}
+        except Exception as exc:
+            self._logger.error("Error actualizando estado: %s", exc)
+            raise BackendCoreBusinessError(
+                f"Error actualizando estado: {exc}"
+            ) from exc
+
+    # ========================================================================
+    # TICKETS - BACKOFFICE (gestión interna)
+    # ========================================================================
+
+    def get_ticket_details(
+        self, ticket_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Obtiene detalles de un ticket con su última interacción."""
+        self._logger.info(
+            "[%s] Consultando detalle ticket %s",
+            headers.get("X-Client-App", "unknown"), ticket_id,
+        )
+        try:
+            from sqlalchemy import text
+
+            engine = self._get_projects_db_engine()
+            with engine.connect() as conn:
+                query = text("""
+                    SELECT consulta, fecha_consulta
+                    FROM myllm_projects_db.ticket_interacciones
+                    WHERE ticket_id = :ticket_id
+                    ORDER BY fecha_consulta DESC
+                    LIMIT 1
+                """)
+                result = conn.execute(
+                    query, {"ticket_id": ticket_id}
+                ).fetchone()
+                if result:
+                    return {
+                        "ultima_consulta": result[0],
+                        "fecha_consulta": (
+                            result[1].strftime("%Y-%m-%d %H:%M")
+                            if result[1]
+                            else ""
+                        ),
+                    }
+                return {
+                    "ultima_consulta": "Sin consultas registradas",
+                    "fecha_consulta": "",
+                }
+        except Exception as exc:
+            self._logger.error("Error consultando detalle ticket: %s", exc)
+            raise BackendCoreBusinessError(
+                f"Error consultando detalle ticket: {exc}"
+            ) from exc
+
+    def save_ticket_interaction(
+        self,
+        ticket_id: int,
+        user_id: int,
+        cliente_id: int,
+        respuesta: str,
+        nuevo_estado: str,
+        estado_actual: str,
+        titulo_ticket: str,
+        headers: dict[str, str],
+    ) -> dict[str, Any]:
+        """Guarda interacción de ticket, actualiza estado y envía mensaje."""
+        self._logger.info(
+            "[%s] Guardando interacción ticket %s",
+            headers.get("X-Client-App", "unknown"), ticket_id,
+        )
+        tiene_respuesta = bool(respuesta.strip()) if respuesta else False
+        tiene_cambio_estado = nuevo_estado != estado_actual
+
+        if not tiene_respuesta and not tiene_cambio_estado:
+            return {"success": False, "message": "No hay cambios"}
+
+        try:
+            from sqlalchemy import text
+
+            engine = self._get_projects_db_engine()
+            with engine.begin() as conn:
+                if tiene_respuesta:
+                    insert_q = text("""
+                        INSERT INTO myllm_projects_db.ticket_interacciones
+                        (ticket_id, autor_consulta_id, autor_respuesta_id,
+                         consulta, respuesta, fecha_respuesta)
+                        VALUES (:ticket_id, :cliente_id, :autor_id,
+                                :consulta, :respuesta, NOW())
+                    """)
+                    conn.execute(insert_q, {
+                        "ticket_id": ticket_id,
+                        "cliente_id": cliente_id,
+                        "autor_id": user_id,
+                        "consulta": "",
+                        "respuesta": respuesta,
+                    })
+
+                if tiene_cambio_estado:
+                    update_q = text("""
+                        UPDATE myllm_projects_db.tickets
+                        SET estado = :estado, fecha_actualizacion = NOW()
+                        WHERE id = :ticket_id
+                    """)
+                    conn.execute(update_q, {
+                        "ticket_id": ticket_id,
+                        "estado": nuevo_estado,
+                    })
+
+                if tiene_respuesta or tiene_cambio_estado:
+                    query_conv = text("""
+                        SELECT c.id_conversacion
+                        FROM myllm_projects_db.conversaciones c
+                        WHERE c.id_usuario_cliente = :cliente_id
+                          AND c.estado IN ('abierta', 'en_curso')
+                        ORDER BY c.fecha_ultima_actualizacion DESC
+                        LIMIT 1
+                    """)
+                    result = conn.execute(
+                        query_conv, {"cliente_id": cliente_id}
+                    ).fetchone()
+
+                    if result:
+                        id_conv = result[0]
+                        msg = f"🎫 Actualización de ticket: {titulo_ticket}\n\n"
+                        if tiene_cambio_estado:
+                            msg += f"Estado: {nuevo_estado}\n\n"
+                        if tiene_respuesta:
+                            msg += f"Respuesta del soporte:\n{respuesta}"
+                        insert_msg = text("""
+                            INSERT INTO myllm_projects_db.mensajes_conversacion
+                            (id_conversacion, id_usuario_emisor, tipo_emisor,
+                             texto_mensaje, id_ticket_referenciado)
+                            VALUES (:id_conv, :user_id, :tipo, :texto, :ticket)
+                        """)
+                        conn.execute(insert_msg, {
+                            "id_conv": id_conv,
+                            "user_id": user_id,
+                            "tipo": "interno",
+                            "texto": msg,
+                            "ticket": ticket_id,
+                        })
+
+            return {"success": True}
+        except Exception as exc:
+            self._logger.error("Error guardando interacción ticket: %s", exc)
+            raise BackendCoreBusinessError(
+                f"Error guardando interacción: {exc}"
+            ) from exc
+
+    # ========================================================================
     # GESTIÓN DE TECNOLOGÍAS
     # ========================================================================
 
@@ -2917,6 +3442,9 @@ class BackendCoreRouter:
             update_data,
         )
 
+        # Guardar estado original para el log de cambios
+        original_state = update_data.get("state")
+
         # Construir la query dinámica según campos presentes
         update_fields = []
         params = {
@@ -2943,8 +3471,11 @@ class BackendCoreRouter:
             params["final_i"] = update_data["final_i"]
 
         if "size_bytes" in update_data:
-            update_fields.append("size_bytes = :size_bytes")
+            update_fields.append("size = :size_bytes")
             params["size_bytes"] = update_data["size_bytes"]
+
+        if user_id is not None:
+            update_fields.append("updated_by = :user_id")
 
         if not update_fields:
             return {
@@ -2954,7 +3485,7 @@ class BackendCoreRouter:
             }
 
         query = f"""
-            UPDATE version_states
+            UPDATE estado_version
             SET {', '.join(update_fields)}
             WHERE id_proyecto = :project_id
               AND id_version = :version_id
@@ -2981,7 +3512,7 @@ class BackendCoreRouter:
 
             # Registrar cambio en tabla cambios con información de proyecto y versión
             if "state" in update_data:
-                new_state = update_data["state"]
+                new_state = original_state or update_data["state"]
 
                 # Obtener nombre del proyecto
                 project_name_query = text("""
@@ -3093,9 +3624,9 @@ class BackendCoreRouter:
         with self._get_projects_db_writer_connection() as conn:
             conn.execute(
                 text("""
-                    INSERT INTO version_states (
+                    INSERT INTO estado_version (
                         id_organizacion, id_proyecto, id_version,
-                        state, protected, size_bytes, final_c, final_i
+                        state, protected, size, final_c, final_i
                     ) VALUES (
                         :org_id, :project_id, :version_id,
                         'Abierta', FALSE, 0, FALSE, FALSE

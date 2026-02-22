@@ -2155,6 +2155,401 @@ def add_ticket_response(
 
 
 # ============================================================================
+# MODELOS PARA CONVERSACIONES Y CAMBIOS
+# ============================================================================
+
+
+class ConversationSearchResponse(BaseModel):
+    """Respuesta de búsqueda de conversación."""
+
+    found: bool
+    id_conversacion: int = 0
+
+
+class ConversationCreateRequest(BaseModel):
+    """Payload para crear una conversación."""
+
+    id_organizacion: int
+    id_usuario_cliente: int
+    asunto: str = "Consulta sobre proyecto"
+    prioridad: str = "media"
+
+
+class ConversationCreateResponse(BaseModel):
+    """Respuesta de creación de conversación."""
+
+    success: bool
+    id_conversacion: int
+
+
+class ConversationMessageRequest(BaseModel):
+    """Payload para enviar un mensaje."""
+
+    id_usuario_emisor: int
+    tipo_emisor: str
+    texto_mensaje: str
+    id_ticket_referenciado: int | None = None
+
+
+class ConversationMessageResponse(BaseModel):
+    """Respuesta de envío de mensaje."""
+
+    success: bool
+    id_mensaje: int | None = None
+
+
+class ConversationMarkReadRequest(BaseModel):
+    """Payload para marcar mensajes como leídos."""
+
+    tipo_lector: str
+
+
+class GenericSuccessResponse(BaseModel):
+    """Respuesta genérica de éxito."""
+
+    success: bool
+
+
+# ============================================================================
+# ENDPOINTS DE CONVERSACIONES
+# ============================================================================
+
+
+@app.get(
+    "/conversations/user/{user_id}",
+    response_model=ConversationSearchResponse,
+    tags=["conversations"],
+)
+def get_user_conversation(
+    user_id: int,
+    org_id: int,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> ConversationSearchResponse:
+    """Busca conversación abierta de un usuario en una organización."""
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        result = router.get_user_conversation(user_id, org_id, headers)
+        return ConversationSearchResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/conversations",
+    response_model=ConversationCreateResponse,
+    tags=["conversations"],
+)
+def create_conversation(
+    request: ConversationCreateRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> ConversationCreateResponse:
+    """Crea una nueva conversación."""
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        result = router.create_conversation(request.model_dump(), headers)
+        return ConversationCreateResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get(
+    "/conversations/{conversation_id}/messages",
+    tags=["conversations"],
+)
+def get_conversation_messages(
+    conversation_id: int,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> list[dict]:
+    """Obtiene los mensajes de una conversación."""
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        return router.get_conversation_messages(conversation_id, headers)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/conversations/{conversation_id}/messages",
+    response_model=ConversationMessageResponse,
+    tags=["conversations"],
+)
+def send_conversation_message(
+    conversation_id: int,
+    request: ConversationMessageRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> ConversationMessageResponse:
+    """Envía un mensaje en una conversación."""
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        result = router.send_conversation_message(
+            conversation_id, request.model_dump(), headers
+        )
+        return ConversationMessageResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/conversations/{conversation_id}/mark-read",
+    response_model=GenericSuccessResponse,
+    tags=["conversations"],
+)
+def mark_conversation_read(
+    conversation_id: int,
+    request: ConversationMarkReadRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> GenericSuccessResponse:
+    """Marca mensajes de una conversación como leídos."""
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        result = router.mark_conversation_read(
+            conversation_id, request.model_dump(), headers
+        )
+        return GenericSuccessResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ============================================================================
+# ENDPOINTS DE CAMBIOS / CALENDARIO
+# ============================================================================
+
+
+@app.get(
+    "/cambios/organization/{org_id}",
+    tags=["cambios"],
+)
+def get_cambios_calendar(
+    org_id: int,
+    mes: int | None = None,
+    anio: int | None = None,
+    proyecto_id: int | None = None,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> list[dict]:
+    """Obtiene eventos del calendario agrupados por día."""
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        return router.get_cambios_calendar(
+            org_id, headers, mes=mes, anio=anio, proyecto_id=proyecto_id
+        )
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ============================================================================
+# CONVERSACIONES - BACKOFFICE (gestión por organización)
+# ============================================================================
+
+
+class JoinConversationRequest(BaseModel):
+    user_id: int
+
+
+class UpdateConversationPriorityRequest(BaseModel):
+    prioridad: str
+
+
+class UpdateConversationStateRequest(BaseModel):
+    estado: str
+    user_id: int
+
+
+class TicketInteractionRequest(BaseModel):
+    user_id: int
+    cliente_id: int
+    respuesta: str = ""
+    nuevo_estado: str = ""
+    estado_actual: str = ""
+    titulo_ticket: str = ""
+
+
+@app.get(
+    "/conversations/organization/{org_id}",
+    tags=["conversations"],
+)
+def get_organization_conversations(
+    org_id: int,
+    solo_activas: bool = True,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> list[dict]:
+    """Obtiene conversaciones de una organización (backoffice)."""
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        return router.get_organization_conversations(
+            org_id, headers, solo_activas=solo_activas
+        )
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/conversations/{conversation_id}/join",
+    response_model=GenericSuccessResponse,
+    tags=["conversations"],
+)
+def join_conversation(
+    conversation_id: int,
+    request: JoinConversationRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> GenericSuccessResponse:
+    """Un usuario interno se une a una conversación."""
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        result = router.join_conversation(
+            conversation_id, request.user_id, headers
+        )
+        return GenericSuccessResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get(
+    "/conversations/{conversation_id}/detail",
+    tags=["conversations"],
+)
+def get_conversation_detail(
+    conversation_id: int,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict:
+    """Obtiene detalle de una conversación."""
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        return router.get_conversation_detail(conversation_id, headers)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch(
+    "/conversations/{conversation_id}/priority",
+    response_model=GenericSuccessResponse,
+    tags=["conversations"],
+)
+def update_conversation_priority(
+    conversation_id: int,
+    request: UpdateConversationPriorityRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> GenericSuccessResponse:
+    """Actualiza la prioridad de una conversación."""
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        result = router.update_conversation_priority(
+            conversation_id, request.prioridad, headers
+        )
+        return GenericSuccessResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch(
+    "/conversations/{conversation_id}/state",
+    response_model=GenericSuccessResponse,
+    tags=["conversations"],
+)
+def update_conversation_state(
+    conversation_id: int,
+    request: UpdateConversationStateRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> GenericSuccessResponse:
+    """Actualiza el estado de una conversación."""
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        result = router.update_conversation_state(
+            conversation_id, request.estado, request.user_id, headers
+        )
+        return GenericSuccessResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ============================================================================
+# TICKETS - BACKOFFICE (gestión interna)
+# ============================================================================
+
+
+@app.get(
+    "/tickets/{ticket_id}/details",
+    tags=["tickets"],
+)
+def get_ticket_details(
+    ticket_id: int,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict:
+    """Obtiene detalles de un ticket con su última interacción."""
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        return router.get_ticket_details(ticket_id, headers)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/tickets/{ticket_id}/interactions",
+    response_model=GenericSuccessResponse,
+    tags=["tickets"],
+)
+def save_ticket_interaction(
+    ticket_id: int,
+    request: TicketInteractionRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> GenericSuccessResponse:
+    """Guarda interacción de ticket con mensaje automático."""
+    headers = _build_permission_headers(authorization, session_token, client_app)
+    try:
+        result = router.save_ticket_interaction(
+            ticket_id=ticket_id,
+            user_id=request.user_id,
+            cliente_id=request.cliente_id,
+            respuesta=request.respuesta,
+            nuevo_estado=request.nuevo_estado,
+            estado_actual=request.estado_actual,
+            titulo_ticket=request.titulo_ticket,
+            headers=headers,
+        )
+        return GenericSuccessResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ============================================================================
 # ENDPOINTS DE TECNOLOGÍAS
 # ============================================================================
 

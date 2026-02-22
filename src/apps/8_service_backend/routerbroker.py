@@ -928,6 +928,230 @@ class BrokerBackendRouter:
             ) from exc
 
     # ========================================================================
+    # GESTIÓN DE CONVERSACIONES Y CAMBIOS
+    # ========================================================================
+
+    def get_user_conversation(
+        self, user_id: int, org_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Busca conversación abierta de un usuario."""
+        self._logger.info(
+            "[%s] Buscando conversación user_id=%s org_id=%s",
+            self._client_app, user_id, org_id,
+        )
+        try:
+            return self._core_client.get_user_conversation(user_id, org_id, headers)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error buscando conversación: {exc}"
+            ) from exc
+
+    def create_conversation(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Crea una nueva conversación."""
+        self._logger.info(
+            "[%s] Creando conversación org=%s user=%s",
+            self._client_app,
+            payload.get("id_organizacion"),
+            payload.get("id_usuario_cliente"),
+        )
+        try:
+            return self._core_client.create_conversation(payload, headers)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error creando conversación: {exc}"
+            ) from exc
+
+    def get_conversation_messages(
+        self, conversation_id: int, headers: dict[str, str]
+    ) -> list[dict[str, Any]]:
+        """Obtiene los mensajes de una conversación."""
+        self._logger.info(
+            "[%s] Obteniendo mensajes conversación=%s",
+            self._client_app, conversation_id,
+        )
+        try:
+            return self._core_client.get_conversation_messages(conversation_id, headers)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error obteniendo mensajes: {exc}"
+            ) from exc
+
+    def send_conversation_message(
+        self, conversation_id: int, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Envía un mensaje en una conversación."""
+        self._logger.info(
+            "[%s] Enviando mensaje en conversación=%s",
+            self._client_app, conversation_id,
+        )
+        try:
+            return self._core_client.send_conversation_message(
+                conversation_id, payload, headers
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error enviando mensaje: {exc}"
+            ) from exc
+
+    def mark_conversation_read(
+        self, conversation_id: int, payload: dict[str, str], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Marca mensajes como leídos."""
+        self._logger.info(
+            "[%s] Marcando leídos conversación=%s tipo=%s",
+            self._client_app, conversation_id, payload.get("tipo_lector"),
+        )
+        try:
+            return self._core_client.mark_conversation_read(
+                conversation_id, payload, headers
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error marcando leídos: {exc}"
+            ) from exc
+
+    def get_cambios_calendar(
+        self,
+        org_id: int,
+        headers: dict[str, str],
+        mes: int | None = None,
+        anio: int | None = None,
+        proyecto_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Obtiene eventos del calendario."""
+        self._logger.info(
+            "[%s] Consultando cambios calendario org=%s mes=%s anio=%s proyecto=%s",
+            self._client_app, org_id, mes, anio, proyecto_id,
+        )
+        try:
+            return self._core_client.get_cambios_calendar(
+                org_id, headers, mes=mes, anio=anio, proyecto_id=proyecto_id
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error consultando cambios: {exc}"
+            ) from exc
+
+    # ========================================================================
+    # CONVERSACIONES - BACKOFFICE
+    # ========================================================================
+
+    def get_organization_conversations(
+        self, org_id: int, headers: dict[str, str], solo_activas: bool = True
+    ) -> list[dict[str, Any]]:
+        """Obtiene conversaciones de una organización."""
+        self._logger.info(
+            "[%s] Consultando conversaciones org=%s", self._client_app, org_id,
+        )
+        try:
+            return self._core_client.get_organization_conversations(
+                org_id, headers, solo_activas=solo_activas
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error consultando conversaciones org: {exc}"
+            ) from exc
+
+    def join_conversation(
+        self, conversation_id: int, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Un usuario interno se une a una conversación."""
+        self._logger.info(
+            "[%s] Unirse a conversación %s", self._client_app, conversation_id,
+        )
+        try:
+            return self._core_client.join_conversation(
+                conversation_id, payload, headers
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error uniéndose a conversación: {exc}"
+            ) from exc
+
+    def get_conversation_detail(
+        self, conversation_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Obtiene detalle de una conversación."""
+        self._logger.info(
+            "[%s] Consultando detalle conversación %s",
+            self._client_app, conversation_id,
+        )
+        try:
+            return self._core_client.get_conversation_detail(
+                conversation_id, headers
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error consultando detalle conversación: {exc}"
+            ) from exc
+
+    def update_conversation_priority(
+        self, conversation_id: int, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Actualiza la prioridad de una conversación."""
+        self._logger.info(
+            "[%s] Actualizando prioridad conversación %s",
+            self._client_app, conversation_id,
+        )
+        try:
+            return self._core_client.update_conversation_priority(
+                conversation_id, payload, headers
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error actualizando prioridad: {exc}"
+            ) from exc
+
+    def update_conversation_state(
+        self, conversation_id: int, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Actualiza el estado de una conversación."""
+        self._logger.info(
+            "[%s] Actualizando estado conversación %s",
+            self._client_app, conversation_id,
+        )
+        try:
+            return self._core_client.update_conversation_state(
+                conversation_id, payload, headers
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error actualizando estado: {exc}"
+            ) from exc
+
+    def get_ticket_details(
+        self, ticket_id: int, headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Obtiene detalles de un ticket."""
+        self._logger.info(
+            "[%s] Consultando detalle ticket %s", self._client_app, ticket_id,
+        )
+        try:
+            return self._core_client.get_ticket_details(ticket_id, headers)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error consultando detalle ticket: {exc}"
+            ) from exc
+
+    def save_ticket_interaction(
+        self, ticket_id: int, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """Guarda interacción de ticket."""
+        self._logger.info(
+            "[%s] Guardando interacción ticket %s", self._client_app, ticket_id,
+        )
+        try:
+            return self._core_client.save_ticket_interaction(
+                ticket_id, payload, headers
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error guardando interacción ticket: {exc}"
+            ) from exc
+
+    # ========================================================================
     # GESTIÓN DE TECNOLOGÍAS
     # ========================================================================
 
