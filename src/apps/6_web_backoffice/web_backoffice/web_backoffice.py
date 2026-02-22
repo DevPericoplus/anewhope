@@ -3546,6 +3546,7 @@ class State(SharedSessionState):
             self.ad_orgs = [
                 {"id": int(o.get("id", 0)), "name": o.get("name", "")}
                 for o in orgs_list
+                if o.get("name", "")
             ]
             print(f"[AD] Organizaciones cargadas: {len(self.ad_orgs)}")
 
@@ -3592,8 +3593,9 @@ class State(SharedSessionState):
                 session_token=self.session_token,
             )
             self.ad_projects = [
-                {"id": int(p.get("id", 0)), "name": p.get("name", "")}
+                {"id": int(p.get("id", 0)), "name": p.get("nombre", p.get("name", ""))}
                 for p in projects_raw
+                if p.get("nombre", p.get("name", ""))
             ]
             print(f"[AD] Proyectos cargados: {len(self.ad_projects)}")
         except Exception as e:
