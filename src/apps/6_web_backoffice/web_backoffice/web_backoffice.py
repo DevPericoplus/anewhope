@@ -584,7 +584,7 @@ class State(SharedSessionState):
     @rx.var
     def bo_organization_names(self) -> list[str]:
         """Nombres de organizaciones accesibles para el selector."""
-        return [org["name"] for org in self.bo_organizations]
+        return [org["name"] for org in self.bo_organizations if org.get("name")]
 
     @rx.var
     def bo_selected_org_display(self) -> str:
@@ -698,12 +698,12 @@ class State(SharedSessionState):
     @rx.var
     def internal_users_for_select(self) -> list[str]:
         """User names for selector."""
-        return [u.get("user_name", "") for u in self.assignments_internal_users]
+        return [u.get("user_name", "") for u in self.assignments_internal_users if u.get("user_name")]
 
     @rx.var
     def organizations_for_select(self) -> list[str]:
         """Organization names for selector."""
-        return [o.get("organization_name", "") for o in self.assignments_organizations]
+        return [o.get("organization_name", "") for o in self.assignments_organizations if o.get("organization_name")]
 
     @rx.var
     def projects_filtered_by_org(self) -> list[dict]:
@@ -713,7 +713,7 @@ class State(SharedSessionState):
     @rx.var
     def projects_for_select(self) -> list[str]:
         """Project names for selector."""
-        return [p.get("nombre", "") for p in self.assignments_projects]
+        return [p.get("nombre", "") for p in self.assignments_projects if p.get("nombre")]
 
     @rx.var
     def filtered_org_roles(self) -> list[dict]:
@@ -731,12 +731,12 @@ class State(SharedSessionState):
     @rx.var
     def org_roles_for_select(self) -> list[str]:
         """Organization role names for selector."""
-        return [r.get("identity_type_name", "") for r in self.assignments_org_roles]
+        return [r.get("identity_type_name", "") for r in self.assignments_org_roles if r.get("identity_type_name")]
 
     @rx.var
     def project_roles_for_select(self) -> list[str]:
         """Project role names for selector."""
-        return [r.get("nombre_rol", "") for r in self.assignments_project_roles]
+        return [r.get("nombre_rol", "") for r in self.assignments_project_roles if r.get("nombre_rol")]
 
     def check_backoffice_access(self):
         """
@@ -3476,7 +3476,7 @@ class State(SharedSessionState):
     @rx.var
     def ad_org_names(self) -> list[str]:
         """Nombres de organizaciones para el selector."""
-        return [o["name"] for o in self.ad_orgs]
+        return [o["name"] for o in self.ad_orgs if o.get("name")]
 
     @rx.var
     def ad_selected_org_display(self) -> str:
@@ -3489,7 +3489,7 @@ class State(SharedSessionState):
     @rx.var
     def ad_project_names(self) -> list[str]:
         """Nombres de proyectos para el selector."""
-        return [p["name"] for p in self.ad_projects]
+        return [p["name"] for p in self.ad_projects if p.get("name")]
 
     @rx.var
     def ad_selected_project_display(self) -> str:
@@ -3502,7 +3502,7 @@ class State(SharedSessionState):
     @rx.var
     def ad_version_names(self) -> list[str]:
         """Carpetas de versiones para el selector."""
-        return [v["version_folder"] for v in self.ad_versions]
+        return [v["version_folder"] for v in self.ad_versions if v.get("version_folder")]
 
     @rx.var
     def ad_selected_version_display(self) -> str:
@@ -3515,7 +3515,7 @@ class State(SharedSessionState):
     @rx.var
     def ad_template_names(self) -> list[str]:
         """Nombres de plantillas para el selector."""
-        return [t["nombre"] for t in self.ad_templates]
+        return [t["nombre"] for t in self.ad_templates if t.get("nombre")]
 
     @rx.var
     def ad_selected_template_display(self) -> str:
@@ -3847,6 +3847,12 @@ class State(SharedSessionState):
         """Inicializa la página de Análisis de Documentación."""
         self.ad_error = ""
         self.ad_success = ""
+        self.ad_orgs = []
+        self.ad_projects = []
+        self.ad_versions = []
+        self.ad_org_id = 0
+        self.ad_project_id = 0
+        self.ad_version_id = 0
         self.ad_load_organizations()
         self.ad_load_templates_and_catalogs()
 
@@ -5475,22 +5481,22 @@ class State(SharedSessionState):
     @rx.var
     def ad_identidad_names(self) -> list[str]:
         """Nombres de prompts de identidades para el selector."""
-        return [p["name"] for p in self.ad_prompts_identidades]
+        return [p["name"] for p in self.ad_prompts_identidades if p.get("name")]
 
     @rx.var
     def ad_contexto_names(self) -> list[str]:
         """Nombres de prompts de contexto para el selector."""
-        return [p["name"] for p in self.ad_prompts_contexto]
+        return [p["name"] for p in self.ad_prompts_contexto if p.get("name")]
 
     @rx.var
     def ad_solicitud_names(self) -> list[str]:
         """Nombres de prompts de solicitudes para el selector."""
-        return [p["name"] for p in self.ad_prompts_solicitudes]
+        return [p["name"] for p in self.ad_prompts_solicitudes if p.get("name")]
 
     @rx.var
     def ad_modalidad_names(self) -> list[str]:
         """Nombres de prompts de modalidad para el selector."""
-        return [p["name"] for p in self.ad_prompts_modalidad]
+        return [p["name"] for p in self.ad_prompts_modalidad if p.get("name")]
 
     def ad_open_job_modal(self, job_id: int):
         """Abre el modal con los datos del job y carga los 4 tipos de prompts.
