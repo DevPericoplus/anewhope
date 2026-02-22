@@ -4407,3 +4407,45 @@ def toggle_job_template(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ============================================================================
+# JOBS - Gestión de jobs
+# ============================================================================
+
+
+@app.get(
+    "/jobs",
+    tags=["jobs"],
+)
+def get_jobs(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    tipo_clave: str | None = None,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> list[dict[str, Any]]:
+    """Lista jobs filtrados por org/proyecto/versión."""
+    try:
+        return router.get_jobs(org_id, project_id, version_id, tipo_clave)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post(
+    "/jobs",
+    tags=["jobs"],
+)
+def create_job(
+    data: dict[str, Any],
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Crea un nuevo job."""
+    try:
+        return router.create_job(data)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

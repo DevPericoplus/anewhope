@@ -7963,7 +7963,8 @@ class BackendCoreRouter:
                         COALESCE(jest.nombre, '-') AS estado_nombre,
                         jt.id_modelo, COALESCE(jmod.nombre, '-') AS modelo_nombre,
                         jt.id_salida, COALESCE(jsal.nombre, '-') AS salida_nombre,
-                        jt.acepta_entrada, jt.permite_hijos
+                        jt.acepta_entrada, jt.permite_hijos,
+                        jtip.clave AS tipo_clave
                     FROM jobs_templates jt
                     INNER JOIN jobs_tipos jtip ON jt.id_tipo = jtip.id
                     LEFT JOIN jobs_estados jest ON jt.id_estado_inicial = jest.id
@@ -7980,6 +7981,7 @@ class BackendCoreRouter:
                     "id_modelo": r[10] or 0, "modelo_nombre": r[11],
                     "id_salida": r[12] or 0, "salida_nombre": r[13],
                     "acepta_entrada": bool(r[14]), "permite_hijos": bool(r[15]),
+                    "tipo_clave": r[16],
                 }
                 for r in rows
             ]
@@ -8054,3 +8056,121 @@ class BackendCoreRouter:
         except Exception as exc:
             self._logger.error("Error toggling plantilla: %s", exc)
             raise BackendCoreBusinessError(f"Error cambiando estado: {exc}") from exc
+
+    # ========================================================================
+    # JOBS - CRUD para jobs (análisis de documentación, etc.)
+    # ========================================================================
+
+    def get_jobs(
+        self,
+        org_id: int,
+        project_id: int,
+        version_id: int,
+        tipo_clave: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Obtiene jobs filtrados por org/proyecto/versión y opcionalmente tipo."""
+        import json as _json
+        from sqlalchemy import text
+        try:
+            with self._get_projects_db_connection() as conn:
+                sql = """
+                    SELECT
+                        j.id, j.nombre, j.descripcion,
+                        jest.nombre       AS estado_nombre,
+                        jest.color        AS estado_color,
+                        COALESCE(jmod.nombre, '-') AS modelo_nombre,
+                        COALESCE(jsal.nombre, '-') AS salida_nombre,
+                        jt.nombre         AS template_nombre,
+                        j.programado_para,
+                        j.iniciado_en,
+                        j.completado_en,
+                        j.error,
+                        j.created_at,
+                        j.configuracion
+                    FROM jobs j
+                    INNER JOIN jobs_estados jest   ON j.id_estado = jest.id
+                    INNER JOIN jobs_templates jt   ON j.id_template = jt.id
+                    LEFT  JOIN jobs_modelos jmod   ON j.id_modelo = jmod.id
+                    LEFT  JOIN jobs_salidas jsal   ON j.id_salida = jsal.id
+                    INNER JOIN jobs_tipos jtip     ON j.id_tipo = jtip.id
+                    WHERE j.id_organizacion = :org_id
+                      AND j.id_proyecto = :prj_id
+                      AND j.id_version = :ver_id
+                """
+                params: dict[str, Any] = {
+                    "org_id": org_id,
+                    "prj_id": project_id,
+                    "ver_id": version_id,
+                }
+                if tipo_clave:
+                    sql += " AND jtip.clave = :tipo_clave"
+                    params["tipo_clave"] = tipo_clave
+                sql += " ORDER BY j.id DESC"
+
+                rows = conn.execute(text(sql), params).fetchall()
+
+            result_jobs = []
+            for r in rows:
+                config_raw = r[13]
+                config_dict: dict = {}
+                if config_raw:
+                    try:
+                        if isinstance(config_raw, str):
+                            config_dict = _json.loads(config_raw)
+                        elif isinstance(config_raw, dict):
+                            config_dict = config_raw
+                    except (ValueError, TypeError):
+                        config_dict = {}
+                result_jobs.append({
+                    "id": r[0],
+                    "nombre": r[1],
+                    "descripcion": r[2] or "",
+                    "estado_nombre": r[3],
+                    "estado_color": r[4] or "#888",
+                    "modelo_nombre": r[5],
+                    "salida_nombre": r[6],
+                    "template_nombre": r[7],
+                    "programado_para": str(r[8]) if r[8] else "-",
+                    "iniciado_en": str(r[9]) if r[9] else "-",
+                    "completado_en": str(r[10]) if r[10] else "-",
+                    "error": r[11] or "",
+                    "created_at": str(r[12]) if r[12] else "",
+                    "configuracion": config_dict,
+                })
+            return result_jobs
+        except Exception as exc:
+            self._logger.error("Error cargando jobs: %s", exc)
+            raise BackendCoreBusinessError(f"Error cargando jobs: {exc}") from exc
+
+    def create_job(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Crea un nuevo job."""
+        from sqlalchemy import text
+        try:
+            with self._get_projects_db_writer_connection() as conn:
+                conn.execute(text("""
+                    INSERT INTO jobs
+                        (id_template, id_organizacion, id_proyecto, id_version,
+                         nombre, descripcion, id_tipo, id_estado,
+                         id_modelo, id_salida, programado_para)
+                    VALUES
+                        (:id_template, :id_org, :id_proyecto, :id_version,
+                         :nombre, :descripcion, :id_tipo, :id_estado,
+                         :id_modelo, :id_salida, :programado_para)
+                """), {
+                    "id_template": data["id_template"],
+                    "id_org": data["id_organizacion"],
+                    "id_proyecto": data["id_proyecto"],
+                    "id_version": data["id_version"],
+                    "nombre": data["nombre"],
+                    "descripcion": data.get("descripcion") or None,
+                    "id_tipo": data["id_tipo"],
+                    "id_estado": data.get("id_estado", 1),
+                    "id_modelo": data.get("id_modelo") or None,
+                    "id_salida": data.get("id_salida") or None,
+                    "programado_para": data.get("programado_para") or None,
+                })
+                conn.commit()
+            return {"success": True, "message": f"Job '{data['nombre']}' creado"}
+        except Exception as exc:
+            self._logger.error("Error creando job: %s", exc)
+            raise BackendCoreBusinessError(f"Error creando job: {exc}") from exc

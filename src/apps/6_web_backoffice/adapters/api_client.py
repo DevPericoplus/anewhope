@@ -4720,3 +4720,74 @@ def toggle_job_template(
     except Exception as exc:
         logger.error(f"Error cambiando estado de plantilla: {exc}")
         return {"success": False, "message": str(exc)}
+
+
+# ============================================================================
+# JOBS - Gestión de jobs
+# ============================================================================
+
+
+def get_jobs(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    tipo_clave: str | None = None,
+    access_token: str = "",
+    session_token: str = "",
+) -> list[dict[str, Any]]:
+    """
+    Lista jobs filtrados por org/proyecto/versión.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+    """
+    from urllib.parse import quote
+    params = f"org_id={org_id}&project_id={project_id}&version_id={version_id}"
+    if tipo_clave:
+        params += f"&tipo_clave={quote(tipo_clave)}"
+    url = f"{_get_middleware_base_url()}/jobs?{params}"
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+
+    request = urllib.request.Request(url, headers=request_headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        logger.error(f"Error obteniendo jobs: {exc}")
+        return []
+
+
+def create_job(
+    data: dict[str, Any],
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Crea un nuevo job.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+    """
+    url = f"{_get_middleware_base_url()}/jobs"
+    request_headers = {
+        "Content-Type": "application/json",
+        "X-Client-App": "backoffice",
+    }
+    if access_token:
+        request_headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        request_headers["X-Session-Token"] = session_token
+
+    payload = json.dumps(data).encode("utf-8")
+    request = urllib.request.Request(url, data=payload, headers=request_headers, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        logger.error(f"Error creando job: {exc}")
+        return {"success": False, "message": str(exc)}

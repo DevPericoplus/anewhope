@@ -4312,3 +4312,35 @@ def toggle_job_template(
         return router.toggle_job_template(template_id)
     except BackendCoreBusinessError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ============================================================================
+# JOBS - Gestión de jobs
+# ============================================================================
+
+
+@app.get("/jobs")
+def get_jobs(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    tipo_clave: str | None = None,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> list[dict[str, Any]]:
+    """Lista jobs filtrados por org/proyecto/versión."""
+    try:
+        return router.get_jobs(org_id, project_id, version_id, tipo_clave)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/jobs")
+def create_job(
+    data: dict[str, Any],
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Crea un nuevo job."""
+    try:
+        return router.create_job(data)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

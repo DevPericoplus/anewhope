@@ -3528,29 +3528,19 @@ class State(SharedSessionState):
     # --- Carga de datos ---
 
     def ad_load_organizations(self):
-        """Carga organizaciones accesibles para el usuario (consulta directa a BD)."""
+        """Carga organizaciones accesibles para el usuario vía API."""
         try:
-            engine = self._get_projects_engine()
-            with engine.connect() as conn:
-                if self.identity_type_id == 1:
-                    # SuperAdmin ve todas las organizaciones
-                    rows = conn.execute(text(
-                        "SELECT organization_id, organization_name "
-                        "FROM myllm_core_db.organizations "
-                        "ORDER BY organization_name"
-                    )).fetchall()
-                else:
-                    # Otros usuarios: filtrar por asignaciones
-                    rows = conn.execute(text(
-                        "SELECT DISTINCT o.organization_id, o.organization_name "
-                        "FROM myllm_core_db.organizations o "
-                        "INNER JOIN asignaciones_organizaciones_internas aoi "
-                        "  ON o.organization_id = aoi.id_organizacion "
-                        "WHERE aoi.id_usuario = :uid AND aoi.active = 1 "
-                        "ORDER BY o.organization_name"
-                    ), {"uid": self.user_id}).fetchall()
-
-            self.ad_orgs = [{"id": int(r[0]), "name": r[1]} for r in rows]
+            from adapters.api_client import get_accessible_organizations
+            result = get_accessible_organizations(
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            orgs_raw = result if isinstance(result, list) else result.get("organizations", [])
+            self.ad_orgs = [
+                {"id": int(o.get("organization_id", o.get("id", 0))),
+                 "name": o.get("organization_name", o.get("name", ""))}
+                for o in orgs_raw
+            ]
             print(f"[AD] Organizaciones cargadas: {len(self.ad_orgs)}")
 
             # Seleccionar organización por defecto
@@ -3582,30 +3572,23 @@ class State(SharedSessionState):
         self._ad_load_projects()
 
     def _ad_load_projects(self):
-        """Carga proyectos de la organización seleccionada (consulta directa a BD)."""
+        """Carga proyectos de la organización seleccionada vía API."""
         if self.ad_org_id <= 0:
             self.ad_projects = []
             return
         try:
-            engine = self._get_projects_engine()
-            with engine.connect() as conn:
-                if self.identity_type_id == 1:
-                    rows = conn.execute(text(
-                        "SELECT id, nombre FROM proyectos "
-                        "WHERE id_organizacion = :org_id "
-                        "ORDER BY nombre"
-                    ), {"org_id": self.ad_org_id}).fetchall()
-                else:
-                    rows = conn.execute(text(
-                        "SELECT DISTINCT p.id, p.nombre "
-                        "FROM proyectos p "
-                        "LEFT JOIN proyectos_roles pr ON p.id = pr.id_proyecto "
-                        "WHERE p.id_organizacion = :org_id "
-                        "  AND pr.id_usuario = :uid AND pr.active = 1 "
-                        "ORDER BY p.nombre"
-                    ), {"org_id": self.ad_org_id, "uid": self.user_id}).fetchall()
-
-            self.ad_projects = [{"id": int(r[0]), "name": r[1]} for r in rows]
+            from adapters.api_client import get_organization_projects
+            result = get_organization_projects(
+                organization_id=self.ad_org_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            projects_raw = result if isinstance(result, list) else result.get("projects", [])
+            self.ad_projects = [
+                {"id": int(p.get("id", p.get("project_id", 0))),
+                 "name": p.get("nombre", p.get("name", ""))}
+                for p in projects_raw
+            ]
             print(f"[AD] Proyectos cargados: {len(self.ad_projects)}")
         except Exception as e:
             print(f"[ERROR AD] _ad_load_projects: {e}")
@@ -3627,24 +3610,25 @@ class State(SharedSessionState):
             self._ad_load_versions()
 
     def _ad_load_versions(self):
-        """Carga versiones del proyecto seleccionado (consulta directa a BD)."""
+        """Carga versiones del proyecto seleccionado vía API."""
         if self.ad_org_id <= 0 or self.ad_project_id <= 0:
             self.ad_versions = []
             return
         try:
-            engine = self._get_projects_engine()
-            with engine.connect() as conn:
-                rows = conn.execute(text(
-                    "SELECT v.id_version "
-                    "FROM versiones v "
-                    "WHERE v.id_organizacion = :org_id "
-                    "  AND v.id_proyecto = :prj_id "
-                    "ORDER BY v.id_version DESC"
-                ), {"org_id": self.ad_org_id, "prj_id": self.ad_project_id}).fetchall()
-
+            from adapters.api_client import get_project_versions
+            result = get_project_versions(
+                organization_id=self.ad_org_id,
+                project_id=self.ad_project_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            versions_raw = result if isinstance(result, list) else result.get("versions", [])
             self.ad_versions = [
-                {"id_version": int(r[0]), "version_folder": f"v{int(r[0]):03d}"}
-                for r in rows
+                {
+                    "id_version": int(v.get("id_version", v.get("version_id", 0))),
+                    "version_folder": f"v{int(v.get('id_version', v.get('version_id', 0))):03d}",
+                }
+                for v in versions_raw
             ]
             print(f"[AD] Versiones cargadas: {len(self.ad_versions)}")
         except Exception as e:
@@ -3665,51 +3649,39 @@ class State(SharedSessionState):
     # --- Plantillas y catálogos ---
 
     def ad_load_templates_and_catalogs(self):
-        """Carga las plantillas de tipo analisis_documentacion y los catálogos."""
+        """Carga las plantillas de tipo analisis_documentacion y los catálogos vía API."""
         try:
-            engine = self._get_projects_engine()
-            with engine.connect() as conn:
-                # Plantillas activas de tipo analisis_documentacion
-                rows = conn.execute(text("""
-                    SELECT jt.id, jt.nombre, jt.descripcion,
-                           jt.id_estado_inicial, jt.id_modelo, jt.id_salida,
-                           jt.es_programable, jt.acepta_entrada, jt.permite_hijos
-                    FROM jobs_templates jt
-                    INNER JOIN jobs_tipos jtip ON jt.id_tipo = jtip.id
-                    WHERE jtip.clave = 'analisis_documentacion'
-                      AND jt.activo = 1
-                    ORDER BY jt.nombre
-                """)).fetchall()
-                self.ad_templates = [
-                    {
-                        "id": r[0], "nombre": r[1], "descripcion": r[2] or "",
-                        "id_estado_inicial": r[3] or 0, "id_modelo": r[4] or 0,
-                        "id_salida": r[5] or 0, "es_programable": bool(r[6]),
-                        "acepta_entrada": bool(r[7]), "permite_hijos": bool(r[8]),
-                    }
-                    for r in rows
-                ]
+            from adapters.api_client import get_job_templates, get_job_template_catalogs
 
-                # Catálogo de modelos
-                rows = conn.execute(text(
-                    "SELECT id, nombre, familia FROM jobs_modelos WHERE activo = 1 ORDER BY nombre"
-                )).fetchall()
-                self.ad_modelos = [{"id": r[0], "nombre": r[1], "familia": r[2]} for r in rows]
+            # Cargar todas las plantillas y filtrar por tipo_clave
+            all_templates = get_job_templates(
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            self.ad_templates = [
+                {
+                    "id": t["id"], "nombre": t["nombre"],
+                    "descripcion": t.get("descripcion", ""),
+                    "id_tipo": t.get("id_tipo", 0),
+                    "id_estado_inicial": t.get("id_estado_inicial", 0),
+                    "id_modelo": t.get("id_modelo", 0),
+                    "id_salida": t.get("id_salida", 0),
+                    "es_programable": t.get("es_programable", False),
+                    "acepta_entrada": t.get("acepta_entrada", False),
+                    "permite_hijos": t.get("permite_hijos", False),
+                }
+                for t in all_templates
+                if t.get("tipo_clave") == "analisis_documentacion" and t.get("activo", False)
+            ]
 
-                # Catálogo de salidas
-                rows = conn.execute(text(
-                    "SELECT id, clave, nombre FROM jobs_salidas WHERE activo = 1 ORDER BY id"
-                )).fetchall()
-                self.ad_salidas = [{"id": r[0], "clave": r[1], "nombre": r[2]} for r in rows]
-
-                # Catálogo de estados
-                rows = conn.execute(text(
-                    "SELECT id, clave, nombre, color FROM jobs_estados WHERE activo = 1 ORDER BY id"
-                )).fetchall()
-                self.ad_estados = [
-                    {"id": r[0], "clave": r[1], "nombre": r[2], "color": r[3]}
-                    for r in rows
-                ]
+            # Cargar catálogos (modelos, salidas, estados)
+            catalogs = get_job_template_catalogs(
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            self.ad_modelos = catalogs.get("modelos", [])
+            self.ad_salidas = catalogs.get("salidas", [])
+            self.ad_estados = catalogs.get("estados", [])
 
             print(f"[AD] Catálogos: templates={len(self.ad_templates)}, "
                   f"modelos={len(self.ad_modelos)}, salidas={len(self.ad_salidas)}")
@@ -3749,7 +3721,7 @@ class State(SharedSessionState):
     # --- CRUD de jobs ---
 
     def ad_create_job(self):
-        """Crea un nuevo job basado en la plantilla seleccionada."""
+        """Crea un nuevo job basado en la plantilla seleccionada vía API."""
         self.ad_error = ""
         self.ad_success = ""
 
@@ -3770,19 +3742,12 @@ class State(SharedSessionState):
             self.ad_error = "El nombre del job es obligatorio"
             return
 
-        # Obtener id_tipo de la plantilla
+        # Obtener id_tipo de la plantilla desde los datos ya cargados
         id_tipo = 0
-        try:
-            engine = self._get_projects_engine()
-            with engine.connect() as conn:
-                row = conn.execute(text(
-                    "SELECT id_tipo FROM jobs_templates WHERE id = :id"
-                ), {"id": self.ad_selected_template_id}).fetchone()
-                if row:
-                    id_tipo = row[0]
-        except Exception as e:
-            self.ad_error = f"Error obteniendo tipo de plantilla: {e}"
-            return
+        for t in self.ad_templates:
+            if t["id"] == self.ad_selected_template_id:
+                id_tipo = t.get("id_tipo", 0)
+                break
 
         if id_tipo <= 0:
             self.ad_error = "No se pudo determinar el tipo de job"
@@ -3792,117 +3757,79 @@ class State(SharedSessionState):
         id_estado = self.ad_job_id_estado if self.ad_job_id_estado > 0 else 1
 
         try:
-            engine = self._get_projects_writer_engine()
-            with engine.begin() as conn:
-                conn.execute(text("""
-                    INSERT INTO jobs
-                        (id_template, id_organizacion, id_proyecto, id_version,
-                         nombre, descripcion, id_tipo, id_estado,
-                         id_modelo, id_salida, programado_para)
-                    VALUES
-                        (:id_template, :id_org, :id_proyecto, :id_version,
-                         :nombre, :descripcion, :id_tipo, :id_estado,
-                         :id_modelo, :id_salida, :programado_para)
-                """), {
+            from adapters.api_client import create_job
+            result = create_job(
+                data={
                     "id_template": self.ad_selected_template_id,
-                    "id_org": self.ad_org_id,
+                    "id_organizacion": self.ad_org_id,
                     "id_proyecto": self.ad_project_id,
                     "id_version": self.ad_version_id,
                     "nombre": self.ad_job_nombre.strip(),
-                    "descripcion": self.ad_job_descripcion.strip() or None,
+                    "descripcion": self.ad_job_descripcion.strip() or "",
                     "id_tipo": id_tipo,
                     "id_estado": id_estado,
                     "id_modelo": self.ad_job_id_modelo if self.ad_job_id_modelo > 0 else None,
                     "id_salida": self.ad_job_id_salida if self.ad_job_id_salida > 0 else None,
                     "programado_para": self.ad_job_programado_para if self.ad_job_programado_para.strip() else None,
-                })
+                },
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
 
-            self.ad_success = f"Job '{self.ad_job_nombre}' creado correctamente"
-            print(f"[AD] Job creado: {self.ad_job_nombre}")
-            # Recargar lista y limpiar selección de plantilla
-            self._ad_load_jobs()
-            self.ad_selected_template_id = 0
-            self.ad_job_nombre = ""
-            self.ad_job_descripcion = ""
-            self.ad_job_programado_para = ""
+            if result.get("success"):
+                self.ad_success = f"Job '{self.ad_job_nombre}' creado correctamente"
+                print(f"[AD] Job creado: {self.ad_job_nombre}")
+                self._ad_load_jobs()
+                self.ad_selected_template_id = 0
+                self.ad_job_nombre = ""
+                self.ad_job_descripcion = ""
+                self.ad_job_programado_para = ""
+            else:
+                self.ad_error = result.get("message", "Error desconocido")
         except Exception as e:
             print(f"[ERROR AD] ad_create_job: {e}")
             self.ad_error = f"Error creando job: {e}"
 
     def _ad_load_jobs(self):
-        """Carga los jobs de análisis de documentación para org/proyecto/versión."""
-        import json as _json
-
+        """Carga los jobs de análisis de documentación para org/proyecto/versión vía API."""
         if self.ad_version_id <= 0:
             self.ad_jobs = []
             return
         try:
-            engine = self._get_projects_engine()
-            with engine.connect() as conn:
-                rows = conn.execute(text("""
-                    SELECT
-                        j.id, j.nombre, j.descripcion,
-                        jest.nombre       AS estado_nombre,
-                        jest.color        AS estado_color,
-                        COALESCE(jmod.nombre, '-') AS modelo_nombre,
-                        COALESCE(jsal.nombre, '-') AS salida_nombre,
-                        jt.nombre         AS template_nombre,
-                        j.programado_para,
-                        j.iniciado_en,
-                        j.completado_en,
-                        j.error,
-                        j.created_at,
-                        j.configuracion
-                    FROM jobs j
-                    INNER JOIN jobs_estados jest   ON j.id_estado = jest.id
-                    INNER JOIN jobs_templates jt   ON j.id_template = jt.id
-                    LEFT  JOIN jobs_modelos jmod   ON j.id_modelo = jmod.id
-                    LEFT  JOIN jobs_salidas jsal   ON j.id_salida = jsal.id
-                    INNER JOIN jobs_tipos jtip     ON j.id_tipo = jtip.id
-                    WHERE jtip.clave = 'analisis_documentacion'
-                      AND j.id_organizacion = :org_id
-                      AND j.id_proyecto = :prj_id
-                      AND j.id_version = :ver_id
-                    ORDER BY j.id DESC
-                """), {
-                    "org_id": self.ad_org_id,
-                    "prj_id": self.ad_project_id,
-                    "ver_id": self.ad_version_id,
-                }).fetchall()
-                result_jobs = []
-                for r in rows:
-                    # Parsear configuracion JSON
-                    config_raw = r[13]
-                    config_dict: dict = {}
-                    if config_raw:
-                        try:
-                            if isinstance(config_raw, str):
-                                config_dict = _json.loads(config_raw)
-                            elif isinstance(config_raw, dict):
-                                config_dict = config_raw
-                        except (ValueError, TypeError):
-                            config_dict = {}
-                    result_jobs.append({
-                        "id": r[0],
-                        "nombre": r[1],
-                        "descripcion": r[2] or "",
-                        "estado_nombre": r[3],
-                        "estado_color": r[4] or "#888",
-                        "modelo_nombre": r[5],
-                        "salida_nombre": r[6],
-                        "template_nombre": r[7],
-                        "programado_para": str(r[8]) if r[8] else "-",
-                        "iniciado_en": str(r[9]) if r[9] else "-",
-                        "completado_en": str(r[10]) if r[10] else "-",
-                        "error": r[11] or "",
-                        "created_at": str(r[12]) if r[12] else "",
-                        "sel_identidad": config_dict.get("sel_identidad", ""),
-                        "sel_contexto": config_dict.get("sel_contexto", ""),
-                        "sel_solicitud": config_dict.get("sel_solicitud", ""),
-                        "sel_modalidad": config_dict.get("sel_modalidad", ""),
-                        "prompt_final_guardado": config_dict.get("prompt_final", ""),
-                    })
-                self.ad_jobs = result_jobs
+            from adapters.api_client import get_jobs
+            jobs_raw = get_jobs(
+                org_id=self.ad_org_id,
+                project_id=self.ad_project_id,
+                version_id=self.ad_version_id,
+                tipo_clave="analisis_documentacion",
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            # Extraer campos de configuración JSON (ya parseado por el backend)
+            result_jobs = []
+            for j in jobs_raw:
+                config = j.get("configuracion", {}) or {}
+                result_jobs.append({
+                    "id": j["id"],
+                    "nombre": j["nombre"],
+                    "descripcion": j.get("descripcion", ""),
+                    "estado_nombre": j.get("estado_nombre", ""),
+                    "estado_color": j.get("estado_color", "#888"),
+                    "modelo_nombre": j.get("modelo_nombre", "-"),
+                    "salida_nombre": j.get("salida_nombre", "-"),
+                    "template_nombre": j.get("template_nombre", ""),
+                    "programado_para": j.get("programado_para", "-"),
+                    "iniciado_en": j.get("iniciado_en", "-"),
+                    "completado_en": j.get("completado_en", "-"),
+                    "error": j.get("error", ""),
+                    "created_at": j.get("created_at", ""),
+                    "sel_identidad": config.get("sel_identidad", ""),
+                    "sel_contexto": config.get("sel_contexto", ""),
+                    "sel_solicitud": config.get("sel_solicitud", ""),
+                    "sel_modalidad": config.get("sel_modalidad", ""),
+                    "prompt_final_guardado": config.get("prompt_final", ""),
+                })
+            self.ad_jobs = result_jobs
             print(f"[AD] Jobs cargados: {len(self.ad_jobs)}")
         except Exception as e:
             print(f"[ERROR AD] _ad_load_jobs: {e}")

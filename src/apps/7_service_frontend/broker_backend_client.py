@@ -1679,3 +1679,21 @@ class BrokerBackendClient:
     def toggle_job_template(self, template_id: int) -> dict[str, Any]:
         """Activa o desactiva una plantilla de job."""
         return dict(self._request("PATCH", f"/job-templates/{template_id}/toggle") or {})
+
+    # ========================================================================
+    # JOBS
+    # ========================================================================
+
+    def get_jobs(
+        self, org_id: int, project_id: int, version_id: int, tipo_clave: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Lista jobs filtrados por org/proyecto/versión."""
+        params = f"?org_id={org_id}&project_id={project_id}&version_id={version_id}"
+        if tipo_clave:
+            params += f"&tipo_clave={tipo_clave}"
+        data = self._request("GET", f"/jobs{params}")
+        return list(data or [])
+
+    def create_job(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Crea un nuevo job."""
+        return dict(self._request("POST", "/jobs", payload=data) or {})

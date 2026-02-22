@@ -4793,3 +4793,81 @@ def toggle_job_template_endpoint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al cambiar estado de plantilla",
         ) from exc
+
+
+# ============================================================================
+# JOBS - Gestión de jobs
+# ============================================================================
+
+
+@app.get(
+    "/jobs",
+    tags=["jobs"],
+)
+def get_jobs_endpoint(
+    org_id: int,
+    project_id: int,
+    version_id: int,
+    tipo_clave: str | None = None,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)] = None,
+    session: Annotated[SessionContext, Depends(get_session_context)] = None,
+) -> list[dict[str, Any]]:
+    """Lista jobs filtrados por org/proyecto/versión."""
+    _logger = logging.getLogger(__name__)
+
+    try:
+        return router.get_jobs(org_id, project_id, version_id, tipo_clave, session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        _logger.error("Error obteniendo jobs: %s", str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al obtener jobs",
+        ) from exc
+
+
+class JobCreateRequest(BaseModel):
+    """Payload para crear un job."""
+
+    id_template: int
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    nombre: str
+    descripcion: str | None = ""
+    id_tipo: int
+    id_estado: int = 1
+    id_modelo: int | None = None
+    id_salida: int | None = None
+    programado_para: str | None = None
+
+
+@app.post(
+    "/jobs",
+    tags=["jobs"],
+)
+def create_job_endpoint(
+    data: JobCreateRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> dict[str, Any]:
+    """Crea un nuevo job."""
+    _logger = logging.getLogger(__name__)
+
+    try:
+        return router.create_job(data.model_dump(), session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        _logger.error("Error creando job: %s", str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al crear job",
+        ) from exc

@@ -5266,3 +5266,32 @@ class RouterMiddleware:
             raise BusinessRuleError(
                 f"No se pudo cambiar estado de plantilla: {exc}"
             ) from exc
+
+    # ========================================================================
+    # JOBS
+    # ========================================================================
+
+    def get_jobs(
+        self,
+        org_id: int,
+        project_id: int,
+        version_id: int,
+        tipo_clave: str | None,
+        session: "SessionContext",
+    ) -> list[dict[str, Any]]:
+        """Lista jobs filtrados por org/proyecto/versión."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.get_jobs(org_id, project_id, version_id, tipo_clave)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(f"No se pudieron obtener jobs: {exc}") from exc
+
+    def create_job(
+        self, data: dict[str, Any], session: "SessionContext"
+    ) -> dict[str, Any]:
+        """Crea un nuevo job."""
+        self._configure_broker_security(session)
+        try:
+            return self._broker_client.create_job(data)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(f"No se pudo crear job: {exc}") from exc

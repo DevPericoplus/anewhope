@@ -2087,3 +2087,23 @@ class BrokerBackendRouter:
             return self._core_client.toggle_job_template(template_id)
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(f"Error cambiando estado plantilla: {exc}") from exc
+
+    # ========================================================================
+    # JOBS
+    # ========================================================================
+
+    def get_jobs(
+        self, org_id: int, project_id: int, version_id: int, tipo_clave: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Lista jobs."""
+        try:
+            return self._core_client.get_jobs(org_id, project_id, version_id, tipo_clave)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"Error obteniendo jobs: {exc}") from exc
+
+    def create_job(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Crea un nuevo job."""
+        try:
+            return self._core_client.create_job(data)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"Error creando job: {exc}") from exc
