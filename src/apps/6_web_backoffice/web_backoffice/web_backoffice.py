@@ -891,6 +891,11 @@ class State(SharedSessionState):
         if menu == "estado_proyectos":
             return self.ep_init_page()
 
+        # Inicializar Análisis de Documentación al navegar (limpiar errores residuales)
+        if menu == "analisis_documentacion":
+            self.ad_error = ""
+            self.ad_success = ""
+
         # Inicializar Asistente al navegar (health check + modelos)
         if menu == "asistente":
             self.check_ollama_health()
@@ -3837,6 +3842,8 @@ class State(SharedSessionState):
 
     def ad_init_page(self):
         """Inicializa la página de Análisis de Documentación."""
+        self.ad_error = ""
+        self.ad_success = ""
         self.ad_load_organizations()
         self.ad_load_templates_and_catalogs()
 
