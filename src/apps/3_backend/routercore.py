@@ -6745,6 +6745,53 @@ class BackendCoreRouter:
                     f"Error obteniendo parámetros de entrenamiento: {exc}"
                 ) from exc
 
+    def list_active_models(self) -> dict[str, Any]:
+        """Lista modelos activos de jobs_modelos.
+
+        Returns:
+            Diccionario con success y lista de modelos activos.
+        """
+        from sqlalchemy import text
+
+        self._logger.info("[MODELS] Consultando modelos activos")
+
+        with self._get_projects_db_connection() as conn:
+            try:
+                rows = conn.execute(
+                    text("""
+                        SELECT MIN(id) AS id, nombre,
+                               MIN(tag) AS tag, MIN(familia) AS familia
+                        FROM jobs_modelos
+                        WHERE activo = 1
+                        GROUP BY nombre
+                        ORDER BY nombre
+                    """),
+                ).mappings().fetchall()
+
+                modelos = [
+                    {
+                        "id": int(r["id"]),
+                        "nombre": str(r["nombre"]),
+                        "tag": str(r.get("tag", "") or ""),
+                        "familia": str(r.get("familia", "") or ""),
+                    }
+                    for r in rows
+                ]
+
+                self._logger.info(
+                    "[MODELS] Modelos activos encontrados: %s", len(modelos)
+                )
+
+                return {"success": True, "modelos": modelos}
+
+            except Exception as exc:
+                self._logger.error(
+                    "[MODELS] Error listando modelos activos: %s", exc
+                )
+                raise BackendCoreBusinessError(
+                    f"Error listando modelos activos: {exc}"
+                ) from exc
+
     def register_entrenamiento(
         self,
         id_organizacion: int,

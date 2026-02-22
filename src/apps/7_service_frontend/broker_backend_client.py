@@ -451,6 +451,15 @@ class BrokerBackendClient:
         )
         return dict(data or {})
 
+    def list_active_models(self) -> dict[str, Any]:
+        """Lista modelos activos desde el broker → backend core.
+
+        Returns:
+            Diccionario con success y lista de modelos activos.
+        """
+        data = self._request("GET", "/models/active")
+        return dict(data or {})
+
     def send_entrenamiento(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Envía solicitud de entrenamiento inicial al broker → trainer.
 

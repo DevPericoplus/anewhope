@@ -1500,6 +1500,29 @@ def get_training_params_endpoint(
         ) from exc
 
 
+@app.get("/models/active", tags=["models"])
+def list_active_models_endpoint(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> dict[str, Any]:
+    """Lista modelos activos de la BD.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+    """
+    try:
+        return router.list_active_models(session)
+    except BusinessRuleError as exc:
+        error_msg = str(exc).lower()
+        if "permisos" in error_msg or "permiso" in error_msg:
+            status_code = status.HTTP_403_FORBIDDEN
+        else:
+            status_code = status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
+        ) from exc
+
+
 @app.patch("/training/progress")
 async def update_training_progress_endpoint(
     payload: TrainingProgressNotification,

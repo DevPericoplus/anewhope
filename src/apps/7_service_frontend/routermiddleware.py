@@ -3337,6 +3337,29 @@ class RouterMiddleware:
                 "No se pudo obtener parámetros de entrenamiento"
             ) from exc
 
+    def list_active_models(self, session: SessionContext) -> dict[str, Any]:
+        """Lista modelos activos via Broker → Backend Core.
+
+        Args:
+            session: Contexto de sesión del usuario.
+
+        Returns:
+            Diccionario con success y lista de modelos activos.
+        """
+        if not self.has_low_level_permission(session, "training_read"):
+            raise BusinessRuleError(
+                "Sin permisos para consultar modelos activos"
+            )
+
+        self._configure_broker_security(session)
+
+        try:
+            return self._broker_client.list_active_models()
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                "No se pudo obtener modelos activos"
+            ) from exc
+
     def send_entrenamiento(
         self,
         payload: dict[str, Any],

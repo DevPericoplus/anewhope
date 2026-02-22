@@ -4117,6 +4117,23 @@ def get_training_params_endpoint(
         ) from exc
 
 
+@app.get("/models/active", tags=["models"])
+def list_active_models_endpoint(
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Lista modelos activos (passthrough a Backend Core).
+
+    Flujo: Middleware → Broker → Backend Core → MariaDB
+    """
+    try:
+        return router.list_active_models()
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
 @app.post(
     "/training/entrenamientos/register",
     response_model=EntrenamientoRegisterResponse,

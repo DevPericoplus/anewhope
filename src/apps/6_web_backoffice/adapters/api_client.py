@@ -3906,6 +3906,35 @@ def get_training_params(
     return response if isinstance(response, dict) else {}
 
 
+def list_active_models(
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Lista modelos activos de la BD.
+
+    Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+
+    Args:
+        access_token: Token de acceso JWT.
+        session_token: Token de sesión JWT.
+
+    Returns:
+        Diccionario con success y lista de modelos activos.
+    """
+    headers: dict[str, str] = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    response = _request_middleware(
+        "GET",
+        "/models/active",
+        headers=headers,
+    )
+    return response if isinstance(response, dict) else {}
+
+
 def send_entrenamiento_to_trainer(
     payload: dict[str, Any],
     access_token: str = "",

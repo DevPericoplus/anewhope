@@ -1089,20 +1089,28 @@ class State(SharedSessionState):
             self.asistente_ollama_status = f"❌ Error: {str(e)}"
 
     def load_ollama_models(self):
-        """Carga la lista de modelos disponibles desde jobs_modelos (BD directa)."""
+        """Carga la lista de modelos disponibles via API.
+
+        Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
+        """
         try:
-            engine = self._get_projects_engine()
-            with engine.connect() as conn:
-                rows = conn.execute(text(
-                    "SELECT nombre FROM jobs_modelos WHERE activo = 1 ORDER BY nombre"
-                )).fetchall()
-                model_names = [r[0] for r in rows if r[0] and r[0].strip()]
+            from adapters.api_client import list_active_models
+
+            result = list_active_models(
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+            modelos = result.get("modelos", [])
+            model_names = [
+                m["nombre"] for m in modelos
+                if m.get("nombre", "").strip()
+            ]
 
             self.asistente_models = model_names
             if self.asistente_models:
                 self.asistente_selected_model = self.asistente_models[0]
             else:
-                self.asistente_error = "No se encontraron modelos activos en BD"
+                self.asistente_error = "No se encontraron modelos activos"
         except Exception as e:
             self.asistente_models = []
             self.asistente_error = f"Error cargando modelos: {str(e)}"

@@ -1196,6 +1196,11 @@ class CoreBackendClient:
         )
         return dict(data or {})
 
+    def list_active_models(self) -> dict[str, Any]:
+        """Lista modelos activos desde Backend Core."""
+        data = self._request("GET", "/models/active")
+        return dict(data or {})
+
     def register_entrenamiento(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Registra un nuevo entrenamiento en Backend Core."""
         data = self._request("POST", "/entrenamientos/register", payload=payload)

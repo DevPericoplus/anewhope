@@ -4057,6 +4057,23 @@ def get_training_params_endpoint(
         ) from exc
 
 
+@app.get("/models/active", tags=["models"])
+def list_active_models_endpoint(
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> dict[str, Any]:
+    """Lista modelos activos de jobs_modelos.
+
+    Flujo: Broker → Backend Core → MariaDB
+    """
+    try:
+        return router.list_active_models()
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
 @app.patch("/training/progress", tags=["training"])
 async def update_training_progress_endpoint(
     payload: TrainingProgressNotification,

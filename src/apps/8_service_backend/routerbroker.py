@@ -1914,6 +1914,19 @@ class BrokerBackendRouter:
                 f"Error obteniendo parámetros de entrenamiento: {str(exc)}"
             ) from exc
 
+    def list_active_models(self) -> dict[str, Any]:
+        """Lista modelos activos via Backend Core.
+
+        Enruta: Middleware → Broker → Backend Core → MariaDB
+        """
+        self._logger.info("[%s] Consultando modelos activos", self._client_app)
+        try:
+            return self._core_client.list_active_models()
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error listando modelos activos: {str(exc)}"
+            ) from exc
+
     def register_entrenamiento(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Registra un nuevo entrenamiento via Backend Core.
 
