@@ -793,7 +793,7 @@ class ExploradorState(rx.State):
                 self.interpretacion_estados()
                 return rx.toast.success(f"Versión {version_key} abierta")
             else:
-                error_msg = response.get("mensaje", "Error desconocido")
+                error_msg = response.get("message") or response.get("detail", "Error desconocido")
                 logger.error(f"Error al persistir estado: {error_msg}")
                 return rx.toast.error(f"Error al guardar: {error_msg}")
 
@@ -835,7 +835,7 @@ class ExploradorState(rx.State):
                 self.interpretacion_estados()
                 return rx.toast.success(f"Versión {version_key} bloqueada")
             else:
-                error_msg = response.get("mensaje", "Error desconocido")
+                error_msg = response.get("message") or response.get("detail", "Error desconocido")
                 logger.error(f"Error al persistir estado: {error_msg}")
                 return rx.toast.error(f"Error al guardar: {error_msg}")
 
@@ -887,7 +887,7 @@ class ExploradorState(rx.State):
                 self.interpretacion_estados()
                 return rx.toast.success(f"Entrenamiento solicitado para versión {version_key}")
             else:
-                error_msg = response.get("mensaje", "Error desconocido")
+                error_msg = response.get("message") or response.get("detail", "Error desconocido")
                 logger.error(f"Error al persistir estado: {error_msg}")
                 return rx.toast.error(f"Error al guardar: {error_msg}")
 
@@ -950,7 +950,7 @@ class ExploradorState(rx.State):
             )
 
             if not response.get("success"):
-                error_msg = response.get("mensaje", "Error al generar token")
+                error_msg = response.get("message") or response.get("detail", "Error al generar token")
                 logger.error(f"Error generando token: {error_msg}")
                 return rx.toast.error(f"Error: {error_msg}")
 
@@ -963,47 +963,59 @@ class ExploradorState(rx.State):
 
             # Usar JavaScript para abrir file picker y subir el archivo
             upload_script = f"""
-            (function() {{
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.onchange = async (e) => {{
-                    const file = e.target.files[0];
-                    if (!file) return;
+            (async function() {{
+                return new Promise((resolve) => {{
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.addEventListener('cancel', () => resolve('cancelled'));
+                    input.onchange = async (e) => {{
+                        const file = e.target.files[0];
+                        if (!file) {{ resolve('cancelled'); return; }}
 
-                    const formData = new FormData();
-                    formData.append('file', file);
-                    formData.append('relative_path', '{relative_path}');
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        formData.append('relative_path', '{relative_path}');
 
-                    try {{
-                        const response = await fetch('{fmanagement_url}/upload', {{
-                            method: 'POST',
-                            headers: {{
-                                'Authorization': 'Bearer {token}'
-                            }},
-                            body: formData
-                        }});
+                        try {{
+                            const response = await fetch('{fmanagement_url}/upload', {{
+                                method: 'POST',
+                                headers: {{
+                                    'Authorization': 'Bearer {token}'
+                                }},
+                                body: formData
+                            }});
 
-                        const result = await response.json();
-                        if (response.ok) {{
-                            alert('Archivo subido exitosamente: ' + file.name);
-                            // Recargar el explorador
-                            window.location.reload();
-                        }} else {{
-                            alert('Error al subir archivo: ' + (result.error || 'Error desconocido'));
+                            const result = await response.json();
+                            if (response.ok) {{
+                                resolve('ok:' + file.name);
+                            }} else {{
+                                resolve('error:' + (result.error || 'Error desconocido'));
+                            }}
+                        }} catch (error) {{
+                            resolve('error:' + error.message);
                         }}
-                    }} catch (error) {{
-                        alert('Error al subir archivo: ' + error.message);
-                    }}
-                }};
-                input.click();
-            }})();
+                    }};
+                    input.click();
+                }});
+            }})()
             """
 
-            return rx.call_script(upload_script)
+            return rx.call_script(upload_script, callback=ExploradorState._handle_upload_result)
 
         except Exception as e:
             logger.error(f"Error en iniciar_subida_archivo: {e}")
             return rx.toast.error(f"Error: {str(e)}")
+
+    def _handle_upload_result(self, result: str):
+        """Procesa el resultado de la subida de archivo y refresca el explorador."""
+        if not result or result == "cancelled":
+            return
+        if result.startswith("ok:"):
+            filename = result[3:]
+            self.load_from_api()
+            return rx.toast.success(f"Archivo subido exitosamente: {filename}")
+        elif result.startswith("error:"):
+            return rx.toast.error(f"Error al subir archivo: {result[6:]}")
 
     def iniciar_descarga_archivo(self, item: FolderItem):
         """Inicia el proceso de descarga de archivo.
@@ -1073,7 +1085,7 @@ class ExploradorState(rx.State):
                 clear_refreshed_tokens()
 
             if not response.get("success"):
-                error_msg = response.get("mensaje", "Error al generar token")
+                error_msg = response.get("message") or response.get("detail", "Error al generar token")
                 logger.error(f"Error generando token: {error_msg}")
                 return rx.toast.error(f"Error: {error_msg}")
 
@@ -1187,7 +1199,7 @@ class ExploradorState(rx.State):
                 self.load_from_api()
                 return rx.toast.success(f"Carpeta '{folder_name}' creada exitosamente")
             else:
-                error_msg = response.get("mensaje") or response.get("error", "Error desconocido")
+                error_msg = response.get("message") or response.get("detail", "Error desconocido")
                 return rx.toast.error(f"Error: {error_msg}")
 
         except Exception as e:
@@ -1299,7 +1311,7 @@ class ExploradorState(rx.State):
                 self.load_from_api()
                 return rx.toast.success(f"Renombrado a '{new_name}' exitosamente")
             else:
-                error_msg = response.get("mensaje") or response.get("error", "Error desconocido")
+                error_msg = response.get("message") or response.get("detail", "Error desconocido")
                 return rx.toast.error(f"Error: {error_msg}")
 
         except Exception as e:
@@ -1406,7 +1418,7 @@ class ExploradorState(rx.State):
                 self.load_from_api()
                 return rx.toast.success(f"'{item.name}' eliminado exitosamente")
             else:
-                error_msg = response.get("mensaje") or response.get("error", "Error desconocido")
+                error_msg = response.get("message") or response.get("detail", "Error desconocido")
                 return rx.toast.error(f"Error: {error_msg}")
 
         except Exception as e:
@@ -1521,7 +1533,7 @@ class ExploradorState(rx.State):
                 self.properties_info = info
                 return rx.toast.success("Propiedades cargadas")
             else:
-                error_msg = response.get("mensaje") or response.get("error", "Error desconocido")
+                error_msg = response.get("message") or response.get("detail", "Error desconocido")
                 self.properties_info = f"Error al obtener propiedades: {error_msg}"
                 return rx.toast.error(f"Error: {error_msg}")
 
@@ -1826,7 +1838,7 @@ class ExploradorState(rx.State):
                 logger.info(f"Datos cargados exitosamente: {items_count} items totales")
                 print(f"✓ Explorador cargado: {items_count} items, {states_count} versiones")
             else:
-                error_msg = response.get("mensaje", "Error desconocido al cargar datos")
+                error_msg = response.get("message") or response.get("detail", "Error desconocido al cargar datos")
                 self.error_message = error_msg
                 logger.error(f"Error al cargar datos: {error_msg}")
                 print(f"✗ Error al cargar explorador: {error_msg}")

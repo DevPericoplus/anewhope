@@ -4,13 +4,15 @@ from pathlib import Path
 from typing import Any, AsyncGenerator
 
 import asyncio
-import importlib.util
 import logging
-import os
-import subprocess
-import sys
 
 import reflex as rx
+
+from adapters.api_client import (
+    get_organization_projects,
+    get_project_versions,
+    get_version_state,
+)
 
 
 def load_flujos_content() -> str:
@@ -36,90 +38,6 @@ FLOW_BOX_PADDING_Y = "0.2em"
 FLOW_ARROW_OFFSET = "-1.2em"
 FLOW_CARD_OFFSET = "-1.2em"
 
-
-def _load_projects_db_settings() -> dict[str, str]:
-    """Carga credenciales y nombre de base de datos para proyectos."""
-
-    env_settings = _load_env_settings_module("frontend_env_settings")
-    protected = env_settings.load_protected_settings()
-
-    return {
-        "host": os.environ.get("MARIADB_HOST", str(protected.get("mariadb_host", ""))),
-        "port": os.environ.get(
-            "MARIADB_PORT", str(protected.get("mariadb_port", 3306))
-        ),
-        "database": os.environ.get(
-            "MARIADB_PROJECTS_DATABASE",
-            str(protected.get("mariadb_ai_database", "myllm_projects_db")),
-        ),
-        "user": os.environ.get(
-            "MARIADB_READER_USER", protected.get("mariadb_reader_user", "")
-        ),
-        "password": os.environ.get(
-            "MARIADB_READER_PASSWORD",
-            protected.get("mariadb_reader_password", ""),
-        ),
-        "cli_path": os.environ.get(
-            "MARIADB_CLI_PATH", protected.get("mariadb_cli_path", "")
-        ),
-    }
-
-
-def _load_env_settings_module(module_name: str) -> Any:
-    """Carga el módulo de configuración compartida."""
-
-    module_path = (
-        Path(__file__).resolve().parents[4]
-        / "src/2_shared_application/config/env_settings.py"
-    )
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("No se pudo cargar el módulo de configuración")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-def _run_mysql_query(query: str) -> list[list[str]]:
-    """Ejecuta una consulta SQL y devuelve filas."""
-
-    settings = _load_projects_db_settings()
-    cmd = [
-        settings["cli_path"],
-        "-h",
-        settings["host"],
-        "-P",
-        settings["port"],
-        "-u",
-        settings["user"],
-        f"-p{settings['password']}",
-        "--database",
-        settings["database"],
-        "-N",
-        "-B",
-        "-e",
-        query,
-    ]
-    try:
-        result = subprocess.run(
-            cmd,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        logger.error(
-            "Error al consultar proyectos: %s",
-            exc.stderr.strip() if exc.stderr else exc,
-        )
-        return []
-    rows: list[list[str]] = []
-    for line in result.stdout.splitlines():
-        if not line.strip():
-            continue
-        rows.append(line.split("\t"))
-    return rows
 
 
 class FlujosState(rx.State):
@@ -185,32 +103,50 @@ class FlujosState(rx.State):
         self.actual_workflow_state[key] = not self.actual_workflow_state[key]
         self.display_state = self.actual_workflow_state
 
-    def initialize_from_session(self, organization_id: int) -> list[rx.EventHandler]:
+    async def initialize_from_session(self, organization_id: int) -> list[rx.EventHandler]:
         """Inicializa selectores desde la sesión."""
 
         self.organization_id = organization_id
-        self._load_projects()
-        self._load_versions()
-        self._refresh_estado()
+
+        from web_frontend.web_frontend import State as MainState
+        main_state = await self.get_state(MainState)
+        access_token = main_state.access_token
+        session_token = main_state.session_token
+
+        self._load_projects(access_token, session_token)
+        self._load_versions(access_token, session_token)
+        self._refresh_estado(access_token, session_token)
         return [type(self).play_startup_flow]
 
-    def set_project(self, project_name: str) -> list[rx.EventHandler]:
+    async def set_project(self, project_name: str) -> list[rx.EventHandler]:
         """Actualiza el proyecto activo y recarga versiones."""
 
         self.selected_project_name = project_name
         self.selected_project_id = self._get_project_id(project_name)
-        self._load_versions()
-        self._refresh_estado()
+
+        from web_frontend.web_frontend import State as MainState
+        main_state = await self.get_state(MainState)
+        access_token = main_state.access_token
+        session_token = main_state.session_token
+
+        self._load_versions(access_token, session_token)
+        self._refresh_estado(access_token, session_token)
         return [type(self).play_startup_flow]
 
-    def set_version(self, version_value: str) -> list[rx.EventHandler]:
+    async def set_version(self, version_value: str) -> list[rx.EventHandler]:
         """Actualiza la versión activa y recarga el estado."""
 
         try:
             self.selected_version_id = int(version_value)
         except ValueError:
             self.selected_version_id = 0
-        self._refresh_estado()
+
+        from web_frontend.web_frontend import State as MainState
+        main_state = await self.get_state(MainState)
+        access_token = main_state.access_token
+        session_token = main_state.session_token
+
+        self._refresh_estado(access_token, session_token)
         return [type(self).play_startup_flow]
 
     def _get_project_id(self, project_name: str) -> int:
@@ -221,8 +157,8 @@ class FlujosState(rx.State):
                 return int(project.get("id", 0))
         return 0
 
-    def _load_projects(self) -> None:
-        """Carga proyectos desde la base de datos."""
+    def _load_projects(self, access_token: str, session_token: str) -> None:
+        """Carga proyectos via API."""
 
         if self.organization_id <= 0:
             self.projects = []
@@ -230,45 +166,60 @@ class FlujosState(rx.State):
             self.selected_project_name = ""
             self.selected_project_id = 0
             return
-        rows = _run_mysql_query(
-            "SELECT id, nombre FROM proyectos "
-            f"WHERE id_organizacion = {int(self.organization_id)} "
-            "ORDER BY nombre"
-        )
-        self.projects = [
-            {"id": int(row[0]), "name": row[1]} for row in rows if len(row) >= 2
-        ]
-        self.project_names = [project["name"] for project in self.projects]
-        if self.project_names:
-            if self.selected_project_name not in self.project_names:
-                self.selected_project_name = self.project_names[0]
-            self.selected_project_id = self._get_project_id(self.selected_project_name)
-        else:
-            self.selected_project_name = ""
-            self.selected_project_id = 0
 
-    def _load_versions(self) -> None:
-        """Carga versiones asociadas al proyecto."""
+        try:
+            projects_data = get_organization_projects(
+                organization_id=self.organization_id,
+                access_token=access_token,
+                session_token=session_token,
+            )
+            self.projects = [
+                {"id": p.get("id"), "name": p.get("nombre", "")}
+                for p in projects_data
+            ]
+            self.project_names = [project["name"] for project in self.projects]
+            if self.project_names:
+                if self.selected_project_name not in self.project_names:
+                    self.selected_project_name = self.project_names[0]
+                self.selected_project_id = self._get_project_id(
+                    self.selected_project_name
+                )
+            else:
+                self.selected_project_name = ""
+                self.selected_project_id = 0
+        except Exception as exc:
+            logger.error("Error al cargar proyectos via API: %s", exc)
+            self.projects = []
+            self.project_names = []
+
+    def _load_versions(self, access_token: str, session_token: str) -> None:
+        """Carga versiones via API."""
 
         if self.organization_id <= 0 or self.selected_project_id <= 0:
             self.versions = []
             self.selected_version_id = 0
             return
-        rows = _run_mysql_query(
-            "SELECT id_version FROM versiones "
-            f"WHERE id_organizacion = {int(self.organization_id)} "
-            f"AND id_proyecto = {int(self.selected_project_id)} "
-            "ORDER BY id_version"
-        )
-        self.versions = [int(row[0]) for row in rows if row]
-        if self.versions:
-            if self.selected_version_id not in self.versions:
-                self.selected_version_id = self.versions[0]
-        else:
-            self.selected_version_id = 0
 
-    def _refresh_estado(self) -> None:
-        """Actualiza el estado final desde la tabla estado."""
+        try:
+            response = get_project_versions(
+                project_id=self.selected_project_id,
+                organization_id=self.organization_id,
+                access_token=access_token,
+                session_token=session_token,
+            )
+            versiones_data = response.get("versiones", [])
+            self.versions = [v.get("id_version", 0) for v in versiones_data]
+            if self.versions:
+                if self.selected_version_id not in self.versions:
+                    self.selected_version_id = self.versions[0]
+            else:
+                self.selected_version_id = 0
+        except Exception as exc:
+            logger.error("Error al cargar versiones via API: %s", exc)
+            self.versions = []
+
+    def _refresh_estado(self, access_token: str, session_token: str) -> None:
+        """Actualiza el estado del workflow via API (tabla estado_version)."""
 
         if (
             self.organization_id <= 0
@@ -276,27 +227,58 @@ class FlujosState(rx.State):
             or self.selected_version_id <= 0
         ):
             return
-        # FIX: estado.id_version almacena el PRIMARY KEY de versiones.id, no el número de versión
-        # Por eso usamos un subquery para obtener el id correcto
-        rows = _run_mysql_query(
-            "SELECT propuesta_cliente, revision_interna, propuesta_mejoras, "
-            "aceptacion_cliente, aceptacion_interna, entrenamiento_inicial, "
-            "evaluacion_entrenamiento, reentrenamiento, optimizacion, "
-            "aprobacion_calidad, generacion_llm, notificacion_descarga "
-            "FROM estado "
-            f"WHERE id_organizacion = {int(self.organization_id)} "
-            f"AND id_proyecto = {int(self.selected_project_id)} "
-            f"AND id_version = (SELECT id FROM versiones WHERE id_proyecto = {int(self.selected_project_id)} AND id_version = {int(self.selected_version_id)}) "
-            "LIMIT 1"
-        )
-        if not rows or len(rows[0]) < 12:
+
+        try:
+            response = get_version_state(
+                project_id=self.selected_project_id,
+                version_id=self.selected_version_id,
+                access_token=access_token,
+                session_token=session_token,
+            )
+
+            if not response.get("success"):
+                self.actual_workflow_state = dict.fromkeys(
+                    self.actual_workflow_state.keys(), False
+                )
+                return
+
+            data = response.get("data", {})
+            if not data:
+                self.actual_workflow_state = dict.fromkeys(
+                    self.actual_workflow_state.keys(), False
+                )
+                return
+
+            # Mapeo estado_version → workflow display
+            self.actual_workflow_state = {
+                "propuesta_cliente": True,
+                "revision_interna": bool(data.get("revision_interna", False)),
+                "propuesta_mejoras": bool(data.get("propuesta_mejoras", False)),
+                "aceptacion_cliente": bool(data.get("final_c", False)),
+                "aceptacion_interna": bool(data.get("final_i", False)),
+                "entrenamiento_inicial": bool(
+                    data.get("entrenamiento_inicial_completado", False)
+                ),
+                "evaluacion_entrenamiento": bool(
+                    data.get("evaluacion_entrenamiento", False)
+                ),
+                "reentrenamiento": bool(data.get("reentrenamiento", False)),
+                "optimizacion": bool(data.get("optimizacion", False)),
+                "aprobacion_calidad": bool(
+                    data.get("control_calidad_aprobado", False)
+                ),
+                "generacion_llm": bool(
+                    data.get("generacion_llm_completada", False)
+                ),
+                "notificacion_descarga": bool(
+                    data.get("notificacion_descarga_enviada", False)
+                ),
+            }
+        except Exception as exc:
+            logger.error("Error al cargar estado via API: %s", exc)
             self.actual_workflow_state = dict.fromkeys(
                 self.actual_workflow_state.keys(), False
             )
-            return
-        values = [value == "1" for value in rows[0][:12]]
-        keys = list(self.actual_workflow_state.keys())
-        self.actual_workflow_state = dict(zip(keys, values))
 
     @rx.var
     def versions_as_strings(self) -> list[str]:

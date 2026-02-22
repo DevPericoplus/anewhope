@@ -1377,6 +1377,224 @@ def create_support_ticket(
 
 
 # ============================================================================
+# GESTIÓN DE CONVERSACIONES Y CAMBIOS
+# ============================================================================
+
+
+def get_organization_tickets(
+    organization_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> list[dict[str, Any]]:
+    """
+    Obtiene los tickets de una organización.
+
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+
+    Returns:
+        Lista de tickets
+    """
+    headers = _build_auth_headers(access_token, session_token)
+
+    response = _request_middleware(
+        "GET",
+        f"/tickets/organization/{organization_id}",
+        headers=headers,
+    )
+
+    if isinstance(response, list):
+        return response
+    return response.get("tickets", []) if isinstance(response, dict) else []
+
+
+def get_user_conversation(
+    user_id: int,
+    org_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Busca conversación abierta de un usuario.
+
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+
+    Returns:
+        {"found": bool, "id_conversacion": int}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+
+    response = _request_middleware(
+        "GET",
+        f"/conversations/user/{user_id}?org_id={org_id}",
+        headers=headers,
+    )
+
+    if isinstance(response, dict):
+        return response
+    return {"found": False, "id_conversacion": 0}
+
+
+def create_conversation(
+    id_organizacion: int,
+    id_usuario_cliente: int,
+    asunto: str = "Consulta sobre proyecto",
+    prioridad: str = "media",
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Crea una nueva conversación.
+
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+
+    Returns:
+        {"success": True, "id_conversacion": int}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+
+    response = _request_middleware(
+        "POST",
+        "/conversations",
+        payload={
+            "id_organizacion": id_organizacion,
+            "id_usuario_cliente": id_usuario_cliente,
+            "asunto": asunto,
+            "prioridad": prioridad,
+        },
+        headers=headers,
+    )
+
+    return dict(response) if isinstance(response, dict) else {}
+
+
+def get_conversation_messages(
+    conversation_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> list[dict[str, Any]]:
+    """
+    Obtiene los mensajes de una conversación.
+
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+
+    Returns:
+        Lista de mensajes
+    """
+    headers = _build_auth_headers(access_token, session_token)
+
+    response = _request_middleware(
+        "GET",
+        f"/conversations/{conversation_id}/messages",
+        headers=headers,
+    )
+
+    if isinstance(response, list):
+        return response
+    return response.get("messages", []) if isinstance(response, dict) else []
+
+
+def send_conversation_message(
+    conversation_id: int,
+    id_usuario_emisor: int,
+    tipo_emisor: str,
+    texto_mensaje: str,
+    id_ticket_referenciado: int | None = None,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Envía un mensaje en una conversación.
+
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+
+    Returns:
+        {"success": True, "id_mensaje": int}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+
+    payload: dict[str, Any] = {
+        "id_usuario_emisor": id_usuario_emisor,
+        "tipo_emisor": tipo_emisor,
+        "texto_mensaje": texto_mensaje,
+    }
+    if id_ticket_referenciado is not None:
+        payload["id_ticket_referenciado"] = id_ticket_referenciado
+
+    response = _request_middleware(
+        "POST",
+        f"/conversations/{conversation_id}/messages",
+        payload=payload,
+        headers=headers,
+    )
+
+    return dict(response) if isinstance(response, dict) else {}
+
+
+def mark_conversation_read(
+    conversation_id: int,
+    tipo_lector: str,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """
+    Marca mensajes como leídos.
+
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+
+    Returns:
+        {"success": True}
+    """
+    headers = _build_auth_headers(access_token, session_token)
+
+    response = _request_middleware(
+        "POST",
+        f"/conversations/{conversation_id}/mark-read",
+        payload={"tipo_lector": tipo_lector},
+        headers=headers,
+    )
+
+    return dict(response) if isinstance(response, dict) else {}
+
+
+def get_cambios_calendar(
+    org_id: int,
+    mes: int | None = None,
+    anio: int | None = None,
+    proyecto_id: int | None = None,
+    access_token: str = "",
+    session_token: str = "",
+) -> list[dict[str, Any]]:
+    """
+    Obtiene eventos del calendario agrupados por día.
+
+    Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
+
+    Returns:
+        Lista de eventos agrupados por día
+    """
+    headers = _build_auth_headers(access_token, session_token)
+
+    params = []
+    if mes is not None:
+        params.append(f"mes={mes}")
+    if anio is not None:
+        params.append(f"anio={anio}")
+    if proyecto_id is not None:
+        params.append(f"proyecto_id={proyecto_id}")
+    qs = f"?{'&'.join(params)}" if params else ""
+
+    response = _request_middleware(
+        "GET",
+        f"/cambios/organization/{org_id}{qs}",
+        headers=headers,
+    )
+
+    if isinstance(response, list):
+        return response
+    return []
+
+
+# ============================================================================
 # GESTIÓN DE TECNOLOGÍAS
 # ============================================================================
 
@@ -1387,9 +1605,9 @@ def get_tecnologias(
 ) -> dict[str, Any]:
     """
     Obtiene la lista de tecnologías disponibles.
-    
+
     Flujo: Frontend → Middleware → Broker → Backend Core → MariaDB
-    
+
     Returns:
         {"tecnologias": [...], "total": int}
     """

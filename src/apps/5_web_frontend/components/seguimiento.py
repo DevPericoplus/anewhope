@@ -11,9 +11,17 @@ import reflex as rx
 import datetime
 import pydantic
 import calendar
-import importlib.util
-from pathlib import Path
-from sqlalchemy import create_engine, text
+
+from adapters.api_client import (
+    get_organization_projects,
+    get_organization_tickets,
+    get_user_conversation,
+    create_conversation,
+    get_conversation_messages,
+    send_conversation_message,
+    mark_conversation_read,
+    get_cambios_calendar,
+)
 
 
 # ============================================================================
@@ -50,36 +58,6 @@ def get_formatted_time():
     return f"{now.day} de {meses[now.month]} de {now.year} a las {now.strftime('%H:%M')}"
 
 
-def _load_conversaciones_adapter():
-    """Carga el adapter de conversaciones usando importlib."""
-    adapter_path = (
-        Path(__file__).resolve().parents[3]
-        / "2_shared_application/adapters/conversaciones_adapter.py"
-    )
-    spec = importlib.util.spec_from_file_location("conversaciones_adapter", adapter_path)
-    if spec is None or spec.loader is None:
-        raise ImportError("No se pudo cargar el adaptador de conversaciones")
-
-    adapter_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(adapter_module)
-    return adapter_module
-
-
-def _load_cambios_adapter():
-    """Carga el adapter de cambios usando importlib."""
-    adapter_path = (
-        Path(__file__).resolve().parents[3]
-        / "2_shared_application/adapters/cambios_adapter.py"
-    )
-    spec = importlib.util.spec_from_file_location("cambios_adapter", adapter_path)
-    if spec is None or spec.loader is None:
-        raise ImportError("No se pudo cargar el adaptador de cambios")
-
-    adapter_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(adapter_module)
-    return adapter_module
-
-
 # ============================================================================
 # CALENDARIO (desde template)
 # ============================================================================
@@ -106,6 +84,7 @@ class SeguimientoState(rx.State):
     seguimiento_projects_select: list[str] = []
     seguimiento_project_name: str = ""
     seguimiento_project_id: int = 0
+    _projects_data: list[dict] = []  # Cache de {id, nombre} para buscar id por nombre
 
     # === NOTIFICACIONES ===
     messages: list[Message] = []
@@ -135,28 +114,11 @@ class SeguimientoState(rx.State):
     is_loading_tickets: bool = False
     tickets_error: str = ""
 
-    async def _get_db_engine(self):
-        """Crea el engine de la base de datos para myllm_projects_db."""
-        try:
-            # Leer configuración de BD desde protected_values
-            env_settings_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "config" / "env_settings.py"
-            spec = importlib.util.spec_from_file_location("env_settings_seg", env_settings_path)
-            env_mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(env_mod)
-            protected = env_mod.load_protected_settings()
-
-            import os
-            from urllib.parse import quote_plus
-            DB_HOST = os.environ.get("MARIADB_HOST", str(protected.get("mariadb_host", "localhost")))
-            DB_PORT = os.environ.get("MARIADB_PORT", str(protected.get("mariadb_port", 3306)))
-            DB_USER = protected.get("mariadb_admin_user", "myllm_admin")
-            DB_PASS = quote_plus(protected.get("mariadb_admin_password", ""))
-            DB_NAME = protected.get("mariadb_ai_database", "myllm_projects_db")
-            engine = create_engine(f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
-            return engine
-        except Exception as e:
-            print(f"Error creando engine: {e}")
-            return None
+    async def _get_tokens(self):
+        """Obtiene access_token y session_token del MainState."""
+        from web_frontend.web_frontend import State as MainState
+        main_state = await self.get_state(MainState)
+        return main_state.access_token, main_state.session_token
 
     def set_new_message(self, value: str):
         """Setter explícito para new_message."""
@@ -166,43 +128,27 @@ class SeguimientoState(rx.State):
 
     async def load_or_create_conversacion(self):
         """Carga o crea la conversación del usuario actual con su organización."""
-        engine = await self._get_db_engine()
-        if not engine:
-            self.conversaciones_error = "Error de conexión a base de datos"
-            return
-
         try:
             from web_frontend.web_frontend import State as MainState
-            conversaciones_adapter = _load_conversaciones_adapter()
-
             main_state = await self.get_state(MainState)
             user_id = main_state.user_id
             org_id = main_state.organization_id
+            at, st = main_state.access_token, main_state.session_token
 
-            # Buscar conversación existente del usuario
-            with engine.connect() as conn:
-                query = text("""
-                    SELECT id_conversacion
-                    FROM myllm_projects_db.conversaciones
-                    WHERE id_organizacion = :org_id
-                      AND id_usuario_cliente = :user_id
-                      AND estado IN ('abierta', 'en_curso')
-                    ORDER BY fecha_ultima_actualizacion DESC
-                    LIMIT 1
-                """)
-                result = conn.execute(query, {"org_id": org_id, "user_id": user_id}).fetchone()
+            # Buscar conversación existente
+            result = get_user_conversation(user_id, org_id, access_token=at, session_token=st)
 
-                if result:
-                    self.id_conversacion_actual = result[0]
-                else:
-                    # Crear nueva conversación
-                    self.id_conversacion_actual = conversaciones_adapter.crear_conversacion(
-                        engine=engine,
-                        id_organizacion=org_id,
-                        id_usuario_cliente=user_id,
-                        asunto="Consulta sobre proyecto",
-                        prioridad="media"
-                    )
+            if result.get("found"):
+                self.id_conversacion_actual = result["id_conversacion"]
+            else:
+                # Crear nueva conversación
+                create_result = create_conversation(
+                    id_organizacion=org_id,
+                    id_usuario_cliente=user_id,
+                    access_token=at,
+                    session_token=st,
+                )
+                self.id_conversacion_actual = create_result.get("id_conversacion", 0)
 
             # Cargar mensajes
             await self.load_messages()
@@ -212,32 +158,32 @@ class SeguimientoState(rx.State):
             self.conversaciones_error = f"Error: {str(e)}"
 
     async def load_messages(self):
-        """Carga los mensajes de la conversación actual desde la BD."""
-        engine = await self._get_db_engine()
-        if not engine or self.id_conversacion_actual == 0:
+        """Carga los mensajes de la conversación actual via API."""
+        if self.id_conversacion_actual == 0:
             return
 
         try:
-            conversaciones_adapter = _load_conversaciones_adapter()
+            at, st = await self._get_tokens()
 
-            mensajes = conversaciones_adapter.obtener_mensajes_conversacion(
-                engine=engine,
-                id_conversacion=self.id_conversacion_actual
+            mensajes = get_conversation_messages(
+                self.id_conversacion_actual, access_token=at, session_token=st
             )
 
             self.messages = []
             for msg in mensajes:
+                fecha = msg.get("fecha_envio", "")
+                if fecha and not isinstance(fecha, str):
+                    fecha = fecha.strftime("%d de %B de %Y a las %H:%M")
                 self.messages.append(Message(
-                    text=msg["texto_mensaje"],
-                    sender=msg["tipo_emisor"],
-                    time=msg["fecha_envio"].strftime("%d de %B de %Y a las %H:%M") if msg["fecha_envio"] else ""
+                    text=msg.get("texto_mensaje", ""),
+                    sender=msg.get("tipo_emisor", ""),
+                    time=str(fecha) if fecha else ""
                 ))
 
             # Marcar como leídos por cliente
-            conversaciones_adapter.marcar_mensajes_como_leidos(
-                engine=engine,
-                id_conversacion=self.id_conversacion_actual,
-                tipo_lector="cliente"
+            mark_conversation_read(
+                self.id_conversacion_actual, "cliente",
+                access_token=at, session_token=st,
             )
 
         except Exception as e:
@@ -245,31 +191,25 @@ class SeguimientoState(rx.State):
             self.conversaciones_error = f"Error: {str(e)}"
 
     async def send_message(self):
-        """Envía el mensaje a la base de datos."""
+        """Envía el mensaje via API."""
         if not self.new_message or self.id_conversacion_actual == 0:
-            return
-
-        engine = await self._get_db_engine()
-        if not engine:
             return
 
         try:
             from web_frontend.web_frontend import State as MainState
-            conversaciones_adapter = _load_conversaciones_adapter()
-
             main_state = await self.get_state(MainState)
             user_id = main_state.user_id
+            at, st = main_state.access_token, main_state.session_token
 
-            # Guardar en BD
-            conversaciones_adapter.enviar_mensaje(
-                engine=engine,
-                id_conversacion=self.id_conversacion_actual,
+            send_conversation_message(
+                conversation_id=self.id_conversacion_actual,
                 id_usuario_emisor=user_id,
                 tipo_emisor="cliente",
-                texto_mensaje=self.new_message
+                texto_mensaje=self.new_message,
+                access_token=at,
+                session_token=st,
             )
 
-            # Recargar mensajes
             self.new_message = ""
             await self.load_messages()
 
@@ -284,64 +224,32 @@ class SeguimientoState(rx.State):
     # === MÉTODOS CALENDARIO ===
 
     async def load_events_data(self):
-        """Carga eventos del calendario desde la tabla cambios."""
-        print("[DEBUG CALENDARIO FRONTEND] load_events_data INICIADO")
-
-        # Obtener organización del usuario desde MainState
+        """Carga eventos del calendario via API."""
         try:
             from web_frontend.web_frontend import State as MainState
             main_state = await self.get_state(MainState)
             org_id = main_state.organization_id
+            at, st = main_state.access_token, main_state.session_token
 
             if org_id == 0:
-                print("[DEBUG CALENDARIO FRONTEND] No hay organización en sesión")
                 self.events_data = []
                 return
-        except Exception as e:
-            print(f"[DEBUG CALENDARIO FRONTEND] Error obteniendo org_id: {e}")
-            self.events_data = []
-            return
 
-        engine = await self._get_db_engine()
-        if not engine:
-            print("[DEBUG CALENDARIO FRONTEND] No se pudo obtener engine")
-            self.events_data = []
-            return
-
-        try:
-            cambios_adapter = _load_cambios_adapter()
-
-            # Obtener mes y año seleccionados
             mes = self._month_map.get(self.selected_month, datetime.datetime.now().month)
             anio = int(self.selected_year)
-
-            # Determinar id_proyecto (None si no hay proyecto seleccionado)
             id_proyecto = self.seguimiento_project_id if self.seguimiento_project_id > 0 else None
 
-            print(f"[DEBUG CALENDARIO FRONTEND] Consultando eventos para:")
-            print(f"[DEBUG CALENDARIO FRONTEND]   org_id={org_id}")
-            print(f"[DEBUG CALENDARIO FRONTEND]   mes={mes} ({self.selected_month})")
-            print(f"[DEBUG CALENDARIO FRONTEND]   año={anio}")
-            print(f"[DEBUG CALENDARIO FRONTEND]   proyecto_id={id_proyecto}")
-
-            # Obtener eventos agrupados por día
-            eventos = cambios_adapter.obtener_cambios_agrupados_por_dia(
-                engine=engine,
-                id_organizacion=org_id,
+            self.events_data = get_cambios_calendar(
+                org_id=org_id,
                 mes=mes,
                 anio=anio,
-                id_proyecto=id_proyecto
+                proyecto_id=id_proyecto,
+                access_token=at,
+                session_token=st,
             )
-
-            self.events_data = eventos
-            print(f"[DEBUG CALENDARIO FRONTEND] Eventos cargados: {len(eventos)} días con eventos")
-            for evento in eventos[:3]:  # Mostrar primeros 3
-                print(f"[DEBUG CALENDARIO FRONTEND]   - {evento['date']}: {evento['count']} evento(s), color={evento['color']}")
 
         except Exception as e:
             print(f"[ERROR CALENDARIO FRONTEND] Error al cargar eventos: {e}")
-            import traceback
-            traceback.print_exc()
             self.events_data = []
 
     @rx.var
@@ -466,78 +374,43 @@ class SeguimientoState(rx.State):
     async def set_seguimiento_project(self, project_name: str):
         """Cambia el proyecto seleccionado y carga tickets y eventos del calendario."""
         self.seguimiento_project_name = project_name
-        engine = await self._get_db_engine()
-        if not engine:
-            self.tickets_error = "Error de conexión a base de datos"
-            return
 
-        try:
-            with engine.connect() as conn:
-                query = text("""
-                    SELECT id FROM myllm_projects_db.proyectos
-                    WHERE nombre = :nombre
-                    LIMIT 1
-                """)
-                result = conn.execute(query, {"nombre": project_name}).fetchone()
+        # Buscar id del proyecto en los datos cacheados
+        project_id = 0
+        for p in self._projects_data:
+            if p.get("nombre") == project_name:
+                project_id = p.get("id", 0)
+                break
 
-                if result:
-                    self.seguimiento_project_id = result[0]
-                    await self.load_tickets()
-                    # Recargar eventos del calendario con el proyecto seleccionado
-                    await self.load_events_data()
-                else:
-                    self.seguimiento_project_id = 0
-                    self.tickets_list = []
-                    # Recargar eventos (sin filtro de proyecto)
-                    await self.load_events_data()
-
-        except Exception as e:
-            print(f"Error al obtener project_id: {e}")
-            self.tickets_error = f"Error: {str(e)}"
+        self.seguimiento_project_id = project_id
+        await self.load_tickets()
+        await self.load_events_data()
 
     async def load_tickets(self):
-        """Carga los tickets del proyecto seleccionado."""
+        """Carga los tickets de la organización via API."""
         self.is_loading_tickets = True
         self.tickets_error = ""
-        engine = await self._get_db_engine()
-        if not engine:
-            self.tickets_error = "Error de conexión a base de datos"
-            self.is_loading_tickets = False
-            return
 
         try:
             from web_frontend.web_frontend import State as MainState
             main_state = await self.get_state(MainState)
-            user_id = main_state.user_id
             org_id = main_state.organization_id
+            at, st = main_state.access_token, main_state.session_token
 
-            with engine.connect() as conn:
-                query = text("""
-                    SELECT id, titulo, estado, prioridad, fecha_creacion, fecha_actualizacion
-                    FROM myllm_projects_db.tickets
-                    WHERE id_organizacion = :org_id
-                      AND cliente_id = :user_id
-                      AND (id_proyecto = :project_id OR id_proyecto IS NULL)
-                    ORDER BY fecha_actualizacion DESC, fecha_creacion DESC
-                    LIMIT 50
-                """)
+            all_tickets = get_organization_tickets(
+                org_id, access_token=at, session_token=st
+            )
 
-                results = conn.execute(query, {
-                    "org_id": org_id,
-                    "user_id": user_id,
-                    "project_id": self.seguimiento_project_id if self.seguimiento_project_id > 0 else None
+            self.tickets_list = []
+            for t in all_tickets:
+                self.tickets_list.append({
+                    "id": t.get("id", 0),
+                    "titulo": t.get("titulo", ""),
+                    "estado": t.get("estado", ""),
+                    "prioridad": t.get("prioridad", ""),
+                    "fecha_creacion": str(t.get("fecha_creacion", "")),
+                    "fecha_actualizacion": str(t.get("fecha_actualizacion", "")),
                 })
-
-                self.tickets_list = []
-                for row in results:
-                    self.tickets_list.append({
-                        "id": row[0],
-                        "titulo": row[1],
-                        "estado": row[2],
-                        "prioridad": row[3],
-                        "fecha_creacion": row[4].strftime("%Y-%m-%d %H:%M") if row[4] else "",
-                        "fecha_actualizacion": row[5].strftime("%Y-%m-%d %H:%M") if row[5] else "",
-                    })
 
         except Exception as e:
             print(f"Error al cargar tickets: {e}")
@@ -548,24 +421,18 @@ class SeguimientoState(rx.State):
     @rx.event
     async def on_mount_seguimiento(self):
         """Se ejecuta cuando se monta el componente."""
-        engine = await self._get_db_engine()
-        if not engine:
-            return
-
         try:
             from web_frontend.web_frontend import State as MainState
             main_state = await self.get_state(MainState)
             org_id = main_state.organization_id
+            at, st = main_state.access_token, main_state.session_token
 
-            # Cargar proyectos
-            with engine.connect() as conn:
-                query = text("""
-                    SELECT nombre FROM myllm_projects_db.proyectos
-                    WHERE id_organizacion = :org_id
-                    ORDER BY nombre
-                """)
-                results = conn.execute(query, {"org_id": org_id})
-                self.seguimiento_projects_select = [row[0] for row in results]
+            # Cargar proyectos via API
+            projects = get_organization_projects(
+                org_id, access_token=at, session_token=st
+            )
+            self._projects_data = projects
+            self.seguimiento_projects_select = [p.get("nombre", "") for p in projects]
 
             # Cargar conversación y mensajes
             await self.load_or_create_conversacion()

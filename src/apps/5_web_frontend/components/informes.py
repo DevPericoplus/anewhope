@@ -3,11 +3,13 @@ Componente de Informes para el frontend.
 Muestra informes y estadísticas del sistema.
 """
 import reflex as rx
-import importlib.util
 import re
-from pathlib import Path
-from sqlalchemy import create_engine
-from adapters.api_client import get_project_versions, list_informe_files, get_informe_content
+from adapters.api_client import (
+    get_organization_projects,
+    get_project_versions,
+    list_informe_files,
+    get_informe_content,
+)
 
 # Colores del tema
 COLORS = {
@@ -20,20 +22,6 @@ COLORS = {
     "input": "#3a3a3a",
     "muted_foreground": "#A0A0A0",
 }
-
-
-def _load_cambios_adapter():
-    """Carga dinámicamente el adaptador de cambios."""
-    adapter_path = (
-        Path(__file__).resolve().parents[3]
-        / "2_shared_application/adapters/cambios_adapter.py"
-    )
-    spec = importlib.util.spec_from_file_location("cambios_adapter", adapter_path)
-    if spec is None or spec.loader is None:
-        raise ImportError("No se pudo cargar el módulo cambios_adapter")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 class InformesState(rx.State):
@@ -74,51 +62,33 @@ class InformesState(rx.State):
             return ["Sin informes disponibles"]
         return [a["display_name"] for a in self.archivos]
 
-    async def _get_db_engine(self):
-        """Crea el engine de la base de datos para myllm_projects_db."""
-        try:
-            # Leer configuración de BD desde protected_values
-            env_settings_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "config" / "env_settings.py"
-            spec = importlib.util.spec_from_file_location("env_settings_inf", env_settings_path)
-            env_mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(env_mod)
-            protected = env_mod.load_protected_settings()
-
-            import os
-            from urllib.parse import quote_plus
-            DB_HOST = os.environ.get("MARIADB_HOST", str(protected.get("mariadb_host", "localhost")))
-            DB_PORT = os.environ.get("MARIADB_PORT", str(protected.get("mariadb_port", 3306)))
-            DB_USER = protected.get("mariadb_admin_user", "myllm_admin")
-            DB_PASS = quote_plus(protected.get("mariadb_admin_password", ""))
-            DB_NAME = protected.get("mariadb_ai_database", "myllm_projects_db")
-            engine = create_engine(f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
-            return engine
-        except Exception as e:
-            print(f"[ERROR INFORMES FRONTEND] Error creando engine: {e}")
-            return None
-
     async def load_proyectos(self):
-        """Carga los proyectos de la organización del usuario."""
+        """Carga los proyectos de la organización del usuario via API."""
         if self.organization_id == 0:
             self.proyectos = []
             return
 
-        engine = await self._get_db_engine()
-        if not engine:
-            return
-
         try:
-            cambios_adapter = _load_cambios_adapter()
+            from web_frontend.web_frontend import State as MainState
+            main_state = await self.get_state(MainState)
+            access_token = main_state.access_token
+            session_token = main_state.session_token
 
-            # Obtener proyectos de la organización
-            proyectos = cambios_adapter.obtener_proyectos_organizacion(
-                engine=engine,
-                id_organizacion=self.organization_id
+            projects_data = get_organization_projects(
+                organization_id=self.organization_id,
+                access_token=access_token,
+                session_token=session_token,
             )
+
+            proyectos = []
+            for p in projects_data:
+                proyectos.append({
+                    "id": p.get("id"),
+                    "nombre": p.get("nombre", ""),
+                })
 
             print(f"[DEBUG INFORMES FRONTEND] Proyectos obtenidos: {len(proyectos)}")
             self.proyectos = proyectos
-            # Resetear selección de proyecto
             self.selected_proyecto_id = 0
             self.selected_proyecto_nombre = "Todos"
 
