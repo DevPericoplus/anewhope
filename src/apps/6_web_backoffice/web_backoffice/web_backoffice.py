@@ -93,8 +93,6 @@ _org_helpers_spec = importlib.util.spec_from_file_location("org_selector_helpers
 _org_helpers_module = importlib.util.module_from_spec(_org_helpers_spec)
 _org_helpers_spec.loader.exec_module(_org_helpers_module)
 load_organizations_for_selector = _org_helpers_module.load_organizations_for_selector
-load_projects_for_selector = _org_helpers_module.load_projects_for_selector
-load_versions_for_selector = _org_helpers_module.load_versions_for_selector
 find_org_id_by_name = _org_helpers_module.find_org_id_by_name
 
 # Importar db_query_helper para acceso a myllm_projects_db (plantillas de jobs)
@@ -599,10 +597,14 @@ class State(SharedSessionState):
 
     def bo_load_organizations(self) -> None:
         """Carga las organizaciones accesibles por el usuario interno."""
-        orgs, default_id = load_organizations_for_selector(
+        from adapters.api_client import get_accessible_organizations
+
+        orgs, default_id = get_accessible_organizations(
             user_id=self.user_id,
             identity_type_id=self.identity_type_id,
             session_org_id=self.organization_id,
+            access_token=self.access_token,
+            session_token=self.session_token,
         )
         self.bo_organizations = orgs
         if self.bo_selected_org_id == 0 and default_id > 0:
@@ -849,6 +851,8 @@ class State(SharedSessionState):
                 organization_id,
                 user_id=self.user_id,
                 identity_type_id=self.identity_type_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
             )
         if menu in ("organizacion", "tecnologias", "proyecciones"):
             self.bo_load_organizations()
@@ -2511,6 +2515,8 @@ class State(SharedSessionState):
                 organization_id,
                 user_id=self.user_id,
                 identity_type_id=self.identity_type_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
             )
         elif self.user_active_menu == "descargas":
             # Reiniciar estado de descargas
@@ -5181,10 +5187,13 @@ class State(SharedSessionState):
         """Carga las organizaciones disponibles según asignaciones del usuario."""
         print(f"[DL] dl_load_organizations user_id={self.user_id} identity_type_id={self.identity_type_id} session_org_id={self.organization_id}")
         try:
-            orgs, default_id = load_organizations_for_selector(
+            from adapters.api_client import get_accessible_organizations
+            orgs, default_id = get_accessible_organizations(
                 user_id=self.user_id,
                 identity_type_id=self.identity_type_id,
                 session_org_id=self.organization_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
             )
             self.dl_organizations = orgs
             print(f"[DL] orgs loaded: {len(orgs)}, default_id={default_id}")
@@ -5246,28 +5255,30 @@ class State(SharedSessionState):
             return
 
         try:
-            projects, default_id = load_projects_for_selector(
-                user_id=self.user_id,
-                identity_type_id=self.identity_type_id,
+            from adapters.api_client import get_organization_projects
+            raw_projects = get_organization_projects(
                 organization_id=self.dl_selected_org_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
             )
+            projects = []
+            for p in raw_projects:
+                projects.append({
+                    "id": p.get("id", p.get("project_id", 0)),
+                    "name": p.get("name", p.get("nombre", "")),
+                })
             self.dl_projects = projects
-            print(f"[DL] projects loaded: {len(projects)}, default_id={default_id}")
-            for p in projects:
-                print(f"[DL]   project: {p}")
+            print(f"[DL] projects loaded: {len(projects)}")
 
             # Auto-seleccionar si solo hay un proyecto
             if len(self.dl_projects) == 1:
                 self.dl_selected_project_id = self.dl_projects[0]["id"]
                 self.dl_selected_project_name = self.dl_projects[0].get("name", "")
                 self.dl_load_versions()
-            elif default_id > 0:
-                for prj in self.dl_projects:
-                    if prj.get("id") == default_id:
-                        self.dl_selected_project_id = default_id
-                        self.dl_selected_project_name = prj.get("name", "")
-                        self.dl_load_versions()
-                        break
+            elif len(self.dl_projects) > 0:
+                self.dl_selected_project_id = self.dl_projects[0]["id"]
+                self.dl_selected_project_name = self.dl_projects[0].get("name", "")
+                self.dl_load_versions()
 
         except Exception as exc:
             print(f"[DL] ERROR cargando proyectos: {exc}")
@@ -5303,18 +5314,21 @@ class State(SharedSessionState):
             return
 
         try:
-            versions, default_id = load_versions_for_selector(
-                organization_id=self.dl_selected_org_id,
+            from adapters.api_client import get_project_versions
+            result = get_project_versions(
                 project_id=self.dl_selected_project_id,
+                organization_id=self.dl_selected_org_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
             )
-            # Mapear al formato esperado por dl_version_options (clave "nombre") y dl_set_selected_version (clave "id")
+            versiones = result.get("versiones", [])
             self.dl_versions = [
                 {
-                    "id": v.get("version_id", 0),
-                    "nombre": f"v{v.get('version_id', 0):03d}",
+                    "id": v.get("id_version", 0),
+                    "nombre": f"v{v.get('id_version', 0):03d}",
                 }
-                for v in versions
-                if v.get("version_id", 0) > 0
+                for v in versiones
+                if v.get("id_version", 0) > 0
             ]
 
         except Exception as exc:

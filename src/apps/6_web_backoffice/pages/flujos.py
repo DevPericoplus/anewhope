@@ -27,13 +27,6 @@ import reflex as rx
 # Importar módulos de 2_shared_application usando importlib (directorio con número)
 _shared_app_dir = Path(__file__).resolve().parents[3] / "2_shared_application"
 
-_db_helper_spec = importlib.util.spec_from_file_location(
-    "db_query_helper", _shared_app_dir / "db_query_helper.py"
-)
-_db_helper_module = importlib.util.module_from_spec(_db_helper_spec)
-_db_helper_spec.loader.exec_module(_db_helper_module)
-run_projects_db_query = _db_helper_module.run_projects_db_query
-
 _org_helpers_spec = importlib.util.spec_from_file_location(
     "org_selector_helpers", _shared_app_dir / "reflex_shared" / "org_selector_helpers.py"
 )
@@ -41,9 +34,6 @@ _org_helpers_module = importlib.util.module_from_spec(_org_helpers_spec)
 _org_helpers_spec.loader.exec_module(_org_helpers_module)
 find_org_id_by_name = _org_helpers_module.find_org_id_by_name
 find_project_id_by_name = _org_helpers_module.find_project_id_by_name
-find_version_id_by_number = _org_helpers_module.find_version_id_by_number
-load_organizations_for_selector = _org_helpers_module.load_organizations_for_selector
-load_projects_for_selector = _org_helpers_module.load_projects_for_selector
 
 
 def load_flujos_content() -> str:
@@ -79,6 +69,8 @@ class FlujosState(rx.State):
     user_id: int = 0
     identity_type_id: int = 0
     session_org_id: int = 0
+    fl_access_token: str = ""
+    fl_session_token: str = ""
 
     # --- Campos existentes ---
     projects: list[dict[str, Any]] = []
@@ -192,7 +184,12 @@ class FlujosState(rx.State):
     # --- Inicialización y cambio de selectores ---
 
     def initialize_from_session(
-        self, organization_id: int, user_id: int = 0, identity_type_id: int = 0
+        self,
+        organization_id: int,
+        user_id: int = 0,
+        identity_type_id: int = 0,
+        access_token: str = "",
+        session_token: str = "",
     ) -> list[rx.EventHandler]:
         """Inicializa selectores desde la sesión.
 
@@ -200,16 +197,23 @@ class FlujosState(rx.State):
             organization_id: ID de organización de la sesión.
             user_id: ID del usuario interno.
             identity_type_id: Tipo de identidad del usuario.
+            access_token: Token JWT de acceso.
+            session_token: Token de sesión.
         """
         self.session_org_id = organization_id
         self.user_id = user_id
         self.identity_type_id = identity_type_id
+        self.fl_access_token = access_token
+        self.fl_session_token = session_token
 
-        # Cargar organizaciones filtradas por asignaciones
-        orgs, default_org = load_organizations_for_selector(
+        # Cargar organizaciones filtradas por asignaciones via API
+        from adapters.api_client import get_accessible_organizations
+        orgs, default_org = get_accessible_organizations(
             user_id=user_id,
             identity_type_id=identity_type_id,
             session_org_id=organization_id,
+            access_token=access_token,
+            session_token=session_token,
         )
         self.organizations = orgs
         self.selected_org_id = default_org
@@ -263,16 +267,28 @@ class FlujosState(rx.State):
             self.selected_project_id = 0
             return
 
-        projects, default_id = load_projects_for_selector(
-            user_id=self.user_id,
-            identity_type_id=self.identity_type_id,
-            organization_id=self.selected_org_id,
-        )
-        self.projects = projects
-        if projects:
-            if self.selected_project_id == 0:
-                self.selected_project_id = default_id
-        else:
+        try:
+            from adapters.api_client import get_organization_projects
+            raw_projects = get_organization_projects(
+                organization_id=self.selected_org_id,
+                access_token=self.fl_access_token,
+                session_token=self.fl_session_token,
+            )
+            projects = []
+            for p in raw_projects:
+                projects.append({
+                    "id": p.get("id", p.get("project_id", 0)),
+                    "name": p.get("name", p.get("nombre", "")),
+                })
+            self.projects = projects
+            if projects:
+                if self.selected_project_id == 0:
+                    self.selected_project_id = projects[0]["id"]
+            else:
+                self.selected_project_id = 0
+        except Exception as e:
+            logger.error("[FLUJOS] Error cargando proyectos: %s", e)
+            self.projects = []
             self.selected_project_id = 0
 
     def _load_versions(self) -> None:
@@ -282,17 +298,28 @@ class FlujosState(rx.State):
             self.versions = []
             self.selected_version_id = 0
             return
-        rows = run_projects_db_query(
-            "SELECT id_version FROM versiones "
-            f"WHERE id_organizacion = {int(self.selected_org_id)} "
-            f"AND id_proyecto = {int(self.selected_project_id)} "
-            "ORDER BY id_version"
-        )
-        self.versions = [int(row[0]) for row in rows if row]
-        if self.versions:
-            if self.selected_version_id not in self.versions:
-                self.selected_version_id = self.versions[0]
-        else:
+        try:
+            from adapters.api_client import get_project_versions
+            result = get_project_versions(
+                project_id=self.selected_project_id,
+                organization_id=self.selected_org_id,
+                access_token=self.fl_access_token,
+                session_token=self.fl_session_token,
+            )
+            versiones = result.get("versiones", [])
+            self.versions = [
+                int(v.get("id_version", 0))
+                for v in versiones
+                if v.get("id_version", 0) > 0
+            ]
+            if self.versions:
+                if self.selected_version_id not in self.versions:
+                    self.selected_version_id = self.versions[0]
+            else:
+                self.selected_version_id = 0
+        except Exception as e:
+            logger.error("[FLUJOS] Error cargando versiones: %s", e)
+            self.versions = []
             self.selected_version_id = 0
 
     def _refresh_estado(self) -> None:
@@ -322,34 +349,39 @@ class FlujosState(rx.State):
             "[FLUJOS] _refresh_estado | org=%d, project=%d, version=%d",
             self.selected_org_id, self.selected_project_id, self.selected_version_id,
         )
-        rows = run_projects_db_query(
-            "SELECT "
-            "1 as propuesta_cliente, "
-            "revision_interna, "
-            "propuesta_mejoras, "
-            "final_c as aceptacion_cliente, "
-            "final_i as aceptacion_interna, "
-            "entrenamiento_inicial_completado as entrenamiento_inicial, "
-            "evaluacion_entrenamiento, "
-            "reentrenamiento, "
-            "optimizacion, "
-            "control_calidad_aprobado as aprobacion_calidad, "
-            "generacion_llm_completada as generacion_llm, "
-            "notificacion_descarga_enviada as notificacion_descarga "
-            "FROM estado_version "
-            f"WHERE id_organizacion = {int(self.selected_org_id)} "
-            f"AND id_proyecto = {int(self.selected_project_id)} "
-            f"AND id_version = {int(self.selected_version_id)} "
-            "LIMIT 1"
-        )
-        if not rows or len(rows[0]) < 12:
+        try:
+            from adapters.api_client import get_version_state
+            result = get_version_state(
+                project_id=self.selected_project_id,
+                version_id=self.selected_version_id,
+                access_token=self.fl_access_token,
+                session_token=self.fl_session_token,
+            )
+            if not result.get("success"):
+                self.actual_workflow_state = dict.fromkeys(
+                    self.actual_workflow_state.keys(), False
+                )
+                return
+            state = result.get("state") or result.get("data") or {}
+            self.actual_workflow_state = {
+                "propuesta_cliente": True,
+                "revision_interna": bool(state.get("revision_interna", False)),
+                "propuesta_mejoras": bool(state.get("propuesta_mejoras", False)),
+                "aceptacion_cliente": bool(state.get("final_c", False)),
+                "aceptacion_interna": bool(state.get("final_i", False)),
+                "entrenamiento_inicial": bool(state.get("entrenamiento_inicial_completado", False)),
+                "evaluacion_entrenamiento": bool(state.get("evaluacion_entrenamiento", False)),
+                "reentrenamiento": bool(state.get("reentrenamiento", False)),
+                "optimizacion": bool(state.get("optimizacion", False)),
+                "aprobacion_calidad": bool(state.get("control_calidad_aprobado", False)),
+                "generacion_llm": bool(state.get("generacion_llm_completada", False)),
+                "notificacion_descarga": bool(state.get("notificacion_descarga_enviada", False)),
+            }
+        except Exception as e:
+            logger.error("[FLUJOS] Error cargando estado: %s", e)
             self.actual_workflow_state = dict.fromkeys(
                 self.actual_workflow_state.keys(), False
             )
-            return
-        values = [value == "1" for value in rows[0][:12]]
-        keys = list(self.actual_workflow_state.keys())
-        self.actual_workflow_state = dict(zip(keys, values))
 
 
 def node_card(

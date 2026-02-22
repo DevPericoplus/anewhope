@@ -42,7 +42,6 @@ _org_helpers_spec.loader.exec_module(_org_helpers_module)
 find_org_id_by_name = _org_helpers_module.find_org_id_by_name
 find_project_id_by_name = _org_helpers_module.find_project_id_by_name
 load_organizations_for_selector = _org_helpers_module.load_organizations_for_selector
-load_projects_for_selector = _org_helpers_module.load_projects_for_selector
 
 
 # ============================================================================
@@ -186,7 +185,7 @@ class SeguimientoState(rx.State):
         from web_backoffice.web_backoffice import State as MainState
         main_state = await self.get_state(MainState)
         return (
-            getattr(main_state, "token", "") or "",
+            getattr(main_state, "access_token", "") or "",
             getattr(main_state, "session_token", "") or "",
             main_state.user_id,
         )
@@ -296,7 +295,7 @@ class SeguimientoState(rx.State):
 
             send_conversation_message(
                 conversation_id=self.id_conversacion_actual,
-                user_id=user_id,
+                id_usuario_emisor=user_id,
                 tipo_emisor="interno",
                 texto_mensaje=self.new_message,
                 access_token=at,
@@ -457,25 +456,32 @@ class SeguimientoState(rx.State):
         await self.load_tickets()
 
     async def _load_seg_projects(self):
-        """Carga los proyectos de la organización seleccionada (respeta asignaciones)."""
+        """Carga los proyectos de la organización seleccionada vía API."""
         if self.seg_selected_org_id <= 0:
             self.seg_projects = []
             return
 
         try:
-            from web_backoffice.web_backoffice import State as MainState
-            main_state = await self.get_state(MainState)
+            at, st, _uid = await self._get_tokens()
+            from adapters.api_client import get_organization_projects
 
-            projects, default_id = load_projects_for_selector(
-                user_id=main_state.user_id,
-                identity_type_id=main_state.identity_type_id,
+            raw_projects = get_organization_projects(
                 organization_id=self.seg_selected_org_id,
+                access_token=at,
+                session_token=st,
             )
+            # Normalizar formato: asegurar que cada item tenga "id" y "name"
+            projects = []
+            for p in raw_projects:
+                projects.append({
+                    "id": p.get("id", p.get("project_id", 0)),
+                    "name": p.get("name", p.get("nombre", "")),
+                })
             self.seg_projects = projects
 
             # Seleccionar primer proyecto por defecto si hay
-            if projects and default_id > 0:
-                self.seg_selected_project_id = default_id
+            if projects:
+                self.seg_selected_project_id = projects[0]["id"]
             else:
                 self.seg_selected_project_id = 0
 
@@ -655,7 +661,7 @@ class SeguimientoState(rx.State):
             at, st, _uid = await self._get_tokens()
 
             tickets = get_organization_tickets(
-                org_id=org_id,
+                organization_id=org_id,
                 access_token=at,
                 session_token=st,
             )
@@ -763,11 +769,14 @@ class SeguimientoState(rx.State):
             session_org_id = main_state.organization_id
             print(f"[DEBUG BACKOFFICE] user_id={user_id}, identity_type_id={identity_type_id}")
 
-            # 1. Cargar organizaciones (respeta asignaciones)
-            orgs, default_id = load_organizations_for_selector(
+            # 1. Cargar organizaciones (respeta asignaciones) via API
+            from adapters.api_client import get_accessible_organizations
+            orgs, default_id = get_accessible_organizations(
                 user_id=user_id,
                 identity_type_id=identity_type_id,
                 session_org_id=session_org_id,
+                access_token=main_state.access_token,
+                session_token=main_state.session_token,
             )
             self.seg_organizations = orgs
             print(f"[DEBUG BACKOFFICE] Organizaciones cargadas: {len(orgs)}")

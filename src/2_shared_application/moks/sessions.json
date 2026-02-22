@@ -819,15 +819,6 @@
   ],
   "auth_logs": [
     {
-      "timestamp": "2026-02-04T18:11:11.106947Z",
-      "user_name": "adminone",
-      "event": "login_success",
-      "status": "success",
-      "ip_address": "127.0.0.1",
-      "session_id": "08a2da8e-1450-4b91-92d5-1cd731abe250",
-      "user_agent": "Python-urllib/3.13"
-    },
-    {
       "timestamp": "2026-02-04T18:18:07.615523Z",
       "user_name": "adminone",
       "event": "logout",
@@ -5363,6 +5354,16 @@
       "ip_address": "127.0.0.1",
       "session_id": "4009583c-fe7a-440d-a320-156998597cc2",
       "user_agent": "Python-urllib/3.13"
+    },
+    {
+      "timestamp": "2026-02-22T01:22:39.070708Z",
+      "user_name": "adminone",
+      "event": "login_attempt",
+      "status": "failed",
+      "ip_address": "127.0.0.1",
+      "error_code": "INVALID_PASSWORD",
+      "details": "Contraseña inválida",
+      "user_agent": "Python-urllib/3.14"
     }
   ]
 }

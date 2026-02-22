@@ -24,7 +24,6 @@ _org_helpers_spec = importlib.util.spec_from_file_location(
 _org_helpers_module = importlib.util.module_from_spec(_org_helpers_spec)
 _org_helpers_spec.loader.exec_module(_org_helpers_module)
 load_organizations_for_selector = _org_helpers_module.load_organizations_for_selector
-load_projects_for_selector = _org_helpers_module.load_projects_for_selector
 
 # Colores del tema
 COLORS = {
@@ -118,11 +117,14 @@ class InformesState(rx.State):
                 session_org_id = main_state.organization_id
             print(f"[DEBUG INFORMES] user_id={user_id}")
 
-            # Usar servicio centralizado
-            orgs, default_id = load_organizations_for_selector(
+            # Usar servicio centralizado via API
+            from adapters.api_client import get_accessible_organizations
+            orgs, default_id = get_accessible_organizations(
                 user_id=user_id,
                 identity_type_id=identity_type_id,
                 session_org_id=session_org_id,
+                access_token=main_state.access_token,
+                session_token=main_state.session_token,
             )
 
             # Convertir formato {id, name} a {id, nombre} para compatibilidad
@@ -172,16 +174,20 @@ class InformesState(rx.State):
                 user_id = main_state.user_id
                 identity_type_id = main_state.identity_type_id
 
-            # Usar servicio centralizado
-            projects, _ = load_projects_for_selector(
-                user_id=user_id,
-                identity_type_id=identity_type_id,
+            # Cargar proyectos vía API
+            from adapters.api_client import get_organization_projects
+            at = getattr(main_state, "token", "") or ""
+            st = getattr(main_state, "session_token", "") or ""
+            raw = get_organization_projects(
                 organization_id=org_id,
+                access_token=at,
+                session_token=st,
             )
 
-            # Convertir formato {id, name} a {id, nombre} para compatibilidad
+            # Convertir formato a {id, nombre} para compatibilidad
             proyectos = [
-                {"id": p["id"], "nombre": p["name"]} for p in projects
+                {"id": p.get("id", p.get("project_id", 0)), "nombre": p.get("name", p.get("nombre", ""))}
+                for p in raw
             ]
 
             print(f"[DEBUG INFORMES] Proyectos obtenidos: {len(proyectos)}")

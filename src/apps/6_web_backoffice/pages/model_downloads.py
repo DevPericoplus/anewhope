@@ -27,8 +27,6 @@ _org_helpers_spec = importlib.util.spec_from_file_location(
 _org_helpers_module = importlib.util.module_from_spec(_org_helpers_spec)
 _org_helpers_spec.loader.exec_module(_org_helpers_module)
 load_organizations_for_selector = _org_helpers_module.load_organizations_for_selector
-load_projects_for_selector = _org_helpers_module.load_projects_for_selector
-load_versions_for_selector = _org_helpers_module.load_versions_for_selector
 
 # Cargar módulo de SMS
 _send_message_by_sms = None
@@ -132,10 +130,13 @@ class ModelDownloadState(SharedSessionState):
     def init_selectors(self):
         """Inicializa los selectores cargando organizaciones."""
         try:
-            orgs, default_id = load_organizations_for_selector(
+            from adapters.api_client import get_accessible_organizations
+            orgs, default_id = get_accessible_organizations(
                 user_id=self.user_id,
                 identity_type_id=self.identity_type_id,
                 session_org_id=self.organization_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
             )
             self.dl_organizations = orgs
 
@@ -190,11 +191,16 @@ class ModelDownloadState(SharedSessionState):
             return
 
         try:
-            projects, _ = load_projects_for_selector(
-                user_id=self.user_id,
-                identity_type_id=self.identity_type_id,
+            from adapters.api_client import get_organization_projects
+            raw = get_organization_projects(
                 organization_id=self.dl_selected_org_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
             )
+            projects = [
+                {"id": p.get("id", p.get("project_id", 0)), "name": p.get("name", p.get("nombre", ""))}
+                for p in raw
+            ]
             self.dl_projects = projects
             self.dl_versions = []
             self.dl_selected_project_id = 0
@@ -233,17 +239,21 @@ class ModelDownloadState(SharedSessionState):
             return
 
         try:
-            versions, _ = load_versions_for_selector(
-                organization_id=self.dl_selected_org_id,
+            from adapters.api_client import get_project_versions
+            result = get_project_versions(
                 project_id=self.dl_selected_project_id,
+                organization_id=self.dl_selected_org_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
             )
+            versiones = result.get("versiones", [])
             self.dl_versions = [
                 {
-                    "id": v.get("version_id", 0),
-                    "nombre": f"v{v.get('version_id', 0):03d}",
+                    "id": v.get("id_version", 0),
+                    "nombre": f"v{v.get('id_version', 0):03d}",
                 }
-                for v in versions
-                if v.get("version_id", 0) > 0
+                for v in versiones
+                if v.get("id_version", 0) > 0
             ]
         except Exception as exc:
             logger.error("Error cargando versiones para selector: %s", exc)
