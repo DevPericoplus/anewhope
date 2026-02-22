@@ -74,6 +74,44 @@ SHOW TABLES LIKE '%pattern%';
 * **Dependency Injection:** Prefer passing dependencies as arguments rather than hardcoding them inside functions/classes.
 * **Docstrings:** Provide Google-style or NumPy-style docstrings for all public modules, classes, and functions.
 
+## 3.1 Flujo de Comunicación entre Aplicaciones y Servicios (OBLIGATORIO - IMPERATIVO)
+
+**REGLA FUNDAMENTAL:** Todas las comunicaciones entre aplicaciones (frontend, backoffice) y servicios (backend core, trainer, broker, middleware) DEBEN seguir estrictamente el flujo de arquitectura establecido. **NUNCA** se debe acceder directamente a la base de datos (MariaDB) ni a los adapters de la capa `2_shared_application` desde las aplicaciones web (frontend/backoffice).
+
+### Flujo obligatorio:
+
+```
+Frontend (8005) / Backoffice (8006)
+        ↓
+   api_client.py  (función wrapper que llama al Middleware)
+        ↓
+   Middleware (8007) - apife.py → routermiddleware.py → broker_backend_client.py
+        ↓
+   Broker (8008) - apibe.py → routerbroker.py → interfacetocore.py
+        ↓
+   Backend Core (8003) - apicore.py → routercore.py → adapters / BD
+        ↓
+   MariaDB
+```
+
+### Reglas imperativas:
+
+1. **PROHIBIDO** usar `sqlalchemy`, `create_engine`, `text()` o cualquier acceso directo a BD desde componentes de frontend/backoffice (carpetas `5_web_frontend`, `6_web_backoffice`).
+2. **PROHIBIDO** importar adapters de `2_shared_application/adapters/` directamente desde frontend/backoffice. Los adapters SOLO los usa el Backend Core (`3_backend`).
+3. **PROHIBIDO** importar `db_query_helper.py` o cualquier módulo de conexión a BD desde frontend/backoffice para operaciones de datos.
+4. **OBLIGATORIO** crear endpoints en toda la cadena (Backend Core → Broker → Middleware) antes de consumirlos desde las aplicaciones web.
+5. **OBLIGATORIO** usar las funciones de `api_client.py` (en cada app web) como único punto de comunicación con el backend.
+
+### Única excepción:
+
+Las operaciones de **ficheros** (upload, download) y **descarga de paquetes/modelos ZIP** pueden comunicarse directamente con el servicio `fmanagement` sin pasar por la cadena completa, ya que son operaciones de transferencia binaria.
+
+### Por qué:
+
+- En producción, MariaDB solo escucha en `localhost` del servidor backend. Las apps web no tienen conectividad directa.
+- Centralizar la lógica de negocio en Backend Core garantiza seguridad, permisos y coherencia.
+- El flujo permite escalar cada capa independientemente.
+
 ## 4. Error Handling
 * **Specific Exceptions:** Never use bare `except:`. Always catch specific exceptions (e.g., `ValueError`, `KeyError`).
 * **Custom Exceptions:** Create domain-specific exception classes inheriting from `Exception`.

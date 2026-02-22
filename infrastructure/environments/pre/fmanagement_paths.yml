@@ -86,7 +86,7 @@ rsync_enabled: true
 
 # Direcciones de sincronización
 rsync_external_direction: backend_to_trainer
-rsync_external_trigger: on_demand
+rsync_external_trigger: automatic
 rsync_models_direction: trainer_to_backend
 rsync_models_trigger: automatic
 rsync_reports_direction: trainer_to_backend
