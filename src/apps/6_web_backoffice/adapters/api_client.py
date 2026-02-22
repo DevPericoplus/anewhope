@@ -1882,20 +1882,22 @@ def create_project_version(
 def get_version_state(
     project_id: int,
     version_id: int,
+    organization_id: int = 0,
     access_token: str = "",
     session_token: str = "",
 ) -> dict[str, Any]:
     """
     Obtiene el estado actual de una versión.
-    
+
     Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
-    
+
     Args:
         project_id: ID del proyecto
         version_id: ID de la versión
+        organization_id: ID de la organización (backoffice usa la del selector)
         access_token: Token de acceso JWT
         session_token: Token de sesión JWT
-        
+
     Returns:
         {"success": bool, "state": VersionStateDto | None, "mensaje": str | None}
     """
@@ -1904,6 +1906,8 @@ def get_version_state(
         "Content-Type": "application/json",
         "X-Client-App": "backoffice",
     }
+    if organization_id > 0:
+        request_headers["X-Organization-Id"] = str(organization_id)
     if access_token:
         request_headers["Authorization"] = f"Bearer {access_token}"
     if session_token:
@@ -1933,14 +1937,15 @@ def update_version_state(
     final_c: bool | None = None,
     final_i: bool | None = None,
     updated_by_user_id: int | None = None,
+    organization_id: int = 0,
     access_token: str = "",
     session_token: str = "",
 ) -> dict[str, Any]:
     """
     Actualiza el estado de una versión.
-    
+
     Flujo: Backoffice → Middleware → Broker → Backend Core → MariaDB
-    
+
     Args:
         project_id: ID del proyecto
         version_id: ID de la versión
@@ -1950,9 +1955,10 @@ def update_version_state(
         final_c: Finalización por cliente
         final_i: Finalización por interno
         updated_by_user_id: ID del usuario que actualiza
+        organization_id: ID de la organización (backoffice usa la del selector)
         access_token: Token de acceso JWT
         session_token: Token de sesión JWT
-        
+
     Returns:
         {"success": bool, "state": VersionStateDto | None, "mensaje": str | None}
     """
@@ -1961,6 +1967,8 @@ def update_version_state(
         "Content-Type": "application/json",
         "X-Client-App": "backoffice",
     }
+    if organization_id > 0:
+        request_headers["X-Organization-Id"] = str(organization_id)
     if access_token:
         request_headers["Authorization"] = f"Bearer {access_token}"
     if session_token:
@@ -2324,12 +2332,11 @@ def fmanagement_list_all_project_versions(
     """
     Lista todas las versiones de un proyecto con sus estructuras de archivos.
 
-    Esta función obtiene todas las versiones del proyecto y carga el contenido
-    de cada una usando fmanagement, construyendo una estructura jerárquica
-    completa para el explorador.
+    Esta función descubre las versiones directamente desde DISCO vía fmanagement
+    (no desde la BD), y carga el contenido de cada una, construyendo una
+    estructura jerárquica completa para el explorador.
 
-    Flujo: Backoffice → Middleware → Backend Core → MariaDB (versiones)
-           Backoffice → Middleware → Broker → Backend Core → fmanagement (contenido)
+    Flujo: Backoffice → Middleware → Broker → Backend Core → fmanagement (disco)
 
     Args:
         org_id: ID de la organización
@@ -2373,18 +2380,28 @@ def fmanagement_list_all_project_versions(
     if not prj_folder:
         prj_folder = f"PRJ{str(project_id).zfill(5)}"
 
-    # 1. Obtener lista de versiones del proyecto
-    versions_response = get_project_versions(
-        project_id=project_id,
-        organization_id=org_id,
+    # 1. Obtener lista de versiones desde DISCO vía fmanagement (no desde BD)
+    #    Llamamos a fmanagement_list con version_folder="" para listar el
+    #    directorio del proyecto, que contiene las carpetas de versión (v001, v002, etc.)
+    import re as _re
+
+    project_listing = fmanagement_list(
+        org_folder=org_folder,
+        prj_folder=prj_folder,
+        version_folder="",
         access_token=access_token,
         session_token=session_token,
     )
 
-    versiones = versions_response.get("versiones", [])
+    # Extraer carpetas de versión del listado de disco (filtrar por patrón v\d{3})
+    disk_items = project_listing.get("items", [])
+    version_folders = sorted(
+        [item["name"] for item in disk_items
+         if item.get("is_dir") and _re.match(r'^v\d{3}$', item.get("name", ""))],
+    )
 
-    if not versiones:
-        logger.warning(f"No se encontraron versiones para el proyecto {project_id}")
+    if not version_folders:
+        logger.warning(f"No se encontraron versiones en disco para el proyecto {project_id}")
         return {
             "status": "success",
             "path": f"/data/external/{org_folder}/{prj_folder}",
@@ -2396,13 +2413,12 @@ def fmanagement_list_all_project_versions(
             }]
         }
 
-    # 2. Para cada versión, obtener su contenido desde fmanagement
+    logger.info(f"Versiones encontradas en disco: {version_folders}")
+
+    # 2. Para cada versión en disco, obtener su contenido desde fmanagement
     versions_data = []
 
-    for version_info in versiones:
-        version_id = version_info.get("id_version", 0)
-        version_name = f"v{str(version_id).zfill(3)}"  # v001, v002, etc.
-
+    for version_name in version_folders:
         logger.info(f"Cargando contenido de versión {version_name} para proyecto {project_id}")
 
         # Llamar a fmanagement_list para esta versión
@@ -2473,7 +2489,7 @@ def fmanagement_list_all_project_versions(
                     except (ValueError, Exception) as e:
                         logger.error(f"Error procesando tamaño de {version_name}: {e}")
 
-        logger.info(f"Estructura cargada: proyecto {prj_folder} con {len(versiones)} versiones")
+        logger.info(f"Estructura cargada: proyecto {prj_folder} con {len(version_folders)} versiones (desde disco)")
         return explorador_data
 
     except Exception as e:
@@ -2556,6 +2572,7 @@ def generate_file_upload_token(
     project_id: int,
     version_id: int,
     relative_path: str = "",
+    organization_id: int = 0,
     access_token: str = "",
     session_token: str = "",
 ) -> dict[str, Any]:
@@ -2565,6 +2582,7 @@ def generate_file_upload_token(
         project_id: ID del proyecto
         version_id: ID de la versión
         relative_path: Ruta relativa dentro de la versión
+        organization_id: ID de la organización (backoffice usa la del selector)
         access_token: Token de acceso del usuario
         session_token: Token de sesión del usuario
 
@@ -2579,6 +2597,8 @@ def generate_file_upload_token(
         "operation": "upload",
         "relative_path": relative_path,
     }
+    if organization_id > 0:
+        payload["organization_id"] = organization_id
 
     response = _request_middleware(
         "POST",
@@ -2594,6 +2614,7 @@ def generate_file_download_token(
     version_id: int,
     filename: str,
     relative_path: str = "",
+    organization_id: int = 0,
     access_token: str = "",
     session_token: str = "",
 ) -> dict[str, Any]:
@@ -2604,6 +2625,7 @@ def generate_file_download_token(
         version_id: ID de la versión
         filename: Nombre del archivo a descargar
         relative_path: Ruta relativa dentro de la versión
+        organization_id: ID de la organización (backoffice usa la del selector)
         access_token: Token de acceso del usuario
         session_token: Token de sesión del usuario
 
@@ -2618,6 +2640,8 @@ def generate_file_download_token(
         "operation": "download",
         "relative_path": relative_path,
     }
+    if organization_id > 0:
+        payload["organization_id"] = organization_id
 
     response = _request_middleware(
         "POST",

@@ -36,7 +36,6 @@ from adapters.api_client import (
     fmanagement_get_properties,
     generate_file_upload_token,
     generate_file_download_token,
-    get_project_versions,
     get_version_state,
     update_version_state,
 )
@@ -396,35 +395,35 @@ class ExploradorState(SharedSessionState):
 
         Obtiene los estados desde version_states tabla vía API del backend.
         """
-        print(f"[DEBUG EXPLORADOR] load_all_version_states() - project_id={self.id_proyecto}, id_organizacion={self.id_organizacion}")
+        logger.info(f"load_all_version_states() - project_id={self.id_proyecto}, id_organizacion={self.id_organizacion}")
         try:
-            # Obtener versiones del proyecto
-            versions_response = get_project_versions(
-                project_id=self.id_proyecto,
-                organization_id=self.id_organizacion,
-                access_token=self.access_token,
-                session_token=self.session_token,
-            )
-            print(f"[DEBUG EXPLORADOR] get_project_versions() llamado con org_id={self.id_organizacion}")
+            # Obtener versiones del árbol ya cargado desde disco (NO desde BD)
+            # Los items con depth==1 son las carpetas de versión (v001, v002, etc.)
+            import re as _re
+            version_names = sorted([
+                item.name for item in self.items
+                if item.depth == 1 and _re.match(r'^v\d{3}$', item.name)
+            ])
 
-            versiones = versions_response.get("versiones", [])
-
-            if not versiones:
-                logger.warning(f"No se encontraron versiones para proyecto {self.id_proyecto}")
+            if not version_names:
+                logger.warning(f"No se encontraron versiones en el árbol para proyecto {self.id_proyecto}")
                 return
+
+            logger.info(f"Versiones en árbol: {version_names}")
 
             # Limpiar diccionario de estados
             self.version_states = {}
 
-            # Para cada versión, obtener su estado desde la API
-            for version_info in versiones:
-                version_id = version_info.get("id_version", 0)
-                version_key = f"v{str(version_id).zfill(3)}"
+            # Para cada versión del árbol, obtener su estado desde la API
+            for version_key in version_names:
+                version_id = int(version_key[1:])  # "v001" → 1
 
                 # Obtener estado de esta versión
+                org_id_to_use = self.id_organizacion if self.id_organizacion > 0 else self.organization_id
                 state_response = get_version_state(
                     project_id=self.id_proyecto,
                     version_id=version_id,
+                    organization_id=org_id_to_use,
                     access_token=self.access_token,
                     session_token=self.session_token,
                 )
@@ -443,8 +442,8 @@ class ExploradorState(SharedSessionState):
                 else:
                     # Valores por defecto si falla la carga
                     self.version_states[version_key] = {
-                        "id_organizacion": version_info.get("id_organizacion", self.organization_id),
-                        "id_proyecto": version_info.get("id_proyecto", self.id_proyecto),
+                        "id_organizacion": self.organization_id,
+                        "id_proyecto": self.id_proyecto,
                         "state": "Abierta",
                         "protected": False,
                         "size": 0,
@@ -477,11 +476,13 @@ class ExploradorState(SharedSessionState):
         try:
             from adapters.api_client import update_version_state
 
+            org_id_to_use = self.id_organizacion if self.id_organizacion > 0 else self.organization_id
             result = update_version_state(
                 project_id=self.id_proyecto,
                 version_id=self.id_version_int,
                 state="Protegida",
                 final_c=True,
+                organization_id=org_id_to_use,
                 access_token=self.access_token,
                 session_token=self.session_token
             )
@@ -516,11 +517,13 @@ class ExploradorState(SharedSessionState):
         try:
             from adapters.api_client import update_version_state
 
+            org_id_to_use = self.id_organizacion if self.id_organizacion > 0 else self.organization_id
             result = update_version_state(
                 project_id=self.id_proyecto,
                 version_id=self.id_version_int,
                 state="Final",
                 final_i=True,
+                organization_id=org_id_to_use,
                 access_token=self.access_token,
                 session_token=self.session_token
             )
@@ -580,11 +583,13 @@ class ExploradorState(SharedSessionState):
         try:
             from adapters.api_client import update_version_state
 
+            org_id_to_use = self.id_organizacion if self.id_organizacion > 0 else self.organization_id
             result = update_version_state(
                 project_id=self.id_proyecto,
                 version_id=int(version_key.replace("v", "")),  # Convertir "v001" a 1
                 state="Abierta",
                 protected=False,
+                organization_id=org_id_to_use,
                 access_token=self.access_token,
                 session_token=self.session_token
             )
@@ -614,11 +619,13 @@ class ExploradorState(SharedSessionState):
         try:
             from adapters.api_client import update_version_state
 
+            org_id_to_use = self.id_organizacion if self.id_organizacion > 0 else self.organization_id
             result = update_version_state(
                 project_id=self.id_proyecto,
                 version_id=int(version_key.replace("v", "")),
                 state="Bloqueada",
                 protected=True,
+                organization_id=org_id_to_use,
                 access_token=self.access_token,
                 session_token=self.session_token
             )
@@ -652,12 +659,14 @@ class ExploradorState(SharedSessionState):
         try:
             from adapters.api_client import update_version_state
 
+            org_id_to_use = self.id_organizacion if self.id_organizacion > 0 else self.organization_id
             result = update_version_state(
                 project_id=self.id_proyecto,
                 version_id=int(version_key.replace("v", "")),
                 state="Entrenar",
                 protected=True,
                 final_c=True,
+                organization_id=org_id_to_use,
                 access_token=self.access_token,
                 session_token=self.session_token
             )
@@ -695,6 +704,7 @@ class ExploradorState(SharedSessionState):
         try:
             from adapters.api_client import update_version_state
 
+            org_id_to_use = self.id_organizacion if self.id_organizacion > 0 else self.organization_id
             result = update_version_state(
                 project_id=self.id_proyecto,
                 version_id=int(version_key.replace("v", "")),
@@ -702,6 +712,7 @@ class ExploradorState(SharedSessionState):
                 protected=True,
                 final_c=True,
                 final_i=True,
+                organization_id=org_id_to_use,
                 access_token=self.access_token,
                 session_token=self.session_token
             )
@@ -740,6 +751,7 @@ class ExploradorState(SharedSessionState):
             final_c = (val in ["Protegida", "Final"])
             final_i = (val == "Final")
 
+            org_id_to_use = self.id_organizacion if self.id_organizacion > 0 else self.organization_id
             result = update_version_state(
                 project_id=self.id_proyecto,
                 version_id=self.id_version_int,
@@ -747,6 +759,7 @@ class ExploradorState(SharedSessionState):
                 protected=protected,
                 final_c=final_c,
                 final_i=final_i,
+                organization_id=org_id_to_use,
                 access_token=self.access_token,
                 session_token=self.session_token
             )
@@ -801,11 +814,13 @@ class ExploradorState(SharedSessionState):
             # Ajustar estado según protected
             new_state = "Bloqueada" if val else "Abierta"
 
+            org_id_to_use = self.id_organizacion if self.id_organizacion > 0 else self.organization_id
             result = update_version_state(
                 project_id=self.id_proyecto,
                 version_id=self.id_version_int,
                 state=new_state,
                 protected=val,
+                organization_id=org_id_to_use,
                 access_token=self.access_token,
                 session_token=self.session_token
             )
@@ -830,10 +845,12 @@ class ExploradorState(SharedSessionState):
         try:
             from adapters.api_client import update_version_state
 
+            org_id_to_use = self.id_organizacion if self.id_organizacion > 0 else self.organization_id
             result = update_version_state(
                 project_id=self.id_proyecto,
                 version_id=self.id_version_int,
                 final_c=val,
+                organization_id=org_id_to_use,
                 access_token=self.access_token,
                 session_token=self.session_token
             )
@@ -858,10 +875,12 @@ class ExploradorState(SharedSessionState):
         try:
             from adapters.api_client import update_version_state
 
+            org_id_to_use = self.id_organizacion if self.id_organizacion > 0 else self.organization_id
             result = update_version_state(
                 project_id=self.id_proyecto,
                 version_id=self.id_version_int,
                 final_i=val,
+                organization_id=org_id_to_use,
                 access_token=self.access_token,
                 session_token=self.session_token
             )
@@ -1131,12 +1150,14 @@ class ExploradorState(SharedSessionState):
                 self.id_proyecto,
             )
 
+            org_id_to_use = self.id_organizacion if self.id_organizacion > 0 else self.organization_id
             response = update_version_state(
                 project_id=self.id_proyecto,
                 version_id=self.id_version_int,
                 state="Bloqueada",
                 protected=True,
                 updated_by_user_id=self.user_id,
+                organization_id=org_id_to_use,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
@@ -1168,12 +1189,14 @@ class ExploradorState(SharedSessionState):
                 self.identity_type_id,
             )
 
+            org_id_to_use = self.id_organizacion if self.id_organizacion > 0 else self.organization_id
             response = update_version_state(
                 project_id=self.id_proyecto,
                 version_id=self.id_version_int,
                 state="Abierta",
                 protected=False,
                 updated_by_user_id=self.user_id,
+                organization_id=org_id_to_use,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
@@ -1811,10 +1834,12 @@ class ExploradorState(SharedSessionState):
                 project_id, version_id, relative_path,
             )
 
+            org_id_to_use = self.id_organizacion if self.id_organizacion > 0 else self.organization_id
             response = generate_file_upload_token(
                 project_id=project_id,
                 version_id=version_id,
                 relative_path=relative_path,
+                organization_id=org_id_to_use,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
@@ -1832,12 +1857,12 @@ class ExploradorState(SharedSessionState):
                 return rx.toast.error("Error: respuesta incompleta del servidor")
 
             upload_script = f"""
-            (function() {{
+            new Promise((resolve) => {{
                 const input = document.createElement('input');
                 input.type = 'file';
                 input.onchange = async (e) => {{
                     const file = e.target.files[0];
-                    if (!file) return;
+                    if (!file) {{ resolve({{"status": "cancelled"}}); return; }}
 
                     const formData = new FormData();
                     formData.append('file', file);
@@ -1854,24 +1879,49 @@ class ExploradorState(SharedSessionState):
 
                         const result = await response.json();
                         if (response.ok) {{
-                            alert('Archivo subido exitosamente: ' + file.name);
-                            window.location.reload();
+                            resolve({{"status": "success", "filename": file.name}});
                         }} else {{
-                            alert('Error al subir archivo: ' + (result.error || 'Error desconocido'));
+                            resolve({{"status": "error", "error": result.error || "Error desconocido"}});
                         }}
                     }} catch (error) {{
-                        alert('Error al subir archivo: ' + error.message);
+                        resolve({{"status": "error", "error": error.message}});
                     }}
                 }};
                 input.click();
-            }})();
+            }})
             """
 
-            return rx.call_script(upload_script)
+            return rx.call_script(
+                upload_script,
+                callback=type(self).on_upload_complete,
+            )
 
         except Exception as e:
             logger.error("Error en iniciar_subida_archivo: %s", e)
             return rx.toast.error(f"Error: {str(e)}")
+
+    def on_upload_complete(self, result):
+        """Callback tras completar la subida de archivo vía JavaScript.
+
+        Recibe el resultado del Promise y refresca el explorador sin recargar la página.
+        """
+        if not isinstance(result, dict):
+            return
+
+        status = result.get("status", "")
+
+        if status == "success":
+            filename = result.get("filename", "")
+            logger.info("Upload completado: %s — refrescando explorador", filename)
+            self.load_from_api()
+            return rx.toast.success(f"Archivo subido: {filename}")
+
+        if status == "error":
+            error = result.get("error", "Error desconocido")
+            logger.error("Upload fallido: %s", error)
+            return rx.toast.error(f"Error al subir: {error}")
+
+        # status == "cancelled" or unknown: no action
 
     def iniciar_descarga_archivo(self, item_or_id):
         """Inicia el proceso de descarga de archivo."""
@@ -1921,11 +1971,13 @@ class ExploradorState(SharedSessionState):
                 project_id, version_id, filename, relative_path,
             )
 
+            org_id_to_use = self.id_organizacion if self.id_organizacion > 0 else self.organization_id
             response = generate_file_download_token(
                 project_id=project_id,
                 version_id=version_id,
                 filename=filename,
                 relative_path=relative_path,
+                organization_id=org_id_to_use,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )

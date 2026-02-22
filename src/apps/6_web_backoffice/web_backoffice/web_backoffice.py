@@ -4613,8 +4613,9 @@ class State(SharedSessionState):
                 # Resetear el panel de evolución
                 self.ent_evo_reset()
             else:
+                error_msg = response.get("message") or response.get("detail") or "Error desconocido"
                 yield rx.toast.error(
-                    f"Error al cancelar: {response.get('message', 'Error desconocido')}",
+                    f"Error al cancelar: {error_msg}",
                     position="bottom-right",
                     duration=5000,
                 )
@@ -4900,46 +4901,72 @@ class State(SharedSessionState):
             print(f"[AUTONOMOUS POLLING] ⚠️ Timeout alcanzado")
 
     def ent_download_autonomous_package(self):
-        """Descarga el paquete ZIP del modelo autónomo generado.
+        """Descarga el paquete ZIP del modelo autónomo desde fmanagement.
 
-        Este método inicia la descarga del archivo ZIP desde el navegador.
+        Usa el mismo patrón que iniciar_descarga_archivo() del explorador:
+        genera un token JWT temporal y construye una URL de descarga directa.
         """
-        from adapters.api_client import download_autonomous_package
-        import base64
+        from adapters.api_client import generate_file_download_token
 
-        print(f"[DOWNLOAD] Iniciando descarga para entrenamiento {self.ent_evo_id_entrenamiento}")
+        id_ent = self.ent_evo_id_entrenamiento
+        version_data = self.ent_evo_version_data
+        id_org = version_data.get("id_organizacion", 0)
+        id_prj = version_data.get("id_proyecto", 0)
+        id_ver = version_data.get("id_version", 0)
+        filename = f"ENT{id_ent}_modelo_autonomo.zip"
+
+        print(
+            f"[DOWNLOAD] Generando token para {filename} "
+            f"(org={id_org}, prj={id_prj}, ver={id_ver})"
+        )
 
         try:
-            # Descargar paquete desde la API
-            package_bytes = download_autonomous_package(
-                id_entrenamiento=self.ent_evo_id_entrenamiento,
+            response = generate_file_download_token(
+                project_id=id_prj,
+                version_id=id_ver,
+                filename=filename,
+                relative_path="modelos",
+                organization_id=id_org,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
 
-            if package_bytes:
-                # Convertir a base64 para trigger download en navegador
-                package_b64 = base64.b64encode(package_bytes).decode('utf-8')
-                filename = f"ENT{self.ent_evo_id_entrenamiento}_modelo_autonomo.zip"
-
-                print(f"[DOWNLOAD] Paquete descargado: {len(package_bytes)} bytes")
-                print(f"[DOWNLOAD] Filename: {filename}")
-
-                # Usar rx.download para trigger la descarga
-                return rx.download(
-                    data=package_b64,
-                    filename=filename,
+            if not response.get("success"):
+                error_msg = response.get("message") or response.get(
+                    "detail", "Error al generar token"
                 )
-            else:
-                print(f"[DOWNLOAD] ❌ Error: No se pudo obtener el paquete")
+                print(f"[DOWNLOAD] Error generando token: {error_msg}")
                 return rx.toast.error(
-                    "No se pudo descargar el paquete",
+                    f"Error: {error_msg}",
                     position="bottom-right",
                     duration=5000,
                 )
 
+            download_url = response.get("download_url")
+            if not download_url:
+                print("[DOWNLOAD] Respuesta incompleta del servidor")
+                return rx.toast.error(
+                    "Error: respuesta incompleta del servidor",
+                    position="bottom-right",
+                    duration=5000,
+                )
+
+            download_script = f"""
+            (function() {{
+                const link = document.createElement('a');
+                link.href = '{download_url}';
+                link.download = '{filename}';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }})();
+            """
+
+            print(f"[DOWNLOAD] Descarga iniciada: {filename}")
+            return rx.call_script(download_script)
+
         except Exception as exc:
-            print(f"[DOWNLOAD] ❌ Excepción: {exc}")
+            print(f"[DOWNLOAD] Excepcion: {exc}")
             return rx.toast.error(
                 f"Error descargando paquete: {str(exc)}",
                 position="bottom-right",

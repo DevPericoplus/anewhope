@@ -10,7 +10,6 @@ from pathlib import Path
 # Imports de adaptadores API
 from adapters.api_client import (
     fmanagement_list_all_project_versions,
-    get_project_versions,
     update_version_state,
     generate_file_upload_token,
     generate_file_download_token,
@@ -963,12 +962,12 @@ class ExploradorState(rx.State):
 
             # Usar JavaScript para abrir file picker y subir el archivo
             upload_script = f"""
-            (function() {{
+            new Promise((resolve) => {{
                 const input = document.createElement('input');
                 input.type = 'file';
                 input.onchange = async (e) => {{
                     const file = e.target.files[0];
-                    if (!file) return;
+                    if (!file) {{ resolve({{"status": "cancelled"}}); return; }}
 
                     const formData = new FormData();
                     formData.append('file', file);
@@ -985,24 +984,49 @@ class ExploradorState(rx.State):
 
                         const result = await response.json();
                         if (response.ok) {{
-                            alert('Archivo subido exitosamente: ' + file.name);
-                            window.location.reload();
+                            resolve({{"status": "success", "filename": file.name}});
                         }} else {{
-                            alert('Error al subir archivo: ' + (result.error || 'Error desconocido'));
+                            resolve({{"status": "error", "error": result.error || "Error desconocido"}});
                         }}
                     }} catch (error) {{
-                        alert('Error al subir archivo: ' + error.message);
+                        resolve({{"status": "error", "error": error.message}});
                     }}
                 }};
                 input.click();
-            }})();
+            }})
             """
 
-            return rx.call_script(upload_script)
+            return rx.call_script(
+                upload_script,
+                callback=type(self).on_upload_complete,
+            )
 
         except Exception as e:
             logger.error(f"Error en iniciar_subida_archivo: {e}")
             return rx.toast.error(f"Error: {str(e)}")
+
+    def on_upload_complete(self, result):
+        """Callback tras completar la subida de archivo vía JavaScript.
+
+        Recibe el resultado del Promise y refresca el explorador sin recargar la página.
+        """
+        if not isinstance(result, dict):
+            return
+
+        status = result.get("status", "")
+
+        if status == "success":
+            filename = result.get("filename", "")
+            logger.info("Upload completado: %s — refrescando explorador", filename)
+            self.load_from_api()
+            return rx.toast.success(f"Archivo subido: {filename}")
+
+        if status == "error":
+            error = result.get("error", "Error desconocido")
+            logger.error("Upload fallido: %s", error)
+            return rx.toast.error(f"Error al subir: {error}")
+
+        # status == "cancelled" or unknown: no action
 
     def iniciar_descarga_archivo(self, item: FolderItem):
         """Inicia el proceso de descarga de archivo.
@@ -1616,30 +1640,28 @@ class ExploradorState(rx.State):
         Obtiene los estados desde version_states tabla vía API del backend.
         """
         try:
-            # Obtener versiones del proyecto
-            versions_response = get_project_versions(
-                project_id=self.id_proyecto,
-                organization_id=self.id_organizacion,
-                access_token=self.access_token,
-                session_token=self.session_token,
-            )
+            # Obtener versiones del árbol ya cargado desde disco (NO desde BD)
+            # Los items con depth==1 son las carpetas de versión (v001, v002, etc.)
+            import re as _re
+            version_names = sorted([
+                item.name for item in self.items
+                if item.depth == 1 and _re.match(r'^v\d{3}$', item.name)
+            ])
 
-            versiones = versions_response.get("versiones", [])
-
-            if not versiones:
-                logger.warning(f"No se encontraron versiones para proyecto {self.id_proyecto}")
+            if not version_names:
+                logger.warning(f"No se encontraron versiones en el árbol para proyecto {self.id_proyecto}")
                 return
+
+            logger.info(f"Versiones en árbol: {version_names}")
 
             # Limpiar diccionario de estados
             self.version_states = {}
 
-            # Para cada versión, obtener su estado desde la API
-            for version_info in versiones:
-                version_id = version_info.get("id_version", 0)
-                version_key = f"v{str(version_id).zfill(3)}"
+            # Para cada versión del árbol, obtener su estado desde la API
+            from adapters.api_client import get_version_state
 
-                # Obtener estado de esta versión desde la API
-                from adapters.api_client import get_version_state
+            for version_key in version_names:
+                version_id = int(version_key[1:])  # "v001" → 1
 
                 state_response = get_version_state(
                     project_id=self.id_proyecto,
@@ -1662,8 +1684,8 @@ class ExploradorState(rx.State):
                 else:
                     # Valores por defecto si falla la carga
                     self.version_states[version_key] = {
-                        "id_organizacion": version_info.get("id_organizacion", self.id_organizacion),
-                        "id_proyecto": version_info.get("id_proyecto", self.id_proyecto),
+                        "id_organizacion": self.id_organizacion,
+                        "id_proyecto": self.id_proyecto,
                         "state": "Abierta",
                         "protected": False,
                         "size": 0,

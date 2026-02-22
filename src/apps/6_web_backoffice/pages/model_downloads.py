@@ -99,6 +99,12 @@ class ModelDownloadState(SharedSessionState):
     otp_error: str = ""
     download_in_progress: bool = False
 
+    # Paquetes GGUF (entrenamiento autónomo)
+    gguf_packages: list[dict[str, Any]] = []
+    gguf_loading: bool = False
+    gguf_loaded: bool = False
+    gguf_error: str = ""
+
     # Mensajes
     success_message: str = ""
     error_message: str = ""
@@ -352,6 +358,186 @@ class ModelDownloadState(SharedSessionState):
                 self.models_loading = False
             logger.error("Excepción al cargar modelos: %s", e, exc_info=True)
 
+        # Cargar paquetes GGUF si hay versión seleccionada
+        await self._load_gguf_packages()
+
+    async def _load_gguf_packages(self):
+        """Busca paquetes GGUF en la carpeta modelos/ de la versión seleccionada."""
+        org_id = self.dl_selected_org_id
+        prj_id = self.dl_selected_project_id
+        ver_id = self.dl_selected_version_id
+
+        if not all([org_id, prj_id, ver_id]):
+            async with self:
+                self.gguf_packages = []
+                self.gguf_loaded = True
+                self.gguf_loading = False
+            return
+
+        async with self:
+            self.gguf_loading = True
+            self.gguf_error = ""
+
+        try:
+            middleware_url = os.getenv("MIDDLEWARE_BASE_URL", "http://localhost:8007")
+            url = f"{middleware_url}/fmanagement/list"
+
+            headers = {
+                "Content-Type": "application/json",
+                "X-Session-Token": self.session_token,
+            }
+            if self.access_token:
+                headers["Authorization"] = f"Bearer {self.access_token}"
+
+            payload = {
+                "org_folder": f"ORG{org_id:05d}",
+                "prj_folder": f"PRJ{prj_id:05d}",
+                "version_folder": f"v{ver_id:03d}",
+            }
+
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.post(url, json=payload, headers=headers)
+
+            if response.status_code == 200:
+                data = response.json()
+                items = data.get("items", [])
+
+                packages = []
+                for item in items:
+                    if item.get("is_dir") and item.get("name") == "modelos":
+                        for child in (item.get("items") or []):
+                            if not child.get("is_dir") and child.get("name", "").endswith(".zip"):
+                                size_bytes = child.get("size_bytes", 0)
+                                size_mb = round(size_bytes / (1024 * 1024), 2) if size_bytes else 0
+                                packages.append({
+                                    "filename": child["name"],
+                                    "size_bytes": size_bytes,
+                                    "size_mb": size_mb,
+                                    "organization_id": org_id,
+                                    "project_id": prj_id,
+                                    "version_id": ver_id,
+                                })
+
+                async with self:
+                    self.gguf_packages = packages
+                    self.gguf_loaded = True
+                    self.gguf_loading = False
+            else:
+                async with self:
+                    self.gguf_packages = []
+                    self.gguf_loaded = True
+                    self.gguf_loading = False
+
+        except Exception as exc:
+            logger.error("Error buscando paquetes GGUF: %s", exc)
+            async with self:
+                self.gguf_error = f"Error buscando paquetes: {str(exc)}"
+                self.gguf_packages = []
+                self.gguf_loaded = True
+                self.gguf_loading = False
+
+    def download_gguf_package(self, pkg: dict[str, Any]):
+        """Descarga un paquete GGUF desde fmanagement."""
+        from adapters.api_client import generate_file_download_token
+
+        filename = pkg.get("filename", "")
+        prj_id = pkg.get("project_id", 0)
+        ver_id = pkg.get("version_id", 0)
+        org_id = pkg.get("organization_id", 0)
+
+        try:
+            response = generate_file_download_token(
+                project_id=prj_id,
+                version_id=ver_id,
+                filename=filename,
+                relative_path="modelos",
+                organization_id=org_id,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+
+            if not response.get("success"):
+                error_msg = response.get("message") or response.get(
+                    "detail", "Error al generar token"
+                )
+                return rx.toast.error(
+                    f"Error: {error_msg}", position="bottom-right", duration=5000
+                )
+
+            download_url = response.get("download_url")
+            if not download_url:
+                return rx.toast.error(
+                    "Error: respuesta incompleta del servidor",
+                    position="bottom-right",
+                    duration=5000,
+                )
+
+            download_script = f"""
+            (function() {{
+                const link = document.createElement('a');
+                link.href = '{download_url}';
+                link.download = '{filename}';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }})();
+            """
+            return rx.call_script(download_script)
+
+        except Exception as exc:
+            return rx.toast.error(
+                f"Error: {str(exc)}", position="bottom-right", duration=5000
+            )
+
+    @rx.event(background=True)
+    async def download_model_file(self, model: dict[str, Any]):
+        """Descarga directa de un fichero de modelo via sesión (sin OTP)."""
+        filename = model.get("filename", "")
+        org_id = model.get("organization_id", 0)
+        prj_id = model.get("project_id", 0)
+        ver_id = model.get("version_id", 0)
+
+        async with self:
+            self.error_message = ""
+
+        try:
+            middleware_url = os.getenv("MIDDLEWARE_BASE_URL", "http://localhost:8007")
+            url = f"{middleware_url}/models/download/session"
+
+            params = {
+                "organization_id": org_id,
+                "project_id": prj_id,
+                "version_id": ver_id,
+                "filename": filename,
+            }
+            headers = {
+                "X-Session-Token": self.session_token,
+            }
+            if self.access_token:
+                headers["Authorization"] = f"Bearer {self.access_token}"
+
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.get(url, params=params, headers=headers)
+
+            if response.status_code == 200:
+                import base64
+                file_b64 = base64.b64encode(response.content).decode("utf-8")
+                async with self:
+                    self.success_message = f"Descargando {filename}..."
+                return rx.download(data=file_b64, filename=filename)
+            else:
+                detail = "Error desconocido"
+                try:
+                    detail = response.json().get("detail", detail)
+                except Exception:
+                    detail = response.text[:200]
+                async with self:
+                    self.error_message = f"Error descargando {filename}: {detail}"
+        except Exception as exc:
+            logger.error("Error download_model_file: %s", exc, exc_info=True)
+            async with self:
+                self.error_message = f"Error: {str(exc)}"
+
     def open_otp_modal(self, model: dict[str, Any]):
         """Abre el modal para solicitar OTP."""
         if self.identity_type_id not in (1, 2):
@@ -585,8 +771,8 @@ def model_card(model: dict[str, Any]) -> rx.Component:
                 ModelDownloadState.can_download_models,
                 rx.button(
                     rx.icon("download", size=16),
-                    "Descargar con OTP",
-                    on_click=lambda: ModelDownloadState.open_otp_modal(model),
+                    "Descargar",
+                    on_click=lambda: ModelDownloadState.download_model_file(model),
                     color_scheme="orange",
                     size="3",
                     style={"font_weight": "bold"},
@@ -698,6 +884,116 @@ def otp_modal() -> rx.Component:
             },
         ),
         open=ModelDownloadState.show_otp_modal,
+    )
+
+
+def gguf_package_card(pkg: dict[str, Any]) -> rx.Component:
+    """Tarjeta para mostrar un paquete GGUF descargable."""
+    return rx.card(
+        rx.vstack(
+            rx.hstack(
+                rx.badge(
+                    f"ORG {pkg['organization_id']:05d}",
+                    color_scheme="blue",
+                ),
+                rx.badge(
+                    f"PRJ {pkg['project_id']:05d}",
+                    color_scheme="green",
+                ),
+                rx.badge(
+                    f"v{pkg['version_id']:03d}",
+                    color_scheme="purple",
+                ),
+                spacing="2",
+                width="100%",
+            ),
+            rx.hstack(
+                rx.icon("package", size=18, color=COLORS["accent"]),
+                rx.heading(
+                    pkg["filename"],
+                    size="4",
+                    color=COLORS["foreground"],
+                ),
+                spacing="2",
+                align="center",
+            ),
+            rx.text(
+                f"Tamano: {pkg['size_mb']} MB",
+                color=COLORS["muted_foreground"],
+                size="2",
+                font_weight="bold",
+            ),
+            rx.button(
+                rx.icon("download", size=16),
+                "Descargar Paquete GGUF",
+                on_click=lambda: ModelDownloadState.download_gguf_package(pkg),
+                color_scheme="orange",
+                size="3",
+                style={"font_weight": "bold"},
+                width="100%",
+            ),
+            spacing="3",
+            align="start",
+        ),
+        style={
+            "background": COLORS["card"],
+            "padding": "1rem",
+            "border_radius": "8px",
+        },
+    )
+
+
+def gguf_packages_section() -> rx.Component:
+    """Seccion de paquetes GGUF del entrenamiento autonomo."""
+    return rx.cond(
+        ModelDownloadState.gguf_loaded,
+        rx.vstack(
+            rx.hstack(
+                rx.icon("cpu", size=20, color=COLORS["accent"]),
+                rx.text(
+                    "Paquetes GGUF (Entrenamiento Autonomo)",
+                    size="4",
+                    weight="bold",
+                    color=COLORS["accent"],
+                ),
+                spacing="2",
+                align="center",
+            ),
+            rx.cond(
+                ModelDownloadState.gguf_error,
+                rx.callout(
+                    ModelDownloadState.gguf_error,
+                    icon="triangle_alert",
+                    color_scheme="red",
+                ),
+            ),
+            rx.cond(
+                ModelDownloadState.gguf_loading,
+                rx.center(rx.spinner(size="3"), padding="1rem"),
+                rx.cond(
+                    ModelDownloadState.gguf_packages,
+                    rx.grid(
+                        rx.foreach(
+                            ModelDownloadState.gguf_packages,
+                            gguf_package_card,
+                        ),
+                        columns="3",
+                        spacing="4",
+                        width="100%",
+                    ),
+                    rx.center(
+                        rx.text(
+                            "No hay paquetes GGUF para esta version",
+                            color=COLORS["muted_foreground"],
+                            size="2",
+                        ),
+                        padding="1rem",
+                    ),
+                ),
+            ),
+            spacing="3",
+            width="100%",
+        ),
     )
 
 
@@ -862,6 +1158,8 @@ def model_downloads_panel() -> rx.Component:
                 padding="4rem",
             ),
         ),
+        # Sección de paquetes GGUF
+        gguf_packages_section(),
         # Modal de OTP
         otp_modal(),
         spacing="5",
