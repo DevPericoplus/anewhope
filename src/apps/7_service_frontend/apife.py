@@ -3621,6 +3621,7 @@ def fmanagement_transfer_endpoint(
 )
 def generate_file_token_endpoint(
     request: GenerateFileTokenRequest,
+    http_request: Request,
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
     session: Annotated[SessionContext, Depends(get_session_context)],
 ) -> GenerateFileTokenResponse:
@@ -3654,11 +3655,15 @@ def generate_file_token_endpoint(
             ttl_seconds=300,  # 5 minutos
         )
 
-        # URL de fmanagement para el navegador: usar proxy público si existe
-        _frontend_api = get_env_value("frontend_api_url", "")
+        # URL de fmanagement para el navegador: usar proxy público según el cliente
+        _client_app = http_request.headers.get("x-client-app", "frontend")
+        if _client_app == "backoffice":
+            _base_api = get_env_value("backoffice_api_url", "")
+        else:
+            _base_api = get_env_value("frontend_api_url", "")
         fmanagement_url = (
-            f"{_frontend_api}/fmanagement"
-            if _frontend_api
+            f"{_base_api}/fmanagement"
+            if _base_api
             else get_env_value("fmanagement_base_url", "http://localhost:1666")
         )
 
@@ -4330,6 +4335,7 @@ def request_model_download_otp_endpoint(
 @app.post("/models/download/validate-otp", response_model=ModelDownloadValidateOtpResponse, tags=["models"])
 def validate_model_download_otp_endpoint(
     request: ModelDownloadValidateOtpRequest,
+    http_request: Request,
     session: SessionContext = Depends(get_session_context),
     router: RouterMiddleware = Depends(get_router_middleware),
 ) -> ModelDownloadValidateOtpResponse:
@@ -4380,11 +4386,15 @@ def validate_model_download_otp_endpoint(
             otp=request.otp
         )
 
-        # URL de fmanagement para el navegador: usar proxy público si existe
-        _frontend_api = get_env_value("frontend_api_url", "")
+        # URL de fmanagement para el navegador: usar proxy público según el cliente
+        _client_app = http_request.headers.get("x-client-app", "frontend")
+        if _client_app == "backoffice":
+            _base_api = get_env_value("backoffice_api_url", "")
+        else:
+            _base_api = get_env_value("frontend_api_url", "")
         fmanagement_url = (
-            f"{_frontend_api}/fmanagement"
-            if _frontend_api
+            f"{_base_api}/fmanagement"
+            if _base_api
             else get_env_value("fmanagement_base_url", "http://localhost:1666")
         )
 

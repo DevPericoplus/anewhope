@@ -1892,59 +1892,46 @@ class ExploradorState(SharedSessionState):
                 return rx.toast.error("Error: respuesta incompleta del servidor")
 
             upload_script = f"""
-            (async function() {{
-                return new Promise((resolve) => {{
-                    const input = document.createElement('input');
-                    input.type = 'file';
-                    input.addEventListener('cancel', () => resolve('cancelled'));
-                    input.onchange = async (e) => {{
-                        const file = e.target.files[0];
-                        if (!file) {{ resolve('cancelled'); return; }}
+            (function() {{
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.onchange = async (e) => {{
+                    const file = e.target.files[0];
+                    if (!file) return;
 
-                        const formData = new FormData();
-                        formData.append('file', file);
-                        formData.append('relative_path', '{relative_path}');
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    formData.append('relative_path', '{relative_path}');
 
-                        try {{
-                            const response = await fetch('{fmanagement_url}/upload', {{
-                                method: 'POST',
-                                headers: {{
-                                    'Authorization': 'Bearer {token}'
-                                }},
-                                body: formData
-                            }});
+                    try {{
+                        const response = await fetch('{fmanagement_url}/upload', {{
+                            method: 'POST',
+                            headers: {{
+                                'Authorization': 'Bearer {token}'
+                            }},
+                            body: formData
+                        }});
 
-                            const result = await response.json();
-                            if (response.ok) {{
-                                resolve('ok:' + file.name);
-                            }} else {{
-                                resolve('error:' + (result.error || 'Error desconocido'));
-                            }}
-                        }} catch (error) {{
-                            resolve('error:' + error.message);
+                        const result = await response.json();
+                        if (response.ok) {{
+                            alert('Archivo subido exitosamente: ' + file.name);
+                            window.location.reload();
+                        }} else {{
+                            alert('Error al subir archivo: ' + (result.error || 'Error desconocido'));
                         }}
-                    }};
-                    input.click();
-                }});
-            }})()
+                    }} catch (error) {{
+                        alert('Error al subir archivo: ' + error.message);
+                    }}
+                }};
+                input.click();
+            }})();
             """
 
-            return rx.call_script(upload_script, callback=ExploradorState._handle_upload_result)
+            return rx.call_script(upload_script)
 
         except Exception as e:
             logger.error("Error en iniciar_subida_archivo: %s", e)
             return rx.toast.error(f"Error: {str(e)}")
-
-    def _handle_upload_result(self, result: str = ""):
-        """Procesa el resultado de la subida de archivo y refresca el explorador."""
-        if not result or result == "cancelled":
-            return
-        if result.startswith("ok:"):
-            filename = result[3:]
-            self.load_from_api()
-            return rx.toast.success(f"Archivo subido exitosamente: {filename}")
-        elif result.startswith("error:"):
-            return rx.toast.error(f"Error al subir archivo: {result[6:]}")
 
     def iniciar_descarga_archivo(self, item_or_id):
         """Inicia el proceso de descarga de archivo."""
