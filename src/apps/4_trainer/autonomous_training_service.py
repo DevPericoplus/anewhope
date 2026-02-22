@@ -29,7 +29,11 @@ Fecha: 2026-02-13
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import importlib.util
+import json
 import logging
 import os
 import sys
@@ -66,6 +70,19 @@ _env_settings = _load_shared_module(
 get_env_value = _env_settings.get_env_value
 get_protected_value = _env_settings.get_protected_value
 
+# Cargar fmanagement client para upload de paquetes
+_fmanagement_module = _load_shared_module(
+    "fmanagement_client_auto",
+    "apps/4_trainer/4_infrastructure/web/fmanagement_client.py",
+)
+_FmanagementClient = _fmanagement_module.FmanagementClient
+
+_storage_module = _load_shared_module(
+    "storage_adapter_auto",
+    "apps/4_trainer/4_infrastructure/persistence/storage_adapter.py",
+)
+_load_fmanagement_settings = _storage_module.load_fmanagement_settings
+
 
 # ---------------------------------------------------------------------------
 # Funciones auxiliares
@@ -83,26 +100,6 @@ def _format_elapsed_time(seconds: float) -> str:
     hours = int(minutes // 60)
     mins = minutes % 60
     return f"{hours}h {mins}m {secs}s"
-
-
-def _get_db_url() -> str:
-    """Construye la URL de MariaDB desde el env.
-
-    Returns:
-        URL de conexión: mysql+pymysql://user:pass@host/database
-    """
-    from urllib.parse import quote_plus
-
-    db_user = get_protected_value("mariadb_admin_user")
-    db_pass = get_protected_value("mariadb_admin_password")
-    db_host = get_env_value("mariadb_host", "localhost")
-    db_name = get_env_value("mariadb_projects_database", "myllm_projects_db")
-
-    # URL-encode user and password to handle special characters like @
-    db_user_encoded = quote_plus(db_user)
-    db_pass_encoded = quote_plus(db_pass)
-
-    return f"mysql+pymysql://{db_user_encoded}:{db_pass_encoded}@{db_host}/{db_name}"
 
 
 def _get_training_mode() -> str:
@@ -127,6 +124,112 @@ def _get_training_mode() -> str:
 
     logger.info(f"[Autonomous] training_mode detectado: {training_mode}")
     return training_mode
+
+
+def _base64url_encode(value: bytes) -> str:
+    """Codifica bytes en base64url sin padding."""
+    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("utf-8")
+
+
+def _generate_fmanagement_jwt(claims: dict[str, Any], secret: str) -> str:
+    """Genera un JWT HS256 para autenticación con fmanagement.
+
+    Mismo patrón que _encode_jwt en routermiddleware.py.
+    """
+    header = {"alg": "HS256", "typ": "JWT"}
+    header_b64 = _base64url_encode(
+        json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    )
+    payload_b64 = _base64url_encode(
+        json.dumps(claims, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    )
+    signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
+    signature = hmac.new(
+        secret.encode("utf-8"), signing_input, hashlib.sha256
+    ).digest()
+    signature_b64 = _base64url_encode(signature)
+    return f"{header_b64}.{payload_b64}.{signature_b64}"
+
+
+def _upload_package_to_fmanagement(
+    package_path: Path,
+    id_org: int,
+    id_prj: int,
+    id_ver: int,
+    id_ent: int,
+) -> bool:
+    """Sube el paquete ZIP del modelo autónomo a fmanagement.
+
+    Permite que el backoffice descargue el paquete directamente
+    desde fmanagement, sin pasar por toda la cadena API.
+
+    Args:
+        package_path: Ruta local al archivo ZIP
+        id_org: ID de la organización
+        id_prj: ID del proyecto
+        id_ver: ID de la versión
+        id_ent: ID del entrenamiento
+
+    Returns:
+        True si el upload fue exitoso, False en caso contrario.
+    """
+    logger.info(f"[AUTONOMOUS] Subiendo paquete a fmanagement: {package_path}")
+
+    jwt_secret = get_protected_value("jwt_access_secret_key")
+    if not jwt_secret:
+        logger.warning("[AUTONOMOUS] No se pudo obtener jwt_access_secret_key")
+        return False
+
+    now = int(time.time())
+    claims = {
+        "user_id": 0,
+        "organization_id": id_org,
+        "identity_type_id": 0,
+        "project_id": id_prj,
+        "version_id": id_ver,
+        "operation": "upload",
+        "relative_path": "modelos",
+        "exp": now + 300,
+        "iat": now,
+    }
+
+    token = _generate_fmanagement_jwt(claims, jwt_secret)
+
+    file_bytes = package_path.read_bytes()
+    filename = package_path.name
+
+    logger.info(
+        f"[AUTONOMOUS] Upload: {filename} ({len(file_bytes)} bytes) "
+        f"-> ORG{id_org:05d}/PRJ{id_prj:05d}/v{id_ver:03d}/modelos/"
+    )
+
+    settings = _load_fmanagement_settings()
+    client = _FmanagementClient(
+        base_url=settings.base_url,
+        timeout_seconds=600,
+    )
+
+    result = client.request_json(
+        method="POST",
+        path="/upload",
+        headers={"Authorization": f"Bearer {token}"},
+        form={"relative_path": "modelos"},
+        file_payload={
+            "filename": filename,
+            "content": file_bytes,
+            "content_type": "application/zip",
+        },
+    )
+
+    if result.get("status") == "success":
+        logger.info(
+            f"[AUTONOMOUS] Upload exitoso: {result.get('filename')} "
+            f"({result.get('size_bytes', 0)} bytes)"
+        )
+        return True
+
+    logger.warning(f"[AUTONOMOUS] Upload fallo: {result}")
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +265,7 @@ def process_autonomous_training(data: dict[str, Any]) -> None:
         execute_phases78_training,
         execute_phase9_export,
     )
+    from broker_client import TrainerBrokerClient
 
     start_time = time.time()
 
@@ -182,21 +286,22 @@ def process_autonomous_training(data: dict[str, Any]) -> None:
 
     # Obtener configuración
     training_mode = _get_training_mode()
-    db_url = _get_db_url()
 
-    # Inicializar PathManager para gestionar rutas de salida
-    path_mgr = PathManager(
-        id_organizacion=id_org,
-        id_proyecto=id_prj,
-        id_version=id_ver,
-        id_entrenamiento=id_ent,
-        pat_version=pat_version,
-    )
-
-    logger.info(f"[AUTONOMOUS] Jerarquía: {path_mgr.get_hierarchy_path()}")
-    logger.info(f"[AUTONOMOUS] Base salida: {path_mgr.base_storage_path}")
+    # Crear cliente HTTP para cadena API (Trainer → Broker → Backend Core → MariaDB)
+    broker_client = TrainerBrokerClient()
 
     try:
+        # Inicializar PathManager para gestionar rutas de salida
+        path_mgr = PathManager(
+            id_organizacion=id_org,
+            id_proyecto=id_prj,
+            id_version=id_ver,
+            id_entrenamiento=id_ent,
+            pat_version=pat_version,
+        )
+
+        logger.info(f"[AUTONOMOUS] Jerarquía: {path_mgr.get_hierarchy_path()}")
+        logger.info(f"[AUTONOMOUS] Base salida: {path_mgr.base_storage_path}")
         # =====================================================================
         # FASE 6: GENERACIÓN DE DATASET
         # =====================================================================
@@ -205,10 +310,10 @@ def process_autonomous_training(data: dict[str, Any]) -> None:
 
         dataset_summary = execute_phase6_generation(
             id_entrenamiento=id_ent,
-            chroma_collection_name=collection_name,
+            collection_name=collection_name,
             training_mode=training_mode,
-            db_url=db_url,
-            output_path=str(path_mgr.get_dataset_path()),
+            broker_client=broker_client,
+            output_dir=str(path_mgr.get_dataset_path()),
         )
 
         phase6_duration = time.time() - phase6_start
@@ -249,7 +354,7 @@ def process_autonomous_training(data: dict[str, Any]) -> None:
             id_entrenamiento=id_ent,
             dataset_path=dataset_summary["dataset_path"],
             training_mode=training_mode,
-            db_url=db_url,
+            broker_client=broker_client,
             base_model_name=base_model_name,
             output_dir=str(path_mgr.get_lora_dir()),
         )
@@ -280,7 +385,7 @@ def process_autonomous_training(data: dict[str, Any]) -> None:
             lora_adapters_path=lora_summary["lora_adapters_path"],
             base_model_path=lora_summary["phase7"]["7.2"]["path"],
             training_mode=training_mode,
-            db_url=db_url,
+            broker_client=broker_client,
             output_dir=str(path_mgr.get_export_dir()),
             training_info=training_info,
         )
@@ -295,6 +400,25 @@ def process_autonomous_training(data: dict[str, Any]) -> None:
         logger.info(
             f"[AUTONOMOUS] Tamaño: {package_summary.get('package_size_mb', 0):.2f} MB"
         )
+
+        # =====================================================================
+        # UPLOAD PAQUETE A FMANAGEMENT
+        # =====================================================================
+        package_path_str = package_summary.get("package_path", "")
+        if package_path_str:
+            try:
+                _upload_package_to_fmanagement(
+                    package_path=Path(package_path_str),
+                    id_org=id_org,
+                    id_prj=id_prj,
+                    id_ver=id_ver,
+                    id_ent=id_ent,
+                )
+            except Exception as upload_exc:
+                logger.warning(
+                    f"[AUTONOMOUS] Upload a fmanagement fallo (non-blocking): "
+                    f"{upload_exc}"
+                )
 
         # =====================================================================
         # RESUMEN FINAL

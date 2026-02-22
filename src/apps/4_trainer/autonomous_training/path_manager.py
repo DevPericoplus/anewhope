@@ -115,7 +115,7 @@ class PathManager:
             return Path.home() / "data" / "anewhope" / "files" / "trainer_server" / "internal" / "models"
 
         # Obtener backend_ia_internal_storage del env
-        internal_storage = get_env_value("backend_ia_internal_storage")
+        internal_storage = get_env_value("backend_ia_internal_storage", "")
 
         if not internal_storage:
             logger.warning(

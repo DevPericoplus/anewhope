@@ -38,7 +38,7 @@ class Phase9Executor:
         lora_adapters_path: str,
         base_model_path: str,
         training_mode: str,
-        db_url: str,
+        broker_client: Any,
         output_dir: Path | None = None,
         training_info: dict[str, Any] | None = None,
     ):
@@ -49,7 +49,7 @@ class Phase9Executor:
             lora_adapters_path: Ruta a adaptadores LoRA (de Fase 8)
             base_model_path: Ruta al modelo base
             training_mode: Modo (simulation/test/production)
-            db_url: URL de conexión a MariaDB
+            broker_client: Cliente HTTP del Broker (TrainerBrokerClient)
             output_dir: Directorio de salida (default: autonomous_training/exports/)
             training_info: Información adicional del entrenamiento
         """
@@ -59,8 +59,8 @@ class Phase9Executor:
         self.training_mode = training_mode
         self.training_info = training_info or {}
 
-        # Progress tracker
-        self.progress = AutonomousProgressTracker(db_url, id_entrenamiento)
+        # Progress tracker (via cadena API)
+        self.progress = AutonomousProgressTracker(broker_client, id_entrenamiento)
 
         # Output directory
         if output_dir is None:
@@ -254,7 +254,7 @@ def execute_phase9_export(
     lora_adapters_path: str,
     base_model_path: str,
     training_mode: str,
-    db_url: str,
+    broker_client: Any,
     **kwargs,
 ) -> dict[str, Any]:
     """Función helper para ejecutar Fase 9 desde el trainer.
@@ -264,7 +264,7 @@ def execute_phase9_export(
         lora_adapters_path: Ruta a adaptadores LoRA
         base_model_path: Ruta al modelo base
         training_mode: Modo de entrenamiento
-        db_url: URL de MariaDB
+        broker_client: Cliente HTTP del Broker (TrainerBrokerClient)
         **kwargs: Argumentos opcionales (output_dir, training_info, etc.)
 
     Returns:
@@ -279,7 +279,7 @@ def execute_phase9_export(
         lora_adapters_path,
         base_model_path,
         training_mode,
-        db_url,
+        broker_client,
         **kwargs,
     ) as executor:
         return executor.execute()

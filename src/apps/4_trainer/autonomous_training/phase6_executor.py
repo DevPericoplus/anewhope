@@ -40,7 +40,7 @@ class Phase6Executor:
         id_entrenamiento: int,
         collection_name: str,
         training_mode: str,
-        db_url: str,
+        broker_client: Any,
         ollama_url: str = "http://localhost:11434",
         chroma_host: str = "localhost",
         chroma_port: int = 8100,
@@ -52,7 +52,7 @@ class Phase6Executor:
             id_entrenamiento: ID del entrenamiento
             collection_name: Nombre de la colección ChromaDB
             training_mode: Modo (simulation/test/production)
-            db_url: URL de conexión a MariaDB
+            broker_client: Cliente HTTP del Broker (TrainerBrokerClient)
             ollama_url: URL de Ollama
             chroma_host: Host de ChromaDB
             chroma_port: Puerto de ChromaDB
@@ -62,8 +62,8 @@ class Phase6Executor:
         self.collection_name = collection_name
         self.training_mode = training_mode
 
-        # Progress tracker
-        self.progress = AutonomousProgressTracker(db_url, id_entrenamiento)
+        # Progress tracker (via cadena API)
+        self.progress = AutonomousProgressTracker(broker_client, id_entrenamiento)
 
         # Dataset generator
         self.generator = DatasetGenerator(
@@ -286,7 +286,7 @@ def execute_phase6_generation(
     id_entrenamiento: int,
     collection_name: str,
     training_mode: str,
-    db_url: str,
+    broker_client: Any,
     **kwargs,
 ) -> dict[str, Any]:
     """Función helper para ejecutar la Fase 6 desde el trainer.
@@ -295,7 +295,7 @@ def execute_phase6_generation(
         id_entrenamiento: ID del entrenamiento
         collection_name: Nombre de la colección ChromaDB
         training_mode: Modo de entrenamiento
-        db_url: URL de MariaDB
+        broker_client: Cliente HTTP del Broker (TrainerBrokerClient)
         **kwargs: Argumentos opcionales (ollama_url, chroma_host, etc.)
 
     Returns:
@@ -308,7 +308,7 @@ def execute_phase6_generation(
         id_entrenamiento,
         collection_name,
         training_mode,
-        db_url,
+        broker_client,
         **kwargs,
     ) as executor:
         return executor.execute()

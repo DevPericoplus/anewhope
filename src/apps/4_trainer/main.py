@@ -18,6 +18,11 @@ ROOT_DIR = Path(__file__).resolve().parents[3]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+# Añadir directorio del trainer para módulos locales (autonomous_training, etc.)
+TRAINER_DIR = Path(__file__).resolve().parent
+if str(TRAINER_DIR) not in sys.path:
+    sys.path.insert(0, str(TRAINER_DIR))
+
 
 APP_NAME = "trainer"
 LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)-20s | %(message)s"

@@ -37,7 +37,7 @@ class Phases78Executor:
         id_entrenamiento: int,
         dataset_path: str,
         training_mode: str,
-        db_url: str,
+        broker_client: Any,
         base_model_name: str = "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
         output_dir: Path | None = None,
     ):
@@ -47,7 +47,7 @@ class Phases78Executor:
             id_entrenamiento: ID del entrenamiento
             dataset_path: Ruta del dataset JSONL (de Fase 6)
             training_mode: Modo (simulation/test/production)
-            db_url: URL de conexión a MariaDB
+            broker_client: Cliente HTTP del Broker (TrainerBrokerClient)
             base_model_name: Nombre del modelo base en HuggingFace
             output_dir: Directorio de salida (default: autonomous_training/lora_adapters/)
         """
@@ -55,8 +55,8 @@ class Phases78Executor:
         self.dataset_path = dataset_path
         self.training_mode = training_mode
 
-        # Progress tracker
-        self.progress = AutonomousProgressTracker(db_url, id_entrenamiento)
+        # Progress tracker (via cadena API)
+        self.progress = AutonomousProgressTracker(broker_client, id_entrenamiento)
 
         # Preparador LoRA
         self.preparation = LoRAPreparation(
@@ -316,7 +316,7 @@ def execute_phases78_training(
     id_entrenamiento: int,
     dataset_path: str,
     training_mode: str,
-    db_url: str,
+    broker_client: Any,
     **kwargs,
 ) -> dict[str, Any]:
     """Función helper para ejecutar Fases 7-8 desde el trainer.
@@ -325,7 +325,7 @@ def execute_phases78_training(
         id_entrenamiento: ID del entrenamiento
         dataset_path: Ruta del dataset JSONL
         training_mode: Modo de entrenamiento
-        db_url: URL de MariaDB
+        broker_client: Cliente HTTP del Broker (TrainerBrokerClient)
         **kwargs: Argumentos opcionales (base_model_name, output_dir, etc.)
 
     Returns:
@@ -339,7 +339,7 @@ def execute_phases78_training(
         id_entrenamiento,
         dataset_path,
         training_mode,
-        db_url,
+        broker_client,
         **kwargs,
     ) as executor:
         return executor.execute()

@@ -901,8 +901,8 @@ def _save_evaluation_report(
         "2_shared_application/config/env_settings.py",
     )
     internal_base = env_settings.get_env_value(
-        "backend_ia_internal_storage",
-        "~/data/anewhope/files/trainer_server/internal",
+        "backend_ia_reports_storage",
+        "~/data/anewhope/files/trainer_server/internal/reports",
     )
 
     # Obtener funciones de estructura de carpetas

@@ -1018,6 +1018,8 @@ def consultar_progreso_autonomo(
 ) -> dict[str, Any]:
     """Consulta el progreso del entrenamiento autónomo (fases 6-9).
 
+    Redirige la consulta via Broker → Backend Core → MariaDB.
+
     Args:
         id_entrenamiento: ID del entrenamiento autónomo
 
@@ -1032,26 +1034,20 @@ def consultar_progreso_autonomo(
     )
 
     try:
-        # Construir DB URL
-        from autonomous_training_service import _get_db_url
-        from autonomous_training.db_progress import AutonomousProgressTracker
+        from broker_client import TrainerBrokerClient
 
-        db_url = _get_db_url()
-
-        # Consultar progreso
-        with AutonomousProgressTracker(db_url, id_entrenamiento) as tracker:
-            progress_data = tracker.get_progress()
-
-        logger.info(
-            "[AUTONOMOUS PROGRESS] Progreso obtenido: %s/%s subfases completadas",
-            progress_data["summary"]["completed"],
-            progress_data["summary"]["total"],
+        broker = TrainerBrokerClient()
+        result = broker._request(
+            "GET",
+            f"/training/entrenamientos/{id_entrenamiento}/autonomous/progress",
         )
 
-        return {
-            "success": True,
-            "data": progress_data,
-        }
+        logger.info(
+            "[AUTONOMOUS PROGRESS] Progreso obtenido via broker para ent=%s",
+            id_entrenamiento,
+        )
+
+        return result
 
     except Exception as exc:
         logger.error(
@@ -1083,6 +1079,9 @@ def descargar_paquete_autonomo(
 ) -> FileResponse:
     """Descarga el paquete ZIP del modelo autónomo generado.
 
+    Consulta package_path via Broker → Backend Core → MariaDB y luego
+    sirve el archivo local.
+
     Args:
         id_entrenamiento: ID del entrenamiento autónomo
 
@@ -1097,27 +1096,34 @@ def descargar_paquete_autonomo(
     )
 
     try:
-        # Construir DB URL
-        from autonomous_training_service import _get_db_url
-        from sqlalchemy import create_engine, text
+        from broker_client import TrainerBrokerClient
 
-        db_url = _get_db_url()
-        engine = create_engine(db_url, pool_pre_ping=True)
+        broker = TrainerBrokerClient()
 
-        # Consultar package_path de BD
-        query = text("""
-            SELECT package_path, package_size_mb
-            FROM entrenamientos_autonomos
-            WHERE id_entrenamiento = :id_ent
-        """)
+        # Consultar progreso para obtener package_path via API chain
+        progress_result = broker._request(
+            "GET",
+            f"/training/entrenamientos/{id_entrenamiento}/autonomous/progress",
+        )
 
-        with engine.connect() as conn:
-            result = conn.execute(query, {"id_ent": id_entrenamiento})
-            row = result.fetchone()
+        # Obtener packages list para el id_entrenamiento
+        packages_result = broker._request(
+            "GET",
+            f"/training/autonomous/packages?id_entrenamiento={id_entrenamiento}",
+        )
 
-        engine.dispose()
+        # Buscar package_path en los resultados
+        package_path = None
+        package_size_mb = 0
 
-        if not row or not row[0]:
+        packages = packages_result.get("packages", [])
+        for pkg in packages:
+            if pkg.get("id_entrenamiento") == id_entrenamiento:
+                package_path = pkg.get("package_path")
+                package_size_mb = pkg.get("package_size_mb", 0)
+                break
+
+        if not package_path:
             logger.error(
                 "[AUTONOMOUS DOWNLOAD] No se encontró paquete para ent=%s",
                 id_entrenamiento,
@@ -1127,10 +1133,7 @@ def descargar_paquete_autonomo(
                 detail=f"No se encontró paquete para entrenamiento {id_entrenamiento}",
             )
 
-        package_path = row[0]
-        package_size_mb = row[1] or 0
-
-        # Verificar que el archivo existe
+        # Verificar que el archivo existe localmente
         from pathlib import Path
         package_file = Path(package_path)
 
@@ -1141,7 +1144,7 @@ def descargar_paquete_autonomo(
             )
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"El archivo del paquete no existe en el servidor",
+                detail="El archivo del paquete no existe en el servidor",
             )
 
         logger.info(
@@ -1183,7 +1186,7 @@ def listar_paquetes_autonomos(
 ) -> dict[str, Any]:
     """Lista los paquetes autónomos disponibles para descargar.
 
-    Filtra por organización, proyecto y/o versión si se proporcionan.
+    Redirige la consulta via Broker → Backend Core → MariaDB.
 
     Args:
         id_organizacion: Filtrar por organización (opcional)
@@ -1203,95 +1206,45 @@ def listar_paquetes_autonomos(
     )
 
     try:
-        # Construir DB URL
-        from autonomous_training_service import _get_db_url
-        from sqlalchemy import create_engine, text
+        from broker_client import TrainerBrokerClient
 
-        db_url = _get_db_url()
-        engine = create_engine(db_url, pool_pre_ping=True)
+        broker = TrainerBrokerClient()
 
-        # Construir query con filtros opcionales
-        where_clauses = []
-        params = {}
-
+        # Construir query string
+        params = []
         if id_organizacion is not None:
-            where_clauses.append("e.id_organizacion = :org")
-            params["org"] = id_organizacion
-
+            params.append(f"id_organizacion={id_organizacion}")
         if id_proyecto is not None:
-            where_clauses.append("e.id_proyecto = :prj")
-            params["prj"] = id_proyecto
-
+            params.append(f"id_proyecto={id_proyecto}")
         if id_version is not None:
-            where_clauses.append("e.id_version = :ver")
-            params["ver"] = id_version
+            params.append(f"id_version={id_version}")
 
-        where_sql = " AND " + " AND ".join(where_clauses) if where_clauses else ""
+        query_string = "&".join(params)
+        path = "/training/entrenamientos/autonomous/packages"
+        if query_string:
+            path = f"{path}?{query_string}"
 
-        query = text(f"""
-            SELECT
-                e.id AS id_entrenamiento,
-                e.id_organizacion,
-                e.id_proyecto,
-                e.id_version,
-                e.collection_name,
-                e.estado,
-                e.created_at,
-                ea.training_mode,
-                ea.package_path,
-                ea.package_size_mb,
-                ea.package_generated_at,
-                ea.dataset_size,
-                ea.gguf_quantization
-            FROM entrenamientos e
-            INNER JOIN entrenamientos_autonomos ea ON e.id = ea.id_entrenamiento
-            WHERE ea.package_path IS NOT NULL
-              AND ea.package_generated_at IS NOT NULL
-              {where_sql}
-            ORDER BY ea.package_generated_at DESC
-            LIMIT 100
-        """)
+        result = broker._request("GET", path)
 
-        with engine.connect() as conn:
-            result = conn.execute(query, params)
-            rows = result.fetchall()
-
-        engine.dispose()
-
-        # Construir lista de paquetes
-        packages = []
-        for row in rows:
-            from pathlib import Path
-            package_file = Path(row[8]) if row[8] else None
-
-            packages.append({
-                "id_entrenamiento": row[0],
-                "id_organizacion": row[1],
-                "id_proyecto": row[2],
-                "id_version": row[3],
-                "collection_name": row[4],
-                "estado": row[5],
-                "created_at": row[6].isoformat() if row[6] else None,
-                "training_mode": row[7],
-                "package_path": row[8],
-                "package_size_mb": float(row[9]) if row[9] else 0,
-                "package_generated_at": row[10].isoformat() if row[10] else None,
-                "dataset_size": row[11],
-                "gguf_quantization": row[12],
-                "package_filename": package_file.name if package_file else "",
-                "package_exists": package_file.exists() if package_file else False,
-            })
+        # Enriquecer con información local de archivos
+        packages = result.get("packages", [])
+        for pkg in packages:
+            package_path = pkg.get("package_path")
+            if package_path:
+                from pathlib import Path
+                package_file = Path(package_path)
+                pkg["package_filename"] = package_file.name
+                pkg["package_exists"] = package_file.exists()
+            else:
+                pkg["package_filename"] = ""
+                pkg["package_exists"] = False
 
         logger.info(
             "[PACKAGES LIST] Encontrados %s paquetes",
             len(packages),
         )
 
-        return {
-            "success": True,
-            "packages": packages,
-            "total": len(packages),
-        }
+        return result
 
     except Exception as exc:
         logger.error(

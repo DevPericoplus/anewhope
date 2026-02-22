@@ -267,17 +267,22 @@ class TrainerBrokerClient:
         status: str,
         elapsed_time: str = "",
         error_message: str = "",
+        metrics: str = "",
     ) -> dict[str, Any]:
         """Notifica progreso de una subfase al Broker.
 
+        Funciona tanto para fases RAG (2-5) como autónomas (6-9).
+        El Backend Core enruta automáticamente a la tabla correcta.
+
         Args:
             id_entrenamiento: ID del entrenamiento en BD.
-            phase_key: Clave de la fase principal (ej: "3").
-            subfase_key: Clave de la subfase (ej: "3.2").
+            phase_key: Clave de la fase principal (ej: "3" o "6").
+            subfase_key: Clave de la subfase (ej: "3.2" o "6.1").
             subfase_name: Nombre legible (ej: "Chunking").
-            status: Estado (in_progress, completed, error).
+            status: Estado (in_progress, completed, error, failed).
             elapsed_time: Tiempo empleado (ej: "2m 15s").
             error_message: Mensaje de error si status=error.
+            metrics: JSON de métricas opcionales (fases autónomas).
 
         Returns:
             Diccionario con success y message.
@@ -290,6 +295,7 @@ class TrainerBrokerClient:
             "status": status,
             "elapsed_time": elapsed_time,
             "error_message": error_message,
+            "metrics": metrics,
         }
 
         try:
@@ -299,6 +305,76 @@ class TrainerBrokerClient:
             logger.warning(
                 "[BROKER-CLIENT] Error notificando progreso %s: %s",
                 subfase_key,
+                exc,
+            )
+            return {"success": False, "message": str(exc)}
+
+    # ================================================================
+    # Operaciones de entrenamiento autónomo (fases 6-9)
+    # ================================================================
+
+    def initialize_autonomous_training(
+        self,
+        id_entrenamiento: int,
+        training_mode: str,
+    ) -> dict[str, Any]:
+        """Inicializa registro de entrenamiento autónomo via Broker → Backend Core.
+
+        Args:
+            id_entrenamiento: ID del entrenamiento en BD.
+            training_mode: Modo (simulation, test, production).
+
+        Returns:
+            Diccionario con success y message.
+        """
+        try:
+            return self._request(
+                "POST",
+                "/training/autonomous/init",
+                payload={
+                    "id_entrenamiento": id_entrenamiento,
+                    "training_mode": training_mode,
+                },
+            )
+        except Exception as exc:
+            logger.warning(
+                "[BROKER-CLIENT] Error inicializando autónomo %s: %s",
+                id_entrenamiento,
+                exc,
+            )
+            return {"success": False, "message": str(exc)}
+
+    def update_autonomous_metadata(
+        self,
+        id_entrenamiento: int,
+        metadata_type: str,
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Actualiza metadatos de entrenamiento autónomo via Broker → Backend Core.
+
+        Args:
+            id_entrenamiento: ID del entrenamiento en BD.
+            metadata_type: Tipo ("dataset", "lora", "gguf", "package").
+            data: Campos específicos según tipo.
+
+        Returns:
+            Diccionario con success y message.
+        """
+        try:
+            return self._request(
+                "PATCH",
+                "/training/autonomous/metadata",
+                payload={
+                    "id_entrenamiento": id_entrenamiento,
+                    "metadata_type": metadata_type,
+                    "data": data,
+                },
+            )
+        except Exception as exc:
+            logger.warning(
+                "[BROKER-CLIENT] Error actualizando metadata %s para %s: %s",
+                metadata_type,
+                id_entrenamiento,
                 exc,
             )
             return {"success": False, "message": str(exc)}

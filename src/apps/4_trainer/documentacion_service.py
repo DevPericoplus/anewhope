@@ -576,8 +576,8 @@ def process_documentacion(data: dict[str, Any]) -> None:
 
         # --- 4b: Calcular ruta de salida (antes de renderizar, para incluirla) ---
         internal_base = get_env_value(
-            "backend_ia_internal_storage",
-            "~/data/anewhope/files/trainer_server/internal",
+            "backend_ia_reports_storage",
+            "~/data/anewhope/files/trainer_server/internal/reports",
         )
         output_path = _compute_output_path(internal_base, id_org, id_prj, id_ver)
 
