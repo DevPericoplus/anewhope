@@ -3229,6 +3229,43 @@ def get_all_organizations(
     return response if isinstance(response, list) else []
 
 
+def get_accessible_organizations(
+    user_id: int,
+    identity_type_id: int,
+    session_org_id: int = 0,
+    access_token: str | None = None,
+    session_token: str | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """Gets organizations accessible to a user based on identity type.
+
+    Returns:
+        Tuple of (organizations_list, default_org_id).
+        Each org is a dict with 'id' and 'name'.
+    """
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    path = f"/assignments/accessible-organizations?user_id={user_id}&identity_type_id={identity_type_id}"
+    response = _request_middleware("GET", path, headers=headers)
+    orgs = response if isinstance(response, list) else []
+
+    # Determine default org
+    default_id = 0
+    if orgs:
+        if session_org_id > 0:
+            for org in orgs:
+                if org.get("id") == session_org_id:
+                    default_id = session_org_id
+                    break
+        if default_id == 0:
+            default_id = orgs[0].get("id", 0)
+
+    return orgs, default_id
+
+
 def get_internal_users(
     access_token: str | None = None,
     session_token: str | None = None,

@@ -538,88 +538,44 @@ class ExploradorState(SharedSessionState):
             logger.exception("Error confirmando entrenamiento: %s", e)
             return rx.toast.error(f"Error al confirmar entrenamiento: {str(e)}")
 
-    def bloquear_version(self):
-        """Admin bloquea versión temporalmente: Abierta → Bloqueada.
+    def _resolve_version_item(self, item_or_id):
+        """Resuelve item_or_id a un FolderItem y su version_key.
 
-        Solo disponible para administradores. Transición REVERSIBLE.
-        Pone la versión en modo solo lectura temporalmente.
+        Maneja los tres formatos posibles que Reflex puede enviar:
+        - str: ID del item (búsqueda en self.items)
+        - dict: Item serializado por Reflex (extrae el id y busca)
+        - FolderItem: Objeto directo
         """
-        if not self.can_version_create:  # Admin permission
-            return rx.toast.error("Esta acción es solo para administradores")
-
-        if self.version_state != "Abierta":
-            return rx.toast.error(f"Solo se puede bloquear versiones en estado 'Abierta'. Estado actual: {self.version_state}")
-
-        try:
-            from adapters.api_client import update_version_state
-
-            result = update_version_state(
-                project_id=self.id_proyecto,
-                version_id=self.id_version_int,
-                state="Bloqueada",
-                protected=True,
-                access_token=self.access_token,
-                session_token=self.session_token
-            )
-
-            if result.get("success"):
-                self.load_version_state_from_api()
-                self.interpretacion_estados()
-                yield
-                return rx.toast.success("Versión bloqueada (reversible)")
-            else:
-                return rx.toast.error(f"Error: {result.get('message', 'Error desconocido')}")
-
-        except Exception as e:
-            logger.exception("Error bloqueando versión: %s", e)
-            return rx.toast.error(f"Error al bloquear versión: {str(e)}")
-
-    def desbloquear_version(self):
-        """Admin desbloquea versión: Bloqueada → Abierta.
-
-        Solo disponible para administradores. Revierte un bloqueo temporal.
-        """
-        if not self.can_version_create:
-            return rx.toast.error("Esta acción es solo para administradores")
-
-        if self.version_state != "Bloqueada":
-            return rx.toast.error(f"Solo se puede desbloquear versiones en estado 'Bloqueada'. Estado actual: {self.version_state}")
-
-        try:
-            from adapters.api_client import update_version_state
-
-            result = update_version_state(
-                project_id=self.id_proyecto,
-                version_id=self.id_version_int,
-                state="Abierta",
-                protected=False,
-                access_token=self.access_token,
-                session_token=self.session_token
-            )
-
-            if result.get("success"):
-                self.load_version_state_from_api()
-                self.interpretacion_estados()
-                yield
-                return rx.toast.success("Versión desbloqueada")
-            else:
-                return rx.toast.error(f"Error: {result.get('message', 'Error desconocido')}")
-
-        except Exception as e:
-            logger.exception("Error desbloqueando versión: %s", e)
-            return rx.toast.error(f"Error al desbloquear versión: {str(e)}")
-
-    def abrir_version(self, item_or_id):
-        """Cambia el estado de una versión a 'Abierta' (protected=False)."""
-        # Obtener el item si es un ID
+        logger.info(
+            "[_resolve_version_item] Recibido: type=%s value=%r items_count=%d item_ids=%s",
+            type(item_or_id).__name__,
+            item_or_id,
+            len(self.items),
+            [i.id for i in self.items[:10]] if self.items else "[]",
+        )
+        if isinstance(item_or_id, dict):
+            item_or_id = item_or_id.get("id", "")
+            logger.info("[_resolve_version_item] Dict → id extraído: %r", item_or_id)
         if isinstance(item_or_id, str):
             item = next((i for i in self.items if i.id == item_or_id), None)
             if not item:
-                return rx.toast.error("Item no encontrado")
-        else:
-            item = item_or_id
+                logger.error(
+                    "[_resolve_version_item] Item NO encontrado: id=%r en items=%s",
+                    item_or_id,
+                    [i.id for i in self.items],
+                )
+                return None, None
+            logger.info("[_resolve_version_item] Item encontrado: id=%s name=%s", item.id, item.name)
+            return item, item.name
+        # FolderItem directo
+        logger.info("[_resolve_version_item] FolderItem directo: %r", item_or_id)
+        return item_or_id, item_or_id.name
 
-        version_key = item.name  # ej: "v001"
+    def abrir_version(self, item_or_id):
+        """Cambia el estado de una versión a 'Abierta' (protected=False)."""
+        item, version_key = self._resolve_version_item(item_or_id)
+        if not item:
+            return rx.toast.error("Item no encontrado")
 
         try:
             from adapters.api_client import update_version_state
@@ -651,15 +607,9 @@ class ExploradorState(SharedSessionState):
 
     def bloquear_version(self, item_or_id):
         """Cambia el estado de una versión a 'Bloqueada' (protected=True)."""
-        # Obtener el item si es un ID
-        if isinstance(item_or_id, str):
-            item = next((i for i in self.items if i.id == item_or_id), None)
-            if not item:
-                return rx.toast.error("Item no encontrado")
-        else:
-            item = item_or_id
-
-        version_key = item.name  # ej: "v001"
+        item, version_key = self._resolve_version_item(item_or_id)
+        if not item:
+            return rx.toast.error("Item no encontrado")
 
         try:
             from adapters.api_client import update_version_state
@@ -695,15 +645,9 @@ class ExploradorState(SharedSessionState):
         Este método reemplaza a proteger_version() con la nueva nomenclatura.
         Estado "Entrenar" indica que el cliente ha solicitado entrenamiento.
         """
-        # Obtener el item si es un ID
-        if isinstance(item_or_id, str):
-            item = next((i for i in self.items if i.id == item_or_id), None)
-            if not item:
-                return rx.toast.error("Item no encontrado")
-        else:
-            item = item_or_id
-
-        version_key = item.name  # ej: "v001"
+        item, version_key = self._resolve_version_item(item_or_id)
+        if not item:
+            return rx.toast.error("Item no encontrado")
 
         try:
             from adapters.api_client import update_version_state
@@ -744,15 +688,9 @@ class ExploradorState(SharedSessionState):
 
     def finalizar_version(self, item_or_id):
         """Cambia el estado de una versión a 'Final' (protected=True, final_c=True, final_i=True)."""
-        # Obtener el item si es un ID
-        if isinstance(item_or_id, str):
-            item = next((i for i in self.items if i.id == item_or_id), None)
-            if not item:
-                return rx.toast.error("Item no encontrado")
-        else:
-            item = item_or_id
-
-        version_key = item.name  # ej: "v001"
+        item, version_key = self._resolve_version_item(item_or_id)
+        if not item:
+            return rx.toast.error("Item no encontrado")
 
         try:
             from adapters.api_client import update_version_state
@@ -961,7 +899,9 @@ class ExploradorState(SharedSessionState):
                     block_version, unblock_version, create_folder, properties)
             item_or_id: Item (FolderItem) o ID del item (str) sobre el que se ejecuta la acción
         """
-        # Si es un string (item_id), buscar el item
+        # Resolver item: puede llegar como str (id), dict (serializado) o FolderItem
+        if isinstance(item_or_id, dict):
+            item_or_id = item_or_id.get("id", "")
         if isinstance(item_or_id, str):
             item = None
             for i in self.items:
@@ -2102,7 +2042,6 @@ class ExploradorState(SharedSessionState):
 
 def render_item(item: FolderItem) -> rx.Component:
     """Renderiza un item del explorador sin menú contextual."""
-    item_id = item.id  # Capturar el id en una variable local
     return rx.cond(
         item.is_visible,
         rx.hstack(
@@ -2125,7 +2064,7 @@ def render_item(item: FolderItem) -> rx.Component:
                 align_items="center",
                 justify_content="center",
                 cursor="pointer",
-                on_click=lambda: ExploradorState.toggle_folder(item_id),
+                on_click=ExploradorState.toggle_folder(item.id),
                 margin_right="6px",
             ),
             rx.box(width="20px"),  # Espacio para alinear si no hay botón
@@ -2248,7 +2187,7 @@ def render_item(item: FolderItem) -> rx.Component:
         _hover={"bg": "#e5f3ff", "outline": "1px dotted #999"},
         width="100%",
         cursor="default",
-        on_click=lambda: ExploradorState.select_item(item_id),
+        on_click=ExploradorState.select_item(item.id),
         ),
         rx.fragment()
     )
@@ -2256,9 +2195,6 @@ def render_item(item: FolderItem) -> rx.Component:
 
 def create_folder_menu_items(item_obj: FolderItem):
     """Crea los menu items para una carpeta, capturando correctamente el item."""
-    # Capturar el item_id en una variable local
-    item_id = item_obj.id
-
     return [
         # Opciones de versión (depth == 1) - Backoffice
         rx.cond(
@@ -2266,19 +2202,19 @@ def create_folder_menu_items(item_obj: FolderItem):
             rx.fragment(
                 rx.context_menu.item(
                     rx.hstack(rx.icon(tag="lock-open", size=16), rx.text("Abrir"), spacing="2"),
-                    on_click=lambda id=item_id: ExploradorState.abrir_version(id),
+                    on_click=ExploradorState.abrir_version(item_obj.id),
                 ),
                 rx.context_menu.item(
                     rx.hstack(rx.icon(tag="lock", size=16), rx.text("Bloquear"), spacing="2"),
-                    on_click=lambda id=item_id: ExploradorState.bloquear_version(id),
+                    on_click=ExploradorState.bloquear_version(item_obj.id),
                 ),
                 rx.context_menu.item(
                     rx.hstack(rx.icon(tag="graduation-cap", size=16), rx.text("Entrenar"), spacing="2"),
-                    on_click=lambda id=item_id: ExploradorState.entrenar_version(id),
+                    on_click=ExploradorState.entrenar_version(item_obj.id),
                 ),
                 rx.context_menu.item(
                     rx.hstack(rx.icon(tag="circle-check", size=16), rx.text("Finalizar"), spacing="2"),
-                    on_click=lambda id=item_id: ExploradorState.finalizar_version(id),
+                    on_click=ExploradorState.finalizar_version(item_obj.id),
                 ),
                 rx.context_menu.separator(),
             ),
@@ -2288,21 +2224,21 @@ def create_folder_menu_items(item_obj: FolderItem):
             ExploradorState.can_folder_create & ~item_obj.is_blocked,
             rx.context_menu.item(
                 rx.hstack(rx.icon(tag="folder-plus", size=16), rx.text("Crear Carpeta"), spacing="2"),
-                on_click=lambda id=item_id: ExploradorState.acciones("create_folder", id),
+                on_click=ExploradorState.acciones("create_folder", item_obj.id),
             ),
         ),
         rx.cond(
             ExploradorState.can_file_create & ~item_obj.is_blocked,
             rx.context_menu.item(
                 rx.hstack(rx.icon(tag="upload", size=16), rx.text("Subir archivo"), spacing="2"),
-                on_click=lambda id=item_id: ExploradorState.acciones("upload_file", id),
+                on_click=ExploradorState.acciones("upload_file", item_obj.id),
             ),
         ),
         rx.cond(
             ExploradorState.can_folder_rename & ~item_obj.is_protected & ~item_obj.is_blocked,
             rx.context_menu.item(
                 rx.hstack(rx.icon(tag="pencil", size=16), rx.text("Renombrar"), spacing="2"),
-                on_click=lambda id=item_id: ExploradorState.acciones("rename", id),
+                on_click=ExploradorState.acciones("rename", item_obj.id),
             ),
         ),
         rx.context_menu.separator(),
@@ -2310,7 +2246,7 @@ def create_folder_menu_items(item_obj: FolderItem):
             ExploradorState.can_folder_delete & ~item_obj.is_protected & ~item_obj.is_blocked,
             rx.context_menu.item(
                 rx.hstack(rx.icon(tag="trash-2", size=16, color="red"), rx.text("Eliminar", color="red"), spacing="2"),
-                on_click=lambda id=item_id: ExploradorState.acciones("delete", id),
+                on_click=ExploradorState.acciones("delete", item_obj.id),
                 color="red",
             ),
         ),
@@ -2319,30 +2255,27 @@ def create_folder_menu_items(item_obj: FolderItem):
             ExploradorState.can_folder_read,
             rx.context_menu.item(
                 rx.hstack(rx.icon(tag="info", size=16), rx.text("Propiedades"), spacing="2"),
-                on_click=lambda id=item_id: ExploradorState.acciones("properties", id),
+                on_click=ExploradorState.acciones("properties", item_obj.id),
             ),
         ),
     ]
 
 
 def create_file_menu_items(item_obj: FolderItem):
-    """Crea los menu items para un archivo, capturando correctamente el item."""
-    # Capturar el item_id en una variable local
-    item_id = item_obj.id
-
+    """Crea los menu items para un archivo."""
     return [
         rx.cond(
             ExploradorState.can_file_read,
             rx.context_menu.item(
                 rx.hstack(rx.icon(tag="download", size=16), rx.text("Descargar"), spacing="2"),
-                on_click=lambda id=item_id: ExploradorState.acciones("download", id),
+                on_click=ExploradorState.acciones("download", item_obj.id),
             ),
         ),
         rx.cond(
             ExploradorState.can_file_update,
             rx.context_menu.item(
                 rx.hstack(rx.icon(tag="pencil", size=16), rx.text("Renombrar"), spacing="2"),
-                on_click=lambda id=item_id: ExploradorState.acciones("rename", id),
+                on_click=ExploradorState.acciones("rename", item_obj.id),
             ),
         ),
         rx.context_menu.separator(),
@@ -2350,7 +2283,7 @@ def create_file_menu_items(item_obj: FolderItem):
             ExploradorState.can_file_delete,
             rx.context_menu.item(
                 rx.hstack(rx.icon(tag="trash-2", size=16, color="red"), rx.text("Eliminar", color="red"), spacing="2"),
-                on_click=lambda id=item_id: ExploradorState.acciones("delete", id),
+                on_click=ExploradorState.acciones("delete", item_obj.id),
                 color="red",
             ),
         ),
@@ -2359,7 +2292,7 @@ def create_file_menu_items(item_obj: FolderItem):
             ExploradorState.can_file_read,
             rx.context_menu.item(
                 rx.hstack(rx.icon(tag="info", size=16), rx.text("Propiedades"), spacing="2"),
-                on_click=lambda id=item_id: ExploradorState.acciones("properties", id),
+                on_click=ExploradorState.acciones("properties", item_obj.id),
             ),
         ),
     ]
@@ -2367,8 +2300,6 @@ def create_file_menu_items(item_obj: FolderItem):
 
 def render_item_with_menu_button(item: FolderItem) -> rx.Component:
     """Renderiza un item con botón de menú visible (⋮) en lugar de menú contextual."""
-    item_id = item.id
-
     # Condición para mostrar menú en carpetas
     should_show_menu_folder = (
         (item.item_type == "folder") &
@@ -2404,7 +2335,7 @@ def render_item_with_menu_button(item: FolderItem) -> rx.Component:
                 align_items="center",
                 justify_content="center",
                 cursor="pointer",
-                on_click=lambda: ExploradorState.toggle_folder(item_id),
+                on_click=ExploradorState.toggle_folder(item.id),
                 margin_right="6px",
             ),
             rx.box(width="20px"),
@@ -2549,7 +2480,7 @@ def render_item_with_menu_button(item: FolderItem) -> rx.Component:
         _hover={"bg": "#e5f3ff", "outline": "1px dotted #999"},
         width="100%",
         cursor="default",
-        on_click=lambda: ExploradorState.select_item(item_id),
+        on_click=ExploradorState.select_item(item.id),
     )
 
 
