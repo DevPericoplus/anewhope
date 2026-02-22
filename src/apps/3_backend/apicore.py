@@ -722,6 +722,23 @@ def create_organization(
         ) from exc
 
 
+@app.get("/accessible-organizations")
+def get_accessible_organizations(
+    user_id: int,
+    identity_type_id: int,
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> list[dict[str, Any]]:
+    """Returns organizations accessible to a user based on identity type."""
+
+    try:
+        return router.get_user_accessible_organizations(user_id, identity_type_id)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+
 @app.get("/roles")
 def list_roles(
     router: BackendCoreRouter = Depends(get_router_core),

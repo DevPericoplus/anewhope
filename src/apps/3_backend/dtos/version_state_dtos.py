@@ -18,7 +18,7 @@ class VersionState(str, Enum):
     
     ABIERTA = "Abierta"
     BLOQUEADA = "Bloqueada"
-    PROTEGIDA = "Protegida"
+    ENTRENAR = "Entrenar"
     FINAL = "Final"
 
 

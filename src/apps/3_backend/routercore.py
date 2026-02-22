@@ -1327,6 +1327,42 @@ class BackendCoreRouter:
                     project_id,
                 )
 
+                # PASO 3: Registrar alta de proyecto en cambios
+                # (antes lo hacía el trigger tr_proyecto_after_insert, eliminado
+                #  porque no puede insertar en cambios sin un id_version válido)
+                version_db_id = (
+                    version_result.get("version", {}).get("id")
+                    if version_result.get("success")
+                    else None
+                )
+                if version_db_id:
+                    try:
+                        from sqlalchemy import text
+                        with self._get_projects_db_connection() as conn:
+                            conn.execute(
+                                text("""
+                                    INSERT INTO cambios (
+                                        id_version, fecha_cambio, tipo_cambio,
+                                        descripcion, id_organizacion, id_proyecto
+                                    ) VALUES (
+                                        :version_db_id, CURDATE(), 'alta_proyecto',
+                                        :descripcion, :org_id, :project_id
+                                    )
+                                """),
+                                {
+                                    "version_db_id": version_db_id,
+                                    "descripcion": f"Proyecto creado: {nombre}",
+                                    "org_id": id_organizacion,
+                                    "project_id": project_id,
+                                },
+                            )
+                            conn.commit()
+                    except Exception as cambio_exc:
+                        self._logger.warning(
+                            "[backend-core] No se pudo registrar alta_proyecto en cambios: %s",
+                            cambio_exc,
+                        )
+
                 return {
                     "success": True,
                     "project_id": project_id,
@@ -1454,6 +1490,44 @@ class BackendCoreRouter:
         dsn = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
         engine = create_engine(dsn)
         return engine.connect()
+
+    def get_user_accessible_organizations(
+        self, user_id: int, identity_type_id: int
+    ) -> list[dict[str, Any]]:
+        """Returns organizations accessible to a user based on identity type.
+
+        SuperAdmin (identity_type_id=1) sees all organizations.
+        Other users see only organizations with active assignment.
+        """
+        from sqlalchemy import text
+
+        with self._get_projects_db_connection() as conn:
+            if identity_type_id == 1:
+                result = conn.execute(
+                    text(
+                        "SELECT organization_id, organization_name "
+                        "FROM myllm_core_db.organizations "
+                        "ORDER BY organization_name"
+                    )
+                )
+            else:
+                result = conn.execute(
+                    text(
+                        "SELECT DISTINCT o.organization_id, o.organization_name "
+                        "FROM myllm_core_db.organizations o "
+                        "INNER JOIN asignaciones_organizaciones_internas aoi "
+                        "ON o.organization_id = aoi.id_organizacion "
+                        "WHERE aoi.id_usuario_interno = :user_id "
+                        "AND aoi.activo = 1 "
+                        "ORDER BY o.organization_name"
+                    ),
+                    {"user_id": int(user_id)},
+                )
+
+            return [
+                {"id": row[0], "name": row[1]}
+                for row in result
+            ]
 
     def _get_projects_db_writer_connection(self):
         """Obtiene conexión de ESCRITURA a la base de datos de proyectos."""
@@ -3473,6 +3547,21 @@ class BackendCoreRouter:
         if "size_bytes" in update_data:
             update_fields.append("size = :size_bytes")
             params["size_bytes"] = update_data["size_bytes"]
+
+        # Cuando el estado cambia a "Entrenar", establecer todos los campos
+        # previos del workflow. El trigger trg_estado_version_auto_entrenamiento
+        # detectará final_c=1 AND final_i=1 y activará entrenamiento_inicial_solicitado=1,
+        # haciendo que la versión aparezca en la página de Entrenamientos.
+        if update_data.get("state") == "Entrenar":
+            update_fields.append("revision_interna = 1")
+            update_fields.append("propuesta_mejoras = 1")
+            # final_c ya viene en update_data, pero aseguramos ambos
+            if "final_c" not in update_data:
+                update_fields.append("final_c = 1")
+            # final_i es clave: el trigger necesita AMBOS para activar entrenamiento
+            if "final_i" not in update_data:
+                update_fields.append("final_i = 1")
+                params["final_i"] = True
 
         if user_id is not None:
             update_fields.append("updated_by = :user_id")
@@ -5912,7 +6001,7 @@ class BackendCoreRouter:
                 state = 'Final'
                 protected = True
             elif aceptacion_cliente and not aceptacion_interna:
-                state = 'Protegida'
+                state = 'Entrenar'
                 protected = True
             elif not aceptacion_cliente and aceptacion_interna:
                 raise BackendCoreBusinessError(
