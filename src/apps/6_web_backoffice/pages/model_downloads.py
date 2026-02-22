@@ -74,6 +74,7 @@ class ModelDownloadState(SharedSessionState):
     # Lista de modelos filtrados (se muestra en la UI)
     models: list[dict[str, Any]] = []
     models_loading: bool = False
+    models_loaded: bool = False
     models_error: str = ""
 
     # Selector de organización (backoffice necesita selector, frontend usa sesión)
@@ -125,6 +126,9 @@ class ModelDownloadState(SharedSessionState):
     def on_mount(self):
         """Se ejecuta cuando la página se monta."""
         logger.info("[DESCARGAS] on_mount")
+        self.models = []
+        self.all_models_unfiltered = []
+        self.models_loaded = False
         return self.init_selectors()
 
     def init_selectors(self):
@@ -151,10 +155,9 @@ class ModelDownloadState(SharedSessionState):
                 self.dl_selected_org_id = orgs[0]["id"]
                 self.dl_selected_org_name = orgs[0].get("name", "")
 
-            # Cargar proyectos y modelos para la org seleccionada
+            # Cargar proyectos para la org seleccionada (modelos solo al pulsar Refrescar)
             if self.dl_selected_org_id > 0:
                 self._load_projects()
-                return type(self).load_models
         except Exception as exc:
             logger.error("Error inicializando selectores: %s", exc)
 
@@ -334,6 +337,7 @@ class ModelDownloadState(SharedSessionState):
                 async with self:
                     self.all_models_unfiltered = all_models
                     self._filter_models()
+                    self.models_loaded = True
                     self.models_loading = False
                 logger.info("Modelos cargados: %d", len(all_models))
             else:
@@ -809,49 +813,53 @@ def model_downloads_panel() -> rx.Component:
                 color_scheme="red",
             ),
         ),
-        # Lista de modelos
+        # Panel de modelos: solo visible después de pulsar "Refrescar"
         rx.cond(
-            ModelDownloadState.models_loading,
-            rx.center(
-                rx.spinner(size="3"),
-                padding="2rem",
-            ),
+            ModelDownloadState.models_loaded,
+            # Modelos cargados: mostrar spinner o resultados
             rx.cond(
-                ModelDownloadState.models,
-                rx.grid(
-                    rx.foreach(
-                        ModelDownloadState.models,
-                        model_card,
-                    ),
-                    columns="3",
-                    spacing="4",
-                    width="100%",
-                ),
+                ModelDownloadState.models_loading,
                 rx.center(
-                    rx.vstack(
-                        rx.icon("inbox", size=48, color=COLORS["muted_foreground"]),
-                        rx.text(
-                            "No hay modelos disponibles para el filtro seleccionado",
-                            color=COLORS["muted_foreground"],
-                            size="3",
-                        ),
-                        rx.cond(
-                            ModelDownloadState.dl_selected_org_id > 0,
-                            rx.text(
-                                "Pruebe a seleccionar otro proyecto o versión",
-                                color=COLORS["muted_foreground"],
-                                size="2",
-                            ),
-                            rx.text(
-                                "Seleccione una organización para ver los modelos disponibles",
-                                color=COLORS["muted_foreground"],
-                                size="2",
-                            ),
-                        ),
-                        spacing="2",
-                    ),
-                    padding="4rem",
+                    rx.spinner(size="3"),
+                    padding="2rem",
                 ),
+                rx.cond(
+                    ModelDownloadState.models,
+                    rx.grid(
+                        rx.foreach(
+                            ModelDownloadState.models,
+                            model_card,
+                        ),
+                        columns="3",
+                        spacing="4",
+                        width="100%",
+                    ),
+                    rx.center(
+                        rx.vstack(
+                            rx.icon("inbox", size=48, color=COLORS["muted_foreground"]),
+                            rx.text(
+                                "No hay modelos disponibles para el filtro seleccionado",
+                                color=COLORS["muted_foreground"],
+                                size="3",
+                            ),
+                            spacing="2",
+                        ),
+                        padding="4rem",
+                    ),
+                ),
+            ),
+            # Antes de Refrescar: mensaje informativo
+            rx.center(
+                rx.vstack(
+                    rx.icon("inbox", size=48, color=COLORS["muted_foreground"]),
+                    rx.text(
+                        "Pulse 'Refrescar' para cargar los modelos disponibles",
+                        color=COLORS["muted_foreground"],
+                        size="3",
+                    ),
+                    spacing="2",
+                ),
+                padding="4rem",
             ),
         ),
         # Modal de OTP
