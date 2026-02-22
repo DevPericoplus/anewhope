@@ -1006,7 +1006,7 @@ class ExploradorState(rx.State):
             logger.error(f"Error en iniciar_subida_archivo: {e}")
             return rx.toast.error(f"Error: {str(e)}")
 
-    def _handle_upload_result(self, result: str):
+    def _handle_upload_result(self, result: str = ""):
         """Procesa el resultado de la subida de archivo y refresca el explorador."""
         if not result or result == "cancelled":
             return
