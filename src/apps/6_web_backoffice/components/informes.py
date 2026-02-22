@@ -176,7 +176,7 @@ class InformesState(rx.State):
 
             # Cargar proyectos vía API
             from adapters.api_client import get_organization_projects
-            at = getattr(main_state, "token", "") or ""
+            at = getattr(main_state, "access_token", "") or ""
             st = getattr(main_state, "session_token", "") or ""
             raw = get_organization_projects(
                 organization_id=org_id,
