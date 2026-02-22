@@ -3536,21 +3536,24 @@ class State(SharedSessionState):
         """Carga organizaciones accesibles para el usuario vía API."""
         try:
             from adapters.api_client import get_accessible_organizations
-            result = get_accessible_organizations(
+            orgs_list, default_id = get_accessible_organizations(
+                user_id=self.user_id,
+                identity_type_id=self.identity_type_id,
+                session_org_id=self.organization_id,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
-            orgs_raw = result if isinstance(result, list) else result.get("organizations", [])
             self.ad_orgs = [
-                {"id": int(o.get("organization_id", o.get("id", 0))),
-                 "name": o.get("organization_name", o.get("name", ""))}
-                for o in orgs_raw
+                {"id": int(o.get("id", 0)), "name": o.get("name", "")}
+                for o in orgs_list
             ]
             print(f"[AD] Organizaciones cargadas: {len(self.ad_orgs)}")
 
             # Seleccionar organización por defecto
             if self.ad_orgs and self.ad_org_id == 0:
-                if self.organization_id > 0:
+                if default_id > 0:
+                    self.ad_org_id = default_id
+                elif self.organization_id > 0:
                     self.ad_org_id = self.organization_id
                 else:
                     self.ad_org_id = self.ad_orgs[0]["id"]
@@ -3583,15 +3586,13 @@ class State(SharedSessionState):
             return
         try:
             from adapters.api_client import get_organization_projects
-            result = get_organization_projects(
+            projects_raw = get_organization_projects(
                 organization_id=self.ad_org_id,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
-            projects_raw = result if isinstance(result, list) else result.get("projects", [])
             self.ad_projects = [
-                {"id": int(p.get("id", p.get("project_id", 0))),
-                 "name": p.get("nombre", p.get("name", ""))}
+                {"id": int(p.get("id", 0)), "name": p.get("name", "")}
                 for p in projects_raw
             ]
             print(f"[AD] Proyectos cargados: {len(self.ad_projects)}")
@@ -3622,16 +3623,16 @@ class State(SharedSessionState):
         try:
             from adapters.api_client import get_project_versions
             result = get_project_versions(
-                organization_id=self.ad_org_id,
                 project_id=self.ad_project_id,
+                organization_id=self.ad_org_id,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
-            versions_raw = result if isinstance(result, list) else result.get("versions", [])
+            versions_raw = result.get("versiones", [])
             self.ad_versions = [
                 {
-                    "id_version": int(v.get("id_version", v.get("version_id", 0))),
-                    "version_folder": f"v{int(v.get('id_version', v.get('version_id', 0))):03d}",
+                    "id_version": int(v.get("id_version", 0)),
+                    "version_folder": v.get("version_folder", f"v{int(v.get('id_version', 0)):03d}"),
                 }
                 for v in versions_raw
             ]
