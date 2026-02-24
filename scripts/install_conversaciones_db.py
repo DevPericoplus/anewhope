@@ -229,7 +229,7 @@ def main():
             print("  ✓ Conexión exitosa\n")
 
         # Ejecutar DDL
-        ddl_path = Path(__file__).parent / "infrastructure" / "database" / "migrations" / "007_conversaciones_sistema.sql"
+        ddl_path = Path(__file__).parent.parent / "infrastructure" / "database" / "migrations" / "007_conversaciones_sistema.sql"
 
         if not ddl_path.exists():
             print(f"❌ Error: No se encuentra el archivo DDL en {ddl_path}")

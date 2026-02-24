@@ -4,7 +4,7 @@ Proyecto para gestionar infraestructura, aplicaciones y flujos de personalizaci�
 
 ## Estructura principal
 
-- `info.txt`: guía rápida para crear y activar el entorno virtual, además de notas de operación.
+- `docs/info.txt`: guía rápida para crear y activar el entorno virtual, además de notas de operación.
 - `infrastructure/environments/<entorno>/protected_values.py`: variables sensibles por entorno.
 - `docs/README_DEPLOYMENT.md`: guía de despliegue con verificación SQL y estructura de base de datos.
 - `src/`: monorepo con organización hexagonal y dominios compartidos.

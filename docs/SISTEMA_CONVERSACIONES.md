@@ -85,13 +85,13 @@ conversaciones_tickets_relacionados
 
 ```bash
 # Instalación básica
-python install_conversaciones_db.py
+python scripts/install_conversaciones_db.py
 
 # Con datos de ejemplo
-python install_conversaciones_db.py --with-examples
+python scripts/install_conversaciones_db.py --with-examples
 
 # Con conexión personalizada
-python install_conversaciones_db.py --connection "mysql+pymysql://user:pass@host/db"
+python scripts/install_conversaciones_db.py --connection "mysql+pymysql://user:pass@host/db"
 ```
 
 ### 2. Verificar Instalación
