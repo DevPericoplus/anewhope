@@ -732,6 +732,62 @@ backend_core_internal_storage: /data/files/internal
 - Reglas de infraestructura: `AGENTS.md` sección 5.3.1
 - Sincronización fmanagement: `infrastructure/environments/README_FMANAGEMENT_SYNC.md`
 
+## Bases de Datos - Schema y Despliegue
+
+### Schema Canónico
+
+Los ficheros de schema canónico de MariaDB se encuentran en `infrastructure/database/schema/`:
+
+| Fichero | Contenido |
+|---|---|
+| `000_create_myllm_core_db.sql` | 14 tablas + 7 vistas (auth, users, orgs, sessions, permissions) |
+| `000_create_myllm_projects_db.sql` | 50 tablas + 11 triggers + 12 vistas (proyectos, entrenamientos, jobs, tickets) |
+| `000_create_routines.sql` | 1 función + 4 stored procedures |
+
+Estos ficheros representan la estructura completa de PRE y son la referencia para inicializar cualquier entorno.
+
+### Migraciones
+
+Las migraciones incrementales están en `infrastructure/database/migrations/` y se ejecutan en orden alfabético. Son idempotentes (pueden ejecutarse varias veces sin error).
+
+### Inicialización por Entorno
+
+| Entorno | Método | Comando |
+|---|---|---|
+| **macbook** | Schema manual | `mariadb -u root -p'<pass>' < infrastructure/database/schema/000_create_myllm_core_db.sql` (repetir con projects_db y routines) |
+| **dev** | Schema via Ansible | `./deploy_custom.sh --env dev --server backend --tags mariadb,users,schema-init` |
+| **pre** | Full dump + migraciones | `export_mariadb_from_macbook.sh pre` + `migrate_mariadb.yml` |
+| **pro** | Full dump + migraciones | `export_mariadb_from_macbook.sh pro` + `migrate_mariadb.yml` |
+
+### Actualización Incremental (todos los entornos)
+
+```bash
+# Via Ansible (dev/pre/pro)
+./deploy_custom.sh --env <env> --server backend --tags code,migrations
+
+# Manual (macbook)
+for f in infrastructure/database/migrations/*.sql; do mariadb -u myllm_admin -p'<pass>' < "$f"; done
+```
+
+### Exportar Schema Actual de PRE
+
+Cuando PRE tenga cambios de estructura:
+
+```bash
+cd /Users/administrator/develop/anh_ansible_environments
+./scripts/export_mariadb_schema.sh pre --to-anewhope
+```
+
+### Bases de Datos del Sistema
+
+| Base de datos | Tipo | Puerto | Ubicación |
+|---|---|---|---|
+| MariaDB (`myllm_core_db`, `myllm_projects_db`) | Relacional | 3306 | Backend |
+| Redis | Clave-valor (sesiones) | 6379 | Frontend |
+| ChromaDB | Vectorial (embeddings) | 8100 | Trainer |
+
+Documentación detallada: `infrastructure/database/schema/README.md`
+
 ## Estrategia de Dockerfiles y despliegue
 
 ### Dockerfiles por aplicación
