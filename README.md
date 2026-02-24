@@ -808,66 +808,90 @@ Documentación detallada: `infrastructure/database/schema/README.md`
 
 ## Estrategia de Dockerfiles y despliegue
 
-### Dockerfiles por aplicación
+### Tres modos de despliegue
 
-Cada aplicación en `src/apps/*` tiene su propio `Dockerfile` y un script `docker_execution.sh` 
-que facilita la construcción y ejecución del contenedor:
+El sistema soporta 3 modos de despliegue gestionados por Ansible (repositorio `anh_ansible_environments`):
+
+| Modo | Tag Ansible | Descripcion |
+|------|-------------|-------------|
+| **native** | `--tags native` | Instalacion directa con virtualenvs Python y servicios systemd |
+| **docker** | `--tags docker` | Contenedores Docker individuales (`docker run --network=host`) |
+| **docker-compose** | `--tags docker-compose` | Docker Compose por servidor con redes aisladas |
+
+En los modos **docker** y **docker-compose**, la infraestructura (MariaDB, Redis, Ollama, ChromaDB) puede ejecutarse nativa o en contenedores segun la configuracion.
+
+### Dockerfiles por aplicacion (fuente)
+
+Cada aplicacion en `src/apps/*` tiene su propio `Dockerfile` y un script `docker_execution.sh`
+que facilita la construccion y ejecucion del contenedor en desarrollo local:
 
 - `src/apps/3_backend/Dockerfile` y `docker_execution.sh`
+- `src/apps/4_trainer/Dockerfile` y `docker_execution.sh`
 - `src/apps/5_web_frontend/Dockerfile` y `docker_execution.sh`
 - `src/apps/6_web_backoffice/Dockerfile` y `docker_execution.sh`
 - `src/apps/7_service_frontend/Dockerfile` y `docker_execution.sh`
 - `src/apps/8_service_backend/Dockerfile` y `docker_execution.sh`
 
-El script `docker_execution.sh` de cada aplicación:
-1. Carga las variables de entorno desde `.env` y `env.yaml` del entorno activo
-2. Construye la imagen Docker con `docker build`
-3. Ejecuta el contenedor exponiendo el puerto fijo de la aplicación
-
-Ejemplo de uso:
+Ejemplo de uso local:
 ```bash
 cd src/apps/7_service_frontend
 bash docker_execution.sh
 ```
 
+### Dockerfile.j2 Templates (Ansible)
+
+Para los despliegues en servidores, Ansible utiliza templates Jinja2 en `anh_ansible_environments/Dockerfiles/`
+que se renderizan con las variables del entorno antes del build. Esto permite inyectar versiones de Python,
+Node.js, entorno de ejecucion y configuracion dinamica:
+
+| Template | Base | App | Puerto | Extras |
+|----------|------|-----|--------|--------|
+| `Dockerfiles/backend_core/Dockerfile.j2` | python-slim | Backend Core | 8003 | FastAPI |
+| `Dockerfiles/broker/Dockerfile.j2` | python-slim | Broker | 8008 | FastAPI |
+| `Dockerfiles/backend_ia/Dockerfile.j2` | python:3.12-slim | Trainer | 8004 | build-essential (torch, tensorflow) |
+| `Dockerfiles/frontend/Dockerfile.j2` | python-slim | Frontend | 8005 | Node.js 20, reflex init |
+| `Dockerfiles/backoffice/Dockerfile.j2` | python-slim | Backoffice | 8006 | Node.js 20, reflex init |
+| `Dockerfiles/middleware/Dockerfile.j2` | python-slim | Middleware | 8007 | FastAPI |
+| `Dockerfiles/fmanagement/Dockerfile.j2` | alpine | Fmanagement | 1666 | Go binary pre-compilado |
+
+### Docker mode (`docker run`)
+
+En modo docker, cada app se ejecuta como contenedor individual con `--network=host` (comparte la red del host):
+
+```
+Servidor Backend:
+  anewhope-backend-core  (8003) → --env-file backend.env + logs + protected_values.py
+  anewhope-broker        (8008) → --env-file backend.env + logs + protected_values.py
+  anewhope-fmanagement   (1666) → --env-file fmanagement.env + /data/external + /data/internal
+
+Servidor Frontend:
+  anewhope-frontend      (8005) → --env-file frontend.env + logs
+  anewhope-backoffice    (8006) → --env-file frontend.env + logs + protected_values.py
+  anewhope-middleware     (8007) → --env-file frontend.env + logs
+
+Servidor Trainer:
+  anewhope-trainer       (8004) → --env-file trainer.env + /data/external:ro + /data/internal + logs
+```
+
 ### Docker Compose por servidor
 
-Los archivos `docker-compose.yml` están organizados por servidor en `infrastructure/servers/*` 
-y agrupan los servicios que se ejecutarán juntos en cada servidor:
+Los templates docker-compose se gestionan en `anh_ansible_environments/templates/docker-compose/`
+organizados por servidor:
 
-- `infrastructure/servers/frontend/docker-compose.yml`: `nginx`, `5_web_frontend`, 
-  `6_web_backoffice`, `7_service_frontend`
-- `infrastructure/servers/backend/docker-compose.yml`: `8_service_backend`, `3_backend`, 
-  `fmanagement` (Go API), `mariadb`
-- `infrastructure/servers/trainer/docker-compose.yml`: `4_trainer` (Backend IA), 
-  `keras_service` (placeholder para servicio Keras)
-- `infrastructure/servers/macbook/docker-compose.yml`: solo aplicaciones internas 
-  (MariaDB y Keras nativos)
+```
+templates/docker-compose/
+├── backend/          # docker-compose.yml.j2 + .env.j2
+├── frontend/         # docker-compose.yml.j2 + .env.j2
+└── trainer/          # docker-compose.yml.j2 + .env.j2
+```
 
-### Servidor frontend (Linux)
-
-- `infrastructure/servers/frontend/docker-compose.yml`: `nginx`, `5_web_frontend`,
-  `6_web_backoffice`, `7_service_frontend`.
-- Plantilla Nginx para ansible:
-  `infrastructure/servers/frontend/nginx/nginx.conf.template`.
-
-### Servidor backend (Linux)
-
-- `infrastructure/servers/backend/docker-compose.yml`: `8_service_backend`,
-  `3_backend`, `fmanagement` (imagen externa), `mariadb`.
-
-### Servidor trainer (Linux)
-
-- `infrastructure/servers/trainer/docker-compose.yml`: `4_trainer` (placeholder),
-  `keras_service` (placeholder).
-- En macOS se instalará TensorFlow CPU en un venv ` .env_trainer` y Keras 2.15
-  con TensorFlow 2.15. [Keras getting started](https://keras.io/getting_started/)
+Se despliegan en el servidor en `/opt/anewhope/docker-compose/<servidor>/`.
 
 ### Macbook (local)
 
 - `infrastructure/servers/macbook/docker-compose.yml` solo contiene aplicaciones internas.
 - MariaDB se usa nativa (instalada).
-- **Redis se usa nativo (instalado con Homebrew)** para sesión compartida.
+- **Redis se usa nativo (instalado con Homebrew)** para sesion compartida.
 - Nginx se instala con Homebrew y se configura con:
   `infrastructure/servers/macbook/nginx/nginx.conf`.
 
@@ -7305,13 +7329,17 @@ ansible-playbook -i env/pre/host backend.yml -e deploy_env=pre
 ansible-playbook -i env/pro/host trainer.yml -e deploy_env=pro
 ```
 
-### Tags de despliegue
+### Tags de despliegue (modos)
 
-| Tag | Descripción | Ejemplo |
-|-----|-------------|---------|
-| `native` | Instalación directa en servidor (sin contenedores) | `--tags native` |
-| `docker` | Despliegue con contenedores Docker individuales | `--tags docker` |
-| `docker-compose` | Despliegue con docker-compose por servidor | `--tags docker-compose` |
+| Tag | Descripcion | Infra | Apps | Ejemplo |
+|-----|-------------|-------|------|---------|
+| `native` | Instalacion directa en servidor con systemd | Nativa | Virtualenvs + systemd | `--tags native` |
+| `docker` | Contenedores Docker individuales (`docker run --network=host`) | Nativa | Docker containers | `--tags docker` |
+| `docker-compose` | Docker Compose por servidor con redes aisladas | Containerizada | Docker Compose | `--tags docker-compose` |
+
+**Modo docker** usa `--network=host` para que los contenedores accedan a la infra nativa (MariaDB, Redis, Ollama, ChromaDB) en localhost. Las apps se configuran via `--env-file` y montan `protected_values.py` como secreto read-only.
+
+**Modo docker-compose** despliega en `/opt/anewhope/docker-compose/{backend,frontend,trainer}/` con red interna aislada por servidor.
 
 ### Distribución de datos con tar.gz
 
