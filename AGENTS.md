@@ -211,13 +211,13 @@ Si un test falla de forma inconsistente:
 
 ## 5.1 Documentación de base de datos
 * **Obligatorio:** Cada cambio en la estructura de tablas debe documentarse en
-  `README_DEPLOYMENT.md` (sección "Estructura de base de datos").
+  `docs/README_DEPLOYMENT.md` (sección "Estructura de base de datos").
 
 ## 5.2 Documentación de fmanagement
 * **Obligatorio:** Cambios en el contrato de la API `fmanagement` (endpoints,
   headers o permisos) deben documentarse en `README.md` y en `fmanagement/README.md`.
 * **Ruta de datos:** Cualquier cambio en la ruta de almacenamiento
-  (`/data/files/external`) debe reflejarse en `README.md` y `README_DEPLOYMENT.md`.
+  (`/data/files/external`) debe reflejarse en `README.md` y `docs/README_DEPLOYMENT.md`.
 * **Endpoints:** La lista de endpoints activos de `fmanagement` debe mantenerse
   actualizada en `README.md` (sección de gestión de ficheros).
 
@@ -9567,7 +9567,7 @@ cd src/apps/7_service_frontend && ./run.sh
 ### 30.15. Referencias
 
 - **README.md:** Sección "Sistema de Entrenamientos y Descargas de Modelos LLM"
-- **TESTING_E2E_ENTRENAMIENTOS.md:** Documento completo de testing E2E
+- **docs/TESTING_E2E_ENTRENAMIENTOS.md:** Documento completo de testing E2E
 - **GUIA_TESTING_MANUAL.md:** Guía paso a paso para testing de UI
 - **src/apps/4_trainer/AUTONOMOUS_TRAINING_SYSTEM.md:** Documentación técnica del trainer
 - **src/apps/4_trainer/autonomous_training/:** Código del sistema autónomo

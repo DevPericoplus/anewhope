@@ -183,7 +183,7 @@
 
 ### Testing
 
-✅ **Referencias a documentos:** TESTING_E2E_ENTRENAMIENTOS.md y GUIA_TESTING_MANUAL.md
+✅ **Referencias a documentos:** docs/TESTING_E2E_ENTRENAMIENTOS.md y GUIA_TESTING_MANUAL.md
 
 ✅ **Ejemplos de tests:** Unitarios, integración y E2E
 
@@ -237,7 +237,7 @@
 
 ### Documentación Adicional
 
-1. **Actualizar diagramas en README_DEPLOYMENT.md** con las nuevas tablas
+1. **Actualizar diagramas en docs/README_DEPLOYMENT.md** con las nuevas tablas
 2. **Agregar ejemplos de uso** en README.md (cómo usar un modelo descargado)
 3. **Crear tutorial video** siguiendo GUIA_TESTING_MANUAL.md
 
@@ -263,15 +263,15 @@
 |-----------|-----------|-----------|
 | **README.md** | Visión general del proyecto y conceptos | Desarrolladores, usuarios técnicos |
 | **AGENTS.md** | Reglas de desarrollo y mejores prácticas | Desarrolladores, AI agents |
-| **README_DEPLOYMENT.md** | Guía de despliegue y estructura DB | DevOps, administradores |
+| **docs/README_DEPLOYMENT.md** | Guía de despliegue y estructura DB | DevOps, administradores |
 
 ### Documentos de Testing
 
 | Documento | Propósito | Estado |
 |-----------|-----------|--------|
-| **TESTING_E2E_ENTRENAMIENTOS.md** | Testing completo E2E | ✅ Creado |
+| **docs/TESTING_E2E_ENTRENAMIENTOS.md** | Testing completo E2E | ✅ Creado |
 | **GUIA_TESTING_MANUAL.md** | Guía paso a paso para UI | ✅ Creado |
-| **TESTING_E2E_STATUS.md** | Estado durante ejecución | ✅ Creado |
+| **docs/TESTING_E2E_STATUS.md** | Estado durante ejecución | ✅ Creado |
 | **TESTING_E2E_RESUMEN_FINAL.md** | Resumen ejecutivo de testing | ✅ Creado |
 
 ### Documentos Técnicos

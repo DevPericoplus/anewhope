@@ -8,7 +8,7 @@ import importlib.util
 from pathlib import Path
 
 # Agregar rutas necesarias al path
-project_root = Path(__file__).parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
 # Cargar el módulo common_security usando importlib (porque el directorio empieza con número)

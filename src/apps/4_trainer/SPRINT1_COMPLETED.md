@@ -158,6 +158,6 @@ pip install -r requirements.txt
 - Tiempo: 1-4 horas
 
 ## Referencias
-- Diseño completo: `/TRAINING_AUTONOMOUS_DESIGN.md`
+- Diseño completo: `/docs/TRAINING_AUTONOMOUS_DESIGN.md`
 - Migración BD: `infrastructure/database/migrations/015_autonomous_training.sql`
 - Configuración: `infrastructure/environments/{env}/env.yaml`

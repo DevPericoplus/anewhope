@@ -6,7 +6,7 @@ from pathlib import Path
 import importlib.util
 
 # Agregar el path base
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from sqlalchemy import create_engine
 
@@ -19,7 +19,7 @@ DB_HOST = "localhost"
 engine = create_engine(f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}/myllm_projects_db")
 
 # Cargar el adaptador de conversaciones
-adapter_path = Path(__file__).parent / "src/2_shared_application/adapters/conversaciones_adapter.py"
+adapter_path = Path(__file__).parent.parent / "src/2_shared_application/adapters/conversaciones_adapter.py"
 spec = importlib.util.spec_from_file_location("conversaciones_adapter", adapter_path)
 adapter_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(adapter_module)

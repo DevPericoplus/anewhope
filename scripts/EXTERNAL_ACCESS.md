@@ -21,7 +21,7 @@ Este script:
 ### 2. Verificar acceso
 
 ```bash
-./scripts/test_external_access.sh
+./tests/test_external_access.sh
 ```
 
 Este script:

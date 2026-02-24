@@ -22,9 +22,9 @@
 | PARTE 5: Tests de Regresión | ⏸️ Pendiente | Requiere PARTES 2 y 3 |
 
 **Documentos de Testing Creados:**
-- `TESTING_E2E_ENTRENAMIENTOS.md` - Documento principal
+- `docs/TESTING_E2E_ENTRENAMIENTOS.md` - Documento principal
 - `GUIA_TESTING_MANUAL.md` - Guía paso a paso
-- `TESTING_E2E_STATUS.md` - Estado durante ejecución
+- `docs/TESTING_E2E_STATUS.md` - Estado durante ejecución
 - `TESTING_E2E_RESUMEN_FINAL.md` - Resumen ejecutivo
 
 ### 2. Correcciones de Código Aplicadas
@@ -309,13 +309,13 @@ Entrenamientos disponibles para análisis:
 |---------|-----------|--------|
 | README.md | Documentación general del proyecto | ✅ Actualizado |
 | AGENTS.md | Reglas de desarrollo | ✅ Actualizado |
-| README_DEPLOYMENT.md | Guía de despliegue | ⏳ Pendiente actualizar |
+| docs/README_DEPLOYMENT.md | Guía de despliegue | ⏳ Pendiente actualizar |
 
 ### Testing
 
 | Archivo | Propósito | Estado |
 |---------|-----------|--------|
-| TESTING_E2E_ENTRENAMIENTOS.md | Testing E2E completo | ✅ Creado |
+| docs/TESTING_E2E_ENTRENAMIENTOS.md | Testing E2E completo | ✅ Creado |
 | GUIA_TESTING_MANUAL.md | Guía paso a paso UI | ✅ Creado |
 | TESTING_E2E_RESUMEN_FINAL.md | Resumen de testing | ✅ Creado |
 
@@ -323,7 +323,7 @@ Entrenamientos disponibles para análisis:
 
 | Archivo | Propósito | Estado |
 |---------|-----------|--------|
-| TESTING_E2E_STATUS.md | Estado durante testing | ✅ Creado |
+| docs/TESTING_E2E_STATUS.md | Estado durante testing | ✅ Creado |
 | DOCUMENTACION_ACTUALIZADA.md | Reporte de documentación | ✅ Creado |
 | ESTADO_PARA_CONTINUAR.md | Este archivo | ✅ Creado |
 

@@ -128,7 +128,7 @@ def verify_venv(project_root: Path, venv_name: str, app_name: str) -> Tuple[bool
 
 
 def main():
-    project_root = Path(__file__).parent
+    project_root = Path(__file__).parent.parent
 
     print("="*70)
     print("VERIFICACIÓN DE ENTORNOS VIRTUALES Y DEPENDENCIAS")

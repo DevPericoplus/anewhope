@@ -26,7 +26,7 @@ echo -e "${BLUE}========================================${NC}"
 echo ""
 
 # Directorio base
-BASE_DIR="/Users/administrator/develop/anewhope"
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MOKS_DIR="$BASE_DIR/src/2_shared_application/moks"
 
 ###############################################################################

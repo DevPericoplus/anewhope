@@ -506,7 +506,7 @@ Una vez completadas las PARTES 2 y 3, puedes ejecutar la **PARTE 5: Tests de Reg
 - Filtrado de paquetes
 - Permisos de descarga
 
-Ver archivo `TESTING_E2E_ENTRENAMIENTOS.md` sección PARTE 5 para instrucciones.
+Ver archivo `docs/TESTING_E2E_ENTRENAMIENTOS.md` sección PARTE 5 para instrucciones.
 
 ---
 

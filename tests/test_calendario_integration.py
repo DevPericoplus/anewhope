@@ -3,14 +3,14 @@
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from sqlalchemy import create_engine
 import importlib.util
 from datetime import datetime
 
 # Cargar adapter
-adapter_path = Path(__file__).parent / "src/2_shared_application/adapters/cambios_adapter.py"
+adapter_path = Path(__file__).parent.parent / "src/2_shared_application/adapters/cambios_adapter.py"
 spec = importlib.util.spec_from_file_location("cambios_adapter", adapter_path)
 adapter_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(adapter_module)

@@ -50,7 +50,7 @@ def print_step(step: str, status: str = "info"):
 def get_db_connection():
     """Crea conexión a la base de datos."""
     import importlib.util
-    protected_path = Path(__file__).parent / "infrastructure" / "environments" / "macbook" / "protected_values.py"
+    protected_path = Path(__file__).parent.parent / "infrastructure" / "environments" / "macbook" / "protected_values.py"
     spec = importlib.util.spec_from_file_location("protected_values", protected_path)
     protected = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(protected)
@@ -67,7 +67,7 @@ def get_db_connection():
 
 def get_base_path() -> Path:
     """Obtiene la ruta base de almacenamiento."""
-    env_yaml_path = Path(__file__).parent / "infrastructure" / "environments" / "macbook" / "env.yaml"
+    env_yaml_path = Path(__file__).parent.parent / "infrastructure" / "environments" / "macbook" / "env.yaml"
     with open(env_yaml_path) as f:
         for line in f:
             line = line.strip()

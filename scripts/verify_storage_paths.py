@@ -35,7 +35,7 @@ def verify_backend_core_config():
     """Verifica la configuración de Backend Core."""
     print_step("Verificando configuración de Backend Core...", "info")
 
-    env_yaml_path = Path(__file__).parent / "infrastructure" / "environments" / "macbook" / "env.yaml"
+    env_yaml_path = Path(__file__).parent.parent / "infrastructure" / "environments" / "macbook" / "env.yaml"
 
     if not env_yaml_path.exists():
         print_step(f"env.yaml no encontrado en {env_yaml_path}", "error")

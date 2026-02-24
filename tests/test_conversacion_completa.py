@@ -5,7 +5,7 @@ Simula el flujo completo de comunicación del sistema de conversaciones.
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from sqlalchemy import create_engine, text
 import importlib.util
@@ -20,7 +20,7 @@ engine_core = create_engine(f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}/myll
 engine_projects = create_engine(f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}/myllm_projects_db")
 
 # Cargar adapter de conversaciones usando importlib
-adapter_path = Path(__file__).parent / "src/2_shared_application/adapters/conversaciones_adapter.py"
+adapter_path = Path(__file__).parent.parent / "src/2_shared_application/adapters/conversaciones_adapter.py"
 spec = importlib.util.spec_from_file_location("conversaciones_adapter", adapter_path)
 if spec is None or spec.loader is None:
     raise ImportError("No se pudo cargar el adaptador de conversaciones")

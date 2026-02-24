@@ -6,7 +6,7 @@ Proyecto para gestionar infraestructura, aplicaciones y flujos de personalizaci�
 
 - `info.txt`: guía rápida para crear y activar el entorno virtual, además de notas de operación.
 - `infrastructure/environments/<entorno>/protected_values.py`: variables sensibles por entorno.
-- `README_DEPLOYMENT.md`: guía de despliegue con verificación SQL y estructura de base de datos.
+- `docs/README_DEPLOYMENT.md`: guía de despliegue con verificación SQL y estructura de base de datos.
 - `src/`: monorepo con organización hexagonal y dominios compartidos.
   - `main.py`: punto de entrada central para orquestar servicios.
   - `config/`: configuración compartida.
@@ -2528,7 +2528,7 @@ Para verificar que el flujo de permisos funciona correctamente:
 
 ```bash
 cd /Users/administrator/develop/anewhope
-python verify_permissions_flow.py
+python scripts/verify_permissions_flow.py
 ```
 
 Este script verifica:
@@ -2884,7 +2884,7 @@ ls -la /tmp/tfmmyllm/files/default/ORG00001/PRJ00001/
 - **Backend Core Router**: `src/apps/3_backend/routercore.py:3291-3336`
 - **Cliente fmanagement**: `src/apps/3_backend/clients/fmanagement_client.py:368-522`
 - **Frontend API Client**: `src/apps/5_web_frontend/adapters/api_client.py:1582-1656`
-- **Documentación completa**: `FLUJO_CREACION_VERSIONES.md` (400+ líneas con detalles exhaustivos)
+- **Documentación completa**: `docs/FLUJO_CREACION_VERSIONES.md` (400+ líneas con detalles exhaustivos)
 
 ## ADRs (Architecture Decision Records)
 
@@ -10213,7 +10213,7 @@ async def ent_poll_training_progress(self) -> None:
 
 El sistema cuenta con testing E2E completo documentado en:
 
-- **`TESTING_E2E_ENTRENAMIENTOS.md`**: Documento principal con 40+ puntos de validación
+- **`docs/TESTING_E2E_ENTRENAMIENTOS.md`**: Documento principal con 40+ puntos de validación
 - **`GUIA_TESTING_MANUAL.md`**: Guía paso a paso para testing de UI
 - **`TESTING_E2E_RESUMEN_FINAL.md`**: Resumen ejecutivo con resultados
 
@@ -10862,13 +10862,13 @@ Cada entorno define sus propias variables en `infrastructure/environments/{env}/
 
 #### Script de Pruebas
 
-**Archivo**: `/Users/administrator/develop/anewhope/test_health_checks.py`
+**Archivo**: `/Users/administrator/develop/anewhope/tests/test_health_checks.py`
 
 Script independiente para verificar el estado de todos los servicios sin necesidad de iniciar el backoffice:
 
 ```bash
 # Ejecutar test de health checks
-python3 test_health_checks.py
+python3 tests/test_health_checks.py
 ```
 
 **Salida esperada:**

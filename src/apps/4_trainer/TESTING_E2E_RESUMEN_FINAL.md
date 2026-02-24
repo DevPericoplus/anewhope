@@ -130,7 +130,7 @@ Fase 5 (Entrenamiento): 5.1-5.5 → 0-101s (5.5 test: 101s)
 4. Permisos de descarga (usuarios sin training_read)
 
 **Documentación:**
-- Ver `TESTING_E2E_ENTRENAMIENTOS.md` sección "PARTE 5"
+- Ver `docs/TESTING_E2E_ENTRENAMIENTOS.md` sección "PARTE 5"
 
 ---
 
@@ -188,7 +188,7 @@ Fase 5 (Entrenamiento): 5.1-5.5 → 0-101s (5.5 test: 101s)
 ### Al Final
 
 **Ejecutar PARTE 5: Tests de Regresión**
-1. Ver `TESTING_E2E_ENTRENAMIENTOS.md`
+1. Ver `docs/TESTING_E2E_ENTRENAMIENTOS.md`
 2. Tiempo estimado: 30-60 min
 3. Tests de múltiples escenarios
 
@@ -196,13 +196,13 @@ Fase 5 (Entrenamiento): 5.1-5.5 → 0-101s (5.5 test: 101s)
 
 ## 📁 Documentación Generada
 
-1. **TESTING_E2E_ENTRENAMIENTOS.md** (Original)
+1. **docs/TESTING_E2E_ENTRENAMIENTOS.md** (Original)
    - Documento completo de testing E2E
    - 40+ puntos de validación
    - Comandos SQL y curl
    - Troubleshooting guide
 
-2. **TESTING_E2E_STATUS.md** (Intermedio)
+2. **docs/TESTING_E2E_STATUS.md** (Intermedio)
    - Estado del testing durante ejecución
    - Reporte de problemas encontrados
    - Instrucciones de reinicio de servicios

@@ -7,7 +7,7 @@ import importlib.util
 from pathlib import Path
 
 # Cargar configuración
-protected_path = Path(__file__).parent / "infrastructure" / "environments" / "macbook" / "protected_values.py"
+protected_path = Path(__file__).parent.parent / "infrastructure" / "environments" / "macbook" / "protected_values.py"
 spec = importlib.util.spec_from_file_location("protected_values", protected_path)
 protected = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(protected)
@@ -25,7 +25,7 @@ conn = pymysql.connect(
 try:
     with conn.cursor() as cursor:
         # Leer el DDL
-        ddl_path = Path(__file__).parent / "infrastructure" / "database" / "ddl_estado_version.sql"
+        ddl_path = Path(__file__).parent.parent / "infrastructure" / "database" / "ddl_estado_version.sql"
         with open(ddl_path, 'r') as f:
             sql_script = f.read()
 

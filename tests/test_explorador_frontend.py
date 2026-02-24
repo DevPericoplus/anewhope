@@ -71,7 +71,7 @@ def print_json(data: dict, title: str = ""):
 def get_db_connection():
     """Crea conexión a la base de datos."""
     import importlib.util
-    protected_path = Path(__file__).parent / "infrastructure" / "environments" / "macbook" / "protected_values.py"
+    protected_path = Path(__file__).parent.parent / "infrastructure" / "environments" / "macbook" / "protected_values.py"
     spec = importlib.util.spec_from_file_location("protected_values", protected_path)
     protected = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(protected)
@@ -150,7 +150,7 @@ def test_fmanagement_direct() -> dict[str, Any] | None:
     print_step("Llamando directamente a fmanagement /fmo/list...", "info")
 
     # Obtener basepath de configuración
-    env_yaml = Path(__file__).parent / "infrastructure" / "environments" / "macbook" / "env.yaml"
+    env_yaml = Path(__file__).parent.parent / "infrastructure" / "environments" / "macbook" / "env.yaml"
     basepath = None
     with open(env_yaml) as f:
         for line in f:
@@ -283,7 +283,7 @@ def verify_explorador_state():
     """Verifica el estado del componente Explorador."""
     print_step("Verificando código del Explorador...", "info")
 
-    explorador_path = Path(__file__).parent / "src" / "apps" / "5_web_frontend" / "components" / "explorador.py"
+    explorador_path = Path(__file__).parent.parent / "src" / "apps" / "5_web_frontend" / "components" / "explorador.py"
 
     if not explorador_path.exists():
         print_step(f"Archivo no encontrado: {explorador_path}", "error")
@@ -319,7 +319,7 @@ def verify_web_frontend_state():
     """Verifica el estado del web_frontend.py."""
     print_step("Verificando código del web_frontend.py...", "info")
 
-    web_frontend_path = Path(__file__).parent / "src" / "apps" / "5_web_frontend" / "web_frontend" / "web_frontend.py"
+    web_frontend_path = Path(__file__).parent.parent / "src" / "apps" / "5_web_frontend" / "web_frontend" / "web_frontend.py"
 
     if not web_frontend_path.exists():
         print_step(f"Archivo no encontrado: {web_frontend_path}", "error")

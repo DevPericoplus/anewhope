@@ -383,7 +383,7 @@ src/2_shared_application/moks/
 ### **Scripts de Verificación**
 
 **1 script ejecutable:**
-- ✅ `scripts/test_permissions_fallback.sh`
+- ✅ `tests/test_permissions_fallback.sh`
 
 ---
 
@@ -458,7 +458,7 @@ Si prefieres tener los archivos JSON pre-poblados:
 
 ```bash
 cd /Users/administrator/develop/anewhope
-./scripts/test_permissions_fallback.sh
+./tests/test_permissions_fallback.sh
 ```
 
 **Resultado esperado:**
@@ -642,7 +642,7 @@ rx.cond(
 
 ```bash
 # 1. Ejecutar script de verificación
-./scripts/test_permissions_fallback.sh
+./tests/test_permissions_fallback.sh
 
 # 2. Reiniciar frontend
 cd /Users/administrator/develop/anewhope

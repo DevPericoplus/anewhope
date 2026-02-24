@@ -240,7 +240,7 @@ Todos estos endpoints verifican permisos antes de ejecutar:
 
 ### Script de Verificación
 
-**Ubicación:** `/Users/administrator/develop/anewhope/verify_permissions_flow.py`
+**Ubicación:** `/Users/administrator/develop/anewhope/scripts/verify_permissions_flow.py`
 
 Este script verifica:
 1. ✅ Backend Core está corriendo (puerto 8003)
@@ -254,7 +254,7 @@ Este script verifica:
 
 ```bash
 cd /Users/administrator/develop/anewhope
-python verify_permissions_flow.py
+python scripts/verify_permissions_flow.py
 ```
 
 **Salida esperada:**

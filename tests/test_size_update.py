@@ -2,7 +2,8 @@
 """Test para verificar que se actualizan los tamaños en BD"""
 
 import sys
-sys.path.insert(0, '/Users/administrator/develop/anewhope/src/apps/5_web_frontend')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src/apps/5_web_frontend"))
 
 import pymysql
 

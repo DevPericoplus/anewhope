@@ -9,7 +9,7 @@ import importlib.util
 # Cargar FmanagementClient
 spec = importlib.util.spec_from_file_location(
     "fmanagement_client",
-    Path(__file__).parent / "src/apps/3_backend/clients/fmanagement_client.py"
+    Path(__file__).parent.parent / "src/apps/3_backend/clients/fmanagement_client.py"
 )
 fmanagement_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fmanagement_module)
@@ -18,7 +18,7 @@ FmanagementClient = fmanagement_module.FmanagementClient
 # Cargar storage_access_structure
 spec2 = importlib.util.spec_from_file_location(
     "storage_access_structure",
-    Path(__file__).parent / "src/2_shared_application/storage_access_structure.py"
+    Path(__file__).parent.parent / "src/2_shared_application/storage_access_structure.py"
 )
 storage_module = importlib.util.module_from_spec(spec2)
 spec2.loader.exec_module(storage_module)

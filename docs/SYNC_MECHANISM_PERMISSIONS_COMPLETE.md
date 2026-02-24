@@ -562,7 +562,7 @@ Todos los archivos JSON ahora tienen datos iniciales:
 
 ```bash
 cd /Users/administrator/develop/anewhope
-./scripts/test_permissions_fallback.sh
+./tests/test_permissions_fallback.sh
 ```
 
 **Verifica:**
@@ -681,7 +681,7 @@ mysql -h localhost -P 3306 -u root -p myllm_core_db -e "SELECT * FROM roles WHER
 ---
 
 ### **Scripts Creados:**
-- ✅ `scripts/test_permissions_fallback.sh` (ejecutable)
+- ✅ `tests/test_permissions_fallback.sh` (ejecutable)
 
 ---
 
@@ -815,7 +815,7 @@ ORGANIZATIONS_DATA_PATH=/path/to/organizations.json
 - `docs/BACKOFFICE_BUTTON_FIX.md`
 
 ### **Tests:**
-- `scripts/test_permissions_fallback.sh`
+- `tests/test_permissions_fallback.sh`
 - `src/apps/7_service_frontend/tests/test_integration_middleware_broker_core.py`
 
 ---
