@@ -8,7 +8,7 @@
 
 set -e
 
-ANEWHOPE_ROOT="/Users/administrator/develop/anewhope"
+ANEWHOPE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FMANAGEMENT_ROOT="/Users/administrator/develop/fmanagement"
 
 echo "=========================================="

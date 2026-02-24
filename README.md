@@ -1227,7 +1227,7 @@ mkcert -install
 
 **Después de regenerar, reiniciar nginx:**
 ```bash
-./deploy_nginx_macbook.sh
+./scripts/deploy_nginx_macbook.sh
 ```
 
 **Notas importantes:**
@@ -1426,10 +1426,10 @@ ambas librerías funcionan correctamente con esta versión.
 
 #### Despliegue de Nginx en macbook
 
-Para desplegar y configurar nginx en el entorno macbook, se proporciona el script `deploy_nginx_macbook.sh`:
+Para desplegar y configurar nginx en el entorno macbook, se proporciona el script `scripts/deploy_nginx_macbook.sh`:
 
 ```bash
-./deploy_nginx_macbook.sh
+./scripts/deploy_nginx_macbook.sh
 ```
 
 **Funcionalidades del script:**
@@ -1473,7 +1473,7 @@ cd infrastructure/certificates/macbook
 cd ../../..
 
 # 3. Desplegar nginx con la configuración SSL
-./deploy_nginx_macbook.sh
+./scripts/deploy_nginx_macbook.sh
 
 # 4. Verificar que nginx está corriendo
 curl -I https://tfmmyllm.ai
@@ -1550,7 +1550,7 @@ Nginx no está corriendo o no está escuchando en el puerto 443.
 brew services list | grep nginx
 
 # Si no está corriendo, iniciarlo
-./deploy_nginx_macbook.sh
+./scripts/deploy_nginx_macbook.sh
 
 # Verificar que escucha en puerto 443
 lsof -i :443 | grep nginx
@@ -1582,7 +1582,7 @@ cd infrastructure/certificates/macbook
 
 # Reiniciar nginx
 cd ../../..
-./deploy_nginx_macbook.sh
+./scripts/deploy_nginx_macbook.sh
 
 # Reiniciar el navegador completamente
 # (cierra todas las ventanas y vuelve a abrir)
@@ -1609,7 +1609,7 @@ lsof -i :8005
 kill -9 <PID>
 
 # Reiniciar los servicios
-./deploy_nginx_macbook.sh
+./scripts/deploy_nginx_macbook.sh
 cd src/apps/5_web_frontend && bash run.sh
 ```
 
@@ -1713,7 +1713,7 @@ reflex run --env prod
 
 # Paso 8: Reiniciar nginx para asegurar configuración
 cd ../../..
-./deploy_nginx_macbook.sh
+./scripts/deploy_nginx_macbook.sh
 
 # Paso 9: Verificar puertos
 lsof -i :3001 -i :8005 | grep LISTEN
@@ -1801,7 +1801,7 @@ server: {
 
 **Script automatizado:**
 ```bash
-./diagnose_system.sh
+./scripts/diagnose_system.sh
 ```
 
 Este script verifica el estado completo del sistema: nginx, frontend, middleware, backend core, broker backend, certificados, /etc/hosts y logs recientes.
@@ -3059,7 +3059,7 @@ Script de limpieza de caches de Reflex y herramientas de desarrollo:
 Script de diagnóstico completo del sistema para verificar el estado de todos los servicios y configuraciones:
 
 ```bash
-./diagnose_system.sh
+./scripts/diagnose_system.sh
 ```
 
 **Verifica:**

@@ -6,7 +6,7 @@
 set -e
 
 # Cargar credenciales desde protected_values.py (nunca hardcodear en scripts)
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 MARIADB_WRITER_PASS=$(python3 -c "
 import importlib.util, sys
 spec = importlib.util.spec_from_file_location('pv', '$SCRIPT_DIR/infrastructure/environments/macbook/protected_values.py')

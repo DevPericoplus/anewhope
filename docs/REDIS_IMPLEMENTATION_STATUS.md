@@ -211,7 +211,7 @@ reflex run --env prod
 
 **Terminal 4: Nginx**
 ```bash
-./deploy_nginx_macbook.sh
+./scripts/deploy_nginx_macbook.sh
 ```
 
 **Escenarios de prueba:**

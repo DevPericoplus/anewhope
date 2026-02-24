@@ -86,7 +86,7 @@ mkcert -key-file tfmmyllm.ai-key.pem \
 Después de regenerar, reiniciar nginx:
 ```bash
 cd ../../..
-./deploy_nginx_macbook.sh
+./scripts/deploy_nginx_macbook.sh
 ```
 
 ## Problemas de confianza

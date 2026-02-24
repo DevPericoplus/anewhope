@@ -766,7 +766,7 @@ source ../../../.venv_backoffice313/bin/activate
 reflex run --env prod
 
 # Terminal 4: Nginx
-./deploy_nginx_macbook.sh
+./scripts/deploy_nginx_macbook.sh
 ```
 
 #### 7.2. Escenarios de prueba

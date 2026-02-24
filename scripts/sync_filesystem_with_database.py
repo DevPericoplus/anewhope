@@ -41,7 +41,7 @@ def get_db_connection():
     """Crea conexión a la base de datos."""
     # Importar protected_values dinámicamente
     import importlib.util
-    protected_path = Path(__file__).parent / "infrastructure" / "environments" / "macbook" / "protected_values.py"
+    protected_path = Path(__file__).parent.parent / "infrastructure" / "environments" / "macbook" / "protected_values.py"
     spec = importlib.util.spec_from_file_location("protected_values", protected_path)
     protected = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(protected)
@@ -118,7 +118,7 @@ def get_versions(conn, id_project: int) -> list[dict[str, Any]]:
 
 def get_base_path() -> Path:
     """Obtiene la ruta base de almacenamiento desde env.yaml."""
-    env_yaml_path = Path(__file__).parent / "infrastructure" / "environments" / "macbook" / "env.yaml"
+    env_yaml_path = Path(__file__).parent.parent / "infrastructure" / "environments" / "macbook" / "env.yaml"
 
     with open(env_yaml_path) as f:
         for line in f:

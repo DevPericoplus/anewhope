@@ -115,7 +115,7 @@ reflex run --env prod
 **Terminal 4: Nginx**
 ```bash
 cd /Users/administrator/develop/anewhope
-./deploy_nginx_macbook.sh
+./scripts/deploy_nginx_macbook.sh
 ```
 
 ---
@@ -236,7 +236,7 @@ cp src/apps/5_web_frontend/web_frontend/shared_state.py \
 **Solución:**
 ```bash
 # Recargar nginx
-./deploy_nginx_macbook.sh
+./scripts/deploy_nginx_macbook.sh
 
 # Limpiar cache de Reflex
 cd src/apps/5_web_frontend && rm -rf .web __pycache__
