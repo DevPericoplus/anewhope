@@ -8,11 +8,14 @@ import pytest
 import requests
 from typing import Any
 
+from tests.helpers import get_service_urls, get_db_connection as _get_db_connection
+
 
 # Configuración
-BACKEND_CORE_URL = "http://localhost:8003"
-BROKER_URL = "http://localhost:8008"
-MIDDLEWARE_URL = "http://localhost:8007"
+_urls = get_service_urls()
+BACKEND_CORE_URL = _urls["backend_core"]
+BROKER_URL = _urls["broker"]
+MIDDLEWARE_URL = _urls["middleware"]
 
 # Datos de prueba
 TEST_ORG_ID = 1
@@ -28,16 +31,8 @@ class TestEstadoProyectosIntegration:
     @pytest.fixture(scope="class")
     def estado_id(self):
         """Obtiene o crea un estado_version de prueba."""
-        import pymysql
-
         # Conectar a la base de datos
-        conn = pymysql.connect(
-            host="localhost",
-            user="myllm_admin",
-            password="Us3r@dminP@ss",
-            database="myllm_projects_db",
-            charset="utf8mb4",
-        )
+        conn = _get_db_connection(database="myllm_projects_db")
 
         try:
             with conn.cursor() as cursor:
@@ -96,15 +91,7 @@ class TestEstadoProyectosIntegration:
 
     def _get_estado_from_db(self, estado_id: int) -> dict[str, Any]:
         """Lee el estado actual desde la base de datos."""
-        import pymysql
-
-        conn = pymysql.connect(
-            host="localhost",
-            user="myllm_admin",
-            password="Us3r@dminP@ss",
-            database="myllm_projects_db",
-            charset="utf8mb4",
-        )
+        conn = _get_db_connection(database="myllm_projects_db")
 
         try:
             with conn.cursor() as cursor:

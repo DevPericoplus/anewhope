@@ -3,19 +3,15 @@
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from sqlalchemy import create_engine, text
-import importlib.util
+from sqlalchemy import text
+from tests.helpers import get_db_engine, load_module_from_path
 
-# Cargar adapter
-adapter_path = Path(__file__).parent.parent / "src/2_shared_application/adapters/conversaciones_adapter.py"
-spec = importlib.util.spec_from_file_location("conversaciones_adapter", adapter_path)
-adapter_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(adapter_module)
-
-# Crear engine
-engine = create_engine("mysql+pymysql://myllm_admin:Us3r%40dminP%40ss@localhost/myllm_projects_db")
+adapter_module = load_module_from_path(
+    "conversaciones_adapter",
+    "src/2_shared_application/adapters/conversaciones_adapter.py",
+)
+engine = get_db_engine(database="myllm_projects_db")
 
 print("=== TEST: Carga de conversaciones como en el backoffice ===\n")
 

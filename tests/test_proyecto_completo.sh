@@ -16,14 +16,33 @@ if [ "$respuesta" != "s" ]; then
     exit 0
 fi
 
-MARIADB_PATH="/usr/local/opt/mariadb@10.6/bin/mariadb"
+# Obtener configuración dinámicamente
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+_CONFIG=$(python3 -c "
+import importlib.util, os
+from urllib.parse import urlparse
+env = os.environ.get('ANEWHOPE_ENV', 'macbook')
+spec = importlib.util.spec_from_file_location('pv', '$BASE_DIR/infrastructure/environments/' + env + '/protected_values.py')
+pv = importlib.util.module_from_spec(spec); spec.loader.exec_module(pv)
+p = urlparse(pv.broker_backend_base_url)
+print(pv.mariadb_cli_path)
+print(f'http://{p.hostname}:8007')
+print(pv.mariadb_admin_user)
+print(pv.mariadb_admin_password)
+print(pv.mariadb_host)
+")
+MARIADB_PATH=$(echo "$_CONFIG" | sed -n '1p')
+MIDDLEWARE_URL=$(echo "$_CONFIG" | sed -n '2p')
+DB_USER=$(echo "$_CONFIG" | sed -n '3p')
+DB_PASS=$(echo "$_CONFIG" | sed -n '4p')
+DB_HOST=$(echo "$_CONFIG" | sed -n '5p')
 
 echo ""
 echo "=========================================="
 echo "PASO 1: Login y obtención de tokens"
 echo "=========================================="
 
-LOGIN_RESPONSE=$(curl -s -X POST http://localhost:8007/auth/login \
+LOGIN_RESPONSE=$(curl -s -X POST ${MIDDLEWARE_URL}/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "user_name": "adminone",
@@ -49,7 +68,7 @@ echo "PASO 2: Crear proyecto de prueba via API"
 echo "=========================================="
 
 PROJECT_NAME="Test Flujo Completo $(date +%s)"
-CREATE_RESPONSE=$(curl -s -X POST http://localhost:8007/projects \
+CREATE_RESPONSE=$(curl -s -X POST ${MIDDLEWARE_URL}/projects \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "X-Session-Token: $SESSION_TOKEN" \
@@ -80,10 +99,10 @@ echo "PASO 3: Verificar proyecto en BD"
 echo "=========================================="
 
 echo "Consultando tabla proyectos..."
-$MARIADB_PATH -u myllm_admin -p'Us3r@dminP@ss' --database=myllm_projects_db -e \
+$MARIADB_PATH -u "$DB_USER" -p"$DB_PASS" -h "$DB_HOST" --database=myllm_projects_db -e \
   "SELECT id, nombre, id_flujo, active FROM proyectos WHERE id = $PROJECT_ID;"
 
-ID_FLUJO=$($MARIADB_PATH -u myllm_admin -p'Us3r@dminP@ss' --database=myllm_projects_db -N -B -e \
+ID_FLUJO=$($MARIADB_PATH -u "$DB_USER" -p"$DB_PASS" -h "$DB_HOST" --database=myllm_projects_db -N -B -e \
   "SELECT id_flujo FROM proyectos WHERE id = $PROJECT_ID;")
 
 if [ "$ID_FLUJO" != "1" ]; then
@@ -98,7 +117,7 @@ echo "=========================================="
 echo "PASO 4: Verificar versión creada"
 echo "=========================================="
 
-VERSION_COUNT=$($MARIADB_PATH -u myllm_admin -p'Us3r@dminP@ss' --database=myllm_projects_db -N -B -e \
+VERSION_COUNT=$($MARIADB_PATH -u "$DB_USER" -p"$DB_PASS" -h "$DB_HOST" --database=myllm_projects_db -N -B -e \
   "SELECT COUNT(*) FROM versiones WHERE id_proyecto = $PROJECT_ID;")
 
 echo "Número de versiones: $VERSION_COUNT"
@@ -108,7 +127,7 @@ if [ "$VERSION_COUNT" -eq "0" ]; then
     exit 1
 fi
 
-VERSION_ID=$($MARIADB_PATH -u myllm_admin -p'Us3r@dminP@ss' --database=myllm_projects_db -N -B -e \
+VERSION_ID=$($MARIADB_PATH -u "$DB_USER" -p"$DB_PASS" -h "$DB_HOST" --database=myllm_projects_db -N -B -e \
   "SELECT id FROM versiones WHERE id_proyecto = $PROJECT_ID ORDER BY id LIMIT 1;")
 
 echo "✅ Versión creada con ID: $VERSION_ID"
@@ -119,11 +138,11 @@ echo "PASO 5: Verificar estado con propuesta_cliente"
 echo "=========================================="
 
 echo "Consultando tabla estado..."
-$MARIADB_PATH -u myllm_admin -p'Us3r@dminP@ss' --database=myllm_projects_db -e \
+$MARIADB_PATH -u "$DB_USER" -p"$DB_PASS" -h "$DB_HOST" --database=myllm_projects_db -e \
   "SELECT id_proyecto, id_version, propuesta_cliente, revision_interna, entrenamiento_inicial 
    FROM estado WHERE id_proyecto = $PROJECT_ID AND id_version = $VERSION_ID;"
 
-PROPUESTA_CLIENTE=$($MARIADB_PATH -u myllm_admin -p'Us3r@dminP@ss' --database=myllm_projects_db -N -B -e \
+PROPUESTA_CLIENTE=$($MARIADB_PATH -u "$DB_USER" -p"$DB_PASS" -h "$DB_HOST" --database=myllm_projects_db -N -B -e \
   "SELECT propuesta_cliente FROM estado WHERE id_proyecto = $PROJECT_ID AND id_version = $VERSION_ID;")
 
 echo ""

@@ -6,6 +6,8 @@ import sys
 import logging
 from pathlib import Path
 
+from tests.helpers import load_module_from_path, load_protected_values, get_project_root
+
 # Configurar logging
 logging.basicConfig(
     level=logging.INFO,
@@ -13,26 +15,14 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-# Agregar rutas necesarias
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root / "src"))
-sys.path.insert(0, str(project_root))
+project_root = get_project_root()
 
-# Cargar protected_values
-import importlib.util
-protected_values_path = project_root / "infrastructure" / "environments" / "macbook" / "protected_values.py"
-spec = importlib.util.spec_from_file_location("protected_values", protected_values_path)
-protected_values = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(protected_values)
-
-# Cargar common_security con delivery checker
-common_security_path = project_root / "src" / "2_shared_application" / "security" / "common_security.py"
-spec = importlib.util.spec_from_file_location("common_security", common_security_path)
-common_security = importlib.util.module_from_spec(spec)
-
-# Inyectar protected_values en el namespace antes de cargar
-sys.modules['protected_values'] = protected_values
-spec.loader.exec_module(common_security)
+# Cargar protected_values y common_security
+load_protected_values()
+common_security = load_module_from_path(
+    "common_security",
+    "src/2_shared_application/security/common_security.py",
+)
 
 def main():
     print("=" * 70)

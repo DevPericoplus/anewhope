@@ -7,10 +7,24 @@ echo "==================================================="
 echo "Test: Crear carpeta en fmanagement"
 echo "==================================================="
 
-# Configuración
-FMANAGEMENT_URL="http://127.0.0.1:1666"
+# Configuración - obtener BASE_DIR dinámicamente
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+FMANAGEMENT_URL=$(python3 -c "
+import importlib.util, os
+env = os.environ.get('ANEWHOPE_ENV', 'macbook')
+spec = importlib.util.spec_from_file_location('pv', '$BASE_DIR/infrastructure/environments/' + env + '/protected_values.py')
+pv = importlib.util.module_from_spec(spec); spec.loader.exec_module(pv)
+from urllib.parse import urlparse
+p = urlparse(pv.broker_backend_base_url)
+print(f'http://{p.hostname}:1666')
+")
+BASE_PATH=$(python3 -c "
+import yaml
+with open('$BASE_DIR/infrastructure/environments/${ANEWHOPE_ENV:-macbook}/env.yaml') as f:
+    d = yaml.safe_load(f)
+import os; print(os.path.expanduser(d.get('fmanagement_base_path', '/tmp')))
+" 2>/dev/null || echo "/Users/administrator/data/anewhope/files/backend_server")
 FOLDER_NAME="test_$(date +%s)"
-BASE_PATH="/Users/administrator/data/anewhope/files/backend_server"
 ORG_PATH="ORG00001"
 PRJ_PATH="PRJ00001"
 VERSION_PATH="v001"

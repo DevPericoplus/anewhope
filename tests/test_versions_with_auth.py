@@ -16,7 +16,9 @@ print("="*60 + "\n")
 
 # 1. Hacer login para obtener tokens
 print("1. Haciendo login...")
-MIDDLEWARE_URL = "http://localhost:8007"  # Puerto del middleware frontend (service_frontend)
+from tests.helpers import get_service_urls
+_urls = get_service_urls()
+MIDDLEWARE_URL = _urls["middleware"]
 
 try:
     login_response = requests.post(

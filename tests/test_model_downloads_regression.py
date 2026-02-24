@@ -21,9 +21,12 @@ import sys
 from pathlib import Path
 from typing import Dict, Any, Optional
 
+from tests.helpers import get_service_urls
+_urls = get_service_urls()
+
 # Configuración
-MIDDLEWARE_URL = "http://localhost:8007"
-FMANAGEMENT_URL = "http://localhost:1666"
+MIDDLEWARE_URL = _urls["middleware"]
+FMANAGEMENT_URL = _urls["fmanagement"]
 
 # Credenciales de test (admin)
 TEST_USER = "admintest"

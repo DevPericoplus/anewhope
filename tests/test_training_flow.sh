@@ -3,8 +3,20 @@
 
 set -e
 
-MIDDLEWARE_URL="http://localhost:8007"
-BACKEND_CORE_URL="http://localhost:8003"
+# Obtener URLs dinámicamente desde protected_values
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+_URLS=$(python3 -c "
+import importlib.util, os
+from urllib.parse import urlparse
+env = os.environ.get('ANEWHOPE_ENV', 'macbook')
+spec = importlib.util.spec_from_file_location('pv', '$BASE_DIR/infrastructure/environments/' + env + '/protected_values.py')
+pv = importlib.util.module_from_spec(spec); spec.loader.exec_module(pv)
+p = urlparse(pv.broker_backend_base_url)
+print(f'http://{p.hostname}:8007')
+print(pv.core_backend_base_url)
+")
+MIDDLEWARE_URL=$(echo "$_URLS" | head -n1)
+BACKEND_CORE_URL=$(echo "$_URLS" | tail -n1)
 
 echo "================================================================================"
 echo "TEST FLUJO COMPLETO DE ENTRENAMIENTO"

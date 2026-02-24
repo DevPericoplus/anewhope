@@ -3,6 +3,13 @@
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 
+from tests.helpers import load_module_from_path
+
+_routercore = load_module_from_path("routercore", "src/apps/3_backend/routercore.py")
+BackendCoreRouter = _routercore.BackendCoreRouter
+BackendCorePermissionError = _routercore.BackendCorePermissionError
+BackendCoreBusinessError = _routercore.BackendCoreBusinessError
+
 
 class TestAssignmentsService:
     """Unit tests for assignment operations."""
@@ -10,16 +17,13 @@ class TestAssignmentsService:
     @pytest.fixture
     def mock_router(self):
         """Fixture for BackendCoreRouter with mocked dependencies."""
-        # Import here to avoid import errors in test discovery
-        from src.apps.backend.routercore import BackendCoreRouter
-
         storage = Mock()
         router = BackendCoreRouter(storage=storage)
         return router
 
     def test_get_internal_users_returns_filtered_list(self, mock_router):
         """Tests that only users with training_create=true are returned."""
-        with patch("src.apps.backend.routercore.create_engine") as mock_engine:
+        with patch("sqlalchemy.create_engine") as mock_engine:
             mock_conn = MagicMock()
             mock_engine.return_value.connect.return_value.__enter__.return_value = mock_conn
 
@@ -37,8 +41,6 @@ class TestAssignmentsService:
 
     def test_create_org_assignment_checks_permission(self, mock_router):
         """Tests that non-SuperAdmin is denied."""
-        from src.apps.backend.routercore import BackendCorePermissionError
-
         with pytest.raises(BackendCorePermissionError):
             mock_router.create_organization_assignment(
                 user_id=5,
@@ -49,9 +51,7 @@ class TestAssignmentsService:
 
     def test_create_org_assignment_prevents_duplicates(self, mock_router):
         """Tests that duplicate assignments are rejected."""
-        from src.apps.backend.routercore import BackendCoreBusinessError
-
-        with patch("src.apps.backend.routercore.create_engine") as mock_engine:
+        with patch("sqlalchemy.create_engine") as mock_engine:
             mock_conn = MagicMock()
             mock_engine.return_value.connect.return_value.__enter__.return_value = mock_conn
 
@@ -70,8 +70,6 @@ class TestAssignmentsService:
 
     def test_update_org_assignment_checks_permission(self, mock_router):
         """Tests that non-SuperAdmin cannot update assignments."""
-        from src.apps.backend.routercore import BackendCorePermissionError
-
         with pytest.raises(BackendCorePermissionError):
             mock_router.update_organization_assignment(
                 assignment_id=1,
@@ -81,8 +79,6 @@ class TestAssignmentsService:
 
     def test_delete_org_assignment_checks_permission(self, mock_router):
         """Tests that non-SuperAdmin cannot delete assignments."""
-        from src.apps.backend.routercore import BackendCorePermissionError
-
         with pytest.raises(BackendCorePermissionError):
             mock_router.delete_organization_assignment(
                 assignment_id=1,
@@ -91,7 +87,7 @@ class TestAssignmentsService:
 
     def test_validate_org_prerequisite_returns_true_when_active(self, mock_router):
         """Tests prerequisite validation with active org role."""
-        with patch("src.apps.backend.routercore.create_engine") as mock_engine:
+        with patch("sqlalchemy.create_engine") as mock_engine:
             mock_conn = MagicMock()
             mock_engine.return_value.connect.return_value.__enter__.return_value = mock_conn
 
@@ -109,7 +105,7 @@ class TestAssignmentsService:
 
     def test_validate_org_prerequisite_returns_false_when_no_role(self, mock_router):
         """Tests prerequisite validation without org role."""
-        with patch("src.apps.backend.routercore.create_engine") as mock_engine:
+        with patch("sqlalchemy.create_engine") as mock_engine:
             mock_conn = MagicMock()
             mock_engine.return_value.connect.return_value.__enter__.return_value = mock_conn
 
@@ -130,7 +126,6 @@ class TestAssignmentsService:
         with patch.object(
             mock_router, "validate_org_prerequisite"
         ) as mock_validate:
-            from src.apps.backend.routercore import BackendCoreBusinessError
 
             mock_validate.return_value = {
                 "valid": False,
@@ -151,12 +146,10 @@ class TestAssignmentsService:
 
     def test_create_project_assignment_prevents_duplicates(self, mock_router):
         """Tests that duplicate project assignments are rejected."""
-        from src.apps.backend.routercore import BackendCoreBusinessError
-
         with patch.object(
             mock_router, "validate_org_prerequisite"
         ) as mock_validate, \
-        patch("src.apps.backend.routercore.create_engine") as mock_engine:
+        patch("sqlalchemy.create_engine") as mock_engine:
 
             # Mock valid prerequisite
             mock_validate.return_value = {
@@ -168,8 +161,12 @@ class TestAssignmentsService:
             mock_conn = MagicMock()
             mock_engine.return_value.connect.return_value.__enter__.return_value = mock_conn
 
-            # Mock existing project assignment found
-            mock_conn.execute.return_value.fetchone.return_value = Mock(id=1)
+            # First fetchone: org validation (project belongs to org 2)
+            # Second fetchone: existing assignment found (duplicate)
+            mock_conn.execute.return_value.fetchone.side_effect = [
+                Mock(id_organizacion=2),  # project org check
+                Mock(id=1),              # existing assignment found
+            ]
 
             with pytest.raises(BackendCoreBusinessError) as exc_info:
                 mock_router.create_project_assignment(
@@ -184,8 +181,6 @@ class TestAssignmentsService:
 
     def test_get_organization_assignments_checks_permission(self, mock_router):
         """Tests that non-SuperAdmin cannot list org assignments."""
-        from src.apps.backend.routercore import BackendCorePermissionError
-
         with pytest.raises(BackendCorePermissionError):
             mock_router.get_organization_assignments(
                 organization_id=2,
@@ -194,8 +189,6 @@ class TestAssignmentsService:
 
     def test_get_project_assignments_checks_permission(self, mock_router):
         """Tests that non-SuperAdmin cannot list project assignments."""
-        from src.apps.backend.routercore import BackendCorePermissionError
-
         with pytest.raises(BackendCorePermissionError):
             mock_router.get_project_assignments(
                 project_id=10,
@@ -204,8 +197,6 @@ class TestAssignmentsService:
 
     def test_update_project_assignment_checks_permission(self, mock_router):
         """Tests that non-SuperAdmin cannot update project assignments."""
-        from src.apps.backend.routercore import BackendCorePermissionError
-
         with pytest.raises(BackendCorePermissionError):
             mock_router.update_project_assignment(
                 assignment_id=1,
@@ -215,8 +206,6 @@ class TestAssignmentsService:
 
     def test_delete_project_assignment_checks_permission(self, mock_router):
         """Tests that non-SuperAdmin cannot delete project assignments."""
-        from src.apps.backend.routercore import BackendCorePermissionError
-
         with pytest.raises(BackendCorePermissionError):
             mock_router.delete_project_assignment(
                 assignment_id=1,

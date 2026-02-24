@@ -28,9 +28,10 @@ BLUE = "\033[94m"
 CYAN = "\033[96m"
 RESET = "\033[0m"
 
-# URLs de servicios
-MIDDLEWARE_URL = "http://localhost:8007"
-FMANAGEMENT_URL = "http://localhost:1666"
+from tests.helpers import get_service_urls
+_urls = get_service_urls()
+MIDDLEWARE_URL = _urls["middleware"]
+FMANAGEMENT_URL = _urls["fmanagement"]
 
 # Datos de prueba
 TEST_USER = "adminone"

@@ -3,7 +3,8 @@
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src/apps/5_web_frontend"))
+from tests.helpers import get_project_root
+sys.path.insert(0, str(get_project_root() / "src/apps/5_web_frontend"))
 
 # Importar la función
 from adapters.api_client import get_project_versions, fmanagement_list_all_project_versions

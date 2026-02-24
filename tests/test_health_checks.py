@@ -7,6 +7,9 @@ import json
 import os
 import ssl
 
+from tests.helpers import get_service_urls
+_urls = get_service_urls()
+
 def test_service(name: str, url: str, accept_404: bool = False, accept_auth_errors: bool = False, skip_ssl_verify: bool = False):
     """Prueba un servicio y muestra el resultado."""
     print(f"\n{'='*60}")
@@ -63,58 +66,58 @@ def main():
     # Frontend
     results['Frontend'] = test_service(
         "Frontend (Reflex)",
-        "http://localhost:8005/",
+        f"{_urls['frontend']}/",
         accept_404=True
     )
 
     # Backoffice
     results['Backoffice'] = test_service(
         "Backoffice (Reflex)",
-        "http://localhost:8006/",
+        f"{_urls['backoffice']}/",
         accept_404=True
     )
 
     # Middleware
     results['Middleware'] = test_service(
         "Middleware (FastAPI)",
-        "http://localhost:8007/docs"
+        f"{_urls['middleware']}/docs"
     )
 
     # Backend Core
     results['Backend Core'] = test_service(
         "Backend Core (FastAPI)",
-        "http://localhost:8003/docs"
+        f"{_urls['backend_core']}/docs"
     )
 
     # Broker
     results['Broker'] = test_service(
         "Broker (FastAPI)",
-        "http://localhost:8008/docs"
+        f"{_urls['broker']}/docs"
     )
 
     # Trainer
     results['Trainer'] = test_service(
         "Trainer (FastAPI)",
-        "http://localhost:8004/docs"
+        f"{_urls['trainer']}/docs"
     )
 
     # fmanagement
     results['fmanagement'] = test_service(
         "fmanagement (Go)",
-        "http://localhost:1666/",
+        f"{_urls['fmanagement']}/",
         accept_404=True
     )
 
     # ChromaDB
     results['ChromaDB'] = test_service(
         "ChromaDB",
-        "http://localhost:8100/api/v2/heartbeat"
+        f"{_urls['chromadb']}/api/v2/heartbeat"
     )
 
     # Ollama (via middleware)
     results['Ollama'] = test_service(
         "Ollama (via middleware)",
-        "http://localhost:8007/trainer/ollama/health"
+        f"{_urls['middleware']}/trainer/ollama/health"
     )
 
     # SMS API

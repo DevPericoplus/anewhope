@@ -9,24 +9,24 @@ import pytest
 from sqlalchemy import create_engine, text
 from datetime import datetime
 
-# Import del adapter a testear
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+from tests.helpers import load_module_from_path, load_protected_values, get_db_engine
 
-from src.app_2_shared_application.adapters import conversaciones_adapter
+conversaciones_adapter = load_module_from_path(
+    "conversaciones_adapter",
+    "src/2_shared_application/adapters/conversaciones_adapter.py",
+)
 
 
 @pytest.fixture(scope="module")
 def engine_core():
     """Engine para myllm_core_db (users, organizations)"""
-    return create_engine("mysql+pymysql://myllm_admin:Us3r@dminP@ss@localhost/myllm_core_db")
+    return get_db_engine(database="myllm_core_db")
 
 
 @pytest.fixture(scope="module")
 def engine_projects():
     """Engine para myllm_projects_db (conversaciones, tickets)"""
-    return create_engine("mysql+pymysql://myllm_admin:Us3r@dminP@ss@localhost/myllm_projects_db")
+    return get_db_engine(database="myllm_projects_db")
 
 
 @pytest.fixture(scope="function")

@@ -7,11 +7,26 @@ echo "==================================================="
 echo "Test: Renombrar archivo en fmanagement"
 echo "==================================================="
 
-# Configuración
-FMANAGEMENT_URL="http://127.0.0.1:1666"
+# Configuración - obtener valores dinámicamente
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+FMANAGEMENT_URL=$(python3 -c "
+import importlib.util, os
+env = os.environ.get('ANEWHOPE_ENV', 'macbook')
+spec = importlib.util.spec_from_file_location('pv', '$BASE_DIR/infrastructure/environments/' + env + '/protected_values.py')
+pv = importlib.util.module_from_spec(spec); spec.loader.exec_module(pv)
+from urllib.parse import urlparse
+p = urlparse(pv.broker_backend_base_url)
+print(f'http://{p.hostname}:1666')
+")
+BASE_PATH=$(python3 -c "
+import yaml, os
+env = os.environ.get('ANEWHOPE_ENV', 'macbook')
+with open('$BASE_DIR/infrastructure/environments/' + env + '/env.yaml') as f:
+    d = yaml.safe_load(f)
+print(os.path.expanduser(d.get('fmanagement_base_path', '/tmp')) + '/external')
+" 2>/dev/null || echo "/Users/administrator/data/anewhope/files/backend_server/external")
 FILE_NAME="test_rename_$(date +%s)"
 NEW_FILE_NAME="renamed_$(date +%s)"
-BASE_PATH="/Users/administrator/data/anewhope/files/backend_server/external"
 ORG_PATH="ORG00001"
 PRJ_PATH="PRJ00001"
 VERSION_PATH="v001"

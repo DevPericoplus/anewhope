@@ -35,6 +35,12 @@ Proyecto para gestionar infraestructura, aplicaciones y flujos de personalizaci�
       - `adapters/` (`api_client.py`)
 - `monorepo_llm_personalizado/`: estructura de referencia en español utilizada para planificar la migración a `src/`.
 - `infrastructure/`: scripts y utilidades adicionales (pendiente de completar).
+- `tests/`: suite de tests centralizada (unit, integration, E2E).
+  - `helpers.py`: utilidades compartidas para carga dinámica de módulos y configuración.
+  - `conftest.py`: fixtures pytest multi-entorno.
+  - `unit/`: tests unitarios de entidades y servicios.
+  - `integration/`: tests de integración con BD y adaptadores.
+  - `test_*.py` / `test_*.sh`: tests E2E standalone.
 - `test/`: pruebas heredadas o de exploración.
 
 ## Sistema de Versiones
@@ -439,7 +445,19 @@ Broker (8008) → 4_trainer (8004) → Ollama (11434) → Inferencia LLM
 
 ### Variables protegidas por entorno (protected_values.py)
 
-Cada entorno tiene su archivo `protected_values.py` con credenciales y URLs internas:
+Cada entorno tiene su archivo `protected_values.py` con credenciales y URLs internas.
+Los ficheros reales están excluidos del repositorio (`.gitignore`). Como referencia,
+cada entorno incluye un `protected_values.py.example` con placeholders `CHANGE_ME_*`:
+
+```
+infrastructure/environments/macbook/protected_values.py.example
+infrastructure/environments/dev/protected_values.py.example
+infrastructure/environments/pre/protected_values.py.example
+infrastructure/environments/pro/protected_values.py.example
+```
+
+Para configurar un entorno nuevo, copiar el `.example` como `protected_values.py`
+y reemplazar todos los valores `CHANGE_ME_*` por credenciales reales.
 
 | Variable | macbook | dev | pre/pro |
 |----------|---------|-----|---------|
@@ -3020,27 +3038,39 @@ cd src/apps/5_web_frontend && bash run.sh
 
 ### full_test.sh
 
-Script de ejecución de tests que valida todos los módulos del proyecto con salida detallada:
+Script de ejecución de tests con interfaz CLI para seleccionar categorías:
 
 ```bash
-./full_test.sh
+./full_test.sh              # Ejecuta todos los tests (equivale a --all)
+./full_test.sh --all        # Ejecuta todos los tests
+./full_test.sh --unit       # Solo tests unitarios
+./full_test.sh --integration # Solo tests de integración
+./full_test.sh --e2e        # Solo tests E2E (end-to-end)
+./full_test.sh --unit --integration  # Combinación de categorías
 ```
 
-**Características:**
-- Ejecuta tests de forma secuencial por módulo
-- Muestra cada test individual con su estado (PASSED/FAILED)
-- Usa entornos virtuales dedicados automáticamente:
-  - `.venv_frontend313` para `2_shared_application` y `5_web_frontend`
-  - `.venv_middleware313` para `7_service_frontend`, `8_service_backend` y `3_backend`
-- Proporciona separadores visuales entre grupos de tests
-- Salida verbose (`-v`) para máxima trazabilidad
+**Categorías de tests:**
 
-**Módulos testeados:**
-1. `src/2_shared_application/tests` (14 tests): DTOs, helpers, validaciones
-2. `src/apps/5_web_frontend/tests` (23 tests): componentes web, integración middleware
-3. `src/apps/7_service_frontend/tests` (8 tests): middleware, sesiones, permisos
-4. `src/apps/8_service_backend/tests` (1 test): broker backend, routing
-5. `src/apps/3_backend/tests` (1 test): backend core, endpoints
+| Categoría | Directorio | Descripción |
+|-----------|-----------|-------------|
+| `--unit` | `src/apps/*/tests/` + `tests/unit/` | Tests unitarios in-tree y centralizados |
+| `--integration` | `tests/integration/` | Tests de integración con BD y adaptadores |
+| `--e2e` | `tests/test_*.py` + `tests/test_*.sh` | Tests end-to-end standalone |
+
+**Características:**
+- Activación automática de entornos virtuales por sección:
+  - `.venv_frontend313` para `2_shared_application` y `5_web_frontend`
+  - `.venv_backoffice313` para `6_web_backoffice`
+  - `.venv_middleware313` para middleware, backend, broker, `tests/unit/` y `tests/integration/`
+- Resumen final con conteo pass/fail/skip por sección
+- Exit code != 0 si hay fallos en cualquier sección
+- Tests Go de fmanagement incluidos en la sección unit
+
+**Infraestructura de tests (`tests/`):**
+
+- `tests/helpers.py`: utilidades compartidas (carga dinámica de módulos con `importlib.util`, credenciales desde `protected_values.py`, URLs de servicios, conexiones BD)
+- `tests/conftest.py`: fixtures pytest (`project_root`, `protected_values`, `db_engine_core`, `db_engine_projects`)
+- `tests/requirements_test.txt`: dependencias para ejecutar tests (httpx, pytest, pymysql, SQLAlchemy, requests, PyYAML)
 
 ### clear_caches.sh
 

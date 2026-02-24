@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 """Script para verificar el estado de las conversaciones."""
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
-# Configuración de base de datos
-DB_USER = "myllm_admin"
-DB_PASS = "Us3r%40dminP%40ss"  # URL-encoded
-DB_HOST = "localhost"
+from tests.helpers import get_db_engine
 
-engine = create_engine(f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}/myllm_projects_db")
+engine = get_db_engine(database="myllm_projects_db")
 
 print("=== CONVERSACIONES EN LA BASE DE DATOS ===\n")
 

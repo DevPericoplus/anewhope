@@ -13,8 +13,11 @@ import httpx
 import json
 from typing import Dict, Any
 
+from tests.helpers import get_service_urls
+_urls = get_service_urls()
+
 # Configuración
-CORE_URL = "http://localhost:8003"
+CORE_URL = _urls["backend_core"]
 
 # Credenciales de ejemplo (ajustar según sea necesario)
 ACCESS_TOKEN = "dummy_token"

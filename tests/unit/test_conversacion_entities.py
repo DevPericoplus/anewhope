@@ -8,20 +8,17 @@ en las entidades del dominio.
 import pytest
 from datetime import datetime, timedelta
 
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+from tests.helpers import load_module_from_path
 
-from src.app_1_shared_domain.conversacion import (
-    Conversacion,
-    MensajeConversacion,
-    ParticipanteConversacion,
-    AsignacionOrganizacionInterna,
-    EstadoConversacion,
-    PrioridadConversacion,
-    TipoParticipante,
-    TipoRelacionTicket
-)
+_mod = load_module_from_path("conversacion", "src/1_shared_domain/conversacion.py")
+Conversacion = _mod.Conversacion
+MensajeConversacion = _mod.MensajeConversacion
+ParticipanteConversacion = _mod.ParticipanteConversacion
+AsignacionOrganizacionInterna = _mod.AsignacionOrganizacionInterna
+EstadoConversacion = _mod.EstadoConversacion
+PrioridadConversacion = _mod.PrioridadConversacion
+TipoParticipante = _mod.TipoParticipante
+TipoRelacionTicket = _mod.TipoRelacionTicket
 
 
 class TestConversacionEntity:

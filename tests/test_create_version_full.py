@@ -28,9 +28,12 @@ BLUE = "\033[94m"
 CYAN = "\033[96m"
 RESET = "\033[0m"
 
+from tests.helpers import get_service_urls
+_urls = get_service_urls()
+
 # URLs de servicios
-MIDDLEWARE_URL = "http://localhost:8007"  # Login endpoint está aquí
-BACKEND_CORE_URL = "http://localhost:8003"  # Endpoints de datos
+MIDDLEWARE_URL = _urls["middleware"]
+BACKEND_CORE_URL = _urls["backend_core"]
 
 # Datos de prueba
 TEST_USER = "adminone"  # user_id=1, identity_type_id=1 (superadmin), org_id=1

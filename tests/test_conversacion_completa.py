@@ -5,28 +5,16 @@ Simula el flujo completo de comunicación del sistema de conversaciones.
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from sqlalchemy import create_engine, text
-import importlib.util
+from sqlalchemy import text
+from tests.helpers import get_db_engine, load_module_from_path
 
-# Configuración de base de datos
-DB_USER = "myllm_admin"
-DB_PASS = "Us3r%40dminP%40ss"  # URL-encoded: @ = %40
-DB_HOST = "localhost"
-
-# Crear engines
-engine_core = create_engine(f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}/myllm_core_db")
-engine_projects = create_engine(f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}/myllm_projects_db")
-
-# Cargar adapter de conversaciones usando importlib
-adapter_path = Path(__file__).parent.parent / "src/2_shared_application/adapters/conversaciones_adapter.py"
-spec = importlib.util.spec_from_file_location("conversaciones_adapter", adapter_path)
-if spec is None or spec.loader is None:
-    raise ImportError("No se pudo cargar el adaptador de conversaciones")
-
-conversaciones_adapter = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(conversaciones_adapter)
+engine_core = get_db_engine(database="myllm_core_db")
+engine_projects = get_db_engine(database="myllm_projects_db")
+conversaciones_adapter = load_module_from_path(
+    "conversaciones_adapter",
+    "src/2_shared_application/adapters/conversaciones_adapter.py",
+)
 
 print("=" * 80)
 print("TEST: Conversación completa Cliente ↔ Interno")

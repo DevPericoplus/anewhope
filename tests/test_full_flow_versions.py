@@ -4,6 +4,9 @@
 import requests
 import pymysql
 
+from tests.helpers import get_service_urls, get_db_connection
+_urls = get_service_urls()
+
 print("\n" + "="*80)
 print("TEST DEL FLUJO COMPLETO: Verificando versiones del proyecto")
 print("="*80 + "\n")
@@ -11,13 +14,7 @@ print("="*80 + "\n")
 # Paso 0: Obtener OTP de la base de datos
 print("0. OBTENER OTP desde base de datos...")
 try:
-    conn = pymysql.connect(
-        host='localhost',
-        user='myllm_admin',
-        password='Us3r@dminP@ss',
-        database='myllm_core_db',
-        charset='utf8mb4'
-    )
+    conn = get_db_connection()
     cursor = conn.cursor(pymysql.cursors.DictCursor)
     cursor.execute("SELECT user_otp FROM users WHERE user_name = 'adminone'")
     result = cursor.fetchone()
@@ -39,7 +36,7 @@ except Exception as e:
 print("\n1. LOGIN en Middleware (puerto 8007)...")
 try:
     login_response = requests.post(
-        "http://localhost:8007/login",
+        f"{_urls['middleware']}/login",
         json={
             "user_name": "adminone",
             "password": "Password01",
@@ -72,7 +69,7 @@ except Exception as e:
 print(f"\n2. OBTENER VERSIONES desde Backend Core (puerto 8003)...")
 try:
     versions_response = requests.get(
-        f"http://localhost:8003/proyectos/1/versiones?org_id={org_id}",
+        f"{_urls['backend_core']}/proyectos/1/versiones?org_id={org_id}",
         headers={
             "X-Access-Token": access_token,
             "X-Session-Token": session_token,
@@ -110,7 +107,7 @@ for version_info in versiones:
     try:
         # Llamar al middleware que llama al broker que llama al backend que llama a fmanagement
         fmanagement_response = requests.post(
-            "http://localhost:8007/fmanagement/list",
+            f"{_urls['middleware']}/fmanagement/list",
             headers={
                 "Authorization": f"Bearer {access_token}",
                 "X-Session-Token": session_token

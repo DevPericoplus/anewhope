@@ -8,9 +8,12 @@ import urllib.error
 import json
 import time
 
+from tests.helpers import get_service_urls, get_db_connection as _get_db_connection
+
 
 # Configuración
-BACKEND_CORE_URL = "http://localhost:8003"
+_urls = get_service_urls()
+BACKEND_CORE_URL = _urls["backend_core"]
 TEST_USER_ID = 1
 TEST_IDENTITY_TYPE_ID = 1
 ESTADO_ID = 1
@@ -18,13 +21,7 @@ ESTADO_ID = 1
 
 def get_db_connection():
     """Crea conexión a la base de datos."""
-    return pymysql.connect(
-        host="localhost",
-        user="myllm_admin",
-        password="Us3r@dminP@ss",
-        database="myllm_projects_db",
-        charset="utf8mb4",
-    )
+    return _get_db_connection(database="myllm_projects_db")
 
 
 def get_estado_from_db(estado_id: int) -> dict:

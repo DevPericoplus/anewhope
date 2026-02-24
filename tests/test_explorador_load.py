@@ -5,17 +5,11 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src/apps/5_web_frontend"))
 
-import pymysql
+from tests.helpers import get_service_urls, get_db_connection
 
 # Obtener OTP
-conn = pymysql.connect(
-    host='localhost',
-    user='myllm_admin',
-    password='Us3r@dminP@ss',
-    database='myllm_core_db',
-    charset='utf8mb4'
-)
-cursor = conn.cursor(pymysql.cursors.DictCursor)
+conn = get_db_connection(database="myllm_core_db")
+cursor = conn.cursor()
 cursor.execute("SELECT user_otp FROM users WHERE user_name = 'adminone'")
 result = cursor.fetchone()
 cursor.close()
@@ -24,8 +18,9 @@ otp = result['user_otp']
 
 # Login
 import requests
+_urls = get_service_urls()
 login_response = requests.post(
-    "http://localhost:8007/login",
+    f"{_urls['middleware']}/login",
     json={"user_name": "adminone", "password": "Password01", "otp": otp},
     timeout=10
 )

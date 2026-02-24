@@ -1,0 +1,88 @@
+"""Variables protegidas para el entorno pre."""
+
+# Dominio interno: anewhope.aws
+# Dominio público: getmyllm.com (solo nginx frontend)
+# Servidores: frontend.anewhope.aws, backend.anewhope.aws, trainer.anewhope.aws
+#
+# INSTRUCCIONES:
+#   1. Copiar este fichero como protected_values.py
+#   2. Reemplazar todos los valores marcados con CHANGE_ME por valores reales
+#   3. NUNCA subir protected_values.py al repositorio
+
+global_shared_key_raw = "CHANGE_ME_shared_key_min_24_chars"
+sms_api_key = "CHANGE_ME_infobip_api_key"
+sms_api_url = "https://CHANGE_ME.api.infobip.com"
+sms_sender_id = "myllm.ia"
+
+# JWT (middleware)
+jwt_access_secret_key = "CHANGE_ME_jwt_access_secret_min_24_chars"
+jwt_session_secret_key = "CHANGE_ME_jwt_session_secret_min_24_chars"
+jwt_algorithm = "HS256"
+jwt_access_expiration_seconds = 900
+jwt_session_expiration_seconds = 2700
+
+# Backend routing (broker y core están en backend.anewhope.aws, trainer en trainer.anewhope.aws)
+broker_backend_base_url = "http://backend.anewhope.aws:8008"
+core_backend_base_url = "http://backend.anewhope.aws:8003"
+trainer_backend_base_url = "http://trainer.anewhope.aws:8004"
+
+# MariaDB (en servidor backend.anewhope.aws)
+mariadb_host = "backend.anewhope.aws"
+mariadb_port = 3306
+mariadb_core_database = "myllm_core_db"
+mariadb_ai_database = "myllm_projects_db"
+
+mariadb_admin_user = "myllm_admin"
+mariadb_admin_password = "CHANGE_ME_admin_password"
+mariadb_writer_user = "myllm_writer"
+mariadb_writer_password = "CHANGE_ME_writer_password"
+mariadb_reader_user = "myllm_reader"
+mariadb_reader_password = "CHANGE_ME_reader_password"
+mariadb_root_user = "root"
+mariadb_root_password = "CHANGE_ME_root_password"
+
+mariadb_admin_dsn = (
+    "mysql+pymysql://myllm_admin:CHANGE_ME_admin_password_urlencoded@backend.anewhope.aws:3306/myllm_core_db"
+)
+mariadb_writer_dsn = (
+    "mysql+pymysql://myllm_writer:CHANGE_ME_writer_password_urlencoded@backend.anewhope.aws:3306/myllm_core_db"
+)
+mariadb_reader_dsn = (
+    "mysql+pymysql://myllm_reader:CHANGE_ME_reader_password_urlencoded@backend.anewhope.aws:3306/myllm_core_db"
+)
+mariadb_root_dsn = (
+    "mysql+pymysql://root:CHANGE_ME_root_password_urlencoded@backend.anewhope.aws:3306/myllm_core_db"
+)
+
+# CLI MariaDB (Oracle Linux 10)
+mariadb_cli_path = "/usr/bin/mariadb"
+
+# Redis (sesión compartida - en servidor frontend.anewhope.aws)
+redis_password = "CHANGE_ME_redis_password"
+
+# Fernet (cifrado de contraseñas)
+fernet_key = "CHANGE_ME_fernet_key_base64_44_chars_xxxxxxxxx="
+
+# ChromaDB (autenticación del servidor de base de datos vectorial)
+chroma_auth_token = "CHANGE_ME_chroma_token"
+chroma_auth_provider = "chromadb.auth.token_authn.TokenAuthenticationServerProvider"
+chroma_auth_credentials_provider = "chromadb.auth.token_authn.TokenAuthClientProvider"
+
+# Parámetros de entrenamiento por defecto
+# Estos valores se usan para crear el registro inicial en jobs_entrenamientos
+# al iniciar cada entrenamiento o reentrenamiento
+training_default_learning_rate = 0.001
+training_default_batch_size = 32
+training_default_epochs = 10
+training_default_embedding_dimension = 768
+training_default_sequence_length = 512
+training_default_hidden_units = 256
+training_default_dropout_rate = 0.1
+training_default_chunk_size = 1000
+training_default_chunk_overlap = 200
+training_default_temperature = 0.7
+training_default_max_tokens = 2048
+training_default_distance_metric = "cosine"
+training_default_top_k = 5
+training_default_loss_function = "cross_entropy"
+training_default_optimizer = "adam"

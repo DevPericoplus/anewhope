@@ -22,9 +22,12 @@ def test_training_flow():
     print("TEST FLUJO COMPLETO DE ENTRENAMIENTO")
     print("=" * 80)
 
+    from tests.helpers import get_service_urls
+    _urls = get_service_urls()
+
     # Configuración
-    MIDDLEWARE_URL = "http://localhost:8007"
-    BACKEND_CORE_URL = "http://localhost:8003"
+    MIDDLEWARE_URL = _urls["middleware"]
+    BACKEND_CORE_URL = _urls["backend_core"]
 
     # Credenciales del usuario admin
     auth_payload = {

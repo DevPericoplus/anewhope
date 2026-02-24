@@ -4,21 +4,14 @@ Script para probar el envío de SMS a través de Infobip.
 Útil para verificar que la API funciona correctamente y ver transacciones en el portal.
 """
 import sys
-import importlib.util
 from pathlib import Path
 
-# Agregar rutas necesarias al path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root / "src"))
+from tests.helpers import load_module_from_path, get_project_root
 
-# Cargar el módulo common_security usando importlib (porque el directorio empieza con número)
-common_security_path = project_root / "src" / "2_shared_application" / "security" / "common_security.py"
-
-spec = importlib.util.spec_from_file_location("common_security", common_security_path)
-common_security_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(common_security_module)
-
-# Obtener la función de envío de SMS
+common_security_module = load_module_from_path(
+    "common_security",
+    "src/2_shared_application/security/common_security.py",
+)
 send_message_by_sms = common_security_module.send_message_by_sms
 
 def main():
