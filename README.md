@@ -7405,6 +7405,31 @@ El servidor util01 actúa como nodo de despliegue centralizado:
 - Accede a todos los servidores por SSH (usuario `ansible`, clave RSA)
 - Ejecuta los playbooks para desplegar en frontend, backend y trainer
 
+### WDS - Web Deploy Service
+
+La aplicacion WDS (`anh_ansible_environments/web/web_deploy_service/`) es una interfaz web construida con Reflex que centraliza la gestion de despliegues y el monitoreo de servicios. Se ejecuta localmente y ofrece 3 pestanas:
+
+**Deploy:** Formulario visual para construir y ejecutar comandos `deploy_custom.sh`. Incluye selectores de entorno/servidor/modo/tags, terminal en tiempo real con salida de Ansible, y reporte de ejecucion con recap.
+
+**Services:** Monitor en tiempo real de los 13 servicios del sistema organizados por servidor (Frontend, Backend, Trainer). Para cada servicio muestra estado (activo/inactivo), puerto y controles de Start/Stop/Restart/Check. En macbook usa comprobaciones locales (socket, brew services, lsof/kill). En dev/pre ejecuta comandos remotos via SSH (`~/.ssh/config`) con `systemctl`.
+
+**History:** Historial de los ultimos 10 despliegues con entorno, servidor, tags, duracion y resultado.
+
+| Servicio | Puerto | Grupo | Acciones macbook | Acciones dev/pre |
+|----------|--------|-------|-----------------|------------------|
+| Frontend | 8005 | frontend | socket + run.sh | ssh + systemctl |
+| Backoffice | 8006 | frontend | socket + run.sh | ssh + systemctl |
+| Middleware | 8007 | frontend | socket + run.sh | ssh + systemctl |
+| Redis | 6379 | frontend | socket + brew | ssh + systemctl |
+| Nginx | 80 | frontend | socket + brew | ssh + systemctl |
+| Backend Core | 8003 | backend | socket + run.sh | ssh + systemctl |
+| Broker | 8008 | backend | socket + run.sh | ssh + systemctl |
+| Fmanagement | 1666 | backend | socket | ssh + systemctl |
+| MariaDB | 3306 | backend | socket + brew | ssh + systemctl |
+| Trainer | 8004 | trainer | socket + run.sh | ssh + systemctl |
+| ChromaDB | 8100 | trainer | socket | ssh + systemctl |
+| Ollama | 11434 | trainer | socket + brew | ssh + systemctl |
+
 ### Proxy Squid en util01 (acceso a internet para servidores internos)
 
 Los servidores `frontend`, `backend` y `trainer` están ubicados en una subred privada (10.0.2.0/24) de la VPC de AWS sin acceso directo a internet. Para que estos servidores puedan descargar paquetes del sistema (dnf), dependencias Python (pip), modelos de IA y otros recursos externos, se utiliza un proxy Squid instalado en `util01`.
