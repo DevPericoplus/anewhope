@@ -1303,6 +1303,14 @@ class State(SharedSessionState):
             existing_versions = len(self.proyecciones_versions)
             version_name = f"V{existing_versions + 1:03d}"
             
+            # Determinar versión a clonar: la ÚLTIMA existente (no la seleccionada)
+            clone_version_id = None
+            if self.proyecciones_versions:
+                last_version = self.proyecciones_versions[-1]
+                clone_version_id = last_version.get("id_version", 0)
+                if clone_version_id <= 0:
+                    clone_version_id = None
+
             # Llamar al endpoint atómico create_version_full
             result = create_version_full(
                 project_id=self.proyecciones_project_id,
@@ -1312,7 +1320,7 @@ class State(SharedSessionState):
                 user_name=self.user_name,
                 identity_type_id=self.identity_type_id,
                 description=f"Versión creada automáticamente por {self.user_name}",
-                clone_from_version_id=self.proyecciones_version_id if self.proyecciones_version_id > 0 else None,
+                clone_from_version_id=clone_version_id,
                 initial_state="Abierta",
                 protected=False,
                 final_c=False,

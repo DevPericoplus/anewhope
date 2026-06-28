@@ -1,59 +1,77 @@
 # Changelog
 
-Todos los cambios notables de este proyecto se documentarán en este archivo.
+## [2026-06-29] - Corrección de bugs críticos: Organizaciones y Versiones
 
-El formato está basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-y este proyecto sigue [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### Bug 1: Nuevas organizaciones no aparecen en selectores
 
-## [Unreleased]
+**Síntoma:** Las organizaciones creadas desde el panel de backoffice no aparecían
+en los selectores de organización para usuarios no-SuperAdmin.
 
-### Added
-- Dockerfiles y `docker-compose.yml` para el frontend y el middleware con entrypoints dedicados.
-- API REST para broker backend (`8_service_backend`) con tres capas y logging local.
-- API REST para backend core (`3_backend`) con tres capas y persistencia mock inicial.
-- Entornos virtuales separados para frontend y middleware para evitar conflictos de dependencias.
-- Integración de logging de seguridad en procesos de creación de usuarios/organizaciones.
-- Funcionalidad de envío de SMS y validaciones relacionadas.
-- Test de seguridad para invalidación de tokens tras logout en el middleware.
-- Tests unitarios e integración para broker/core y flujo middleware → broker → core.
-- Documentación de la gestión de roles por organización con mapeo dominio/DTO/mock/BD.
-- Documentación de permisos básicos con mapeo dominio/DTO/mock/BD y flujo API.
-- Relación 1 a 1 entre roles y permisos en mocks y esquema de MariaDB.
-- Capa de permisos de bajo nivel con mock exportado desde MariaDB y endpoints API.
-- ADR actualizado: operaciones de filesystem delegadas a `fmanagement` (Go) por rendimiento y seguridad.
-- Endpoint `GET /models/active` a través de toda la cadena API (middleware → broker → core).
-- Esquema canónico de BD (`schema_core.sql`, `schema_projects.sql`) y documentación de inicialización.
-- Páginas de descarga de modelos y soporte de paquetes GGUF en UI.
-- Fases autónomas de entrenamiento 6-9 y subida via fmanagement.
-- `tests/helpers.py`: módulo de utilidades compartidas para todos los tests (carga dinámica de módulos, credenciales, URLs de servicio, conexiones BD).
-- `tests/conftest.py`: fixtures pytest con soporte multi-entorno (`project_root`, `protected_values`, `db_engine_core`, `db_engine_projects`).
-- Ficheros `protected_values.py.example` para los 4 entornos (macbook, dev, pre, pro) con placeholders seguros.
+**Causa raíz:**
+1. `store_organizations()` en `storage_adapter.py` solo escribía en JSON local,
+   sin persistir en MariaDB. Los selectores en modo `db_only` leen directamente
+   de la tabla `myllm_core_db.organizations`.
+2. `routermiddleware.create_organization()` no delegaba la escritura al broker
+   en modo `db_only`, quedando los datos solo en el JSON local.
+3. Al crear una organización, no se generaba automáticamente la asignación en
+   `asignaciones_organizaciones_internas`, por lo que usuarios no-SuperAdmin
+   nunca podían ver la organización.
 
-### Changed
-- Estandarización de puertos por regla `8000 + primer dígito del nombre de carpeta`.
-- Ajustes a `run.sh` y `entrypoint.sh` para ejecución local y en contenedor.
-- Mejoras de UX y validaciones en formularios de creación de usuario/organización.
-- Actualización de configuraciones y documentación para el despliegue de servicios.
-- Validación de sesión reforzada para rechazar tokens tras logout.
-- Middleware con modo de almacenamiento conmutado (`mock`, `mock_and_db`, `db_only`).
-- Reorganización de ficheros raíz en `tests/`, `scripts/` y `docs/`.
-- `full_test.sh` reescrito con interfaz CLI (`--unit`, `--integration`, `--e2e`, `--all`) y activación automática de venvs por sección.
-- Todos los tests de `tests/` actualizados para usar `importlib.util` en lugar de imports directos a directorios con prefijo numérico.
-- Tests E2E y de integración migrados de credenciales hardcodeadas a carga dinámica desde `protected_values.py` via `tests/helpers.py`.
-- `tests/requirements_test.txt` actualizado con dependencias completas (httpx, pytest, pymysql, SQLAlchemy, requests, PyYAML).
+**Correcciones aplicadas:**
+- `src/apps/3_backend/4_infrastructure/persistence/storage_adapter.py`:
+  - `store_organizations()` ahora sincroniza con MariaDB (INSERT ... ON DUPLICATE
+    KEY UPDATE) cuando `storage_mode=db_only`.
+  - Nueva función `_sync_organizations_to_mariadb()` implementa la persistencia.
+- `src/apps/7_service_frontend/routermiddleware.py`:
+  - `create_organization()` ahora replica al broker en modo `db_only` para
+    garantizar persistencia end-to-end.
+- `src/apps/3_backend/routercore.py`:
+  - `create_organization()` ahora auto-asigna todos los SuperAdmin activos a la
+    nueva organización mediante `_auto_assign_superadmins_to_org()`.
 
-### Fixed
-- Validación consistente de OTP (longitud y dígitos) en el dominio.
-- Manejo correcto de errores de serialización al escribir JSON.
-- Desempaquetado correcto del valor devuelto por `decrypt_value()`.
-- Persistencia de sesiones al autenticar usuarios para no perder el registro creado.
-- Carga segura de `DomainError` en `session.py` para evitar errores de importación.
-- Imports rotos en `tests/unit/` y `tests/integration/` por directorios con prefijo numérico (`1_shared_domain`, `2_shared_application`, `3_backend`).
-- URLs y credenciales hardcodeadas eliminadas de ~30 ficheros de test (Python y shell).
-- Targets de `unittest.mock.patch` corregidos para imports lazy de SQLAlchemy.
+---
 
-## [0.1.0] - 2025-10-16
+### Bug 2: Nuevas versiones no reflejan contenido en explorador
 
-### Added
-- Estructura inicial del proyecto y primera configuración de `.gitignore`.
-- Primeras utilidades de cifrado y base del modelo de usuario.
+**Síntoma:** Al crear una nueva versión en la página Proyecciones, el backend
+reportaba éxito pero el explorador no mostraba la nueva carpeta de versión.
+Las versiones existentes previamente sí funcionaban.
+
+**Causa raíz:**
+1. `create_version_full()` usaba `/fmo/newversion` (clone) que requiere que la
+   versión origen exista físicamente. Para proyectos nuevos sin carpeta en disco,
+   la operación fallaba silenciosamente.
+2. El backend retornaba `success: True` incluso cuando fmanagement fallaba,
+   causando desincronización entre BD y filesystem.
+3. `clone_from_version_id` se fijaba siempre a la versión SELECCIONADA en la UI
+   (típicamente la primera), en vez de la última existente.
+
+**Correcciones aplicadas:**
+- `src/apps/3_backend/routercore.py`:
+  - `create_version_full()` ahora siempre usa `_create_empty_version` (POST
+    `/fmo/createfolder`) que crea la jerarquía completa ORG/PRJ/version sin
+    depender de que exista una versión previa en disco.
+  - Si fmanagement falla, se hace rollback de la transacción SQL y se retorna
+    `success: False` con el error específico.
+- `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py`:
+  - `create_new_version()` ahora usa la ÚLTIMA versión existente como fuente de
+    clonación, no la versión seleccionada en la UI.
+- `src/apps/5_web_frontend/web_frontend/web_frontend.py`:
+  - Misma corrección que en backoffice para consistencia.
+
+---
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---------|--------|
+| `src/apps/3_backend/4_infrastructure/persistence/storage_adapter.py` | Persistencia de organizaciones en MariaDB |
+| `src/apps/3_backend/routercore.py` | Auto-asignación SuperAdmin + rollback fmanagement + versión vacía |
+| `src/apps/7_service_frontend/routermiddleware.py` | Replicación al broker en db_only |
+| `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py` | Clone desde última versión |
+| `src/apps/5_web_frontend/web_frontend/web_frontend.py` | Clone desde última versión |
+
+### Entornos verificados
+
+- [x] MacBook (desarrollo local)
+- [x] AWS Pre (producción)

@@ -274,7 +274,10 @@ class JsonMockStorageAdapter:
         return [OrganizationDto.model_validate(record) for record in records]
 
     def store_organizations(self, organizations: list[OrganizationDto]) -> None:
-        """Guarda organizaciones en JSON."""
+        """Guarda organizaciones en JSON y sincroniza con MariaDB si procede."""
+
+        if _should_read_users_from_db():
+            _sync_organizations_to_mariadb(organizations)
 
         _write_json_list(
             self._organizations_path, [org.model_dump() for org in organizations]
@@ -619,6 +622,79 @@ def _load_organizations_from_mariadb() -> list[dict[str, Any]]:
                 "active": bool(int(row[7])) if row[7] else False,
             })
     return records
+
+
+def _sync_organizations_to_mariadb(organizations: list[OrganizationDto]) -> None:
+    """Sincroniza organizaciones en MariaDB (INSERT o UPDATE).
+
+    Usa INSERT ... ON DUPLICATE KEY UPDATE para garantizar que todas las
+    organizaciones del listado existen en la tabla organizations de MariaDB.
+    """
+
+    settings = load_mariadb_settings()
+    cli_path = settings["cli_path"]
+    db_name = settings["core_database"]
+    db_user = settings["writer_user"]
+    db_password = settings["writer_password"]
+    if not cli_path or not db_user:
+        raise StorageAdapterError(
+            "Faltan credenciales de escritura para MariaDB (organizations)"
+        )
+
+    def sql_escape(value: str) -> str:
+        return value.replace("\\", "\\\\").replace("'", "''")
+
+    for org in organizations:
+        payload = org.model_dump()
+        org_id = int(payload.get("organization_id", 0))
+        org_name = sql_escape(str(payload.get("organization_name", "")))
+        org_email = sql_escape(str(payload.get("organization_email", "")))
+        org_tlf = sql_escape(str(payload.get("organization_tlf", "")))
+        org_address = sql_escape(str(payload.get("organization_address", "")))
+        org_country = sql_escape(str(payload.get("organization_country", "")))
+        org_state = sql_escape(str(payload.get("organization_state", "")))
+        active = 1 if payload.get("active", True) else 0
+
+        sql = (
+            f"INSERT INTO organizations "
+            f"(organization_id, organization_name, organization_email, "
+            f"organization_tlf, organization_address, organization_country, "
+            f"organization_state, active) "
+            f"VALUES ({org_id}, '{org_name}', '{org_email}', "
+            f"'{org_tlf}', '{org_address}', '{org_country}', "
+            f"'{org_state}', {active}) "
+            f"ON DUPLICATE KEY UPDATE "
+            f"organization_name='{org_name}', "
+            f"organization_email='{org_email}', "
+            f"organization_tlf='{org_tlf}', "
+            f"organization_address='{org_address}', "
+            f"organization_country='{org_country}', "
+            f"organization_state='{org_state}', "
+            f"active={active};"
+        )
+
+        cmd = [
+            cli_path,
+            "-u",
+            db_user,
+            f"-p{db_password}",
+            "--database",
+            db_name,
+            "-e",
+            sql,
+        ]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as exc:
+            error_msg = exc.stderr if exc.stderr else str(exc)
+            logging.getLogger("backend_core.storage").error(
+                "Error sincronizando org_id=%s a MariaDB: %s",
+                org_id,
+                error_msg,
+            )
+            raise StorageAdapterError(
+                f"No se pudo sincronizar organización {org_id} a MariaDB: {error_msg}"
+            ) from exc
 
 
 def _sync_users_to_mariadb(users: list[UserDto]) -> None:

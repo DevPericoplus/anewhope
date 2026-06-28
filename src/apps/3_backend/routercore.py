@@ -537,7 +537,53 @@ class BackendCoreRouter:
         organizations.append(record)
         self.store_organizations(organizations)
         self._logger.info("Organización creada org_id=%s", next_id)
+
+        # Auto-asignar todos los SuperAdmin a la nueva organización
+        self._auto_assign_superadmins_to_org(next_id)
+
         return next_id
+
+    def _auto_assign_superadmins_to_org(self, org_id: int) -> None:
+        """Asigna automáticamente todos los SuperAdmin a una nueva organización."""
+        from sqlalchemy import text
+
+        try:
+            with self._get_projects_db_writer_connection() as conn:
+                superadmins = conn.execute(
+                    text(
+                        "SELECT user_id FROM myllm_core_db.users "
+                        "WHERE identity_type_id = 1 AND active = 1"
+                    )
+                ).fetchall()
+
+                for row in superadmins:
+                    user_id = row[0]
+                    existing = conn.execute(
+                        text(
+                            "SELECT id FROM asignaciones_organizaciones_internas "
+                            "WHERE id_usuario_interno = :uid AND id_organizacion = :oid"
+                        ),
+                        {"uid": user_id, "oid": org_id},
+                    ).fetchone()
+
+                    if not existing:
+                        conn.execute(
+                            text(
+                                "INSERT INTO asignaciones_organizaciones_internas "
+                                "(id_usuario_interno, id_organizacion, id_rol, activo, asignado_por) "
+                                "VALUES (:uid, :oid, 1, 1, :uid)"
+                            ),
+                            {"uid": user_id, "oid": org_id},
+                        )
+                        self._logger.info(
+                            "Auto-asignado SuperAdmin user_id=%s a org_id=%s",
+                            user_id, org_id,
+                        )
+                conn.commit()
+        except Exception as exc:
+            self._logger.error(
+                "Error auto-asignando SuperAdmins a org_id=%s: %s", org_id, str(exc)
+            )
 
     def create_user(self, payload: dict[str, Any]) -> dict[str, int]:
         """Crea un usuario y registra rol por organización."""
@@ -4169,53 +4215,27 @@ class BackendCoreRouter:
                 )
 
                 # PASO 3: Crear carpeta física vía fmanagement
-                # Usar el cliente inyectado que ya tiene la configuración correcta
                 client = self._get_fmanagement_client()
 
-                # Determinar estrategia de creación:
-                # - Si es v001: crear vacía con estructura base
-                # - Si es v002+: clonar desde versión anterior (o la especificada)
+                # Siempre crear versión vacía con estructura base.
+                # Se usa _create_empty_version (POST /fmo/createfolder) que crea
+                # la jerarquía completa ORG/PRJ/version de forma fiable.
+                # El método /fmo/newversion (clone) tiene problemas cuando hay
+                # desincronización entre BD y disco.
+                self._logger.info(
+                    "[backend-core] Creando estructura vacía en fmanagement: %s/%s/%s",
+                    org_folder,
+                    prj_folder,
+                    version_folder,
+                )
 
-                clone_from_folder = None
-                if version_id == 1:
-                    # Primera versión: crear estructura base vacía
-                    self._logger.info(
-                        "[backend-core] Creando v001 con estructura base vacía"
-                    )
-                    clone_from_folder = None
-                elif clone_from_version:
-                    # Clonar desde versión específica
-                    clone_from_folder = f"v{clone_from_version:03d}"
-                    self._logger.info(
-                        "[backend-core] Clonando desde versión específica: %s",
-                        clone_from_folder,
-                    )
-                else:
-                    # Clonar desde versión anterior (automático)
-                    previous_version_id = version_id - 1
-                    clone_from_folder = f"v{previous_version_id:03d}"
-                    self._logger.info(
-                        "[backend-core] Clonando desde versión anterior: %s",
-                        clone_from_folder,
-                    )
-
-                # Crear estructura en fmanagement
                 try:
-                    self._logger.info(
-                        "[backend-core] Creando estructura en fmanagement: %s/%s/%s (clone_from=%s)",
-                        org_folder,
-                        prj_folder,
-                        version_folder,
-                        clone_from_folder,
-                    )
-
-                    # Llamar a fmanagement para crear la versión
                     fm_result = client.create_version(
                         orgpath=org_folder,
                         prjpath=prj_folder,
                         versionpath=version_folder,
                         identity_type_id=identity_type_id,
-                        clone_from=clone_from_folder,
+                        clone_from=None,
                         iduser=user_id,
                     )
 
@@ -4229,9 +4249,14 @@ class BackendCoreRouter:
                             "[backend-core] Error en fmanagement: %s",
                             fm_result.get("error")
                         )
-                        # No fallar la transacción, solo registrar el error
-                        # La carpeta se creará con el script de sincronización
-                        fmanagement_created = False
+                        conn.rollback()
+                        return {
+                            "success": False,
+                            "message": f"Error creando carpeta en fmanagement: {fm_result.get('error')}",
+                            "version_id": version_id,
+                            "version_folder": version_folder,
+                            "fmanagement_result": fm_result,
+                        }
                     else:
                         self._logger.info(
                             "[backend-core] Estructura creada en fmanagement exitosamente"
@@ -4243,9 +4268,14 @@ class BackendCoreRouter:
                         "[backend-core] Excepción al crear en fmanagement: %s",
                         str(e)
                     )
-                    # No fallar la transacción, continuar
-                    fmanagement_created = False
-                    fm_result = {"error": str(e)}
+                    conn.rollback()
+                    return {
+                        "success": False,
+                        "message": f"Error comunicando con fmanagement: {str(e)}",
+                        "version_id": version_id,
+                        "version_folder": version_folder,
+                        "fmanagement_result": {"error": str(e)},
+                    }
 
                 # PASO 4: Crear estado inicial en la tabla estado
                 # NOTA: Los triggers trg_versiones_after_insert y trg_estado_version_after_insert

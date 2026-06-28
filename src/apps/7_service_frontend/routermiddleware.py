@@ -1949,6 +1949,21 @@ class RouterMiddleware:
         )
         organizations.append(org_record)
         self._store_organizations(organizations_path, organizations)
+
+        # En modo db_only, replicar al broker para persistir en MariaDB
+        if self._should_use_broker_reads():
+            try:
+                all_orgs = [org.model_dump() for org in organizations]
+                self._broker_client.store_organizations(all_orgs)
+                self._logger.info(
+                    "Organización sincronizada con broker/MariaDB org_id=%s",
+                    next_id,
+                )
+            except Exception as exc:
+                self._logger.error(
+                    "Error sincronizando organización con broker: %s", str(exc)
+                )
+
         self._logger.info(
             "Organización creada org_id=%s nombre=%s",
             next_id,
