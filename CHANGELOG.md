@@ -1,5 +1,28 @@
 # Changelog
 
+## [2026-06-29] - Fix refresco del explorador tras operaciones de menú contextual
+
+### Bug 4: El explorador no refresca la vista al crear carpetas
+
+**Síntoma:** Al crear una carpeta mediante el menú contextual del explorador, el mensaje
+de éxito aparecía ("Carpeta creada exitosamente") pero la vista no se actualizaba visualmente.
+El usuario debía navegar fuera y volver para ver los cambios.
+
+**Causa raíz:** El método `process_fmanagementlist()` reconstruía todos los items desde cero
+con `is_expanded=depth < 1`, lo que significa que las carpetas de versión (depth 1) se colapsaban
+al refrescar. El usuario tenía la versión expandida para ver su contenido, pero tras el refresh
+la versión se colapsaba, ocultando la nueva carpeta creada.
+
+**Fix:** Se preserva el estado de expansión (`is_expanded`) de los items existentes antes de
+reconstruir el árbol, y se restaura después. Así los nodos que el usuario tenía abiertos
+permanecen abiertos tras la operación.
+
+**Archivos corregidos:**
+- `src/apps/5_web_frontend/components/explorador.py` - `process_fmanagementlist()`
+- `src/apps/6_web_backoffice/components/explorador.py` - `process_fmanagementlist()`
+
+---
+
 ## [2026-06-29] - Fix conexión fmanagement al crear versiones en AWS
 
 ### Bug 3: Error de conexión con fmanagement al crear versiones en AWS
