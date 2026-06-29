@@ -89,6 +89,30 @@ por el usuario) demuestra el comportamiento correcto.
 
 ---
 
+### Bug 1.1: organization_id no se asigna tras crear organización en formulario
+
+**Síntoma:** Los usuarios `julio` y `juangarcia` fueron creados con
+`organization_id=1` (myllm) a pesar de que se debía crear una organización
+nueva para cada uno.
+
+**Causa raíz:**
+En `save_organization()` de `user_creation.py` (tanto frontend como backoffice),
+tras crear una organización exitosamente y obtener su nuevo `organization_id`,
+el valor NO se asignaba a `self.organization_id`. Al guardar el usuario
+posteriormente, `self.organization_id` seguía vacío y la línea:
+```python
+org_id_int = int(self.organization_id) if self.organization_id else 1
+```
+asignaba `1` (myllm) por defecto.
+
+**Correcciones aplicadas:**
+- `src/apps/6_web_backoffice/pages/user_creation.py`:
+  - Añadido `self.organization_id = str(organization_id)` tras creación exitosa.
+- `src/apps/5_web_frontend/pages/user_creation.py`:
+  - Misma corrección que en backoffice.
+
+---
+
 ### Archivos modificados
 
 | Archivo | Cambio |
@@ -99,6 +123,8 @@ por el usuario) demuestra el comportamiento correcto.
 | `src/apps/7_service_frontend/routermiddleware.py` | Replicación al broker en db_only |
 | `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py` | Clone desde última versión |
 | `src/apps/5_web_frontend/web_frontend/web_frontend.py` | Clone desde última versión |
+| `src/apps/6_web_backoffice/pages/user_creation.py` | Asignar organization_id al formulario tras crear org |
+| `src/apps/5_web_frontend/pages/user_creation.py` | Misma corrección que backoffice |
 
 ### Entornos verificados
 
