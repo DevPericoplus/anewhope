@@ -1860,12 +1860,25 @@ class ExploradorState(rx.State):
             self.is_loading = False
 
     def process_fmanagementlist(self):
-        """Procesa la estructura fmanagementlist para aplanarla con reglas de seguridad y tamaños."""
+        """Procesa la estructura fmanagementlist para aplanarla con reglas de seguridad y tamaños.
+
+        Preserva el estado de expansión de los items existentes para que al
+        refrescar después de una operación (crear carpeta, renombrar, etc.)
+        la vista no colapse los nodos que el usuario tenía abiertos.
+        """
         if not self.fmanagementlist or "items" not in self.fmanagementlist:
             return
 
+        expanded_ids = {item.id for item in self.items if item.is_expanded}
+
         self.items = []
         self._flatten_recursive(self.fmanagementlist["items"])
+
+        if expanded_ids:
+            for item in self.items:
+                if item.id in expanded_ids:
+                    item.is_expanded = True
+
         self._update_visibility()
 
     def _format_size(self, bytes_val):
