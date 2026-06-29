@@ -11,6 +11,10 @@ import logging
 from typing import Any, Optional
 
 
+class FmanagementClientError(Exception):
+    """Error al comunicarse con fmanagement."""
+
+
 class FmanagementClient:
     """Cliente HTTP para fmanagement API."""
     

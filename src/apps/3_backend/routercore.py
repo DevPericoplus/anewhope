@@ -99,12 +99,11 @@ load_mariadb_settings = _storage_module.load_mariadb_settings
 
 
 def _load_fmanagement_module(module_name: str) -> Any:
-    """Carga el cliente de fmanagement desde infraestructura."""
+    """Carga el cliente de fmanagement desde clients/."""
 
     module_path = (
         Path(__file__).resolve().parent
-        / "4_infrastructure"
-        / "web"
+        / "clients"
         / "fmanagement_client.py"
     )
     spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -4145,17 +4144,6 @@ class BackendCoreRouter:
             Dict con el resultado completo
         """
         from sqlalchemy import text
-
-        # Cargar FmanagementClient usando importlib (evitar import relativo)
-        _fmanagement_client_path = (
-            Path(__file__).resolve().parent / "clients" / "fmanagement_client.py"
-        )
-        _spec = importlib.util.spec_from_file_location(
-            "fmanagement_client_backend", _fmanagement_client_path
-        )
-        _fmanagement_module = importlib.util.module_from_spec(_spec)
-        _spec.loader.exec_module(_fmanagement_module)
-        FmanagementClient = _fmanagement_module.FmanagementClient
 
         self._logger.info(
             "[backend-core] Creando versión completa proyecto=%s org=%s user=%s",

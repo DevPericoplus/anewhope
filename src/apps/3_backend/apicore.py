@@ -63,12 +63,13 @@ TogglePromptDto = _prompts_dtos.TogglePromptDto
 PromptListItemDto = _prompts_dtos.PromptListItemDto
 
 # Cargar fmanagement_client
-_infra_path = Path(__file__).resolve().parent / "4_infrastructure"
-_fmanagement_path = _infra_path / "web" / "fmanagement_client.py"
+_fmanagement_path = Path(__file__).resolve().parent / "clients" / "fmanagement_client.py"
 _fmanagement_module = _load_backend_module("fmanagement_client_backend", _fmanagement_path)
 FmanagementClient = _fmanagement_module.FmanagementClient
+FmanagementClientError = getattr(_fmanagement_module, "FmanagementClientError", Exception)
 
 # Cargar storage_adapter
+_infra_path = Path(__file__).resolve().parent / "4_infrastructure"
 _storage_adapter_path = _infra_path / "persistence" / "storage_adapter.py"
 _storage_adapter = _load_backend_module("storage_adapter_backend", _storage_adapter_path)
 load_fmanagement_settings = _storage_adapter.load_fmanagement_settings

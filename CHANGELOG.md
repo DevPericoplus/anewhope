@@ -1,5 +1,24 @@
 # Changelog
 
+## [2026-06-29] - Fix conexión fmanagement al crear versiones en AWS
+
+### Bug 3: Error de conexión con fmanagement al crear versiones en AWS
+
+**Síntoma:** Al crear una nueva versión para un proyecto en el entorno AWS (pre),
+se producía el error: `[Errno 2] No such file or directory: '/opt/anewhope/app/infrastructure/environments/macbook/env.yaml'`
+
+**Causa raíz:** El archivo `apicore.py` y `routercore.py` importaban el `FmanagementClient`
+desde un archivo legacy (`4_infrastructure/web/fmanagement_client.py`) que tenía la ruta
+`macbook` hardcodeada en la lógica de resolución de `basepath`. El archivo correcto es
+`clients/fmanagement_client.py` que resuelve la configuración dinámicamente.
+
+**Archivos corregidos:**
+- `src/apps/3_backend/apicore.py` - Cambiada la ruta de importación de `4_infrastructure/web/` a `clients/`
+- `src/apps/3_backend/routercore.py` - Cambiada la ruta de importación y eliminada reimportación redundante
+- `src/apps/3_backend/clients/fmanagement_client.py` - Añadida clase `FmanagementClientError`
+
+---
+
 ## [2026-06-29] - Corrección de bugs críticos: Organizaciones y Versiones
 
 ### Bug 1: Nuevas organizaciones no aparecen en selectores
