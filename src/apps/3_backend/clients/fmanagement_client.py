@@ -435,28 +435,22 @@ class FmanagementClient:
         iduser: int = 0,
         basepath: str = "default",
     ) -> dict[str, Any]:
-        """Crea una versión vacía con estructura base.
+        """Crea una versión vacía (solo la carpeta raíz, sin subcarpetas).
 
-        Usa /fmo/createfolder para crear:
+        Usa /fmo/createfolder para crear únicamente:
         - ORG.../PRJ.../vXXX/
-        - ORG.../PRJ.../vXXX/datos/
-        - ORG.../PRJ.../vXXX/modelos/
-        - ORG.../PRJ.../vXXX/evaluaciones/
-        - ORG.../PRJ.../vXXX/resultados/
+
+        El usuario creará las subcarpetas que necesite desde el explorador.
         """
         self._logger.info(
             f"Creando versión vacía: {orgpath}/{prjpath}/{versionpath}"
         )
 
-        # Crear carpeta raíz de la versión
-        self._logger.info(
-            f"[FmanagementClient] Creando carpeta raíz: {orgpath}/{prjpath}/{versionpath}"
-        )
         result = self.create_folder(
             orgpath=orgpath,
             prjpath=prjpath,
             versionpath=versionpath,
-            subfolders="",  # Raíz de la versión
+            subfolders="",
             identity_type_id=identity_type_id,
             iduser=iduser,
             basepath=basepath,
@@ -465,25 +459,10 @@ class FmanagementClient:
         self._logger.info(f"[FmanagementClient] Resultado create_folder raíz: {result}")
 
         if "error" in result:
-            self._logger.error(f"[FmanagementClient] Error creando carpeta raíz: {result.get('error')}")
-            return result
-
-        # Crear subcarpetas base
-        base_folders = ["datos", "modelos", "evaluaciones", "resultados"]
-        for folder in base_folders:
-            folder_result = self.create_folder(
-                orgpath=orgpath,
-                prjpath=prjpath,
-                versionpath=versionpath,
-                subfolders=folder,
-                identity_type_id=identity_type_id,
-                iduser=iduser,
-                basepath=basepath,
+            self._logger.error(
+                f"[FmanagementClient] Error creando carpeta raíz: {result.get('error')}"
             )
-            if "error" in folder_result:
-                self._logger.warning(
-                    f"No se pudo crear subcarpeta {folder}: {folder_result.get('error')}"
-                )
+            return result
 
         return {
             "status": "success",

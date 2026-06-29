@@ -4217,17 +4217,25 @@ class BackendCoreRouter:
                 # PASO 3: Crear carpeta física vía fmanagement
                 client = self._get_fmanagement_client()
 
-                # Siempre crear versión vacía con estructura base.
-                # Se usa _create_empty_version (POST /fmo/createfolder) que crea
-                # la jerarquía completa ORG/PRJ/version de forma fiable.
-                # El método /fmo/newversion (clone) tiene problemas cuando hay
-                # desincronización entre BD y disco.
-                self._logger.info(
-                    "[backend-core] Creando estructura vacía en fmanagement: %s/%s/%s",
-                    org_folder,
-                    prj_folder,
-                    version_folder,
-                )
+                # Si es la primera versión (v001) o no hay clone_from: crear vacía.
+                # Si hay versión previa: clonar contenido existente.
+                clone_source = None
+                if clone_from_version and clone_from_version > 0:
+                    clone_source = f"v{clone_from_version:03d}"
+                    self._logger.info(
+                        "[backend-core] Clonando desde %s en fmanagement: %s/%s/%s",
+                        clone_source,
+                        org_folder,
+                        prj_folder,
+                        version_folder,
+                    )
+                else:
+                    self._logger.info(
+                        "[backend-core] Creando versión vacía en fmanagement: %s/%s/%s",
+                        org_folder,
+                        prj_folder,
+                        version_folder,
+                    )
 
                 try:
                     fm_result = client.create_version(
@@ -4235,7 +4243,7 @@ class BackendCoreRouter:
                         prjpath=prj_folder,
                         versionpath=version_folder,
                         identity_type_id=identity_type_id,
-                        clone_from=None,
+                        clone_from=clone_source,
                         iduser=user_id,
                     )
 
