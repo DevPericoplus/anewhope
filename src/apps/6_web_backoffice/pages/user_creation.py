@@ -595,6 +595,9 @@ class UserCreationState(rx.State):
                 self.message_type = "success"
                 logger.info(f"Organización '{self.organization_name.strip()}' creada exitosamente a través del adaptador con ID: {organization_id}")
                 
+                # Asignar el ID de la organización creada al formulario de usuario
+                self.organization_id = str(organization_id)
+                
                 # Registrar la creación en el log de seguridad
                 self.log_organization_creation_security(organization_id)
                 
