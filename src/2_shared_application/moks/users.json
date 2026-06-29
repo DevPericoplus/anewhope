@@ -894,5 +894,29 @@
       "zip_code": "",
       "address": ""
     }
+  },
+  {
+    "user_id": 61,
+    "organization_id": 11,
+    "identity_type_id": 2,
+    "user_name": "juangarcia",
+    "user_password": "secret",
+    "user_email": "juangarcia@fujitsusupercomputer.com",
+    "user_mobile": "600000001",
+    "user_otp": "1234",
+    "active": true,
+    "blocked": false
+  },
+  {
+    "user_id": 62,
+    "organization_id": 12,
+    "identity_type_id": 2,
+    "user_name": "julio",
+    "user_password": "secret",
+    "user_email": "julio@rigby.com",
+    "user_mobile": "600000002",
+    "user_otp": "1234",
+    "active": true,
+    "blocked": false
   }
 ]

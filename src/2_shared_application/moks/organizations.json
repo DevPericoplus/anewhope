@@ -88,5 +88,25 @@
     "organization_address": "calle aguas 34",
     "organization_country": "España",
     "organization_state": "Bilbao"
+  },
+  {
+    "organization_id": 11,
+    "organization_name": "fujitsusupercomputer",
+    "organization_email": "admin@fujitsusupercomputer.com",
+    "organization_tlf": "",
+    "organization_address": "",
+    "organization_country": "",
+    "organization_state": "",
+    "active": true
+  },
+  {
+    "organization_id": 12,
+    "organization_name": "rigby",
+    "organization_email": "admin@rigby.com",
+    "organization_tlf": "",
+    "organization_address": "",
+    "organization_country": "",
+    "organization_state": "",
+    "active": true
   }
 ]
