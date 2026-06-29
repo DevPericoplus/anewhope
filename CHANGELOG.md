@@ -48,9 +48,8 @@ Las versiones existentes previamente sí funcionaban.
 
 **Correcciones aplicadas:**
 - `src/apps/3_backend/routercore.py`:
-  - `create_version_full()` ahora siempre usa `_create_empty_version` (POST
-    `/fmo/createfolder`) que crea la jerarquía completa ORG/PRJ/version sin
-    depender de que exista una versión previa en disco.
+  - `create_version_full()` ahora usa `_create_empty_version` para v001 (sin
+    clone_from) y `/fmo/newversion` (clone) para versiones posteriores.
   - Si fmanagement falla, se hace rollback de la transacción SQL y se retorna
     `success: False` con el error específico.
 - `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py`:
@@ -61,12 +60,42 @@ Las versiones existentes previamente sí funcionaban.
 
 ---
 
+### Bug 2.1: Versiones nuevas creaban subcarpetas internas no deseadas
+
+**Síntoma:** Las carpetas de versión nuevas (v001, v002, etc.) contenían
+subcarpetas internas (`datos`, `modelos`, `evaluaciones`, `resultados`) que no
+deberían existir. Comparando con PRJ00004 (creado correctamente desde el
+explorador), una v001 debe estar **vacía** y las subcarpetas las crea el
+usuario manualmente.
+
+**Causa raíz:**
+`_create_empty_version()` en `fmanagement_client.py` creaba automáticamente
+una "estructura base" con 4 subcarpetas predefinidas. Esto era incorrecto:
+la versión debe contener solo lo que el usuario decida crear.
+
+**Correcciones aplicadas:**
+- `src/apps/3_backend/clients/fmanagement_client.py`:
+  - `_create_empty_version()` ahora solo crea la carpeta raíz de versión (vacía).
+    Se eliminó la creación automática de subcarpetas base.
+- `src/apps/3_backend/routercore.py`:
+  - `create_version_full()` restaura la lógica de clonado: si hay versión previa
+    (`clone_from_version > 0`) usa `/fmo/newversion` para copiar el contenido
+    existente. Solo la primera versión usa `_create_empty_version` (vacía).
+- **Limpieza en AWS**: Se eliminaron las subcarpetas internas erróneas de
+  PRJ00014, PRJ00015, PRJ00016, PRJ00017.
+
+**Referencia**: PRJ00004 v001 (vacía, solo contiene `images/` y `text/` creadas
+por el usuario) demuestra el comportamiento correcto.
+
+---
+
 ### Archivos modificados
 
 | Archivo | Cambio |
 |---------|--------|
 | `src/apps/3_backend/4_infrastructure/persistence/storage_adapter.py` | Persistencia de organizaciones en MariaDB |
-| `src/apps/3_backend/routercore.py` | Auto-asignación SuperAdmin + rollback fmanagement + versión vacía |
+| `src/apps/3_backend/routercore.py` | Auto-asignación SuperAdmin + rollback fmanagement + lógica de clonado |
+| `src/apps/3_backend/clients/fmanagement_client.py` | Versión vacía sin subcarpetas internas |
 | `src/apps/7_service_frontend/routermiddleware.py` | Replicación al broker en db_only |
 | `src/apps/6_web_backoffice/web_backoffice/web_backoffice.py` | Clone desde última versión |
 | `src/apps/5_web_frontend/web_frontend/web_frontend.py` | Clone desde última versión |
