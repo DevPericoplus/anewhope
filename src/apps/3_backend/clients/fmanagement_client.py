@@ -53,6 +53,49 @@ class FmanagementClient:
             self._logger.error(f"Error de conexión con fmanagement: {e}")
             return {"error": str(e)}
     
+    def request_json(
+        self,
+        method: str,
+        path: str,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        form: dict[str, Any] | None = None,
+        file_payload: Any = None,
+    ) -> dict[str, Any]:
+        """Realiza una petición HTTP genérica a fmanagement y devuelve JSON.
+
+        Args:
+            method: Método HTTP (GET, POST, etc.)
+            path: Ruta del endpoint (ej: /fmo/list)
+            params: Query parameters
+            headers: Headers adicionales
+            form: Datos de formulario (se envían como query params en GET)
+            file_payload: Payload de archivo para upload
+        """
+        try:
+            with httpx.Client(base_url=self.base_url, timeout=self.timeout) as client:
+                kwargs: dict[str, Any] = {}
+                if params:
+                    kwargs["params"] = params
+                if headers:
+                    kwargs["headers"] = headers
+                if method.upper() == "GET":
+                    if form and not params:
+                        kwargs["params"] = form
+                    response = client.get(path, **kwargs)
+                else:
+                    if form:
+                        kwargs["params"] = form
+                    if file_payload:
+                        kwargs["files"] = file_payload
+                    response = client.post(path, **kwargs)
+                return self._handle_response(response)
+        except httpx.HTTPStatusError as e:
+            raise FmanagementClientError(str(e)) from e
+        except Exception as e:
+            self._logger.error(f"Error en request_json {method} {path}: {e}")
+            raise FmanagementClientError(str(e)) from e
+
     # === LISTADO Y LECTURA ===
     
     def list_structure(
@@ -517,7 +560,7 @@ class FmanagementClient:
 
         try:
             with httpx.Client(base_url=self.base_url, timeout=self.timeout) as client:
-                response = client.post("/fmo/newversion", json=payload)
+                response = client.post("/fmo/newversion", params=payload)
             return self._handle_response(response)
         except Exception as e:
             self._logger.error(f"Error clonando versión: {e}")

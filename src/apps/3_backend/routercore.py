@@ -996,12 +996,24 @@ class BackendCoreRouter:
         settings = load_fmanagement_settings()
         params = self._build_fmo_params(payload, settings.base_path)
         try:
-            return client.request_json(
-                "GET",
-                "/fmo/list",
-                params=params,
-                headers=headers,
+            result = client.list_structure(
+                orgpath=params.get("orgpath", ""),
+                prjpath=params.get("prjpath", ""),
+                versionpath=params.get("versionpath", ""),
+                iduser=int(params.get("iduser", 0)),
+                basepath=params.get("basepath", settings.base_path),
             )
+            if result.get("error"):
+                raise FmanagementClientError(result["error"])
+            items = result.get("items")
+            if items is None:
+                items = []
+            return {
+                "success": True,
+                "items": items,
+                "path": result.get("path", ""),
+                "status": result.get("status", "success"),
+            }
         except FmanagementClientError as exc:
             raise BackendCoreBusinessError(
                 "No se pudo listar directorios en fmanagement"
@@ -3981,7 +3993,10 @@ class BackendCoreRouter:
 
             # Extraer items del resultado
             # El fmanagement devuelve un JSON con estructura jerárquica
-            items = result.get("items", []) if isinstance(result, dict) else []
+            # NOTA: fmanagement devuelve items=null para carpetas vacías
+            items = result.get("items") if isinstance(result, dict) else []
+            if items is None:
+                items = []
 
             self._logger.info(
                 "[backend-core] Items extraídos: %d items",
@@ -4204,6 +4219,8 @@ class BackendCoreRouter:
 
                 # PASO 3: Crear carpeta física vía fmanagement
                 client = self._get_fmanagement_client()
+                fmanagement_settings = load_fmanagement_settings()
+                fm_base_path = fmanagement_settings.base_path
 
                 # Si es la primera versión (v001) o no hay clone_from: crear vacía.
                 # Si hay versión previa: clonar contenido existente.
@@ -4233,6 +4250,7 @@ class BackendCoreRouter:
                         identity_type_id=identity_type_id,
                         clone_from=clone_source,
                         iduser=user_id,
+                        basepath=fm_base_path,
                     )
 
                     self._logger.info(
