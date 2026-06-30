@@ -42,7 +42,9 @@ config = rx.Config(
     db_url="sqlite:///reflex.db",
     redis_url=redis_url,
     redis_lock_expiration=REDIS_LOCK_EXPIRATION,
-    env=rx.Env.DEV,
+    env=rx.Env.PROD
+    if env_settings.get_env_value("reflex_env_mode", "dev") == "prod"
+    else rx.Env.DEV,
     frontend_port=3110,
     backend_port=8010,
     api_url=env_settings.get_env_value("laimweb_api_url", "http://localhost:8010"),

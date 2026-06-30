@@ -47,18 +47,6 @@ CRT_MARKDOWN_COMPONENT_MAP = {
         line_height="1.6",
         margin_y="0.65em",
     ),
-    "strong": lambda text: rx.text(
-        text,
-        as_="strong",
-        color=COLORS["text"],
-        font_weight="700",
-    ),
-    "em": lambda text: rx.text(
-        text,
-        as_="em",
-        color=COLORS["text"],
-        font_style="italic",
-    ),
     "code": lambda text: rx.code(
         text,
         color=COLORS["accent"],
@@ -80,14 +68,6 @@ CRT_MARKDOWN_COMPONENT_MAP = {
         color=COLORS["accent"],
         text_decoration="underline",
         _hover={"color": COLORS["title"]},
-    ),
-    "li": lambda text: rx.text(
-        text,
-        as_="li",
-        color=COLORS["muted"],
-        font_size="0.95em",
-        line_height="1.5",
-        margin_y="0.25em",
     ),
     "blockquote": lambda text: rx.box(
         rx.text(text, color=COLORS["muted"], font_style="italic", line_height="1.6"),

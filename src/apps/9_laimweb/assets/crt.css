@@ -430,3 +430,15 @@ body::after {
   color: #e2ffe2;
   background: rgba(0, 18, 0, 0.5);
 }
+
+.crt-markdown strong,
+.crt-markdown b {
+  color: #e8ffe8;
+  font-weight: 700;
+}
+
+.crt-markdown em,
+.crt-markdown i {
+  color: #e8ffe8;
+  font-style: italic;
+}
