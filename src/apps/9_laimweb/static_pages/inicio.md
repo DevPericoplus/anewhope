@@ -45,4 +45,4 @@ LAIM es tu plataforma de gestión de inteligencia artificial local. Accede a tus
 **Nota:** Algunos de estos modelos requiren servicios de suscripcion con terceros.
 
 
-> Edita este contenido en `static_pages/inicio.md` para actualizar la página de inicio sin modificar código.
+> Informacion base como `inicio` para localizar informacion extendida recomendamos acceder a la pagina de documentacion.
