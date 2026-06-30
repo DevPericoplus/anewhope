@@ -11063,3 +11063,106 @@ backend_core_port: "8003"
 
 ---
 
+## 18. LAIM - Local Artificial Intelligence Management
+
+**LAIM** (Local Artificial Intelligence Management) es una extensión del proyecto anewhope orientada a la gestión local de modelos de inteligencia artificial. Proporciona herramientas para el ciclo completo de gestión de modelos LLM desplegados localmente: desde su creación y entrenamiento hasta su distribución, monitoreo y mantenimiento.
+
+### 18.1. Visión General
+
+LAIM extiende las capacidades del sistema anewhope para ofrecer:
+
+- **Gestión de modelos locales**: Administración del ciclo de vida de modelos LLM desplegados en infraestructura propia
+- **Orquestación de entrenamiento**: Coordinación de jobs de entrenamiento y re-entrenamiento sobre Ollama y motores compatibles
+- **Distribución controlada**: Empaquetado y distribución de modelos entrenados a instancias locales
+- **Monitoreo y métricas**: Seguimiento del rendimiento, uso y calidad de los modelos en producción
+- **Gestión de prompts**: Sistema de prompts categorizados (Identidades, Contexto, Solicitudes, Modalidad) para consultas estructuradas a los modelos
+
+### 18.2. Arquitectura LAIM
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        LAIM - Arquitectura                          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────────┐  │
+│  │  Backoffice  │    │  Frontend    │    │  API REST (Backend)  │  │
+│  │  (Gestión)   │    │  (Consumo)   │    │  (Orquestación)      │  │
+│  └──────┬───────┘    └──────┬───────┘    └──────────┬───────────┘  │
+│         │                   │                       │              │
+│         └───────────────────┼───────────────────────┘              │
+│                             │                                      │
+│                    ┌────────▼────────┐                              │
+│                    │   Middleware    │                              │
+│                    │   (8007)        │                              │
+│                    └────────┬────────┘                              │
+│                             │                                      │
+│                    ┌────────▼────────┐                              │
+│                    │    Broker       │                              │
+│                    │    (8008)       │                              │
+│                    └───┬────────┬────┘                              │
+│                        │        │                                  │
+│              ┌─────────▼─┐  ┌───▼──────────┐                       │
+│              │ Backend   │  │  Trainer     │                       │
+│              │ Core      │  │  (8004)      │                       │
+│              │ (8003)    │  │  ┌─────────┐ │                       │
+│              │           │  │  │ Ollama  │ │                       │
+│              │ ┌───────┐ │  │  │ (11434) │ │                       │
+│              │ │MariaDB│ │  │  └─────────┘ │                       │
+│              │ └───────┘ │  │  ┌─────────┐ │                       │
+│              │           │  │  │ChromaDB │ │                       │
+│              │ ┌───────┐ │  │  │ (8100)  │ │                       │
+│              │ │fmgmt  │ │  │  └─────────┘ │                       │
+│              │ │(1666) │ │  │              │                       │
+│              │ └───────┘ │  └──────────────┘                       │
+│              └───────────┘                                         │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 18.3. Componentes Principales
+
+| Componente | Ubicación | Descripción |
+|------------|-----------|-------------|
+| **Gestión de Modelos** | `4_trainer` | Creación, entrenamiento y versionado de modelos |
+| **Sistema de Prompts** | `myllm_projects_db` | 4 familias: Identidades, Contexto, Solicitudes, Modalidad |
+| **Jobs de Entrenamiento** | `myllm_projects_db` | Cola de trabajos con seguimiento de subfases |
+| **Distribución** | `fmanagement` | Transferencia de modelos entre servidores |
+| **Monitoreo** | `6_web_backoffice` | Panel de estado y métricas de modelos |
+
+### 18.4. Entorno de Desarrollo
+
+El desarrollo de LAIM se realiza sobre el **entorno pre/AWS** como referencia principal. Los cambios se replican a los entornos `dev` y `macbook` siguiendo las reglas definidas en `AGENTS.md`.
+
+**Flujo de trabajo:**
+```
+pre/AWS (desarrollo activo) → dev (replicación) → macbook (desarrollo local)
+```
+
+**Repositorios implicados:**
+
+| Repositorio | Ruta | Contenido |
+|-------------|------|-----------|
+| `anewhope` | `~/develop/anewhope` | Código fuente principal |
+| `anh_ansible` | `~/develop/anh_ansible` | Roles Ansible reutilizables |
+| `anh_ansible_environments` | `~/develop/anh_ansible_environments` | Planes de despliegue por entorno |
+
+### 18.5. Base de Datos LAIM
+
+Las tablas de LAIM residen en `myllm_projects_db`:
+
+- **Sistema de Prompts**: `prompts_identidades`, `prompts_contexto`, `prompts_solicitudes`, `prompts_modalidad`
+- **Jobs de Entrenamiento**: `jobs_entrenamientos`, `jobs_plantillas`
+- **Estado de Versiones**: `estado_version` (extensión con campos de fases)
+- **Modelos Generados**: Almacenados en `/data/internal/models/`
+
+### 18.6. Roadmap
+
+- [ ] Gestión completa del ciclo de vida de modelos
+- [ ] Panel de monitoreo de modelos en producción
+- [ ] Sistema de evaluación automática de calidad
+- [ ] Distribución multi-instancia de modelos
+- [ ] API de consulta a modelos locales con prompts categorizados
+- [ ] Dashboard de métricas y uso
+
+---
+

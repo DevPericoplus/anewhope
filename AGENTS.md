@@ -10163,3 +10163,161 @@ vars_files:
 
 ---
 
+## 33. LAIM - Local Artificial Intelligence Management (Reglas de Desarrollo)
+
+**LAIM** (Local Artificial Intelligence Management) es una extensión del proyecto anewhope.
+Todas las funcionalidades LAIM se desarrollan activamente sobre el **entorno pre/AWS** y se
+replican a los entornos `dev` y `macbook`.
+
+### 33.1. Flujo de Trabajo LAIM (OBLIGATORIO)
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│  pre / AWS   │ ──→ │     dev      │ ──→ │   macbook    │
+│  (primario)  │     │  (réplica)   │     │  (réplica)   │
+└──────────────┘     └──────────────┘     └──────────────┘
+```
+
+**Regla fundamental:** El entorno **pre/AWS** es la referencia primaria para LAIM.
+Cualquier cambio en código, configuración o infraestructura se desarrolla y verifica
+primero en pre/AWS, y luego se replica a dev y macbook.
+
+### 33.2. Reglas de Replicación de Cambios
+
+#### 33.2.1. Cambios en Código (src/)
+
+Los cambios en código fuente son **idénticos** entre entornos (no dependen del entorno):
+
+| Tipo de cambio | ¿Replicar a dev/macbook? | Mecanismo |
+|----------------|--------------------------|-----------|
+| Nuevo archivo Python | ✅ Sí (automático via git) | `git push` + deploy |
+| Modificación de lógica | ✅ Sí (automático via git) | `git push` + deploy |
+| Nueva migración SQL | ✅ Sí (ejecutar en cada BD) | Playbook `migrate_mariadb.yml` |
+| Nuevo endpoint API | ✅ Sí (automático via git) | `git push` + deploy |
+
+#### 33.2.2. Cambios en Configuración (infrastructure/environments/)
+
+Los cambios de configuración se **adaptan** por entorno:
+
+| Cambio en pre | Adaptación dev | Adaptación macbook |
+|---------------|----------------|---------------------|
+| Nueva variable en `env.yaml` | Copiar con host `*.house.loc` | Copiar con host `*.tfmmyllm.ai` |
+| Nueva variable en `protected_values.py` | Copiar con credenciales dev | Copiar con credenciales macbook |
+| Cambio en `fmanagement_paths.yml` | Copiar con hosts dev | Copiar con rutas `~/data/...` |
+| Nuevo rol Ansible | Agregar en `anh_ansible` | N/A (macbook no usa Ansible) |
+| Nuevo playbook | Agregar en `anh_ansible_environments` | Usar `deploy_macbook.sh` |
+
+#### 33.2.3. Cambios en Base de Datos
+
+| Cambio en pre | Replicación dev | Replicación macbook |
+|---------------|-----------------|---------------------|
+| Nueva tabla | Ejecutar migración SQL | Ejecutar migración SQL |
+| Nuevo trigger | Ejecutar migración SQL | Ejecutar migración SQL |
+| Nuevo stored procedure | Ejecutar migración SQL | Ejecutar migración SQL |
+| Datos de catálogo (INSERT) | Ejecutar migración SQL | Ejecutar migración SQL |
+| Permisos MariaDB (GRANT) | Ejecutar con usuarios dev | Ejecutar con usuarios macbook |
+
+### 33.3. Repositorios Implicados en LAIM
+
+| Repositorio | Ruta local | Rama activa | Propósito |
+|-------------|------------|-------------|-----------|
+| **anewhope** | `~/develop/anewhope` | `develop` | Código fuente, configuración de entornos |
+| **anh_ansible** | `~/develop/anh_ansible` | `develop` | Roles Ansible reutilizables (infra) |
+| **anh_ansible_environments** | `~/develop/anh_ansible_environments` | `aws` | Planes de despliegue por entorno |
+
+**Reglas de sincronización entre repositorios:**
+
+1. ✅ **Cambios en `anewhope`** que afecten despliegue → actualizar playbooks en `anh_ansible_environments`
+2. ✅ **Nuevo servicio systemd** → crear template en `anh_ansible_environments/templates/`
+3. ✅ **Nuevo rol de infraestructura** → crear en `anh_ansible/roles/`
+4. ✅ **Cambio en puertos o hosts** → actualizar inventarios en `anh_ansible_environments/env/`
+
+### 33.4. Despliegue LAIM
+
+**Pre/AWS (principal):**
+```bash
+# Desde anh_ansible_environments (rama aws)
+./deploy_custom.sh
+# Seleccionar: entorno=pre, servidor=backend/frontend/trainer, modo=native
+```
+
+**Dev:**
+```bash
+# Desde anh_ansible_environments (rama develop)
+ansible-playbook -i env/dev/host backend.yml -e deploy_env=dev --tags native
+```
+
+**Macbook:**
+```bash
+# Desde anh_ansible_environments
+./deploy_macbook.sh
+# O directamente desde anewhope con run.sh de cada app
+```
+
+### 33.5. Checklist para Nuevas Funcionalidades LAIM
+
+Al implementar una nueva funcionalidad LAIM:
+
+- [ ] Desarrollar y verificar en pre/AWS
+- [ ] Crear/actualizar migración SQL en `infrastructure/database/migrations/`
+- [ ] Actualizar `env.yaml` de los **3 entornos** si hay nuevas variables
+- [ ] Actualizar `protected_values.py` de los **3 entornos** si hay credenciales
+- [ ] Actualizar playbooks Ansible si hay cambios de infraestructura
+- [ ] Ejecutar migraciones SQL en los 3 entornos
+- [ ] Verificar que los servicios arrancan correctamente en pre/AWS
+- [ ] Documentar en README.md sección 18 (LAIM)
+- [ ] Replicar cambios a dev y macbook
+
+### 33.6. Adaptación de Hosts por Entorno (Referencia Rápida)
+
+| Servicio | pre/AWS | dev | macbook |
+|----------|---------|-----|---------|
+| Backend Core | `backend.anewhope.aws:8003` | `backend.house.loc:8003` | `backend.tfmmyllm.ai:8003` |
+| Trainer | `trainer.anewhope.aws:8004` | `trainer.house.loc:8004` | `trainer.tfmmyllm.ai:8004` |
+| Frontend | `frontend.anewhope.aws:8005` | `frontend.house.loc:8005` | `frontend.tfmmyllm.ai:8005` |
+| Backoffice | `frontend.anewhope.aws:8006` | `frontend.house.loc:8006` | `frontend.tfmmyllm.ai:8006` |
+| Middleware | `frontend.anewhope.aws:8007` | `frontend.house.loc:8007` | `frontend.tfmmyllm.ai:8007` |
+| Broker | `backend.anewhope.aws:8008` | `backend.house.loc:8008` | `backend.tfmmyllm.ai:8008` |
+| Fmanagement | `backend.anewhope.aws:1666` | `backend.house.loc:1666` | `192.168.0.39:1666` |
+| MariaDB | `backend.anewhope.aws:3306` | `backend.house.loc:3306` | `localhost:3306` |
+| Redis | `frontend.anewhope.aws:6379` | `frontend.house.loc:6379` | `frontend.tfmmyllm.ai:6379` |
+| Ollama | `trainer.anewhope.aws:11434` | `trainer.house.loc:11434` | `trainer.tfmmyllm.ai:11434` |
+| ChromaDB | `trainer.anewhope.aws:8100` | `trainer.house.loc:8100` | `trainer.tfmmyllm.ai:8100` |
+
+### 33.7. Variables de Entorno Específicas LAIM
+
+Cuando se añadan variables específicas de LAIM a `env.yaml`, seguir el patrón:
+
+```yaml
+# ============================================================================
+# LAIM - Local Artificial Intelligence Management
+# ============================================================================
+# <descripción de la variable>
+laim_variable_name: valor_para_este_entorno
+```
+
+**Prefijo obligatorio:** Todas las variables LAIM deben comenzar con `laim_` para facilitar
+su identificación y evitar colisiones con variables existentes.
+
+### 33.8. Reglas de Identificación de Trabajo LAIM
+
+La IA debe identificar que está trabajando en funcionalidad LAIM cuando:
+
+1. El usuario menciona explícitamente "LAIM" o "gestión local de IA"
+2. Se trabaja en el sistema de prompts (4 familias)
+3. Se trabaja en jobs de entrenamiento o re-entrenamiento
+4. Se trabaja en distribución/transferencia de modelos
+5. Se trabaja en monitoreo de modelos o métricas de IA
+6. Se trabaja en la integración con Ollama o ChromaDB
+7. Se modifica el trainer (4_trainer) para funcionalidad de gestión de modelos
+
+**Cuando se identifique trabajo LAIM, la IA DEBE:**
+
+1. ✅ Verificar que el cambio funciona en pre/AWS antes de replicar
+2. ✅ Adaptar configuraciones para los 3 entornos
+3. ✅ Proponer las migraciones SQL necesarias
+4. ✅ Indicar qué playbooks Ansible necesitan actualizarse
+5. ✅ Documentar en README.md sección 18
+
+---
+
