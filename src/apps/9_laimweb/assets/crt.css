@@ -392,3 +392,41 @@ body::after {
   padding: 0.35rem 0.5rem;
   margin-bottom: 0;
 }
+
+/* Visor markdown — páginas estáticas */
+.crt-markdown {
+  width: 100%;
+  color: #e8ffe8;
+  line-height: 1.6;
+}
+
+.crt-markdown ul,
+.crt-markdown ol {
+  margin: 0.75em 0;
+  padding-left: 1.5em;
+  color: rgba(200, 255, 200, 0.85);
+}
+
+.crt-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.9rem;
+}
+
+.crt-markdown th,
+.crt-markdown td {
+  border: 1px solid rgba(0, 180, 0, 0.35);
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+}
+
+.crt-markdown th {
+  color: #7dff7d;
+  background: rgba(0, 40, 0, 0.55);
+}
+
+.crt-markdown td {
+  color: #e2ffe2;
+  background: rgba(0, 18, 0, 0.5);
+}

@@ -2,6 +2,7 @@
 
 import reflex as rx
 
+from laim_web.components.markdown_viewer import crt_markdown_viewer
 from laim_web.laim_state import LaimWebState
 
 
@@ -195,26 +196,9 @@ def sidebar() -> rx.Component:
     )
 
 
-def content_inicio() -> rx.Component:
-    """Contenido por defecto — pantalla de bienvenida."""
-    return rx.vstack(
-        rx.text("Bienvenido a LAIM", class_name="crt-title", font_size=FONT_SIZE_TITLE),
-        rx.text(
-            "Local Artificial Intelligence Management",
-            color=COLORS["text"],
-            font_size="1.1em",
-        ),
-        rx.divider(color=COLORS["border"], margin_y="1em"),
-        rx.text(
-            "LAIM es tu plataforma de gestión de inteligencia artificial local. "
-            "Accede a tus sistemas,servicios,bases de datos o aplicaciones para gestionarlos con soporte de IA.",
-            color=COLORS["muted"],
-            font_size=FONT_SIZE_BODY,
-            line_height="1.6",
-        ),
-        spacing="3",
-        padding=CONTENT_PADDING,
-    )
+def content_static_page() -> rx.Component:
+    """Contenido cargado desde static_pages/*.md."""
+    return crt_markdown_viewer(LaimWebState.static_page_content)
 
 
 def content_dashboard() -> rx.Component:
@@ -258,16 +242,16 @@ def main_content() -> rx.Component:
     return rx.box(
         rx.match(
             LaimWebState.active_menu,
-            ("inicio", content_inicio()),
+            ("inicio", content_static_page()),
             ("dashboard", content_dashboard()),
-            ("servicios", content_placeholder("Servicios")),
-            ("documentacion", content_placeholder("Documentación")),
-            ("contacto", content_placeholder("Contacto")),
+            ("servicios", content_static_page()),
+            ("documentacion", content_static_page()),
+            ("contacto", content_static_page()),
             ("modelos", content_placeholder("Gestión de Modelos")),
             ("datasets", content_placeholder("Gestión de Datasets")),
             ("entrenamiento", content_placeholder("Entrenamiento")),
             ("configuracion", content_placeholder("Configuración")),
-            content_inicio(),
+            content_static_page(),
         ),
         width="100%",
         height="100%",

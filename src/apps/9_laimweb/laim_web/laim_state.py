@@ -29,6 +29,7 @@ class LaimWebState(rx.State):
     loading: bool = False
     error_message: str = ""
     active_menu: str = "inicio"
+    static_page_content: str = ""
 
     # Login
     login_username: str = ""
@@ -46,12 +47,20 @@ class LaimWebState(rx.State):
 
     def on_page_load(self) -> None:
         """Carga inicial de la página."""
-        pass
+        self._load_static_page(self.active_menu)
+
+    def _load_static_page(self, menu: str) -> None:
+        """Carga el markdown de static_pages/ si el menú es una página pública."""
+        from laim_web.static_pages_loader import STATIC_PAGE_MENUS, load_static_page_markdown
+
+        if menu in STATIC_PAGE_MENUS:
+            self.static_page_content = load_static_page_markdown(menu)
 
     @event
     def set_menu(self, item: str) -> None:
         """Cambia la opción activa del menú."""
         self.active_menu = item
+        self._load_static_page(item)
 
     @event
     def handle_login(self) -> None:
@@ -86,6 +95,7 @@ class LaimWebState(rx.State):
         self.access_token = ""
         self.session_token = ""
         self.active_menu = "inicio"
+        self._load_static_page("inicio")
         self.login_username = ""
         self.login_password = ""
         self.error_message = ""
