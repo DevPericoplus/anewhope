@@ -10321,3 +10321,238 @@ La IA debe identificar que está trabajando en funcionalidad LAIM cuando:
 
 ---
 
+## 34. LAIM Web — Aplicación Frontal (9_laimweb)
+
+### 34.1. Descripción General
+
+`9_laimweb` es un portal web independiente con estilo visual CRT terminal (fuente Inconsolata,
+paleta verde fósforo sobre fondo negro). Reutiliza los estilos de `~/develop/laim/internal/web`
+y se ejecuta de forma autónoma con su propio `run.sh`.
+
+**Puerto:** 8009 (regla: 8000 + primer dígito de carpeta `9_laimweb`)
+**Puerto frontend Vite:** 3109
+**Entorno virtual:** `.venv_laimweb313`
+
+### 34.2. Flujo Arquitectónico de Peticiones (OBLIGATORIO)
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ FLUJO DE PETICIONES: LAIM Web → Backend Core │
+├──────────────────────────────────────────────────────────────────────────┤
+│ │
+│ ┌───────────┐ ┌────────────┐ ┌─────────┐ ┌──────────────┐ │
+│ │ LAIM Web │───────▶│ Middleware │──────▶│ Broker │──────▶│ Backend Core │ │
+│ │ (8009) │ │ (8007) │ │ (8008) │ │ (8003) │ │
+│ └───────────┘ └────────────┘ └─────────┘ └──────────────┘ │
+│ │ │ │
+│ │ │ ▼ │
+│ │ │ ┌──────────────┐ │
+│ │ │ │ fmanagement │ │
+│ │ │ │ (1666) │ │
+│ │ │ └──────────────┘ │
+│ │ │ │
+│ ◀────────────────────────────┴──────────────────────────────────────┘ │
+│ RESPUESTAS (mismo camino inverso) │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 34.2.1. Flujo de Peticiones (Request - ida)
+
+| Paso | Origen | Destino | Archivo | Método/Endpoint |
+|------|--------|---------|---------|-----------------|
+| 1 | LAIM Web | Middleware | `9_laimweb/laim_web/adapters/laim_api_client.py` | `_request_middleware()` → `http://middleware:8007/laim/*` |
+| 2 | Middleware | Broker | `7_service_frontend/broker_backend_client.py` | Métodos con prefijo `laim_*()` |
+| 3 | Broker | Backend Core | `8_service_backend/interfacetocore.py` | Métodos con prefijo `laim_*()` |
+| 4 | Backend Core | fmanagement | `3_backend/clients/fmanagement_client.py` | Solo para operaciones de ficheros |
+
+#### 34.2.2. Flujo de Respuestas (Response - vuelta)
+
+| Paso | Origen | Destino | Descripción |
+|------|--------|---------|-------------|
+| 4 | Backend Core / fmanagement | Broker | JSON response con resultado |
+| 3 | Broker | Middleware | Propaga response sin modificar |
+| 2 | Middleware | LAIM Web | JSON response al cliente HTTP |
+| 1 | LAIM Web | UI | Actualiza State de Reflex |
+
+#### 34.2.3. Headers Obligatorios en Cada Petición
+
+```python
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": f"Bearer {access_token}",
+    "X-Session-Token": session_token,
+    "X-Client-App": "laimweb",  # Identificador de trazabilidad
+}
+```
+
+**REGLA CRÍTICA:** El header `X-Client-App: laimweb` DEBE propagarse en toda la cadena
+para identificar el origen de las peticiones en logs y auditoría.
+
+### 34.3. Prefijo Laim_ para Nuevos Elementos
+
+#### 34.3.1. En capas compartidas (1_shared_domain, 2_shared_application)
+
+| Capa | Ejemplo de nuevo elemento | Convención |
+|------|---------------------------|------------|
+| `1_shared_domain/entities/` | `Laim_Session`, `Laim_Model` | Prefijo `Laim_` en clases |
+| `2_shared_application/services/` | `Laim_model_service.py` | Prefijo `laim_` en archivos |
+| `2_shared_application/dtos/` | `Laim_ModelDto`, `Laim_StatusDto` | Prefijo `Laim_` en DTOs |
+| `2_shared_application/interfaces/` | `Laim_model_repository.py` | Prefijo `laim_` en archivos |
+
+#### 34.3.2. En la cadena de servicios
+
+| Servicio | Archivo | Convención de métodos/endpoints |
+|----------|---------|--------------------------------|
+| **Middleware** | `apife.py` | Endpoints bajo `/laim/*` (ej: `/laim/login`, `/laim/status`) |
+| **Middleware** | `routermiddleware.py` | Métodos `laim_*()` (ej: `laim_login()`, `laim_get_status()`) |
+| **Middleware** | `broker_backend_client.py` | Métodos `laim_*()` |
+| **Broker** | `apibe.py` | Endpoints bajo `/laim/*` |
+| **Broker** | `routerbroker.py` | Métodos `laim_*()` |
+| **Broker** | `interfacetocore.py` | Métodos `laim_*()` |
+| **Backend Core** | `apicore.py` | Endpoints bajo `/laim/*` |
+| **Backend Core** | `routercore.py` | Métodos `laim_*()` |
+
+#### 34.3.3. En base de datos
+
+- Base de datos: `laim_core_db`
+- Tablas: prefijo `laim_` (ej: `laim_users`, `laim_sessions`)
+- Usuarios MariaDB: `laim_admin`, `laim_writer`, `laim_reader`
+- Variables en `protected_values.py`: prefijo `laim_`
+- Variables en `env.yaml`: prefijo `laim_`
+
+### 34.4. Atajo Permitido: fmanagement
+
+El ÚNICO atajo autorizado (igual que en `5_web_frontend` y `6_web_backoffice`) es la
+comunicación con fmanagement para operaciones de ficheros (crear carpetas, listar,
+subir/descargar archivos). Este atajo funciona así:
+
+```
+Backend Core (8003) → fmanagement (1666)
+```
+
+El Backend Core invoca directamente al fmanagement mediante `fmanagement_client.py`.
+Este NO es un atajo desde LAIM Web: la petición sigue el flujo completo hasta Backend Core,
+y es Backend Core quien internamente llama a fmanagement.
+
+**PROHIBIDO:** LAIM Web NUNCA llama directamente a:
+- ❌ Broker (8008) — siempre a través del middleware
+- ❌ Backend Core (8003) — siempre a través del middleware → broker
+- ❌ fmanagement (1666) — siempre a través del flujo completo
+
+### 34.5. Implementación de Nuevos Endpoints (Checklist)
+
+Al añadir una nueva operación LAIM, seguir este orden:
+
+```
+1. [Backend Core] apicore.py      → @app.post("/laim/nueva_operacion")
+2. [Backend Core] routercore.py   → def laim_nueva_operacion(self, ...)
+3. [Broker]       interfacetocore → def laim_nueva_operacion(self, ...)
+4. [Broker]       apibe.py        → @app.post("/laim/nueva_operacion")
+5. [Broker]       routerbroker.py → def laim_nueva_operacion(self, ...)
+6. [Middleware]   broker_backend_client.py → def laim_nueva_operacion(self, ...)
+7. [Middleware]   apife.py        → @app.post("/laim/nueva_operacion")
+8. [Middleware]   routermiddleware.py → def laim_nueva_operacion(self, ...)
+9. [LAIM Web]    laim_api_client.py  → def laim_nueva_operacion(...)
+10.[LAIM Web]    laim_state.py       → def handle_nueva_operacion(self)
+```
+
+**Implementar de ABAJO (backend core) hacia ARRIBA (frontend).**
+**Probar de ARRIBA (frontend) hacia ABAJO (backend core).**
+
+### 34.6. Estructura de Archivos
+
+```
+src/apps/9_laimweb/
+├── run.sh                      # Script de arranque (activa .venv_laimweb313)
+├── rxconfig.py                 # Configuración Reflex (puertos 8009/3109)
+├── patch_vite_config.py        # Parche Vite para hosts permitidos
+├── requirements.txt            # Dependencias Python
+├── assets/
+│   └── crt.css                 # Estilos CRT terminal (verde fósforo)
+├── laim_web/
+│   ├── __init__.py
+│   ├── laim_web.py             # App principal Reflex
+│   ├── laim_state.py           # Estado global (sesión, UI)
+│   ├── adapters/
+│   │   ├── __init__.py
+│   │   └── laim_api_client.py  # Cliente HTTP → Middleware
+│   └── pages/
+│       ├── __init__.py
+│       └── index.py            # Página principal (login + terminal)
+├── components/                 # Componentes Reflex reutilizables
+├── pages/                      # Páginas adicionales
+├── logs/
+│   └── .gitkeep
+└── tests/
+    └── __init__.py
+```
+
+### 34.7. Estilo Visual
+
+- **Fuente:** Inconsolata (Google Fonts) — monospace
+- **Paleta:** Verde fósforo (#e8ffe8, #9dff9d, #7dff7d) sobre negro
+- **Efecto:** Scanlines CRT, text-shadow verde, radial gradient
+- **Clases CSS:** `crt-shell`, `crt-panel`, `crt-btn`, `crt-input`, `crt-terminal`
+- **Origen:** `~/develop/laim/internal/web/assets/crt.css`
+
+### 34.8. Base de Datos
+
+LAIM Web opera contra `laim_core_db` con credenciales independientes:
+
+| Usuario | Permiso | Variable en protected_values.py |
+|---------|---------|--------------------------------|
+| `laim_admin` | ALL PRIVILEGES | `laim_admin_user`, `laim_admin_password` |
+| `laim_writer` | SELECT, INSERT, UPDATE, DELETE | `laim_writer_user`, `laim_writer_password` |
+| `laim_reader` | SELECT | `laim_reader_user`, `laim_reader_password` |
+
+**DSN de conexión:** `laim_admin_dsn`, `laim_writer_dsn`, `laim_reader_dsn`
+
+### 34.9. Reutilización de Capas Compartidas
+
+LAIM Web importa directamente de las capas compartidas:
+
+```python
+# Dominio (entidades, value objects)
+from src.1_shared_domain.entities.session import Session, SessionStatus
+
+# Aplicación (servicios, configuración)
+from src.2_shared_application.config import env_settings
+from src.2_shared_application.console_logger import create_console_logger
+from src.2_shared_application.services.jwt_service import JwtService
+```
+
+Si necesita crear elementos nuevos, usa el prefijo `Laim_`:
+
+```python
+# Nuevas entidades LAIM
+from src.1_shared_domain.entities.laim_model import Laim_Model
+from src.2_shared_application.services.laim_model_service import Laim_ModelService
+```
+
+### 34.10. Seguridad y Permisos
+
+- La autenticación se valida en el middleware (no en LAIM Web)
+- LAIM Web propaga tokens JWT en cada petición
+- El middleware valida el token y extrae `identity_type_id`
+- Los permisos se verifican en Backend Core antes de ejecutar
+- `X-Client-App: laimweb` identifica las peticiones LAIM en logs
+
+### 34.11. Entorno Virtual Dedicado
+
+| Variable | Valor |
+|----------|-------|
+| Nombre | `.venv_laimweb313` |
+| Python | 3.13 |
+| Ubicación | `$ROOT_DIR/.venv_laimweb313/` |
+| Activación | Automática en `run.sh` |
+| Tests | Se ejecutan con este entorno |
+
+**Crear entorno:**
+```bash
+python3.13 -m venv .venv_laimweb313
+source .venv_laimweb313/bin/activate
+pip install -r src/apps/9_laimweb/requirements.txt
+```
+
+---
+

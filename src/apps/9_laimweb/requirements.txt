@@ -1,0 +1,15 @@
+
+reflex==0.8.25
+cryptography==46.0.3
+requests==2.32.5
+httpx==0.28.1
+pyyaml==6.0.2
+PyJWT==2.11.0
+
+# Redis para sesión compartida
+redis==5.2.1
+hiredis>=2.3.2
+
+# Acceso a MariaDB (laim_core_db)
+SQLAlchemy==2.0.46
+pymysql==1.1.2

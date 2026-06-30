@@ -1,0 +1,14 @@
+{
+  "include": ["src"],
+  "exclude": ["**/__pycache__", "**/node_modules", "**/.web", "**/.states"],
+  "executionEnvironments": [
+    {
+      "root": "src/apps/9_laimweb",
+      "pythonVersion": "3.13",
+      "extraPaths": [
+        "src/apps/9_laimweb",
+        ".venv_laimweb313/lib/python3.13/site-packages"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "include": ["."],
+  "exclude": ["**/__pycache__", "**/.web", "**/.states"],
+  "venvPath": "../../..",
+  "venv": ".venv_laimweb313",
+  "pythonVersion": "3.13",
+  "extraPaths": ["."]
+}

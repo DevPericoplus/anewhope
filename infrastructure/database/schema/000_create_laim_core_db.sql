@@ -408,11 +408,15 @@ LEFT JOIN `laim_identity_type_permissions` itp ON it.`identity_type_id` = itp.`i
 LEFT JOIN `laim_permissions` p ON itp.`permission_id` = p.`id`;
 
 -- ============================================================================
--- Permisos de acceso para usuarios de aplicación
+-- Usuarios dedicados para laim_core_db (credenciales independientes de myllm_*)
 -- ============================================================================
 
-GRANT SELECT ON `laim_core_db`.* TO 'myllm_reader'@'localhost';
-GRANT SELECT, INSERT, UPDATE, DELETE ON `laim_core_db`.* TO 'myllm_writer'@'localhost';
-GRANT ALL PRIVILEGES ON `laim_core_db`.* TO 'myllm_admin'@'localhost';
+CREATE USER IF NOT EXISTS 'laim_admin'@'localhost' IDENTIFIED BY 'NDt@dL_0Rxw6aiI_@XSE';
+CREATE USER IF NOT EXISTS 'laim_writer'@'localhost' IDENTIFIED BY 'YzKG89nsIWvMf2M5q0B7';
+CREATE USER IF NOT EXISTS 'laim_reader'@'localhost' IDENTIFIED BY 'Avv7VZs4x3iuxAgPysrH';
+
+GRANT ALL PRIVILEGES ON `laim_core_db`.* TO 'laim_admin'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON `laim_core_db`.* TO 'laim_writer'@'localhost';
+GRANT SELECT ON `laim_core_db`.* TO 'laim_reader'@'localhost';
 
 FLUSH PRIVILEGES;

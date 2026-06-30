@@ -10894,6 +10894,8 @@ middleware_host: localhost
 middleware_port: "8007"
 broker_host: localhost
 broker_port: "8008"
+laimweb_host: localhost
+laimweb_port: "8010"
 fmanagement_host: localhost
 fmanagement_port: "1666"
 chroma_host: localhost
@@ -10905,6 +10907,7 @@ redis_port: "6379"
 broker_backend_base_url: http://localhost:8008
 core_backend_base_url: http://localhost:8003
 middleware_base_url: http://localhost:8007
+laimweb_base_url: http://localhost:8010
 fmanagement_base_url: http://192.168.0.39:1666
 trainer_base_url: http://localhost:8004
 ```
@@ -11155,7 +11158,103 @@ Las tablas de LAIM residen en `myllm_projects_db`:
 - **Estado de Versiones**: `estado_version` (extensión con campos de fases)
 - **Modelos Generados**: Almacenados en `/data/internal/models/`
 
-### 18.6. Roadmap
+### 18.6. LAIM Web — Portal Frontal (9_laimweb)
+
+**Aplicación:** `src/apps/9_laimweb/`  
+**Puerto:** 8010 (backend/granian) + 3110 (frontend/Vite)  
+**Dominio público:** `www.laim.app`  
+**Entorno virtual:** `.venv_laimweb313` (macbook) / `/opt/anewhope/venvs/laimweb` (AWS)
+
+#### Arquitectura de Red (Nginx + SSL)
+
+```
+Internet → https://www.laim.app
+              │
+              ▼
+        ┌─────────────┐
+        │   Nginx     │  (frontend.anewhope.aws:443)
+        │   SSL/TLS   │  Certificado: Let's Encrypt (laim.app + *.laim.app)
+        └──────┬──────┘
+               │
+     ┌─────────┴─────────┐
+     │                    │
+     ▼                    ▼
+┌─────────┐        ┌──────────┐
+│ Static  │        │ Backend  │
+│ (3110)  │        │ (8010)   │
+│ Vite/   │        │ Granian  │
+│ Sirv    │        │ API+WS   │
+└─────────┘        └──────────┘
+```
+
+#### Configuración SSL
+
+| Elemento | Valor |
+|----------|-------|
+| **Dominio** | `laim.app`, `*.laim.app` |
+| **Método validación** | DNS-01 via AWS Route53 |
+| **Certificado** | `/etc/letsencrypt/live/laim.app/fullchain.pem` |
+| **Clave privada** | `/etc/letsencrypt/live/laim.app/privkey.pem` |
+| **Tipo de clave** | ECDSA |
+| **Expiración** | 90 días (renovación automática) |
+| **Renovación** | Cron cada 12h (`/opt/anewhope/scripts/renew_ssl.sh`) |
+| **Post-hook** | `systemctl reload nginx` |
+
+#### Archivos de configuración
+
+| Archivo | Ubicación | Descripción |
+|---------|-----------|-------------|
+| **Nginx vhost** | `/etc/nginx/conf.d/laim.conf` | Virtual host para www.laim.app |
+| **Template Ansible** | `anh_ansible_environments/templates/nginx/laim_vhost.conf.j2` | Template Jinja2 |
+| **Variables** | `anh_ansible_environments/env/pre/frontend.yml` | Puertos y dominio LAIM |
+| **Renovación SSL** | `/opt/anewhope/scripts/renew_ssl.sh` | Script con credenciales AWS |
+
+#### Despliegue
+
+```bash
+# Desplegar solo LAIM web
+ansible-playbook -i env/pre/host frontend.yml -e deploy_env=pre -e deploy_apps=laimweb --tags native
+
+# Desplegar todo el frontend server (incluye LAIM)
+ansible-playbook -i env/pre/host frontend.yml -e deploy_env=pre --tags native
+```
+
+#### Servicio systemd
+
+```bash
+# Gestión del servicio
+sudo systemctl start anewhope-laimweb
+sudo systemctl stop anewhope-laimweb
+sudo systemctl status anewhope-laimweb
+sudo journalctl -u anewhope-laimweb -f
+```
+
+#### Verificación HTTPS (resultado 2026-06-30)
+
+```bash
+# Verificar handshake TLS → HTTP/1.1 200 OK
+curl -sSI https://www.laim.app/
+
+# Verificar backend ping → "pong"
+curl -sS https://www.laim.app/ping
+
+# Verificar redirect HTTP→HTTPS → 301 Moved Permanently
+curl -sSI http://www.laim.app/
+
+# Verificar certificado
+openssl s_client -connect www.laim.app:443 -servername www.laim.app < /dev/null 2>/dev/null | openssl x509 -noout -dates
+
+# Verificar renovación
+sudo certbot certificates | grep -A 5 "laim.app"
+```
+
+**Resultados verificados:**
+- HTTPS estático (puerto 3110): Sirve HTML de Reflex correctamente
+- HTTPS backend (puerto 8010): Endpoint `/ping` responde `"pong"`
+- Redirect HTTP→HTTPS: 301 Moved Permanently
+- Certificado ECDSA válido hasta 2026-09-28 (90 días)
+
+### 18.7. Roadmap
 
 - [ ] Gestión completa del ciclo de vida de modelos
 - [ ] Panel de monitoreo de modelos en producción
@@ -11163,6 +11262,9 @@ Las tablas de LAIM residen en `myllm_projects_db`:
 - [ ] Distribución multi-instancia de modelos
 - [ ] API de consulta a modelos locales con prompts categorizados
 - [ ] Dashboard de métricas y uso
+- [x] Portal web LAIM (9_laimweb) con dominio www.laim.app
+- [x] Certificado SSL Let's Encrypt con renovación automática
+- [x] Configuración Nginx como reverse proxy para LAIM Web
 
 ---
 
