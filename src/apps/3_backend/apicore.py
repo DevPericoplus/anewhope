@@ -34,6 +34,7 @@ BackendCoreBusinessError = _routercore.BackendCoreBusinessError
 BackendCorePermissionError = _routercore.BackendCorePermissionError
 BackendCoreRouter = _routercore.BackendCoreRouter
 BasicPermissionDto = _routercore.BasicPermissionDto
+LowLevelPermissionDto = _routercore.LowLevelPermissionDto
 JsonMockStorageAdapter = _routercore.JsonMockStorageAdapter
 ManageRoleByOrgDto = _routercore.ManageRoleByOrgDto
 OrganizationDto = _routercore.OrganizationDto
@@ -468,7 +469,7 @@ class JobCompleteRequest(BaseModel):
     descripcion: str = ""
     referencia_salida: str = ""
     tipo_cambio: str = "evaluacion_documental"
-    id_estado: int = 4  # 4=Finalizado, 3=Error
+    id_estado: int = Field(default=4, description="4=Finalizado, 3=Error")
 
 
 class JobCompleteResponse(BaseModel):
@@ -512,6 +513,17 @@ try:
     logger.info("✅ Router de autenticación LAIM registrado")
 except Exception as e:
     logger.warning(f"⚠️ No se pudo registrar router LAIM auth: {e}")
+
+# Router de contacto LAIM
+try:
+    _laim_contact_router_path = Path(__file__).resolve().parent / "router_laim_contact.py"
+    _laim_contact_module = _load_backend_module(
+        "router_laim_contact", _laim_contact_router_path
+    )
+    app.include_router(_laim_contact_module.router)
+    logger.info("✅ Router de contacto LAIM registrado")
+except Exception as e:
+    logger.warning(f"⚠️ No se pudo registrar router LAIM contact: {e}")
 
 
 @app.get("/users")
@@ -932,18 +944,7 @@ def get_permissions(
 
 @app.get("/fmo", response_model=FileOperationResponse)
 def fmo_operation(
-    id_user: int,
-    id_organization: int,
-    id_project: int,
-    version_path: str,
-    operation: str,
-    subfolders: str = "",
-    filename: str = "",
-    ext_file: str = "",
-    new_filename: str = "",
-    new_extfile: str = "",
-    compare_version_path: str = "",
-    identity_type_id: int | None = None,
+    payload: Annotated[FileOperationRequest, Depends()],
     authorization: str | None = Header(default=None, alias="Authorization"),
     session_token: str | None = Header(default=None, alias="X-Session-Token"),
     client_app: str = Depends(get_client_app),
@@ -951,23 +952,9 @@ def fmo_operation(
 ) -> FileOperationResponse:
     """Delegación de operaciones de ficheros/carpetas a fmanagement."""
 
-    payload = FileOperationRequest(
-        id_user=id_user,
-        id_organization=id_organization,
-        id_project=id_project,
-        version_path=version_path,
-        operation=operation,
-        subfolders=subfolders,
-        filename=filename,
-        ext_file=ext_file,
-        new_filename=new_filename,
-        new_extfile=new_extfile,
-        compare_version_path=compare_version_path,
-        identity_type_id=identity_type_id,
-    ).model_dump()
     headers = _build_permission_headers(authorization, session_token, client_app)
     try:
-        result = router.fmo_operation(payload, headers)
+        result = router.fmo_operation(payload.model_dump(), headers)
         return FileOperationResponse(result=result)
     except BackendCoreBusinessError as exc:
         raise HTTPException(
@@ -976,9 +963,21 @@ def fmo_operation(
         ) from exc
 
 
-@app.post("/fmo", response_model=FileOperationResponse)
-async def fmo_upload(
-    file: UploadFile = File(...),
+class FmoUploadForm(BaseModel):
+    """Campos de formulario para carga de ficheros vía fmanagement."""
+
+    id_user: int
+    id_organization: int
+    id_project: int
+    version_path: str
+    operation: str = "upload"
+    subfolders: str = ""
+    filename: str = ""
+    ext_file: str = ""
+    identity_type_id: int | None = None
+
+
+def _get_fmo_upload_form(
     id_user: int = Form(...),
     id_organization: int = Form(...),
     id_project: int = Form(...),
@@ -988,14 +987,10 @@ async def fmo_upload(
     filename: str = Form(""),
     ext_file: str = Form(""),
     identity_type_id: int | None = Form(None),
-    authorization: str | None = Header(default=None, alias="Authorization"),
-    session_token: str | None = Header(default=None, alias="X-Session-Token"),
-    client_app: str = Depends(get_client_app),
-    router: BackendCoreRouter = Depends(get_router_core),
-) -> FileOperationResponse:
-    """Delegación de carga de fichero a fmanagement."""
+) -> FmoUploadForm:
+    """Agrupa parámetros de formulario para reducir la firma del endpoint."""
 
-    payload = FileOperationRequest(
+    return FmoUploadForm(
         id_user=id_user,
         id_organization=id_organization,
         id_project=id_project,
@@ -1005,7 +1000,21 @@ async def fmo_upload(
         filename=filename,
         ext_file=ext_file,
         identity_type_id=identity_type_id,
-    ).model_dump()
+    )
+
+
+@app.post("/fmo", response_model=FileOperationResponse)
+async def fmo_upload(
+    file: UploadFile = File(...),
+    form: FmoUploadForm = Depends(_get_fmo_upload_form),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    client_app: str = Depends(get_client_app),
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> FileOperationResponse:
+    """Delegación de carga de fichero a fmanagement."""
+
+    payload = form.model_dump()
     headers = _build_permission_headers(authorization, session_token, client_app)
     file_payload = {
         "filename": file.filename,
@@ -1570,7 +1579,6 @@ class ProjectDto(BaseModel):
     flujo_nombre: str | None = None
     flujo_emoji: str | None = None
     existe: bool = True
-    existe: bool = True
 
 
 class ProjectListResponse(BaseModel):
@@ -1792,7 +1800,7 @@ class ProjectRoleDto(BaseModel):
     id_usuario: int
     id_proyecto: int
     id_organizacion: int
-    id_rol: int  # 3=Editor, 4=Lector, 5=Auditor
+    id_rol: int = Field(..., description="3=Editor, 4=Lector, 5=Auditor")
     rol_nombre: str | None = None
     proyecto_nombre: str | None = None
     active: bool = True
@@ -1832,7 +1840,7 @@ class AssignUserToProjectRequest(BaseModel):
     id_usuario: int
     id_proyecto: int
     id_organizacion: int
-    id_rol: int  # 3=Editor, 4=Lector, 5=Auditor
+    id_rol: int = Field(..., description="3=Editor, 4=Lector, 5=Auditor")
 
 
 class AssignUserToProjectResponse(BaseModel):
@@ -2940,14 +2948,13 @@ def fmanagement_list(
 
 @app.post(
     "/fmanagement/operation",
-    response_model=FmanagementOperationResponse,
     tags=["fmanagement"],
 )
 def fmanagement_operation(
     request: FmanagementOperationRequest,
     client_app: str = Depends(get_client_app),
     router: BackendCoreRouter = Depends(get_router_core),
-) -> FmanagementOperationResponse:
+) -> FmanagementOperationResponse | Response:
     """Ejecuta una operación genérica en fmanagement.
 
     Operaciones soportadas:

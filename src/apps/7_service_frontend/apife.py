@@ -11,6 +11,10 @@ from pathlib import Path
 
 # Logger a nivel de módulo para uso en endpoints
 logger = logging.getLogger(__name__)
+
+SESSION_TOKEN_NOT_PROVIDED_MSG = "Token de sesión no proporcionado"
+MEDIA_TYPE_ZIP = "application/zip"
+JOB_TEMPLATES_SUPERADMIN_ONLY_MSG = "Solo SuperAdmin puede gestionar plantillas de jobs"
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from typing import Annotated, Any, AsyncIterator
@@ -226,6 +230,24 @@ class LaimRegisterRequest(BaseModel):
     hcaptcha_token: str = ""
 
 
+class LaimContactScreenshotRequest(BaseModel):
+    """Captura adjunta en base64."""
+
+    file_name: str = Field(..., min_length=1, max_length=255)
+    mime_type: str = Field(..., min_length=3, max_length=100)
+    data_base64: str = Field(..., min_length=1)
+
+
+class LaimContactMessageRequest(BaseModel):
+    """Payload del formulario de contacto LAIM."""
+
+    usage_mode: str = Field(..., min_length=1, max_length=50)
+    affected_user_info: str = Field(default="", max_length=500)
+    message_body: str = Field(..., min_length=10, max_length=10000)
+    reply_email: str = Field(..., min_length=5, max_length=255)
+    screenshot: LaimContactScreenshotRequest | None = None
+
+
 class OrganizationCheckRequest(BaseModel):
     """Payload para validar existencia de organización."""
 
@@ -428,7 +450,7 @@ def get_session_context(
     try:
         access_value = _extract_bearer_token(access_token)
         if session_token is None:
-            raise TokenValidationError("Token de sesión no proporcionado")
+            raise TokenValidationError(SESSION_TOKEN_NOT_PROVIDED_MSG)
         session = router.validate_session(access_value, session_token)
 
         # Override org_id para backoffice admin gestionando otra organización
@@ -646,7 +668,7 @@ async def refresh_token_endpoint(
 
     try:
         if session_token is None:
-            raise TokenValidationError("Token de sesión no proporcionado")
+            raise TokenValidationError(SESSION_TOKEN_NOT_PROVIDED_MSG)
         ip_address, user_agent = _get_request_metadata(http_request)
         tokens = router.refresh_tokens(
             session_token, ip_address=ip_address, user_agent=user_agent
@@ -1543,7 +1565,7 @@ def list_active_models_endpoint(
 
 
 @app.patch("/training/progress")
-async def update_training_progress_endpoint(
+def update_training_progress_endpoint(
     payload: TrainingProgressNotification,
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
 ) -> dict[str, Any]:
@@ -1554,8 +1576,7 @@ async def update_training_progress_endpoint(
     Flujo: Trainer → Middleware → Broker → Backend Core
     """
     try:
-        result = await router.update_training_progress(payload.model_dump())
-        return result
+        return router.update_training_progress(payload.model_dump())
     except BusinessRuleError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -1574,7 +1595,7 @@ def send_entrenamiento_endpoint(
     try:
         response = router.send_entrenamiento(request.model_dump(), session)
 
-        print(f"[MIDDLEWARE ENDPOINT] ===== RESPUESTA DEL BROKER =====")
+        print("[MIDDLEWARE ENDPOINT] ===== RESPUESTA DEL BROKER =====")
         print(f"[MIDDLEWARE ENDPOINT] Response type: {type(response)}")
         print(f"[MIDDLEWARE ENDPOINT] Response: {response}")
         if isinstance(response, dict):
@@ -1584,11 +1605,11 @@ def send_entrenamiento_endpoint(
 
         result = EntrenamientoResponse(**response)
 
-        print(f"[MIDDLEWARE ENDPOINT] ===== RESPONSE MODEL CREADO =====")
+        print("[MIDDLEWARE ENDPOINT] ===== RESPONSE MODEL CREADO =====")
         print(f"[MIDDLEWARE ENDPOINT] result.id_entrenamiento: {result.id_entrenamiento}")
         print(f"[MIDDLEWARE ENDPOINT] result.collection_name: {result.collection_name}")
         print(f"[MIDDLEWARE ENDPOINT] result.numero_secuencia: {result.numero_secuencia}")
-        print(f"[MIDDLEWARE ENDPOINT] ==========================================")
+        print("[MIDDLEWARE ENDPOINT] ==========================================")
 
         return result
     except BusinessRuleError as exc:
@@ -1643,9 +1664,9 @@ def send_autonomous_training_endpoint(
     try:
         response = router.send_autonomous_training(request.model_dump(), session)
 
-        print(f"[MIDDLEWARE ENDPOINT] ===== RESPUESTA AUTONOMOUS =====")
+        print("[MIDDLEWARE ENDPOINT] ===== RESPUESTA AUTONOMOUS =====")
         print(f"[MIDDLEWARE ENDPOINT] Response: {response}")
-        print(f"[MIDDLEWARE ENDPOINT] ====================================")
+        print("[MIDDLEWARE ENDPOINT] ====================================")
 
         return AutonomousTrainingResponse(**response)
     except BusinessRuleError as exc:
@@ -1713,7 +1734,7 @@ def download_autonomous_package_endpoint(
         # Devolver el contenido como Response
         return Response(
             content=response.content,
-            media_type="application/zip",
+            media_type=MEDIA_TYPE_ZIP,
             headers={
                 "Content-Disposition": response.headers.get("Content-Disposition", "attachment"),
             },
@@ -2306,7 +2327,6 @@ class ProjectDto(BaseModel):
     id_flujo: int = 1
     flujo_nombre: str | None = None
     flujo_emoji: str | None = None
-    existe: bool = True
     existe: bool = True
 
 
@@ -3741,7 +3761,7 @@ def generate_file_token_endpoint(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error(f"Error generando token de archivo: {exc}")
+        logger.exception("Error generando token de archivo")
         raise HTTPException(
             status_code=500,
             detail=f"Error generando token: {str(exc)}"
@@ -3763,7 +3783,7 @@ def ollama_health_proxy(
     except BusinessRuleError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
-        logger.error(f"Error en proxy ollama health: {exc}")
+        logger.exception("Error en proxy ollama health")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
@@ -3778,7 +3798,7 @@ def ollama_models_proxy(
     except BusinessRuleError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
-        logger.error(f"Error en proxy ollama models: {exc}")
+        logger.exception("Error en proxy ollama models")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
@@ -3794,7 +3814,7 @@ def ollama_generate_proxy(
     except BusinessRuleError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
-        logger.error(f"Error en proxy ollama generate: {exc}")
+        logger.exception("Error en proxy ollama generate")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
@@ -3810,7 +3830,7 @@ def ollama_chat_proxy(
     except BusinessRuleError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
-        logger.error(f"Error en proxy ollama chat: {exc}")
+        logger.exception("Error en proxy ollama chat")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
@@ -4317,9 +4337,8 @@ def list_available_model_packages_endpoint(
 
         # Si no se especifica organización, usar la del usuario
         # (excepto para admins globales que pueden ver todas)
-        if organization_id is None:
-            if session.identity_type_id != 1:  # No es admin global
-                organization_id = session.organization_id
+        if organization_id is None and session.identity_type_id != 1:
+            organization_id = session.organization_id
 
         models = router.list_available_models(session, organization_id)
         return ModelListResponse(
@@ -4335,7 +4354,7 @@ def list_available_model_packages_endpoint(
             detail=str(exc),
         ) from exc
     except Exception as exc:
-        _logger.error("Error listando modelos: %s", str(exc))
+        _logger.exception("Error listando modelos")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al listar modelos"
@@ -4407,7 +4426,7 @@ def request_model_download_otp_endpoint(
             detail=str(exc),
         ) from exc
     except Exception as exc:
-        _logger.error("Error solicitando OTP: %s", str(exc))
+        _logger.exception("Error solicitando OTP")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al solicitar OTP"
@@ -4496,7 +4515,7 @@ def validate_model_download_otp_endpoint(
             detail=str(exc),
         ) from exc
     except Exception as exc:
-        logger.error("Error validando OTP: %s", str(exc))
+        logger.exception("Error validando OTP")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al validar OTP"
@@ -4570,7 +4589,7 @@ def download_model_direct_endpoint(
 
         return Response(
             content=content,
-            media_type="application/zip",
+            media_type=MEDIA_TYPE_ZIP,
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
     except HTTPException:
@@ -4578,7 +4597,7 @@ def download_model_direct_endpoint(
     except BusinessRuleError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        _logger.error("[MODELS DIRECT] Error: %s: %s", type(exc).__name__, exc, exc_info=True)
+        _logger.exception("[MODELS DIRECT] Error: %s: %s", type(exc).__name__, exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
@@ -4617,7 +4636,7 @@ def download_model_session_endpoint(
             session, organization_id, project_id, version_id, filename
         )
 
-        media = "application/zip" if filename.endswith(".zip") else "application/octet-stream"
+        media = MEDIA_TYPE_ZIP if filename.endswith(".zip") else "application/octet-stream"
 
         return Response(
             content=content,
@@ -4629,7 +4648,7 @@ def download_model_session_endpoint(
     except BusinessRuleError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        _logger.error("[MODELS SESSION] Error: %s: %s", type(exc).__name__, exc, exc_info=True)
+        _logger.exception("[MODELS SESSION] Error: %s: %s", type(exc).__name__, exc)
         raise HTTPException(status_code=500, detail="Error descargando modelo") from exc
 
 
@@ -4701,7 +4720,7 @@ def list_informe_files_endpoint(
             detail=str(exc),
         ) from exc
     except Exception as exc:
-        _logger.error("Error listando informes: %s", str(exc))
+        _logger.exception("Error listando informes")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al listar informes",
@@ -4752,7 +4771,7 @@ def get_informe_content_endpoint(
             detail=str(exc),
         ) from exc
     except Exception as exc:
-        _logger.error("Error obteniendo contenido informe: %s", str(exc))
+        _logger.exception("Error obteniendo contenido informe")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al obtener contenido del informe",
@@ -4778,7 +4797,7 @@ def get_job_template_catalogs_endpoint(
     if session.identity_type_id != 1:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo SuperAdmin puede gestionar plantillas de jobs",
+            detail=JOB_TEMPLATES_SUPERADMIN_ONLY_MSG,
         )
 
     try:
@@ -4789,7 +4808,7 @@ def get_job_template_catalogs_endpoint(
             detail=str(exc),
         ) from exc
     except Exception as exc:
-        _logger.error("Error obteniendo catálogos job templates: %s", str(exc))
+        _logger.exception("Error obteniendo catálogos job templates")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al obtener catálogos",
@@ -4810,7 +4829,7 @@ def get_job_templates_endpoint(
     if session.identity_type_id != 1:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo SuperAdmin puede gestionar plantillas de jobs",
+            detail=JOB_TEMPLATES_SUPERADMIN_ONLY_MSG,
         )
 
     try:
@@ -4821,7 +4840,7 @@ def get_job_templates_endpoint(
             detail=str(exc),
         ) from exc
     except Exception as exc:
-        _logger.error("Error obteniendo plantillas de jobs: %s", str(exc))
+        _logger.exception("Error obteniendo plantillas de jobs")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al obtener plantillas",
@@ -4858,7 +4877,7 @@ def save_job_template_endpoint(
     if session.identity_type_id != 1:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo SuperAdmin puede gestionar plantillas de jobs",
+            detail=JOB_TEMPLATES_SUPERADMIN_ONLY_MSG,
         )
 
     try:
@@ -4869,7 +4888,7 @@ def save_job_template_endpoint(
             detail=str(exc),
         ) from exc
     except Exception as exc:
-        _logger.error("Error guardando plantilla de job: %s", str(exc))
+        _logger.exception("Error guardando plantilla de job")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al guardar plantilla",
@@ -4891,7 +4910,7 @@ def toggle_job_template_endpoint(
     if session.identity_type_id != 1:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo SuperAdmin puede gestionar plantillas de jobs",
+            detail=JOB_TEMPLATES_SUPERADMIN_ONLY_MSG,
         )
 
     try:
@@ -4902,7 +4921,7 @@ def toggle_job_template_endpoint(
             detail=str(exc),
         ) from exc
     except Exception as exc:
-        _logger.error("Error cambiando estado de plantilla: %s", str(exc))
+        _logger.exception("Error cambiando estado de plantilla")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al cambiar estado de plantilla",
@@ -4937,7 +4956,7 @@ def get_jobs_endpoint(
             detail=str(exc),
         ) from exc
     except Exception as exc:
-        _logger.error("Error obteniendo jobs: %s", str(exc))
+        _logger.exception("Error obteniendo jobs")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al obtener jobs",
@@ -4980,7 +4999,7 @@ def create_job_endpoint(
             detail=str(exc),
         ) from exc
     except Exception as exc:
-        _logger.error("Error creando job: %s", str(exc))
+        _logger.exception("Error creando job")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al crear job",
@@ -5055,7 +5074,7 @@ async def laim_logout_endpoint(
     if not session_token:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Token de sesión no proporcionado",
+            detail=SESSION_TOKEN_NOT_PROVIDED_MSG,
         )
     try:
         return router.laim_logout(session_token)
@@ -5075,7 +5094,7 @@ async def laim_refresh_token_endpoint(
     if not session_token:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Token de sesión no proporcionado",
+            detail=SESSION_TOKEN_NOT_PROVIDED_MSG,
         )
     try:
         result = router.laim_refresh_token(session_token)
@@ -5114,6 +5133,37 @@ async def laim_status_endpoint(
     """Estado del subsistema LAIM."""
     try:
         return router.laim_status()
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/laim/contact/messages")
+async def laim_create_contact_message_endpoint(
+    request: LaimContactMessageRequest,
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Registra un mensaje del formulario de contacto LAIM (público)."""
+    ip_address, user_agent = _get_request_metadata(http_request)
+    try:
+        result = router.laim_create_contact_message(
+            request.model_dump(),
+            authorization=authorization or "",
+            session_token=session_token or "",
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("error", "No se pudo registrar el mensaje"),
+            )
+        return result
     except BusinessRuleError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

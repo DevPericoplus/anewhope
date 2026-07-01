@@ -76,6 +76,28 @@ class LaimUserRepository:
             return None
         return self._row_to_user(dict(row))
 
+    def get_user_by_id(self, user_id: int) -> LaimUserRecord | None:
+        """Obtiene usuario por identificador."""
+        if user_id <= 0:
+            return None
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT user_id, organization_id, identity_type_id,
+                           user_name, user_password, user_email, user_mobile,
+                           user_otp, active, blocked
+                    FROM laim_users
+                    WHERE user_id = :user_id
+                    LIMIT 1
+                    """
+                ),
+                {"user_id": user_id},
+            ).mappings().fetchone()
+        if row is None:
+            return None
+        return self._row_to_user(dict(row))
+
     def user_exists(self, user_name: str, user_email: str) -> bool:
         """Verifica unicidad de username o email."""
         with self._engine.connect() as conn:

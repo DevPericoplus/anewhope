@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from pathlib import Path
 
 import reflex as rx
+
+from laim_web.dynamic_import import load_module_from_path
 
 _env_settings_path = (
     Path(__file__).resolve().parent.parent.parent.parent.parent
@@ -14,10 +14,7 @@ _env_settings_path = (
     / "config"
     / "env_settings.py"
 )
-_spec = importlib.util.spec_from_file_location("env_settings_hcaptcha", _env_settings_path)
-_env_settings = importlib.util.module_from_spec(_spec)
-sys.modules.setdefault("env_settings_hcaptcha", _env_settings)
-_spec.loader.exec_module(_env_settings)
+_env_settings = load_module_from_path(_env_settings_path, "env_settings_hcaptcha")
 
 
 def get_hcaptcha_site_key() -> str:

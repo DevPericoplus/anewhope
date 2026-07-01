@@ -14,13 +14,16 @@ import re
 import sys
 from pathlib import Path
 
-# Add src/2_shared_application to path to import env_settings
+from laim_web.dynamic_import import load_module_from_path
+
+# Add src/apps/9_laimweb to path for dynamic_import
 project_root = Path(__file__).resolve().parents[3]
-shared_app_path = project_root / "src" / "2_shared_application"
-sys.path.insert(0, str(shared_app_path))
+laimweb_root = Path(__file__).resolve().parent
+sys.path.insert(0, str(laimweb_root))
 
 try:
-    from config import env_settings
+    env_settings_path = project_root / "src" / "2_shared_application" / "config" / "env_settings.py"
+    env_settings = load_module_from_path(env_settings_path, "env_settings_patch_vite")
 except ImportError:
     print("[ERROR] No se pudo importar env_settings. Verifica la estructura del proyecto.")
     sys.exit(1)

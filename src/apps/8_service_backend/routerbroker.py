@@ -581,7 +581,7 @@ class BrokerBackendRouter:
                 "No se pudo enviar la solicitud de entrenamiento autónomo al trainer"
             ) from exc
 
-    async def initialize_autonomous_training(
+    def initialize_autonomous_training(
         self, payload: dict[str, Any]
     ) -> dict[str, Any]:
         """Inicializa registro de entrenamiento autónomo via Backend Core.
@@ -598,13 +598,13 @@ class BrokerBackendRouter:
             payload.get("id_entrenamiento"),
         )
         try:
-            return await self._core_client.initialize_autonomous_training(payload)
+            return self._core_client.initialize_autonomous_training(payload)
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(
                 f"Error inicializando entrenamiento autónomo: {str(exc)}"
             ) from exc
 
-    async def update_autonomous_metadata(
+    def update_autonomous_metadata(
         self, payload: dict[str, Any]
     ) -> dict[str, Any]:
         """Actualiza metadatos de entrenamiento autónomo via Backend Core.
@@ -622,13 +622,13 @@ class BrokerBackendRouter:
             payload.get("metadata_type"),
         )
         try:
-            return await self._core_client.update_autonomous_metadata(payload)
+            return self._core_client.update_autonomous_metadata(payload)
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(
                 f"Error actualizando metadata autónoma: {str(exc)}"
             ) from exc
 
-    async def get_autonomous_training_progress(
+    def get_autonomous_training_progress(
         self, id_entrenamiento: int
     ) -> dict[str, Any]:
         """Consulta el progreso del entrenamiento autónomo (fases 6-9) via Backend Core.
@@ -645,7 +645,7 @@ class BrokerBackendRouter:
             id_entrenamiento,
         )
         try:
-            return await self._core_client.get_autonomous_progress(id_entrenamiento)
+            return self._core_client.get_autonomous_progress(id_entrenamiento)
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(
                 "No se pudo consultar el progreso del entrenamiento autónomo"
@@ -668,7 +668,7 @@ class BrokerBackendRouter:
                 "No se pudo descargar el paquete del modelo autónomo"
             ) from exc
 
-    async def list_autonomous_packages(
+    def list_autonomous_packages(
         self,
         id_organizacion: int | None = None,
         id_proyecto: int | None = None,
@@ -692,7 +692,7 @@ class BrokerBackendRouter:
             id_version,
         )
         try:
-            return await self._core_client.list_autonomous_packages(
+            return self._core_client.list_autonomous_packages(
                 id_organizacion, id_proyecto, id_version
             )
         except CoreBackendCommunicationError as exc:
@@ -2022,7 +2022,7 @@ class BrokerBackendRouter:
                 f"Error cancelando entrenamiento: {str(exc)}"
             ) from exc
 
-    async def update_training_progress(
+    def update_training_progress(
         self,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
@@ -2037,13 +2037,13 @@ class BrokerBackendRouter:
             subfase_key,
         )
         try:
-            return await self._core_client.update_training_progress(payload)
+            return self._core_client.update_training_progress(payload)
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(
                 f"Error actualizando progreso: {str(exc)}"
             ) from exc
 
-    async def get_training_progress(
+    def get_training_progress(
         self,
         id_entrenamiento: int,
     ) -> dict[str, Any]:
@@ -2054,7 +2054,7 @@ class BrokerBackendRouter:
             id_entrenamiento,
         )
         try:
-            return await self._core_client.get_training_progress(id_entrenamiento)
+            return self._core_client.get_training_progress(id_entrenamiento)
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(
                 f"Error consultando progreso: {str(exc)}"
@@ -2235,3 +2235,19 @@ class BrokerBackendRouter:
             return self._core_client.laim_status()
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(f"Error consultando estado LAIM: {exc}") from exc
+
+    def laim_create_contact_message(
+        self,
+        payload: dict[str, Any],
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Registra mensaje de contacto LAIM via Backend Core."""
+        try:
+            return self._core_client.laim_create_contact_message(
+                payload,
+                extra_headers=extra_headers,
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error registrando mensaje de contacto LAIM: {exc}"
+            ) from exc

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from pathlib import Path
+
+from laim_web.dynamic_import import load_module_from_path
 
 
 def load_laim_shared_session_state():
@@ -15,12 +15,7 @@ def load_laim_shared_session_state():
         / "reflex_shared"
         / "laim_shared_session_state.py"
     )
-    spec = importlib.util.spec_from_file_location(
-        "laim_shared_session_state", shared_state_path
-    )
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["laim_shared_session_state"] = module
-    spec.loader.exec_module(module)
+    module = load_module_from_path(shared_state_path, "laim_shared_session_state")
     return module.LaimSharedSessionState
 
 

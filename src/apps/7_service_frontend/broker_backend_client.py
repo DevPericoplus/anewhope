@@ -11,6 +11,9 @@ from typing import Any
 
 import httpx
 
+USERS_PATH = "/users"
+TECNOLOGIAS_PATH = "/tecnologias"
+
 
 class BrokerBackendCommunicationError(Exception):
     """Error de comunicación con el broker backend."""
@@ -140,13 +143,13 @@ class BrokerBackendClient:
     def fetch_users(self) -> list[dict[str, Any]]:
         """Obtiene la lista de usuarios."""
 
-        data = self._request("GET", "/users")
+        data = self._request("GET", USERS_PATH)
         return list(data or [])
 
     def store_users(self, users: list[dict[str, Any]]) -> None:
         """Guarda la lista de usuarios."""
 
-        self._request("PUT", "/users", payload=users)
+        self._request("PUT", USERS_PATH, payload=users)
 
     def create_user(self, user_data: dict[str, Any]) -> dict[str, Any]:
         """Crea un usuario individual en el backend core vía broker.
@@ -171,7 +174,7 @@ class BrokerBackendClient:
         Raises:
             BrokerBackendCommunicationError: Si hay error de comunicación
         """
-        data = self._request("POST", "/users", payload=user_data)
+        data = self._request("POST", USERS_PATH, payload=user_data)
         return dict(data or {})
 
     def update_user_status(
@@ -1017,7 +1020,7 @@ class BrokerBackendClient:
 
     def get_tecnologias(self) -> dict[str, Any]:
         """Obtiene todas las tecnologías disponibles."""
-        data = self._request("GET", "/tecnologias")
+        data = self._request("GET", TECNOLOGIAS_PATH)
         return dict(data or {})
 
     def get_proyecto_tecnologia(self, project_id: int) -> dict[str, Any]:
@@ -1047,78 +1050,7 @@ class BrokerBackendClient:
         """Obtiene todas las tecnologías asignadas a proyectos de una organización."""
         data = self._request("GET", f"/organizaciones/{org_id}/tecnologias-asignadas")
         return dict(data or {})
-    # ========================================================================
-    # GESTIÓN DE TECNOLOGÍAS
-    # ========================================================================
 
-    def get_tecnologias(self) -> dict[str, Any]:
-        """Obtiene todas las tecnologías disponibles."""
-        data = self._request("GET", "/tecnologias")
-        return dict(data or {})
-
-    def get_proyecto_tecnologia(self, project_id: int) -> dict[str, Any]:
-        """Obtiene la tecnología asignada a un proyecto."""
-        data = self._request("GET", f"/proyectos/{project_id}/tecnologia")
-        return dict(data or {})
-
-    def asignar_tecnologia(
-        self, project_id: int, payload: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Asigna una tecnología a un proyecto."""
-        data = self._request(
-            "POST", f"/proyectos/{project_id}/tecnologia", payload=payload
-        )
-        return dict(data or {})
-
-    def actualizar_tecnologia(
-        self, project_id: int, payload: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Actualiza la tecnología de un proyecto."""
-        data = self._request(
-            "PATCH", f"/proyectos/{project_id}/tecnologia", payload=payload
-        )
-        return dict(data or {})
-
-    def get_tecnologias_asignadas_org(self, org_id: int) -> dict[str, Any]:
-        """Obtiene todas las tecnologías asignadas a proyectos de una organización."""
-        data = self._request("GET", f"/organizaciones/{org_id}/tecnologias-asignadas")
-        return dict(data or {})
-    # ========================================================================
-    # GESTIÓN DE TECNOLOGÍAS
-    # ========================================================================
-
-    def get_tecnologias(self) -> dict[str, Any]:
-        """Obtiene todas las tecnologías disponibles."""
-        data = self._request("GET", "/tecnologias")
-        return dict(data or {})
-
-    def get_proyecto_tecnologia(self, project_id: int) -> dict[str, Any]:
-        """Obtiene la tecnología asignada a un proyecto."""
-        data = self._request("GET", f"/proyectos/{project_id}/tecnologia")
-        return dict(data or {})
-
-    def asignar_tecnologia(
-        self, project_id: int, payload: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Asigna una tecnología a un proyecto."""
-        data = self._request(
-            "POST", f"/proyectos/{project_id}/tecnologia", payload=payload
-        )
-        return dict(data or {})
-
-    def actualizar_tecnologia(
-        self, project_id: int, payload: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Actualiza la tecnología de un proyecto."""
-        data = self._request(
-            "PATCH", f"/proyectos/{project_id}/tecnologia", payload=payload
-        )
-        return dict(data or {})
-
-    def get_tecnologias_asignadas_org(self, org_id: int) -> dict[str, Any]:
-        """Obtiene todas las tecnologías asignadas a proyectos de una organización."""
-        data = self._request("GET", f"/organizaciones/{org_id}/tecnologias-asignadas")
-        return dict(data or {})
     # ========================================================================
     # GESTIÓN DE VERSIONES DE PROYECTOS
     # ========================================================================
@@ -1602,7 +1534,7 @@ class BrokerBackendClient:
         data = self._request("GET", "/training/pending-versions")
         return dict(data or {"versions": [], "total": 0})
 
-    async def update_training_progress(
+    def update_training_progress(
         self, payload: dict[str, Any]
     ) -> dict[str, Any]:
         """Envía notificación de progreso al broker."""
@@ -1762,3 +1694,19 @@ class BrokerBackendClient:
     def laim_status(self) -> dict[str, Any]:
         """Estado del subsistema LAIM."""
         return dict(self._request("GET", "/laim/status") or {})
+
+    def laim_create_contact_message(
+        self,
+        payload: dict[str, Any],
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Registra mensaje del formulario de contacto LAIM."""
+        return dict(
+            self._request(
+                "POST",
+                "/laim/contact/messages",
+                payload=payload,
+                extra_headers=extra_headers,
+            )
+            or {}
+        )

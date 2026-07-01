@@ -11,6 +11,10 @@ from typing import Any
 
 import httpx
 
+USERS_PATH = "/users"
+ORGANIZATIONS_PATH = "/organizations"
+ROLES_PATH = "/roles"
+
 
 class CoreBackendCommunicationError(Exception):
     """Error de comunicación con el backend core."""
@@ -138,35 +142,35 @@ class CoreBackendClient:
     def fetch_users(self) -> list[dict[str, Any]]:
         """Obtiene la lista de usuarios."""
 
-        data = self._request("GET", "/users")
+        data = self._request("GET", USERS_PATH)
         return list(data or [])
 
     def store_users(self, users: list[dict[str, Any]]) -> None:
         """Guarda la lista de usuarios."""
 
-        self._request("PUT", "/users", payload=users)
+        self._request("PUT", USERS_PATH, payload=users)
 
     def fetch_organizations(self) -> list[dict[str, Any]]:
         """Obtiene la lista de organizaciones."""
 
-        data = self._request("GET", "/organizations")
+        data = self._request("GET", ORGANIZATIONS_PATH)
         return list(data or [])
 
     def store_organizations(self, organizations: list[dict[str, Any]]) -> None:
         """Guarda la lista de organizaciones."""
 
-        self._request("PUT", "/organizations", payload=organizations)
+        self._request("PUT", ORGANIZATIONS_PATH, payload=organizations)
 
     def fetch_roles(self) -> list[dict[str, Any]]:
         """Obtiene la lista de roles."""
 
-        data = self._request("GET", "/roles")
+        data = self._request("GET", ROLES_PATH)
         return list(data or [])
 
     def store_roles(self, roles: list[dict[str, Any]]) -> None:
         """Guarda la lista de roles."""
 
-        self._request("PUT", "/roles", payload=roles)
+        self._request("PUT", ROLES_PATH, payload=roles)
 
     def fetch_basic_permissions(self) -> list[dict[str, Any]]:
         """Obtiene la lista de permisos básicos."""
@@ -209,12 +213,12 @@ class CoreBackendClient:
     def create_organization(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Crea una organización."""
 
-        return self._request("POST", "/organizations", payload=payload)
+        return self._request("POST", ORGANIZATIONS_PATH, payload=payload)
 
     def create_user(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Crea un usuario."""
 
-        return self._request("POST", "/users", payload=payload)
+        return self._request("POST", USERS_PATH, payload=payload)
 
     def update_user_status(
         self, user_id: int, active: bool, requester_org_id: int, requester_identity_type_id: int = 0
@@ -279,7 +283,7 @@ class CoreBackendClient:
 
     def list_organizations(self) -> list[dict[str, Any]]:
         """Lista todas las organizaciones."""
-        data = self._request("GET", "/organizations")
+        data = self._request("GET", ORGANIZATIONS_PATH)
         return list(data or [])
 
     def get_accessible_organizations(
@@ -294,7 +298,7 @@ class CoreBackendClient:
 
     def list_roles(self) -> list[dict[str, Any]]:
         """Lista todos los roles."""
-        data = self._request("GET", "/roles")
+        data = self._request("GET", ROLES_PATH)
         return list(data or [])
 
     def process_data(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -1254,14 +1258,14 @@ class CoreBackendClient:
         )
         return dict(data or {})
 
-    async def update_training_progress(
+    def update_training_progress(
         self, payload: dict[str, Any]
     ) -> dict[str, Any]:
         """Envía notificación de progreso al Backend Core."""
         data = self._request("PATCH", "/training/progress", payload=payload)
         return dict(data or {})
 
-    async def get_training_progress(self, id_entrenamiento: int) -> dict[str, Any]:
+    def get_training_progress(self, id_entrenamiento: int) -> dict[str, Any]:
         """Consulta el progreso actual de un entrenamiento."""
         data = self._request(
             "GET",
@@ -1273,21 +1277,21 @@ class CoreBackendClient:
     # Entrenamiento Autónomo (fases 6-9)
     # ========================================================================
 
-    async def initialize_autonomous_training(
+    def initialize_autonomous_training(
         self, payload: dict[str, Any]
     ) -> dict[str, Any]:
         """Inicializa registro de entrenamiento autónomo en Backend Core."""
         data = self._request("POST", "/training/autonomous/init", payload=payload)
         return dict(data or {})
 
-    async def update_autonomous_metadata(
+    def update_autonomous_metadata(
         self, payload: dict[str, Any]
     ) -> dict[str, Any]:
         """Actualiza metadatos de entrenamiento autónomo en Backend Core."""
         data = self._request("PATCH", "/training/autonomous/metadata", payload=payload)
         return dict(data or {})
 
-    async def get_autonomous_progress(
+    def get_autonomous_progress(
         self, id_entrenamiento: int
     ) -> dict[str, Any]:
         """Consulta el progreso del entrenamiento autónomo (fases 6-9)."""
@@ -1297,7 +1301,7 @@ class CoreBackendClient:
         )
         return dict(data or {})
 
-    async def list_autonomous_packages(
+    def list_autonomous_packages(
         self,
         id_organizacion: int | None = None,
         id_proyecto: int | None = None,
@@ -1470,3 +1474,19 @@ class CoreBackendClient:
     def laim_status(self) -> dict[str, Any]:
         """Estado del subsistema LAIM."""
         return dict(self._request("GET", "/laim/status") or {})
+
+    def laim_create_contact_message(
+        self,
+        payload: dict[str, Any],
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Registra mensaje del formulario de contacto LAIM."""
+        return dict(
+            self._request(
+                "POST",
+                "/laim/contact/messages",
+                payload=payload,
+                extra_headers=extra_headers,
+            )
+            or {}
+        )

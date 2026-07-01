@@ -133,6 +133,13 @@ JwtAlgorithm = _session_entities_module.JwtAlgorithm
 TokenType = _session_entities_module.TokenType
 UserSessionContext = _session_entities_module.UserSessionContext
 
+MSG_UNSUPPORTED_TOKEN_ALGORITHM = "Algoritmo de token no soportado"
+MSG_INVALID_CREDENTIALS = "Usuario o credenciales inválidas"
+MSG_USER_BLOCKED_OR_INACTIVE = "Usuario bloqueado o inactivo"
+MSG_USER_BLOCKED_TOO_MANY_ATTEMPTS = "Usuario bloqueado por intentos fallidos"
+MSG_INVALID_OTP = "OTP inválido"
+MSG_USER_NOT_FOUND = "Usuario no encontrado"
+
 
 @dataclass(frozen=True)
 class JwtSettings:
@@ -383,10 +390,10 @@ def _decode_jwt(token: str, secret: str, algorithm: str) -> dict[str, Any]:
     payload = json.loads(_base64url_decode(payload_b64))
 
     if header.get("alg") != algorithm:
-        raise TokenValidationError("Algoritmo de token no soportado")
+        raise TokenValidationError(MSG_UNSUPPORTED_TOKEN_ALGORITHM)
 
     if algorithm != "HS256":
-        raise TokenValidationError("Algoritmo de token no soportado")
+        raise TokenValidationError(MSG_UNSUPPORTED_TOKEN_ALGORITHM)
 
     signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
     expected_signature = hmac.new(
@@ -409,7 +416,7 @@ def _encode_jwt(payload: dict[str, Any], secret: str, algorithm: str) -> str:
     """Codifica un JWT con HMAC-SHA256."""
 
     if algorithm != "HS256":
-        raise TokenValidationError("Algoritmo de token no soportado")
+        raise TokenValidationError(MSG_UNSUPPORTED_TOKEN_ALGORITHM)
 
     header = {"alg": algorithm, "typ": "JWT"}
     header_b64 = _base64url_encode(
@@ -1286,6 +1293,102 @@ class RouterMiddleware:
             auth_logs = auth_logs[-max_records:]
         payload["auth_logs"] = auth_logs
 
+    def _record_auth_failure(
+        self,
+        sessions_data: dict[str, Any],
+        sessions_path: Path,
+        *,
+        user_name: str,
+        event: str,
+        error_code: str,
+        details: str,
+        ip_address: str,
+        user_agent: str,
+    ) -> None:
+        """Registra un fallo de autenticación y persiste la sesión."""
+
+        self._append_auth_log(
+            sessions_data,
+            user_name=user_name,
+            event=event,
+            status="failed",
+            error_code=error_code,
+            details=details,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        self._store_sessions_data(sessions_path, sessions_data)
+
+    def _raise_auth_failure(
+        self,
+        sessions_data: dict[str, Any],
+        sessions_path: Path,
+        *,
+        user_name: str,
+        event: str,
+        error_code: str,
+        details: str,
+        message: str,
+        ip_address: str,
+        user_agent: str,
+    ) -> None:
+        """Registra un fallo de autenticación y lanza BusinessRuleError."""
+
+        self._record_auth_failure(
+            sessions_data,
+            sessions_path,
+            user_name=user_name,
+            event=event,
+            error_code=error_code,
+            details=details,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        raise BusinessRuleError(message)
+
+    def _maybe_block_user_after_failed_attempts(
+        self,
+        sessions_data: dict[str, Any],
+        users_path: Path,
+        users: list[UserDto],
+        user_record: UserDto,
+        user_name: str,
+        *,
+        events: tuple[str, ...],
+        ip_address: str,
+        user_agent: str,
+    ) -> None:
+        """Bloquea al usuario si supera el umbral de intentos fallidos."""
+
+        if self._count_recent_failed_attempts(sessions_data, user_name, events=events) < 3:
+            return
+
+        user_record.blocked = True
+        self._append_auth_log(
+            sessions_data,
+            user_name=user_name,
+            event="login_blocked",
+            status="blocked",
+            error_code="TOO_MANY_ATTEMPTS",
+            details=MSG_USER_BLOCKED_TOO_MANY_ATTEMPTS,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        self._store_users(users_path, users)
+
+    def _auth_log_is_within_window(
+        self, record: dict[str, Any], cutoff: datetime
+    ) -> bool:
+        """Indica si el registro de auth_log sigue dentro de la ventana temporal."""
+
+        timestamp = record.get("timestamp")
+        if not timestamp:
+            return True
+        try:
+            return _parse_iso_utc(timestamp) >= cutoff
+        except ValueError:
+            return False
+
     def _count_recent_failed_attempts(
         self,
         payload: dict[str, Any],
@@ -1301,13 +1404,8 @@ class RouterMiddleware:
         for record in reversed(payload.get("auth_logs", [])):
             if record.get("user_name") != user_name:
                 continue
-            timestamp = record.get("timestamp")
-            if timestamp:
-                try:
-                    if _parse_iso_utc(timestamp) < cutoff:
-                        break
-                except ValueError:
-                    break
+            if not self._auth_log_is_within_window(record, cutoff):
+                break
             if record.get("event") == "login_success":
                 break
             if record.get("event") in events and record.get("status") == "failed":
@@ -1371,7 +1469,7 @@ class RouterMiddleware:
         password: str,
         ip_address: str = "",
         user_agent: str = "",
-    ) -> bool:
+    ) -> dict[str, Any]:
         """Valida credenciales y envía el OTP por SMS."""
 
         users_path = self._get_users_file_path()
@@ -1382,68 +1480,56 @@ class RouterMiddleware:
             (entry for entry in users if entry.user_name == user_name), None
         )
         if user_record is None:
-            self._append_auth_log(
+            self._raise_auth_failure(
                 sessions_data,
+                sessions_path,
                 user_name=user_name,
                 event="otp_request",
-                status="failed",
                 error_code="USER_NOT_FOUND",
                 details="Usuario no existe",
+                message=MSG_INVALID_CREDENTIALS,
                 ip_address=ip_address,
                 user_agent=user_agent,
             )
-            self._store_sessions_data(sessions_path, sessions_data)
-            raise BusinessRuleError("Usuario o credenciales inválidas")
         if not user_record.active or user_record.blocked:
-            self._append_auth_log(
+            self._raise_auth_failure(
                 sessions_data,
+                sessions_path,
                 user_name=user_name,
                 event="otp_request",
-                status="failed",
                 error_code="USER_BLOCKED",
-                details="Usuario bloqueado o inactivo",
+                details=MSG_USER_BLOCKED_OR_INACTIVE,
+                message="El usuario no está habilitado",
                 ip_address=ip_address,
                 user_agent=user_agent,
             )
-            self._store_sessions_data(sessions_path, sessions_data)
-            raise BusinessRuleError("El usuario no está habilitado")
 
         decrypted_password = self._decrypt_password(
             str(user_record.user_password)
         )
         if decrypted_password != password:
-            self._append_auth_log(
+            self._record_auth_failure(
                 sessions_data,
+                sessions_path,
                 user_name=user_name,
                 event="otp_request",
-                status="failed",
                 error_code="INVALID_PASSWORD",
                 details="Contraseña inválida",
                 ip_address=ip_address,
                 user_agent=user_agent,
             )
-            if (
-                self._count_recent_failed_attempts(
-                    sessions_data,
-                    user_name,
-                    events=("login_attempt", "otp_request"),
-                )
-                >= 3
-            ):
-                user_record.blocked = True
-                self._append_auth_log(
-                    sessions_data,
-                    user_name=user_name,
-                    event="login_blocked",
-                    status="blocked",
-                    error_code="TOO_MANY_ATTEMPTS",
-                    details="Usuario bloqueado por intentos fallidos",
-                    ip_address=ip_address,
-                    user_agent=user_agent,
-                )
-                self._store_users(users_path, users)
+            self._maybe_block_user_after_failed_attempts(
+                sessions_data,
+                users_path,
+                users,
+                user_record,
+                user_name,
+                events=("login_attempt", "otp_request"),
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
             self._store_sessions_data(sessions_path, sessions_data)
-            raise BusinessRuleError("Usuario o credenciales inválidas")
+            raise BusinessRuleError(MSG_INVALID_CREDENTIALS)
 
         # Usuario exento de OTP: devolver sin datos de teléfono/OTP
         if self._is_otp_exempt(user_name):
@@ -1462,32 +1548,30 @@ class RouterMiddleware:
 
         user_otp = str(user_record.user_otp)
         if len(user_otp) != 4 or not user_otp.isdigit():
-            self._append_auth_log(
+            self._raise_auth_failure(
                 sessions_data,
+                sessions_path,
                 user_name=user_name,
                 event="otp_request",
-                status="failed",
                 error_code="INVALID_OTP",
-                details="OTP inválido",
+                details=MSG_INVALID_OTP,
+                message=MSG_INVALID_OTP,
                 ip_address=ip_address,
                 user_agent=user_agent,
             )
-            self._store_sessions_data(sessions_path, sessions_data)
-            raise BusinessRuleError("OTP inválido")
 
         if not user_record.user_mobile:
-            self._append_auth_log(
+            self._raise_auth_failure(
                 sessions_data,
+                sessions_path,
                 user_name=user_name,
                 event="otp_request",
-                status="failed",
                 error_code="MOBILE_NOT_FOUND",
                 details="Número móvil no disponible",
+                message="No hay teléfono asociado al usuario",
                 ip_address=ip_address,
                 user_agent=user_agent,
             )
-            self._store_sessions_data(sessions_path, sessions_data)
-            raise BusinessRuleError("No hay teléfono asociado al usuario")
 
         # Devolver datos al frontend para que envíe el SMS directamente
         # El frontend es responsable de enviar el SMS a la API externa (Infobip)
@@ -1540,7 +1624,7 @@ class RouterMiddleware:
                 user_agent=user_agent,
             )
             self._store_sessions_data(sessions_path, sessions_data)
-            raise BusinessRuleError("Usuario o credenciales inválidas")
+            raise BusinessRuleError(MSG_INVALID_CREDENTIALS)
         if not user_record.active or user_record.blocked:
             self._append_auth_log(
                 sessions_data,
@@ -1548,7 +1632,7 @@ class RouterMiddleware:
                 event="login_attempt",
                 status="failed",
                 error_code="USER_BLOCKED",
-                details="Usuario bloqueado o inactivo",
+                details=MSG_USER_BLOCKED_OR_INACTIVE,
                 ip_address=ip_address,
                 user_agent=user_agent,
             )
@@ -1577,13 +1661,13 @@ class RouterMiddleware:
                     event="login_blocked",
                     status="blocked",
                     error_code="TOO_MANY_ATTEMPTS",
-                    details="Usuario bloqueado por intentos fallidos",
+                    details=MSG_USER_BLOCKED_TOO_MANY_ATTEMPTS,
                     ip_address=ip_address,
                     user_agent=user_agent,
                 )
                 self._store_users(users_path, users)
             self._store_sessions_data(sessions_path, sessions_data)
-            raise BusinessRuleError("Usuario o credenciales inválidas")
+            raise BusinessRuleError(MSG_INVALID_CREDENTIALS)
 
         if not self._is_otp_exempt(user_name):
             if str(user_record.user_otp) != str(otp):
@@ -1593,7 +1677,7 @@ class RouterMiddleware:
                     event="login_attempt",
                     status="failed",
                     error_code="INVALID_OTP",
-                    details="OTP inválido",
+                    details=MSG_INVALID_OTP,
                     ip_address=ip_address,
                     user_agent=user_agent,
                 )
@@ -1605,13 +1689,13 @@ class RouterMiddleware:
                         event="login_blocked",
                         status="blocked",
                         error_code="TOO_MANY_ATTEMPTS",
-                        details="Usuario bloqueado por intentos fallidos",
+                        details=MSG_USER_BLOCKED_TOO_MANY_ATTEMPTS,
                         ip_address=ip_address,
                         user_agent=user_agent,
                     )
                     self._store_users(users_path, users)
                 self._store_sessions_data(sessions_path, sessions_data)
-                raise BusinessRuleError("OTP inválido")
+                raise BusinessRuleError(MSG_INVALID_OTP)
 
         self._logger.info(
             "Login exitoso user_id=%s org_id=%s",
@@ -1651,7 +1735,11 @@ class RouterMiddleware:
         Mantiene la misma interfaz pública para compatibilidad.
         """
 
-        self._logger.info("[DDD] Renovando tokens con session_token")
+        self._logger.info(
+            "[DDD] Renovando tokens con session_token (ip=%s user_agent=%s)",
+            ip_address or "unknown",
+            user_agent or "unknown",
+        )
 
         try:
             # Delegar a SessionService
@@ -2785,7 +2873,7 @@ class RouterMiddleware:
                     break
             
             if not user_found:
-                return {"success": False, "message": "Usuario no encontrado"}
+                return {"success": False, "message": MSG_USER_NOT_FOUND}
             
             self._store_users(users_path, users)
             return {"success": True, "message": "Contraseña actualizada correctamente"}
@@ -5020,13 +5108,13 @@ class RouterMiddleware:
                 "No se pudieron obtener versiones pendientes de entrenamiento"
             ) from exc
 
-    async def update_training_progress(
+    def update_training_progress(
         self,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         """Envía notificación de progreso al broker."""
         try:
-            return await self._broker_client.update_training_progress(payload)
+            return self._broker_client.update_training_progress(payload)
         except BrokerCommunicationError as exc:
             raise BusinessRuleError(
                 f"Error actualizando progreso de entrenamiento: {str(exc)}"
@@ -5119,10 +5207,10 @@ class RouterMiddleware:
         )
 
         if user_record is None:
-            raise BusinessRuleError("Usuario no encontrado")
+            raise BusinessRuleError(MSG_USER_NOT_FOUND)
 
         if not user_record.active or user_record.blocked:
-            raise BusinessRuleError("Usuario bloqueado o inactivo")
+            raise BusinessRuleError(MSG_USER_BLOCKED_OR_INACTIVE)
 
         # Usuario exento de OTP: saltar envío de SMS
         if self._is_otp_exempt(user_record.user_name):
@@ -5182,10 +5270,10 @@ class RouterMiddleware:
         )
 
         if user_record is None:
-            raise BusinessRuleError("Usuario no encontrado")
+            raise BusinessRuleError(MSG_USER_NOT_FOUND)
 
         if not user_record.active or user_record.blocked:
-            raise BusinessRuleError("Usuario bloqueado o inactivo")
+            raise BusinessRuleError(MSG_USER_BLOCKED_OR_INACTIVE)
 
         # Validar OTP (saltar para usuarios exentos)
         if not self._is_otp_exempt(user_record.user_name):
@@ -5195,7 +5283,7 @@ class RouterMiddleware:
                     "OTP inválido para descarga modelo: user_id=%s expected=%s got=%s",
                     session.user_id, user_otp, otp
                 )
-                raise BusinessRuleError("OTP inválido")
+                raise BusinessRuleError(MSG_INVALID_OTP)
 
         # Generar token de descarga
         # Usar "internal" como relative_path para indicar almacenamiento interno
@@ -5406,3 +5494,31 @@ class RouterMiddleware:
             return self._broker_client.laim_status()
         except BrokerBackendCommunicationError as exc:
             raise BusinessRuleError(f"No se pudo consultar estado LAIM: {exc}") from exc
+
+    def laim_create_contact_message(
+        self,
+        payload: dict[str, Any],
+        authorization: str = "",
+        session_token: str = "",
+        ip_address: str = "",
+        user_agent: str = "",
+    ) -> dict[str, Any]:
+        """Registra mensaje de contacto LAIM via broker → backend core."""
+        extra_headers: dict[str, str] = {}
+        if ip_address:
+            extra_headers["X-Forwarded-For"] = ip_address
+        if user_agent:
+            extra_headers["User-Agent"] = user_agent
+        self._broker_client.set_security_context(
+            authorization=authorization or None,
+            session_token=session_token or None,
+        )
+        try:
+            return self._broker_client.laim_create_contact_message(
+                payload,
+                extra_headers=extra_headers or None,
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo registrar el mensaje de contacto: {exc}"
+            ) from exc

@@ -4,5 +4,10 @@
   "venvPath": "../../..",
   "venv": ".venv_laimweb313",
   "pythonVersion": "3.13",
-  "extraPaths": ["."]
+  "extraPaths": [
+    ".",
+    "../../../src/2_shared_application",
+    "../../../.venv_laimweb313/lib/python3.13/site-packages"
+  ],
+  "typeCheckingMode": "basic"
 }

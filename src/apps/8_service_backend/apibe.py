@@ -1208,18 +1208,18 @@ def send_entrenamiento(
 
     try:
         response = router.send_entrenamiento(request.model_dump())
-        print(f"[DEBUG BROKER ENDPOINT] ===== RESPONSE DEL ROUTER =====")
+        print("[DEBUG BROKER ENDPOINT] ===== RESPONSE DEL ROUTER =====")
         print(f"[DEBUG BROKER ENDPOINT] response type: {type(response)}")
         print(f"[DEBUG BROKER ENDPOINT] response: {response}")
         print(f"[DEBUG BROKER ENDPOINT] id_entrenamiento: {response.get('id_entrenamiento') if isinstance(response, dict) else 'N/A'}")
-        print(f"[DEBUG BROKER ENDPOINT] ==========================================")
+        print("[DEBUG BROKER ENDPOINT] ==========================================")
         result = EntrenamientoResponse(**response)
-        print(f"[DEBUG BROKER ENDPOINT] ===== ENTRENAMIENTO RESPONSE CREADO =====")
+        print("[DEBUG BROKER ENDPOINT] ===== ENTRENAMIENTO RESPONSE CREADO =====")
         print(f"[DEBUG BROKER ENDPOINT] result.id_entrenamiento: {result.id_entrenamiento}")
         print(f"[DEBUG BROKER ENDPOINT] result.collection_name: {result.collection_name}")
         print(f"[DEBUG BROKER ENDPOINT] result.numero_secuencia: {result.numero_secuencia}")
         print(f"[DEBUG BROKER ENDPOINT] result.model_dump(): {result.model_dump()}")
-        print(f"[DEBUG BROKER ENDPOINT] ==========================================")
+        print("[DEBUG BROKER ENDPOINT] ==========================================")
         return result
     except BrokerBusinessError as exc:
         raise HTTPException(
@@ -1240,9 +1240,9 @@ def send_autonomous_training(
 
     try:
         response = router.send_autonomous_training(request.model_dump())
-        print(f"[DEBUG BROKER ENDPOINT] ===== AUTONOMOUS TRAINING RESPONSE =====")
+        print("[DEBUG BROKER ENDPOINT] ===== AUTONOMOUS TRAINING RESPONSE =====")
         print(f"[DEBUG BROKER ENDPOINT] response: {response}")
-        print(f"[DEBUG BROKER ENDPOINT] ===========================================")
+        print("[DEBUG BROKER ENDPOINT] ===========================================")
         return AutonomousTrainingResponse(**response)
     except BrokerBusinessError as exc:
         raise HTTPException(
@@ -1252,7 +1252,7 @@ def send_autonomous_training(
 
 
 @app.post("/training/autonomous/init")
-async def initialize_autonomous_training(
+def initialize_autonomous_training(
     request: AutonomousInitRequest,
     router: BrokerBackendRouter = Depends(get_router_broker),
 ) -> dict[str, Any]:
@@ -1261,7 +1261,7 @@ async def initialize_autonomous_training(
     Flujo: Trainer → Broker → Backend Core → MariaDB
     """
     try:
-        response = await router.initialize_autonomous_training(request.model_dump())
+        response = router.initialize_autonomous_training(request.model_dump())
         return response
     except BrokerBusinessError as exc:
         raise HTTPException(
@@ -1271,7 +1271,7 @@ async def initialize_autonomous_training(
 
 
 @app.patch("/training/autonomous/metadata")
-async def update_autonomous_metadata(
+def update_autonomous_metadata(
     request: AutonomousMetadataUpdate,
     router: BrokerBackendRouter = Depends(get_router_broker),
 ) -> dict[str, Any]:
@@ -1280,7 +1280,7 @@ async def update_autonomous_metadata(
     Flujo: Trainer → Broker → Backend Core → MariaDB
     """
     try:
-        response = await router.update_autonomous_metadata(request.model_dump())
+        response = router.update_autonomous_metadata(request.model_dump())
         return response
     except BrokerBusinessError as exc:
         raise HTTPException(
@@ -1290,7 +1290,7 @@ async def update_autonomous_metadata(
 
 
 @app.get("/training/entrenamientos/{id_entrenamiento}/autonomous/progress")
-async def get_autonomous_training_progress(
+def get_autonomous_training_progress(
     id_entrenamiento: int,
     router: BrokerBackendRouter = Depends(get_router_broker),
 ) -> dict[str, Any]:
@@ -1302,7 +1302,7 @@ async def get_autonomous_training_progress(
         Diccionario con success y data (subphases del entrenamiento autónomo)
     """
     try:
-        response = await router.get_autonomous_training_progress(id_entrenamiento)
+        response = router.get_autonomous_training_progress(id_entrenamiento)
         return response
     except BrokerBusinessError as exc:
         raise HTTPException(
@@ -1340,7 +1340,7 @@ def download_autonomous_package(
 
 
 @app.get("/training/entrenamientos/autonomous/packages")
-async def list_autonomous_packages(
+def list_autonomous_packages(
     id_organizacion: int | None = None,
     id_proyecto: int | None = None,
     id_version: int | None = None,
@@ -1359,7 +1359,7 @@ async def list_autonomous_packages(
         Diccionario con success y lista de paquetes
     """
     try:
-        response = await router.list_autonomous_packages(
+        response = router.list_autonomous_packages(
             id_organizacion, id_proyecto, id_version
         )
         return response
@@ -1767,7 +1767,6 @@ class ProjectDto(BaseModel):
     id_flujo: int = 1
     flujo_nombre: str | None = None
     flujo_emoji: str | None = None
-    existe: bool = True
     existe: bool = True
 
 
@@ -4269,7 +4268,7 @@ def cancel_entrenamiento_endpoint(
     response_model=dict,
     tags=["training"],
 )
-async def update_training_progress_endpoint(
+def update_training_progress_endpoint(
     payload: TrainingProgressNotification,
     router: BrokerBackendRouter = Depends(get_router_broker),
 ) -> dict[str, Any]:
@@ -4278,7 +4277,7 @@ async def update_training_progress_endpoint(
     Flujo: Trainer → Broker → Backend Core
     """
     try:
-        result = await router.update_training_progress(payload.model_dump())
+        result = router.update_training_progress(payload.model_dump())
         return result
     except BrokerBusinessError as exc:
         raise HTTPException(
@@ -4292,7 +4291,7 @@ async def update_training_progress_endpoint(
     response_model=dict,
     tags=["training"],
 )
-async def get_training_progress_endpoint(
+def get_training_progress_endpoint(
     id_entrenamiento: int,
     router: BrokerBackendRouter = Depends(get_router_broker),
 ) -> dict[str, Any]:
@@ -4301,7 +4300,7 @@ async def get_training_progress_endpoint(
     Flujo: Backoffice → Middleware → Broker → Backend Core
     """
     try:
-        result = await router.get_training_progress(id_entrenamiento)
+        result = router.get_training_progress(id_entrenamiento)
         return result
     except BrokerBusinessError as exc:
         raise HTTPException(
@@ -4552,6 +4551,24 @@ class LaimRegisterRequest(BaseModel):
     hcaptcha_token: str = ""
 
 
+class LaimContactScreenshotRequest(BaseModel):
+    """Captura adjunta en base64."""
+
+    file_name: str = Field(..., min_length=1, max_length=255)
+    mime_type: str = Field(..., min_length=3, max_length=100)
+    data_base64: str = Field(..., min_length=1)
+
+
+class LaimContactMessageRequest(BaseModel):
+    """Payload del formulario de contacto LAIM."""
+
+    usage_mode: str = Field(..., min_length=1, max_length=50)
+    affected_user_info: str = Field(default="", max_length=500)
+    message_body: str = Field(..., min_length=10, max_length=10000)
+    reply_email: str = Field(..., min_length=5, max_length=255)
+    screenshot: LaimContactScreenshotRequest | None = None
+
+
 def _laim_forward_headers(request: Request) -> dict[str, str]:
     """Propaga IP y user-agent hacia Backend Core."""
     headers: dict[str, str] = {}
@@ -4644,3 +4661,36 @@ def laim_status(
         return router.laim_status()
     except BrokerBusinessError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+# ============================================================================
+# LAIM CONTACT
+# ============================================================================
+
+
+@app.post("/laim/contact/messages", tags=["laim-contact"])
+def laim_create_contact_message(
+    request: Request,
+    payload: LaimContactMessageRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Registra un mensaje del formulario de contacto LAIM."""
+    router.set_security_context(
+        authorization=authorization,
+        session_token=session_token,
+    )
+    try:
+        result = router.laim_create_contact_message(
+            payload.model_dump(),
+            _laim_forward_headers(request),
+        )
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=400,
+                detail=result.get("error", "No se pudo registrar el mensaje"),
+            )
+        return result
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

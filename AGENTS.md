@@ -67,6 +67,195 @@ SHOW TABLES LIKE '%pattern%';
 * **Clarity:** Use `typing.Annotated` for complex types and `TypeAlias` for readability.
 * **Pydantic:** If creating data models, use Pydantic v2 for validation and settings management.
 
+### 2.1 Calidad de código y avisos SonarLint (recomendaciones de implementación)
+
+Estas reglas resumen patrones detectados en correcciones recientes del repositorio. **Aplícalas al escribir código nuevo** para evitar warnings de SonarLint y deuda técnica repetitiva.
+
+#### Literales duplicados (S1192)
+
+**Regla:** Si un mismo literal aparece **3 o más veces** en un módulo, extraer constante a nivel de módulo con `UPPER_SNAKE_CASE`.
+
+| Tipo de literal | Convención de nombre | Ejemplo |
+|-----------------|----------------------|---------|
+| Mensaje de error al usuario | `MSG_<DESCRIPCION>` | `MSG_INVALID_CREDENTIALS = "Usuario o credenciales inválidas"` |
+| Ruta de endpoint HTTP | `<RECURSO>_PATH` | `USERS_PATH = "/users"` |
+| Script JS para Reflex | `<ACCION>_SCRIPT` | `RESET_LAIM_HCAPTCHA_SCRIPT = "if (typeof ..."` |
+
+**Ubicación:** Inmediatamente después de imports y antes de la primera clase del módulo.
+
+**CRÍTICO al refactorizar:** Al usar `replace_all` para sustituir un literal por una constante, **no reemplazar la línea de definición** de la constante (evitar `MSG_X = MSG_X`).
+
+```python
+# ✅ CORRECTO
+MSG_INVALID_CREDENTIALS = "Usuario o credenciales inválidas"
+raise BusinessRuleError(MSG_INVALID_CREDENTIALS)
+
+# ❌ INCORRECTO — literal repetido 3+ veces en el mismo archivo
+raise BusinessRuleError("Usuario o credenciales inválidas")
+```
+
+#### Complejidad cognitiva (S3776)
+
+**Regla:** Mantener funciones públicas por debajo del umbral de SonarLint (~**15**). Si una función mezcla validación, logging, persistencia y ramas de error, **extraer helpers privados**.
+
+**Patrones de extracción recomendados:**
+
+| Responsabilidad | Prefijo sugerido | Ejemplo |
+|-----------------|------------------|---------|
+| Validar entrada | `_validate_*` | `_validate_contact_input()` |
+| Registrar fallo y abortar | `_record_*` / `_raise_*` | `_raise_auth_failure()` |
+| Normalizar contexto | `_extract_*` / `_normalize_*` | `_extract_user_context_fields()` |
+| Una iteración de loop | `_run_*_iteration()` | `_run_token_renewal_iteration()` |
+| Efecto secundario reusable | `_handle_*` | `_handle_renewal_session_expired()` |
+
+**Preferir:** early return en rutas de error; una responsabilidad por helper; métodos orquestadores cortos que solo coordinen.
+
+#### Coherencia de tipos de retorno (S5886)
+
+**Regla:** El tipo anotado debe coincidir **exactamente** con lo que retorna la función.
+
+```python
+# ❌ INCORRECTO — anotado bool pero retorna dict
+def request_login_otp(...) -> bool:
+    return {"success": True, "otp": "1234"}
+
+# ✅ CORRECTO
+def request_login_otp(...) -> dict[str, Any]:
+    return {"success": True, "otp": "1234"}
+```
+
+Revisar especialmente métodos de routers, servicios y clientes HTTP consumidos por capas superiores.
+
+#### async innecesario (S7503)
+
+**Regla:** No declarar `async def` si el cuerpo **no usa** `await`, `async for` ni `async with`.
+
+En este proyecto, los clientes HTTP internos (`interfacetocore.py`, `broker_backend_client.py`) usan **`httpx.Client` síncrono**. Por tanto:
+
+1. Métodos del cliente → `def` (síncronos).
+2. Router que delega al cliente → `def` si solo llama al cliente.
+3. Endpoint FastAPI → `def` si la cadena completa es síncrona (FastAPI ejecuta en thread pool).
+
+**Propagación obligatoria:** Si se elimina `async` en la capa inferior, quitar `await` en todas las capas superiores de la misma cadena (cliente → router → `apife.py` / `apibe.py`).
+
+```python
+# ❌ INCORRECTO — async sin await real
+async def update_training_progress(self, payload: dict) -> dict:
+    return self._request("PATCH", "/training/progress", payload=payload)
+
+# ✅ CORRECTO
+def update_training_progress(self, payload: dict) -> dict:
+    return self._request("PATCH", "/training/progress", payload=payload)
+```
+
+Reservar `async def` para código que realmente espera I/O asíncrono (p. ej. `httpx.AsyncClient`, loops Reflex `@rx.event(background=True)` con `await asyncio.sleep`).
+
+#### Parámetros no usados (S1172)
+
+**Regla:** No dejar parámetros de firma sin uso.
+
+| Situación | Acción |
+|-----------|--------|
+| Parámetro de auditoría (`ip_address`, `user_agent`) | Usarlo en **logging** o persistencia de auth logs |
+| Parámetro requerido por interfaz pero no usado aún | Prefijo `_` en la firma interna o documentar por qué se conserva |
+| Parámetro obsoleto | Eliminar de firma y actualizar todos los call sites |
+
+#### f-strings sin interpolación (S3457)
+
+**Regla:** Usar string normal cuando **no hay** campos `{...}`.
+
+```python
+# ❌ INCORRECTO
+print(f"[DEBUG] ===== INICIO =====")
+
+# ✅ CORRECTO
+print("[DEBUG] ===== INICIO =====")
+
+# ✅ CORRECTO — sí hay interpolación
+print(f"[DEBUG] user_id={user_id}")
+```
+
+#### Modelos Pydantic duplicados (S8512)
+
+**Regla:** Verificar que cada campo del modelo aparece **una sola vez**. Tras copiar/pegar DTOs entre capas (middleware, broker, core), revisar duplicados antes de commit.
+
+```python
+# ❌ INCORRECTO
+class ProjectDto(BaseModel):
+    existe: bool = True
+    existe: bool = True  # duplicado
+```
+
+Preferir `Field(..., description="...")` en lugar de comentarios inline para documentar campos.
+
+#### Clientes HTTP y endpoints — anti-patrones
+
+1. **No duplicar bloques de métodos** al añadir endpoints (copiar/pegar en `broker_backend_client.py` generó métodos triplicados). Reutilizar `_request()` y constantes de path.
+2. **Sincronizar toda la cadena** al crear un endpoint nuevo: Core → Broker (`interfacetocore`) → Middleware → Web client.
+3. **Evitar `print()` de debug** en endpoints de producción; usar `logging`. Si se usa debug temporal, aplicar regla S3457 en los mensajes estáticos.
+
+#### Reflex / LAIM Web — scripts y estado
+
+1. Scripts JavaScript pasados a `rx.call_script()` → constante de módulo si se repiten.
+2. Loops en background (`@rx.event(background=True)`) → extraer lógica de iteración a métodos `_run_*_iteration()` para mantener complejidad baja.
+3. Usar `yield` en background tasks cuando se actualice el State de Reflex.
+
+#### Servicios de dominio — validación en capas
+
+Al implementar servicios (`*_service.py`):
+
+1. **Validación** → método `_validate_*` que retorna tupla `(datos, error)`.
+2. **Normalización de contexto opcional** → `_extract_*` / `_normalize_*`.
+3. **Persistencia** → try/except solo alrededor de la operación de BD, con `logger.exception()`.
+
+#### Referencias cruzadas — archivos ejemplo
+
+Tabla de implementaciones de referencia tras las correcciones SonarLint recientes. Consultar estos archivos **antes** de replicar el mismo patrón en código nuevo.
+
+| Regla | Archivo(s) | Qué revisar |
+|-------|------------|-------------|
+| **S1192** — `MSG_*` (mensajes de error) | `src/apps/7_service_frontend/routermiddleware.py` (líneas ~136–141) | Bloque `MSG_INVALID_CREDENTIALS`, `MSG_INVALID_OTP`, etc. + uso en `login()` / `request_login_otp()` |
+| **S1192** — `MSG_*` (auth LAIM) | `src/apps/3_backend/laim_auth_service.py` | `MSG_INVALID_CREDENTIALS` en `login()` |
+| **S1192** — `*_PATH` (rutas HTTP) | `src/apps/8_service_backend/interfacetocore.py` | `USERS_PATH`, `ORGANIZATIONS_PATH`, `ROLES_PATH` |
+| **S1192** — `*_PATH` (middleware) | `src/apps/7_service_frontend/broker_backend_client.py` | `USERS_PATH`, `TECNOLOGIAS_PATH` (mismo patrón en cliente broker) |
+| **S1192** — `*_SCRIPT` (Reflex/JS) | `src/apps/9_laimweb/laim_web/laim_state.py` | `RESET_LAIM_HCAPTCHA_SCRIPT` en modales de registro |
+| **S3776** — auth con helpers | `src/apps/7_service_frontend/routermiddleware.py` | `_record_auth_failure`, `_raise_auth_failure`, `_maybe_block_user_after_failed_attempts`, `_run_token_renewal_iteration` |
+| **S3776** — servicio con validación | `src/apps/3_backend/laim_contact_service.py` | `_validate_contact_input`, `_extract_user_context_fields`, `_normalize_positive_id` |
+| **S3776** — loop Reflex background | `src/apps/9_laimweb/laim_web/laim_state.py` | `auto_renew_tokens_loop` → delega en `_run_token_renewal_iteration` y `_handle_renewal_session_expired` |
+| **S5886** — tipo de retorno | `src/apps/7_service_frontend/routermiddleware.py` | `request_login_otp(...) -> dict[str, Any]` (antes anotado como `bool`) |
+| **S7503** — cadena sync HTTP | `src/apps/8_service_backend/interfacetocore.py` | Métodos `update_training_progress`, `get_autonomous_progress`, etc. como `def` |
+| **S7503** — propagación broker | `src/apps/8_service_backend/routerbroker.py` | Mismos métodos sin `async`/`await` hacia `_core_client` |
+| **S7503** — propagación API | `src/apps/8_service_backend/apibe.py` | Endpoints `/training/progress`, `/training/autonomous/*` como `def` |
+| **S7503** — propagación middleware | `src/apps/7_service_frontend/apife.py`, `routermiddleware.py`, `broker_backend_client.py` | Cadena completa de `update_training_progress` sin `await` |
+| **S1172** — params en logs | `src/apps/7_service_frontend/routermiddleware.py` | `refresh_tokens`: `ip_address` y `user_agent` en log `[DDD]` |
+| **S3457** — f-strings estáticos | `src/apps/8_service_backend/apibe.py` | `send_entrenamiento` / `send_autonomous_training`: separadores `[DEBUG]` como string normal |
+| **S8512** — campos Pydantic | `src/apps/8_service_backend/apibe.py` | `ProjectDto`: un solo `existe: bool = True` |
+| **S8512** — Field descriptions | `src/apps/3_backend/apicore.py` | DTOs con `Field(..., description=...)` en lugar de comentarios inline |
+| **Anti-patrón** — métodos duplicados | `src/apps/7_service_frontend/broker_backend_client.py` | Un único bloque por recurso; no copiar métodos de tecnologías 3 veces |
+| **Anti-patrón** — cadena de endpoints | Ver flujo §3.1 | Ejemplo entrenamiento: `interfacetocore` → `routerbroker` → `apibe` → middleware → `api_client` |
+
+**Flujo de lectura recomendado al añadir un endpoint HTTP:**
+
+1. Cliente Core: `src/apps/8_service_backend/interfacetocore.py` (`_request` + constante `*_PATH` si aplica).
+2. Router Broker: `src/apps/8_service_backend/routerbroker.py` (delegación síncrona).
+3. API Broker: `src/apps/8_service_backend/apibe.py` (endpoint `def`, sin `await` falso).
+4. Cliente Middleware: `src/apps/7_service_frontend/broker_backend_client.py`.
+5. Router Middleware: `src/apps/7_service_frontend/routermiddleware.py`.
+6. API Middleware: `src/apps/7_service_frontend/apife.py`.
+
+**Flujo LAIM (portal 8009):** servicios en `src/apps/3_backend/laim_*_service.py`, estado Reflex en `src/apps/9_laimweb/laim_web/laim_state.py`, cliente en `src/apps/9_laimweb/laim_web/adapters/laim_api_client.py`.
+
+#### Checklist rápido antes de commit (calidad SonarLint)
+
+- [ ] ¿Hay literales repetidos 3+ veces? → constante de módulo
+- [ ] ¿La función supera ~12-15 ramas/condiciones? → extraer helpers
+- [ ] ¿`async def` sin `await`? → cambiar a `def` y propagar en la cadena
+- [ ] ¿El tipo de retorno coincide con lo devuelto?
+- [ ] ¿Parámetros `ip_address` / `user_agent` usados en logs?
+- [ ] ¿f-strings solo donde hay `{variables}`?
+- [ ] ¿Modelos Pydantic sin campos duplicados?
+- [ ] ¿Tras `replace_all`, las definiciones de constantes siguen con el literal original?
+
 ## 3. Best Practices & Design Patterns
 * **Explicit over Implicit:** Avoid `from module import *`. Use explicit imports.
 * **List Comprehensions:** Use them for simple transformations, but favor `for` loops for complex logic to maintain readability.

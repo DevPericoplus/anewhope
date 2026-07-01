@@ -15,6 +15,12 @@ from reflex.event import event
 
 from laim_web.shared_state import LaimSharedSessionState
 
+EventHandlerReturn = Any
+
+RESET_LAIM_HCAPTCHA_SCRIPT = (
+    "if (typeof window.resetLaimHcaptcha === 'function') { window.resetLaimHcaptcha(); }"
+)
+
 
 class LaimWebState(LaimSharedSessionState):
     """Estado de LAIM Web con autenticación y UI."""
@@ -41,6 +47,16 @@ class LaimWebState(LaimSharedSessionState):
     reg_full_name: str = ""
     reg_mobile: str = ""
     reg_hcaptcha_token: str = ""
+
+    # Formulario de contacto
+    contact_usage_mode: str = "local"
+    contact_affected_user: str = ""
+    contact_message_body: str = ""
+    contact_reply_email: str = ""
+    contact_form_error: str = ""
+    contact_form_success: bool = False
+    contact_submitting: bool = False
+    _pending_contact_screenshot: dict[str, str] | None = None
 
     _token_renewal_running: bool = False
 
@@ -74,7 +90,7 @@ class LaimWebState(LaimSharedSessionState):
         self.reg_hcaptcha_token = value
 
     @event
-    def handle_register(self) -> rx.event.EventSpec | None:
+    def handle_register(self) -> EventHandlerReturn:
         """Inicia registro; usa hCaptcha solo si está configurado en el entorno."""
         from laim_web.components.hcaptcha import is_hcaptcha_configured
 
@@ -113,7 +129,7 @@ class LaimWebState(LaimSharedSessionState):
         return ""
 
     @event
-    def set_reg_hcaptcha_token(self, token: str | None) -> rx.event.EventSpec | None:
+    def set_reg_hcaptcha_token(self, token: str | None) -> EventHandlerReturn:
         """Recibe token hCaptcha desde JavaScript y continúa el registro."""
         from laim_web.components.hcaptcha import is_hcaptcha_configured
 
@@ -208,38 +224,32 @@ class LaimWebState(LaimSharedSessionState):
         self.error_message = ""
 
     @event
-    def open_register_modal(self) -> rx.event.EventSpec | None:
+    def open_register_modal(self) -> EventHandlerReturn:
         """Abre el modal de registro."""
         self.register_modal_open = True
         self.login_modal_open = False
         self.error_message = ""
         self.register_message = ""
         self.reg_hcaptcha_token = ""
-        return rx.call_script(
-            "if (typeof window.resetLaimHcaptcha === 'function') { window.resetLaimHcaptcha(); }"
-        )
+        return rx.call_script(RESET_LAIM_HCAPTCHA_SCRIPT)
 
     @event
-    def close_register_modal(self) -> rx.event.EventSpec | None:
+    def close_register_modal(self) -> EventHandlerReturn:
         """Cierra el modal de registro."""
         self.register_modal_open = False
         self.error_message = ""
         self.loading = False
-        return rx.call_script(
-            "if (typeof window.resetLaimHcaptcha === 'function') { window.resetLaimHcaptcha(); }"
-        )
+        return rx.call_script(RESET_LAIM_HCAPTCHA_SCRIPT)
 
     @event
-    def switch_to_register_modal(self) -> rx.event.EventSpec | None:
+    def switch_to_register_modal(self) -> EventHandlerReturn:
         """Cierra login y abre registro."""
         self.login_modal_open = False
         self.register_modal_open = True
         self.error_message = ""
         self.register_message = ""
         self.reg_hcaptcha_token = ""
-        return rx.call_script(
-            "if (typeof window.resetLaimHcaptcha === 'function') { window.resetLaimHcaptcha(); }"
-        )
+        return rx.call_script(RESET_LAIM_HCAPTCHA_SCRIPT)
 
     @event
     def switch_to_login_modal(self) -> None:
@@ -271,7 +281,8 @@ class LaimWebState(LaimSharedSessionState):
 
         self._load_static_page(self.active_menu)
 
-    def on_page_load(self) -> None:
+    @rx.event
+    def on_page_load(self) -> EventHandlerReturn:
         """Carga inicial de la página."""
         self._sync_menu_for_session()
         if self.is_logged_in and self.session_token and not self._token_renewal_running:
@@ -289,9 +300,172 @@ class LaimWebState(LaimSharedSessionState):
     def set_menu(self, item: str) -> None:
         self.active_menu = item
         self._load_static_page(item)
+        if item == "contacto":
+            self._prepare_contact_form()
+
+    def _prepare_contact_form(self) -> None:
+        """Pre-rellena el formulario de contacto al abrir la página."""
+        if self.is_logged_in and self.user_email.strip() and not self.contact_reply_email.strip():
+            self.contact_reply_email = self.user_email.strip()
+        self.contact_form_error = ""
+        self.contact_form_success = False
 
     @event
-    def handle_page_action(self, action_key: str) -> rx.event.EventSpec | None:
+    def set_contact_usage_mode(self, value: str) -> None:
+        self.contact_usage_mode = value
+
+    @event
+    def set_contact_affected_user(self, value: str) -> None:
+        self.contact_affected_user = value
+
+    @event
+    def set_contact_message_body(self, value: str) -> None:
+        self.contact_message_body = value
+
+    @event
+    def set_contact_reply_email(self, value: str) -> None:
+        self.contact_reply_email = value
+
+    def _validate_contact_form(self) -> str:
+        """Valida campos del formulario de contacto."""
+        if self.contact_usage_mode not in {
+            "local",
+            "share",
+            "connect",
+            "remote",
+            "other",
+        }:
+            return "Seleccione un modo de uso válido."
+        if not self.contact_reply_email.strip():
+            return "Indique un e-mail de respuesta."
+        if "@" not in self.contact_reply_email or "." not in self.contact_reply_email:
+            return "El e-mail de respuesta no es válido."
+        if len(self.contact_message_body.strip()) < 10:
+            return "La descripción debe tener al menos 10 caracteres."
+        return ""
+
+    _CONTACT_SCREENSHOT_SCRIPT = """
+(() => {
+  const input = document.getElementById('laim_contact_screenshot');
+  if (!input || !input.files || input.files.length === 0) {
+    return { screenshot: null };
+  }
+  const file = input.files[0];
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result || '';
+      const base64 = typeof result === 'string' && result.includes(',')
+        ? result.split(',')[1]
+        : '';
+      resolve({
+        screenshot: {
+          file_name: file.name,
+          mime_type: file.type || 'application/octet-stream',
+          data_base64: base64,
+        },
+      });
+    };
+    reader.onerror = () => resolve({ screenshot: null });
+    reader.readAsDataURL(file);
+  });
+})()
+"""
+
+    @event
+    def submit_contact_form(self) -> EventHandlerReturn:
+        """Inicia envío del formulario (lee captura en el cliente)."""
+        validation_error = self._validate_contact_form()
+        if validation_error:
+            self.contact_form_error = validation_error
+            self.contact_form_success = False
+            return None
+
+        self.contact_form_error = ""
+        self.contact_form_success = False
+        return rx.call_script(
+            self._CONTACT_SCREENSHOT_SCRIPT,
+            callback=LaimWebState.contact_submit_with_screenshot,
+        )
+
+    @event
+    def contact_submit_with_screenshot(
+        self, payload: dict[str, object] | None
+    ) -> EventHandlerReturn:
+        """Recibe captura opcional y lanza envío en background."""
+        validation_error = self._validate_contact_form()
+        if validation_error:
+            self.contact_form_error = validation_error
+            return None
+
+        screenshot_data: dict[str, str] | None = None
+        if isinstance(payload, dict):
+            raw_screenshot = payload.get("screenshot")
+            if isinstance(raw_screenshot, dict):
+                file_name = str(raw_screenshot.get("file_name", "")).strip()
+                mime_type = str(raw_screenshot.get("mime_type", "")).strip()
+                data_base64 = str(raw_screenshot.get("data_base64", "")).strip()
+                if file_name and mime_type and data_base64:
+                    screenshot_data = {
+                        "file_name": file_name,
+                        "mime_type": mime_type,
+                        "data_base64": data_base64,
+                    }
+
+        self._pending_contact_screenshot = screenshot_data
+        return LaimWebState.submit_contact_form_background
+
+    @rx.event(background=True)
+    async def submit_contact_form_background(self) -> None:
+        """Envía el mensaje de contacto al middleware."""
+        from laim_web.adapters.laim_api_client import laim_submit_contact_message
+
+        async with self:
+            validation_error = self._validate_contact_form()
+            if validation_error:
+                self.contact_form_error = validation_error
+                return
+
+            self.contact_submitting = True
+            self.contact_form_error = ""
+            self.contact_form_success = False
+            screenshot = self._pending_contact_screenshot
+            self._pending_contact_screenshot = None
+
+            payload: dict[str, object] = {
+                "usage_mode": self.contact_usage_mode,
+                "affected_user_info": self.contact_affected_user.strip(),
+                "message_body": self.contact_message_body.strip(),
+                "reply_email": self.contact_reply_email.strip(),
+            }
+            if screenshot:
+                payload["screenshot"] = screenshot
+
+            access_token = self.access_token if self.is_logged_in else ""
+            session_token = self.session_token if self.is_logged_in else ""
+
+        result = laim_submit_contact_message(
+            payload=payload,
+            access_token=access_token,
+            session_token=session_token,
+        )
+
+        async with self:
+            self.contact_submitting = False
+            if result.get("success"):
+                self.contact_form_success = True
+                self.contact_affected_user = ""
+                self.contact_message_body = ""
+                if not self.is_logged_in:
+                    self.contact_reply_email = ""
+                return
+
+            self.contact_form_error = result.get(
+                "error", "No se pudo enviar el mensaje. Inténtelo más tarde."
+            )
+
+    @event
+    def handle_page_action(self, action_key: str) -> EventHandlerReturn:
         """Ejecuta acciones de botones bajo el contenido markdown."""
         navigate_to_menu = {
             "faq_to_support": "soporte",
@@ -382,7 +556,7 @@ class LaimWebState(LaimSharedSessionState):
         return {}
 
     @event
-    def handle_login(self) -> None:
+    def handle_login(self) -> EventHandlerReturn:
         """Procesa login contra middleware LAIM."""
         from laim_web.adapters.laim_api_client import laim_login
 
@@ -425,7 +599,7 @@ class LaimWebState(LaimSharedSessionState):
         self.loading = False
 
     @event
-    def handle_logout(self) -> rx.event.EventSpec:
+    def handle_logout(self) -> EventHandlerReturn:
         """Cierra sesión LAIM y vuelve al área pública."""
         from laim_web.adapters.laim_api_client import laim_logout
 
@@ -499,41 +673,61 @@ class LaimWebState(LaimSharedSessionState):
 
         return True
 
+    def _handle_renewal_session_expired(self) -> None:
+        """Limpia la sesión cuando expira durante el loop de renovación."""
+
+        self.login_error = (
+            "Su sesión ha expirado. Por favor, inicie sesión nuevamente."
+        )
+        self.error_message = self.login_error
+        self.clear_session()
+        self.is_logged_in = False
+        self.active_menu = "inicio"
+        self._load_static_page("inicio")
+        self.login_modal_open = True
+        self._token_renewal_running = False
+
+    def _run_token_renewal_iteration(self) -> bool:
+        """Ejecuta una iteración del loop de renovación.
+
+        Returns:
+            False si el loop debe detenerse.
+        """
+        if (
+            not self.is_logged_in
+            or not self.access_token
+            or not self.session_token
+        ):
+            self._token_renewal_running = False
+            return False
+
+        self._load_tokens_from_redis()
+        check_result = self.check_token_expiration()
+
+        if check_result["session_expired"]:
+            self._handle_renewal_session_expired()
+            return False
+
+        if not check_result["needs_renewal"]:
+            return True
+
+        success = self.ensure_tokens_valid()
+        if success or not self.login_error:
+            return True
+
+        if "expirado" in self.login_error.lower():
+            self._token_renewal_running = False
+            return False
+
+        self.login_error = ""
+        return True
+
     @rx.event(background=True)
     async def auto_renew_tokens_loop(self) -> None:
         """Renueva tokens en background cada 2 minutos."""
         while True:
             async with self:
-                if (
-                    not self.is_logged_in
-                    or not self.access_token
-                    or not self.session_token
-                ):
-                    self._token_renewal_running = False
+                if not self._run_token_renewal_iteration():
                     break
-
-                self._load_tokens_from_redis()
-                check_result = self.check_token_expiration()
-
-                if check_result["session_expired"]:
-                    self.login_error = (
-                        "Su sesión ha expirado. Por favor, inicie sesión nuevamente."
-                    )
-                    self.error_message = self.login_error
-                    self.clear_session()
-                    self.is_logged_in = False
-                    self.active_menu = "inicio"
-                    self._load_static_page("inicio")
-                    self.login_modal_open = True
-                    self._token_renewal_running = False
-                    break
-
-                if check_result["needs_renewal"]:
-                    success = self.ensure_tokens_valid()
-                    if not success and self.login_error:
-                        if "expirado" in self.login_error.lower():
-                            self._token_renewal_running = False
-                            break
-                        self.login_error = ""
 
             await asyncio.sleep(120)

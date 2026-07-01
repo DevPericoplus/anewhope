@@ -82,7 +82,7 @@ def _action_button(action: PageAction) -> rx.Component:
         )
     return rx.button(
         action.label,
-        on_click=LaimWebState.handle_page_action(action.action_key),
+        on_click=lambda: LaimWebState.handle_page_action(action.action_key),
         class_name="crt-btn crt-btn-inline",
     )
 

@@ -4,11 +4,10 @@ Estilo visual CRT terminal con fuentes Inconsolata.
 Puerto: 8010 (asignación dedicada LAIM)
 """
 
-import importlib.util
-import sys
+import reflex as rx
 from pathlib import Path
 
-import reflex as rx
+from laim_web.dynamic_import import load_module_from_path
 
 # Cargar env_settings dinámicamente
 env_settings_path = (
@@ -17,10 +16,7 @@ env_settings_path = (
     / "config"
     / "env_settings.py"
 )
-spec = importlib.util.spec_from_file_location("env_settings", env_settings_path)
-env_settings = importlib.util.module_from_spec(spec)
-sys.modules["env_settings"] = env_settings
-spec.loader.exec_module(env_settings)
+env_settings = load_module_from_path(env_settings_path, "env_settings_rxconfig")
 
 # Redis para sesión compartida
 REDIS_HOST = env_settings.get_env_value("redis_host", "localhost")
@@ -42,9 +38,6 @@ config = rx.Config(
     db_url="sqlite:///reflex.db",
     redis_url=redis_url,
     redis_lock_expiration=REDIS_LOCK_EXPIRATION,
-    env=rx.Env.PROD
-    if env_settings.get_env_value("reflex_env_mode", "dev") == "prod"
-    else rx.Env.DEV,
     frontend_port=3110,
     backend_port=8010,
     api_url=env_settings.get_env_value("laimweb_api_url", "http://localhost:8010"),

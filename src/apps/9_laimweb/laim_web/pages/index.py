@@ -3,6 +3,7 @@
 import reflex as rx
 
 from laim_web.components.auth_modals import auth_modals
+from laim_web.components.contact_form import contact_form_panel
 from laim_web.components.markdown_viewer import crt_markdown_viewer
 from laim_web.components.page_actions import page_action_panel
 from laim_web.laim_state import LaimWebState
@@ -175,7 +176,7 @@ def _sidebar_menu_item(item: str) -> rx.Component:
     """Entrada del menú lateral con etiqueta en español."""
     return rx.box(
         rx.text(_menu_label(item), font_size="0.9em"),
-        on_click=LaimWebState.set_menu(item),
+        on_click=lambda: LaimWebState.set_menu(item),
         background=rx.cond(
             LaimWebState.active_menu == item,
             "rgba(0, 180, 0, 0.3)",
@@ -245,6 +246,11 @@ def content_static_page() -> rx.Component:
     """Contenido cargado desde static_pages/*.md (panel derecho)."""
     return rx.vstack(
         crt_markdown_viewer(LaimWebState.static_page_content),
+        rx.cond(
+            LaimWebState.active_menu == "contacto",
+            contact_form_panel(),
+            rx.fragment(),
+        ),
         rx.match(
             LaimWebState.active_menu,
             ("instaladores", page_action_panel("instaladores")),

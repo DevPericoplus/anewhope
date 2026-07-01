@@ -12,14 +12,13 @@ gestionado internamente por el backend core.
 
 from __future__ import annotations
 
-import importlib.util
-import sys
+import time
 from pathlib import Path
 from typing import Any
 
-import time
-
 import httpx
+
+from laim_web.dynamic_import import load_module_from_path
 
 RENEWAL_THRESHOLD_SECONDS = 120
 
@@ -30,10 +29,7 @@ _env_settings_path = (
     / "config"
     / "env_settings.py"
 )
-_spec = importlib.util.spec_from_file_location("env_settings", _env_settings_path)
-_env_settings = importlib.util.module_from_spec(_spec)
-sys.modules.setdefault("env_settings", _env_settings)
-_spec.loader.exec_module(_env_settings)
+_env_settings = load_module_from_path(_env_settings_path, "env_settings_laim_api")
 
 
 def _get_middleware_base_url() -> str:
@@ -214,4 +210,23 @@ def laim_get_status(
         "/laim/status",
         access_token=access_token,
         session_token=session_token,
+    )
+
+
+def laim_submit_contact_message(
+    payload: dict[str, Any],
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Envía un mensaje del formulario de contacto.
+
+    Flujo: LAIM Web → Middleware /laim/contact/messages → Broker → Backend Core
+    """
+    return _request_middleware(
+        "POST",
+        "/laim/contact/messages",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+        timeout=90.0,
     )

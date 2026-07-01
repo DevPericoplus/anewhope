@@ -314,6 +314,22 @@ body::after {
   font-family: inherit !important;
 }
 
+.crt-label {
+  color: #9dff9d;
+  font-weight: bold;
+  font-size: 0.95em;
+}
+
+.crt-textarea {
+  min-height: 8em;
+  resize: vertical;
+}
+
+.crt-contact-form {
+  border: 1px solid rgba(0, 180, 0, 0.35);
+  border-radius: 4px;
+}
+
 .crt-chat-input {
   flex-shrink: 0;
   min-height: 3.5rem;

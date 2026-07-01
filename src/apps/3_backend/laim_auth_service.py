@@ -72,6 +72,8 @@ LaimUserRepository = _laim_user_repo_mod.LaimUserRepository
 decrypt_password = _laim_crypto_mod.decrypt_password
 encrypt_password = _laim_crypto_mod.encrypt_password
 
+MSG_INVALID_CREDENTIALS = "Usuario o credenciales inválidas"
+
 
 class LaimAuthError(Exception):
     """Error de autenticación LAIM."""
@@ -185,7 +187,7 @@ class LaimAuthService:
         user = self._user_repo.get_user_by_name(user_name.strip())
         if user is None:
             self._log_failure(user_name, "USER_NOT_FOUND", "Usuario no existe", ip_address, user_agent)
-            return LaimTokenResponse(success=False, error="Usuario o credenciales inválidas")
+            return LaimTokenResponse(success=False, error=MSG_INVALID_CREDENTIALS)
 
         if not user.active or user.blocked:
             self._log_failure(user_name, "USER_BLOCKED", "Usuario bloqueado o inactivo", ip_address, user_agent)
@@ -195,7 +197,7 @@ class LaimAuthService:
             decrypted = decrypt_password(user.user_password)
         except ValueError:
             self._log_failure(user_name, "DECRYPT_ERROR", "Error al descifrar contraseña", ip_address, user_agent)
-            return LaimTokenResponse(success=False, error="Usuario o credenciales inválidas")
+            return LaimTokenResponse(success=False, error=MSG_INVALID_CREDENTIALS)
 
         if decrypted != password:
             self._log_failure(user_name, "INVALID_PASSWORD", "Contraseña inválida", ip_address, user_agent)
@@ -212,7 +214,7 @@ class LaimAuthService:
                     user_agent=user_agent,
                     details={"reason": "TOO_MANY_ATTEMPTS"},
                 )
-            return LaimTokenResponse(success=False, error="Usuario o credenciales inválidas")
+            return LaimTokenResponse(success=False, error=MSG_INVALID_CREDENTIALS)
 
         try:
             response = self._session_service.create_session(
@@ -419,3 +421,33 @@ class LaimAuthService:
         except httpx.HTTPError as exc:
             self._logger.error("Error verificando hCaptcha: %s", exc)
             return False
+
+    def resolve_optional_session_context(
+        self,
+        access_token: str,
+        session_token: str,
+    ) -> dict[str, Any]:
+        """Devuelve contexto de usuario si los tokens LAIM son válidos."""
+        if not access_token.strip() or not session_token.strip():
+            return {}
+
+        try:
+            access_payload = self._session_service._jwt_service.validate_access_token(
+                access_token.strip()
+            )
+            session_payload = self._session_service._jwt_service.validate_session_token(
+                session_token.strip()
+            )
+            if access_payload.session_id != session_payload.session_id:
+                return {}
+
+            context = self._session_service.get_session_context(access_token.strip())
+            user = self._user_repo.get_user_by_id(context.user_id)
+            return {
+                "user_id": context.user_id,
+                "user_name": user.user_name if user else "",
+                "organization_id": context.organization_id,
+            }
+        except Exception as exc:
+            self._logger.debug("Sesión LAIM opcional no válida en contacto: %s", exc)
+            return {}
