@@ -11254,6 +11254,32 @@ sudo certbot certificates | grep -A 5 "laim.app"
 - Redirect HTTP→HTTPS: 301 Moved Permanently
 - Certificado ECDSA válido hasta 2026-09-28 (90 días)
 
+#### Funcionalidades para el usuario final
+
+LAIM Web (`www.laim.app`) es el **portal de descarga y orientación** para usuarios finales del cliente **LAIM** (Local Artificial Intelligence Management). Tras registrarse e iniciar sesión, el usuario accede a un área privada orientada a:
+
+| Sección del menú | Propósito |
+|------------------|-----------|
+| **Instaladores** | Descarga del cliente LAIM para Windows, macOS y Linux (`.deb` / `.rpm`) |
+| **Manuales** | Guías de instalación, uso, seguridad y referencia CLI |
+| **Modelos base** | Catálogo orientativo de modelos adaptados al hardware local |
+| **Modelos especializados** | Modelos enriquecidos por dominio; enlace a proyectos en [getmyllm.com](https://www.getmyllm.com/) |
+| **Modelos personalizados** | Modelos entrenados con datos privados; creación de proyectos vía ecosistema myllm |
+| **Skills** | Extensiones modulares de capacidades del cliente |
+| **Complementos** | Integraciones y utilidades adicionales |
+| **Soporte** | Tickets, email y estado de servicios |
+| **FAQ** | Privacidad, seguridad, modalidades de uso y preguntas frecuentes |
+
+**Área pública (sin sesión):** Inicio, Servicios, Documentación y Contacto (`static_pages/*.md`).
+
+**Área autenticada:** Las nueve secciones anteriores. El contenido se muestra en el **panel derecho** (markdown estilo terminal CRT) con **botones de acción** bajo el texto. Los enlaces a [getmyllm.com](https://www.getmyllm.com/) aparecen en modelos especializados y personalizados para solicitar proyectos a medida.
+
+**Autenticación:** Registro público con hCaptcha (site key en `env.yaml`, secret en `protected_values.py`). Tras el login, la vista inicial es **Instaladores**.
+
+**Contenido editable:** Ficheros markdown en `src/apps/9_laimweb/static_pages/`. Acciones de botones definidas en `laim_web/components/page_actions.py` (descargas reales se habilitarán en iteraciones posteriores).
+
+**Flujo de datos:** LAIM Web → Middleware (8007) → Broker (8008) → Backend Core (8003) → `laim_core_db`. Header `X-Client-App: laimweb`.
+
 ### 18.7. Roadmap
 
 - [ ] Gestión completa del ciclo de vida de modelos
@@ -11265,6 +11291,8 @@ sudo certbot certificates | grep -A 5 "laim.app"
 - [x] Portal web LAIM (9_laimweb) con dominio www.laim.app
 - [x] Certificado SSL Let's Encrypt con renovación automática
 - [x] Configuración Nginx como reverse proxy para LAIM Web
+- [x] Menú autenticado (instaladores, manuales, modelos, skills, soporte, FAQ)
+- [ ] Descargas reales de instaladores y modelos desde el portal
 
 ---
 

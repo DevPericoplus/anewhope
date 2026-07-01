@@ -5338,3 +5338,71 @@ class RouterMiddleware:
             return self._broker_client.create_job(data)
         except BrokerBackendCommunicationError as exc:
             raise BusinessRuleError(f"No se pudo crear job: {exc}") from exc
+
+    # ========================================================================
+    # LAIM AUTH
+    # ========================================================================
+
+    def laim_login(
+        self,
+        payload: dict[str, Any],
+        ip_address: str = "",
+        user_agent: str = "",
+    ) -> dict[str, Any]:
+        """Autentica usuario LAIM via broker → backend core."""
+        extra_headers: dict[str, str] = {}
+        if ip_address:
+            extra_headers["X-Forwarded-For"] = ip_address
+        if user_agent:
+            extra_headers["User-Agent"] = user_agent
+        try:
+            return self._broker_client.laim_login(payload, extra_headers=extra_headers)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(f"No se pudo iniciar sesión LAIM: {exc}") from exc
+
+    def laim_register(
+        self,
+        payload: dict[str, Any],
+        ip_address: str = "",
+        user_agent: str = "",
+    ) -> dict[str, Any]:
+        """Registro público LAIM."""
+        extra_headers: dict[str, str] = {}
+        if ip_address:
+            extra_headers["X-Forwarded-For"] = ip_address
+        if user_agent:
+            extra_headers["User-Agent"] = user_agent
+        try:
+            return self._broker_client.laim_register(payload, extra_headers=extra_headers)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(f"No se pudo registrar usuario LAIM: {exc}") from exc
+
+    def laim_logout(self, session_token: str) -> dict[str, Any]:
+        """Cierra sesión LAIM."""
+        self._broker_client.set_security_context(session_token=session_token)
+        try:
+            return self._broker_client.laim_logout()
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(f"No se pudo cerrar sesión LAIM: {exc}") from exc
+
+    def laim_refresh_token(self, session_token: str) -> dict[str, Any]:
+        """Renueva tokens LAIM."""
+        self._broker_client.set_security_context(session_token=session_token)
+        try:
+            return self._broker_client.laim_refresh_token()
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(f"No se pudo renovar sesión LAIM: {exc}") from exc
+
+    def laim_session_permissions(self, identity_type_id: int) -> dict[str, Any]:
+        """Obtiene permisos LAIM para un rol."""
+        try:
+            return self._broker_client.laim_session_permissions(identity_type_id)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(f"No se pudieron obtener permisos LAIM: {exc}") from exc
+
+    def laim_status(self) -> dict[str, Any]:
+        """Estado del subsistema LAIM."""
+        try:
+            return self._broker_client.laim_status()
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(f"No se pudo consultar estado LAIM: {exc}") from exc

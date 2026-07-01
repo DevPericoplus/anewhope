@@ -12,7 +12,7 @@ from collections.abc import Iterator
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any, AsyncIterator
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status, Response
 from pydantic import BaseModel, Field
 from typing import Annotated
 
@@ -4526,3 +4526,121 @@ def create_job(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ============================================================================
+# LAIM AUTH
+# ============================================================================
+
+
+class LaimLoginRequest(BaseModel):
+    """Payload de login LAIM."""
+
+    username: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
+
+
+class LaimRegisterRequest(BaseModel):
+    """Payload de registro LAIM."""
+
+    username: str = Field(..., min_length=3)
+    password: str = Field(..., min_length=8)
+    password_confirm: str = Field(..., min_length=8)
+    email: str = Field(..., min_length=5)
+    full_name: str = Field(..., min_length=2)
+    mobile: str | None = None
+    hcaptcha_token: str = ""
+
+
+def _laim_forward_headers(request: Request) -> dict[str, str]:
+    """Propaga IP y user-agent hacia Backend Core."""
+    headers: dict[str, str] = {}
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    ip_address = forwarded.split(",")[0].strip() if forwarded else ""
+    if not ip_address and request.client:
+        ip_address = request.client.host
+    if ip_address:
+        headers["X-Forwarded-For"] = ip_address
+    user_agent = request.headers.get("User-Agent", "")
+    if user_agent:
+        headers["User-Agent"] = user_agent
+    return headers
+
+
+@app.post("/laim/login", tags=["laim-auth"])
+def laim_login(
+    request: Request,
+    payload: LaimLoginRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Autentica usuario LAIM."""
+    try:
+        return router.laim_login(payload.model_dump(), _laim_forward_headers(request))
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/laim/register", tags=["laim-auth"])
+def laim_register(
+    request: Request,
+    payload: LaimRegisterRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Registro público LAIM."""
+    try:
+        return router.laim_register(payload.model_dump(), _laim_forward_headers(request))
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/laim/logout", tags=["laim-auth"])
+def laim_logout(
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Cierra sesión LAIM."""
+    if not session_token:
+        raise HTTPException(status_code=400, detail="Token de sesión no proporcionado")
+    router.set_security_context(session_token=session_token)
+    try:
+        return router.laim_logout()
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/laim/refresh-token", tags=["laim-auth"])
+def laim_refresh_token(
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Renueva tokens LAIM."""
+    if not session_token:
+        raise HTTPException(status_code=400, detail="Token de sesión no proporcionado")
+    router.set_security_context(session_token=session_token)
+    try:
+        return router.laim_refresh_token()
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+@app.get("/laim/session/permissions", tags=["laim-auth"])
+def laim_session_permissions(
+    identity_type_id: int,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Obtiene permisos LAIM para un rol."""
+    try:
+        return router.laim_session_permissions(identity_type_id)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/laim/status", tags=["laim-auth"])
+def laim_status(
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Estado del subsistema LAIM."""
+    try:
+        return router.laim_status()
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc

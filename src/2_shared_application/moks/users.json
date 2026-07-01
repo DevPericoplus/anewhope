@@ -905,7 +905,23 @@
     "user_mobile": "600000001",
     "user_otp": "1234",
     "active": true,
-    "blocked": false
+    "blocked": false,
+    "contact_info": {
+      "first_name": "NULL",
+      "sur_name": "NULL",
+      "country": "NULL",
+      "state": "NULL",
+      "zip_code": "NULL",
+      "address": "NULL"
+    },
+    "billing_info": {
+      "first_name": "NULL",
+      "sur_name": "NULL",
+      "country": "NULL",
+      "state": "NULL",
+      "zip_code": "NULL",
+      "address": "NULL"
+    }
   },
   {
     "user_id": 62,
@@ -917,6 +933,22 @@
     "user_mobile": "600000002",
     "user_otp": "1234",
     "active": true,
-    "blocked": false
+    "blocked": false,
+    "contact_info": {
+      "first_name": "NULL",
+      "sur_name": "NULL",
+      "country": "NULL",
+      "state": "NULL",
+      "zip_code": "NULL",
+      "address": "NULL"
+    },
+    "billing_info": {
+      "first_name": "NULL",
+      "sur_name": "NULL",
+      "country": "NULL",
+      "state": "NULL",
+      "zip_code": "NULL",
+      "address": "NULL"
+    }
   }
 ]

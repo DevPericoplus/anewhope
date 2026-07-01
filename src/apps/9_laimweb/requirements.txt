@@ -5,6 +5,7 @@ requests==2.32.5
 httpx==0.28.1
 pyyaml==6.0.2
 PyJWT==2.11.0
+pytest==9.0.2
 
 # Redis para sesión compartida
 redis==5.2.1

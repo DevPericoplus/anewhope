@@ -2181,3 +2181,57 @@ class BrokerBackendRouter:
             return self._core_client.create_job(data)
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(f"Error creando job: {exc}") from exc
+
+    # ========================================================================
+    # LAIM AUTH
+    # ========================================================================
+
+    def laim_login(
+        self,
+        payload: dict[str, Any],
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Autentica usuario LAIM via Backend Core."""
+        try:
+            return self._core_client.laim_login(payload, extra_headers=extra_headers)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"Error en login LAIM: {exc}") from exc
+
+    def laim_register(
+        self,
+        payload: dict[str, Any],
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Registro público LAIM via Backend Core."""
+        try:
+            return self._core_client.laim_register(payload, extra_headers=extra_headers)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"Error en registro LAIM: {exc}") from exc
+
+    def laim_logout(self) -> dict[str, Any]:
+        """Cierra sesión LAIM."""
+        try:
+            return self._core_client.laim_logout()
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"Error en logout LAIM: {exc}") from exc
+
+    def laim_refresh_token(self) -> dict[str, Any]:
+        """Renueva tokens LAIM."""
+        try:
+            return self._core_client.laim_refresh_token()
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"Error renovando tokens LAIM: {exc}") from exc
+
+    def laim_session_permissions(self, identity_type_id: int) -> dict[str, Any]:
+        """Obtiene permisos LAIM."""
+        try:
+            return self._core_client.laim_session_permissions(identity_type_id)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"Error obteniendo permisos LAIM: {exc}") from exc
+
+    def laim_status(self) -> dict[str, Any]:
+        """Estado del subsistema LAIM."""
+        try:
+            return self._core_client.laim_status()
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"Error consultando estado LAIM: {exc}") from exc

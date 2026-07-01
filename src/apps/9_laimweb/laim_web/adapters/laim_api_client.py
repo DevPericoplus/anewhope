@@ -17,7 +17,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import time
+
 import httpx
+
+RENEWAL_THRESHOLD_SECONDS = 120
 
 # Cargar env_settings para obtener URL del middleware
 _env_settings_path = (
@@ -72,9 +76,16 @@ def _request_middleware(
             response.raise_for_status()
             return response.json()
     except httpx.HTTPStatusError as exc:
+        detail = exc.response.text
+        try:
+            body = exc.response.json()
+            if isinstance(body, dict):
+                detail = body.get("detail", body.get("error", detail))
+        except ValueError:
+            pass
         return {
             "success": False,
-            "error": f"HTTP {exc.response.status_code}: {exc.response.text}",
+            "error": str(detail),
         }
     except httpx.RequestError as exc:
         return {"success": False, "error": f"Error de conexión: {exc}"}
@@ -89,6 +100,105 @@ def laim_login(username: str, password: str) -> dict[str, Any]:
         "POST",
         "/laim/login",
         payload={"username": username, "password": password},
+    )
+
+
+def laim_register(
+    username: str,
+    password: str,
+    password_confirm: str,
+    email: str,
+    full_name: str,
+    mobile: str | None = None,
+    hcaptcha_token: str = "",
+) -> dict[str, Any]:
+    """Registro público de usuario LAIM."""
+    payload: dict[str, Any] = {
+        "username": username,
+        "password": password,
+        "password_confirm": password_confirm,
+        "email": email,
+        "full_name": full_name,
+        "hcaptcha_token": hcaptcha_token,
+    }
+    if mobile:
+        payload["mobile"] = mobile
+    return _request_middleware("POST", "/laim/register", payload=payload)
+
+
+def laim_logout(access_token: str, session_token: str) -> dict[str, Any]:
+    """Cierra sesión LAIM."""
+    return _request_middleware(
+        "POST",
+        "/laim/logout",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_refresh_token(session_token: str) -> dict[str, Any]:
+    """Renueva tokens LAIM."""
+    return _request_middleware(
+        "POST",
+        "/laim/refresh-token",
+        session_token=session_token,
+    )
+
+
+def _should_renew_token(expires_at: int) -> bool:
+    """Indica si un token debe renovarse antes de expirar."""
+    if expires_at <= 0:
+        return False
+    return time.time() > (expires_at - RENEWAL_THRESHOLD_SECONDS)
+
+
+def ensure_valid_tokens(
+    access_token: str,
+    session_token: str,
+    access_expires_at: int,
+    session_expires_at: int,
+) -> dict[str, Any]:
+    """Garantiza tokens válidos renovándolos si es necesario."""
+    result: dict[str, Any] = {
+        "renewed": False,
+        "access_token": access_token,
+        "session_token": session_token,
+        "access_expires_at": access_expires_at,
+        "session_expires_at": session_expires_at,
+        "error": "",
+    }
+
+    if not _should_renew_token(access_expires_at):
+        return result
+
+    if _should_renew_token(session_expires_at):
+        result["error"] = "La sesión ha expirado, por favor inicie sesión nuevamente"
+        return result
+
+    response = laim_refresh_token(session_token)
+    if response.get("success") and response.get("access_token"):
+        result["renewed"] = True
+        result["access_token"] = response["access_token"]
+        result["session_token"] = response.get("session_token", session_token)
+        result["access_expires_at"] = int(response.get("access_expires_at", 0))
+        result["session_expires_at"] = int(response.get("session_expires_at", 0))
+        return result
+
+    result["error"] = response.get("error", "No se pudieron renovar los tokens")
+    return result
+
+
+def laim_get_session_permissions(
+    identity_type_id: int,
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Obtiene permisos de bajo nivel para el rol."""
+    return _request_middleware(
+        "GET",
+        f"/laim/session/permissions?identity_type_id={identity_type_id}",
+        access_token=access_token,
+        session_token=session_token,
     )
 
 

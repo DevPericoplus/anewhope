@@ -155,6 +155,44 @@ def load_mariadb_settings() -> dict[str, Any]:
     }
 
 
+def load_laim_mariadb_settings() -> dict[str, Any]:
+    """Carga configuración de MariaDB para laim_core_db."""
+
+    env_settings = _load_env_settings_module("backend_core_laim_env_settings")
+    protected = env_settings.load_protected_settings()
+    if not protected:
+        raise StorageAdapterError(
+            "No se pudo cargar la configuración LAIM desde protected_values"
+        )
+
+    database = os.environ.get(
+        "LAIM_CORE_DATABASE",
+        env_settings.get_env_value("laim_core_database", "laim_core_db"),
+    )
+
+    return {
+        "host": os.environ.get("MARIADB_HOST", protected.get("mariadb_host", "")),
+        "port": int(
+            os.environ.get("MARIADB_PORT", protected.get("mariadb_port", 3306))
+        ),
+        "database": database,
+        "writer_user": os.environ.get(
+            "LAIM_WRITER_USER", protected.get("laim_writer_user", "")
+        ),
+        "writer_password": os.environ.get(
+            "LAIM_WRITER_PASSWORD", protected.get("laim_writer_password", "")
+        ),
+        "reader_user": os.environ.get(
+            "LAIM_READER_USER", protected.get("laim_reader_user", "")
+        ),
+        "reader_password": os.environ.get(
+            "LAIM_READER_PASSWORD", protected.get("laim_reader_password", "")
+        ),
+        "writer_dsn": os.environ.get(
+            "LAIM_WRITER_DSN", protected.get("laim_writer_dsn", "")
+        ),
+    }
+
 
 def _load_dto_module(module_name: str, filename: str) -> Any:
     """Carga un módulo de DTOs desde el paquete compartido."""

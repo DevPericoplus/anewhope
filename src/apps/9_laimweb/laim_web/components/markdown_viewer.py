@@ -55,12 +55,13 @@ CRT_MARKDOWN_COMPONENT_MAP = {
         border_radius="3px",
         font_size="0.9em",
     ),
-    "pre": lambda text, **props: rx.code_block(
+    "codeblock": lambda text, **props: rx.code_block(
         text,
-        **props,
         theme=rx.code_block.themes.a11y_dark,
         margin_y="1em",
         width="100%",
+        wrap_long_lines=True,
+        **props,
     ),
     "a": lambda text, **props: rx.link(
         text,

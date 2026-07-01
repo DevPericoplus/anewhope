@@ -40,7 +40,7 @@ LAIM es tu plataforma de gestión de inteligencia artificial local. Accede a tus
 
 - **Modelos de google** Posibilidad de configurar en los tiers modelos gemini.
 - **Modelos Mistral** Indicados para necesidades especificas en el ambito europeo.
-- **Modelo Kimi** Alternativa qualificada para necesidades exigentes.
+- **Modelo Kimi** Alternativa cualificada para necesidades exigentes.
 
 **Nota:** Algunos de estos modelos requiren servicios de suscripcion con terceros.
 

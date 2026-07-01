@@ -207,6 +207,25 @@ class LogoutResponse(BaseModel):
     success: bool
 
 
+class LaimLoginRequest(BaseModel):
+    """Payload de login LAIM."""
+
+    username: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
+
+
+class LaimRegisterRequest(BaseModel):
+    """Payload de registro LAIM."""
+
+    username: str = Field(..., min_length=3)
+    password: str = Field(..., min_length=8)
+    password_confirm: str = Field(..., min_length=8)
+    email: str = Field(..., min_length=5)
+    full_name: str = Field(..., min_length=2)
+    mobile: str | None = None
+    hcaptcha_token: str = ""
+
+
 class OrganizationCheckRequest(BaseModel):
     """Payload para validar existencia de organización."""
 
@@ -4965,4 +4984,138 @@ def create_job_endpoint(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al crear job",
+        ) from exc
+
+
+# ============================================================================
+# LAIM AUTH
+# ============================================================================
+
+
+@app.post("/laim/login")
+async def laim_login_endpoint(
+    request: LaimLoginRequest,
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+) -> dict[str, Any]:
+    """Autenticación LAIM (sin OTP)."""
+    ip_address, user_agent = _get_request_metadata(http_request)
+    try:
+        result = router.laim_login(
+            request.model_dump(),
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("error", "Credenciales inválidas"),
+            )
+        return result
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/laim/register")
+async def laim_register_endpoint(
+    request: LaimRegisterRequest,
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+) -> dict[str, Any]:
+    """Registro público LAIM."""
+    ip_address, user_agent = _get_request_metadata(http_request)
+    try:
+        result = router.laim_register(
+            request.model_dump(),
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("error", "Error en registro"),
+            )
+        return result
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/laim/logout")
+async def laim_logout_endpoint(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Cierra sesión LAIM."""
+    if not session_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token de sesión no proporcionado",
+        )
+    try:
+        return router.laim_logout(session_token)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/laim/refresh-token")
+async def laim_refresh_token_endpoint(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Renueva tokens LAIM."""
+    if not session_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token de sesión no proporcionado",
+        )
+    try:
+        result = router.laim_refresh_token(session_token)
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=result.get("error", "Sesión inválida"),
+            )
+        return result
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/laim/session/permissions")
+async def laim_session_permissions_endpoint(
+    identity_type_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+) -> dict[str, Any]:
+    """Permisos LAIM para un rol."""
+    try:
+        return router.laim_session_permissions(identity_type_id)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/laim/status")
+async def laim_status_endpoint(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+) -> dict[str, Any]:
+    """Estado del subsistema LAIM."""
+    try:
+        return router.laim_status()
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
         ) from exc

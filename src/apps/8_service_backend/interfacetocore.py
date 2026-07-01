@@ -1414,3 +1414,59 @@ class CoreBackendClient:
     def create_job(self, data: dict[str, Any]) -> dict[str, Any]:
         """Crea un nuevo job."""
         return dict(self._request("POST", "/jobs", payload=data) or {})
+
+    # === Autenticación LAIM ===
+
+    def laim_login(
+        self,
+        payload: dict[str, Any],
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Autentica usuario LAIM."""
+        return dict(
+            self._request(
+                "POST",
+                "/laim/login",
+                payload=payload,
+                extra_headers=extra_headers,
+            )
+            or {}
+        )
+
+    def laim_register(
+        self,
+        payload: dict[str, Any],
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Registro público LAIM."""
+        return dict(
+            self._request(
+                "POST",
+                "/laim/register",
+                payload=payload,
+                extra_headers=extra_headers,
+            )
+            or {}
+        )
+
+    def laim_logout(self) -> dict[str, Any]:
+        """Cierra sesión LAIM."""
+        return dict(self._request("POST", "/laim/logout") or {})
+
+    def laim_refresh_token(self) -> dict[str, Any]:
+        """Renueva tokens LAIM."""
+        return dict(self._request("POST", "/laim/refresh-token") or {})
+
+    def laim_session_permissions(self, identity_type_id: int) -> dict[str, Any]:
+        """Obtiene permisos de sesión LAIM."""
+        return dict(
+            self._request(
+                "GET",
+                f"/laim/session/permissions?identity_type_id={identity_type_id}",
+            )
+            or {}
+        )
+
+    def laim_status(self) -> dict[str, Any]:
+        """Estado del subsistema LAIM."""
+        return dict(self._request("GET", "/laim/status") or {})

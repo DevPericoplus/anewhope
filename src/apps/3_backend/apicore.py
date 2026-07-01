@@ -504,6 +504,15 @@ try:
 except Exception as e:
     logger.warning(f"⚠️ No se pudo registrar router de análisis: {e}")
 
+# Router de autenticación LAIM
+try:
+    _laim_auth_router_path = Path(__file__).resolve().parent / "router_laim_auth.py"
+    _laim_auth_module = _load_backend_module("router_laim_auth", _laim_auth_router_path)
+    app.include_router(_laim_auth_module.router)
+    logger.info("✅ Router de autenticación LAIM registrado")
+except Exception as e:
+    logger.warning(f"⚠️ No se pudo registrar router LAIM auth: {e}")
+
 
 @app.get("/users")
 def list_users(

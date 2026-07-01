@@ -96,8 +96,7 @@
     "organization_tlf": "",
     "organization_address": "",
     "organization_country": "",
-    "organization_state": "",
-    "active": true
+    "organization_state": ""
   },
   {
     "organization_id": 12,
@@ -106,7 +105,6 @@
     "organization_tlf": "",
     "organization_address": "",
     "organization_country": "",
-    "organization_state": "",
-    "active": true
+    "organization_state": ""
   }
 ]

@@ -2,7 +2,9 @@
 
 import reflex as rx
 
+from laim_web.components.auth_modals import auth_modals
 from laim_web.components.markdown_viewer import crt_markdown_viewer
+from laim_web.components.page_actions import page_action_panel
 from laim_web.laim_state import LaimWebState
 
 
@@ -27,22 +29,73 @@ FONT_SIZE_SMALL = "0.85em"
 CONTENT_PADDING = "1.5em"
 
 MENU_ITEMS_LOGGED_OUT = ["inicio", "servicios", "documentacion", "contacto"]
-MENU_ITEMS_LOGGED_IN = ["dashboard", "modelos", "datasets", "entrenamiento", "configuracion"]
+
+MENU_LABELS: dict[str, str] = {
+    "inicio": "Inicio",
+    "servicios": "Servicios",
+    "documentacion": "Documentación",
+    "contacto": "Contacto",
+    "instaladores": "Instaladores",
+    "manuales": "Manuales",
+    "modelos_base": "Modelos base",
+    "modelos_especializados": "Modelos especializados",
+    "modelos_personalizados": "Modelos personalizados",
+    "skills": "Skills",
+    "complementos": "Complementos",
+    "soporte": "Soporte",
+    "faq": "FAQ",
+}
+
+LOGGED_IN_MENU_ITEMS = [
+    "instaladores",
+    "manuales",
+    "modelos_base",
+    "modelos_especializados",
+    "modelos_personalizados",
+    "skills",
+    "complementos",
+    "soporte",
+    "faq",
+]
 
 
 def logo() -> rx.Component:
     """Logo LAIM con estilo CRT."""
     return rx.hstack(
-        rx.text("LAIM", font_weight="bold", font_size="1.6em", color=COLORS["title"],
-                letter_spacing="0.08em"),
+        rx.text(
+            "LAIM",
+            font_weight="bold",
+            font_size="1.6em",
+            color=COLORS["title"],
+            letter_spacing="0.08em",
+        ),
         rx.text(".app", font_size="1.2em", color=COLORS["muted"]),
         spacing="1",
         align_items="baseline",
     )
 
 
+def header_auth_actions() -> rx.Component:
+    """Acciones de autenticación en la cabecera (usuario no conectado)."""
+    return rx.hstack(
+        rx.button(
+            "Iniciar sesión",
+            on_click=LaimWebState.open_login_modal,
+            class_name="crt-btn crt-btn-inline",
+        ),
+        rx.button(
+            "Crear cuenta",
+            on_click=LaimWebState.open_register_modal,
+            class_name="crt-btn crt-btn-inline",
+        ),
+        spacing="2",
+        align_items="center",
+        class_name="crt-header-actions",
+    )
+
+
 def header() -> rx.Component:
-    """Panel superior — logo, nombre de usuario y botón desconectar."""
+    """Panel superior — logo, usuario y acciones de sesión."""
     return rx.hstack(
         logo(),
         rx.box(flex_grow="1"),
@@ -57,18 +110,14 @@ def header() -> rx.Component:
                 rx.button(
                     "Desconectar",
                     on_click=LaimWebState.handle_logout,
-                    class_name="crt-btn crt-btn-danger",
+                    class_name="crt-btn crt-btn-danger crt-btn-inline",
                     width="auto",
                     padding_x="1em",
                 ),
                 spacing="3",
                 align_items="center",
             ),
-            rx.text(
-                "Local Artificial Intelligence Management",
-                color=COLORS["muted"],
-                font_size=FONT_SIZE_BODY,
-            ),
+            header_auth_actions(),
         ),
         width="100%",
         padding="0.75em 1.5em",
@@ -79,38 +128,31 @@ def header() -> rx.Component:
     )
 
 
-def login_panel() -> rx.Component:
-    """Panel de autenticación en el sidebar."""
+def auth_cta_panel() -> rx.Component:
+    """Acceso compacto en sidebar — abre modales de autenticación."""
     return rx.vstack(
-        rx.text("Autenticación", class_name="crt-title", font_size="1em"),
-        rx.input(
-            placeholder="Usuario",
-            value=LaimWebState.login_username,
-            on_change=LaimWebState.set_login_username,
-            class_name="crt-input",
-            width="100%",
-        ),
-        rx.input(
-            placeholder="Contraseña",
-            type="password",
-            value=LaimWebState.login_password,
-            on_change=LaimWebState.set_login_password,
-            class_name="crt-input",
-            width="100%",
-        ),
-        rx.cond(
-            LaimWebState.error_message != "",
-            rx.text(LaimWebState.error_message, class_name="crt-error", font_size=FONT_SIZE_SMALL),
+        rx.text("Acceso al portal", class_name="crt-title", font_size="1em"),
+        rx.text(
+            "Inicie sesión o cree una cuenta para acceder al panel de gestión de IA local.",
+            class_name="crt-muted",
+            font_size=FONT_SIZE_SMALL,
+            line_height="1.45",
         ),
         rx.button(
-            "Conectar",
-            on_click=LaimWebState.handle_login,
+            "Iniciar sesión",
+            on_click=LaimWebState.open_login_modal,
             class_name="crt-btn",
             width="100%",
-            disabled=LaimWebState.loading,
+        ),
+        rx.button(
+            "Crear cuenta",
+            on_click=LaimWebState.open_register_modal,
+            class_name="crt-btn",
+            width="100%",
         ),
         spacing="2",
         width="100%",
+        class_name="crt-auth-sidebar-cta",
     )
 
 
@@ -119,59 +161,62 @@ def user_info_panel() -> rx.Component:
     return rx.vstack(
         rx.text("Sesión activa", class_name="crt-title", font_size="1em"),
         rx.text(LaimWebState.user_name, color=COLORS["text"], font_size=FONT_SIZE_BODY),
-        rx.text(
-            rx.cond(
-                LaimWebState.organization_id > 0,
-                f"Org: {LaimWebState.organization_id}",
-                "",
-            ),
-            color=COLORS["muted"],
-            font_size=FONT_SIZE_SMALL,
-        ),
         spacing="1",
         width="100%",
     )
 
 
-def sidebar_menu() -> rx.Component:
-    """Menú de navegación lateral."""
-    menu_items = rx.cond(
-        LaimWebState.is_logged_in,
-        MENU_ITEMS_LOGGED_IN,
-        MENU_ITEMS_LOGGED_OUT,
+def _menu_label(item: str) -> str:
+    """Etiqueta legible para una clave de menú."""
+    return MENU_LABELS.get(item, item.replace("_", " ").title())
+
+
+def _sidebar_menu_item(item: str) -> rx.Component:
+    """Entrada del menú lateral con etiqueta en español."""
+    return rx.box(
+        rx.text(_menu_label(item), font_size="0.9em"),
+        on_click=LaimWebState.set_menu(item),
+        background=rx.cond(
+            LaimWebState.active_menu == item,
+            "rgba(0, 180, 0, 0.3)",
+            "transparent",
+        ),
+        border_left=rx.cond(
+            LaimWebState.active_menu == item,
+            f"3px solid {COLORS['accent']}",
+            "3px solid transparent",
+        ),
+        color=rx.cond(
+            LaimWebState.active_menu == item,
+            COLORS["title"],
+            COLORS["text"],
+        ),
+        width="100%",
+        padding="0.55em 0.75em",
+        cursor="pointer",
+        _hover={"background": "rgba(0, 80, 0, 0.35)"},
     )
 
+
+def sidebar_menu() -> rx.Component:
+    """Menú de navegación lateral."""
     return rx.vstack(
         rx.text("Menú", class_name="crt-title", font_size="1em", margin_top="0.5em"),
-        rx.vstack(
-            rx.foreach(
-                menu_items,
-                lambda item: rx.box(
-                    rx.text(item.upper(), font_size="0.9em"),
-                    on_click=LaimWebState.set_menu(item),
-                    background=rx.cond(
-                        LaimWebState.active_menu == item,
-                        "rgba(0, 180, 0, 0.3)",
-                        "transparent",
-                    ),
-                    border_left=rx.cond(
-                        LaimWebState.active_menu == item,
-                        f"3px solid {COLORS['accent']}",
-                        "3px solid transparent",
-                    ),
-                    color=rx.cond(
-                        LaimWebState.active_menu == item,
-                        COLORS["title"],
-                        COLORS["text"],
-                    ),
-                    width="100%",
-                    padding="0.55em 0.75em",
-                    cursor="pointer",
-                    _hover={"background": "rgba(0, 80, 0, 0.35)"},
-                ),
+        rx.cond(
+            LaimWebState.is_logged_in,
+            rx.vstack(
+                *[_sidebar_menu_item(item) for item in LOGGED_IN_MENU_ITEMS],
+                spacing="1",
+                width="100%",
             ),
-            spacing="1",
-            width="100%",
+            rx.vstack(
+                rx.foreach(
+                    MENU_ITEMS_LOGGED_OUT,
+                    lambda item: _sidebar_menu_item(item),
+                ),
+                spacing="1",
+                width="100%",
+            ),
         ),
         spacing="1",
         width="100%",
@@ -179,12 +224,12 @@ def sidebar_menu() -> rx.Component:
 
 
 def sidebar() -> rx.Component:
-    """Sidebar izquierda: autenticación + menú."""
+    """Sidebar izquierda: acceso + menú de navegación."""
     return rx.vstack(
         rx.cond(
             LaimWebState.is_logged_in,
             user_info_panel(),
-            login_panel(),
+            auth_cta_panel(),
         ),
         rx.divider(color=COLORS["border"], margin_y="0.75em"),
         sidebar_menu(),
@@ -197,62 +242,32 @@ def sidebar() -> rx.Component:
 
 
 def content_static_page() -> rx.Component:
-    """Contenido cargado desde static_pages/*.md."""
-    return crt_markdown_viewer(LaimWebState.static_page_content)
-
-
-def content_dashboard() -> rx.Component:
-    """Panel de control tras login."""
+    """Contenido cargado desde static_pages/*.md (panel derecho)."""
     return rx.vstack(
-        rx.text("Dashboard", class_name="crt-title", font_size=FONT_SIZE_TITLE),
-        rx.text(
-            "Sesión activa — Usuario: ",
-            color=COLORS["text"],
-            font_size="1em",
+        crt_markdown_viewer(LaimWebState.static_page_content),
+        rx.match(
+            LaimWebState.active_menu,
+            ("instaladores", page_action_panel("instaladores")),
+            ("manuales", page_action_panel("manuales")),
+            ("modelos_base", page_action_panel("modelos_base")),
+            ("modelos_especializados", page_action_panel("modelos_especializados")),
+            ("modelos_personalizados", page_action_panel("modelos_personalizados")),
+            ("skills", page_action_panel("skills")),
+            ("complementos", page_action_panel("complementos")),
+            ("soporte", page_action_panel("soporte")),
+            ("faq", page_action_panel("faq")),
+            rx.fragment(),
         ),
-        rx.text(LaimWebState.user_name, color=COLORS["title"], font_size="1em"),
-        rx.divider(color=COLORS["border"], margin_y="1em"),
-        rx.text(
-            "Aquí se mostrará el resumen de actividad, modelos activos y estado del sistema.",
-            color=COLORS["muted"],
-            font_size=FONT_SIZE_BODY,
-        ),
-        spacing="3",
-        padding=CONTENT_PADDING,
-    )
-
-
-def content_placeholder(title: str) -> rx.Component:
-    """Contenido genérico para secciones pendientes de implementar."""
-    return rx.vstack(
-        rx.text(title, class_name="crt-title", font_size=FONT_SIZE_TITLE),
-        rx.divider(color=COLORS["border"], margin_y="1em"),
-        rx.text(
-            "Esta sección se encuentra en desarrollo.",
-            color=COLORS["muted"],
-            font_size=FONT_SIZE_BODY,
-        ),
-        spacing="3",
-        padding=CONTENT_PADDING,
+        spacing="0",
+        width="100%",
+        align_items="stretch",
     )
 
 
 def main_content() -> rx.Component:
     """Panel de contenido principal — renderiza según menú activo."""
     return rx.box(
-        rx.match(
-            LaimWebState.active_menu,
-            ("inicio", content_static_page()),
-            ("dashboard", content_dashboard()),
-            ("servicios", content_static_page()),
-            ("documentacion", content_static_page()),
-            ("contacto", content_static_page()),
-            ("modelos", content_placeholder("Gestión de Modelos")),
-            ("datasets", content_placeholder("Gestión de Datasets")),
-            ("entrenamiento", content_placeholder("Entrenamiento")),
-            ("configuracion", content_placeholder("Configuración")),
-            content_static_page(),
-        ),
+        content_static_page(),
         width="100%",
         height="100%",
         overflow_y="auto",
@@ -279,36 +294,38 @@ def footer() -> rx.Component:
 
 
 def index_page() -> rx.Component:
-    """Layout principal: header + (sidebar | contenido) + footer."""
-    return rx.vstack(
-        header(),
-        rx.hstack(
-            # Sidebar izquierda (25%)
-            rx.box(
-                sidebar(),
-                width="25%",
-                min_width="220px",
-                max_width="320px",
-                background=COLORS["panel_bg"],
-                border_right=f"1px solid {COLORS['border']}",
-                height="100%",
-            ),
-            # Contenido principal (75%)
-            rx.box(
-                main_content(),
+    """Layout principal: header + (sidebar | contenido) + footer + modales."""
+    return rx.box(
+        rx.vstack(
+            header(),
+            rx.hstack(
+                rx.box(
+                    sidebar(),
+                    width="25%",
+                    min_width="220px",
+                    max_width="320px",
+                    background=COLORS["panel_bg"],
+                    border_right=f"1px solid {COLORS['border']}",
+                    height="100%",
+                ),
+                rx.box(
+                    main_content(),
+                    flex="1",
+                    min_width="0",
+                    height="100%",
+                ),
+                width="100%",
+                spacing="0",
                 flex="1",
-                min_width="0",
-                height="100%",
+                align_items="stretch",
+                overflow="hidden",
             ),
+            footer(),
             width="100%",
+            min_height="100vh",
             spacing="0",
-            flex="1",
-            align_items="stretch",
-            overflow="hidden",
         ),
-        footer(),
+        auth_modals(),
+        class_name="crt-shell",
         width="100%",
-        min_height="100vh",
-        spacing="0",
-        background="black",
     )

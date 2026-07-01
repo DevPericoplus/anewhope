@@ -165,6 +165,62 @@ body::after {
   box-sizing: border-box;
 }
 
+.crt-modal-panel--auth {
+  width: calc(100vw - 2rem);
+  max-width: 440px;
+  box-sizing: border-box;
+}
+
+.crt-modal-header {
+  width: 100%;
+  align-items: center;
+}
+
+.crt-modal-header .crt-title {
+  margin-bottom: 0;
+}
+
+.crt-modal-close {
+  min-width: 2rem;
+  margin-bottom: 0;
+  text-align: center;
+  padding: 0.25rem 0.45rem;
+}
+
+.crt-auth-sidebar-cta {
+  padding: 0.25rem 0;
+}
+
+.crt-header-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.crt-header-actions .crt-btn-inline {
+  min-width: 7.5rem;
+}
+
+.crt-success {
+  color: #9dff9d;
+  text-shadow: 0 0 6px rgba(120, 255, 120, 0.45);
+}
+
+.crt-btn-link {
+  width: auto;
+  margin-bottom: 0;
+  padding: 0.15rem 0.35rem;
+  border: none;
+  background: transparent;
+  color: #7dff7d;
+  text-decoration: underline;
+  box-shadow: none;
+}
+
+.crt-btn-link:hover {
+  background: rgba(0, 60, 0, 0.45);
+  box-shadow: none;
+}
+
 .crt-perf-chart-wrap {
   width: 100%;
   min-height: 320px;
