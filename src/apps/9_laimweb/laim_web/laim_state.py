@@ -21,6 +21,29 @@ RESET_LAIM_HCAPTCHA_SCRIPT = (
     "if (typeof window.resetLaimHcaptcha === 'function') { window.resetLaimHcaptcha(); }"
 )
 
+SCHEDULE_LAIM_HCAPTCHA_RENDER_SCRIPT = """
+(function() {
+  var attempts = 0;
+  function tryRender() {
+    if (typeof window.renderLaimHcaptchaWidget === 'function') {
+      window.renderLaimHcaptchaWidget();
+    }
+    if (++attempts < 20) {
+      setTimeout(tryRender, 200);
+    }
+  }
+  tryRender();
+})();
+"""
+
+READ_LAIM_HCAPTCHA_TOKEN_SCRIPT = """
+(function() {
+  var input = document.getElementById('laim-hcaptcha-token-input');
+  var token = window.__LAIM_HCAPTCHA_TOKEN__ || (input && input.value) || '';
+  return String(token).trim();
+})();
+"""
+
 
 class LaimWebState(LaimSharedSessionState):
     """Estado de LAIM Web con autenticación y UI."""
@@ -108,7 +131,7 @@ class LaimWebState(LaimSharedSessionState):
             return LaimWebState.complete_register_background
 
         return rx.call_script(
-            "return window.__LAIM_HCAPTCHA_TOKEN__ || ''",
+            READ_LAIM_HCAPTCHA_TOKEN_SCRIPT,
             callback=LaimWebState.set_reg_hcaptcha_token,
         )
 
@@ -231,7 +254,7 @@ class LaimWebState(LaimSharedSessionState):
         self.error_message = ""
         self.register_message = ""
         self.reg_hcaptcha_token = ""
-        return rx.call_script(RESET_LAIM_HCAPTCHA_SCRIPT)
+        return rx.call_script(SCHEDULE_LAIM_HCAPTCHA_RENDER_SCRIPT)
 
     @event
     def close_register_modal(self) -> EventHandlerReturn:
@@ -249,7 +272,7 @@ class LaimWebState(LaimSharedSessionState):
         self.error_message = ""
         self.register_message = ""
         self.reg_hcaptcha_token = ""
-        return rx.call_script(RESET_LAIM_HCAPTCHA_SCRIPT)
+        return rx.call_script(SCHEDULE_LAIM_HCAPTCHA_RENDER_SCRIPT)
 
     @event
     def switch_to_login_modal(self) -> None:
