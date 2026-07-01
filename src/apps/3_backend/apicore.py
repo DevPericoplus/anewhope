@@ -2949,6 +2949,7 @@ def fmanagement_list(
 @app.post(
     "/fmanagement/operation",
     tags=["fmanagement"],
+    response_model=None,
 )
 def fmanagement_operation(
     request: FmanagementOperationRequest,
