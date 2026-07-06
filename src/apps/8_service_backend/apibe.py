@@ -4694,3 +4694,64 @@ def laim_create_contact_message(
         return result
     except BrokerBusinessError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ============================================================================
+# LAIM FORUM (proxy transparente hacia Backend Core)
+# ============================================================================
+
+
+def _laim_forum_proxy_response(proxy_result: dict[str, Any]) -> Any:
+    """Convierte respuesta del proxy en Response HTTP de FastAPI."""
+    status_code = int(proxy_result.get("status_code", 502))
+    if proxy_result.get("is_binary"):
+        return Response(
+            content=proxy_result.get("body", b""),
+            media_type=proxy_result.get("content_type", "application/octet-stream"),
+            status_code=status_code,
+        )
+    body = proxy_result.get("body")
+    if status_code >= 400:
+        detail: Any = body
+        if isinstance(body, dict):
+            detail = body.get("detail", body)
+        raise HTTPException(status_code=status_code, detail=detail)
+    return body if body is not None else {}
+
+
+@app.api_route(
+    "/laim/forum/{forum_path:path}",
+    methods=["GET", "POST", "PATCH", "DELETE"],
+    tags=["laim-forum"],
+)
+async def laim_forum_proxy_endpoint(
+    forum_path: str,
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> Any:
+    """Proxy transparente del foro LAIM hacia Backend Core."""
+    router.set_security_context(
+        authorization=authorization,
+        session_token=session_token,
+    )
+    payload: dict[str, Any] | None = None
+    if request.method in {"POST", "PATCH", "DELETE"}:
+        try:
+            raw = await request.json()
+            payload = raw if isinstance(raw, dict) else {}
+        except Exception:
+            payload = {}
+
+    try:
+        result = router.laim_forum_request(
+            method=request.method,
+            path=f"/laim/forum/{forum_path}",
+            payload=payload,
+            query_string=request.url.query,
+            extra_headers=_laim_forward_headers(request),
+        )
+        return _laim_forum_proxy_response(result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc

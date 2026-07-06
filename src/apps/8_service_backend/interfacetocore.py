@@ -1490,3 +1490,54 @@ class CoreBackendClient:
             )
             or {}
         )
+
+    def laim_forum_request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        query_string: str = "",
+        extra_headers: dict[str, str] | None = None,
+        timeout: float = 90.0,
+    ) -> dict[str, Any]:
+        """Proxy transparente hacia endpoints /laim/forum/* del Backend Core."""
+        normalized_path = path if path.startswith("/") else f"/{path}"
+        url = f"{self._base_url}{normalized_path}"
+        if query_string:
+            url = f"{url}?{query_string.lstrip('?')}"
+        headers = self._build_headers(extra_headers)
+
+        try:
+            response = self._client.request(
+                method.upper(),
+                url,
+                json=payload,
+                headers=headers,
+                timeout=timeout,
+            )
+        except httpx.RequestError as exc:
+            raise CoreBackendCommunicationError(
+                "No se pudo contactar con el backend core (foro LAIM)"
+            ) from exc
+
+        content_type = response.headers.get("content-type", "application/json")
+        result: dict[str, Any] = {
+            "status_code": response.status_code,
+            "content_type": content_type,
+            "is_binary": False,
+        }
+        if not response.content:
+            result["body"] = None
+            return result
+
+        if content_type.startswith("image/"):
+            result["is_binary"] = True
+            result["body"] = response.content
+            return result
+
+        try:
+            result["body"] = response.json()
+        except json.JSONDecodeError:
+            result["is_binary"] = True
+            result["body"] = response.content
+        return result

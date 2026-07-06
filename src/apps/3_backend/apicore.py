@@ -525,6 +525,17 @@ try:
 except Exception as e:
     logger.warning(f"⚠️ No se pudo registrar router LAIM contact: {e}")
 
+# Router de foro LAIM
+try:
+    _laim_forum_router_path = Path(__file__).resolve().parent / "router_laim_forum.py"
+    _laim_forum_module = _load_backend_module(
+        "router_laim_forum", _laim_forum_router_path
+    )
+    app.include_router(_laim_forum_module.router)
+    logger.info("✅ Router de foro LAIM registrado")
+except Exception as e:
+    logger.warning(f"⚠️ No se pudo registrar router LAIM forum: {e}")
+
 
 @app.get("/users")
 def list_users(

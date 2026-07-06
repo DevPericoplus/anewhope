@@ -2251,3 +2251,25 @@ class BrokerBackendRouter:
             raise BrokerBusinessError(
                 f"Error registrando mensaje de contacto LAIM: {exc}"
             ) from exc
+
+    def laim_forum_request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        query_string: str = "",
+        extra_headers: dict[str, str] | None = None,
+        timeout: float = 90.0,
+    ) -> dict[str, Any]:
+        """Proxy transparente del foro LAIM hacia Backend Core."""
+        try:
+            return self._core_client.laim_forum_request(
+                method=method,
+                path=path,
+                payload=payload,
+                query_string=query_string,
+                extra_headers=extra_headers,
+                timeout=timeout,
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(f"Error en foro LAIM: {exc}") from exc

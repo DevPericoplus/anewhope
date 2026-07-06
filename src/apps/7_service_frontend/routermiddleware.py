@@ -5522,3 +5522,37 @@ class RouterMiddleware:
             raise BusinessRuleError(
                 f"No se pudo registrar el mensaje de contacto: {exc}"
             ) from exc
+
+    def laim_forum_request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        query_string: str = "",
+        authorization: str = "",
+        session_token: str = "",
+        ip_address: str = "",
+        user_agent: str = "",
+        timeout: float = 90.0,
+    ) -> dict[str, Any]:
+        """Proxy transparente del foro LAIM via broker → backend core."""
+        extra_headers: dict[str, str] = {}
+        if ip_address:
+            extra_headers["X-Forwarded-For"] = ip_address
+        if user_agent:
+            extra_headers["User-Agent"] = user_agent
+        self._broker_client.set_security_context(
+            authorization=authorization or None,
+            session_token=session_token or None,
+        )
+        try:
+            return self._broker_client.laim_forum_request(
+                method=method,
+                path=path,
+                payload=payload,
+                query_string=query_string,
+                extra_headers=extra_headers or None,
+                timeout=timeout,
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(f"No se pudo procesar petición del foro: {exc}") from exc
