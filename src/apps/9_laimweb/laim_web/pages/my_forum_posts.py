@@ -1,0 +1,11 @@
+"""Página mis respuestas del foro."""
+
+from __future__ import annotations
+
+from laim_web.components.forum_ui import forum_my_posts_table
+from laim_web.components.portal_shell import portal_page
+
+
+def my_forum_posts_page():
+    """Listado de respuestas publicadas por el usuario."""
+    return portal_page(forum_my_posts_table(), title="Mis respuestas — Foro LAIM")

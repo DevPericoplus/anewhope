@@ -12,6 +12,7 @@ gestionado internamente por el backend core.
 
 from __future__ import annotations
 
+import base64
 import time
 from pathlib import Path
 from typing import Any
@@ -85,6 +86,400 @@ def _request_middleware(
         }
     except httpx.RequestError as exc:
         return {"success": False, "error": f"Error de conexión: {exc}"}
+
+
+def _forum_headers(access_token: str, session_token: str) -> dict[str, str]:
+    """Headers comunes para peticiones al foro LAIM."""
+    headers: dict[str, str] = {
+        "Content-Type": "application/json",
+        "X-Client-App": "laimweb",
+    }
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if session_token:
+        headers["X-Session-Token"] = session_token
+    return headers
+
+
+def _request_forum(
+    method: str,
+    endpoint: str,
+    *,
+    access_token: str = "",
+    session_token: str = "",
+    payload: dict[str, Any] | None = None,
+    timeout: float = 30.0,
+) -> dict[str, Any]:
+    """Petición JSON al subsistema foro vía middleware."""
+    base_url = _get_middleware_base_url()
+    url = f"{base_url}{endpoint}"
+    headers = _forum_headers(access_token, session_token)
+
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            response = client.request(
+                method=method,
+                url=url,
+                json=payload,
+                headers=headers,
+            )
+            response.raise_for_status()
+            if not response.content:
+                return {"success": True}
+            data = response.json()
+            if isinstance(data, dict):
+                return data
+            return {"success": True, "data": data}
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text
+        try:
+            body = exc.response.json()
+            if isinstance(body, dict):
+                detail = body.get("detail", body.get("error", detail))
+        except ValueError:
+            pass
+        return {"success": False, "error": str(detail)}
+    except httpx.RequestError as exc:
+        return {"success": False, "error": f"Error de conexión: {exc}"}
+
+
+def laim_forum_get_image_data_url(
+    image_id: int,
+    access_token: str,
+    session_token: str,
+) -> str:
+    """Obtiene imagen del foro como data URL (para mostrar en UI autenticada)."""
+    base_url = _get_middleware_base_url()
+    url = f"{base_url}/laim/forum/images/{image_id}"
+    headers = _forum_headers(access_token, session_token)
+    headers.pop("Content-Type", None)
+
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.get(url, headers=headers)
+            response.raise_for_status()
+            mime = response.headers.get("content-type", "image/png")
+            encoded = base64.b64encode(response.content).decode("ascii")
+            return f"data:{mime};base64,{encoded}"
+    except (httpx.HTTPError, ValueError):
+        return ""
+
+
+def laim_forum_health() -> dict[str, Any]:
+    """Estado público del subsistema foro."""
+    return _request_forum("GET", "/laim/forum/health")
+
+
+def laim_forum_list_categories(
+    access_token: str, session_token: str
+) -> dict[str, Any]:
+    """Lista categorías del foro."""
+    return _request_forum(
+        "GET",
+        "/laim/forum/categories",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_list_subcategories(
+    access_token: str,
+    session_token: str,
+    category_id: str | None = None,
+) -> dict[str, Any]:
+    """Lista subcategorías, opcionalmente filtradas por categoría."""
+    endpoint = "/laim/forum/subcategories"
+    if category_id:
+        endpoint = f"{endpoint}?category_id={category_id}"
+    return _request_forum(
+        "GET",
+        endpoint,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_list_prefixes(
+    access_token: str, session_token: str
+) -> dict[str, Any]:
+    """Lista prefijos de hilo."""
+    return _request_forum(
+        "GET",
+        "/laim/forum/prefixes",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_list_threads(
+    subcategory_id: str,
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Lista hilos de una subcategoría."""
+    return _request_forum(
+        "GET",
+        f"/laim/forum/subcategories/{subcategory_id}/threads",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_get_thread(
+    thread_id: int,
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Detalle de un hilo."""
+    return _request_forum(
+        "GET",
+        f"/laim/forum/threads/{thread_id}",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_create_thread(
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Crea un hilo."""
+    return _request_forum(
+        "POST",
+        "/laim/forum/threads",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_update_thread(
+    thread_id: int,
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Actualiza un hilo."""
+    return _request_forum(
+        "PATCH",
+        f"/laim/forum/threads/{thread_id}",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_delete_thread(
+    thread_id: int,
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Elimina un hilo."""
+    return _request_forum(
+        "DELETE",
+        f"/laim/forum/threads/{thread_id}",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_list_posts(
+    thread_id: int,
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Lista respuestas de un hilo."""
+    return _request_forum(
+        "GET",
+        f"/laim/forum/threads/{thread_id}/posts",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_create_post(
+    thread_id: int,
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Crea respuesta en un hilo."""
+    return _request_forum(
+        "POST",
+        f"/laim/forum/threads/{thread_id}/posts",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_rate_post(
+    post_id: int,
+    valoracion: int,
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Valora una respuesta (1-5)."""
+    return _request_forum(
+        "POST",
+        f"/laim/forum/posts/{post_id}/rating",
+        payload={"valoracion": valoracion},
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_my_threads(
+    access_token: str, session_token: str
+) -> dict[str, Any]:
+    """Hilos del usuario autenticado."""
+    return _request_forum(
+        "GET",
+        "/laim/forum/me/threads",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_my_posts(
+    access_token: str, session_token: str
+) -> dict[str, Any]:
+    """Respuestas del usuario autenticado."""
+    return _request_forum(
+        "GET",
+        "/laim/forum/me/posts",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_upload_image(
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Sube imagen (adjunto o avatar)."""
+    return _request_forum(
+        "POST",
+        "/laim/forum/images/upload",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+        timeout=90.0,
+    )
+
+
+def laim_forum_pending_notifications(
+    access_token: str, session_token: str
+) -> dict[str, Any]:
+    """Notificaciones pendientes del foro."""
+    return _request_forum(
+        "GET",
+        "/laim/forum/notifications/pending",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_ack_notifications(
+    notification_ids: list[int],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Confirma entrega de notificaciones."""
+    return _request_forum(
+        "POST",
+        "/laim/forum/notifications/ack",
+        payload={"notification_ids": notification_ids},
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_admin_settings(
+    access_token: str, session_token: str
+) -> dict[str, Any]:
+    """Configuración de moderación (admin)."""
+    return _request_forum(
+        "GET",
+        "/laim/forum/admin/settings",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_admin_update_settings(
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Actualiza configuración de moderación (admin)."""
+    return _request_forum(
+        "PATCH",
+        "/laim/forum/admin/settings",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_upsert_category(
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Crea o actualiza categoría (admin)."""
+    return _request_forum(
+        "PUT",
+        "/laim/forum/categories",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_delete_category(
+    category_id: str,
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Elimina categoría (admin)."""
+    return _request_forum(
+        "DELETE",
+        f"/laim/forum/categories/{category_id}",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_upsert_subcategory(
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Crea o actualiza subcategoría (admin)."""
+    return _request_forum(
+        "PUT",
+        "/laim/forum/subcategories",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_delete_subcategory(
+    subcategory_id: str,
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Elimina subcategoría (admin)."""
+    return _request_forum(
+        "DELETE",
+        f"/laim/forum/subcategories/{subcategory_id}",
+        access_token=access_token,
+        session_token=session_token,
+    )
 
 
 def laim_login(username: str, password: str) -> dict[str, Any]:

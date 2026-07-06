@@ -13,6 +13,7 @@ from typing import Any
 import reflex as rx
 from reflex.event import event
 
+from laim_web.laim_forum_mixin import LaimForumMixin
 from laim_web.shared_state import LaimSharedSessionState
 
 EventHandlerReturn = Any
@@ -45,7 +46,7 @@ READ_LAIM_HCAPTCHA_TOKEN_SCRIPT = """
 """
 
 
-class LaimWebState(LaimSharedSessionState):
+class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     """Estado de LAIM Web con autenticación y UI."""
 
     @rx.var

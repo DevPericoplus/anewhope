@@ -6,6 +6,7 @@ from laim_web.components.auth_modals import auth_modals
 from laim_web.components.contact_form import contact_form_panel
 from laim_web.components.markdown_viewer import crt_markdown_viewer
 from laim_web.components.page_actions import page_action_panel
+from laim_web.components.portal_shell import forum_nav_section
 from laim_web.laim_state import LaimWebState
 
 
@@ -277,6 +278,7 @@ def sidebar() -> rx.Component:
         ),
         rx.divider(color=COLORS["border"], margin_y="0.75em"),
         sidebar_menu(),
+        forum_nav_section(),
         sidebar_config_menu(),
         spacing="2",
         padding="1em",
