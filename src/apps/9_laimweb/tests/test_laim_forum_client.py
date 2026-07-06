@@ -79,3 +79,59 @@ def test_forum_get_image_data_url(monkeypatch: pytest.MonkeyPatch) -> None:
     data_url = client.laim_forum_get_image_data_url(7, "tok", "sess")
 
     assert data_url.startswith("data:image/png;base64,")
+
+
+def test_forum_get_poll_interval_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Lee intervalo de polling desde env.yaml."""
+    monkeypatch.setattr(
+        client._env_settings,
+        "get_env_value",
+        lambda key, default=None: "5" if key == "laim_forum_poll_interval_seconds" else default,
+    )
+    assert client.laim_forum_get_poll_interval_seconds() == 5
+
+
+def test_forum_get_profile_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Consulta perfil de foro."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {
+        "success": True,
+        "profile": {"forum_display_name": "Usuario"},
+    }
+
+    mock_client = MagicMock()
+    mock_client.request.return_value = mock_response
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+
+    monkeypatch.setattr(client.httpx, "Client", lambda **_: mock_client)
+
+    result = client.laim_forum_get_profile("tok", "sess")
+
+    assert result["profile"]["forum_display_name"] == "Usuario"
+    assert "/laim/forum/profile" in mock_client.request.call_args.kwargs["url"]
+
+
+def test_forum_create_ban_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Crea baneo con payload correcto."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"success": True, "ban_id": 9}
+
+    mock_client = MagicMock()
+    mock_client.request.return_value = mock_response
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+
+    monkeypatch.setattr(client.httpx, "Client", lambda **_: mock_client)
+
+    payload = {
+        "user_id": 42,
+        "subcategory_id": "general",
+        "motivo": "Spam",
+    }
+    result = client.laim_forum_create_ban(payload, "tok", "sess")
+
+    assert result["ban_id"] == 9
+    assert mock_client.request.call_args.kwargs["json"] == payload

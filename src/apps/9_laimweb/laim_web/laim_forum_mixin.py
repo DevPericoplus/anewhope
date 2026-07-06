@@ -106,6 +106,7 @@ class LaimForumMixin:
 
     # Polling
     _forum_poll_running: bool = False
+    forum_poll_enabled: bool = False
 
     # Vista previa de imagen
     forum_preview_image_url: str = ""
@@ -153,10 +154,38 @@ class LaimForumMixin:
         """True si el usuario puede ver acciones de moderación (admin LAIM)."""
         return bool(getattr(self, "is_laim_admin", False))
 
-    _FORUM_ATTACHMENT_SCRIPT = """
+    @rx.var
+    def forum_ban_user_id_text(self) -> str:
+        """Texto del campo ID de usuario para baneo."""
+        return str(self.forum_ban_user_id) if self.forum_ban_user_id > 0 else ""
+
+    @rx.var
+    def forum_admin_mod_user_id_text(self) -> str:
+        """Texto del campo ID de moderador."""
+        return str(self.forum_admin_mod_user_id) if self.forum_admin_mod_user_id > 0 else ""
+
+    @rx.var
+    def forum_admin_avatar_image_id_text(self) -> str:
+        """Texto del campo image ID para catálogo de avatares."""
+        return (
+            str(self.forum_admin_avatar_image_id)
+            if self.forum_admin_avatar_image_id > 0
+            else ""
+        )
+
+    @rx.var
+    def forum_has_prefixes(self) -> bool:
+        """True si hay prefijos disponibles para nuevos hilos."""
+        return len(self.forum_prefixes) > 0
+
+    @rx.var
+    def forum_thread_has_attachments(self) -> bool:
+        """True si el hilo activo tiene adjuntos."""
+        return len(self.forum_thread_image_ids) > 0
+
+    _FORUM_THREAD_ATTACHMENT_SCRIPT = """
 (() => {
-  const inputId = window.__forum_attachment_input_id || 'forum_thread_file_input';
-  const input = document.getElementById(inputId);
+  const input = document.getElementById('forum_thread_file_input');
   if (!input || !input.files || input.files.length === 0) {
     return { attachment: null };
   }
@@ -173,7 +202,36 @@ class LaimForumMixin:
           file_name: file.name,
           mime_type: file.type || 'application/octet-stream',
           data_base64: base64,
-          target: inputId.indexOf('reply') >= 0 ? 'reply' : 'thread',
+          target: 'thread',
+        },
+      });
+    };
+    reader.onerror = () => resolve({ attachment: null });
+    reader.readAsDataURL(file);
+  });
+})()
+"""
+
+    _FORUM_REPLY_ATTACHMENT_SCRIPT = """
+(() => {
+  const input = document.getElementById('forum_reply_file_input');
+  if (!input || !input.files || input.files.length === 0) {
+    return { attachment: null };
+  }
+  const file = input.files[0];
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result || '';
+      const base64 = typeof result === 'string' && result.includes(',')
+        ? result.split(',')[1]
+        : '';
+      resolve({
+        attachment: {
+          file_name: file.name,
+          mime_type: file.type || 'application/octet-stream',
+          data_base64: base64,
+          target: 'reply',
         },
       });
     };
@@ -223,23 +281,19 @@ class LaimForumMixin:
         if not self.is_logged_in:
             return rx.redirect("/")
         self.forum_error = ""
+        self.forum_poll_enabled = True
         self.forum_load_catalog()
         self.forum_poll_notifications()
         if self.forum_active_thread_id > 0:
             self.forum_open_thread(self.forum_active_thread_id)
         from laim_web.laim_state import LaimWebState
 
-        handlers: list[Any] = []
         if self.is_logged_in and self.session_token and not self._token_renewal_running:
             self._token_renewal_running = True
-            handlers.append(LaimWebState.auto_renew_tokens_loop)
-        if not self._forum_poll_running:
+            return LaimWebState.auto_renew_tokens_loop
+        if self.is_logged_in and not self._forum_poll_running:
             self._forum_poll_running = True
-            handlers.append(LaimWebState.forum_poll_loop)
-        if len(handlers) == 1:
-            return handlers[0]
-        if len(handlers) == 2:
-            return handlers[0]
+            return LaimWebState.forum_poll_loop
         return None
 
     @event
@@ -266,6 +320,7 @@ class LaimForumMixin:
         if not self.is_laim_admin:
             return rx.redirect("/foro")
         self.forum_load_admin_panel()
+        self.forum_load_admin_extended()
         return None
 
     def forum_poll_notifications(self) -> None:
@@ -289,6 +344,19 @@ class LaimForumMixin:
             ids = [int(i["id"]) for i in items if i.get("id")]
             if ids:
                 laim_forum_ack_notifications(ids, access, session)
+
+    def forum_poll_tick(self) -> None:
+        """Actualiza notificaciones y hilo activo (llamado desde polling)."""
+        self.forum_poll_notifications()
+        if self.forum_active_thread_id > 0:
+            from laim_web.adapters.laim_api_client import laim_forum_list_posts
+
+            access, session = self._forum_auth_tokens()
+            posts_result = laim_forum_list_posts(
+                self.forum_active_thread_id, access, session
+            )
+            if posts_result.get("success"):
+                self.forum_posts = posts_result.get("items", [])
 
     def forum_load_catalog(self) -> None:
         """Carga categorías, subcategorías y prefijos."""
@@ -699,5 +767,664 @@ class LaimForumMixin:
         )
 
     @event
+    def forum_admin_set_prefix_id(self, value: str) -> None:
+        self.forum_admin_prefix_id = value
+
+    @event
+    def forum_admin_set_prefix_text(self, value: str) -> None:
+        self.forum_admin_prefix_text = value
+
+    @event
+    def forum_admin_set_prefix_color(self, value: str) -> None:
+        self.forum_admin_prefix_color = value
+
+    @event
+    def forum_admin_set_announce_ban(self, value: bool) -> None:
+        self.forum_admin_settings_announce_ban = value
+
+    @event
+    def forum_admin_set_ban_template(self, value: str) -> None:
+        self.forum_admin_settings_ban_template = value
+
+    @event
+    def forum_admin_set_delete_template(self, value: str) -> None:
+        self.forum_admin_settings_delete_template = value
+
+    @event
+    def forum_admin_set_word_palabra(self, value: str) -> None:
+        self.forum_admin_word_palabra = value
+
+    @event
+    def forum_admin_set_word_accion(self, value: str) -> None:
+        self.forum_admin_word_accion = value
+
+    @event
+    def forum_admin_set_word_mensaje(self, value: str) -> None:
+        self.forum_admin_word_mensaje = value
+
+    @event
+    def forum_admin_set_url_dominio(self, value: str) -> None:
+        self.forum_admin_url_dominio = value
+
+    @event
+    def forum_admin_set_url_descripcion(self, value: str) -> None:
+        self.forum_admin_url_descripcion = value
+
+    @event
+    def forum_admin_set_mod_user_id(self, value: str) -> None:
+        try:
+            self.forum_admin_mod_user_id = int(value.strip())
+        except ValueError:
+            self.forum_admin_mod_user_id = 0
+
+    @event
+    def forum_admin_set_mod_user_name(self, value: str) -> None:
+        self.forum_admin_mod_user_name = value
+
+    @event
+    def forum_admin_set_mod_subcategory_id(self, value: str) -> None:
+        self.forum_admin_mod_subcategory_id = value
+
+    @event
+    def forum_admin_set_avatar_image_id(self, value: str) -> None:
+        try:
+            self.forum_admin_avatar_image_id = int(value.strip())
+        except ValueError:
+            self.forum_admin_avatar_image_id = 0
+
+    @event
+    def forum_admin_set_avatar_label(self, value: str) -> None:
+        self.forum_admin_avatar_label = value
+
+    @event
     def forum_close_image_preview(self) -> None:
         self.forum_preview_image_url = ""
+
+    @rx.event(background=True)
+    async def forum_poll_loop(self) -> None:
+        """Polling periódico de notificaciones y respuestas del hilo activo."""
+        import asyncio
+
+        from laim_web.adapters.laim_api_client import laim_forum_get_poll_interval_seconds
+
+        interval = laim_forum_get_poll_interval_seconds()
+        while True:
+            async with self:
+                if not self.is_logged_in:
+                    self._forum_poll_running = False
+                    break
+                self.forum_poll_tick()
+            await asyncio.sleep(interval)
+
+    @event
+    def forum_request_thread_attachment(self) -> EventHandlerReturn:
+        """Lee adjunto del formulario de nuevo hilo."""
+        from laim_web.laim_state import LaimWebState
+
+        return rx.call_script(
+            self._FORUM_THREAD_ATTACHMENT_SCRIPT,
+            callback=LaimWebState.forum_process_attachment_upload,
+        )
+
+    @event
+    def forum_request_reply_attachment(self) -> EventHandlerReturn:
+        """Lee adjunto del formulario de respuesta."""
+        from laim_web.laim_state import LaimWebState
+
+        return rx.call_script(
+            self._FORUM_REPLY_ATTACHMENT_SCRIPT,
+            callback=LaimWebState.forum_process_attachment_upload,
+        )
+
+    @event
+    def forum_process_attachment_upload(
+        self, payload: dict[str, object] | None
+    ) -> None:
+        """Sube adjunto y lo añade a la lista pendiente."""
+        from laim_web.adapters.laim_api_client import laim_forum_upload_image
+
+        if not isinstance(payload, dict):
+            return
+        raw = payload.get("attachment")
+        if not isinstance(raw, dict):
+            self._forum_set_error("No se seleccionó ningún archivo.")
+            return
+
+        file_name = str(raw.get("file_name", "")).strip()
+        mime_type = str(raw.get("mime_type", "")).strip()
+        data_base64 = str(raw.get("data_base64", "")).strip()
+        target = str(raw.get("target", "thread"))
+        if not file_name or not mime_type or not data_base64:
+            self._forum_set_error("Archivo adjunto no válido.")
+            return
+
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_upload_image(
+            {
+                "file_name": file_name,
+                "mime_type": mime_type,
+                "data_base64": data_base64,
+                "image_kind": "post_attachment",
+            },
+            access,
+            session,
+        )
+        if not result.get("success"):
+            self._forum_set_error(result.get("error", "No se pudo subir el adjunto."))
+            return
+
+        image = result.get("image", {})
+        image_id = int(image.get("id", 0))
+        if image_id <= 0:
+            self._forum_set_error("Respuesta de imagen inválida.")
+            return
+
+        if target == "reply":
+            if image_id not in self.forum_reply_image_ids:
+                self.forum_reply_image_ids = [*self.forum_reply_image_ids, image_id]
+        else:
+            if image_id not in self.forum_new_thread_image_ids:
+                self.forum_new_thread_image_ids = [
+                    *self.forum_new_thread_image_ids,
+                    image_id,
+                ]
+        self.forum_error = ""
+
+    @event
+    def forum_moderate_pin(self) -> None:
+        """Fija o desfija el hilo activo."""
+        from laim_web.adapters.laim_api_client import laim_forum_update_thread
+
+        if self.forum_active_thread_id <= 0:
+            return
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_update_thread(
+            self.forum_active_thread_id,
+            {"fijado": not self.forum_thread_pinned},
+            access,
+            session,
+        )
+        if result.get("success"):
+            self.forum_open_thread(self.forum_active_thread_id)
+        else:
+            self._forum_set_error(result.get("error", "No se pudo fijar el hilo."))
+
+    @event
+    def forum_moderate_close(self) -> None:
+        """Cierra o abre el hilo activo."""
+        from laim_web.adapters.laim_api_client import laim_forum_update_thread
+
+        if self.forum_active_thread_id <= 0:
+            return
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_update_thread(
+            self.forum_active_thread_id,
+            {"cerrado": not self.forum_thread_closed},
+            access,
+            session,
+        )
+        if result.get("success"):
+            self.forum_open_thread(self.forum_active_thread_id)
+        else:
+            self._forum_set_error(result.get("error", "No se pudo cambiar el estado."))
+
+    @event
+    def forum_moderate_delete_thread(self) -> None:
+        """Elimina el hilo activo."""
+        from laim_web.adapters.laim_api_client import laim_forum_delete_thread
+
+        if self.forum_active_thread_id <= 0:
+            return
+        thread_id = self.forum_active_thread_id
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_delete_thread(thread_id, access, session)
+        if result.get("success"):
+            self.forum_close_thread()
+            self.forum_load_threads()
+            self.forum_error = ""
+        else:
+            self._forum_set_error(result.get("error", "No se pudo eliminar el hilo."))
+
+    @event
+    def forum_profile_on_load(self) -> EventHandlerReturn:
+        """Carga página de perfil de foro."""
+        if not self.is_logged_in:
+            return rx.redirect("/")
+        self.forum_load_profile()
+        return None
+
+    def forum_load_profile(self) -> None:
+        """Carga perfil y catálogo de avatares."""
+        from laim_web.adapters.laim_api_client import (
+            laim_forum_get_profile,
+            laim_forum_list_avatar_catalog,
+        )
+
+        access, session = self._forum_auth_tokens()
+        profile_result = laim_forum_get_profile(access, session)
+        if profile_result.get("success"):
+            profile = profile_result.get("profile", {})
+            self.forum_profile_display_name = str(
+                profile.get("forum_display_name") or profile.get("user_name") or ""
+            )
+            self.forum_profile_signature = str(profile.get("signature_md") or "")
+            self.forum_profile_avatar_id = int(profile.get("avatar_image_id") or 0)
+            self.forum_profile_notify_mentions = bool(
+                profile.get("notify_mentions", True)
+            )
+            self.forum_profile_notify_replies = bool(
+                profile.get("notify_replies", True)
+            )
+        else:
+            self._forum_set_error(profile_result.get("error", "Error al cargar perfil"))
+
+        catalog = laim_forum_list_avatar_catalog(access, session)
+        if catalog.get("success"):
+            self.forum_avatar_catalog = catalog.get("items", [])
+
+    @event
+    def forum_set_profile_display_name(self, value: str) -> None:
+        self.forum_profile_display_name = value
+
+    @event
+    def forum_set_profile_signature(self, value: str) -> None:
+        self.forum_profile_signature = value
+
+    @event
+    def forum_set_profile_notify_mentions(self, value: bool) -> None:
+        self.forum_profile_notify_mentions = value
+
+    @event
+    def forum_set_profile_notify_replies(self, value: bool) -> None:
+        self.forum_profile_notify_replies = value
+
+    @event
+    def forum_select_catalog_avatar(self, image_id: int) -> None:
+        self.forum_profile_avatar_id = image_id
+
+    @event
+    def forum_save_profile(self) -> None:
+        """Guarda perfil de foro."""
+        from laim_web.adapters.laim_api_client import laim_forum_update_profile
+
+        access, session = self._forum_auth_tokens()
+        payload: dict[str, Any] = {
+            "forum_display_name": self.forum_profile_display_name.strip() or None,
+            "signature_md": self.forum_profile_signature.strip() or None,
+            "notify_mentions": self.forum_profile_notify_mentions,
+            "notify_replies": self.forum_profile_notify_replies,
+        }
+        if self.forum_profile_avatar_id > 0:
+            payload["avatar_image_id"] = self.forum_profile_avatar_id
+
+        result = laim_forum_update_profile(payload, access, session)
+        if result.get("success"):
+            self.forum_profile_message = "Perfil guardado."
+            self.forum_error = ""
+        else:
+            self.forum_profile_message = ""
+            self._forum_set_error(result.get("error", "No se pudo guardar el perfil."))
+
+    @event
+    def forum_request_avatar_upload(self) -> EventHandlerReturn:
+        """Sube avatar personal."""
+        from laim_web.laim_state import LaimWebState
+
+        return rx.call_script(
+            self._FORUM_AVATAR_SCRIPT,
+            callback=LaimWebState.forum_process_avatar_upload,
+        )
+
+    @event
+    def forum_process_avatar_upload(self, payload: dict[str, object] | None) -> None:
+        """Procesa subida de avatar personal."""
+        from laim_web.adapters.laim_api_client import (
+            laim_forum_update_profile,
+            laim_forum_upload_image,
+        )
+
+        if not isinstance(payload, dict):
+            return
+        raw = payload.get("avatar")
+        if not isinstance(raw, dict):
+            self._forum_set_error("No se seleccionó imagen de avatar.")
+            return
+
+        access, session = self._forum_auth_tokens()
+        upload = laim_forum_upload_image(
+            {
+                "file_name": str(raw.get("file_name", "")),
+                "mime_type": str(raw.get("mime_type", "")),
+                "data_base64": str(raw.get("data_base64", "")),
+                "image_kind": "avatar_user",
+            },
+            access,
+            session,
+        )
+        if not upload.get("success"):
+            self._forum_set_error(upload.get("error", "No se pudo subir el avatar."))
+            return
+
+        image_id = int(upload.get("image", {}).get("id", 0))
+        if image_id <= 0:
+            return
+
+        self.forum_profile_avatar_id = image_id
+        update = laim_forum_update_profile(
+            {"avatar_image_id": image_id}, access, session
+        )
+        if update.get("success"):
+            self.forum_profile_message = "Avatar actualizado."
+            self.forum_error = ""
+        else:
+            self._forum_set_error(update.get("error", "No se pudo asignar el avatar."))
+
+    @event
+    def forum_mod_on_load(self) -> EventHandlerReturn:
+        """Carga panel de moderación."""
+        if not self.is_logged_in:
+            return rx.redirect("/")
+        if not self.forum_show_moderation:
+            return rx.redirect("/foro")
+        if not self.forum_selected_subcategory_id:
+            self.forum_load_catalog()
+        self.forum_load_moderation_data()
+        return None
+
+    def forum_load_moderation_data(self) -> None:
+        """Carga logs de la subcategoría activa."""
+        from laim_web.adapters.laim_api_client import laim_forum_moderation_logs
+
+        if not self.forum_selected_subcategory_id:
+            self.forum_mod_logs = []
+            return
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_moderation_logs(
+            self.forum_selected_subcategory_id, access, session
+        )
+        if result.get("success"):
+            self.forum_mod_logs = result.get("items", [])
+        else:
+            self._forum_set_error(result.get("error", "No se pudieron cargar logs."))
+
+    @event
+    def forum_refresh_moderation(self) -> None:
+        """Recarga datos del panel de moderación."""
+        self.forum_load_moderation_data()
+
+    @event
+    def forum_set_ban_user_id(self, value: str) -> None:
+        try:
+            self.forum_ban_user_id = int(value.strip())
+        except ValueError:
+            self.forum_ban_user_id = 0
+
+    @event
+    def forum_set_ban_motivo(self, value: str) -> None:
+        self.forum_ban_motivo = value
+
+    @event
+    def forum_set_ban_expires(self, value: str) -> None:
+        self.forum_ban_expires_at = value
+
+    @event
+    def forum_submit_ban(self) -> None:
+        """Banea usuario en subcategoría activa."""
+        from laim_web.adapters.laim_api_client import laim_forum_create_ban
+
+        if not self.forum_selected_subcategory_id:
+            self.forum_mod_message = "Seleccione subcategoría en el foro."
+            return
+        if self.forum_ban_user_id <= 0 or not self.forum_ban_motivo.strip():
+            self.forum_mod_message = "Indique usuario y motivo."
+            return
+
+        access, session = self._forum_auth_tokens()
+        payload: dict[str, Any] = {
+            "user_id": self.forum_ban_user_id,
+            "subcategory_id": self.forum_selected_subcategory_id,
+            "motivo": self.forum_ban_motivo.strip(),
+        }
+        if self.forum_ban_expires_at.strip():
+            payload["expires_at"] = self.forum_ban_expires_at.strip()
+
+        result = laim_forum_create_ban(payload, access, session)
+        if result.get("success"):
+            self.forum_mod_message = "Usuario baneado."
+            self.forum_ban_motivo = ""
+            self.forum_load_moderation_data()
+        else:
+            self.forum_mod_message = result.get("error", "No se pudo banear.")
+
+    @event
+    def forum_revoke_ban(self, ban_id: int) -> None:
+        """Revoca un baneo."""
+        from laim_web.adapters.laim_api_client import laim_forum_revoke_ban
+
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_revoke_ban(ban_id, access, session)
+        if result.get("success"):
+            self.forum_mod_message = "Baneo revocado."
+            self.forum_load_moderation_data()
+        else:
+            self.forum_mod_message = result.get("error", "No se pudo revocar.")
+
+    @event
+    def forum_admin_set_tab(self, tab: str) -> None:
+        self.forum_admin_tab = tab
+        if tab in ("word-rules", "allowed-urls", "moderators", "settings"):
+            self.forum_load_admin_extended()
+
+    def forum_load_admin_extended(self) -> None:
+        """Carga datos de pestañas admin extendidas."""
+        from laim_web.adapters.laim_api_client import (
+            laim_forum_admin_allowed_urls,
+            laim_forum_admin_moderators,
+            laim_forum_admin_settings,
+            laim_forum_admin_word_rules,
+            laim_forum_list_avatar_catalog,
+        )
+
+        access, session = self._forum_auth_tokens()
+        settings = laim_forum_admin_settings(access, session)
+        if settings.get("success"):
+            import json
+
+            cfg = settings.get("settings", settings)
+            self.forum_admin_settings_json = json.dumps(
+                cfg, ensure_ascii=False, indent=2
+            )
+            if isinstance(cfg, dict):
+                self.forum_admin_settings_announce_ban = bool(
+                    cfg.get("anunciar_ban_en_log", True)
+                )
+                self.forum_admin_settings_ban_template = str(
+                    cfg.get("plantilla_ban") or ""
+                )
+                self.forum_admin_settings_delete_template = str(
+                    cfg.get("plantilla_eliminacion") or ""
+                )
+
+        words = laim_forum_admin_word_rules(access, session)
+        if words.get("success"):
+            self.forum_word_rules = words.get("items", [])
+
+        urls = laim_forum_admin_allowed_urls(access, session)
+        if urls.get("success"):
+            self.forum_allowed_urls = urls.get("items", [])
+
+        mods = laim_forum_admin_moderators(
+            access, session, self.forum_selected_subcategory_id or None
+        )
+        if mods.get("success"):
+            self.forum_moderators = mods.get("items", [])
+
+        avatars = laim_forum_list_avatar_catalog(access, session)
+        if avatars.get("success"):
+            self.forum_avatar_catalog = avatars.get("items", [])
+
+    @event
+    def forum_admin_save_settings(self) -> None:
+        """Guarda ajustes de moderación."""
+        from laim_web.adapters.laim_api_client import laim_forum_admin_update_settings
+
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_admin_update_settings(
+            {
+                "anunciar_ban_en_log": self.forum_admin_settings_announce_ban,
+                "plantilla_ban": self.forum_admin_settings_ban_template,
+                "plantilla_eliminacion": self.forum_admin_settings_delete_template,
+            },
+            access,
+            session,
+        )
+        self.forum_admin_message = (
+            "Ajustes guardados." if result.get("success") else result.get("error", "Error")
+        )
+
+    @event
+    def forum_admin_save_prefix(self) -> None:
+        """Guarda prefijo de hilo."""
+        from laim_web.adapters.laim_api_client import laim_forum_upsert_prefix
+
+        if not self.forum_admin_prefix_id.strip() or not self.forum_admin_prefix_text.strip():
+            self.forum_admin_message = "ID y texto del prefijo son obligatorios."
+            return
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_upsert_prefix(
+            {
+                "id": self.forum_admin_prefix_id.strip(),
+                "texto": self.forum_admin_prefix_text.strip(),
+                "color_scheme": self.forum_admin_prefix_color.strip() or "green",
+                "activo": True,
+            },
+            access,
+            session,
+        )
+        self.forum_admin_message = (
+            "Prefijo guardado." if result.get("success") else result.get("error", "Error")
+        )
+        if result.get("success"):
+            self.forum_load_catalog()
+
+    @event
+    def forum_admin_save_word_rule(self) -> None:
+        """Crea regla de palabra."""
+        from laim_web.adapters.laim_api_client import laim_forum_admin_create_word_rule
+
+        if not self.forum_admin_word_palabra.strip():
+            self.forum_admin_message = "Indique la palabra."
+            return
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_admin_create_word_rule(
+            {
+                "palabra": self.forum_admin_word_palabra.strip(),
+                "accion": self.forum_admin_word_accion.strip() or "warn",
+                "mensaje": self.forum_admin_word_mensaje.strip(),
+                "activo": True,
+            },
+            access,
+            session,
+        )
+        self.forum_admin_message = (
+            "Regla creada." if result.get("success") else result.get("error", "Error")
+        )
+        if result.get("success"):
+            self.forum_load_admin_extended()
+
+    @event
+    def forum_admin_delete_word_rule(self, rule_id: int) -> None:
+        from laim_web.adapters.laim_api_client import laim_forum_admin_delete_word_rule
+
+        access, session = self._forum_auth_tokens()
+        laim_forum_admin_delete_word_rule(rule_id, access, session)
+        self.forum_load_admin_extended()
+
+    @event
+    def forum_admin_save_allowed_url(self) -> None:
+        from laim_web.adapters.laim_api_client import laim_forum_admin_create_allowed_url
+
+        if not self.forum_admin_url_dominio.strip():
+            self.forum_admin_message = "Indique el dominio."
+            return
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_admin_create_allowed_url(
+            {
+                "dominio": self.forum_admin_url_dominio.strip(),
+                "descripcion": self.forum_admin_url_descripcion.strip(),
+                "activo": True,
+            },
+            access,
+            session,
+        )
+        self.forum_admin_message = (
+            "Dominio añadido." if result.get("success") else result.get("error", "Error")
+        )
+        if result.get("success"):
+            self.forum_load_admin_extended()
+
+    @event
+    def forum_admin_delete_allowed_url(self, url_id: int) -> None:
+        from laim_web.adapters.laim_api_client import laim_forum_admin_delete_allowed_url
+
+        access, session = self._forum_auth_tokens()
+        laim_forum_admin_delete_allowed_url(url_id, access, session)
+        self.forum_load_admin_extended()
+
+    @event
+    def forum_admin_assign_moderator(self) -> None:
+        from laim_web.adapters.laim_api_client import laim_forum_admin_assign_moderator
+
+        if self.forum_admin_mod_user_id <= 0 or not self.forum_admin_mod_subcategory_id.strip():
+            self.forum_admin_message = "Usuario y subcategoría obligatorios."
+            return
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_admin_assign_moderator(
+            {
+                "user_id": self.forum_admin_mod_user_id,
+                "user_name": self.forum_admin_mod_user_name.strip() or f"user_{self.forum_admin_mod_user_id}",
+                "subcategory_id": self.forum_admin_mod_subcategory_id.strip(),
+            },
+            access,
+            session,
+        )
+        self.forum_admin_message = (
+            "Moderador asignado." if result.get("success") else result.get("error", "Error")
+        )
+        if result.get("success"):
+            self.forum_load_admin_extended()
+
+    @event
+    def forum_admin_deactivate_moderator(self, moderator_id: int) -> None:
+        from laim_web.adapters.laim_api_client import laim_forum_admin_deactivate_moderator
+
+        access, session = self._forum_auth_tokens()
+        laim_forum_admin_deactivate_moderator(moderator_id, access, session)
+        self.forum_load_admin_extended()
+
+    @event
+    def forum_admin_add_catalog_avatar(self) -> None:
+        """Registra imagen de catálogo ya subida."""
+        from laim_web.adapters.laim_api_client import laim_forum_add_avatar_catalog
+
+        if self.forum_admin_avatar_image_id <= 0 or not self.forum_admin_avatar_label.strip():
+            self.forum_admin_message = "Image ID y etiqueta obligatorios."
+            return
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_add_avatar_catalog(
+            {
+                "image_id": self.forum_admin_avatar_image_id,
+                "label": self.forum_admin_avatar_label.strip(),
+                "is_default": False,
+                "sort_order": 0,
+            },
+            access,
+            session,
+        )
+        self.forum_admin_message = (
+            "Avatar de catálogo añadido."
+            if result.get("success")
+            else result.get("error", "Error")
+        )
+        if result.get("success"):
+            self.forum_load_admin_extended()

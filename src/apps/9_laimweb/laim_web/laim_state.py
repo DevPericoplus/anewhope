@@ -770,10 +770,17 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
 
     @rx.event(background=True)
     async def auto_renew_tokens_loop(self) -> None:
-        """Renueva tokens en background cada 2 minutos."""
+        """Renueva tokens y hace polling del foro cuando corresponde."""
+        from laim_web.adapters.laim_api_client import laim_forum_get_poll_interval_seconds
+
         while True:
             async with self:
                 if not self._run_token_renewal_iteration():
                     break
+                if getattr(self, "forum_poll_enabled", False):
+                    self.forum_poll_tick()
 
-            await asyncio.sleep(120)
+            if getattr(self, "forum_poll_enabled", False):
+                await asyncio.sleep(laim_forum_get_poll_interval_seconds())
+            else:
+                await asyncio.sleep(120)

@@ -15,6 +15,7 @@ from laim_web.laim_state import LaimWebState
 
 FORUM_NAV = [
     ("/foro", "Foro"),
+    ("/foro-perfil", "Mi perfil"),
     ("/mis-hilos-foro", "Mis hilos"),
     ("/mis-respuestas-foro", "Mis respuestas"),
 ]
@@ -114,7 +115,10 @@ def forum_nav_section() -> rx.Component:
             *[_forum_nav_link(href, label) for href, label in FORUM_NAV],
             rx.cond(
                 LaimWebState.is_laim_admin,
-                _forum_nav_link("/config-foro", "Config. foro"),
+                rx.fragment(
+                    _forum_nav_link("/config-foro", "Config. foro"),
+                    _forum_nav_link("/foro-moderacion", "Moderación"),
+                ),
                 rx.fragment(),
             ),
             spacing="1",

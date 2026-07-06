@@ -5,6 +5,8 @@ import reflex as rx
 from laim_web.laim_state import LaimWebState
 from laim_web.pages.forum import forum_page
 from laim_web.pages.forum_admin import forum_admin_page
+from laim_web.pages.forum_moderation import forum_moderation_page
+from laim_web.pages.forum_profile import forum_profile_page
 from laim_web.pages.index import index_page
 from laim_web.pages.my_forum_posts import my_forum_posts_page
 from laim_web.pages.my_forum_threads import my_forum_threads_page
@@ -49,4 +51,18 @@ app.add_page(
     route="/config-foro",
     title="Config. foro — LAIM",
     on_load=LaimWebState.forum_admin_on_load,
+)
+
+app.add_page(
+    forum_profile_page,
+    route="/foro-perfil",
+    title="Perfil foro — LAIM",
+    on_load=LaimWebState.forum_profile_on_load,
+)
+
+app.add_page(
+    forum_moderation_page,
+    route="/foro-moderacion",
+    title="Moderación foro — LAIM",
+    on_load=LaimWebState.forum_mod_on_load,
 )
