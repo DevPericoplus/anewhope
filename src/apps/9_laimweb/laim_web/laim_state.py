@@ -48,6 +48,15 @@ READ_LAIM_HCAPTCHA_TOKEN_SCRIPT = """
 class LaimWebState(LaimSharedSessionState):
     """Estado de LAIM Web con autenticación y UI."""
 
+    @rx.var
+    def is_laim_admin(self) -> bool:
+        """True si el usuario tiene rol administrador (SuperAdmin o Admin org)."""
+        if not self.is_logged_in or self.identity_type_id <= 0:
+            return False
+        from laim_web.static_pages_loader import LAIM_ADMIN_IDENTITY_TYPE_IDS
+
+        return self.identity_type_id in LAIM_ADMIN_IDENTITY_TYPE_IDS
+
     # UI / Navegación
     loading: bool = False
     error_message: str = ""
@@ -294,11 +303,19 @@ class LaimWebState(LaimSharedSessionState):
         from laim_web.static_pages_loader import (
             AUTHENTICATED_PAGE_MENUS,
             PUBLIC_MENU_FILES,
+            can_access_admin_config_menu,
+            is_admin_config_menu,
         )
 
         if self.is_logged_in:
-            if self.active_menu not in AUTHENTICATED_PAGE_MENUS:
-                self.active_menu = "instaladores"
+            if is_admin_config_menu(self.active_menu):
+                if not can_access_admin_config_menu(
+                    self.active_menu, self.identity_type_id
+                ):
+                    self.active_menu = "instaladores"
+            elif self.active_menu not in AUTHENTICATED_PAGE_MENUS:
+                if self.active_menu not in PUBLIC_MENU_FILES:
+                    self.active_menu = "instaladores"
         elif self.active_menu not in PUBLIC_MENU_FILES:
             self.active_menu = "inicio"
 
@@ -321,6 +338,11 @@ class LaimWebState(LaimSharedSessionState):
 
     @event
     def set_menu(self, item: str) -> None:
+        from laim_web.static_pages_loader import can_access_admin_config_menu
+
+        if not can_access_admin_config_menu(item, self.identity_type_id):
+            return
+
         self.active_menu = item
         self._load_static_page(item)
         if item == "contacto":

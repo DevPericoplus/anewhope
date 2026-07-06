@@ -45,6 +45,14 @@ MENU_LABELS: dict[str, str] = {
     "complementos": "Complementos",
     "soporte": "Soporte",
     "faq": "FAQ",
+    "config_general": "General",
+    "config_usuarios": "Usuarios",
+    "config_modelos_ia": "Modelos IA",
+    "config_fases_tiers": "Fases y tiers",
+    "config_sesiones": "Sesiones",
+    "config_share": "Share / Connect",
+    "config_agentes": "Agentes",
+    "config_auditoria": "Auditoría",
 }
 
 LOGGED_IN_MENU_ITEMS = [
@@ -57,6 +65,17 @@ LOGGED_IN_MENU_ITEMS = [
     "complementos",
     "soporte",
     "faq",
+]
+
+ADMIN_CONFIG_MENU_ITEMS = [
+    "config_general",
+    "config_usuarios",
+    "config_modelos_ia",
+    "config_fases_tiers",
+    "config_sesiones",
+    "config_share",
+    "config_agentes",
+    "config_auditoria",
 ]
 
 
@@ -224,6 +243,30 @@ def sidebar_menu() -> rx.Component:
     )
 
 
+def sidebar_config_menu() -> rx.Component:
+    """Menú de configuración del portal (solo administradores)."""
+    return rx.cond(
+        LaimWebState.is_logged_in & LaimWebState.is_laim_admin,
+        rx.vstack(
+            rx.divider(color=COLORS["border"], margin_y="0.75em"),
+            rx.text(
+                "Configuración",
+                class_name="crt-title",
+                font_size="1em",
+                margin_top="0.25em",
+            ),
+            rx.vstack(
+                *[_sidebar_menu_item(item) for item in ADMIN_CONFIG_MENU_ITEMS],
+                spacing="1",
+                width="100%",
+            ),
+            spacing="1",
+            width="100%",
+        ),
+        rx.fragment(),
+    )
+
+
 def sidebar() -> rx.Component:
     """Sidebar izquierda: acceso + menú de navegación."""
     return rx.vstack(
@@ -234,6 +277,7 @@ def sidebar() -> rx.Component:
         ),
         rx.divider(color=COLORS["border"], margin_y="0.75em"),
         sidebar_menu(),
+        sidebar_config_menu(),
         spacing="2",
         padding="1em",
         width="100%",

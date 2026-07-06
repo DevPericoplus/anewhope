@@ -25,13 +25,41 @@ AUTHENTICATED_MENU_FILES: dict[str, str] = {
     "faq": "faq.md",
 }
 
+ADMIN_CONFIG_MENU_FILES: dict[str, str] = {
+    "config_general": "config_general.md",
+    "config_usuarios": "config_usuarios.md",
+    "config_modelos_ia": "config_modelos_ia.md",
+    "config_fases_tiers": "config_fases_tiers.md",
+    "config_sesiones": "config_sesiones.md",
+    "config_share": "config_share.md",
+    "config_agentes": "config_agentes.md",
+    "config_auditoria": "config_auditoria.md",
+}
+
 MENU_TO_MARKDOWN_FILE: dict[str, str] = {
     **PUBLIC_MENU_FILES,
     **AUTHENTICATED_MENU_FILES,
+    **ADMIN_CONFIG_MENU_FILES,
 }
 
 STATIC_PAGE_MENUS = frozenset(MENU_TO_MARKDOWN_FILE.keys())
 AUTHENTICATED_PAGE_MENUS = frozenset(AUTHENTICATED_MENU_FILES.keys())
+ADMIN_CONFIG_PAGE_MENUS = frozenset(ADMIN_CONFIG_MENU_FILES.keys())
+
+# SuperAdmin (1) y Administrador de organización (2) en laim_identity_types.
+LAIM_ADMIN_IDENTITY_TYPE_IDS: frozenset[int] = frozenset({1, 2})
+
+
+def is_admin_config_menu(menu: str) -> bool:
+    """Indica si la clave de menú pertenece a la sección Configuración."""
+    return menu in ADMIN_CONFIG_PAGE_MENUS
+
+
+def can_access_admin_config_menu(menu: str, identity_type_id: int) -> bool:
+    """Valida acceso a páginas de configuración según el rol del usuario."""
+    if not is_admin_config_menu(menu):
+        return True
+    return identity_type_id in LAIM_ADMIN_IDENTITY_TYPE_IDS
 
 
 def load_static_page_markdown(menu: str) -> str:

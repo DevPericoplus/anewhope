@@ -1,6 +1,7 @@
 """Tests del cargador de páginas estáticas markdown."""
 
 from laim_web.static_pages_loader import (
+    ADMIN_CONFIG_PAGE_MENUS,
     AUTHENTICATED_PAGE_MENUS,
     STATIC_PAGE_MENUS,
     load_static_page_markdown,
@@ -41,6 +42,11 @@ def test_load_instaladores_markdown() -> None:
     """Carga el contenido de instaladores.md."""
     content = load_static_page_markdown("instaladores")
     assert "Instaladores LAIM" in content
+
+
+def test_static_page_menus_includes_admin_config() -> None:
+    """Las páginas de configuración admin están en el catálogo global."""
+    assert ADMIN_CONFIG_PAGE_MENUS.issubset(STATIC_PAGE_MENUS)
 
 
 def test_markdown_component_map_uses_codeblock_not_pre() -> None:
