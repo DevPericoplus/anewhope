@@ -482,6 +482,315 @@ def laim_forum_delete_subcategory(
     )
 
 
+def laim_forum_get_profile(
+    access_token: str, session_token: str
+) -> dict[str, Any]:
+    """Obtiene perfil de foro del usuario."""
+    return _request_forum(
+        "GET",
+        "/laim/forum/profile",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_update_profile(
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Actualiza perfil de foro."""
+    return _request_forum(
+        "PATCH",
+        "/laim/forum/profile",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_list_avatar_catalog(
+    access_token: str, session_token: str
+) -> dict[str, Any]:
+    """Lista avatares del catálogo."""
+    return _request_forum(
+        "GET",
+        "/laim/forum/avatars/catalog",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_add_avatar_catalog(
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Añade avatar al catálogo (admin)."""
+    return _request_forum(
+        "POST",
+        "/laim/forum/avatars/catalog",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_update_thread(
+    thread_id: int,
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Actualiza hilo (fijar, cerrar, editar)."""
+    return _request_forum(
+        "PATCH",
+        f"/laim/forum/threads/{thread_id}",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_delete_thread(
+    thread_id: int,
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Elimina hilo."""
+    return _request_forum(
+        "DELETE",
+        f"/laim/forum/threads/{thread_id}",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_upsert_prefix(
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Crea o actualiza prefijo (admin)."""
+    return _request_forum(
+        "PUT",
+        "/laim/forum/prefixes",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_delete_prefix(
+    prefix_id: str,
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Elimina prefijo (admin)."""
+    return _request_forum(
+        "DELETE",
+        f"/laim/forum/prefixes/{prefix_id}",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_admin_word_rules(
+    access_token: str, session_token: str
+) -> dict[str, Any]:
+    """Lista reglas de palabras (admin)."""
+    return _request_forum(
+        "GET",
+        "/laim/forum/admin/word-rules",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_admin_create_word_rule(
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Crea regla de palabra (admin)."""
+    return _request_forum(
+        "POST",
+        "/laim/forum/admin/word-rules",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_admin_update_word_rule(
+    rule_id: int,
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Actualiza regla de palabra (admin)."""
+    return _request_forum(
+        "PATCH",
+        f"/laim/forum/admin/word-rules/{rule_id}",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_admin_delete_word_rule(
+    rule_id: int,
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Elimina regla de palabra (admin)."""
+    return _request_forum(
+        "DELETE",
+        f"/laim/forum/admin/word-rules/{rule_id}",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_admin_allowed_urls(
+    access_token: str, session_token: str
+) -> dict[str, Any]:
+    """Lista dominios permitidos (admin)."""
+    return _request_forum(
+        "GET",
+        "/laim/forum/admin/allowed-urls",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_admin_create_allowed_url(
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Crea dominio permitido (admin)."""
+    return _request_forum(
+        "POST",
+        "/laim/forum/admin/allowed-urls",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_admin_delete_allowed_url(
+    url_id: int,
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Elimina dominio permitido (admin)."""
+    return _request_forum(
+        "DELETE",
+        f"/laim/forum/admin/allowed-urls/{url_id}",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_admin_moderators(
+    access_token: str,
+    session_token: str,
+    subcategory_id: str | None = None,
+) -> dict[str, Any]:
+    """Lista moderadores (admin)."""
+    endpoint = "/laim/forum/admin/moderators"
+    if subcategory_id:
+        endpoint = f"{endpoint}?subcategory_id={subcategory_id}"
+    return _request_forum(
+        "GET",
+        endpoint,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_admin_assign_moderator(
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Asigna moderador (admin)."""
+    return _request_forum(
+        "POST",
+        "/laim/forum/admin/moderators",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_admin_deactivate_moderator(
+    moderator_id: int,
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Desactiva moderador (admin)."""
+    return _request_forum(
+        "DELETE",
+        f"/laim/forum/admin/moderators/{moderator_id}",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_create_ban(
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Banea usuario en subcategoría."""
+    return _request_forum(
+        "POST",
+        "/laim/forum/moderation/bans",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_revoke_ban(
+    ban_id: int,
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Revoca baneo."""
+    return _request_forum(
+        "POST",
+        f"/laim/forum/moderation/bans/{ban_id}/revoke",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_moderation_logs(
+    subcategory_id: str,
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Logs de moderación de una subcategoría."""
+    return _request_forum(
+        "GET",
+        f"/laim/forum/moderation/logs/{subcategory_id}",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_get_poll_interval_seconds() -> int:
+    """Intervalo de polling del foro desde env.yaml."""
+    raw = _env_settings.get_env_value("laim_forum_poll_interval_seconds", "30")
+    try:
+        return max(3, int(str(raw).strip()))
+    except ValueError:
+        return 30
+
+
 def laim_login(username: str, password: str) -> dict[str, Any]:
     """Autentica un usuario a través del middleware.
 

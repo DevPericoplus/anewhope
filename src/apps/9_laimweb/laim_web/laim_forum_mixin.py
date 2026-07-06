@@ -60,6 +60,53 @@ class LaimForumMixin:
     forum_admin_subcategory_desc: str = ""
     forum_admin_message: str = ""
 
+    # Adjuntos pendientes
+    forum_new_thread_image_ids: list[int] = []
+    forum_reply_image_ids: list[int] = []
+    forum_thread_image_ids: list[int] = []
+
+    # Perfil de foro
+    forum_profile_display_name: str = ""
+    forum_profile_signature: str = ""
+    forum_profile_avatar_id: int = 0
+    forum_profile_notify_mentions: bool = True
+    forum_profile_notify_replies: bool = True
+    forum_profile_message: str = ""
+    forum_avatar_catalog: list[dict[str, Any]] = []
+
+    # Admin extendido
+    forum_admin_tab: str = "categories"
+    forum_admin_settings_announce_ban: bool = True
+    forum_admin_settings_ban_template: str = ""
+    forum_admin_settings_delete_template: str = ""
+    forum_admin_prefix_id: str = ""
+    forum_admin_prefix_text: str = ""
+    forum_admin_prefix_color: str = "green"
+    forum_admin_word_palabra: str = ""
+    forum_admin_word_accion: str = "warn"
+    forum_admin_word_mensaje: str = ""
+    forum_admin_url_dominio: str = ""
+    forum_admin_url_descripcion: str = ""
+    forum_admin_mod_user_id: int = 0
+    forum_admin_mod_user_name: str = ""
+    forum_admin_mod_subcategory_id: str = ""
+    forum_admin_avatar_label: str = ""
+    forum_admin_avatar_image_id: int = 0
+    forum_word_rules: list[dict[str, Any]] = []
+    forum_allowed_urls: list[dict[str, Any]] = []
+    forum_moderators: list[dict[str, Any]] = []
+
+    # Moderación
+    forum_mod_logs: list[dict[str, Any]] = []
+    forum_mod_bans: list[dict[str, Any]] = []
+    forum_ban_user_id: int = 0
+    forum_ban_motivo: str = ""
+    forum_ban_expires_at: str = ""
+    forum_mod_message: str = ""
+
+    # Polling
+    _forum_poll_running: bool = False
+
     # Vista previa de imagen
     forum_preview_image_url: str = ""
 
@@ -91,6 +138,78 @@ class LaimForumMixin:
         """Etiquetas legibles de prefijos."""
         return [str(p.get("texto", p.get("id", ""))) for p in self.forum_prefixes]
 
+    @rx.var
+    def forum_new_attachment_count(self) -> int:
+        """Número de adjuntos pendientes para nuevo hilo."""
+        return len(self.forum_new_thread_image_ids)
+
+    @rx.var
+    def forum_reply_attachment_count(self) -> int:
+        """Número de adjuntos pendientes para respuesta."""
+        return len(self.forum_reply_image_ids)
+
+    @rx.var
+    def forum_show_moderation(self) -> bool:
+        """True si el usuario puede ver acciones de moderación (admin LAIM)."""
+        return bool(getattr(self, "is_laim_admin", False))
+
+    _FORUM_ATTACHMENT_SCRIPT = """
+(() => {
+  const inputId = window.__forum_attachment_input_id || 'forum_thread_file_input';
+  const input = document.getElementById(inputId);
+  if (!input || !input.files || input.files.length === 0) {
+    return { attachment: null };
+  }
+  const file = input.files[0];
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result || '';
+      const base64 = typeof result === 'string' && result.includes(',')
+        ? result.split(',')[1]
+        : '';
+      resolve({
+        attachment: {
+          file_name: file.name,
+          mime_type: file.type || 'application/octet-stream',
+          data_base64: base64,
+          target: inputId.indexOf('reply') >= 0 ? 'reply' : 'thread',
+        },
+      });
+    };
+    reader.onerror = () => resolve({ attachment: null });
+    reader.readAsDataURL(file);
+  });
+})()
+"""
+
+    _FORUM_AVATAR_SCRIPT = """
+(() => {
+  const input = document.getElementById('forum_avatar_file_input');
+  if (!input || !input.files || input.files.length === 0) {
+    return { avatar: null };
+  }
+  const file = input.files[0];
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result || '';
+      const base64 = typeof result === 'string' && result.includes(',')
+        ? result.split(',')[1]
+        : '';
+      resolve({
+        avatar: {
+          file_name: file.name,
+          mime_type: file.type || 'application/octet-stream',
+          data_base64: base64,
+        },
+      });
+    };
+    reader.onerror = () => resolve({ avatar: null });
+    reader.readAsDataURL(file);
+  });
+})()
+"""
     @event
     def forum_guard_auth(self) -> EventHandlerReturn:
         """Redirige al inicio si no hay sesión."""
@@ -110,9 +229,17 @@ class LaimForumMixin:
             self.forum_open_thread(self.forum_active_thread_id)
         from laim_web.laim_state import LaimWebState
 
+        handlers: list[Any] = []
         if self.is_logged_in and self.session_token and not self._token_renewal_running:
             self._token_renewal_running = True
-            return LaimWebState.auto_renew_tokens_loop
+            handlers.append(LaimWebState.auto_renew_tokens_loop)
+        if not self._forum_poll_running:
+            self._forum_poll_running = True
+            handlers.append(LaimWebState.forum_poll_loop)
+        if len(handlers) == 1:
+            return handlers[0]
+        if len(handlers) == 2:
+            return handlers[0]
         return None
 
     @event
@@ -276,6 +403,10 @@ class LaimForumMixin:
         self.forum_thread_pinned = bool(thread.get("fijado"))
         self.forum_thread_author = str(thread.get("user_name", ""))
         self.forum_thread_author_id = int(thread.get("user_id", 0))
+        raw_images = thread.get("image_ids", [])
+        self.forum_thread_image_ids = [
+            int(i) for i in raw_images if i is not None
+        ] if isinstance(raw_images, list) else []
 
         posts_result = laim_forum_list_posts(thread_id, access, session)
         if posts_result.get("success"):
@@ -292,6 +423,7 @@ class LaimForumMixin:
         self.forum_thread_body = ""
         self.forum_posts = []
         self.forum_reply_body = ""
+        self.forum_reply_image_ids = []
 
     @event
     def forum_refresh(self) -> None:
@@ -309,6 +441,7 @@ class LaimForumMixin:
             self.forum_new_title = ""
             self.forum_new_body = ""
             self.forum_new_prefix_id = ""
+            self.forum_new_thread_image_ids = []
 
     @event
     def forum_set_new_title(self, value: str) -> None:
@@ -345,7 +478,7 @@ class LaimForumMixin:
             "subcategory_id": self.forum_selected_subcategory_id,
             "titulo": self.forum_new_title.strip(),
             "cuerpo_md": self.forum_new_body.strip(),
-            "image_ids": [],
+            "image_ids": list(self.forum_new_thread_image_ids),
         }
         if self.forum_new_prefix_id.strip():
             payload["prefix_id"] = self.forum_new_prefix_id.strip()
@@ -361,6 +494,7 @@ class LaimForumMixin:
         self.forum_new_title = ""
         self.forum_new_body = ""
         self.forum_new_prefix_id = ""
+        self.forum_new_thread_image_ids = []
         self.forum_error = ""
         self.forum_load_threads()
         if thread_id > 0:
@@ -384,7 +518,7 @@ class LaimForumMixin:
         access, session = self._forum_auth_tokens()
         result = laim_forum_create_post(
             self.forum_active_thread_id,
-            {"cuerpo_md": self.forum_reply_body.strip(), "image_ids": []},
+            {"cuerpo_md": self.forum_reply_body.strip(), "image_ids": list(self.forum_reply_image_ids)},
             access,
             session,
         )
@@ -393,6 +527,7 @@ class LaimForumMixin:
             return None
 
         self.forum_reply_body = ""
+        self.forum_reply_image_ids = []
         self.forum_error = ""
         self.forum_open_thread(self.forum_active_thread_id)
         return None
