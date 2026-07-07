@@ -188,6 +188,11 @@ class LaimForumMixin:
         )
 
     @rx.var
+    def forum_has_avatar_catalog(self) -> bool:
+        """True si hay avatares disponibles en el catálogo."""
+        return len(self.forum_avatar_catalog) > 0
+
+    @rx.var
     def forum_has_prefixes(self) -> bool:
         """True si hay prefijos disponibles para nuevos hilos."""
         return len(self.forum_prefixes) > 0
@@ -996,6 +1001,28 @@ class LaimForumMixin:
         self.forum_load_profile()
         return None
 
+    def _forum_enrich_avatar_catalog(
+        self,
+        items: list[dict[str, Any]],
+        access_token: str,
+        session_token: str,
+    ) -> list[dict[str, Any]]:
+        """Añade preview_url (data URL) a cada entrada del catálogo."""
+        from laim_web.adapters.laim_api_client import laim_forum_get_image_data_url
+
+        enriched: list[dict[str, Any]] = []
+        for item in items:
+            row = dict(item)
+            image_id = int(row.get("image_id") or 0)
+            if image_id > 0:
+                row["preview_url"] = laim_forum_get_image_data_url(
+                    image_id, access_token, session_token
+                )
+            else:
+                row["preview_url"] = ""
+            enriched.append(row)
+        return enriched
+
     def forum_load_profile(self) -> None:
         """Carga perfil y catálogo de avatares."""
         from laim_web.adapters.laim_api_client import (
@@ -1023,7 +1050,9 @@ class LaimForumMixin:
 
         catalog = laim_forum_list_avatar_catalog(access, session)
         if catalog.get("success"):
-            self.forum_avatar_catalog = catalog.get("items", [])
+            self.forum_avatar_catalog = self._forum_enrich_avatar_catalog(
+                catalog.get("items", []), access, session
+            )
 
     @forum_event
     def forum_set_profile_display_name(self, value: str) -> None:
@@ -1259,7 +1288,9 @@ class LaimForumMixin:
 
         avatars = laim_forum_list_avatar_catalog(access, session)
         if avatars.get("success"):
-            self.forum_avatar_catalog = avatars.get("items", [])
+            self.forum_avatar_catalog = self._forum_enrich_avatar_catalog(
+                avatars.get("items", []), access, session
+            )
 
     @forum_event
     def forum_admin_save_settings(self) -> None:

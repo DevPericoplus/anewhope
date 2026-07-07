@@ -68,17 +68,52 @@ def forum_profile_panel() -> rx.Component:
             flex_wrap="wrap",
         ),
         rx.text("Avatares del catálogo", class_name="crt-title", font_size="1em"),
-        rx.hstack(
-            rx.foreach(
-                LaimWebState.forum_avatar_catalog,
-                lambda item: rx.button(
-                    item["label"],
-                    on_click=LaimWebState.forum_select_catalog_avatar(item["image_id"]),
-                    class_name="crt-btn crt-btn-inline",
+        rx.cond(
+            LaimWebState.forum_has_avatar_catalog,
+            rx.hstack(
+                rx.foreach(
+                    LaimWebState.forum_avatar_catalog,
+                    lambda item: rx.button(
+                        rx.vstack(
+                            rx.cond(
+                                item["preview_url"] != "",
+                                rx.image(
+                                    src=item["preview_url"],
+                                    width="56px",
+                                    height="56px",
+                                    border_radius="50%",
+                                    alt=item["label"],
+                                ),
+                                rx.box(
+                                    width="56px",
+                                    height="56px",
+                                    border_radius="50%",
+                                    background_color=COLORS["panel_bg"],
+                                ),
+                            ),
+                            rx.text(item["label"], font_size=FONT_SIZE_SMALL),
+                            spacing="1",
+                            align_items="center",
+                        ),
+                        on_click=LaimWebState.forum_select_catalog_avatar(
+                            item["image_id"]
+                        ),
+                        class_name="crt-btn crt-btn-inline",
+                        style={
+                            "padding": "0.4em",
+                            "min_width": "72px",
+                        },
+                    ),
                 ),
+                flex_wrap="wrap",
+                spacing="3",
             ),
-            flex_wrap="wrap",
-            spacing="2",
+            rx.text(
+                "No hay avatares en el catálogo. El administrador debe cargarlos "
+                "desde Config. foro → Avatares o ejecutar el seed del sistema.",
+                color=COLORS["muted"],
+                font_size=FONT_SIZE_SMALL,
+            ),
         ),
         rx.hstack(
             rx.input(type="file", id="forum_avatar_file_input", accept="image/*"),
