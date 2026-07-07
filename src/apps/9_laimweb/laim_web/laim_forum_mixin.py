@@ -9,6 +9,21 @@ from reflex.event import event
 
 EventHandlerReturn = Any
 
+# Reflex 0.8+ solo registra @event en métodos del State, no en mixins.
+FORUM_EVENT_HANDLER_NAMES: list[str] = []
+
+
+def forum_event(func):
+    """Decorador de eventos del foro que permite re-registro en LaimWebState."""
+    FORUM_EVENT_HANDLER_NAMES.append(func.__name__)
+    return event(func)
+
+
+def forum_background_event(func):
+    """Decorador para eventos background del foro (polling)."""
+    FORUM_EVENT_HANDLER_NAMES.append(func.__name__)
+    return rx.event(background=True)(func)
+
 
 class LaimForumMixin:
     """Variables y handlers del foro (mezclar con LaimWebState)."""
@@ -268,14 +283,14 @@ class LaimForumMixin:
   });
 })()
 """
-    @event
+    @forum_event
     def forum_guard_auth(self) -> EventHandlerReturn:
         """Redirige al inicio si no hay sesión."""
         if not self.is_logged_in:
             return rx.redirect("/")
         return None
 
-    @event
+    @forum_event
     def forum_on_page_load(self) -> EventHandlerReturn:
         """Carga inicial del foro principal."""
         if not self.is_logged_in:
@@ -296,7 +311,7 @@ class LaimForumMixin:
             return LaimWebState.forum_poll_loop
         return None
 
-    @event
+    @forum_event
     def forum_my_threads_on_load(self) -> EventHandlerReturn:
         """Carga página mis hilos."""
         if not self.is_logged_in:
@@ -304,7 +319,7 @@ class LaimForumMixin:
         self.forum_load_my_threads()
         return None
 
-    @event
+    @forum_event
     def forum_my_posts_on_load(self) -> EventHandlerReturn:
         """Carga página mis respuestas."""
         if not self.is_logged_in:
@@ -312,7 +327,7 @@ class LaimForumMixin:
         self.forum_load_my_posts()
         return None
 
-    @event
+    @forum_event
     def forum_admin_on_load(self) -> EventHandlerReturn:
         """Carga panel admin del foro."""
         if not self.is_logged_in:
@@ -402,7 +417,7 @@ class LaimForumMixin:
 
         self.forum_loading = False
 
-    @event
+    @forum_event
     def forum_select_category(self, category_id: str) -> None:
         """Selecciona categoría y recarga subcategorías."""
         from laim_web.adapters.laim_api_client import laim_forum_list_subcategories
@@ -424,7 +439,7 @@ class LaimForumMixin:
         else:
             self._forum_set_error(result.get("error", "Error al cargar subcategorías"))
 
-    @event
+    @forum_event
     def forum_select_subcategory(self, subcategory_id: str) -> None:
         """Selecciona subcategoría y lista hilos."""
         self.forum_selected_subcategory_id = subcategory_id
@@ -449,7 +464,7 @@ class LaimForumMixin:
         else:
             self._forum_set_error(result.get("error", "Error al cargar hilos"))
 
-    @event
+    @forum_event
     def forum_open_thread(self, thread_id: int) -> None:
         """Abre un hilo y carga sus respuestas."""
         from laim_web.adapters.laim_api_client import (
@@ -483,7 +498,7 @@ class LaimForumMixin:
             self.forum_posts = []
             self._forum_set_error(posts_result.get("error", "Error al cargar respuestas"))
 
-    @event
+    @forum_event
     def forum_close_thread(self) -> None:
         """Cierra vista de hilo."""
         self.forum_active_thread_id = 0
@@ -493,7 +508,7 @@ class LaimForumMixin:
         self.forum_reply_body = ""
         self.forum_reply_image_ids = []
 
-    @event
+    @forum_event
     def forum_refresh(self) -> None:
         """Refresca hilos o hilo activo."""
         if self.forum_active_thread_id > 0:
@@ -501,7 +516,7 @@ class LaimForumMixin:
         else:
             self.forum_load_threads()
 
-    @event
+    @forum_event
     def forum_toggle_new_thread(self) -> None:
         """Abre/cierra formulario de nuevo hilo."""
         self.forum_new_thread_open = not self.forum_new_thread_open
@@ -511,23 +526,23 @@ class LaimForumMixin:
             self.forum_new_prefix_id = ""
             self.forum_new_thread_image_ids = []
 
-    @event
+    @forum_event
     def forum_set_new_title(self, value: str) -> None:
         self.forum_new_title = value
 
-    @event
+    @forum_event
     def forum_set_new_body(self, value: str) -> None:
         self.forum_new_body = value
 
-    @event
+    @forum_event
     def forum_set_new_prefix(self, value: str) -> None:
         self.forum_new_prefix_id = value
 
-    @event
+    @forum_event
     def forum_set_reply_body(self, value: str) -> None:
         self.forum_reply_body = value
 
-    @event
+    @forum_event
     def forum_create_thread(self) -> EventHandlerReturn:
         """Crea un hilo en la subcategoría activa."""
         from laim_web.adapters.laim_api_client import laim_forum_create_thread
@@ -569,7 +584,7 @@ class LaimForumMixin:
             self.forum_open_thread(thread_id)
         return None
 
-    @event
+    @forum_event
     def forum_submit_reply(self) -> EventHandlerReturn:
         """Publica respuesta en el hilo activo."""
         from laim_web.adapters.laim_api_client import laim_forum_create_post
@@ -600,7 +615,7 @@ class LaimForumMixin:
         self.forum_open_thread(self.forum_active_thread_id)
         return None
 
-    @event
+    @forum_event
     def forum_rate_post(self, post_id: int, rating: int) -> None:
         """Valora una respuesta."""
         from laim_web.adapters.laim_api_client import laim_forum_rate_post
@@ -634,7 +649,7 @@ class LaimForumMixin:
         else:
             self._forum_set_error(result.get("error", "Error al cargar mis respuestas"))
 
-    @event
+    @forum_event
     def forum_go_to_thread(self, thread_id: int) -> EventHandlerReturn:
         """Navega al foro y abre un hilo."""
         self.forum_active_thread_id = thread_id
@@ -674,31 +689,31 @@ class LaimForumMixin:
             if sub_result.get("success"):
                 self.forum_subcategories = sub_result.get("items", [])
 
-    @event
+    @forum_event
     def forum_admin_set_category_id(self, value: str) -> None:
         self.forum_admin_category_id = value
 
-    @event
+    @forum_event
     def forum_admin_set_category_name(self, value: str) -> None:
         self.forum_admin_category_name = value
 
-    @event
+    @forum_event
     def forum_admin_set_category_desc(self, value: str) -> None:
         self.forum_admin_category_desc = value
 
-    @event
+    @forum_event
     def forum_admin_set_subcategory_id(self, value: str) -> None:
         self.forum_admin_subcategory_id = value
 
-    @event
+    @forum_event
     def forum_admin_set_subcategory_name(self, value: str) -> None:
         self.forum_admin_subcategory_name = value
 
-    @event
+    @forum_event
     def forum_admin_set_subcategory_desc(self, value: str) -> None:
         self.forum_admin_subcategory_desc = value
 
-    @event
+    @forum_event
     def forum_admin_save_category(self) -> None:
         """Guarda categoría (admin)."""
         from laim_web.adapters.laim_api_client import laim_forum_upsert_category
@@ -725,7 +740,7 @@ class LaimForumMixin:
         else:
             self.forum_admin_message = result.get("error", "Error al guardar categoría")
 
-    @event
+    @forum_event
     def forum_admin_save_subcategory(self) -> None:
         """Guarda subcategoría (admin)."""
         from laim_web.adapters.laim_api_client import laim_forum_upsert_subcategory
@@ -756,7 +771,7 @@ class LaimForumMixin:
         else:
             self.forum_admin_message = result.get("error", "Error al guardar subcategoría")
 
-    @event
+    @forum_event
     def forum_preview_image(self, image_id: int) -> None:
         """Carga imagen adjunta como data URL."""
         from laim_web.adapters.laim_api_client import laim_forum_get_image_data_url
@@ -766,81 +781,81 @@ class LaimForumMixin:
             image_id, access, session
         )
 
-    @event
+    @forum_event
     def forum_admin_set_prefix_id(self, value: str) -> None:
         self.forum_admin_prefix_id = value
 
-    @event
+    @forum_event
     def forum_admin_set_prefix_text(self, value: str) -> None:
         self.forum_admin_prefix_text = value
 
-    @event
+    @forum_event
     def forum_admin_set_prefix_color(self, value: str) -> None:
         self.forum_admin_prefix_color = value
 
-    @event
+    @forum_event
     def forum_admin_set_announce_ban(self, value: bool) -> None:
         self.forum_admin_settings_announce_ban = value
 
-    @event
+    @forum_event
     def forum_admin_set_ban_template(self, value: str) -> None:
         self.forum_admin_settings_ban_template = value
 
-    @event
+    @forum_event
     def forum_admin_set_delete_template(self, value: str) -> None:
         self.forum_admin_settings_delete_template = value
 
-    @event
+    @forum_event
     def forum_admin_set_word_palabra(self, value: str) -> None:
         self.forum_admin_word_palabra = value
 
-    @event
+    @forum_event
     def forum_admin_set_word_accion(self, value: str) -> None:
         self.forum_admin_word_accion = value
 
-    @event
+    @forum_event
     def forum_admin_set_word_mensaje(self, value: str) -> None:
         self.forum_admin_word_mensaje = value
 
-    @event
+    @forum_event
     def forum_admin_set_url_dominio(self, value: str) -> None:
         self.forum_admin_url_dominio = value
 
-    @event
+    @forum_event
     def forum_admin_set_url_descripcion(self, value: str) -> None:
         self.forum_admin_url_descripcion = value
 
-    @event
+    @forum_event
     def forum_admin_set_mod_user_id(self, value: str) -> None:
         try:
             self.forum_admin_mod_user_id = int(value.strip())
         except ValueError:
             self.forum_admin_mod_user_id = 0
 
-    @event
+    @forum_event
     def forum_admin_set_mod_user_name(self, value: str) -> None:
         self.forum_admin_mod_user_name = value
 
-    @event
+    @forum_event
     def forum_admin_set_mod_subcategory_id(self, value: str) -> None:
         self.forum_admin_mod_subcategory_id = value
 
-    @event
+    @forum_event
     def forum_admin_set_avatar_image_id(self, value: str) -> None:
         try:
             self.forum_admin_avatar_image_id = int(value.strip())
         except ValueError:
             self.forum_admin_avatar_image_id = 0
 
-    @event
+    @forum_event
     def forum_admin_set_avatar_label(self, value: str) -> None:
         self.forum_admin_avatar_label = value
 
-    @event
+    @forum_event
     def forum_close_image_preview(self) -> None:
         self.forum_preview_image_url = ""
 
-    @rx.event(background=True)
+    @forum_background_event
     async def forum_poll_loop(self) -> None:
         """Polling periódico de notificaciones y respuestas del hilo activo."""
         import asyncio
@@ -856,7 +871,7 @@ class LaimForumMixin:
                 self.forum_poll_tick()
             await asyncio.sleep(interval)
 
-    @event
+    @forum_event
     def forum_request_thread_attachment(self) -> EventHandlerReturn:
         """Lee adjunto del formulario de nuevo hilo."""
         from laim_web.laim_state import LaimWebState
@@ -866,7 +881,7 @@ class LaimForumMixin:
             callback=LaimWebState.forum_process_attachment_upload,
         )
 
-    @event
+    @forum_event
     def forum_request_reply_attachment(self) -> EventHandlerReturn:
         """Lee adjunto del formulario de respuesta."""
         from laim_web.laim_state import LaimWebState
@@ -876,7 +891,7 @@ class LaimForumMixin:
             callback=LaimWebState.forum_process_attachment_upload,
         )
 
-    @event
+    @forum_event
     def forum_process_attachment_upload(
         self, payload: dict[str, object] | None
     ) -> None:
@@ -930,7 +945,7 @@ class LaimForumMixin:
                 ]
         self.forum_error = ""
 
-    @event
+    @forum_event
     def forum_moderate_pin(self) -> None:
         """Fija o desfija el hilo activo."""
         from laim_web.adapters.laim_api_client import laim_forum_update_thread
@@ -949,7 +964,7 @@ class LaimForumMixin:
         else:
             self._forum_set_error(result.get("error", "No se pudo fijar el hilo."))
 
-    @event
+    @forum_event
     def forum_moderate_close(self) -> None:
         """Cierra o abre el hilo activo."""
         from laim_web.adapters.laim_api_client import laim_forum_update_thread
@@ -968,7 +983,7 @@ class LaimForumMixin:
         else:
             self._forum_set_error(result.get("error", "No se pudo cambiar el estado."))
 
-    @event
+    @forum_event
     def forum_moderate_delete_thread(self) -> None:
         """Elimina el hilo activo."""
         from laim_web.adapters.laim_api_client import laim_forum_delete_thread
@@ -985,7 +1000,7 @@ class LaimForumMixin:
         else:
             self._forum_set_error(result.get("error", "No se pudo eliminar el hilo."))
 
-    @event
+    @forum_event
     def forum_profile_on_load(self) -> EventHandlerReturn:
         """Carga página de perfil de foro."""
         if not self.is_logged_in:
@@ -1022,27 +1037,27 @@ class LaimForumMixin:
         if catalog.get("success"):
             self.forum_avatar_catalog = catalog.get("items", [])
 
-    @event
+    @forum_event
     def forum_set_profile_display_name(self, value: str) -> None:
         self.forum_profile_display_name = value
 
-    @event
+    @forum_event
     def forum_set_profile_signature(self, value: str) -> None:
         self.forum_profile_signature = value
 
-    @event
+    @forum_event
     def forum_set_profile_notify_mentions(self, value: bool) -> None:
         self.forum_profile_notify_mentions = value
 
-    @event
+    @forum_event
     def forum_set_profile_notify_replies(self, value: bool) -> None:
         self.forum_profile_notify_replies = value
 
-    @event
+    @forum_event
     def forum_select_catalog_avatar(self, image_id: int) -> None:
         self.forum_profile_avatar_id = image_id
 
-    @event
+    @forum_event
     def forum_save_profile(self) -> None:
         """Guarda perfil de foro."""
         from laim_web.adapters.laim_api_client import laim_forum_update_profile
@@ -1065,7 +1080,7 @@ class LaimForumMixin:
             self.forum_profile_message = ""
             self._forum_set_error(result.get("error", "No se pudo guardar el perfil."))
 
-    @event
+    @forum_event
     def forum_request_avatar_upload(self) -> EventHandlerReturn:
         """Sube avatar personal."""
         from laim_web.laim_state import LaimWebState
@@ -1075,7 +1090,7 @@ class LaimForumMixin:
             callback=LaimWebState.forum_process_avatar_upload,
         )
 
-    @event
+    @forum_event
     def forum_process_avatar_upload(self, payload: dict[str, object] | None) -> None:
         """Procesa subida de avatar personal."""
         from laim_web.adapters.laim_api_client import (
@@ -1119,7 +1134,7 @@ class LaimForumMixin:
         else:
             self._forum_set_error(update.get("error", "No se pudo asignar el avatar."))
 
-    @event
+    @forum_event
     def forum_mod_on_load(self) -> EventHandlerReturn:
         """Carga panel de moderación."""
         if not self.is_logged_in:
@@ -1147,27 +1162,27 @@ class LaimForumMixin:
         else:
             self._forum_set_error(result.get("error", "No se pudieron cargar logs."))
 
-    @event
+    @forum_event
     def forum_refresh_moderation(self) -> None:
         """Recarga datos del panel de moderación."""
         self.forum_load_moderation_data()
 
-    @event
+    @forum_event
     def forum_set_ban_user_id(self, value: str) -> None:
         try:
             self.forum_ban_user_id = int(value.strip())
         except ValueError:
             self.forum_ban_user_id = 0
 
-    @event
+    @forum_event
     def forum_set_ban_motivo(self, value: str) -> None:
         self.forum_ban_motivo = value
 
-    @event
+    @forum_event
     def forum_set_ban_expires(self, value: str) -> None:
         self.forum_ban_expires_at = value
 
-    @event
+    @forum_event
     def forum_submit_ban(self) -> None:
         """Banea usuario en subcategoría activa."""
         from laim_web.adapters.laim_api_client import laim_forum_create_ban
@@ -1196,7 +1211,7 @@ class LaimForumMixin:
         else:
             self.forum_mod_message = result.get("error", "No se pudo banear.")
 
-    @event
+    @forum_event
     def forum_revoke_ban(self, ban_id: int) -> None:
         """Revoca un baneo."""
         from laim_web.adapters.laim_api_client import laim_forum_revoke_ban
@@ -1209,7 +1224,7 @@ class LaimForumMixin:
         else:
             self.forum_mod_message = result.get("error", "No se pudo revocar.")
 
-    @event
+    @forum_event
     def forum_admin_set_tab(self, tab: str) -> None:
         self.forum_admin_tab = tab
         if tab in ("word-rules", "allowed-urls", "moderators", "settings"):
@@ -1263,7 +1278,7 @@ class LaimForumMixin:
         if avatars.get("success"):
             self.forum_avatar_catalog = avatars.get("items", [])
 
-    @event
+    @forum_event
     def forum_admin_save_settings(self) -> None:
         """Guarda ajustes de moderación."""
         from laim_web.adapters.laim_api_client import laim_forum_admin_update_settings
@@ -1282,7 +1297,7 @@ class LaimForumMixin:
             "Ajustes guardados." if result.get("success") else result.get("error", "Error")
         )
 
-    @event
+    @forum_event
     def forum_admin_save_prefix(self) -> None:
         """Guarda prefijo de hilo."""
         from laim_web.adapters.laim_api_client import laim_forum_upsert_prefix
@@ -1307,7 +1322,7 @@ class LaimForumMixin:
         if result.get("success"):
             self.forum_load_catalog()
 
-    @event
+    @forum_event
     def forum_admin_save_word_rule(self) -> None:
         """Crea regla de palabra."""
         from laim_web.adapters.laim_api_client import laim_forum_admin_create_word_rule
@@ -1332,7 +1347,7 @@ class LaimForumMixin:
         if result.get("success"):
             self.forum_load_admin_extended()
 
-    @event
+    @forum_event
     def forum_admin_delete_word_rule(self, rule_id: int) -> None:
         from laim_web.adapters.laim_api_client import laim_forum_admin_delete_word_rule
 
@@ -1340,7 +1355,7 @@ class LaimForumMixin:
         laim_forum_admin_delete_word_rule(rule_id, access, session)
         self.forum_load_admin_extended()
 
-    @event
+    @forum_event
     def forum_admin_save_allowed_url(self) -> None:
         from laim_web.adapters.laim_api_client import laim_forum_admin_create_allowed_url
 
@@ -1363,7 +1378,7 @@ class LaimForumMixin:
         if result.get("success"):
             self.forum_load_admin_extended()
 
-    @event
+    @forum_event
     def forum_admin_delete_allowed_url(self, url_id: int) -> None:
         from laim_web.adapters.laim_api_client import laim_forum_admin_delete_allowed_url
 
@@ -1371,7 +1386,7 @@ class LaimForumMixin:
         laim_forum_admin_delete_allowed_url(url_id, access, session)
         self.forum_load_admin_extended()
 
-    @event
+    @forum_event
     def forum_admin_assign_moderator(self) -> None:
         from laim_web.adapters.laim_api_client import laim_forum_admin_assign_moderator
 
@@ -1394,7 +1409,7 @@ class LaimForumMixin:
         if result.get("success"):
             self.forum_load_admin_extended()
 
-    @event
+    @forum_event
     def forum_admin_deactivate_moderator(self, moderator_id: int) -> None:
         from laim_web.adapters.laim_api_client import laim_forum_admin_deactivate_moderator
 
@@ -1402,7 +1417,7 @@ class LaimForumMixin:
         laim_forum_admin_deactivate_moderator(moderator_id, access, session)
         self.forum_load_admin_extended()
 
-    @event
+    @forum_event
     def forum_admin_add_catalog_avatar(self) -> None:
         """Registra imagen de catálogo ya subida."""
         from laim_web.adapters.laim_api_client import laim_forum_add_avatar_catalog

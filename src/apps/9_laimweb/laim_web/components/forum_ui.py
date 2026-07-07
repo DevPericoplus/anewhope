@@ -321,6 +321,69 @@ def forum_threads_panel() -> rx.Component:
     )
 
 
+def _post_row(post) -> rx.Component:
+    """Fila de respuesta en detalle de hilo (Var reactivo)."""
+    image_ids = post["image_ids"].to(list[int])
+    return rx.box(
+        rx.hstack(
+            rx.text(
+                post["user_name"],
+                font_weight="bold",
+                color=COLORS["accent"],
+            ),
+            rx.box(flex_grow="1"),
+            rx.text("Valorar:", color=COLORS["muted"], font_size=FONT_SIZE_SMALL),
+            rx.button(
+                "1",
+                on_click=LaimWebState.forum_rate_post(post["id"], 1),
+                class_name="crt-btn crt-btn-inline",
+                size="1",
+            ),
+            rx.button(
+                "2",
+                on_click=LaimWebState.forum_rate_post(post["id"], 2),
+                class_name="crt-btn crt-btn-inline",
+                size="1",
+            ),
+            rx.button(
+                "3",
+                on_click=LaimWebState.forum_rate_post(post["id"], 3),
+                class_name="crt-btn crt-btn-inline",
+                size="1",
+            ),
+            rx.button(
+                "4",
+                on_click=LaimWebState.forum_rate_post(post["id"], 4),
+                class_name="crt-btn crt-btn-inline",
+                size="1",
+            ),
+            rx.button(
+                "5",
+                on_click=LaimWebState.forum_rate_post(post["id"], 5),
+                class_name="crt-btn crt-btn-inline",
+                size="1",
+            ),
+            width="100%",
+            align_items="center",
+            flex_wrap="wrap",
+            spacing="1",
+        ),
+        crt_markdown_viewer(post["cuerpo_md"]),
+        rx.hstack(
+            rx.foreach(
+                image_ids,
+                _attachment_button,
+            ),
+            flex_wrap="wrap",
+            spacing="1",
+            margin_top="0.35em",
+        ),
+        padding_y="0.75em",
+        border_bottom=f"1px solid {COLORS['border']}",
+        width="100%",
+    )
+
+
 def forum_thread_detail() -> rx.Component:
     """Vista de hilo abierto con respuestas."""
     return rx.cond(
@@ -421,64 +484,7 @@ def forum_thread_detail() -> rx.Component:
             _panel_title("Respuestas"),
             rx.foreach(
                 LaimWebState.forum_posts,
-                lambda post: rx.box(
-                    rx.hstack(
-                        rx.text(
-                            post["user_name"],
-                            font_weight="bold",
-                            color=COLORS["accent"],
-                        ),
-                        rx.box(flex_grow="1"),
-                        rx.text("Valorar:", color=COLORS["muted"], font_size=FONT_SIZE_SMALL),
-                        rx.button(
-                            "1",
-                            on_click=LaimWebState.forum_rate_post(post["id"], 1),
-                            class_name="crt-btn crt-btn-inline",
-                            size="1",
-                        ),
-                        rx.button(
-                            "2",
-                            on_click=LaimWebState.forum_rate_post(post["id"], 2),
-                            class_name="crt-btn crt-btn-inline",
-                            size="1",
-                        ),
-                        rx.button(
-                            "3",
-                            on_click=LaimWebState.forum_rate_post(post["id"], 3),
-                            class_name="crt-btn crt-btn-inline",
-                            size="1",
-                        ),
-                        rx.button(
-                            "4",
-                            on_click=LaimWebState.forum_rate_post(post["id"], 4),
-                            class_name="crt-btn crt-btn-inline",
-                            size="1",
-                        ),
-                        rx.button(
-                            "5",
-                            on_click=LaimWebState.forum_rate_post(post["id"], 5),
-                            class_name="crt-btn crt-btn-inline",
-                            size="1",
-                        ),
-                        width="100%",
-                        align_items="center",
-                        flex_wrap="wrap",
-                        spacing="1",
-                    ),
-                    crt_markdown_viewer(post["cuerpo_md"]),
-                    rx.hstack(
-                        rx.foreach(
-                            post["image_ids"],
-                            _attachment_button,
-                        ),
-                        flex_wrap="wrap",
-                        spacing="1",
-                        margin_top="0.35em",
-                    ),
-                    padding_y="0.75em",
-                    border_bottom=f"1px solid {COLORS['border']}",
-                    width="100%",
-                ),
+                _post_row,
             ),
             rx.cond(
                 ~LaimWebState.forum_thread_closed,

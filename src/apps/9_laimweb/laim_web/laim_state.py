@@ -784,3 +784,36 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
                 await asyncio.sleep(laim_forum_get_poll_interval_seconds())
             else:
                 await asyncio.sleep(120)
+
+
+def _register_laim_forum_event_handlers() -> None:
+    """Registra handlers del mixin en LaimWebState (Reflex 0.8+)."""
+    from typing import get_type_hints
+
+    from reflex.event import EventHandler
+    from reflex.vars.base import ComputedVar
+
+    from laim_web.laim_forum_mixin import FORUM_EVENT_HANDLER_NAMES, LaimForumMixin
+
+    existing_fields = LaimWebState.get_fields()
+    type_hints = get_type_hints(LaimForumMixin, include_extras=True)
+
+    for name, field_type in type_hints.items():
+        if name in existing_fields:
+            continue
+        raw = LaimForumMixin.__dict__.get(name)
+        if isinstance(raw, ComputedVar) or callable(raw):
+            continue
+        default_value = raw if name in LaimForumMixin.__dict__ else None
+        LaimWebState.add_var(name, field_type, default_value)
+
+    for name in FORUM_EVENT_HANDLER_NAMES:
+        if isinstance(getattr(LaimWebState, name, None), EventHandler):
+            continue
+        handler_fn = getattr(LaimForumMixin, name, None)
+        if handler_fn is None:
+            continue
+        LaimWebState._add_event_handler(name, handler_fn)
+
+
+_register_laim_forum_event_handlers()
