@@ -12,6 +12,7 @@ from laim_web.components.crt_theme import (
     FONT_SIZE_SMALL,
 )
 from laim_web.laim_state import LaimWebState
+from laim_web.static_pages_loader import ADMIN_CONFIG_MENU_FILES
 
 FORUM_NAV = [
     ("/foro", "Foro"),
@@ -19,6 +20,24 @@ FORUM_NAV = [
     ("/mis-hilos-foro", "Mis hilos"),
     ("/mis-respuestas-foro", "Mis respuestas"),
 ]
+
+ADMIN_CONFIG_MENU_ITEMS = list(ADMIN_CONFIG_MENU_FILES.keys())
+
+ADMIN_CONFIG_MENU_LABELS: dict[str, str] = {
+    "config_general": "General",
+    "config_usuarios": "Usuarios",
+    "config_modelos_ia": "Modelos IA",
+    "config_fases_tiers": "Fases y tiers",
+    "config_sesiones": "Sesiones",
+    "config_share": "Share / Connect",
+    "config_agentes": "Agentes",
+    "config_auditoria": "Auditoría",
+}
+
+ADMIN_CONFIG_ROUTE_LINKS: tuple[tuple[str, str], ...] = (
+    ("/config-foro", "Config. foro"),
+    ("/foro-moderacion", "Moderación"),
+)
 
 
 def logo() -> rx.Component:
@@ -105,6 +124,73 @@ def _forum_nav_link(href: str, label: str) -> rx.Component:
     )
 
 
+def _config_route_link(href: str, label: str) -> rx.Component:
+    """Enlace del menú Configuración hacia rutas dedicadas (foro admin)."""
+    return rx.link(
+        rx.text(label, font_size="0.9em", color=COLORS["text"]),
+        href=href,
+        width="100%",
+        padding="0.55em 0.75em",
+        _hover={"background": "rgba(0, 80, 0, 0.35)", "text_decoration": "none"},
+    )
+
+
+def _sidebar_config_menu_item(item: str) -> rx.Component:
+    """Entrada del submenú Configuración (páginas estáticas admin)."""
+    label = ADMIN_CONFIG_MENU_LABELS.get(item, item.replace("_", " ").title())
+    return rx.box(
+        rx.text(label, font_size="0.9em"),
+        on_click=lambda: LaimWebState.set_menu(item),
+        background=rx.cond(
+            LaimWebState.active_menu == item,
+            "rgba(0, 180, 0, 0.3)",
+            "transparent",
+        ),
+        border_left=rx.cond(
+            LaimWebState.active_menu == item,
+            f"3px solid {COLORS['accent']}",
+            "3px solid transparent",
+        ),
+        color=rx.cond(
+            LaimWebState.active_menu == item,
+            COLORS["title"],
+            COLORS["text"],
+        ),
+        width="100%",
+        padding="0.55em 0.75em",
+        cursor="pointer",
+        _hover={"background": "rgba(0, 80, 0, 0.35)"},
+    )
+
+
+def sidebar_config_menu() -> rx.Component:
+    """Menú Configuración del portal (solo administradores)."""
+    return rx.cond(
+        LaimWebState.is_logged_in & LaimWebState.is_laim_admin,
+        rx.vstack(
+            rx.divider(color=COLORS["border"], margin_y="0.75em"),
+            rx.text(
+                "Configuración",
+                class_name="crt-title",
+                font_size="1em",
+                margin_top="0.25em",
+            ),
+            rx.vstack(
+                *[_sidebar_config_menu_item(item) for item in ADMIN_CONFIG_MENU_ITEMS],
+                *[
+                    _config_route_link(href, label)
+                    for href, label in ADMIN_CONFIG_ROUTE_LINKS
+                ],
+                spacing="1",
+                width="100%",
+            ),
+            spacing="1",
+            width="100%",
+        ),
+        rx.fragment(),
+    )
+
+
 def forum_nav_section() -> rx.Component:
     """Sección de navegación del foro (solo autenticados)."""
     return rx.cond(
@@ -113,14 +199,6 @@ def forum_nav_section() -> rx.Component:
             rx.divider(color=COLORS["border"], margin_y="0.5em"),
             rx.text("Foro", class_name="crt-title", font_size="1em"),
             *[_forum_nav_link(href, label) for href, label in FORUM_NAV],
-            rx.cond(
-                LaimWebState.is_laim_admin,
-                rx.fragment(
-                    _forum_nav_link("/config-foro", "Config. foro"),
-                    _forum_nav_link("/foro-moderacion", "Moderación"),
-                ),
-                rx.fragment(),
-            ),
             spacing="1",
             width="100%",
         ),
@@ -165,6 +243,7 @@ def portal_sidebar() -> rx.Component:
             padding="0.55em 0.75em",
         ),
         forum_nav_section(),
+        sidebar_config_menu(),
         spacing="2",
         padding="1em",
         width="100%",
