@@ -1,4 +1,10 @@
-"""Repositorio MariaDB del foro LAIM Web."""
+"""Repositorio MariaDB del foro LAIM Web.
+
+Todo el contenido del foro (categorías, hilos, mensajes, ajustes, moderación,
+etc.) se persiste exclusivamente en ``laim_core_db``. No hay ficheros JSON ni
+adaptadores mock para datos del foro. Las imágenes adjuntas se guardan en
+filesystem; sus metadatos están en ``laim_forum_images``.
+"""
 
 from __future__ import annotations
 
@@ -32,7 +38,7 @@ def _float_value(value: Any) -> float:
 
 
 def _timestamp_value(value: Any) -> str:
-    """Serializa timestamp para JSON."""
+    """Serializa timestamp para respuestas de la API."""
     if value is None:
         return ""
     if isinstance(value, datetime):

@@ -38,7 +38,7 @@ def test_forum_list_categories_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_forum_create_thread_payload(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Crea hilo con payload JSON correcto."""
+    """Crea hilo con payload REST correcto en el cuerpo de la petición."""
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
     mock_response.json.return_value = {"success": True, "thread_id": 42}

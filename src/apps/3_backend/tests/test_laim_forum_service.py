@@ -111,3 +111,21 @@ def test_admin_only_upsert_category() -> None:
     )
     assert allowed["success"] is True
     repository.upsert_category.assert_called_once()
+
+
+def test_forum_persistence_does_not_use_json_files() -> None:
+    """El subsistema foro no persiste datos en ficheros JSON."""
+    import re
+
+    repo_root = Path(__file__).resolve().parents[3]
+    repo_path = repo_root / "2_shared_application/adapters/laim_forum_repository.py"
+    service_path = repo_root / "apps/3_backend/laim_forum_service.py"
+    mixin_path = repo_root / "apps/9_laimweb/laim_web/laim_forum_mixin.py"
+
+    json_file_pattern = re.compile(r"""['"][^'"]+\.json['"]""")
+
+    for path in (repo_path, service_path, mixin_path):
+        source = path.read_text(encoding="utf-8")
+        assert "json.load" not in source
+        assert "json.dump" not in source
+        assert json_file_pattern.search(source) is None

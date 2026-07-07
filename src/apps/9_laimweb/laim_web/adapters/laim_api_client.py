@@ -110,7 +110,7 @@ def _request_forum(
     payload: dict[str, Any] | None = None,
     timeout: float = 30.0,
 ) -> dict[str, Any]:
-    """Petición JSON al subsistema foro vía middleware."""
+    """Petición HTTP REST al subsistema foro vía middleware (sin ficheros locales)."""
     base_url = _get_middleware_base_url()
     url = f"{base_url}{endpoint}"
     headers = _forum_headers(access_token, session_token)

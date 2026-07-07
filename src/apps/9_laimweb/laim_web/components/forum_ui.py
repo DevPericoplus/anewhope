@@ -776,11 +776,11 @@ def forum_admin_panel() -> rx.Component:
             ),
         ),
         rx.divider(color=COLORS["border"], margin_y="1.5em"),
-        rx.text("Ajustes de moderación (JSON)", class_name="crt-title", font_size="1em"),
-        rx.code_block(
-            LaimWebState.forum_admin_settings_json,
-            theme=rx.code_block.themes.a11y_dark,
-            width="100%",
+        rx.text(
+            "Los ajustes de moderación, prefijos y reglas se gestionan en "
+            "«Configuración avanzada» (persistidos en la base de datos).",
+            color=COLORS["muted"],
+            font_size=FONT_SIZE_SMALL,
         ),
         spacing="3",
         width="100%",

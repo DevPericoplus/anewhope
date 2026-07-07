@@ -66,7 +66,6 @@ class LaimForumMixin:
     forum_my_posts: list[dict[str, Any]] = []
 
     # Admin
-    forum_admin_settings_json: str = ""
     forum_admin_category_id: str = ""
     forum_admin_category_name: str = ""
     forum_admin_category_desc: str = ""
@@ -658,22 +657,11 @@ class LaimForumMixin:
     def forum_load_admin_panel(self) -> None:
         """Carga datos del panel admin."""
         from laim_web.adapters.laim_api_client import (
-            laim_forum_admin_settings,
             laim_forum_list_categories,
             laim_forum_list_subcategories,
         )
 
         access, session = self._forum_auth_tokens()
-        settings = laim_forum_admin_settings(access, session)
-        if settings.get("success"):
-            import json
-
-            self.forum_admin_settings_json = json.dumps(
-                settings.get("settings", settings.get("items", settings)),
-                ensure_ascii=False,
-                indent=2,
-            )
-
         cat_result = laim_forum_list_categories(access, session)
         if cat_result.get("success"):
             self.forum_categories = cat_result.get("items", [])
@@ -1243,12 +1231,7 @@ class LaimForumMixin:
         access, session = self._forum_auth_tokens()
         settings = laim_forum_admin_settings(access, session)
         if settings.get("success"):
-            import json
-
             cfg = settings.get("settings", settings)
-            self.forum_admin_settings_json = json.dumps(
-                cfg, ensure_ascii=False, indent=2
-            )
             if isinstance(cfg, dict):
                 self.forum_admin_settings_announce_ban = bool(
                     cfg.get("anunciar_ban_en_log", True)

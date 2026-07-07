@@ -7,7 +7,20 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import HTTPException
 
-from apife import _laim_forum_proxy_response
+from apife import _laim_forum_proxy_response, app
+
+LAIM_FORUM_PROXY_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
+
+
+def test_forum_proxy_route_allows_put_method() -> None:
+    """El proxy del foro debe aceptar PUT (categorías, subcategorías, prefijos)."""
+    forum_routes = [
+        route
+        for route in app.routes
+        if getattr(route, "path", "") == "/laim/forum/{forum_path:path}"
+    ]
+    assert len(forum_routes) == 1
+    assert LAIM_FORUM_PROXY_METHODS.issubset(set(forum_routes[0].methods))
 
 
 def test_forum_proxy_response_json_success() -> None:

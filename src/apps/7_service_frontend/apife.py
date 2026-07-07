@@ -5196,7 +5196,7 @@ def _laim_forum_proxy_response(proxy_result: dict[str, Any]) -> Any:
 
 @app.api_route(
     "/laim/forum/{forum_path:path}",
-    methods=["GET", "POST", "PATCH", "DELETE"],
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     tags=["laim-forum"],
 )
 async def laim_forum_proxy_endpoint(
@@ -5209,7 +5209,7 @@ async def laim_forum_proxy_endpoint(
     """Proxy transparente del foro LAIM hacia Backend Core."""
     ip_address, user_agent = _get_request_metadata(request)
     payload: dict[str, Any] | None = None
-    if request.method in {"POST", "PATCH", "DELETE"}:
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
         try:
             raw = await request.json()
             payload = raw if isinstance(raw, dict) else {}
