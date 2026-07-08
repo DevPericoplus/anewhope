@@ -39,16 +39,22 @@ def _get_middleware_base_url() -> str:
 
 
 def get_laim_site_asset_url(asset_key: str) -> str:
-    """Construye URL pública de un asset del sitio vía middleware.
+    """Construye URL pública de un asset del sitio.
 
-    Si no hay middleware configurado, usa copia local empaquetada en Reflex.
+    En producción usa ``laimweb_api_url`` (HTTPS, mismo dominio) con proxy nginx
+    hacia middleware. En desarrollo local usa middleware directo o fallback estático.
     """
     normalized = asset_key.strip().lower()
     fallback = "/presentacion_hero.png" if normalized == "presentacion-hero" else ""
-    base_url = _get_middleware_base_url().strip()
-    if not base_url:
-        return fallback
-    return f"{base_url.rstrip('/')}/laim/site/assets/{normalized}"
+
+    public_base = _env_settings.get_env_value("laimweb_api_url", "").strip().rstrip("/")
+    if public_base.startswith("https://"):
+        return f"{public_base}/laim/site/assets/{normalized}"
+
+    base_url = _get_middleware_base_url().strip().rstrip("/")
+    if base_url:
+        return f"{base_url}/laim/site/assets/{normalized}"
+    return fallback
 
 
 def _request_middleware(
