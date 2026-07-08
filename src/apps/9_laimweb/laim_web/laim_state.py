@@ -184,9 +184,9 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         return LaimWebState.complete_register_background
 
     @rx.event(background=True)
-    async def complete_register_background(self) -> None:
+    async def complete_register_background(self) -> EventHandlerReturn:
         """Ejecuta el registro en segundo plano para no bloquear la UI."""
-        from laim_web.adapters.laim_api_client import laim_register
+        from laim_web.adapters.laim_api_client import laim_login, laim_register
         from laim_web.components.hcaptcha import is_hcaptcha_configured
 
         async with self:
@@ -226,22 +226,39 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         except Exception as exc:
             result = {"success": False, "error": f"Error inesperado: {exc}"}
 
+        auto_login_started = False
         async with self:
             try:
                 if result.get("success"):
-                    self.register_message = result.get(
-                        "message", "Registro completado. Ya puede iniciar sesión."
-                    )
-                    self.register_modal_open = False
-                    self.login_modal_open = True
-                    self.login_username = username
-                    self.reg_username = ""
-                    self.reg_password = ""
-                    self.reg_password_confirm = ""
-                    self.reg_email = ""
-                    self.reg_full_name = ""
-                    self.reg_mobile = ""
-                    self.reg_hcaptcha_token = ""
+                    login_result = laim_login(username, password)
+                    if self._apply_laim_login_success(
+                        login_result,
+                        user_email_fallback=email,
+                    ):
+                        self.reg_username = ""
+                        self.reg_password = ""
+                        self.reg_password_confirm = ""
+                        self.reg_email = ""
+                        self.reg_full_name = ""
+                        self.reg_mobile = ""
+                        self.reg_hcaptcha_token = ""
+                        auto_login_started = True
+                    else:
+                        self.register_message = result.get(
+                            "message",
+                            "Registro completado. Ya puede iniciar sesión.",
+                        )
+                        self.register_modal_open = False
+                        self.login_modal_open = True
+                        self.login_username = username
+                        self.login_password = password
+                        self.reg_username = ""
+                        self.reg_password = ""
+                        self.reg_password_confirm = ""
+                        self.reg_email = ""
+                        self.reg_full_name = ""
+                        self.reg_mobile = ""
+                        self.reg_hcaptcha_token = ""
                 else:
                     detail = result.get("error", "Error en registro")
                     if "HTTP 400" in str(detail):
@@ -249,6 +266,9 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
                     self.error_message = str(detail)
             finally:
                 self.loading = False
+
+        if auto_login_started:
+            yield LaimWebState.auto_renew_tokens_loop
 
     @event
     def open_login_modal(self) -> None:
@@ -608,6 +628,47 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
             return response.get("permissions", {})
         return {}
 
+    def _apply_laim_login_success(
+        self,
+        result: dict[str, Any],
+        *,
+        user_email_fallback: str = "",
+    ) -> bool:
+        """Aplica tokens y permisos tras un login API exitoso."""
+        if not result.get("success"):
+            self.error_message = result.get("error", "Error de autenticación")
+            return False
+
+        permissions = self._load_permissions_after_login(
+            identity_type_id=int(result.get("identity_type_id", 0)),
+            access_token=result.get("access_token", ""),
+            session_token=result.get("session_token", ""),
+        )
+        self.load_user_data(
+            user_id=int(result.get("user_id", 0)),
+            organization_id=int(result.get("organization_id", 0)),
+            identity_type_id=int(result.get("identity_type_id", 0)),
+            user_name=result.get("user_name", ""),
+            user_email=str(result.get("user_email", "") or user_email_fallback),
+            user_mobile=result.get("user_mobile", ""),
+            access_token=result.get("access_token", ""),
+            session_token=result.get("session_token", ""),
+            permissions=permissions,
+            access_expires_at=int(result.get("access_expires_at", 0)),
+            session_expires_at=int(result.get("session_expires_at", 0)),
+            session_id=result.get("session_id", ""),
+        )
+        self.login_modal_open = False
+        self.register_modal_open = False
+        self.register_message = ""
+        self.login_password = ""
+        self.error_message = ""
+        self.login_error = ""
+        self.active_menu = "instaladores"
+        self._load_static_page("instaladores")
+        self._token_renewal_running = True
+        return True
+
     @event
     def handle_login(self) -> EventHandlerReturn:
         """Procesa login contra middleware LAIM."""
@@ -619,36 +680,10 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
 
         result = laim_login(self.login_username, self.login_password)
 
-        if result.get("success"):
-            permissions = self._load_permissions_after_login(
-                identity_type_id=int(result.get("identity_type_id", 0)),
-                access_token=result.get("access_token", ""),
-                session_token=result.get("session_token", ""),
-            )
-            self.load_user_data(
-                user_id=int(result.get("user_id", 0)),
-                organization_id=int(result.get("organization_id", 0)),
-                identity_type_id=int(result.get("identity_type_id", 0)),
-                user_name=result.get("user_name", ""),
-                user_email=result.get("user_email", ""),
-                user_mobile=result.get("user_mobile", ""),
-                access_token=result.get("access_token", ""),
-                session_token=result.get("session_token", ""),
-                permissions=permissions,
-                access_expires_at=int(result.get("access_expires_at", 0)),
-                session_expires_at=int(result.get("session_expires_at", 0)),
-                session_id=result.get("session_id", ""),
-            )
-            self.login_modal_open = False
-            self.register_modal_open = False
-            self.register_message = ""
+        if self._apply_laim_login_success(result):
             self.loading = False
-            self.active_menu = "instaladores"
-            self._load_static_page("instaladores")
-            self._token_renewal_running = True
             return LaimWebState.auto_renew_tokens_loop
 
-        self.error_message = result.get("error", "Error de autenticación")
         self.loading = False
 
     @event
