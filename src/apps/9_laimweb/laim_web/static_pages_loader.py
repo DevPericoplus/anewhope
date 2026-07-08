@@ -8,6 +8,7 @@ STATIC_PAGES_DIR = Path(__file__).resolve().parent.parent / "static_pages"
 
 PUBLIC_MENU_FILES: dict[str, str] = {
     "inicio": "inicio.md",
+    "presentacion": "presentacion.md",
     "servicios": "servicios.md",
     "documentacion": "documentacion.md",
     "contacto": "contacto.md",

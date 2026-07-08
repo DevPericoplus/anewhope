@@ -709,3 +709,38 @@ body::after {
 .forum-profile-save-btn {
   margin-top: 0.5rem;
 }
+
+/* Presentación — visor hero humano–IA */
+.crt-presentacion-hero {
+  padding: 1em 1.25em 1.25em;
+  border: 1px solid rgba(0, 200, 0, 0.35);
+  border-radius: 4px;
+  background:
+    radial-gradient(ellipse at center, rgba(0, 80, 0, 0.18) 0%, rgba(0, 0, 0, 0.85) 72%),
+    repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.15) 0px,
+      rgba(0, 0, 0, 0.15) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  box-shadow:
+    inset 0 0 40px rgba(0, 255, 0, 0.06),
+    0 0 18px rgba(0, 180, 0, 0.12);
+}
+
+.crt-presentacion-hero-frame {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(0, 220, 0, 0.25);
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.crt-presentacion-hero-frame img {
+  display: block;
+  filter: saturate(1.05) contrast(1.08) brightness(0.95);
+}
+
+.crt-presentacion-markdown {
+  padding: 0 1.25em 1.5em;
+}

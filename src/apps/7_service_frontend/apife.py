@@ -5233,3 +5233,38 @@ async def laim_forum_proxy_endpoint(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
+
+
+# ============================================================================
+# LAIM SITE (proxy público de assets hacia Backend Core)
+# ============================================================================
+
+
+@app.api_route(
+    "/laim/site/{site_path:path}",
+    methods=["GET"],
+    tags=["laim-site"],
+)
+async def laim_site_proxy_endpoint(
+    site_path: str,
+    request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+) -> Any:
+    """Proxy público de assets del sitio LAIM hacia Backend Core."""
+    try:
+        result = router.laim_forum_request(
+            method="GET",
+            path=f"/laim/site/{site_path}",
+            payload=None,
+            query_string=request.url.query,
+            authorization="",
+            session_token="",
+            ip_address="",
+            user_agent="",
+        )
+        return _laim_forum_proxy_response(result)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc

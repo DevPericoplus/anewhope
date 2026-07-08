@@ -10,7 +10,13 @@ from laim_web.static_pages_loader import (
 
 def test_static_page_menus_contains_public_sections() -> None:
     """Las secciones públicas del menú tienen fichero markdown."""
-    assert {"inicio", "servicios", "documentacion", "contacto"}.issubset(STATIC_PAGE_MENUS)
+    assert {
+        "inicio",
+        "presentacion",
+        "servicios",
+        "documentacion",
+        "contacto",
+    }.issubset(STATIC_PAGE_MENUS)
 
 
 def test_authenticated_menus_have_markdown_files() -> None:
@@ -36,6 +42,13 @@ def test_load_inicio_markdown() -> None:
     """Carga el contenido de inicio.md."""
     content = load_static_page_markdown("inicio")
     assert "# Bienvenido a LAIM" in content
+
+
+def test_load_presentacion_markdown() -> None:
+    """Carga el contenido de presentacion.md."""
+    content = load_static_page_markdown("presentacion")
+    assert "# Presentación" in content
+    assert "traductor de conocimiento" in content.lower()
 
 
 def test_load_instaladores_markdown() -> None:

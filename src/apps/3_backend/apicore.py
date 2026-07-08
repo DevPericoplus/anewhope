@@ -536,6 +536,15 @@ try:
 except Exception as e:
     logger.warning(f"⚠️ No se pudo registrar router LAIM forum: {e}")
 
+# Router de assets públicos del sitio LAIM
+try:
+    _laim_site_router_path = Path(__file__).resolve().parent / "router_laim_site.py"
+    _laim_site_module = _load_backend_module("router_laim_site", _laim_site_router_path)
+    app.include_router(_laim_site_module.router)
+    logger.info("✅ Router de assets del sitio LAIM registrado")
+except Exception as e:
+    logger.warning(f"⚠️ No se pudo registrar router LAIM site: {e}")
+
 
 @app.get("/users")
 def list_users(

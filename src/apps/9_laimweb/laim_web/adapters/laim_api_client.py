@@ -38,6 +38,19 @@ def _get_middleware_base_url() -> str:
     return _env_settings.get_env_value("middleware_base_url", "http://localhost:8007")
 
 
+def get_laim_site_asset_url(asset_key: str) -> str:
+    """Construye URL pública de un asset del sitio vía middleware.
+
+    Si no hay middleware configurado, usa copia local empaquetada en Reflex.
+    """
+    normalized = asset_key.strip().lower()
+    fallback = "/presentacion_hero.png" if normalized == "presentacion-hero" else ""
+    base_url = _get_middleware_base_url().strip()
+    if not base_url:
+        return fallback
+    return f"{base_url.rstrip('/')}/laim/site/assets/{normalized}"
+
+
 def _request_middleware(
     method: str,
     endpoint: str,

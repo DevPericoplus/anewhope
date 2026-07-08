@@ -4755,3 +4755,27 @@ async def laim_forum_proxy_endpoint(
         return _laim_forum_proxy_response(result)
     except BrokerBusinessError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.api_route(
+    "/laim/site/{site_path:path}",
+    methods=["GET"],
+    tags=["laim-site"],
+)
+async def laim_site_proxy_endpoint(
+    site_path: str,
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> Any:
+    """Proxy público de assets del sitio LAIM hacia Backend Core."""
+    try:
+        result = router.laim_forum_request(
+            method="GET",
+            path=f"/laim/site/{site_path}",
+            payload=None,
+            query_string=request.url.query,
+            extra_headers=_laim_forward_headers(request),
+        )
+        return _laim_forum_proxy_response(result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc

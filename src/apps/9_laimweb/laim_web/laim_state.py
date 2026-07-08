@@ -65,6 +65,13 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     active_menu: str = "inicio"
     static_page_content: str = ""
 
+    @rx.var
+    def presentacion_hero_url(self) -> str:
+        """URL del asset hero de Presentación (backend con fallback local)."""
+        from laim_web.adapters.laim_api_client import get_laim_site_asset_url
+
+        return get_laim_site_asset_url("presentacion-hero")
+
     # Login / modales de autenticación
     login_username: str = ""
     login_password: str = ""
