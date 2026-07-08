@@ -710,6 +710,111 @@ body::after {
   margin-top: 0.5rem;
 }
 
+/* Foro — visor legible de mensajes (texto blanco, sin glow CRT) */
+.forum-post-row {
+  transition: background-color 0.15s ease;
+}
+
+.forum-post-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.forum-thread-op-row {
+  margin-top: 0.35em;
+}
+
+.forum-list-preview {
+  color: #e8e8e8;
+  line-height: 1.55;
+  text-shadow: none;
+  letter-spacing: 0.01em;
+  font-family: "Inconsolata", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji",
+    monospace;
+  word-break: break-word;
+}
+
+.forum-post-body {
+  width: 100%;
+}
+
+.forum-message-viewer {
+  width: 100%;
+  color: #f5f5f5;
+  line-height: 1.75;
+  font-size: 1rem;
+  text-shadow: none;
+  letter-spacing: 0.01em;
+  font-family: "Inconsolata", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji",
+    monospace;
+}
+
+.forum-message-viewer p,
+.forum-message-viewer li,
+.forum-message-viewer span {
+  text-shadow: none !important;
+}
+
+.forum-message-viewer ul,
+.forum-message-viewer ol {
+  margin: 0.65em 0 0.85em;
+  padding-left: 1.45em;
+  color: #f5f5f5;
+}
+
+.forum-message-viewer li {
+  margin-bottom: 0.35em;
+}
+
+.forum-message-viewer strong,
+.forum-message-viewer b {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.forum-message-viewer em,
+.forum-message-viewer i {
+  color: #f0f0f0;
+  font-style: italic;
+}
+
+.forum-message-viewer a {
+  color: #bae6fd;
+  text-decoration: underline;
+}
+
+.forum-message-viewer blockquote {
+  color: #e5e5e5;
+}
+
+.forum-message-viewer table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.85em 0;
+  font-size: 0.95rem;
+}
+
+.forum-message-viewer th,
+.forum-message-viewer td {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+}
+
+.forum-message-viewer th {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.forum-message-viewer td {
+  color: #f5f5f5;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.forum-message-viewer pre,
+.forum-message-viewer code {
+  text-shadow: none;
+}
+
 /* Presentación — visor hero humano–IA */
 .crt-presentacion-hero {
   padding: 1em 1.25em 1.25em;

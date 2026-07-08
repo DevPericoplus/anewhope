@@ -63,6 +63,7 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_active_thread_id: int = 0
     forum_thread_title: str = ""
     forum_thread_body: str = ""
+    forum_thread_body_display: str = ""
     forum_thread_closed: bool = False
     forum_thread_pinned: bool = False
     forum_thread_author: str = ""
@@ -464,7 +465,11 @@ class LaimForumMixin(rx.State, mixin=True):
                 self.forum_active_thread_id, access, session
             )
             if posts_result.get("success"):
-                self.forum_posts = posts_result.get("items", [])
+                self.forum_posts = self._forum_process_posts(
+                    posts_result.get("items", []),
+                    access,
+                    session,
+                )
 
     def forum_load_catalog(self) -> None:
         """Carga categorías, subcategorías y prefijos."""
@@ -616,7 +621,11 @@ class LaimForumMixin(rx.State, mixin=True):
         thread = thread_result.get("thread", {})
         self.forum_active_thread_id = int(thread.get("id", thread_id))
         self.forum_thread_title = str(thread.get("titulo", ""))
-        self.forum_thread_body = str(thread.get("cuerpo_md", ""))
+        raw_body = str(thread.get("cuerpo_md", ""))
+        self.forum_thread_body = raw_body
+        from laim_web.components.forum_message_viewer import enrich_forum_message_markdown
+
+        self.forum_thread_body_display = enrich_forum_message_markdown(raw_body)
         self.forum_thread_closed = bool(thread.get("cerrado"))
         self.forum_thread_pinned = bool(thread.get("fijado"))
         self.forum_thread_author = str(thread.get("user_name", ""))
@@ -630,9 +639,7 @@ class LaimForumMixin(rx.State, mixin=True):
         posts_result = laim_forum_list_posts(thread_id, access, session)
         if posts_result.get("success"):
             raw_posts = posts_result.get("items", [])
-            self.forum_posts = self._forum_enrich_posts_author_avatars(
-                raw_posts, access, session
-            )
+            self.forum_posts = self._forum_process_posts(raw_posts, access, session)
         else:
             self.forum_posts = []
             self._forum_set_error(posts_result.get("error", "Error al cargar respuestas"))
@@ -643,6 +650,7 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_active_thread_id = 0
         self.forum_thread_title = ""
         self.forum_thread_body = ""
+        self.forum_thread_body_display = ""
         self.forum_thread_author_avatar_url = ""
         self.forum_posts = []
         self.forum_reply_body = ""
@@ -798,7 +806,11 @@ class LaimForumMixin(rx.State, mixin=True):
         access, session = self._forum_auth_tokens()
         result = laim_forum_my_threads(access, session)
         if result.get("success"):
-            self.forum_my_threads = result.get("items", [])
+            from laim_web.components.forum_message_viewer import enrich_forum_message_row
+
+            self.forum_my_threads = [
+                enrich_forum_message_row(item) for item in result.get("items", [])
+            ]
         else:
             self._forum_set_error(result.get("error", "Error al cargar mis hilos"))
 
@@ -809,7 +821,11 @@ class LaimForumMixin(rx.State, mixin=True):
         access, session = self._forum_auth_tokens()
         result = laim_forum_my_posts(access, session)
         if result.get("success"):
-            self.forum_my_posts = result.get("items", [])
+            from laim_web.components.forum_message_viewer import enrich_forum_message_row
+
+            self.forum_my_posts = [
+                enrich_forum_message_row(item) for item in result.get("items", [])
+            ]
         else:
             self._forum_set_error(result.get("error", "Error al cargar mis respuestas"))
 
@@ -1311,6 +1327,25 @@ class LaimForumMixin(rx.State, mixin=True):
         )
         self.forum_profile_avatar_preview_url = preview
         self.forum_my_avatar_preview_url = preview
+
+    def _forum_process_posts(
+        self,
+        posts: list[dict[str, Any]],
+        access_token: str,
+        session_token: str,
+    ) -> list[dict[str, Any]]:
+        """Enriquece respuestas con avatar y markdown legible para el visor."""
+        with_avatars = self._forum_enrich_posts_author_avatars(
+            posts, access_token, session_token
+        )
+        return self._forum_enrich_posts_display(with_avatars)
+
+    @staticmethod
+    def _forum_enrich_posts_display(posts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Prepara display_md y display_preview para mensajes del foro."""
+        from laim_web.components.forum_message_viewer import enrich_forum_message_row
+
+        return [enrich_forum_message_row(post) for post in posts]
 
     def _forum_enrich_posts_author_avatars(
         self,

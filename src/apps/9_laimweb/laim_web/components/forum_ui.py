@@ -10,7 +10,7 @@ from laim_web.components.crt_theme import (
     FONT_SIZE_SMALL,
     SELECT_STYLE,
 )
-from laim_web.components.markdown_viewer import crt_markdown_viewer
+from laim_web.components.forum_message_viewer import forum_message_body
 from laim_web.laim_state import LaimWebState
 
 
@@ -487,7 +487,12 @@ def _post_row(post) -> rx.Component:
             flex_wrap="wrap",
             spacing="1",
         ),
-        crt_markdown_viewer(post["cuerpo_md"]),
+        rx.box(
+            forum_message_body(post["display_md"]),
+            class_name="forum-post-body",
+            width="100%",
+            margin_top="0.5em",
+        ),
         rx.hstack(
             rx.foreach(
                 image_ids,
@@ -497,9 +502,13 @@ def _post_row(post) -> rx.Component:
             spacing="1",
             margin_top="0.35em",
         ),
-        padding_y="0.75em",
-        border_bottom=f"1px solid {COLORS['border']}",
+        padding="0.85em 1em",
+        margin_bottom="0.65em",
+        border=f"1px solid {COLORS['border']}",
+        border_radius="6px",
+        background="rgba(255, 255, 255, 0.03)",
         width="100%",
+        class_name="forum-post-row",
     )
 
 
@@ -592,8 +601,20 @@ def forum_thread_content_panel() -> rx.Component:
                     class_name="forum-thread-author-block",
                 ),
                 rx.box(
+                    forum_message_body(
+                        LaimWebState.forum_thread_body_display,
+                        class_name="forum-post-body forum-thread-op-body",
+                    ),
+                    padding="0.85em 1em",
+                    margin_bottom="0.65em",
+                    border=f"1px solid {COLORS['border']}",
+                    border_radius="6px",
+                    background="rgba(255, 255, 255, 0.03)",
+                    width="100%",
+                    class_name="forum-post-row forum-thread-op-row",
+                ),
+                rx.box(
                     rx.vstack(
-                        crt_markdown_viewer(LaimWebState.forum_thread_body),
                         rx.cond(
                             LaimWebState.forum_thread_has_attachments,
                             rx.vstack(
@@ -779,23 +800,38 @@ def forum_my_threads_table() -> rx.Component:
         forum_error_banner(),
         rx.foreach(
             LaimWebState.forum_my_threads,
-            lambda item: rx.hstack(
-                rx.button(
-                    item["titulo"],
-                    on_click=LaimWebState.forum_go_to_thread(item["id"]),
-                    class_name="crt-btn crt-btn-inline",
-                    style={"color": COLORS["accent"], "font_weight": "normal"},
+            lambda item: rx.vstack(
+                rx.hstack(
+                    rx.button(
+                        item["titulo"],
+                        on_click=LaimWebState.forum_go_to_thread(item["id"]),
+                        class_name="crt-btn crt-btn-inline",
+                        style={"color": COLORS["accent"], "font_weight": "normal"},
+                    ),
+                    rx.text(item["subcategory_id"], color=COLORS["muted"], font_size=FONT_SIZE_SMALL),
+                    rx.spacer(),
+                    rx.cond(
+                        item["cerrado"],
+                        rx.badge("Cerrado", color_scheme="gray", variant="solid", size="1"),
+                        rx.badge("Abierto", color_scheme="green", variant="solid", size="1"),
+                    ),
+                    width="100%",
+                    align_items="center",
                 ),
-                rx.text(item["subcategory_id"], color=COLORS["muted"], font_size=FONT_SIZE_SMALL),
-                rx.spacer(),
                 rx.cond(
-                    item["cerrado"],
-                    rx.badge("Cerrado", color_scheme="gray", variant="solid", size="1"),
-                    rx.badge("Abierto", color_scheme="green", variant="solid", size="1"),
+                    item["display_preview"] != "",
+                    rx.text(
+                        item["display_preview"],
+                        class_name="forum-list-preview",
+                        font_size=FONT_SIZE_SMALL,
+                        width="100%",
+                    ),
+                    rx.fragment(),
                 ),
                 width="100%",
-                padding="0.5em 0",
+                padding="0.65em 0",
                 border_bottom=f"1px solid {COLORS['border']}",
+                spacing="1",
             ),
         ),
         width="100%",
@@ -809,24 +845,26 @@ def forum_my_posts_table() -> rx.Component:
         forum_error_banner(),
         rx.foreach(
             LaimWebState.forum_my_posts,
-            lambda item: rx.hstack(
-                rx.button(
-                    rx.fragment("Hilo #", item["thread_id"]),
-                    on_click=LaimWebState.forum_go_to_thread(item["thread_id"]),
-                    class_name="crt-btn crt-btn-inline",
+            lambda item: rx.vstack(
+                rx.hstack(
+                    rx.button(
+                        rx.fragment("Hilo #", item["thread_id"]),
+                        on_click=LaimWebState.forum_go_to_thread(item["thread_id"]),
+                        class_name="crt-btn crt-btn-inline",
+                    ),
+                    rx.spacer(),
+                    width="100%",
                 ),
                 rx.text(
-                    item["cuerpo_md"],
-                    color=COLORS["muted"],
+                    item["display_preview"],
+                    class_name="forum-list-preview",
                     font_size=FONT_SIZE_SMALL,
-                    max_width="60%",
-                    overflow="hidden",
-                    text_overflow="ellipsis",
-                    white_space="nowrap",
+                    width="100%",
                 ),
                 width="100%",
-                padding="0.5em 0",
+                padding="0.65em 0",
                 border_bottom=f"1px solid {COLORS['border']}",
+                spacing="1",
             ),
         ),
         width="100%",
