@@ -575,3 +575,19 @@ body::after {
   min-height: 0;
   overflow: visible;
 }
+
+.forum-filters-row {
+  width: 100%;
+}
+
+.forum-select,
+.forum-select button,
+.forum-select select {
+  background-color: rgba(0, 30, 0, 0.8) !important;
+  color: #e8ffe8 !important;
+  border-color: rgba(0, 200, 0, 0.35) !important;
+}
+
+.forum-select [data-placeholder] {
+  color: rgba(200, 255, 200, 0.65) !important;
+}

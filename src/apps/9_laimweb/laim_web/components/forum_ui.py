@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import reflex as rx
 
-from laim_web.components.crt_theme import COLORS, FONT_SIZE_BODY, FONT_SIZE_SMALL
+from laim_web.components.crt_theme import (
+    COLORS,
+    FONT_SIZE_BODY,
+    FONT_SIZE_SMALL,
+    SELECT_STYLE,
+)
 from laim_web.components.markdown_viewer import crt_markdown_viewer
 from laim_web.laim_state import LaimWebState
 
@@ -186,63 +191,67 @@ def forum_error_banner() -> rx.Component:
     )
 
 
+def _forum_select_label(text: str) -> rx.Component:
+    """Etiqueta de selector del foro."""
+    return rx.text(
+        text,
+        font_size="1.1em",
+        color=COLORS["title"],
+        font_weight="bold",
+    )
+
+
 def forum_category_select() -> rx.Component:
-    """Selector compacto de categoría (barra superior)."""
-    return rx.select.root(
-        rx.select.trigger(
+    """Desplegable de categoría (barra superior, estilo Radikal)."""
+    return rx.vstack(
+        _forum_select_label("Categoría"),
+        rx.select(
+            LaimWebState.forum_category_select_labels,
+            value=LaimWebState.forum_selected_category_label,
+            on_change=LaimWebState.forum_select_category_by_label,
             placeholder="Categoría",
-            class_name="crt-input",
-            style={
-                "backgroundColor": COLORS["input_bg"],
-                "color": COLORS["text"],
-                "borderColor": COLORS["border"],
-                "minWidth": "180px",
-            },
+            size="3",
+            width="100%",
+            min_width="180px",
+            style=SELECT_STYLE,
+            class_name="forum-select",
         ),
-        rx.select.content(
-            rx.select.group(
-                rx.foreach(
-                    LaimWebState.forum_categories,
-                    lambda item: rx.select.item(
-                        item["nombre"],
-                        value=item["id"],
-                    ),
-                ),
-            ),
-        ),
-        value=LaimWebState.forum_selected_category_id,
-        on_change=LaimWebState.forum_select_category,
-        size="2",
+        spacing="1",
+        align_items="start",
     )
 
 
 def forum_subcategory_select() -> rx.Component:
-    """Selector compacto de subcategoría (barra superior)."""
-    return rx.select.root(
-        rx.select.trigger(
+    """Desplegable de subcategoría (barra superior, estilo Radikal)."""
+    return rx.vstack(
+        _forum_select_label("Subcategoría"),
+        rx.select(
+            LaimWebState.forum_subcategory_select_labels,
+            value=LaimWebState.forum_selected_subcategory_label,
+            on_change=LaimWebState.forum_select_subcategory_by_label,
             placeholder="Subcategoría",
-            class_name="crt-input",
-            style={
-                "backgroundColor": COLORS["input_bg"],
-                "color": COLORS["text"],
-                "borderColor": COLORS["border"],
-                "minWidth": "200px",
-            },
+            size="3",
+            width="100%",
+            min_width="200px",
+            style=SELECT_STYLE,
+            class_name="forum-select",
         ),
-        rx.select.content(
-            rx.select.group(
-                rx.foreach(
-                    LaimWebState.forum_subcategories,
-                    lambda item: rx.select.item(
-                        item["nombre"],
-                        value=item["id"],
-                    ),
-                ),
-            ),
-        ),
-        value=LaimWebState.forum_selected_subcategory_id,
-        on_change=LaimWebState.forum_select_subcategory,
-        size="2",
+        spacing="1",
+        align_items="start",
+    )
+
+
+def _forum_category_filters_row() -> rx.Component:
+    """Fila de filtros: categoría + subcategoría."""
+    return rx.hstack(
+        forum_category_select(),
+        forum_subcategory_select(),
+        spacing="4",
+        width="100%",
+        flex_wrap="wrap",
+        align_items="end",
+        flex_shrink="0",
+        class_name="forum-filters-row",
     )
 
 
@@ -262,53 +271,40 @@ def forum_new_thread_dialog() -> rx.Component:
 
 
 def _forum_toolbar() -> rx.Component:
-    """Cabecera compacta: título, selectores y acciones."""
-    return rx.vstack(
-        rx.hstack(
-            rx.vstack(
-                rx.heading("Foro LAIM", size="6", color=COLORS["title"]),
-                rx.text(
-                    "Categorías, hilos y respuestas · Markdown soportado",
-                    color=COLORS["muted"],
-                    font_size=FONT_SIZE_SMALL,
-                ),
-                spacing="1",
+    """Cabecera compacta: título y acciones."""
+    return rx.hstack(
+        rx.vstack(
+            rx.heading("Foro LAIM", size="6", color=COLORS["title"]),
+            rx.text(
+                "Categorías, hilos y respuestas · Markdown soportado",
+                color=COLORS["muted"],
+                font_size=FONT_SIZE_SMALL,
             ),
-            rx.box(flex_grow="1"),
-            rx.cond(
-                LaimWebState.forum_notifications_count > 0,
-                rx.badge(
-                    LaimWebState.forum_notifications_count,
-                    color_scheme="amber",
-                    variant="solid",
-                ),
-                rx.fragment(),
-            ),
-            rx.button(
-                "Nuevo hilo",
-                on_click=LaimWebState.forum_open_new_thread,
-                class_name="crt-btn crt-btn-inline",
-            ),
-            width="100%",
-            align_items="center",
-            flex_shrink="0",
+            spacing="1",
         ),
-        rx.hstack(
-            forum_category_select(),
-            forum_subcategory_select(),
-            rx.button(
-                "Actualizar",
-                on_click=LaimWebState.forum_refresh,
-                class_name="crt-btn crt-btn-inline",
+        rx.box(flex_grow="1"),
+        rx.cond(
+            LaimWebState.forum_notifications_count > 0,
+            rx.badge(
+                LaimWebState.forum_notifications_count,
+                color_scheme="amber",
+                variant="solid",
             ),
-            spacing="3",
-            width="100%",
-            flex_wrap="wrap",
-            align_items="center",
-            flex_shrink="0",
+            rx.fragment(),
         ),
-        spacing="3",
+        rx.button(
+            "Nuevo hilo",
+            on_click=LaimWebState.forum_open_new_thread,
+            class_name="crt-btn crt-btn-inline",
+        ),
+        rx.button(
+            "Actualizar",
+            on_click=LaimWebState.forum_refresh,
+            class_name="crt-btn crt-btn-inline",
+        ),
         width="100%",
+        align_items="center",
+        flex_shrink="0",
     )
 
 
@@ -330,10 +326,28 @@ def _thread_row(thread) -> rx.Component:
                 spacing="2",
             ),
             rx.text(thread["titulo"], font_weight="bold", color=COLORS["title"]),
-            rx.text(
-                rx.fragment("Por ", thread["user_name"]),
-                color=COLORS["muted"],
-                font_size=FONT_SIZE_SMALL,
+            rx.hstack(
+                rx.text(thread["user_name"], color=COLORS["accent"], font_size=FONT_SIZE_SMALL),
+                rx.text("·", color=COLORS["muted"], font_size=FONT_SIZE_SMALL),
+                rx.text(
+                    thread["respuestas_count"],
+                    color=COLORS["muted"],
+                    font_size=FONT_SIZE_SMALL,
+                ),
+                rx.text(" resp.", color=COLORS["muted"], font_size=FONT_SIZE_SMALL),
+                spacing="1",
+                flex_wrap="wrap",
+            ),
+            rx.cond(
+                thread["actualizado"] != "",
+                rx.text(
+                    thread["actualizado"],
+                    color=COLORS["muted"],
+                    font_size=FONT_SIZE_SMALL,
+                    text_align="right",
+                    width="100%",
+                ),
+                rx.fragment(),
             ),
             spacing="1",
             align_items="start",
@@ -376,7 +390,7 @@ def forum_threads_sidebar() -> rx.Component:
                     ),
                 ),
                 rx.text(
-                    "Seleccione categoría y subcategoría.",
+                    "No hay hilos en esta subcategoría.",
                     color=COLORS["muted"],
                     font_size=FONT_SIZE_SMALL,
                 ),
@@ -668,6 +682,7 @@ def forum_main_layout() -> rx.Component:
                     color=COLORS["muted"],
                 ),
                 rx.vstack(
+                    _forum_category_filters_row(),
                     rx.hstack(
                         forum_threads_sidebar(),
                         forum_thread_content_panel(),

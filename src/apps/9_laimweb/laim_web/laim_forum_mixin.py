@@ -217,6 +217,45 @@ class LaimForumMixin:
         return items
 
     @rx.var
+    def forum_category_select_labels(self) -> list[str]:
+        """Etiquetas legibles para el desplegable de categorías."""
+        return [
+            str(c.get("nombre") or c.get("id", ""))
+            for c in self.forum_categories
+            if c.get("id")
+        ]
+
+    @rx.var
+    def forum_subcategory_select_labels(self) -> list[str]:
+        """Etiquetas legibles para el desplegable de subcategorías."""
+        active = self.forum_selected_category_id
+        labels: list[str] = []
+        for sub in self.forum_subcategories:
+            sub_id = str(sub.get("id", ""))
+            if not sub_id:
+                continue
+            parent = str(sub.get("categoria_id", sub.get("category_id", "")))
+            if not active or parent == active:
+                labels.append(str(sub.get("nombre") or sub_id))
+        return labels
+
+    @rx.var
+    def forum_selected_category_label(self) -> str:
+        """Nombre visible de la categoría seleccionada."""
+        for category in self.forum_categories:
+            if str(category.get("id", "")) == self.forum_selected_category_id:
+                return str(category.get("nombre") or category.get("id", ""))
+        return ""
+
+    @rx.var
+    def forum_selected_subcategory_label(self) -> str:
+        """Nombre visible de la subcategoría seleccionada."""
+        for subcategory in self.forum_subcategories:
+            if str(subcategory.get("id", "")) == self.forum_selected_subcategory_id:
+                return str(subcategory.get("nombre") or subcategory.get("id", ""))
+        return ""
+
+    @rx.var
     def forum_thread_has_attachments(self) -> bool:
         """True si el hilo activo tiene adjuntos."""
         return len(self.forum_thread_image_ids) > 0
@@ -440,9 +479,8 @@ class LaimForumMixin:
 
         self.forum_loading = False
 
-    @forum_event
-    def forum_select_category(self, category_id: str) -> None:
-        """Selecciona categoría y recarga subcategorías."""
+    def _forum_apply_category(self, category_id: str) -> None:
+        """Aplica selección de categoría y recarga subcategorías."""
         from laim_web.adapters.laim_api_client import laim_forum_list_subcategories
 
         self.forum_selected_category_id = category_id
@@ -463,12 +501,48 @@ class LaimForumMixin:
             self._forum_set_error(result.get("error", "Error al cargar subcategorías"))
 
     @forum_event
-    def forum_select_subcategory(self, subcategory_id: str) -> None:
-        """Selecciona subcategoría y lista hilos."""
+    def forum_select_category(self, category_id: str) -> None:
+        """Selecciona categoría y recarga subcategorías."""
+        self._forum_apply_category(category_id)
+
+    @forum_event
+    def forum_select_category_by_label(self, label: str) -> None:
+        """Selecciona categoría desde el desplegable (etiqueta visible)."""
+        for category in self.forum_categories:
+            nombre = str(category.get("nombre") or category.get("id", ""))
+            category_id = str(category.get("id", ""))
+            if label in (nombre, category_id):
+                self._forum_apply_category(category_id)
+                return
+
+    def _forum_apply_subcategory(self, subcategory_id: str) -> None:
+        """Aplica selección de subcategoría y carga hilos."""
         self.forum_selected_subcategory_id = subcategory_id
         self.forum_active_thread_id = 0
         self.forum_posts = []
         self.forum_load_threads()
+
+    @forum_event
+    def forum_select_subcategory(self, subcategory_id: str) -> None:
+        """Selecciona subcategoría y lista hilos."""
+        self._forum_apply_subcategory(subcategory_id)
+
+    @forum_event
+    def forum_select_subcategory_by_label(self, label: str) -> None:
+        """Selecciona subcategoría desde el desplegable (etiqueta visible)."""
+        active = self.forum_selected_category_id
+        for subcategory in self.forum_subcategories:
+            nombre = str(subcategory.get("nombre") or subcategory.get("id", ""))
+            subcategory_id = str(subcategory.get("id", ""))
+            if label not in (nombre, subcategory_id):
+                continue
+            parent = str(
+                subcategory.get("categoria_id", subcategory.get("category_id", ""))
+            )
+            if active and parent != active:
+                continue
+            self._forum_apply_subcategory(subcategory_id)
+            return
 
     def forum_load_threads(self) -> None:
         """Carga hilos de la subcategoría activa."""
@@ -483,7 +557,14 @@ class LaimForumMixin:
             self.forum_selected_subcategory_id, access, session
         )
         if result.get("success"):
-            self.forum_threads = result.get("items", [])
+            items = result.get("items", [])
+            normalized: list[dict[str, Any]] = []
+            for item in items:
+                row = dict(item)
+                row.setdefault("respuestas_count", row.get("posts_count", 0))
+                row.setdefault("actualizado", row.get("updated_at", row.get("creado", "")))
+                normalized.append(row)
+            self.forum_threads = normalized
         else:
             self._forum_set_error(result.get("error", "Error al cargar hilos"))
 

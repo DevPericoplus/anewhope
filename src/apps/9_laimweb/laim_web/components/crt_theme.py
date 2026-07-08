@@ -20,3 +20,10 @@ FONT_SIZE_TITLE = "1.4em"
 FONT_SIZE_BODY = "0.95em"
 FONT_SIZE_SMALL = "0.85em"
 CONTENT_PADDING = "1.5em"
+
+# Estilo estándar para selectores en tema oscuro CRT
+SELECT_STYLE = {
+    "backgroundColor": COLORS["input_bg"],
+    "color": COLORS["text"],
+    "borderColor": COLORS["border"],
+}
