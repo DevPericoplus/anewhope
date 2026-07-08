@@ -119,7 +119,7 @@ def forum_thread_star_rating_panel() -> rx.Component:
             ),
         ),
         spacing="2",
-        align="flex-start",
+        align="start",
         width="100%",
         class_name="forum-thread-rating-block",
     )
