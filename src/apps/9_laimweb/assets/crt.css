@@ -580,6 +580,18 @@ body::after {
   width: 100%;
 }
 
+.forum-threads-area {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(0, 200, 0, 0.35);
+  border-radius: 8px;
+  padding: 0.75em;
+  background: rgba(0, 20, 0, 0.35);
+}
+
 .forum-select,
 .forum-select button,
 .forum-select select {

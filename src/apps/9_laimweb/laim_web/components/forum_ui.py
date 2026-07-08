@@ -271,12 +271,12 @@ def forum_new_thread_dialog() -> rx.Component:
 
 
 def _forum_toolbar() -> rx.Component:
-    """Cabecera compacta: título y acciones."""
+    """Cabecera: solo título (filtros y acciones van debajo)."""
     return rx.hstack(
         rx.vstack(
             rx.heading("Foro LAIM", size="6", color=COLORS["title"]),
             rx.text(
-                "Categorías, hilos y respuestas · Markdown soportado",
+                "Seleccione categoría y subcategoría; los hilos se muestran debajo.",
                 color=COLORS["muted"],
                 font_size=FONT_SIZE_SMALL,
             ),
@@ -292,19 +292,32 @@ def _forum_toolbar() -> rx.Component:
             ),
             rx.fragment(),
         ),
-        rx.button(
-            "Nuevo hilo",
-            on_click=LaimWebState.forum_open_new_thread,
-            class_name="crt-btn crt-btn-inline",
-        ),
+        width="100%",
+        align_items="center",
+        flex_shrink="0",
+    )
+
+
+def _forum_threads_toolbar() -> rx.Component:
+    """Acciones del listado de hilos (debajo de los selectores)."""
+    return rx.hstack(
+        _panel_title("Hilos"),
+        rx.box(flex_grow="1"),
         rx.button(
             "Actualizar",
             on_click=LaimWebState.forum_refresh,
             class_name="crt-btn crt-btn-inline",
         ),
+        rx.button(
+            "Nuevo hilo",
+            on_click=LaimWebState.forum_open_new_thread,
+            class_name="crt-btn crt-btn-inline",
+        ),
         width="100%",
         align_items="center",
         flex_shrink="0",
+        flex_wrap="wrap",
+        spacing="2",
     )
 
 
@@ -372,8 +385,6 @@ def forum_threads_sidebar() -> rx.Component:
     """Columna lateral con listado de hilos (estilo Radikal)."""
     return rx.box(
         rx.vstack(
-            _panel_title("Hilos"),
-            rx.box(height="1px", width="100%", background=COLORS["border"]),
             rx.cond(
                 LaimWebState.forum_has_selection,
                 rx.cond(
@@ -527,11 +538,6 @@ def forum_thread_content_panel() -> rx.Component:
                         ),
                         rx.fragment(),
                     ),
-                    rx.button(
-                        "Actualizar",
-                        on_click=LaimWebState.forum_refresh,
-                        class_name="crt-btn crt-btn-inline",
-                    ),
                     width="100%",
                     flex_wrap="wrap",
                     spacing="2",
@@ -683,15 +689,23 @@ def forum_main_layout() -> rx.Component:
                 ),
                 rx.vstack(
                     _forum_category_filters_row(),
-                    rx.hstack(
-                        forum_threads_sidebar(),
-                        forum_thread_content_panel(),
-                        spacing="4",
+                    rx.vstack(
+                        _forum_threads_toolbar(),
+                        rx.hstack(
+                            forum_threads_sidebar(),
+                            forum_thread_content_panel(),
+                            spacing="4",
+                            width="100%",
+                            flex="1",
+                            min_height="0",
+                            align_items="stretch",
+                            class_name="forum-panels-row",
+                        ),
+                        spacing="2",
                         width="100%",
                         flex="1",
                         min_height="0",
-                        align_items="stretch",
-                        class_name="forum-panels-row",
+                        class_name="forum-threads-area",
                     ),
                     spacing="3",
                     width="100%",
