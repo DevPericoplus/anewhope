@@ -69,6 +69,7 @@ LaimForumThreadUpdateDto = _dtos.LaimForumThreadUpdateDto
 LaimForumPostCreateDto = _dtos.LaimForumPostCreateDto
 LaimForumPostUpdateDto = _dtos.LaimForumPostUpdateDto
 LaimForumPostRatingDto = _dtos.LaimForumPostRatingDto
+LaimForumThreadRatingDto = _dtos.LaimForumThreadRatingDto
 LaimForumUserProfileUpdateDto = _dtos.LaimForumUserProfileUpdateDto
 LaimForumImageUploadDto = _dtos.LaimForumImageUploadDto
 LaimForumCategoryUpsertDto = _dtos.LaimForumCategoryUpsertDto
@@ -498,13 +499,20 @@ class LaimForumService:
             "items": self._repository.list_threads_by_subcategory(subcategory_id),
         }
 
-    def get_thread(self, thread_id: int) -> dict[str, Any]:
+    def get_thread(
+        self, thread_id: int, session: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Detalle de hilo."""
         if not self.is_forum_active():
             return self._forum_disabled_error()
         thread = self._repository.get_thread(thread_id)
         if thread is None:
             return {"success": False, "error": "Hilo no encontrado."}
+        if session is not None:
+            my_rating = self._repository.get_user_thread_rating(
+                thread_id, session["user_id"]
+            )
+            thread["my_rating"] = my_rating
         return {"success": True, "thread": thread}
 
     def create_thread(
@@ -781,6 +789,30 @@ class LaimForumService:
         return {
             "success": True,
             "items": self._repository.list_posts_by_user(session["user_id"]),
+        }
+
+    def rate_thread(
+        self, thread_id: int, payload: dict[str, Any], session: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Valoración 1-5 de un hilo (una por usuario)."""
+        if not self.is_forum_active():
+            return self._forum_disabled_error()
+        thread = self._repository.get_thread(thread_id)
+        if thread is None:
+            return {"success": False, "error": "Hilo no encontrado."}
+        if int(thread["user_id"]) == session["user_id"]:
+            return {"success": False, "error": "No puede valorar su propio hilo."}
+        dto = LaimForumThreadRatingDto.model_validate(payload)
+        self._repository.upsert_thread_rating(
+            thread_id=thread_id,
+            user_id=session["user_id"],
+            valoracion=dto.valoracion,
+        )
+        updated = self._repository.get_thread(thread_id)
+        return {
+            "success": True,
+            "thread": updated,
+            "my_rating": dto.valoracion,
         }
 
     def rate_post(

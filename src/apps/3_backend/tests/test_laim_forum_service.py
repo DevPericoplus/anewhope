@@ -92,6 +92,82 @@ def test_rate_post_rejects_self_rating() -> None:
     repository.upsert_post_rating.assert_not_called()
 
 
+def test_rate_thread_rejects_self_rating() -> None:
+    module = _load_forum_service()
+    repository = MagicMock()
+    repository.get_thread.return_value = {
+        "id": 5,
+        "user_id": 10,
+        "user_name": "demo_user",
+        "titulo": "Hilo",
+        "cuerpo_md": "texto",
+        "rating_avg": 0.0,
+        "rating_count": 0,
+    }
+    service = module.LaimForumService(repository=repository, image_storage=MagicMock())
+
+    result = service.rate_thread(5, {"valoracion": 4}, _session())
+
+    assert result["success"] is False
+    repository.upsert_thread_rating.assert_not_called()
+
+
+def test_rate_thread_updates_aggregate() -> None:
+    module = _load_forum_service()
+    repository = MagicMock()
+    repository.get_thread.side_effect = [
+        {
+            "id": 5,
+            "user_id": 99,
+            "user_name": "autor",
+            "titulo": "Hilo",
+            "cuerpo_md": "texto",
+            "rating_avg": 0.0,
+            "rating_count": 0,
+        },
+        {
+            "id": 5,
+            "user_id": 99,
+            "user_name": "autor",
+            "titulo": "Hilo",
+            "cuerpo_md": "texto",
+            "rating_avg": 4.0,
+            "rating_count": 1,
+        },
+    ]
+    service = module.LaimForumService(repository=repository, image_storage=MagicMock())
+
+    result = service.rate_thread(5, {"valoracion": 4}, _session())
+
+    assert result["success"] is True
+    assert result["my_rating"] == 4
+    assert result["thread"]["rating_avg"] == 4.0
+    repository.upsert_thread_rating.assert_called_once_with(
+        thread_id=5,
+        user_id=10,
+        valoracion=4,
+    )
+
+
+def test_get_thread_includes_my_rating_when_session() -> None:
+    module = _load_forum_service()
+    repository = MagicMock()
+    repository.get_thread.return_value = {
+        "id": 5,
+        "user_id": 99,
+        "rating_avg": 3.5,
+        "rating_count": 2,
+    }
+    repository.get_user_thread_rating.return_value = 4
+    service = module.LaimForumService(repository=repository, image_storage=MagicMock())
+
+    result = service.get_thread(5, _session())
+
+    assert result["success"] is True
+    assert result["thread"]["my_rating"] == 4
+    repository.get_user_thread_rating.assert_called_once_with(5, 10)
+
+
 def test_admin_only_upsert_category() -> None:
     module = _load_forum_service()
     repository = MagicMock()

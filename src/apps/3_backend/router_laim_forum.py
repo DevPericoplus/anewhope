@@ -297,8 +297,8 @@ def laim_forum_get_thread(
     session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
 ) -> dict[str, Any]:
     """Detalle de hilo."""
-    _require_session(authorization, session_token)
-    return _raise_if_failed(get_laim_forum_service().get_thread(thread_id))
+    session = _require_session(authorization, session_token)
+    return _raise_if_failed(get_laim_forum_service().get_thread(thread_id, session))
 
 
 @router.post("/threads")
@@ -411,6 +411,20 @@ def laim_forum_my_posts(
     """Mis respuestas."""
     session = _require_session(authorization, session_token)
     return _raise_if_failed(get_laim_forum_service().list_my_posts(session))
+
+
+@router.post("/threads/{thread_id}/rating")
+def laim_forum_rate_thread(
+    thread_id: int,
+    payload: dict[str, Any],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Valoración de hilo (una por usuario)."""
+    session = _require_session(authorization, session_token)
+    return _raise_if_failed(
+        get_laim_forum_service().rate_thread(thread_id, payload, session)
+    )
 
 
 @router.post("/posts/{post_id}/rating")

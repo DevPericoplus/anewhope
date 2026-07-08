@@ -182,6 +182,14 @@ class LaimForumPostRatingDto(BaseModel):
     valoracion: int = Field(..., ge=1, le=5)
 
 
+class LaimForumThreadRatingDto(BaseModel):
+    """Valoración de hilo (1-5, una por usuario)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    valoracion: int = Field(..., ge=1, le=5)
+
+
 class LaimForumAvatarCatalogItemDto(BaseModel):
     """Entrada del catálogo de avatares."""
 

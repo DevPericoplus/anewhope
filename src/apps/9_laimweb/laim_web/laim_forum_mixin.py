@@ -68,6 +68,9 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_thread_pinned: bool = False
     forum_thread_author: str = ""
     forum_thread_author_id: int = 0
+    forum_thread_rating_avg: float = 0.0
+    forum_thread_rating_count: int = 0
+    forum_my_thread_rating: int = 0
 
     # Respuestas
     forum_posts: list[dict[str, Any]] = []
@@ -163,6 +166,32 @@ class LaimForumMixin(rx.State, mixin=True):
     def forum_has_thread(self) -> bool:
         """True si hay un hilo abierto."""
         return self.forum_active_thread_id > 0
+
+    @rx.var
+    def forum_can_vote_thread(self) -> bool:
+        """True si el usuario puede valorar el hilo abierto."""
+        if not self.is_logged_in or self.forum_active_thread_id <= 0:
+            return False
+        if self.forum_thread_author_id <= 0:
+            return False
+        return self.user_id != self.forum_thread_author_id
+
+    @rx.var
+    def forum_thread_rating_summary(self) -> str:
+        """Texto resumen de valoraciones del hilo."""
+        avg = self.forum_thread_rating_avg
+        count = self.forum_thread_rating_count
+        avg_text = f"{avg:.1f}".replace(".", ",")
+        if count == 1:
+            return f"{avg_text} · 1 valoración"
+        return f"{avg_text} · {count} valoraciones"
+
+    @rx.var
+    def forum_my_thread_rating_label(self) -> str:
+        """Etiqueta de la valoración propia en el hilo."""
+        if self.forum_my_thread_rating <= 0:
+            return ""
+        return f"Tu valoración: {self.forum_my_thread_rating}/5"
 
     @rx.var
     def forum_prefix_options(self) -> list[str]:
@@ -630,6 +659,10 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_thread_pinned = bool(thread.get("fijado"))
         self.forum_thread_author = str(thread.get("user_name", ""))
         self.forum_thread_author_id = int(thread.get("user_id", 0))
+        self.forum_thread_rating_avg = float(thread.get("rating_avg") or 0)
+        self.forum_thread_rating_count = int(thread.get("rating_count") or 0)
+        my_rating = thread.get("my_rating")
+        self.forum_my_thread_rating = int(my_rating) if my_rating is not None else 0
         self._forum_load_thread_author_avatar(thread, access, session)
         raw_images = thread.get("image_ids", [])
         self.forum_thread_image_ids = [
@@ -652,6 +685,9 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_thread_body = ""
         self.forum_thread_body_display = ""
         self.forum_thread_author_avatar_url = ""
+        self.forum_thread_rating_avg = 0.0
+        self.forum_thread_rating_count = 0
+        self.forum_my_thread_rating = 0
         self.forum_posts = []
         self.forum_reply_body = ""
         self.forum_reply_image_ids = []
@@ -786,6 +822,28 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_error = ""
         self.forum_open_thread(self.forum_active_thread_id)
         return None
+
+    @forum_event
+    def forum_rate_thread(self, rating: int) -> None:
+        """Valora el hilo abierto (1-5, una valoración por usuario)."""
+        if self.forum_active_thread_id <= 0:
+            return
+        from laim_web.adapters.laim_api_client import laim_forum_rate_thread
+
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_rate_thread(
+            self.forum_active_thread_id, rating, access, session
+        )
+        if not result.get("success"):
+            self._forum_set_error(result.get("error", "No se pudo valorar el hilo"))
+            return
+
+        thread = result.get("thread") or {}
+        self.forum_thread_rating_avg = float(thread.get("rating_avg") or 0)
+        self.forum_thread_rating_count = int(thread.get("rating_count") or 0)
+        my_rating = result.get("my_rating", thread.get("my_rating"))
+        self.forum_my_thread_rating = int(my_rating) if my_rating is not None else rating
+        self.forum_error = ""
 
     @forum_event
     def forum_rate_post(self, post_id: int, rating: int) -> None:

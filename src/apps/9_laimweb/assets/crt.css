@@ -815,6 +815,24 @@ body::after {
   text-shadow: none;
 }
 
+.forum-thread-rating-block {
+  margin: 0.35em 0 0.75em;
+  padding: 0.65em 0.85em;
+  border: 1px solid rgba(0, 200, 0, 0.25);
+  border-radius: 6px;
+  background: rgba(0, 40, 0, 0.22);
+}
+
+.forum-star-display .lucide-star,
+.forum-star-vote-panel .lucide-star {
+  filter: drop-shadow(0 0 4px rgba(125, 255, 125, 0.45));
+}
+
+.forum-star-vote:hover {
+  transform: scale(1.08);
+  transition: transform 0.12s ease;
+}
+
 /* Presentación — visor hero humano–IA */
 .crt-presentacion-hero {
   padding: 1em 1.25em 1.25em;

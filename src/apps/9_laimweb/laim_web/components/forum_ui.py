@@ -11,6 +11,7 @@ from laim_web.components.crt_theme import (
     SELECT_STYLE,
 )
 from laim_web.components.forum_message_viewer import forum_message_body
+from laim_web.components.forum_star_rating import forum_thread_star_rating_panel
 from laim_web.laim_state import LaimWebState
 
 
@@ -451,37 +452,6 @@ def _post_row(post) -> rx.Component:
                 color=COLORS["accent"],
             ),
             rx.box(flex_grow="1"),
-            rx.text("Valorar:", color=COLORS["muted"], font_size=FONT_SIZE_SMALL),
-            rx.button(
-                "1",
-                on_click=LaimWebState.forum_rate_post(post["id"], 1),
-                class_name="crt-btn crt-btn-inline",
-                size="1",
-            ),
-            rx.button(
-                "2",
-                on_click=LaimWebState.forum_rate_post(post["id"], 2),
-                class_name="crt-btn crt-btn-inline",
-                size="1",
-            ),
-            rx.button(
-                "3",
-                on_click=LaimWebState.forum_rate_post(post["id"], 3),
-                class_name="crt-btn crt-btn-inline",
-                size="1",
-            ),
-            rx.button(
-                "4",
-                on_click=LaimWebState.forum_rate_post(post["id"], 4),
-                class_name="crt-btn crt-btn-inline",
-                size="1",
-            ),
-            rx.button(
-                "5",
-                on_click=LaimWebState.forum_rate_post(post["id"], 5),
-                class_name="crt-btn crt-btn-inline",
-                size="1",
-            ),
             width="100%",
             align_items="center",
             flex_wrap="wrap",
@@ -600,6 +570,7 @@ def forum_thread_content_panel() -> rx.Component:
                     width="100%",
                     class_name="forum-thread-author-block",
                 ),
+                forum_thread_star_rating_panel(),
                 rx.box(
                     forum_message_body(
                         LaimWebState.forum_thread_body_display,

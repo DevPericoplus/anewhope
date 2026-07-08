@@ -299,14 +299,22 @@ class LaimForumRepository:
         return self.get_user_forum(user_id)
 
     def recalculate_user_reputation(self, target_user_id: int) -> None:
-        """Recalcula reputación media desde valoraciones."""
+        """Recalcula reputación media desde valoraciones de respuestas e hilos."""
         with self._engine.begin() as conn:
             stats = conn.execute(
                 text(
                     """
                     SELECT AVG(valoracion) AS avg_val, COUNT(*) AS total
-                    FROM laim_forum_post_ratings
-                    WHERE target_user_id = :user_id
+                    FROM (
+                        SELECT valoracion
+                        FROM laim_forum_post_ratings
+                        WHERE target_user_id = :user_id
+                        UNION ALL
+                        SELECT tr.valoracion
+                        FROM laim_forum_thread_ratings tr
+                        INNER JOIN laim_forum_threads t ON t.id = tr.thread_id
+                        WHERE t.user_id = :user_id AND t.deleted = 0
+                    ) AS combined_ratings
                     """
                 ),
                 {"user_id": target_user_id},
@@ -664,6 +672,7 @@ class LaimForumRepository:
                     SELECT t.id, t.subcategory_id, t.prefix_id, t.titulo,
                            t.user_id, t.user_name, t.cuerpo_md,
                            t.fijado, t.cerrado, t.deleted,
+                           t.rating_avg, t.rating_count,
                            t.created_at, t.updated_at,
                            uf.avatar_image_id AS author_avatar_image_id,
                            ac.label AS author_avatar_catalog_label
@@ -692,7 +701,26 @@ class LaimForumRepository:
         data["author_avatar_catalog_label"] = str(
             data.get("author_avatar_catalog_label") or ""
         )
+        data["rating_avg"] = _float_value(data.get("rating_avg"))
+        data["rating_count"] = int(data.get("rating_count") or 0)
         return data
+
+    def get_user_thread_rating(self, thread_id: int, user_id: int) -> int | None:
+        """Obtiene la valoración del usuario en un hilo (1-5) o None."""
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT valoracion
+                    FROM laim_forum_thread_ratings
+                    WHERE thread_id = :thread_id AND user_id = :user_id
+                    """
+                ),
+                {"thread_id": thread_id, "user_id": user_id},
+            ).first()
+        if row is None:
+            return None
+        return int(row[0])
 
     def list_threads_by_subcategory(
         self, subcategory_id: str, *, include_deleted: bool = False
@@ -1464,6 +1492,45 @@ class LaimForumRepository:
                 },
             )
         self.recalculate_user_reputation(target_user_id)
+
+    def upsert_thread_rating(
+        self,
+        *,
+        thread_id: int,
+        user_id: int,
+        valoracion: int,
+    ) -> None:
+        """Inserta o actualiza valoración 1-5 de un hilo (una por usuario)."""
+        with self._engine.begin() as conn:
+            thread_row = conn.execute(
+                text(
+                    """
+                    SELECT user_id
+                    FROM laim_forum_threads
+                    WHERE id = :thread_id AND deleted = 0
+                    """
+                ),
+                {"thread_id": thread_id},
+            ).first()
+            if thread_row is None:
+                raise ValueError("Hilo no encontrado")
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO laim_forum_thread_ratings (
+                        thread_id, user_id, valoracion
+                    ) VALUES (:thread_id, :user_id, :valoracion)
+                    ON DUPLICATE KEY UPDATE valoracion = VALUES(valoracion)
+                    """
+                ),
+                {
+                    "thread_id": thread_id,
+                    "user_id": user_id,
+                    "valoracion": valoracion,
+                },
+            )
+            author_user_id = int(thread_row[0])
+        self.recalculate_user_reputation(author_user_id)
 
     def insert_moderation_log(
         self,

@@ -333,6 +333,22 @@ def laim_forum_create_post(
     )
 
 
+def laim_forum_rate_thread(
+    thread_id: int,
+    valoracion: int,
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Valora un hilo (1-5, una valoración por usuario)."""
+    return _request_forum(
+        "POST",
+        f"/laim/forum/threads/{thread_id}/rating",
+        payload={"valoracion": valoracion},
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
 def laim_forum_rate_post(
     post_id: int,
     valoracion: int,
