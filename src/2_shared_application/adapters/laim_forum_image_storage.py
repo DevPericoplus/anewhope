@@ -186,6 +186,30 @@ class LaimForumImageStorage:
         )
         return stored, None
 
+    @staticmethod
+    def compute_checksum(image_bytes: bytes) -> str:
+        """Calcula SHA-256 de los bytes de imagen."""
+        return hashlib.sha256(image_bytes).hexdigest()
+
+    def overwrite_image_file(self, storage_key: str, image_bytes: bytes) -> Path:
+        """Sobrescribe un fichero existente en disco (misma storage_key)."""
+        if len(image_bytes) == 0:
+            raise ValueError("La imagen está vacía.")
+        if len(image_bytes) > self._max_bytes:
+            max_mb = self._max_bytes // (1024 * 1024)
+            raise ValueError(
+                f"La imagen supera el tamaño máximo permitido ({max_mb} MB)."
+            )
+        target_path = self.resolve_absolute_path(storage_key)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_bytes(image_bytes)
+        _logger.info(
+            "Imagen foro sobrescrita key=%s size=%s",
+            storage_key,
+            len(image_bytes),
+        )
+        return target_path
+
     def resolve_absolute_path(self, storage_key: str) -> Path:
         """Resuelve ruta absoluta desde storage_key (protección path traversal)."""
         normalized = storage_key.strip().replace("\\", "/").lstrip("/")

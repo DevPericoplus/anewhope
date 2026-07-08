@@ -27,3 +27,72 @@ SELECT_STYLE = {
     "color": COLORS["text"],
     "borderColor": COLORS["border"],
 }
+
+FORUM_PROFILE_PANEL_STYLE = {
+    "width": "100%",
+    "maxWidth": "100%",
+    "gap": "1rem",
+}
+
+FORUM_PROFILE_AVATAR_GRID_STYLE = {
+    "display": "flex",
+    "flexWrap": "wrap",
+    "alignItems": "flex-start",
+    "gap": "0.75rem",
+    "width": "100%",
+    "marginTop": "0.75rem",
+    "marginBottom": "2rem",
+    "minHeight": "9.5rem",
+}
+
+FORUM_PROFILE_AVATAR_TILE_STYLE = {
+    "display": "flex",
+    "flexDirection": "column",
+    "alignItems": "center",
+    "justifyContent": "flex-start",
+    "boxSizing": "border-box",
+    "width": "5.75rem",
+    "maxWidth": "5.75rem",
+    "flexShrink": "0",
+    "padding": "0.55rem 0.35rem 0.45rem",
+    "border": f"1px solid {COLORS['border']}",
+    "borderRadius": "4px",
+    "background": COLORS["panel_bg"],
+    "cursor": "pointer",
+}
+
+FORUM_PROFILE_AVATAR_SECTION_STYLE = {
+    "display": "block",
+    "width": "100%",
+    "marginBottom": "1.5rem",
+    "paddingBottom": "0.5rem",
+    "position": "relative",
+    "zIndex": "1",
+}
+
+FORUM_PROFILE_UPLOAD_SECTION_STYLE = {
+    "display": "block",
+    "width": "100%",
+    "marginTop": "0.5rem",
+    "paddingTop": "1.25rem",
+    "borderTop": f"1px solid {COLORS['border']}",
+    "clear": "both",
+    "position": "relative",
+    "zIndex": "2",
+}
+
+FORUM_PROFILE_UPLOAD_ROW_STYLE = {
+    "display": "flex",
+    "flexWrap": "wrap",
+    "alignItems": "center",
+    "gap": "0.75rem",
+    "width": "100%",
+}
+
+FORUM_PROFILE_UPLOAD_BTN_STYLE = {
+    "flex": "0 0 auto",
+    "width": "auto",
+    "minWidth": "11rem",
+    "marginBottom": "0",
+    "textAlign": "center",
+}

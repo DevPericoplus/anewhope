@@ -12,6 +12,19 @@ EventHandlerReturn = Any
 # Reflex 0.8+ solo registra @event en métodos del State, no en mixins.
 FORUM_EVENT_HANDLER_NAMES: list[str] = []
 
+# Previews del catálogo: assets estáticos empaquetados con laimweb (iconos con dibujo).
+# El image_id sigue viniendo del backend para guardar la selección del usuario.
+_CATALOG_AVATAR_STATIC_URLS: dict[str, str] = {
+    "Terminal": "/forum_avatars/avatar_01_terminal.png?v=2",
+    "Cipher": "/forum_avatars/avatar_02_cipher.png?v=2",
+    "Node": "/forum_avatars/avatar_03_node.png?v=2",
+    "Pulse": "/forum_avatars/avatar_04_pulse.png?v=2",
+    "Signal": "/forum_avatars/avatar_05_signal.png?v=2",
+    "Vector": "/forum_avatars/avatar_06_vector.png?v=2",
+    "Matrix": "/forum_avatars/avatar_07_matrix.png?v=2",
+    "Proxy": "/forum_avatars/avatar_08_proxy.png?v=2",
+}
+
 
 def forum_event(func):
     """Decorador de eventos del foro que permite re-registro en LaimWebState."""
@@ -25,8 +38,12 @@ def forum_background_event(func):
     return rx.event(background=True)(func)
 
 
-class LaimForumMixin:
-    """Variables y handlers del foro (mezclar con LaimWebState)."""
+class LaimForumMixin(rx.State, mixin=True):
+    """Variables y handlers del foro (mezclar con LaimWebState).
+
+    Debe heredar de ``rx.State`` con ``mixin=True`` para que Reflex registre
+    ``@rx.var`` y eventos del mixin en ``LaimWebState``.
+    """
 
     # Estado general del foro
     forum_loading: bool = False
@@ -83,6 +100,9 @@ class LaimForumMixin:
     forum_profile_display_name: str = ""
     forum_profile_signature: str = ""
     forum_profile_avatar_id: int = 0
+    forum_profile_avatar_preview_url: str = ""
+    forum_my_avatar_preview_url: str = ""
+    forum_thread_author_avatar_url: str = ""
     forum_profile_notify_mentions: bool = True
     forum_profile_notify_replies: bool = True
     forum_profile_message: str = ""
@@ -191,6 +211,16 @@ class LaimForumMixin:
     def forum_has_avatar_catalog(self) -> bool:
         """True si hay avatares disponibles en el catálogo."""
         return len(self.forum_avatar_catalog) > 0
+
+    @rx.var
+    def forum_has_thread_author_avatar(self) -> bool:
+        """True si hay URL de avatar para el autor del hilo activo."""
+        return self.forum_thread_author_avatar_url != ""
+
+    @rx.var
+    def forum_has_profile_avatar(self) -> bool:
+        """True si el perfil tiene avatar asignado con vista previa."""
+        return self.forum_profile_avatar_preview_url != ""
 
     @rx.var
     def forum_has_prefixes(self) -> bool:
@@ -360,6 +390,7 @@ class LaimForumMixin:
         self.forum_error = ""
         self.forum_poll_enabled = True
         self.forum_load_catalog()
+        self._forum_sync_my_avatar_preview()
         self.forum_poll_notifications()
         if self.forum_active_thread_id > 0:
             self.forum_open_thread(self.forum_active_thread_id)
@@ -590,6 +621,7 @@ class LaimForumMixin:
         self.forum_thread_pinned = bool(thread.get("fijado"))
         self.forum_thread_author = str(thread.get("user_name", ""))
         self.forum_thread_author_id = int(thread.get("user_id", 0))
+        self._forum_load_thread_author_avatar(thread, access, session)
         raw_images = thread.get("image_ids", [])
         self.forum_thread_image_ids = [
             int(i) for i in raw_images if i is not None
@@ -597,7 +629,10 @@ class LaimForumMixin:
 
         posts_result = laim_forum_list_posts(thread_id, access, session)
         if posts_result.get("success"):
-            self.forum_posts = posts_result.get("items", [])
+            raw_posts = posts_result.get("items", [])
+            self.forum_posts = self._forum_enrich_posts_author_avatars(
+                raw_posts, access, session
+            )
         else:
             self.forum_posts = []
             self._forum_set_error(posts_result.get("error", "Error al cargar respuestas"))
@@ -608,6 +643,7 @@ class LaimForumMixin:
         self.forum_active_thread_id = 0
         self.forum_thread_title = ""
         self.forum_thread_body = ""
+        self.forum_thread_author_avatar_url = ""
         self.forum_posts = []
         self.forum_reply_body = ""
         self.forum_reply_image_ids = []
@@ -1125,25 +1161,268 @@ class LaimForumMixin:
         self.forum_load_profile()
         return None
 
+    def _forum_static_url_for_catalog_label(self, label: str) -> str:
+        """URL estática empaquetada para un label del catálogo."""
+        clean = label.strip()
+        if not clean:
+            return ""
+        return _CATALOG_AVATAR_STATIC_URLS.get(clean, "")
+
+    def _forum_load_thread_author_avatar(
+        self,
+        thread: dict[str, Any],
+        access_token: str,
+        session_token: str,
+    ) -> None:
+        """Resuelve y asigna la vista previa del avatar del autor del hilo."""
+        author_id = int(thread.get("user_id") or 0)
+        avatar_id = int(thread.get("author_avatar_image_id") or 0)
+        catalog_label = str(thread.get("author_avatar_catalog_label") or "")
+
+        if author_id == self.user_id:
+            from laim_web.adapters.laim_api_client import laim_forum_get_profile
+
+            profile_result = laim_forum_get_profile(access_token, session_token)
+            if profile_result.get("success"):
+                profile = profile_result.get("profile", {})
+                profile_avatar_id = int(profile.get("avatar_image_id") or 0)
+                if profile_avatar_id > 0:
+                    avatar_id = profile_avatar_id
+                catalog_map = self._forum_build_catalog_preview_map(
+                    access_token, session_token
+                )
+                preview = self._forum_resolve_avatar_preview_url(
+                    avatar_id,
+                    access_token,
+                    session_token,
+                    catalog_map=catalog_map,
+                    catalog_label=catalog_label,
+                )
+                if preview:
+                    self.forum_thread_author_avatar_url = preview
+                    self.forum_my_avatar_preview_url = preview
+                    return
+
+        static_url = self._forum_static_url_for_catalog_label(catalog_label)
+        if static_url:
+            self.forum_thread_author_avatar_url = static_url
+            return
+
+        if avatar_id > 0:
+            catalog_map = self._forum_build_catalog_preview_map(
+                access_token, session_token
+            )
+            self.forum_thread_author_avatar_url = self._forum_resolve_avatar_preview_url(
+                avatar_id,
+                access_token,
+                session_token,
+                catalog_map=catalog_map,
+            )
+            return
+
+        self.forum_thread_author_avatar_url = ""
+
+    def _forum_catalog_static_url_by_image_id(self) -> dict[int, str]:
+        """Mapa image_id → URL estática del catálogo empaquetado."""
+        mapping: dict[int, str] = {}
+        for item in self.forum_avatar_catalog:
+            image_id = int(item.get("image_id") or 0)
+            if image_id <= 0:
+                continue
+            label = str(item.get("label") or "")
+            static_url = _CATALOG_AVATAR_STATIC_URLS.get(label, "")
+            if static_url:
+                mapping[image_id] = static_url
+        return mapping
+
+    def _forum_build_catalog_preview_map(
+        self,
+        access_token: str,
+        session_token: str,
+    ) -> dict[int, str]:
+        """Construye mapa image_id → preview para avatares del catálogo."""
+        from laim_web.adapters.laim_api_client import laim_forum_list_avatar_catalog
+
+        mapping: dict[int, str] = {}
+        catalog = laim_forum_list_avatar_catalog(access_token, session_token)
+        if not catalog.get("success"):
+            return mapping
+        for item in catalog.get("items", []):
+            image_id = int(item.get("image_id") or 0)
+            if image_id <= 0:
+                continue
+            label = str(item.get("label") or "")
+            static_url = _CATALOG_AVATAR_STATIC_URLS.get(label, "")
+            if static_url:
+                mapping[image_id] = static_url
+        return mapping
+
+    def _forum_resolve_avatar_preview_url(
+        self,
+        image_id: int,
+        access_token: str,
+        session_token: str,
+        catalog_map: dict[int, str] | None = None,
+        catalog_label: str = "",
+    ) -> str:
+        """Resuelve URL de vista previa para un avatar (catálogo o personalizado)."""
+        if image_id <= 0:
+            return ""
+
+        static_from_label = self._forum_static_url_for_catalog_label(catalog_label)
+        if static_from_label:
+            return static_from_label
+
+        static_from_catalog = self._forum_catalog_static_url_by_image_id().get(image_id)
+        if static_from_catalog:
+            return static_from_catalog
+
+        if catalog_map and image_id in catalog_map:
+            return catalog_map[image_id]
+
+        for item in self.forum_avatar_catalog:
+            if int(item.get("image_id") or 0) != image_id:
+                continue
+            preview = str(item.get("preview_url") or "")
+            if preview:
+                return preview
+
+        from laim_web.adapters.laim_api_client import laim_forum_get_image_data_url
+
+        return laim_forum_get_image_data_url(image_id, access_token, session_token)
+
+    def _forum_apply_profile_from_api(
+        self,
+        profile: dict[str, Any],
+        access_token: str,
+        session_token: str,
+    ) -> None:
+        """Aplica datos de perfil devueltos por la API y refresca vista previa."""
+        self.forum_profile_display_name = str(
+            profile.get("forum_display_name") or profile.get("user_name") or ""
+        )
+        self.forum_profile_signature = str(profile.get("signature_md") or "")
+        avatar_id = int(profile.get("avatar_image_id") or 0)
+        self.forum_profile_avatar_id = avatar_id
+        self.forum_profile_notify_mentions = bool(profile.get("notify_mentions", True))
+        self.forum_profile_notify_replies = bool(profile.get("notify_replies", True))
+        preview = self._forum_resolve_avatar_preview_url(
+            avatar_id, access_token, session_token
+        )
+        self.forum_profile_avatar_preview_url = preview
+        self.forum_my_avatar_preview_url = preview
+
+    def _forum_enrich_posts_author_avatars(
+        self,
+        posts: list[dict[str, Any]],
+        access_token: str,
+        session_token: str,
+    ) -> list[dict[str, Any]]:
+        """Añade author_avatar_preview_url a cada respuesta del hilo."""
+        catalog_map = self._forum_build_catalog_preview_map(access_token, session_token)
+        preview_cache: dict[int, str] = dict(catalog_map)
+        enriched: list[dict[str, Any]] = []
+
+        for post in posts:
+            row = dict(post)
+            user_id = int(row.get("user_id") or 0)
+            if user_id == self.user_id and self.forum_my_avatar_preview_url:
+                row["author_avatar_preview_url"] = self.forum_my_avatar_preview_url
+                enriched.append(row)
+                continue
+
+            avatar_id = int(row.get("author_avatar_image_id") or 0)
+            catalog_label = str(row.get("author_avatar_catalog_label") or "")
+            static_url = self._forum_static_url_for_catalog_label(catalog_label)
+            if static_url:
+                row["author_avatar_preview_url"] = static_url
+                enriched.append(row)
+                continue
+
+            if avatar_id > 0 and avatar_id not in preview_cache:
+                preview_cache[avatar_id] = self._forum_resolve_avatar_preview_url(
+                    avatar_id,
+                    access_token,
+                    session_token,
+                    catalog_map=catalog_map,
+                )
+            row["author_avatar_preview_url"] = preview_cache.get(avatar_id, "")
+            enriched.append(row)
+        return enriched
+
+    def _forum_persist_avatar_selection(self, image_id: int) -> bool:
+        """Persiste avatar seleccionado y actualiza estado local."""
+        from laim_web.adapters.laim_api_client import laim_forum_update_profile
+
+        if image_id <= 0:
+            self._forum_set_error("Avatar no válido.")
+            return False
+
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_update_profile(
+            {"avatar_image_id": image_id}, access, session
+        )
+        if not result.get("success"):
+            self.forum_profile_message = ""
+            self._forum_set_error(result.get("error", "No se pudo asignar el avatar."))
+            return False
+
+        profile = result.get("profile", {})
+        if profile:
+            self._forum_apply_profile_from_api(profile, access, session)
+        else:
+            self.forum_profile_avatar_id = image_id
+            preview = self._forum_resolve_avatar_preview_url(image_id, access, session)
+            self.forum_profile_avatar_preview_url = preview
+            self.forum_my_avatar_preview_url = preview
+
+        self.forum_profile_message = "Avatar actualizado."
+        self.forum_error = ""
+        return True
+
+    def _forum_sync_my_avatar_preview(self) -> None:
+        """Carga vista previa del avatar del usuario para mostrarla en el foro."""
+        from laim_web.adapters.laim_api_client import laim_forum_get_profile
+
+        access, session = self._forum_auth_tokens()
+        if not access:
+            return
+        result = laim_forum_get_profile(access, session)
+        if not result.get("success"):
+            return
+        profile = result.get("profile", {})
+        avatar_id = int(profile.get("avatar_image_id") or 0)
+        if avatar_id <= 0:
+            self.forum_my_avatar_preview_url = ""
+            return
+        self.forum_my_avatar_preview_url = self._forum_resolve_avatar_preview_url(
+            avatar_id, access, session
+        )
+
     def _forum_enrich_avatar_catalog(
         self,
         items: list[dict[str, Any]],
         access_token: str,
         session_token: str,
     ) -> list[dict[str, Any]]:
-        """Añade preview_url (data URL) a cada entrada del catálogo."""
+        """Añade preview_url a cada entrada del catálogo."""
         from laim_web.adapters.laim_api_client import laim_forum_get_image_data_url
 
         enriched: list[dict[str, Any]] = []
         for item in items:
             row = dict(item)
-            image_id = int(row.get("image_id") or 0)
-            if image_id > 0:
-                row["preview_url"] = laim_forum_get_image_data_url(
-                    image_id, access_token, session_token
-                )
+            label = str(row.get("label") or "")
+            static_url = _CATALOG_AVATAR_STATIC_URLS.get(label, "")
+            if static_url:
+                row["preview_url"] = static_url
             else:
-                row["preview_url"] = ""
+                image_id = int(row.get("image_id") or 0)
+                if image_id > 0:
+                    row["preview_url"] = laim_forum_get_image_data_url(
+                        image_id, access_token, session_token
+                    )
+                else:
+                    row["preview_url"] = ""
             enriched.append(row)
         return enriched
 
@@ -1155,28 +1434,19 @@ class LaimForumMixin:
         )
 
         access, session = self._forum_auth_tokens()
-        profile_result = laim_forum_get_profile(access, session)
-        if profile_result.get("success"):
-            profile = profile_result.get("profile", {})
-            self.forum_profile_display_name = str(
-                profile.get("forum_display_name") or profile.get("user_name") or ""
-            )
-            self.forum_profile_signature = str(profile.get("signature_md") or "")
-            self.forum_profile_avatar_id = int(profile.get("avatar_image_id") or 0)
-            self.forum_profile_notify_mentions = bool(
-                profile.get("notify_mentions", True)
-            )
-            self.forum_profile_notify_replies = bool(
-                profile.get("notify_replies", True)
-            )
-        else:
-            self._forum_set_error(profile_result.get("error", "Error al cargar perfil"))
-
         catalog = laim_forum_list_avatar_catalog(access, session)
         if catalog.get("success"):
             self.forum_avatar_catalog = self._forum_enrich_avatar_catalog(
                 catalog.get("items", []), access, session
             )
+
+        profile_result = laim_forum_get_profile(access, session)
+        if profile_result.get("success"):
+            self._forum_apply_profile_from_api(
+                profile_result.get("profile", {}), access, session
+            )
+        else:
+            self._forum_set_error(profile_result.get("error", "Error al cargar perfil"))
 
     @forum_event
     def forum_set_profile_display_name(self, value: str) -> None:
@@ -1196,7 +1466,9 @@ class LaimForumMixin:
 
     @forum_event
     def forum_select_catalog_avatar(self, image_id: int) -> None:
+        """Selecciona avatar del catálogo, persiste y refresca vista previa."""
         self.forum_profile_avatar_id = image_id
+        self._forum_persist_avatar_selection(image_id)
 
     @forum_event
     def forum_save_profile(self) -> None:
@@ -1215,6 +1487,9 @@ class LaimForumMixin:
 
         result = laim_forum_update_profile(payload, access, session)
         if result.get("success"):
+            profile = result.get("profile", {})
+            if profile:
+                self._forum_apply_profile_from_api(profile, access, session)
             self.forum_profile_message = "Perfil guardado."
             self.forum_error = ""
         else:
@@ -1270,6 +1545,15 @@ class LaimForumMixin:
             {"avatar_image_id": image_id}, access, session
         )
         if update.get("success"):
+            profile = update.get("profile", {})
+            if profile:
+                self._forum_apply_profile_from_api(profile, access, session)
+            else:
+                preview = self._forum_resolve_avatar_preview_url(
+                    image_id, access, session
+                )
+                self.forum_profile_avatar_preview_url = preview
+                self.forum_my_avatar_preview_url = preview
             self.forum_profile_message = "Avatar actualizado."
             self.forum_error = ""
         else:

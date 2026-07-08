@@ -4,7 +4,18 @@ from __future__ import annotations
 
 import reflex as rx
 
-from laim_web.components.crt_theme import COLORS, FONT_SIZE_BODY, FONT_SIZE_SMALL
+from laim_web.components.crt_theme import (
+    COLORS,
+    FONT_SIZE_BODY,
+    FONT_SIZE_SMALL,
+    FORUM_PROFILE_AVATAR_GRID_STYLE,
+    FORUM_PROFILE_AVATAR_SECTION_STYLE,
+    FORUM_PROFILE_AVATAR_TILE_STYLE,
+    FORUM_PROFILE_PANEL_STYLE,
+    FORUM_PROFILE_UPLOAD_BTN_STYLE,
+    FORUM_PROFILE_UPLOAD_ROW_STYLE,
+    FORUM_PROFILE_UPLOAD_SECTION_STYLE,
+)
 from laim_web.components.forum_ui import forum_error_banner
 from laim_web.laim_state import LaimWebState
 
@@ -22,6 +33,49 @@ def _admin_tab_button(tab: str, label: str) -> rx.Component:
     )
 
 
+def _forum_avatar_catalog_tile(item) -> rx.Component:
+    """Celda del catálogo de avatares (sin estilos de botón ancho completo)."""
+    return rx.box(
+        rx.vstack(
+            rx.cond(
+                item["preview_url"] != "",
+                rx.image(
+                    src=item["preview_url"],
+                    width="56px",
+                    height="56px",
+                    border_radius="50%",
+                    alt=item["label"],
+                ),
+                rx.box(
+                    width="56px",
+                    height="56px",
+                    border_radius="50%",
+                    background_color=COLORS["panel_bg"],
+                ),
+            ),
+            rx.text(
+                item["label"],
+                class_name="forum-profile-avatar-label",
+                font_size=FONT_SIZE_SMALL,
+            ),
+            spacing="1",
+            align_items="center",
+        ),
+        on_click=LaimWebState.forum_select_catalog_avatar(item["image_id"]),
+        class_name="forum-profile-avatar-tile",
+        style=rx.cond(
+            LaimWebState.forum_profile_avatar_id == item["image_id"],
+            {
+                **FORUM_PROFILE_AVATAR_TILE_STYLE,
+                "borderColor": "rgba(157, 255, 157, 0.85)",
+                "boxShadow": "0 0 12px rgba(120, 255, 120, 0.35)",
+                "background": "rgba(0, 50, 0, 0.55)",
+            },
+            FORUM_PROFILE_AVATAR_TILE_STYLE,
+        ),
+    )
+
+
 def forum_profile_panel() -> rx.Component:
     """Formulario de perfil de foro."""
     return rx.vstack(
@@ -30,7 +84,7 @@ def forum_profile_panel() -> rx.Component:
             "Nombre visible, firma, avatar y preferencias de notificación.",
             color=COLORS["muted"],
             font_size=FONT_SIZE_SMALL,
-            margin_bottom="1em",
+            margin_bottom="0.5em",
         ),
         forum_error_banner(),
         rx.cond(
@@ -67,72 +121,113 @@ def forum_profile_panel() -> rx.Component:
             spacing="4",
             flex_wrap="wrap",
         ),
-        rx.text("Avatares del catálogo", class_name="crt-title", font_size="1em"),
-        rx.cond(
-            LaimWebState.forum_has_avatar_catalog,
-            rx.hstack(
-                rx.foreach(
-                    LaimWebState.forum_avatar_catalog,
-                    lambda item: rx.button(
-                        rx.vstack(
-                            rx.cond(
-                                item["preview_url"] != "",
-                                rx.image(
-                                    src=item["preview_url"],
-                                    width="56px",
-                                    height="56px",
-                                    border_radius="50%",
-                                    alt=item["label"],
-                                ),
-                                rx.box(
-                                    width="56px",
-                                    height="56px",
-                                    border_radius="50%",
-                                    background_color=COLORS["panel_bg"],
-                                ),
-                            ),
-                            rx.text(item["label"], font_size=FONT_SIZE_SMALL),
-                            spacing="1",
-                            align_items="center",
-                        ),
-                        on_click=LaimWebState.forum_select_catalog_avatar(
-                            item["image_id"]
-                        ),
-                        class_name="crt-btn crt-btn-inline",
-                        style={
-                            "padding": "0.4em",
-                            "min_width": "72px",
-                        },
+        rx.box(
+            rx.text("Avatar actual", class_name="crt-title", font_size="1em"),
+            rx.cond(
+                LaimWebState.forum_has_profile_avatar,
+                rx.hstack(
+                    rx.image(
+                        src=LaimWebState.forum_profile_avatar_preview_url,
+                        width="72px",
+                        height="72px",
+                        border_radius="50%",
+                        alt="Avatar del perfil",
+                        border=f"2px solid {COLORS['accent']}",
                     ),
+                    rx.vstack(
+                        rx.text(
+                            "Este avatar se muestra en tus mensajes del foro.",
+                            color=COLORS["muted"],
+                            font_size=FONT_SIZE_SMALL,
+                        ),
+                        spacing="1",
+                        align_items="flex-start",
+                    ),
+                    spacing="4",
+                    align_items="center",
+                    flex_wrap="wrap",
+                    margin_top="0.5em",
                 ),
-                flex_wrap="wrap",
-                spacing="3",
+                rx.text(
+                    "Aún no tienes avatar. Elige uno del catálogo o sube uno personalizado.",
+                    color=COLORS["muted"],
+                    font_size=FONT_SIZE_SMALL,
+                    margin_top="0.5em",
+                ),
             ),
-            rx.text(
-                "No hay avatares en el catálogo. El administrador debe cargarlos "
-                "desde Config. foro → Avatares o ejecutar el seed del sistema.",
-                color=COLORS["muted"],
-                font_size=FONT_SIZE_SMALL,
-            ),
+            class_name="forum-profile-current-avatar-section",
+            width="100%",
+            margin_top="0.25em",
         ),
-        rx.hstack(
-            rx.input(type="file", id="forum_avatar_file_input", accept="image/*"),
-            rx.button(
-                "Subir avatar personal",
-                on_click=LaimWebState.forum_request_avatar_upload,
-                class_name="crt-btn crt-btn-inline",
+        rx.box(
+            rx.text("Avatares del catálogo", class_name="crt-title", font_size="1em"),
+            rx.cond(
+                LaimWebState.forum_has_avatar_catalog,
+                rx.flex(
+                    rx.foreach(
+                        LaimWebState.forum_avatar_catalog,
+                        _forum_avatar_catalog_tile,
+                    ),
+                    direction="row",
+                    wrap="wrap",
+                    spacing="3",
+                    class_name="forum-profile-avatar-grid",
+                    style=FORUM_PROFILE_AVATAR_GRID_STYLE,
+                    width="100%",
+                ),
+                rx.text(
+                    "No hay avatares en el catálogo. El administrador debe cargarlos "
+                    "desde Config. foro → Avatares o ejecutar el seed del sistema.",
+                    color=COLORS["muted"],
+                    font_size=FONT_SIZE_SMALL,
+                    margin_top="0.5em",
+                ),
             ),
-            spacing="2",
-            align_items="center",
-            flex_wrap="wrap",
+            class_name="forum-profile-avatar-section",
+            style=FORUM_PROFILE_AVATAR_SECTION_STYLE,
+            width="100%",
+        ),
+        rx.box(
+            rx.text(
+                "Avatar personalizado",
+                class_name="crt-title",
+                font_size="1em",
+                margin_bottom="0.75em",
+            ),
+            rx.hstack(
+                rx.input(
+                    type="file",
+                    id="forum_avatar_file_input",
+                    accept="image/*",
+                    style={"flex": "1 1 14rem", "minWidth": "0", "maxWidth": "100%"},
+                ),
+                rx.button(
+                    "Subir avatar personal",
+                    on_click=LaimWebState.forum_request_avatar_upload,
+                    class_name="crt-btn crt-btn-inline forum-profile-upload-btn",
+                    style=FORUM_PROFILE_UPLOAD_BTN_STYLE,
+                ),
+                spacing="3",
+                align_items="center",
+                flex_wrap="wrap",
+                class_name="forum-profile-upload-row",
+                style=FORUM_PROFILE_UPLOAD_ROW_STYLE,
+                width="100%",
+            ),
+            class_name="forum-profile-upload-section",
+            style=FORUM_PROFILE_UPLOAD_SECTION_STYLE,
+            width="100%",
         ),
         rx.button(
             "Guardar perfil",
             on_click=LaimWebState.forum_save_profile,
-            class_name="crt-btn",
+            class_name="crt-btn forum-profile-save-btn",
+            margin_top="0.5em",
         ),
-        spacing="3",
+        spacing="4",
         width="100%",
+        class_name="forum-profile-panel",
+        style=FORUM_PROFILE_PANEL_STYLE,
     )
 
 

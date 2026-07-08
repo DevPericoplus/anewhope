@@ -191,6 +191,15 @@ def load_laim_mariadb_settings() -> dict[str, Any]:
         "writer_dsn": os.environ.get(
             "LAIM_WRITER_DSN", protected.get("laim_writer_dsn", "")
         ),
+        "admin_user": os.environ.get(
+            "LAIM_ADMIN_USER", protected.get("laim_admin_user", "")
+        ),
+        "admin_password": os.environ.get(
+            "LAIM_ADMIN_PASSWORD", protected.get("laim_admin_password", "")
+        ),
+        "admin_dsn": os.environ.get(
+            "LAIM_ADMIN_DSN", protected.get("laim_admin_dsn", "")
+        ),
     }
 
 

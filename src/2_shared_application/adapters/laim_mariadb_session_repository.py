@@ -193,12 +193,31 @@ def _ensure_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-def create_laim_session_engine(settings: dict[str, Any]) -> Engine:
+def create_laim_session_engine(
+    settings: dict[str, Any],
+    *,
+    role: str = "writer",
+) -> Engine:
     """Crea engine SQLAlchemy para laim_core_db."""
+    admin_dsn = str(settings.get("admin_dsn") or "").strip()
+    writer_dsn = str(settings.get("writer_dsn") or "").strip()
+    if role == "admin" and admin_dsn:
+        return create_engine(admin_dsn, pool_pre_ping=True)
+    if role == "writer" and writer_dsn:
+        return create_engine(writer_dsn, pool_pre_ping=True)
+
     host = settings.get("host", "localhost")
     port = settings.get("port", 3306)
-    user = quote_plus(str(settings.get("writer_user", "")))
-    password = quote_plus(str(settings.get("writer_password", "")))
     database = settings.get("database", "laim_core_db")
+    if role == "admin":
+        user_raw = settings.get("admin_user") or settings.get("writer_user", "")
+        password_raw = settings.get("admin_password") or settings.get(
+            "writer_password", ""
+        )
+    else:
+        user_raw = settings.get("writer_user", "")
+        password_raw = settings.get("writer_password", "")
+    user = quote_plus(str(user_raw))
+    password = quote_plus(str(password_raw))
     dsn = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
     return create_engine(dsn, pool_pre_ping=True)

@@ -3,36 +3,25 @@
 
 Copia avatares PNG al storage del foro y registra entradas en
 ``laim_forum_images`` + ``laim_forum_avatar_catalog``. Idempotente: si ya hay
-entradas activas en el catálogo, no hace nada.
+entradas activas en el catálogo, no hace nada salvo con ``--refresh-images``.
 
 Uso (desde la raíz del repo, con entorno backend activo):
 
     PYTHONPATH=. .venv_backend313/bin/python scripts/seed_laim_forum_avatar_catalog.py
+    PYTHONPATH=. .venv_backend313/bin/python scripts/seed_laim_forum_avatar_catalog.py --refresh-images
 """
 
 from __future__ import annotations
 
+import argparse
 import base64
 import importlib.util
 import logging
-import struct
 import sys
-import zlib
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ASSETS_DIR = REPO_ROOT / "src" / "apps" / "9_laimweb" / "assets" / "forum_avatars"
-
-DEFAULT_AVATARS: list[tuple[str, tuple[int, int, int], bool]] = [
-    ("Terminal", (125, 255, 125), True),
-    ("Cipher", (100, 220, 180), False),
-    ("Node", (80, 200, 140), False),
-    ("Pulse", (140, 255, 160), False),
-    ("Signal", (90, 230, 120), False),
-    ("Vector", (110, 240, 150), False),
-    ("Matrix", (70, 190, 110), False),
-    ("Proxy", (130, 255, 170), False),
-]
 
 _logger = logging.getLogger("seed_laim_forum_avatars")
 
@@ -49,58 +38,71 @@ def _load_module(relative_path: str, module_name: str):
     return module
 
 
-def _png_chunk(tag: bytes, data: bytes) -> bytes:
-    crc = zlib.crc32(tag + data) & 0xFFFFFFFF
-    return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
-
-
-def _build_avatar_png(accent: tuple[int, int, int], size: int = 64) -> bytes:
-    """Genera PNG cuadrado estilo CRT (fondo oscuro + disco verde)."""
-    bg = (8, 12, 8)
-    cx, cy, radius = size // 2, size // 2, size // 2 - 6
-    pixels = bytearray()
-    for y in range(size):
-        row = bytearray([0])
-        for x in range(size):
-            dx, dy = x - cx, y - cy
-            dist_sq = dx * dx + dy * dy
-            if dist_sq <= radius * radius:
-                row.extend(accent)
-            elif dist_sq <= (radius + 2) * (radius + 2):
-                row.extend((40, 90, 40))
-            else:
-                row.extend(bg)
-        pixels.extend(row)
-    compressed = zlib.compress(bytes(pixels), 9)
-    ihdr = struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)
-    return (
-        b"\x89PNG\r\n\x1a\n"
-        + _png_chunk(b"IHDR", ihdr)
-        + _png_chunk(b"IDAT", compressed)
-        + _png_chunk(b"IEND", b"")
+def _load_avatar_art():
+    """Carga el generador de avatares con iconos."""
+    return _load_module(
+        "src/2_shared_application/laim_forum_avatar_art.py",
+        "seed_laim_forum_avatar_art",
     )
 
 
-def _ensure_asset_files() -> list[tuple[Path, str, bool]]:
-    """Crea PNGs en assets si no existen y devuelve (path, label, is_default)."""
+def _ensure_asset_files(*, force: bool = False) -> list[tuple[Path, str, bool]]:
+    """Crea PNGs en assets y devuelve (path, label, is_default)."""
+    avatar_art = _load_avatar_art()
     ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     items: list[tuple[Path, str, bool]] = []
-    for index, (label, accent, is_default) in enumerate(DEFAULT_AVATARS, start=1):
+    for index, (label, accent, is_default) in enumerate(
+        avatar_art.DEFAULT_AVATAR_SPECS, start=1
+    ):
         slug = label.lower().replace(" ", "-")
         path = ASSETS_DIR / f"avatar_{index:02d}_{slug}.png"
-        if not path.is_file():
-            path.write_bytes(_build_avatar_png(accent))
+        if force or not path.is_file():
+            path.write_bytes(avatar_art.build_avatar_png(label, accent))
             _logger.info("Generado asset %s", path.name)
         items.append((path, label, is_default))
     return items
 
 
-def _seed_catalog() -> int:
+def _refresh_catalog_images(repository, storage) -> int:
+    """Sobrescribe PNGs del catálogo existente con iconos actualizados."""
+    avatar_art = _load_avatar_art()
+    specs_by_label = {
+        label: (accent, is_default)
+        for label, accent, is_default in avatar_art.DEFAULT_AVATAR_SPECS
+    }
+    updated = 0
+    for entry in repository.list_avatar_catalog(active_only=False):
+        label = str(entry.get("label") or "")
+        spec = specs_by_label.get(label)
+        if spec is None:
+            continue
+        accent, _ = spec
+        image_id = int(entry.get("image_id") or 0)
+        if image_id <= 0:
+            continue
+        image = repository.get_image_by_id(image_id)
+        if image is None:
+            continue
+        png_bytes = avatar_art.build_avatar_png(label, accent)
+        storage_key = str(image["storage_key"])
+        storage.overwrite_image_file(storage_key, png_bytes)
+        repository.update_image_file_meta(
+            image_id=image_id,
+            file_size=len(png_bytes),
+            checksum_sha256=storage.compute_checksum(png_bytes),
+        )
+        updated += 1
+        _logger.info("Actualizado avatar %s (image_id=%s)", label, image_id)
+    return updated
+
+
+def _seed_catalog(*, refresh_images: bool = False) -> int:
     """Inserta avatares en BD y filesystem. Retorna número de entradas creadas."""
     import os
 
-    # En servidores backend, MariaDB escucha en localhost (como systemd del core).
-    os.environ.setdefault("MARIADB_HOST", "localhost")
+    # En servidores backend, MariaDB escucha en localhost (systemd del core).
+    # Forzar localhost: en pre/pro MARIADB_HOST suele ser el FQDN del servidor.
+    os.environ["MARIADB_HOST"] = "localhost"
 
     repo_mod = _load_module(
         "src/2_shared_application/adapters/laim_forum_repository.py",
@@ -120,20 +122,30 @@ def _seed_catalog() -> int:
     )
 
     settings = storage_mod.load_laim_mariadb_settings()
-    engine = session_mod.create_laim_session_engine(settings)
+    # Mantenimiento en el servidor backend: MariaDB escucha en localhost y los
+    # GRANT suelen ser user@localhost (no user@FQDN del host).
+    settings = dict(settings)
+    settings["host"] = "localhost"
+    settings["admin_dsn"] = ""
+    settings["writer_dsn"] = ""
+    engine = session_mod.create_laim_session_engine(settings, role="admin")
     repository = repo_mod.LaimForumRepository(engine)
     storage = image_mod.LaimForumImageStorage()
     storage.ensure_base_directory()
 
     existing = repository.list_avatar_catalog(active_only=False)
     if existing:
+        if refresh_images:
+            refreshed = _refresh_catalog_images(repository, storage)
+            _logger.info("Imágenes del catálogo actualizadas: %s", refreshed)
+            return refreshed
         _logger.info(
             "Catálogo ya tiene %s entradas; omitiendo seed.", len(existing)
         )
         return 0
 
     created = 0
-    for path, label, is_default in _ensure_asset_files():
+    for path, label, is_default in _ensure_asset_files(force=True):
         raw = path.read_bytes()
         data_b64 = base64.b64encode(raw).decode("ascii")
         stored, error = storage.save_image(
@@ -169,9 +181,20 @@ def _seed_catalog() -> int:
 
 def main() -> None:
     """Punto de entrada del script."""
+    parser = argparse.ArgumentParser(description="Semilla del catálogo de avatares LAIM")
+    parser.add_argument(
+        "--refresh-images",
+        action="store_true",
+        help="Regenera PNGs con iconos y actualiza ficheros del catálogo existente",
+    )
+    args = parser.parse_args()
+
     logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
-    count = _seed_catalog()
-    if count:
+    _ensure_asset_files(force=args.refresh_images)
+    count = _seed_catalog(refresh_images=args.refresh_images)
+    if args.refresh_images and count:
+        print(f"OK: {count} imágenes del catálogo actualizadas.")
+    elif count:
         print(f"OK: {count} avatares añadidos al catálogo.")
     else:
         print("OK: catálogo sin cambios (ya poblado).")

@@ -426,6 +426,25 @@ def _post_row(post) -> rx.Component:
     image_ids = post["image_ids"].to(list[int])
     return rx.box(
         rx.hstack(
+            rx.cond(
+                post["author_avatar_preview_url"] != "",
+                rx.image(
+                    src=post["author_avatar_preview_url"],
+                    width="40px",
+                    height="40px",
+                    border_radius="50%",
+                    alt=post["user_name"],
+                    flex_shrink="0",
+                ),
+                rx.box(
+                    width="40px",
+                    height="40px",
+                    border_radius="50%",
+                    background_color=COLORS["panel_bg"],
+                    border=f"1px solid {COLORS['border']}",
+                    flex_shrink="0",
+                ),
+            ),
             rx.text(
                 post["user_name"],
                 font_weight="bold",
@@ -543,10 +562,34 @@ def forum_thread_content_panel() -> rx.Component:
                     spacing="2",
                     flex_shrink="0",
                 ),
-                rx.text(
-                    rx.fragment("Autor: ", LaimWebState.forum_thread_author),
-                    color=COLORS["muted"],
-                    font_size=FONT_SIZE_SMALL,
+                rx.vstack(
+                    rx.text(
+                        rx.fragment("Autor: ", LaimWebState.forum_thread_author),
+                        color=COLORS["muted"],
+                        font_size=FONT_SIZE_SMALL,
+                    ),
+                    rx.cond(
+                        LaimWebState.forum_has_thread_author_avatar,
+                        rx.image(
+                            src=LaimWebState.forum_thread_author_avatar_url,
+                            width="56px",
+                            height="56px",
+                            border_radius="50%",
+                            alt=LaimWebState.forum_thread_author,
+                            border=f"2px solid {COLORS['accent']}",
+                            class_name="forum-thread-author-avatar",
+                        ),
+                        rx.text(
+                            "Sin avatar asignado",
+                            color=COLORS["muted"],
+                            font_size=FONT_SIZE_SMALL,
+                            font_style="italic",
+                        ),
+                    ),
+                    spacing="2",
+                    align_items="flex-start",
+                    width="100%",
+                    class_name="forum-thread-author-block",
                 ),
                 rx.box(
                     rx.vstack(

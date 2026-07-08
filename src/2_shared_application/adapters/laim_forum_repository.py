@@ -128,6 +128,31 @@ class LaimForumRepository:
             )
         return result.rowcount > 0
 
+    def update_image_file_meta(
+        self,
+        image_id: int,
+        *,
+        file_size: int,
+        checksum_sha256: str,
+    ) -> bool:
+        """Actualiza tamaño y checksum tras sobrescribir un fichero."""
+        with self._engine.begin() as conn:
+            result = conn.execute(
+                text(
+                    """
+                    UPDATE laim_forum_images
+                    SET file_size = :file_size, checksum_sha256 = :checksum_sha256
+                    WHERE id = :id AND active = 1
+                    """
+                ),
+                {
+                    "id": image_id,
+                    "file_size": file_size,
+                    "checksum_sha256": checksum_sha256,
+                },
+            )
+        return result.rowcount > 0
+
     def insert_avatar_catalog_item(
         self,
         *,
@@ -639,8 +664,13 @@ class LaimForumRepository:
                     SELECT t.id, t.subcategory_id, t.prefix_id, t.titulo,
                            t.user_id, t.user_name, t.cuerpo_md,
                            t.fijado, t.cerrado, t.deleted,
-                           t.created_at, t.updated_at
+                           t.created_at, t.updated_at,
+                           uf.avatar_image_id AS author_avatar_image_id,
+                           ac.label AS author_avatar_catalog_label
                     FROM laim_forum_threads t
+                    LEFT JOIN laim_user_forum uf ON uf.user_id = t.user_id
+                    LEFT JOIN laim_forum_avatar_catalog ac
+                        ON ac.image_id = uf.avatar_image_id AND ac.active = 1
                     WHERE t.id = :id {deleted_clause}
                     """
                 ),
@@ -655,6 +685,13 @@ class LaimForumRepository:
         data["created_at"] = _timestamp_value(data.get("created_at"))
         data["updated_at"] = _timestamp_value(data.get("updated_at"))
         data["image_ids"] = self.list_thread_image_ids(thread_id)
+        author_avatar_id = data.get("author_avatar_image_id")
+        data["author_avatar_image_id"] = (
+            int(author_avatar_id) if author_avatar_id is not None else 0
+        )
+        data["author_avatar_catalog_label"] = str(
+            data.get("author_avatar_catalog_label") or ""
+        )
         return data
 
     def list_threads_by_subcategory(
@@ -839,11 +876,16 @@ class LaimForumRepository:
             rows = conn.execute(
                 text(
                     f"""
-                    SELECT id, thread_id, user_id, user_name, cuerpo_md, deleted,
-                           created_at, updated_at
-                    FROM laim_forum_posts
-                    WHERE thread_id = :thread_id {deleted_clause}
-                    ORDER BY created_at ASC
+                    SELECT p.id, p.thread_id, p.user_id, p.user_name, p.cuerpo_md,
+                           p.deleted, p.created_at, p.updated_at,
+                           uf.avatar_image_id AS author_avatar_image_id,
+                           ac.label AS author_avatar_catalog_label
+                    FROM laim_forum_posts p
+                    LEFT JOIN laim_user_forum uf ON uf.user_id = p.user_id
+                    LEFT JOIN laim_forum_avatar_catalog ac
+                        ON ac.image_id = uf.avatar_image_id AND ac.active = 1
+                    WHERE p.thread_id = :thread_id {deleted_clause}
+                    ORDER BY p.created_at ASC
                     """
                 ),
                 {"thread_id": thread_id},
@@ -854,6 +896,8 @@ class LaimForumRepository:
                 "deleted": _bool_value(r.get("deleted")),
                 "created_at": _timestamp_value(r.get("created_at")),
                 "updated_at": _timestamp_value(r.get("updated_at")),
+                "author_avatar_image_id": int(r.get("author_avatar_image_id") or 0),
+                "author_avatar_catalog_label": str(r.get("author_avatar_catalog_label") or ""),
                 "image_ids": self.list_post_image_ids(int(r["id"])),
             }
             for r in rows
