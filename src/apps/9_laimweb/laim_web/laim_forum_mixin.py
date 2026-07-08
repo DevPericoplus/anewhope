@@ -198,6 +198,25 @@ class LaimForumMixin:
         return len(self.forum_prefixes) > 0
 
     @rx.var
+    def forum_category_ids(self) -> list[str]:
+        """IDs de categorías para selectores del foro."""
+        return [str(c.get("id", "")) for c in self.forum_categories if c.get("id")]
+
+    @rx.var
+    def forum_subcategory_ids(self) -> list[str]:
+        """IDs de subcategorías visibles para la categoría activa."""
+        active = self.forum_selected_category_id
+        items: list[str] = []
+        for sub in self.forum_subcategories:
+            sub_id = str(sub.get("id", ""))
+            if not sub_id:
+                continue
+            parent = str(sub.get("categoria_id", sub.get("category_id", "")))
+            if not active or parent == active:
+                items.append(sub_id)
+        return items
+
+    @rx.var
     def forum_thread_has_attachments(self) -> bool:
         """True si el hilo activo tiene adjuntos."""
         return len(self.forum_thread_image_ids) > 0
@@ -529,6 +548,30 @@ class LaimForumMixin:
             self.forum_new_body = ""
             self.forum_new_prefix_id = ""
             self.forum_new_thread_image_ids = []
+
+    @forum_event
+    def forum_open_new_thread(self) -> None:
+        """Abre el diálogo de nuevo hilo."""
+        self.forum_new_thread_open = True
+
+    @forum_event
+    def forum_on_new_thread_dialog_change(self, open: bool) -> None:
+        """Sincroniza cierre del diálogo de nuevo hilo."""
+        self.forum_new_thread_open = open
+        if not open:
+            self.forum_new_title = ""
+            self.forum_new_body = ""
+            self.forum_new_prefix_id = ""
+            self.forum_new_thread_image_ids = []
+
+    @forum_event
+    def forum_close_new_thread(self) -> None:
+        """Cierra el diálogo de nuevo hilo."""
+        self.forum_new_thread_open = False
+        self.forum_new_title = ""
+        self.forum_new_body = ""
+        self.forum_new_prefix_id = ""
+        self.forum_new_thread_image_ids = []
 
     @forum_event
     def forum_set_new_title(self, value: str) -> None:

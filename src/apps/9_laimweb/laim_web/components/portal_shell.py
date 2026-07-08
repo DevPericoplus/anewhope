@@ -271,8 +271,15 @@ def portal_footer() -> rx.Component:
     )
 
 
-def portal_page(content: rx.Component, *, title: str = "LAIM Foro") -> rx.Component:
+def portal_page(
+    content: rx.Component,
+    *,
+    title: str = "LAIM Foro",
+    fill_height: bool = False,
+) -> rx.Component:
     """Layout estándar para páginas del foro."""
+    content_overflow = "hidden" if fill_height else "auto"
+    content_padding = "0.75em" if fill_height else CONTENT_PADDING
     return rx.box(
         rx.vstack(
             portal_header(),
@@ -291,8 +298,8 @@ def portal_page(content: rx.Component, *, title: str = "LAIM Foro") -> rx.Compon
                     flex="1",
                     min_width="0",
                     height="100%",
-                    overflow_y="auto",
-                    padding=CONTENT_PADDING,
+                    overflow=content_overflow,
+                    padding=content_padding,
                 ),
                 width="100%",
                 spacing="0",

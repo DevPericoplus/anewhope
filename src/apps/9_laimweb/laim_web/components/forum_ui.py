@@ -63,7 +63,6 @@ def _attachment_button(image_id) -> rx.Component:
 def forum_new_thread_form() -> rx.Component:
     """Formulario de creación de hilo con prefijo y adjuntos."""
     return rx.box(
-        rx.text("Nuevo hilo", class_name="crt-title", font_size="1em"),
         rx.input(
             placeholder="Título",
             value=LaimWebState.forum_new_title,
@@ -157,7 +156,7 @@ def forum_new_thread_form() -> rx.Component:
             ),
             rx.button(
                 "Cancelar",
-                on_click=LaimWebState.forum_toggle_new_thread,
+                on_click=LaimWebState.forum_close_new_thread,
                 class_name="crt-btn crt-btn-inline",
             ),
             spacing="2",
@@ -187,137 +186,213 @@ def forum_error_banner() -> rx.Component:
     )
 
 
-def forum_category_column() -> rx.Component:
-    """Columna de categorías."""
-    return rx.vstack(
-        _panel_title("Categorías"),
-        rx.foreach(
-            LaimWebState.forum_categories,
-            lambda item: rx.box(
-                rx.text(item["nombre"], font_size=FONT_SIZE_BODY),
-                on_click=LaimWebState.forum_select_category(item["id"]),
-                padding="0.5em",
-                cursor="pointer",
-                width="100%",
-                background=rx.cond(
-                    LaimWebState.forum_selected_category_id == item["id"],
-                    "rgba(0, 180, 0, 0.25)",
-                    "transparent",
+def forum_category_select() -> rx.Component:
+    """Selector compacto de categoría (barra superior)."""
+    return rx.select.root(
+        rx.select.trigger(
+            placeholder="Categoría",
+            class_name="crt-input",
+            style={
+                "backgroundColor": COLORS["input_bg"],
+                "color": COLORS["text"],
+                "borderColor": COLORS["border"],
+                "minWidth": "180px",
+            },
+        ),
+        rx.select.content(
+            rx.select.group(
+                rx.foreach(
+                    LaimWebState.forum_categories,
+                    lambda item: rx.select.item(
+                        item["nombre"],
+                        value=item["id"],
+                    ),
                 ),
-                border_left=rx.cond(
-                    LaimWebState.forum_selected_category_id == item["id"],
-                    f"3px solid {COLORS['accent']}",
-                    "3px solid transparent",
-                ),
-                _hover={"background": "rgba(0, 80, 0, 0.3)"},
             ),
         ),
-        spacing="1",
-        width="100%",
-        min_width="160px",
+        value=LaimWebState.forum_selected_category_id,
+        on_change=LaimWebState.forum_select_category,
+        size="2",
     )
 
 
-def forum_subcategory_column() -> rx.Component:
-    """Columna de subcategorías."""
-    return rx.vstack(
-        _panel_title("Subcategorías"),
-        rx.foreach(
-            LaimWebState.forum_subcategories,
-            lambda item: rx.box(
-                rx.text(item["nombre"], font_size=FONT_SIZE_BODY),
-                on_click=LaimWebState.forum_select_subcategory(item["id"]),
-                padding="0.5em",
-                cursor="pointer",
-                width="100%",
-                background=rx.cond(
-                    LaimWebState.forum_selected_subcategory_id == item["id"],
-                    "rgba(0, 180, 0, 0.25)",
-                    "transparent",
+def forum_subcategory_select() -> rx.Component:
+    """Selector compacto de subcategoría (barra superior)."""
+    return rx.select.root(
+        rx.select.trigger(
+            placeholder="Subcategoría",
+            class_name="crt-input",
+            style={
+                "backgroundColor": COLORS["input_bg"],
+                "color": COLORS["text"],
+                "borderColor": COLORS["border"],
+                "minWidth": "200px",
+            },
+        ),
+        rx.select.content(
+            rx.select.group(
+                rx.foreach(
+                    LaimWebState.forum_subcategories,
+                    lambda item: rx.select.item(
+                        item["nombre"],
+                        value=item["id"],
+                    ),
                 ),
-                border_left=rx.cond(
-                    LaimWebState.forum_selected_subcategory_id == item["id"],
-                    f"3px solid {COLORS['accent']}",
-                    "3px solid transparent",
-                ),
-                _hover={"background": "rgba(0, 80, 0, 0.3)"},
             ),
         ),
-        spacing="1",
-        width="100%",
-        min_width="160px",
+        value=LaimWebState.forum_selected_subcategory_id,
+        on_change=LaimWebState.forum_select_subcategory,
+        size="2",
     )
 
 
-def _thread_row(thread) -> rx.Component:
-    """Fila de hilo en listado (Var reactivo)."""
-    return rx.box(
-        rx.hstack(
-            rx.cond(
-                thread["fijado"],
-                rx.badge("Fijado", color_scheme="green", variant="solid", size="1"),
-                rx.fragment(),
-            ),
-            rx.cond(
-                thread["cerrado"],
-                rx.badge("Cerrado", color_scheme="gray", variant="solid", size="1"),
-                rx.fragment(),
-            ),
-            rx.text(thread["titulo"], font_weight="bold", color=COLORS["title"]),
-            spacing="2",
-            align_items="center",
-            flex_wrap="wrap",
+def forum_new_thread_dialog() -> rx.Component:
+    """Diálogo modal para crear hilo (no ocupa espacio del listado)."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Nuevo hilo", color=COLORS["title"]),
+            forum_new_thread_form(),
+            background=COLORS["panel_bg"],
+            border=f"1px solid {COLORS['border']}",
+            max_width="560px",
         ),
-        rx.text(
-            rx.fragment("Por ", thread["user_name"]),
-            color=COLORS["muted"],
-            font_size=FONT_SIZE_SMALL,
-        ),
-        on_click=LaimWebState.forum_open_thread(thread["id"]),
-        padding="0.65em",
-        border_bottom=f"1px solid {COLORS['border']}",
-        cursor="pointer",
-        width="100%",
-        _hover={"background": "rgba(0, 60, 0, 0.35)"},
+        open=LaimWebState.forum_new_thread_open,
+        on_open_change=LaimWebState.forum_on_new_thread_dialog_change,
     )
 
 
-def forum_threads_panel() -> rx.Component:
-    """Listado de hilos de la subcategoría activa."""
+def _forum_toolbar() -> rx.Component:
+    """Cabecera compacta: título, selectores y acciones."""
     return rx.vstack(
         rx.hstack(
-            _panel_title("Hilos"),
+            rx.vstack(
+                rx.heading("Foro LAIM", size="6", color=COLORS["title"]),
+                rx.text(
+                    "Categorías, hilos y respuestas · Markdown soportado",
+                    color=COLORS["muted"],
+                    font_size=FONT_SIZE_SMALL,
+                ),
+                spacing="1",
+            ),
             rx.box(flex_grow="1"),
+            rx.cond(
+                LaimWebState.forum_notifications_count > 0,
+                rx.badge(
+                    LaimWebState.forum_notifications_count,
+                    color_scheme="amber",
+                    variant="solid",
+                ),
+                rx.fragment(),
+            ),
+            rx.button(
+                "Nuevo hilo",
+                on_click=LaimWebState.forum_open_new_thread,
+                class_name="crt-btn crt-btn-inline",
+            ),
+            width="100%",
+            align_items="center",
+            flex_shrink="0",
+        ),
+        rx.hstack(
+            forum_category_select(),
+            forum_subcategory_select(),
             rx.button(
                 "Actualizar",
                 on_click=LaimWebState.forum_refresh,
                 class_name="crt-btn crt-btn-inline",
             ),
-            rx.button(
-                "Nuevo hilo",
-                on_click=LaimWebState.forum_toggle_new_thread,
-                class_name="crt-btn crt-btn-inline",
-            ),
+            spacing="3",
             width="100%",
+            flex_wrap="wrap",
             align_items="center",
+            flex_shrink="0",
         ),
-        rx.cond(
-            LaimWebState.forum_new_thread_open,
-            forum_new_thread_form(),
-            rx.fragment(),
-        ),
-        rx.cond(
-            LaimWebState.forum_has_thread,
-            rx.fragment(),
-            rx.vstack(
-                rx.foreach(LaimWebState.forum_threads, _thread_row),
-                spacing="0",
-                width="100%",
-            ),
-        ),
-        spacing="2",
+        spacing="3",
         width="100%",
-        flex="1",
+    )
+
+
+def _thread_row(thread) -> rx.Component:
+    """Fila de hilo en listado lateral (Var reactivo)."""
+    return rx.box(
+        rx.vstack(
+            rx.hstack(
+                rx.cond(
+                    thread["fijado"],
+                    rx.badge("Fijado", color_scheme="green", variant="solid", size="1"),
+                    rx.fragment(),
+                ),
+                rx.cond(
+                    thread["cerrado"],
+                    rx.badge("Cerrado", color_scheme="gray", variant="solid", size="1"),
+                    rx.fragment(),
+                ),
+                spacing="2",
+            ),
+            rx.text(thread["titulo"], font_weight="bold", color=COLORS["title"]),
+            rx.text(
+                rx.fragment("Por ", thread["user_name"]),
+                color=COLORS["muted"],
+                font_size=FONT_SIZE_SMALL,
+            ),
+            spacing="1",
+            align_items="start",
+            width="100%",
+        ),
+        on_click=LaimWebState.forum_open_thread(thread["id"]),
+        padding="0.75em",
+        border_radius="6px",
+        background=rx.cond(
+            LaimWebState.forum_active_thread_id == thread["id"],
+            "rgba(0, 180, 0, 0.25)",
+            COLORS["panel_bg"],
+        ),
+        border=f"1px solid {COLORS['border']}",
+        cursor="pointer",
+        width="100%",
+        _hover={"background": "rgba(0, 80, 0, 0.35)"},
+    )
+
+
+def forum_threads_sidebar() -> rx.Component:
+    """Columna lateral con listado de hilos (estilo Radikal)."""
+    return rx.box(
+        rx.vstack(
+            _panel_title("Hilos"),
+            rx.box(height="1px", width="100%", background=COLORS["border"]),
+            rx.cond(
+                LaimWebState.forum_has_selection,
+                rx.cond(
+                    LaimWebState.forum_threads.length() > 0,
+                    rx.vstack(
+                        rx.foreach(LaimWebState.forum_threads, _thread_row),
+                        spacing="2",
+                        width="100%",
+                    ),
+                    rx.text(
+                        "No hay hilos en esta subcategoría.",
+                        color=COLORS["muted"],
+                        font_size=FONT_SIZE_SMALL,
+                    ),
+                ),
+                rx.text(
+                    "Seleccione categoría y subcategoría.",
+                    color=COLORS["muted"],
+                    font_size=FONT_SIZE_SMALL,
+                ),
+            ),
+            spacing="2",
+            width="100%",
+        ),
+        width="280px",
+        min_width="280px",
+        height="100%",
+        overflow_y="auto",
+        padding="0.75em",
+        background=COLORS["panel_bg"],
+        border=f"1px solid {COLORS['border']}",
+        border_radius="8px",
+        class_name="forum-threads-sidebar",
     )
 
 
@@ -384,220 +459,244 @@ def _post_row(post) -> rx.Component:
     )
 
 
-def forum_thread_detail() -> rx.Component:
-    """Vista de hilo abierto con respuestas."""
-    return rx.cond(
-        LaimWebState.forum_has_thread,
-        rx.vstack(
-            rx.hstack(
-                rx.button(
-                    "← Volver al listado",
-                    on_click=LaimWebState.forum_close_thread,
-                    class_name="crt-btn crt-btn-inline",
-                ),
-                rx.box(flex_grow="1"),
-                rx.cond(
-                    LaimWebState.forum_show_moderation,
-                    rx.hstack(
-                        rx.button(
-                            rx.cond(
-                                LaimWebState.forum_thread_pinned,
-                                "Desfijar",
-                                "Fijar",
-                            ),
-                            on_click=LaimWebState.forum_moderate_pin,
-                            class_name="crt-btn crt-btn-inline",
-                        ),
-                        rx.button(
-                            rx.cond(
-                                LaimWebState.forum_thread_closed,
-                                "Reabrir",
-                                "Cerrar",
-                            ),
-                            on_click=LaimWebState.forum_moderate_close,
-                            class_name="crt-btn crt-btn-inline",
-                        ),
-                        rx.button(
-                            "Eliminar hilo",
-                            on_click=LaimWebState.forum_moderate_delete_thread,
-                            class_name="crt-btn crt-btn-inline",
-                        ),
-                        spacing="2",
-                        flex_wrap="wrap",
+def forum_thread_content_panel() -> rx.Component:
+    """Panel principal: detalle del hilo seleccionado o mensaje vacío."""
+    return rx.box(
+        rx.cond(
+            LaimWebState.forum_has_thread,
+            rx.vstack(
+                rx.hstack(
+                    rx.cond(
+                        LaimWebState.forum_thread_pinned,
+                        rx.badge("Fijado", color_scheme="green", variant="solid"),
+                        rx.fragment(),
                     ),
-                    rx.fragment(),
-                ),
-                rx.button(
-                    "Actualizar",
-                    on_click=LaimWebState.forum_refresh,
-                    class_name="crt-btn crt-btn-inline",
-                ),
-                width="100%",
-                flex_wrap="wrap",
-                spacing="2",
-            ),
-            rx.hstack(
-                rx.cond(
-                    LaimWebState.forum_thread_pinned,
-                    rx.badge("Fijado", color_scheme="green", variant="solid"),
-                    rx.fragment(),
-                ),
-                rx.cond(
-                    LaimWebState.forum_thread_closed,
-                    rx.badge("Cerrado", color_scheme="gray", variant="solid"),
-                    rx.fragment(),
-                ),
-                rx.heading(
-                    LaimWebState.forum_thread_title,
-                    size="6",
-                    color=COLORS["title"],
-                ),
-                spacing="2",
-                flex_wrap="wrap",
-                align_items="center",
-            ),
-            rx.text(
-                rx.fragment("Autor: ", LaimWebState.forum_thread_author),
-                color=COLORS["muted"],
-                font_size=FONT_SIZE_SMALL,
-            ),
-            crt_markdown_viewer(LaimWebState.forum_thread_body),
-            rx.cond(
-                LaimWebState.forum_thread_has_attachments,
-                rx.vstack(
-                    rx.text("Adjuntos del hilo", class_name="crt-title", font_size="0.95em"),
-                    rx.hstack(
-                        rx.foreach(
-                            LaimWebState.forum_thread_image_ids,
-                            _attachment_button,
-                        ),
-                        flex_wrap="wrap",
-                        spacing="2",
+                    rx.cond(
+                        LaimWebState.forum_thread_closed,
+                        rx.badge("Cerrado", color_scheme="gray", variant="solid"),
+                        rx.fragment(),
                     ),
-                    spacing="1",
-                    width="100%",
-                    margin_top="0.5em",
-                ),
-                rx.fragment(),
-            ),
-            rx.divider(color=COLORS["border"], margin_y="1em"),
-            _panel_title("Respuestas"),
-            rx.foreach(
-                LaimWebState.forum_posts,
-                _post_row,
-            ),
-            rx.cond(
-                ~LaimWebState.forum_thread_closed,
-                rx.vstack(
-                    rx.text_area(
-                        placeholder="Escriba su respuesta (Markdown)...",
-                        value=LaimWebState.forum_reply_body,
-                        on_change=LaimWebState.forum_set_reply_body,
-                        class_name="crt-input",
-                        width="100%",
-                        min_height="100px",
+                    rx.heading(
+                        LaimWebState.forum_thread_title,
+                        size="5",
+                        color=COLORS["title"],
                     ),
-                    rx.hstack(
-                        rx.input(
-                            type="file",
-                            id="forum_reply_file_input",
-                            accept="image/*",
-                        ),
-                        rx.button(
-                            "Adjuntar imagen",
-                            on_click=LaimWebState.forum_request_reply_attachment,
-                            class_name="crt-btn crt-btn-inline",
-                        ),
-                        rx.cond(
-                            LaimWebState.forum_reply_attachment_count > 0,
-                            rx.text(
-                                rx.fragment(
-                                    LaimWebState.forum_reply_attachment_count,
-                                    " adjunto(s)",
+                    rx.box(flex_grow="1"),
+                    rx.cond(
+                        LaimWebState.forum_show_moderation,
+                        rx.hstack(
+                            rx.button(
+                                rx.cond(
+                                    LaimWebState.forum_thread_pinned,
+                                    "Desfijar",
+                                    "Fijar",
                                 ),
-                                color=COLORS["accent"],
-                                font_size=FONT_SIZE_SMALL,
+                                on_click=LaimWebState.forum_moderate_pin,
+                                class_name="crt-btn crt-btn-inline",
                             ),
-                            rx.fragment(),
+                            rx.button(
+                                rx.cond(
+                                    LaimWebState.forum_thread_closed,
+                                    "Reabrir",
+                                    "Cerrar",
+                                ),
+                                on_click=LaimWebState.forum_moderate_close,
+                                class_name="crt-btn crt-btn-inline",
+                            ),
+                            rx.button(
+                                "Eliminar hilo",
+                                on_click=LaimWebState.forum_moderate_delete_thread,
+                                class_name="crt-btn crt-btn-inline",
+                            ),
+                            spacing="2",
+                            flex_wrap="wrap",
                         ),
-                        spacing="2",
-                        align_items="center",
-                        flex_wrap="wrap",
+                        rx.fragment(),
                     ),
                     rx.button(
-                        "Enviar respuesta",
-                        on_click=LaimWebState.forum_submit_reply,
-                        class_name="crt-btn",
-                        width="auto",
+                        "Actualizar",
+                        on_click=LaimWebState.forum_refresh,
+                        class_name="crt-btn crt-btn-inline",
                     ),
-                    spacing="2",
                     width="100%",
-                    margin_top="1em",
+                    flex_wrap="wrap",
+                    spacing="2",
+                    flex_shrink="0",
                 ),
                 rx.text(
-                    "Este hilo está cerrado. No se admiten nuevas respuestas.",
+                    rx.fragment("Autor: ", LaimWebState.forum_thread_author),
                     color=COLORS["muted"],
                     font_size=FONT_SIZE_SMALL,
                 ),
+                rx.box(
+                    rx.vstack(
+                        crt_markdown_viewer(LaimWebState.forum_thread_body),
+                        rx.cond(
+                            LaimWebState.forum_thread_has_attachments,
+                            rx.vstack(
+                                rx.text(
+                                    "Adjuntos del hilo",
+                                    class_name="crt-title",
+                                    font_size="0.95em",
+                                ),
+                                rx.hstack(
+                                    rx.foreach(
+                                        LaimWebState.forum_thread_image_ids,
+                                        _attachment_button,
+                                    ),
+                                    flex_wrap="wrap",
+                                    spacing="2",
+                                ),
+                                spacing="1",
+                                width="100%",
+                            ),
+                            rx.fragment(),
+                        ),
+                        rx.divider(color=COLORS["border"], margin_y="1em"),
+                        _panel_title("Respuestas"),
+                        rx.foreach(
+                            LaimWebState.forum_posts,
+                            _post_row,
+                        ),
+                        spacing="3",
+                        width="100%",
+                    ),
+                    class_name="forum-thread-scroll",
+                    width="100%",
+                    min_height="0",
+                    flex="1",
+                ),
+                rx.cond(
+                    ~LaimWebState.forum_thread_closed,
+                    rx.vstack(
+                        rx.text_area(
+                            placeholder="Escriba su respuesta (Markdown)...",
+                            value=LaimWebState.forum_reply_body,
+                            on_change=LaimWebState.forum_set_reply_body,
+                            class_name="crt-input",
+                            width="100%",
+                            min_height="80px",
+                        ),
+                        rx.hstack(
+                            rx.input(
+                                type="file",
+                                id="forum_reply_file_input",
+                                accept="image/*",
+                            ),
+                            rx.button(
+                                "Adjuntar imagen",
+                                on_click=LaimWebState.forum_request_reply_attachment,
+                                class_name="crt-btn crt-btn-inline",
+                            ),
+                            rx.cond(
+                                LaimWebState.forum_reply_attachment_count > 0,
+                                rx.text(
+                                    rx.fragment(
+                                        LaimWebState.forum_reply_attachment_count,
+                                        " adjunto(s)",
+                                    ),
+                                    color=COLORS["accent"],
+                                    font_size=FONT_SIZE_SMALL,
+                                ),
+                                rx.fragment(),
+                            ),
+                            rx.button(
+                                "Enviar respuesta",
+                                on_click=LaimWebState.forum_submit_reply,
+                                class_name="crt-btn crt-btn-inline",
+                            ),
+                            spacing="2",
+                            align_items="center",
+                            flex_wrap="wrap",
+                            width="100%",
+                        ),
+                        spacing="2",
+                        width="100%",
+                        class_name="forum-reply-panel",
+                        flex_shrink="0",
+                    ),
+                    rx.text(
+                        "Este hilo está cerrado. No se admiten nuevas respuestas.",
+                        color=COLORS["muted"],
+                        font_size=FONT_SIZE_SMALL,
+                        flex_shrink="0",
+                    ),
+                ),
+                spacing="2",
+                width="100%",
+                height="100%",
+                min_height="0",
+                class_name="forum-thread-layout",
             ),
-            spacing="3",
-            width="100%",
+            rx.center(
+                rx.text(
+                    "Seleccione un hilo de la lista.",
+                    color=COLORS["muted"],
+                    font_size=FONT_SIZE_BODY,
+                ),
+                height="100%",
+                width="100%",
+            ),
         ),
-        rx.fragment(),
+        flex="1",
+        min_width="0",
+        height="100%",
+        min_height="0",
+        class_name="forum-thread-panel",
+        padding="1em",
+        background=COLORS["panel_bg"],
+        border=f"1px solid {COLORS['border']}",
+        border_radius="8px",
     )
 
 
+def forum_thread_detail() -> rx.Component:
+    """Alias de compatibilidad: vista de hilo en panel principal."""
+    return forum_thread_content_panel()
+
+
 def forum_main_layout() -> rx.Component:
-    """Layout principal de tres columnas del foro."""
-    return rx.vstack(
-        rx.hstack(
-            rx.heading("Foro LAIM", size="7", color=COLORS["title"]),
-            rx.box(flex_grow="1"),
+    """Layout principal del foro: selectores arriba + hilos protagonistas."""
+    return rx.box(
+        rx.vstack(
+            _forum_toolbar(),
+            forum_error_banner(),
             rx.cond(
-                LaimWebState.forum_notifications_count > 0,
-                rx.badge(
-                    LaimWebState.forum_notifications_count,
-                    color_scheme="amber",
-                    variant="solid",
+                ~LaimWebState.forum_service_active,
+                rx.text(
+                    "El foro no está activo en este entorno.",
+                    color=COLORS["muted"],
                 ),
-                rx.fragment(),
+                rx.vstack(
+                    rx.hstack(
+                        forum_threads_sidebar(),
+                        forum_thread_content_panel(),
+                        spacing="4",
+                        width="100%",
+                        flex="1",
+                        min_height="0",
+                        align_items="stretch",
+                        class_name="forum-panels-row",
+                    ),
+                    spacing="3",
+                    width="100%",
+                    flex="1",
+                    min_height="0",
+                    class_name="forum-service-area",
+                ),
             ),
+            forum_image_preview_modal(),
+            forum_new_thread_dialog(),
+            spacing="3",
             width="100%",
-            align_items="center",
-            margin_bottom="1em",
+            flex="1",
+            min_height="0",
         ),
-        forum_error_banner(),
-        rx.cond(
-            ~LaimWebState.forum_service_active,
-            rx.text(
-                "El foro no está activo en este entorno.",
-                color=COLORS["muted"],
-            ),
-            rx.fragment(),
-        ),
-        rx.cond(
-            LaimWebState.forum_has_thread,
-            forum_thread_detail(),
-            rx.hstack(
-                rx.box(
-                    forum_category_column(),
-                    padding_right="1em",
-                    border_right=f"1px solid {COLORS['border']}",
-                ),
-                rx.box(
-                    forum_subcategory_column(),
-                    padding_x="1em",
-                    border_right=f"1px solid {COLORS['border']}",
-                ),
-                rx.box(forum_threads_panel(), flex="1", padding_left="1em"),
-                width="100%",
-                align_items="flex-start",
-                spacing="0",
-            ),
-        ),
-        forum_image_preview_modal(),
-        spacing="2",
         width="100%",
+        flex="1",
+        min_height="0",
+        height="100%",
+        class_name="forum-page-layout",
     )
 
 

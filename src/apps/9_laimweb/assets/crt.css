@@ -514,3 +514,64 @@ body::after {
   color: #e8ffe8;
   font-style: italic;
 }
+
+/* Foro LAIM — layout tipo Radikal (selectores arriba, hilos protagonistas) */
+.forum-page-layout {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.forum-service-area {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.forum-panels-row {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.forum-thread-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.forum-threads-sidebar {
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.forum-thread-layout {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.forum-thread-scroll {
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.forum-reply-panel {
+  flex-shrink: 0;
+  min-height: 0;
+  overflow: visible;
+}
