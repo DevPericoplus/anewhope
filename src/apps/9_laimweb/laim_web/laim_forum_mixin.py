@@ -121,7 +121,7 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_admin_prefix_text: str = ""
     forum_admin_prefix_color: str = "green"
     forum_admin_word_palabra: str = ""
-    forum_admin_word_accion: str = "warn"
+    forum_admin_word_accion: str = "Amonestaciones"
     forum_admin_word_mensaje: str = ""
     forum_admin_url_dominio: str = ""
     forum_admin_url_descripcion: str = ""
@@ -134,6 +134,23 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_allowed_urls: list[dict[str, Any]] = []
     forum_moderators: list[dict[str, Any]] = []
 
+    # Estadísticas admin
+    forum_stats_dialog_open: bool = False
+    forum_stats_loading: bool = False
+    forum_stats_message: str = ""
+    forum_stats_categorias: int = 0
+    forum_stats_subcategorias: int = 0
+    forum_stats_hilos: int = 0
+    forum_stats_respuestas: int = 0
+    forum_stats_valoraciones: int = 0
+    forum_stats_valoracion_promedio: float = 0.0
+    forum_stats_usuarios_activos: int = 0
+    forum_stats_baneos_activos: int = 0
+    forum_stats_infracciones_hoy: int = 0
+    forum_stats_adjuntos: int = 0
+    forum_stats_subcategory_rows: list[dict[str, Any]] = []
+    forum_stats_top_users: list[dict[str, Any]] = []
+
     # Moderación
     forum_mod_logs: list[dict[str, Any]] = []
     forum_mod_bans: list[dict[str, Any]] = []
@@ -141,6 +158,21 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_ban_motivo: str = ""
     forum_ban_expires_at: str = ""
     forum_mod_message: str = ""
+
+    # Hub del servicio de foro (admin)
+    forum_admin_view: str = "hub"
+    forum_service_detail: str = "Comprobando estado del servicio..."
+    forum_admin_subcategory_ban_seconds: str = "86400"
+    forum_admin_subcategory_log_rotation: str = "weekly"
+    forum_admin_logs_subcategory_id: str = ""
+    forum_admin_logs_lines: list[dict[str, Any]] = []
+    forum_rule_action_options: list[str] = [
+        "Agradecimientos",
+        "Amonestaciones",
+        "Sugerencias",
+        "Ban",
+        "Kick",
+    ]
 
     # Polling
     _forum_poll_running: bool = False
@@ -457,9 +489,138 @@ class LaimForumMixin(rx.State, mixin=True):
             return rx.redirect("/")
         if not self.is_laim_admin:
             return rx.redirect("/foro")
+        self.forum_admin_view = "hub"
+        self.forum_service_refresh_health()
         self.forum_load_admin_panel()
         self.forum_load_admin_extended()
         return None
+
+    def forum_service_refresh_health(self) -> None:
+        """Actualiza badge y detalle del servicio de foro."""
+        from laim_web.adapters.laim_api_client import laim_forum_health
+
+        health = laim_forum_health()
+        threads = int(health.get("threads", health.get("hilos", 0)) or 0)
+        activo = bool(
+            health.get("activo", health.get("ok", health.get("success", False)))
+        )
+        self.forum_service_active = activo
+        if activo:
+            self.forum_service_detail = (
+                f"API operativa · {threads} hilo(s) registrados"
+            )
+        else:
+            detail = str(health.get("error", "")).strip()
+            self.forum_service_detail = (
+                detail if detail else "Servicio detenido o no disponible"
+            )
+
+    @forum_event
+    def forum_admin_go_hub(self) -> None:
+        """Vuelve al hub del servicio de foro."""
+        self.forum_admin_view = "hub"
+        self.forum_admin_message = ""
+        self.forum_service_refresh_health()
+
+    @forum_event
+    def forum_admin_open_view(self, view: str) -> None:
+        """Abre una vista del panel admin del foro."""
+        self.forum_admin_view = view
+        self.forum_admin_message = ""
+
+        tab_map = {
+            "prefixes": "prefixes",
+            "moderators": "moderators",
+            "permissions": "settings",
+            "word-rules": "word-rules",
+            "allowed-urls": "allowed-urls",
+            "avatars": "avatars",
+        }
+        if view in tab_map:
+            self.forum_admin_tab = tab_map[view]
+            self.forum_load_admin_extended()
+        elif view in ("categories", "subcategories"):
+            self.forum_load_admin_panel()
+        elif view == "bans":
+            self.forum_load_admin_bans()
+        elif view == "logs":
+            self.forum_load_admin_logs()
+        elif view == "config_general":
+            self.forum_service_refresh_health()
+        elif view == "stats":
+            self.forum_open_stats_dialog()
+            self.forum_admin_view = "hub"
+
+    @forum_event
+    def forum_service_reload_config(self) -> None:
+        """Recarga estado del servicio (equivalente a Radikal reload_config)."""
+        from laim_web.adapters.laim_api_client import laim_forum_admin_reload_config
+
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_admin_reload_config(access, session)
+        if result.get("success"):
+            self.forum_service_refresh_health()
+            self.forum_admin_message = "Estado del servicio actualizado."
+        else:
+            self.forum_service_refresh_health()
+            self.forum_admin_message = result.get(
+                "error", "No se pudo actualizar el estado."
+            )
+
+    def forum_load_admin_bans(self) -> None:
+        """Carga baneos activos para el panel admin."""
+        from laim_web.adapters.laim_api_client import laim_forum_admin_list_bans
+
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_admin_list_bans(access, session)
+        if result.get("success"):
+            self.forum_mod_bans = result.get("items", [])
+        else:
+            self.forum_mod_bans = []
+            self.forum_admin_message = result.get(
+                "error", "No se pudieron cargar baneos activos."
+            )
+
+    @forum_event
+    def forum_admin_set_logs_subcategory_id(self, value: str) -> None:
+        self.forum_admin_logs_subcategory_id = value
+
+    def forum_load_admin_logs(self) -> None:
+        """Carga logs globales de moderación."""
+        from laim_web.adapters.laim_api_client import laim_forum_admin_logs
+
+        access, session = self._forum_auth_tokens()
+        sub_id = self.forum_admin_logs_subcategory_id.strip() or None
+        result = laim_forum_admin_logs(
+            access, session, subcategory_id=sub_id, limit=200
+        )
+        if not result.get("success"):
+            self.forum_admin_logs_lines = []
+            self.forum_admin_message = result.get("error", "No se pudieron cargar logs.")
+            return
+
+        lines: list[dict[str, Any]] = []
+        for item in result.get("items", []):
+            if not isinstance(item, dict):
+                continue
+            created = str(item.get("created_at", ""))[:19]
+            sub = str(item.get("subcategory_id", ""))
+            event = str(item.get("event_type", ""))
+            message = str(item.get("message", ""))
+            lines.append(
+                {
+                    "line": f"[{created}] [{sub}] {event}: {message}",
+                }
+            )
+        self.forum_admin_logs_lines = lines
+
+    @forum_event
+    def forum_admin_set_subcategory_ban_seconds(self, value: str) -> None:
+        self.forum_admin_subcategory_ban_seconds = value
+
+    @forum_event
+    def forum_admin_set_subcategory_log_rotation(self, value: str) -> None:
+        self.forum_admin_subcategory_log_rotation = value
 
     def forum_poll_notifications(self) -> None:
         """Consulta notificaciones pendientes del foro."""
@@ -980,6 +1141,14 @@ class LaimForumMixin(rx.State, mixin=True):
             return
 
         access, session = self._forum_auth_tokens()
+        try:
+            ban_seconds = max(60, int(self.forum_admin_subcategory_ban_seconds.strip()))
+        except ValueError:
+            ban_seconds = 86400
+        log_rotation = self.forum_admin_subcategory_log_rotation.strip() or "weekly"
+        if log_rotation not in ("weekly", "daily", "none"):
+            log_rotation = "weekly"
+
         result = laim_forum_upsert_subcategory(
             {
                 "id": self.forum_admin_subcategory_id.strip(),
@@ -988,6 +1157,8 @@ class LaimForumMixin(rx.State, mixin=True):
                 "descripcion": self.forum_admin_subcategory_desc.strip(),
                 "orden": 0,
                 "activa": True,
+                "ban_seconds": ban_seconds,
+                "log_rotation": log_rotation,
             },
             access,
             session,
@@ -1739,8 +1910,59 @@ class LaimForumMixin(rx.State, mixin=True):
         if result.get("success"):
             self.forum_mod_message = "Baneo revocado."
             self.forum_load_moderation_data()
+            if self.forum_admin_view == "bans":
+                self.forum_load_admin_bans()
         else:
             self.forum_mod_message = result.get("error", "No se pudo revocar.")
+
+    @rx.var
+    def forum_stats_valoracion_promedio_text(self) -> str:
+        """Promedio de valoraciones formateado para UI."""
+        return f"{self.forum_stats_valoracion_promedio:.2f}"
+
+    @forum_event
+    def forum_on_stats_dialog_change(self, open: bool) -> None:
+        """Abre/cierra el diálogo de estadísticas."""
+        self.forum_stats_dialog_open = open
+        if open:
+            self.forum_load_stats()
+
+    @forum_event
+    def forum_open_stats_dialog(self) -> None:
+        """Muestra estadísticas del foro."""
+        self.forum_stats_dialog_open = True
+        self.forum_load_stats()
+
+    def forum_load_stats(self) -> None:
+        """Carga estadísticas agregadas del foro (admin)."""
+        from laim_web.adapters.laim_api_client import laim_forum_admin_stats
+
+        self.forum_stats_loading = True
+        self.forum_stats_message = ""
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_admin_stats(access, session)
+        self.forum_stats_loading = False
+        if not result.get("success"):
+            self.forum_stats_message = result.get("error", "No se pudieron cargar estadísticas.")
+            return
+
+        stats = result.get("stats", {})
+        if not isinstance(stats, dict):
+            self.forum_stats_message = "Respuesta de estadísticas inválida."
+            return
+
+        self.forum_stats_categorias = int(stats.get("categorias", 0) or 0)
+        self.forum_stats_subcategorias = int(stats.get("subcategorias", 0) or 0)
+        self.forum_stats_hilos = int(stats.get("hilos", 0) or 0)
+        self.forum_stats_respuestas = int(stats.get("respuestas", 0) or 0)
+        self.forum_stats_valoraciones = int(stats.get("valoraciones", 0) or 0)
+        self.forum_stats_valoracion_promedio = float(stats.get("valoracion_promedio", 0) or 0)
+        self.forum_stats_usuarios_activos = int(stats.get("usuarios_activos", 0) or 0)
+        self.forum_stats_baneos_activos = int(stats.get("baneos_activos", 0) or 0)
+        self.forum_stats_infracciones_hoy = int(stats.get("infracciones_hoy", 0) or 0)
+        self.forum_stats_adjuntos = int(stats.get("adjuntos", 0) or 0)
+        self.forum_stats_subcategory_rows = stats.get("subcategorias_detalle", [])
+        self.forum_stats_top_users = stats.get("top_reputacion", [])
 
     @forum_event
     def forum_admin_set_tab(self, tab: str) -> None:
@@ -1849,7 +2071,7 @@ class LaimForumMixin(rx.State, mixin=True):
         result = laim_forum_admin_create_word_rule(
             {
                 "palabra": self.forum_admin_word_palabra.strip(),
-                "accion": self.forum_admin_word_accion.strip() or "warn",
+                "accion": self.forum_admin_word_accion.strip() or "Amonestaciones",
                 "mensaje": self.forum_admin_word_mensaje.strip(),
                 "activo": True,
             },

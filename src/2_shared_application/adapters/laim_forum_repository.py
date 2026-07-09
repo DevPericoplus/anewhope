@@ -1384,6 +1384,137 @@ class LaimForumRepository:
             ).first()
         return int(row[0]) if row else 0
 
+    def get_subcategory(self, subcategory_id: str) -> dict[str, Any] | None:
+        """Obtiene una subcategoría por ID."""
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT id, categoria_id, nombre, descripcion, orden, activa,
+                           ban_seconds, log_rotation
+                    FROM laim_forum_subcategories
+                    WHERE id = :id
+                    LIMIT 1
+                    """
+                ),
+                {"id": subcategory_id},
+            ).mappings().first()
+        if row is None:
+            return None
+        return {**dict(row), "activa": _bool_value(row["activa"])}
+
+    def increment_daily_infraction(
+        self,
+        *,
+        user_id: int,
+        subcategory_id: str,
+        tipo: str,
+    ) -> int:
+        """Incrementa infracciones del día y devuelve el nivel actual."""
+        with self._engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT id, strikes
+                    FROM laim_forum_infractions
+                    WHERE user_id = :user_id
+                      AND subcategory_id = :subcategory_id
+                      AND tipo = :tipo
+                      AND DATE(created_at) = CURDATE()
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """
+                ),
+                {
+                    "user_id": user_id,
+                    "subcategory_id": subcategory_id,
+                    "tipo": tipo,
+                },
+            ).first()
+            if row:
+                new_level = int(row[1]) + 1
+                conn.execute(
+                    text(
+                        "UPDATE laim_forum_infractions SET strikes = :strikes WHERE id = :id"
+                    ),
+                    {"strikes": new_level, "id": row[0]},
+                )
+                return new_level
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO laim_forum_infractions (
+                        user_id, subcategory_id, tipo, strikes
+                    ) VALUES (:user_id, :subcategory_id, :tipo, 1)
+                    """
+                ),
+                {
+                    "user_id": user_id,
+                    "subcategory_id": subcategory_id,
+                    "tipo": tipo,
+                },
+            )
+        return 1
+
+    def list_active_bans(self) -> list[dict[str, Any]]:
+        """Lista baneos activos con nombre de subcategoría."""
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT b.id, b.user_id, b.subcategory_id, b.motivo,
+                           b.moderador_user_id, b.moderador_user_name,
+                           b.expires_at, b.automatico, b.created_at,
+                           s.nombre AS subcategory_name
+                    FROM laim_forum_bans b
+                    LEFT JOIN laim_forum_subcategories s ON s.id = b.subcategory_id
+                    WHERE b.activo = 1
+                      AND (b.expires_at IS NULL OR b.expires_at > NOW())
+                    ORDER BY b.created_at DESC
+                    """
+                )
+            ).mappings().all()
+        return [
+            {
+                **dict(row),
+                "automatico": _bool_value(row.get("automatico", 0)),
+                "expires_at": _timestamp_value(row.get("expires_at")),
+                "created_at": _timestamp_value(row.get("created_at")),
+            }
+            for row in rows
+        ]
+
+    def list_moderation_logs_admin(
+        self,
+        *,
+        subcategory_id: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Lista logs de moderación para administración."""
+        conditions: list[str] = []
+        params: dict[str, Any] = {"limit": limit}
+        if subcategory_id:
+            conditions.append("subcategory_id = :subcategory_id")
+            params["subcategory_id"] = subcategory_id
+        clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    f"""
+                    SELECT id, subcategory_id, event_type, message, user_id,
+                           moderator_user_id, moderator_user_name, created_at
+                    FROM laim_forum_moderation_logs
+                    {clause}
+                    ORDER BY created_at DESC
+                    LIMIT :limit
+                    """
+                ),
+                params,
+            ).mappings().all()
+        return [
+            {**dict(r), "created_at": _timestamp_value(r.get("created_at"))} for r in rows
+        ]
+
     # ---------------------------------------------------- notificaciones/ratings
     def create_notification(
         self,
@@ -1615,3 +1746,141 @@ class LaimForumRepository:
         if row is None:
             return {"categorias": 0, "subcategorias": 0, "hilos": 0, "respuestas": 0}
         return {key: int(row[key] or 0) for key in row.keys()}
+
+    def get_admin_stats(self) -> dict[str, Any]:
+        """Estadísticas agregadas para el panel de administración."""
+        with self._engine.connect() as conn:
+            totals_row = conn.execute(
+                text(
+                    """
+                    SELECT
+                        (SELECT COUNT(*) FROM laim_forum_categories) AS categorias,
+                        (SELECT COUNT(*) FROM laim_forum_subcategories) AS subcategorias,
+                        (SELECT COUNT(*) FROM laim_forum_threads WHERE deleted = 0) AS hilos,
+                        (SELECT COUNT(*) FROM laim_forum_posts WHERE deleted = 0) AS respuestas,
+                        (
+                            (SELECT COUNT(*) FROM laim_forum_thread_ratings)
+                            + (SELECT COUNT(*) FROM laim_forum_post_ratings)
+                        ) AS valoraciones,
+                        (
+                            SELECT ROUND(AVG(valoracion), 2)
+                            FROM (
+                                SELECT valoracion FROM laim_forum_thread_ratings
+                                UNION ALL
+                                SELECT valoracion FROM laim_forum_post_ratings
+                            ) AS all_ratings
+                        ) AS valoracion_promedio,
+                        (
+                            SELECT COUNT(*) FROM (
+                                SELECT user_id FROM laim_forum_threads WHERE deleted = 0
+                                UNION
+                                SELECT user_id FROM laim_forum_posts WHERE deleted = 0
+                            ) AS active_users
+                        ) AS usuarios_activos,
+                        (
+                            SELECT COUNT(*)
+                            FROM laim_forum_bans
+                            WHERE activo = 1
+                              AND (expires_at IS NULL OR expires_at > NOW())
+                        ) AS baneos_activos,
+                        (
+                            SELECT COUNT(*)
+                            FROM laim_forum_infractions
+                            WHERE DATE(created_at) = CURDATE()
+                        ) AS infracciones_hoy,
+                        (
+                            (SELECT COUNT(*) FROM laim_forum_thread_images)
+                            + (SELECT COUNT(*) FROM laim_forum_post_images)
+                        ) AS adjuntos
+                    """
+                )
+            ).mappings().first()
+
+            subcategory_rows = conn.execute(
+                text(
+                    """
+                    SELECT
+                        s.id AS subcategory_id,
+                        s.nombre AS subcategory_name,
+                        c.nombre AS category_name,
+                        (
+                            SELECT COUNT(*)
+                            FROM laim_forum_threads t
+                            WHERE t.subcategory_id = s.id AND t.deleted = 0
+                        ) AS hilos,
+                        (
+                            SELECT COUNT(*)
+                            FROM laim_forum_posts p
+                            INNER JOIN laim_forum_threads t ON p.thread_id = t.id
+                            WHERE t.subcategory_id = s.id
+                              AND p.deleted = 0
+                              AND t.deleted = 0
+                        ) AS respuestas
+                    FROM laim_forum_subcategories s
+                    INNER JOIN laim_forum_categories c ON s.categoria_id = c.id
+                    ORDER BY c.orden, s.orden, s.nombre
+                    """
+                )
+            ).mappings().all()
+
+            top_users_rows = conn.execute(
+                text(
+                    """
+                    SELECT
+                        uf.user_id,
+                        COALESCE(NULLIF(uf.forum_display_name, ''), u.user_name) AS display_name,
+                        uf.reputation_avg,
+                        uf.reputation_votes
+                    FROM laim_user_forum uf
+                    INNER JOIN laim_users u ON uf.user_id = u.user_id
+                    WHERE uf.reputation_votes > 0
+                    ORDER BY uf.reputation_avg DESC, uf.reputation_votes DESC, uf.user_id ASC
+                    LIMIT 10
+                    """
+                )
+            ).mappings().all()
+
+        totals: dict[str, Any] = {
+            "categorias": 0,
+            "subcategorias": 0,
+            "hilos": 0,
+            "respuestas": 0,
+            "valoraciones": 0,
+            "valoracion_promedio": 0.0,
+            "usuarios_activos": 0,
+            "baneos_activos": 0,
+            "infracciones_hoy": 0,
+            "adjuntos": 0,
+        }
+        if totals_row is not None:
+            for key in totals:
+                raw = totals_row.get(key)
+                if key == "valoracion_promedio":
+                    totals[key] = float(raw or 0)
+                else:
+                    totals[key] = int(raw or 0)
+
+        subcategorias_detalle = [
+            {
+                "subcategory_id": str(row["subcategory_id"]),
+                "subcategory_name": str(row["subcategory_name"]),
+                "category_name": str(row["category_name"]),
+                "hilos": int(row["hilos"] or 0),
+                "respuestas": int(row["respuestas"] or 0),
+            }
+            for row in subcategory_rows
+        ]
+        top_reputacion = [
+            {
+                "user_id": int(row["user_id"]),
+                "display_name": str(row["display_name"]),
+                "reputation_avg": float(row["reputation_avg"] or 0),
+                "reputation_votes": int(row["reputation_votes"] or 0),
+            }
+            for row in top_users_rows
+        ]
+        return {
+            **totals,
+            "subcategorias_detalle": subcategorias_detalle,
+            "top_reputacion": top_reputacion,
+        }

@@ -60,9 +60,27 @@ if [ -f "$SCRIPT_DIR/.web/vite.config.js" ]; then
     python "$SCRIPT_DIR/patch_vite_config.py" 2>/dev/null || true
 fi
 
+FORUM_START="$SCRIPT_DIR/scripts/start_laim_forum.sh"
+FORUM_STOP="$SCRIPT_DIR/scripts/stop_laim_forum.sh"
+
+cleanup() {
+    if [ -x "$FORUM_STOP" ]; then
+        bash "$FORUM_STOP" || true
+    fi
+}
+trap cleanup EXIT INT TERM
+
+if [ -x "$FORUM_START" ]; then
+    echo "Iniciando daemon del foro LAIM..."
+    bash "$FORUM_START"
+else
+    echo "ADVERTENCIA: no se encontró $FORUM_START"
+fi
+
 cd "$SCRIPT_DIR"
 echo "=========================================="
 echo "LAIM Web — Puerto backend: 8009"
 echo "LAIM Web — Puerto frontend: 3109"
+echo "LAIM Foro — Daemon API: 8766"
 echo "=========================================="
 reflex run

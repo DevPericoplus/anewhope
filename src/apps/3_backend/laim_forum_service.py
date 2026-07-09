@@ -9,16 +9,12 @@ from __future__ import annotations
 
 import importlib.util
 import logging
-import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 _logger = logging.getLogger("LaimForumService")
-
-_URL_PATTERN = re.compile(r"https?://[^\s)\]>]+", re.IGNORECASE)
 
 
 def _load_module(relative_path: str, module_name: str) -> Any:
@@ -57,12 +53,20 @@ _env_settings = _load_module(
     "src/2_shared_application/config/env_settings.py",
     "laim_env_settings_forum",
 )
+_content_rules = _load_module(
+    "src/1_shared_domain/laim_forum_content_rules.py",
+    "laim_forum_content_rules_svc",
+)
 
 LaimForumRepository = _repo_mod.LaimForumRepository
 LaimForumImageStorage = _image_mod.LaimForumImageStorage
 create_laim_session_engine = _session_repo_mod.create_laim_session_engine
 load_laim_mariadb_settings = _storage.load_laim_mariadb_settings
 get_env_value = _env_settings.get_env_value
+find_matching_rule = _content_rules.find_matching_rule
+evaluate_rule_match = _content_rules.evaluate_rule_match
+POSITIVE_ACTIONS = _content_rules.POSITIVE_ACTIONS
+find_unauthorized_urls = _content_rules.find_unauthorized_urls
 
 LaimForumThreadCreateDto = _dtos.LaimForumThreadCreateDto
 LaimForumThreadUpdateDto = _dtos.LaimForumThreadUpdateDto
@@ -176,27 +180,223 @@ class LaimForumService:
             return True
         return self._repository.is_moderator(user_id, subcategory_id)
 
-    def _validate_markdown_content(self, content: str) -> str | None:
-        """Aplica reglas de palabras y URLs permitidas."""
-        lowered = content.lower()
-        for rule in self._repository.list_word_rules(active_only=True):
-            word = str(rule.get("palabra", "")).strip().lower()
-            if word and word in lowered:
-                return str(rule.get("mensaje") or f"Contenido no permitido: {word}")
-        allowed = {
-            str(item.get("dominio", "")).strip().lower()
+    def _log_moderation_event(
+        self,
+        *,
+        subcategory_id: str,
+        event_type: str,
+        message: str,
+        user_id: int | None = None,
+        user_name: str | None = None,
+        thread_id: int | None = None,
+        post_id: int | None = None,
+        moderator_user_id: int | None = None,
+        moderator_user_name: str | None = None,
+    ) -> None:
+        """Registra evento en log de moderación (BD)."""
+        self._repository.insert_moderation_log(
+            subcategory_id=subcategory_id,
+            event_type=event_type,
+            message=message,
+            user_id=user_id,
+            user_name=user_name,
+            thread_id=thread_id,
+            post_id=post_id,
+            moderator_user_id=moderator_user_id,
+            moderator_user_name=moderator_user_name,
+        )
+
+    def _apply_automatic_ban(
+        self,
+        *,
+        user_id: int,
+        subcategory_id: str,
+        motivo: str,
+        ban_seconds: int,
+    ) -> None:
+        """Aplica baneo automático por moderación."""
+        expires = datetime.now(timezone.utc) + timedelta(seconds=max(1, ban_seconds))
+        self._repository.create_ban(
+            user_id=user_id,
+            subcategory_id=subcategory_id,
+            motivo=motivo,
+            moderador_user_id=None,
+            moderador_user_name="Moderación automática",
+            expires_at=expires,
+            automatico=True,
+        )
+        self._log_moderation_event(
+            subcategory_id=subcategory_id,
+            event_type="ban",
+            message=f"Ban automático: user_id={user_id} — {motivo}",
+            user_id=user_id,
+            moderator_user_name="Moderación automática",
+        )
+
+    def _validate_urls(
+        self,
+        text: str,
+        *,
+        user_id: int,
+        user_name: str,
+        sub: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Valida URLs contra dominios permitidos (strikes diarios)."""
+        allowed_domains = [
+            str(item.get("dominio", "")).strip()
             for item in self._repository.list_allowed_urls(active_only=True)
-        }
-        if not allowed:
+        ]
+        unauthorized = find_unauthorized_urls(text, allowed_domains)
+        if not unauthorized:
             return None
-        for match in _URL_PATTERN.findall(content):
-            parsed = urlparse(match.rstrip(".,;"))
-            host = (parsed.hostname or "").lower()
-            if not host:
-                continue
-            if not any(host == domain or host.endswith(f".{domain}") for domain in allowed):
-                return f"Dominio no permitido en enlaces: {host}"
+
+        subcategory_id = str(sub["id"])
+        url = unauthorized[0]
+        strikes = self._repository.increment_daily_infraction(
+            user_id=user_id,
+            subcategory_id=subcategory_id,
+            tipo="url",
+        )
+        max_strikes = self.max_url_strikes()
+        ban_seconds = int(sub.get("ban_seconds") or 86400)
+        self._log_moderation_event(
+            subcategory_id=subcategory_id,
+            event_type="url_rechazada",
+            message=f"{user_name}: URL no autorizada {url} ({strikes}/{max_strikes})",
+            user_id=user_id,
+            user_name=user_name,
+        )
+        warning = (
+            f"Enlace no autorizado detectado ({url}). "
+            f"Infracción {strikes}/{max_strikes}."
+        )
+        self._repository.create_notification(
+            user_id=user_id,
+            tipo="url_rechazada",
+            titulo="Enlace no permitido",
+            mensaje=warning,
+            subcategory_id=subcategory_id,
+        )
+        if strikes >= max_strikes:
+            self._apply_automatic_ban(
+                user_id=user_id,
+                subcategory_id=subcategory_id,
+                motivo=f"Ban automático tras {strikes} infracciones de URL",
+                ban_seconds=ban_seconds,
+            )
+            warning += " Se ha aplicado un ban automático."
+        return {"success": False, "error": warning, "strikes": strikes}
+
+    def _validate_content_rules(
+        self,
+        text: str,
+        *,
+        user_id: int,
+        user_name: str,
+        sub: dict[str, Any],
+        thread_id: int = 0,
+        thread_title: str = "",
+    ) -> dict[str, Any] | None:
+        """Valida reglas de palabras con escalado diario (Radikal)."""
+        matched = find_matching_rule(
+            text, self._repository.list_word_rules(active_only=True)
+        )
+        if matched is None:
+            return None
+
+        subcategory_id = str(sub["id"])
+        accion = str(matched.get("accion", "Amonestaciones"))
+
+        if accion in POSITIVE_ACTIONS:
+            mensaje = str(matched.get("mensaje", "")).strip()
+            if mensaje:
+                self._log_moderation_event(
+                    subcategory_id=subcategory_id,
+                    event_type="regla_positiva",
+                    message=(
+                        f"{user_name}: regla positiva "
+                        f"'{matched.get('palabra')}' — {mensaje}"
+                    ),
+                    user_id=user_id,
+                    user_name=user_name,
+                    thread_id=thread_id or None,
+                )
+            return None
+
+        strike_level = self._repository.increment_daily_infraction(
+            user_id=user_id,
+            subcategory_id=subcategory_id,
+            tipo="palabra",
+        )
+        outcome = evaluate_rule_match(matched, strike_level=strike_level)
+        self._log_moderation_event(
+            subcategory_id=subcategory_id,
+            event_type="palabra_prohibida",
+            message=(
+                f"{user_name}: palabra '{matched.get('palabra')}' "
+                f"(nivel {strike_level})"
+            ),
+            user_id=user_id,
+            user_name=user_name,
+            thread_id=thread_id or None,
+        )
+        if outcome.notify_user:
+            self._repository.create_notification(
+                user_id=user_id,
+                tipo="regla_automatica",
+                titulo="Aviso de moderación",
+                mensaje=outcome.notify_user,
+                subcategory_id=subcategory_id,
+                thread_id=thread_id or None,
+            )
+        if outcome.escalation in ("ban", "kick"):
+            ban_seconds = int(sub.get("ban_seconds") or 86400)
+            self._apply_automatic_ban(
+                user_id=user_id,
+                subcategory_id=subcategory_id,
+                motivo=outcome.notify_user or "Ban automático por palabra prohibida",
+                ban_seconds=ban_seconds,
+            )
+        if outcome.block_message:
+            return {
+                "success": False,
+                "error": (
+                    outcome.notify_user
+                    or "Mensaje no permitido por moderación automática."
+                ),
+            }
         return None
+
+    def _validate_user_content(
+        self,
+        text: str,
+        *,
+        user_id: int,
+        user_name: str,
+        subcategory_id: str,
+        thread_id: int = 0,
+        thread_title: str = "",
+    ) -> dict[str, Any] | None:
+        """Valida URLs y reglas de contenido para un mensaje."""
+        sub = self._repository.get_subcategory(subcategory_id)
+        if sub is None:
+            return {"success": False, "error": "Subcategoría no encontrada."}
+        if not sub.get("activa"):
+            return {"success": False, "error": "Subcategoría inactiva."}
+
+        url_error = self._validate_urls(
+            text, user_id=user_id, user_name=user_name, sub=sub
+        )
+        if url_error:
+            return url_error
+        return self._validate_content_rules(
+            text,
+            user_id=user_id,
+            user_name=user_name,
+            sub=sub,
+            thread_id=thread_id,
+            thread_title=thread_title,
+        )
 
     def _validate_attachment_ids(
         self,
@@ -234,33 +434,6 @@ class LaimForumService:
             return "Est? baneado en esta subcategor?a."
         return None
 
-    def _register_url_infraction(
-        self, user_id: int, subcategory_id: str, reason: str
-    ) -> None:
-        """Registra strike por URL y banea si supera umbral."""
-        self._repository.add_infraction(
-            user_id=user_id,
-            subcategory_id=subcategory_id,
-            tipo="url_no_permitida",
-            strikes=1,
-        )
-        total = self._repository.count_strikes(user_id, subcategory_id)
-        if total >= self.max_url_strikes():
-            subcats = self._repository.list_subcategories(active_only=False)
-            ban_seconds = 86400
-            for sub in subcats:
-                if sub.get("id") == subcategory_id:
-                    ban_seconds = int(sub.get("ban_seconds") or 86400)
-                    break
-            expires = datetime.now(timezone.utc) + timedelta(seconds=ban_seconds)
-            self._repository.create_ban(
-                user_id=user_id,
-                subcategory_id=subcategory_id,
-                motivo=reason,
-                expires_at=expires,
-                automatico=True,
-            )
-
     # ------------------------------------------------------------------ health
     def get_health(self) -> dict[str, Any]:
         """Estado del subsistema foro."""
@@ -268,9 +441,18 @@ class LaimForumService:
         return {
             "success": True,
             "ok": True,
+            "status": "ok",
             "activo": self.is_forum_active(),
+            "threads": stats.get("hilos", 0),
             **stats,
         }
+
+    def get_admin_stats(self, session: dict[str, Any]) -> dict[str, Any]:
+        """Estadísticas agregadas del foro (solo administradores)."""
+        if not self.is_forum_admin(session["identity_type_id"]):
+            return {"success": False, "error": "Sin permisos de administración."}
+        stats = self._repository.get_admin_stats()
+        return {"success": True, "stats": stats}
 
     # ------------------------------------------------------------------ im?genes
     def upload_image(
@@ -530,12 +712,15 @@ class LaimForumService:
         if ban_error:
             return {"success": False, "error": ban_error}
 
-        content_error = self._validate_markdown_content(dto.cuerpo_md)
+        content_error = self._validate_user_content(
+            dto.cuerpo_md,
+            user_id=session["user_id"],
+            user_name=session["user_name"],
+            subcategory_id=dto.subcategory_id,
+            thread_title=dto.titulo.strip(),
+        )
         if content_error:
-            self._register_url_infraction(
-                session["user_id"], dto.subcategory_id, content_error
-            )
-            return {"success": False, "error": content_error}
+            return content_error
 
         attach_error = self._validate_attachment_ids(
             dto.image_ids,
@@ -581,9 +766,16 @@ class LaimForumService:
             return {"success": False, "error": f"Datos inv?lidos: {exc}"}
 
         if dto.cuerpo_md is not None:
-            content_error = self._validate_markdown_content(dto.cuerpo_md)
+            content_error = self._validate_user_content(
+                dto.cuerpo_md,
+                user_id=session["user_id"],
+                user_name=session["user_name"],
+                subcategory_id=subcategory_id,
+                thread_id=thread_id,
+                thread_title=str(thread.get("titulo") or ""),
+            )
             if content_error:
-                return {"success": False, "error": content_error}
+                return content_error
 
         if dto.fijado is not None or dto.cerrado is not None:
             if not is_mod:
@@ -682,12 +874,16 @@ class LaimForumService:
         except Exception as exc:
             return {"success": False, "error": f"Datos inv?lidos: {exc}"}
 
-        content_error = self._validate_markdown_content(dto.cuerpo_md)
+        content_error = self._validate_user_content(
+            dto.cuerpo_md,
+            user_id=session["user_id"],
+            user_name=session["user_name"],
+            subcategory_id=subcategory_id,
+            thread_id=thread_id,
+            thread_title=str(thread.get("titulo") or ""),
+        )
         if content_error:
-            self._register_url_infraction(
-                session["user_id"], subcategory_id, content_error
-            )
-            return {"success": False, "error": content_error}
+            return content_error
 
         attach_error = self._validate_attachment_ids(
             dto.image_ids,
@@ -744,9 +940,17 @@ class LaimForumService:
             return {"success": False, "error": "Sin permisos para editar la respuesta."}
 
         dto = LaimForumPostUpdateDto.model_validate(payload)
-        content_error = self._validate_markdown_content(dto.cuerpo_md)
-        if content_error:
-            return {"success": False, "error": content_error}
+        if dto.cuerpo_md is not None:
+            content_error = self._validate_user_content(
+                dto.cuerpo_md,
+                user_id=session["user_id"],
+                user_name=session["user_name"],
+                subcategory_id=subcategory_id,
+                thread_id=int(thread["id"]),
+                thread_title=str(thread.get("titulo") or ""),
+            )
+            if content_error:
+                return content_error
         if dto.image_ids is not None:
             attach_error = self._validate_attachment_ids(
                 dto.image_ids,
@@ -1039,4 +1243,41 @@ class LaimForumService:
         return {
             "success": True,
             "items": self._repository.list_moderation_logs(subcategory_id),
+        }
+
+    def list_active_bans_admin(self, session: dict[str, Any]) -> dict[str, Any]:
+        """Lista baneos activos (solo administradores)."""
+        if not self.is_forum_admin(session["identity_type_id"]):
+            return {"success": False, "error": "Sin permisos de administración."}
+        return {"success": True, "items": self._repository.list_active_bans()}
+
+    def list_admin_logs(
+        self,
+        session: dict[str, Any],
+        *,
+        subcategory_id: str | None = None,
+        limit: int = 200,
+    ) -> dict[str, Any]:
+        """Visor de logs de moderación (admin global)."""
+        if not self.is_forum_admin(session["identity_type_id"]):
+            return {"success": False, "error": "Sin permisos de administración."}
+        return {
+            "success": True,
+            "items": self._repository.list_moderation_logs_admin(
+                subcategory_id=subcategory_id,
+                limit=limit,
+            ),
+        }
+
+    def reload_admin_config(self, session: dict[str, Any]) -> dict[str, Any]:
+        """Refresca estado del servicio (equivalente a reload_config en Radikal)."""
+        if not self.is_forum_admin(session["identity_type_id"]):
+            return {"success": False, "error": "Sin permisos de administración."}
+        health = self.get_health()
+        return {
+            "success": True,
+            "ok": True,
+            "activo": health.get("activo"),
+            "threads": health.get("hilos", health.get("threads", 0)),
+            "stats": health,
         }

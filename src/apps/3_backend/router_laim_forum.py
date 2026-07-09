@@ -462,6 +462,19 @@ def laim_forum_ack_notifications(
     )
 
 
+@router.get("/admin/stats")
+def laim_forum_admin_stats(
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Estadísticas agregadas del foro (admin)."""
+    session = _require_session(authorization, session_token)
+    return _raise_if_failed(
+        get_laim_forum_service().get_admin_stats(session),
+        default_status=status.HTTP_403_FORBIDDEN,
+    )
+
+
 @router.get("/admin/settings")
 def laim_forum_admin_settings(
     authorization: Annotated[str | None, Header()] = None,
@@ -681,5 +694,48 @@ def laim_forum_moderation_logs(
     session = _require_session(authorization, session_token)
     return _raise_if_failed(
         get_laim_forum_service().list_moderation_logs(subcategory_id, session),
+        default_status=status.HTTP_403_FORBIDDEN,
+    )
+
+
+@router.get("/admin/bans")
+def laim_forum_admin_list_bans(
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Lista baneos activos (admin)."""
+    session = _require_session(authorization, session_token)
+    return _raise_if_failed(
+        get_laim_forum_service().list_active_bans_admin(session),
+        default_status=status.HTTP_403_FORBIDDEN,
+    )
+
+
+@router.get("/admin/logs")
+def laim_forum_admin_logs(
+    subcategory_id: str | None = None,
+    limit: int = 200,
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Visor de logs de moderación (admin)."""
+    session = _require_session(authorization, session_token)
+    return _raise_if_failed(
+        get_laim_forum_service().list_admin_logs(
+            session, subcategory_id=subcategory_id, limit=limit
+        ),
+        default_status=status.HTTP_403_FORBIDDEN,
+    )
+
+
+@router.post("/admin/reload-config")
+def laim_forum_admin_reload_config(
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Actualiza estado del servicio de foro (admin)."""
+    session = _require_session(authorization, session_token)
+    return _raise_if_failed(
+        get_laim_forum_service().reload_admin_config(session),
         default_status=status.HTTP_403_FORBIDDEN,
     )

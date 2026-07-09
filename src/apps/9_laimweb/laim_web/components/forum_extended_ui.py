@@ -300,6 +300,178 @@ def forum_moderation_panel() -> rx.Component:
     )
 
 
+def _forum_stats_metric(label: str, value) -> rx.Component:
+    return rx.vstack(
+        rx.text(label, color=COLORS["muted"], font_size=FONT_SIZE_SMALL),
+        rx.text(value, color=COLORS["accent"], font_size="1.2em", font_weight="bold"),
+        spacing="1",
+        align_items="center",
+        min_width="120px",
+    )
+
+
+def forum_stats_dialog() -> rx.Component:
+    """Diálogo con estadísticas globales del foro (solo admin)."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Estadísticas del foro", color=COLORS["title"]),
+            rx.cond(
+                LaimWebState.forum_stats_loading,
+                rx.text("Cargando estadísticas...", color=COLORS["muted"]),
+                rx.cond(
+                    LaimWebState.forum_stats_message != "",
+                    rx.text(LaimWebState.forum_stats_message, color=COLORS["accent"]),
+                    rx.vstack(
+                        rx.hstack(
+                            _forum_stats_metric(
+                                "Categorías", LaimWebState.forum_stats_categorias
+                            ),
+                            _forum_stats_metric(
+                                "Subcategorías", LaimWebState.forum_stats_subcategorias
+                            ),
+                            _forum_stats_metric("Hilos", LaimWebState.forum_stats_hilos),
+                            _forum_stats_metric(
+                                "Respuestas", LaimWebState.forum_stats_respuestas
+                            ),
+                            flex_wrap="wrap",
+                            spacing="4",
+                            width="100%",
+                        ),
+                        rx.hstack(
+                            _forum_stats_metric(
+                                "Valoraciones", LaimWebState.forum_stats_valoraciones
+                            ),
+                            _forum_stats_metric(
+                                "Promedio ★",
+                                LaimWebState.forum_stats_valoracion_promedio_text,
+                            ),
+                            _forum_stats_metric(
+                                "Usuarios activos",
+                                LaimWebState.forum_stats_usuarios_activos,
+                            ),
+                            _forum_stats_metric(
+                                "Baneos activos",
+                                LaimWebState.forum_stats_baneos_activos,
+                            ),
+                            flex_wrap="wrap",
+                            spacing="4",
+                            width="100%",
+                        ),
+                        rx.hstack(
+                            _forum_stats_metric(
+                                "Infracciones hoy",
+                                LaimWebState.forum_stats_infracciones_hoy,
+                            ),
+                            _forum_stats_metric(
+                                "Adjuntos", LaimWebState.forum_stats_adjuntos
+                            ),
+                            flex_wrap="wrap",
+                            spacing="4",
+                            width="100%",
+                        ),
+                        rx.text(
+                            "Actividad por subcategoría",
+                            class_name="crt-title",
+                            font_size="1em",
+                            margin_top="1em",
+                        ),
+                        rx.cond(
+                            LaimWebState.forum_stats_subcategory_rows.length() > 0,
+                            rx.vstack(
+                                rx.foreach(
+                                    LaimWebState.forum_stats_subcategory_rows,
+                                    lambda row: rx.hstack(
+                                        rx.text(
+                                            rx.fragment(
+                                                row["category_name"],
+                                                " / ",
+                                                row["subcategory_name"],
+                                            ),
+                                            font_size=FONT_SIZE_BODY,
+                                            width="55%",
+                                        ),
+                                        rx.text(
+                                            rx.fragment(
+                                                row["hilos"],
+                                                " hilos · ",
+                                                row["respuestas"],
+                                                " resp.",
+                                            ),
+                                            font_size=FONT_SIZE_SMALL,
+                                            color=COLORS["muted"],
+                                            width="45%",
+                                        ),
+                                        width="100%",
+                                    ),
+                                ),
+                                spacing="1",
+                                width="100%",
+                            ),
+                            rx.text(
+                                "Sin subcategorías registradas.",
+                                color=COLORS["muted"],
+                                font_size=FONT_SIZE_SMALL,
+                            ),
+                        ),
+                        rx.text(
+                            "Top 10 reputación",
+                            class_name="crt-title",
+                            font_size="1em",
+                            margin_top="1em",
+                        ),
+                        rx.cond(
+                            LaimWebState.forum_stats_top_users.length() > 0,
+                            rx.vstack(
+                                rx.foreach(
+                                    LaimWebState.forum_stats_top_users,
+                                    lambda user: rx.hstack(
+                                        rx.text(
+                                            user["display_name"],
+                                            font_size=FONT_SIZE_BODY,
+                                            width="50%",
+                                        ),
+                                        rx.text(
+                                            rx.fragment(
+                                                user["reputation_avg"],
+                                                " ★ (",
+                                                user["reputation_votes"],
+                                                " votos)",
+                                            ),
+                                            font_size=FONT_SIZE_SMALL,
+                                            color=COLORS["muted"],
+                                            width="50%",
+                                        ),
+                                        width="100%",
+                                    ),
+                                ),
+                                spacing="1",
+                                width="100%",
+                            ),
+                            rx.text(
+                                "Aún no hay valoraciones de reputación.",
+                                color=COLORS["muted"],
+                                font_size=FONT_SIZE_SMALL,
+                            ),
+                        ),
+                        spacing="3",
+                        width="100%",
+                    ),
+                ),
+            ),
+            rx.dialog.close(
+                rx.button("Cerrar", class_name="crt-btn crt-btn-inline", margin_top="1em"),
+            ),
+            background=COLORS["panel_bg"],
+            border=f"1px solid {COLORS['border']}",
+            max_width="720px",
+            max_height="85vh",
+            overflow_y="auto",
+        ),
+        open=LaimWebState.forum_stats_dialog_open,
+        on_open_change=LaimWebState.forum_on_stats_dialog_change,
+    )
+
+
 def forum_admin_extended_panel() -> rx.Component:
     """Panel admin con pestañas."""
     return rx.vstack(
@@ -388,14 +560,15 @@ def forum_admin_extended_panel() -> rx.Component:
                             on_change=LaimWebState.forum_admin_set_word_palabra,
                             class_name="crt-input",
                         ),
-                        rx.input(
-                            placeholder="Acción (warn, ban, delete)",
+                        rx.select(
+                            LaimWebState.forum_rule_action_options,
                             value=LaimWebState.forum_admin_word_accion,
                             on_change=LaimWebState.forum_admin_set_word_accion,
                             class_name="crt-input",
+                            width="100%",
                         ),
                         rx.input(
-                            placeholder="Mensaje",
+                            placeholder="Mensaje al usuario",
                             value=LaimWebState.forum_admin_word_mensaje,
                             on_change=LaimWebState.forum_admin_set_word_mensaje,
                             class_name="crt-input",

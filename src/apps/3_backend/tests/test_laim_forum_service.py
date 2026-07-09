@@ -189,6 +189,46 @@ def test_admin_only_upsert_category() -> None:
     repository.upsert_category.assert_called_once()
 
 
+def test_get_admin_stats_requires_admin() -> None:
+    module = _load_forum_service()
+    repository = MagicMock()
+    service = module.LaimForumService(repository=repository, image_storage=MagicMock())
+
+    result = service.get_admin_stats(_session())
+
+    assert result["success"] is False
+    repository.get_admin_stats.assert_not_called()
+
+
+def test_get_admin_stats_success() -> None:
+    module = _load_forum_service()
+    repository = MagicMock()
+    repository.get_admin_stats.return_value = {
+        "categorias": 2,
+        "subcategorias": 4,
+        "hilos": 10,
+        "respuestas": 25,
+        "valoraciones": 8,
+        "valoracion_promedio": 4.25,
+        "usuarios_activos": 6,
+        "baneos_activos": 1,
+        "infracciones_hoy": 0,
+        "adjuntos": 3,
+        "subcategorias_detalle": [],
+        "top_reputacion": [],
+    }
+    service = module.LaimForumService(repository=repository, image_storage=MagicMock())
+    session = _session()
+    session["identity_type_id"] = 1
+
+    result = service.get_admin_stats(session)
+
+    assert result["success"] is True
+    assert result["stats"]["hilos"] == 10
+    assert result["stats"]["valoracion_promedio"] == 4.25
+    repository.get_admin_stats.assert_called_once()
+
+
 def test_forum_persistence_does_not_use_json_files() -> None:
     """El subsistema foro no persiste datos en ficheros JSON."""
     import re

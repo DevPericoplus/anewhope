@@ -120,6 +120,16 @@ def _forum_headers(access_token: str, session_token: str) -> dict[str, str]:
     return headers
 
 
+def _get_forum_base_url() -> str:
+    """URL base del daemon del foro (independiente del middleware)."""
+    explicit = _env_settings.get_env_value("laim_forum_api_base_url", "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    host = _env_settings.get_env_value("laim_forum_api_host", "127.0.0.1")
+    port = _env_settings.get_env_value("laim_forum_api_port", "8766")
+    return f"http://{host}:{port}"
+
+
 def _request_forum(
     method: str,
     endpoint: str,
@@ -129,8 +139,8 @@ def _request_forum(
     payload: dict[str, Any] | None = None,
     timeout: float = 30.0,
 ) -> dict[str, Any]:
-    """Petición HTTP REST al subsistema foro vía middleware (sin ficheros locales)."""
-    base_url = _get_middleware_base_url()
+    """Petición HTTP REST al daemon del foro LAIM."""
+    base_url = _get_forum_base_url()
     url = f"{base_url}{endpoint}"
     headers = _forum_headers(access_token, session_token)
 
@@ -168,7 +178,7 @@ def laim_forum_get_image_data_url(
     session_token: str,
 ) -> str:
     """Obtiene imagen del foro como data URL (para mostrar en UI autenticada)."""
-    base_url = _get_middleware_base_url()
+    base_url = _get_forum_base_url()
     url = f"{base_url}/laim/forum/images/{image_id}"
     headers = _forum_headers(access_token, session_token)
     headers.pop("Content-Type", None)
@@ -427,6 +437,18 @@ def laim_forum_ack_notifications(
         "POST",
         "/laim/forum/notifications/ack",
         payload={"notification_ids": notification_ids},
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_admin_stats(
+    access_token: str, session_token: str
+) -> dict[str, Any]:
+    """Estadísticas agregadas del foro (admin)."""
+    return _request_forum(
+        "GET",
+        "/laim/forum/admin/stats",
         access_token=access_token,
         session_token=session_token,
     )
@@ -812,6 +834,51 @@ def laim_forum_moderation_logs(
     return _request_forum(
         "GET",
         f"/laim/forum/moderation/logs/{subcategory_id}",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_admin_list_bans(
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Lista baneos activos (admin)."""
+    return _request_forum(
+        "GET",
+        "/laim/forum/admin/bans",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_admin_logs(
+    access_token: str,
+    session_token: str,
+    *,
+    subcategory_id: str | None = None,
+    limit: int = 200,
+) -> dict[str, Any]:
+    """Visor global de logs de moderación (admin)."""
+    endpoint = f"/laim/forum/admin/logs?limit={limit}"
+    if subcategory_id:
+        endpoint = f"{endpoint}&subcategory_id={subcategory_id}"
+    return _request_forum(
+        "GET",
+        endpoint,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_admin_reload_config(
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Actualiza estado del servicio de foro (admin)."""
+    return _request_forum(
+        "POST",
+        "/laim/forum/admin/reload-config",
         access_token=access_token,
         session_token=session_token,
     )

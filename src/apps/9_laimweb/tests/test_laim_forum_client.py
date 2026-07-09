@@ -10,8 +10,9 @@ from laim_web.adapters import laim_api_client as client
 
 
 @pytest.fixture(autouse=True)
-def _mock_middleware_url(monkeypatch: pytest.MonkeyPatch) -> None:
+def _mock_service_urls(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(client, "_get_middleware_base_url", lambda: "http://middleware.test:8007")
+    monkeypatch.setattr(client, "_get_forum_base_url", lambda: "http://forum.test:8766")
 
 
 def test_forum_list_categories_success(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -79,6 +80,46 @@ def test_forum_get_image_data_url(monkeypatch: pytest.MonkeyPatch) -> None:
     data_url = client.laim_forum_get_image_data_url(7, "tok", "sess")
 
     assert data_url.startswith("data:image/png;base64,")
+    assert mock_client.get.call_args.args[0] == "http://forum.test:8766/laim/forum/images/7"
+
+
+def test_forum_admin_list_bans_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Lista baneos activos contra el daemon del foro."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"success": True, "items": [{"id": 1}]}
+
+    mock_client = MagicMock()
+    mock_client.request.return_value = mock_response
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+
+    monkeypatch.setattr(client.httpx, "Client", lambda **_: mock_client)
+
+    result = client.laim_forum_admin_list_bans("tok", "sess")
+
+    assert result["items"][0]["id"] == 1
+    assert mock_client.request.call_args.kwargs["url"].endswith("/laim/forum/admin/bans")
+
+
+def test_forum_admin_reload_config_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Recarga configuración del servicio de foro."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.content = b""
+    mock_response.json.side_effect = ValueError()
+
+    mock_client = MagicMock()
+    mock_client.request.return_value = mock_response
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+
+    monkeypatch.setattr(client.httpx, "Client", lambda **_: mock_client)
+
+    result = client.laim_forum_admin_reload_config("tok", "sess")
+
+    assert result["success"] is True
+    assert mock_client.request.call_args.kwargs["url"].endswith("/laim/forum/admin/reload-config")
 
 
 def test_forum_get_poll_interval_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -135,3 +176,25 @@ def test_forum_create_ban_payload(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert result["ban_id"] == 9
     assert mock_client.request.call_args.kwargs["json"] == payload
+
+
+def test_forum_admin_stats_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Consulta estadísticas admin con ruta correcta."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {
+        "success": True,
+        "stats": {"hilos": 3, "respuestas": 7},
+    }
+
+    mock_client = MagicMock()
+    mock_client.request.return_value = mock_response
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+
+    monkeypatch.setattr(client.httpx, "Client", lambda **_: mock_client)
+
+    result = client.laim_forum_admin_stats("tok", "sess")
+
+    assert result["stats"]["hilos"] == 3
+    assert "/laim/forum/admin/stats" in mock_client.request.call_args.kwargs["url"]

@@ -318,3 +318,41 @@ class LaimForumHealthDto(BaseModel):
     subcategorias: int = 0
     hilos: int = 0
     respuestas: int = 0
+
+
+class LaimForumAdminSubcategoryStatsDto(BaseModel):
+    """Actividad agregada por subcategoría."""
+
+    subcategory_id: str
+    subcategory_name: str
+    category_name: str
+    hilos: int = 0
+    respuestas: int = 0
+
+
+class LaimForumAdminTopUserDto(BaseModel):
+    """Usuario con mayor reputación en el foro."""
+
+    user_id: int
+    display_name: str
+    reputation_avg: float = 0.0
+    reputation_votes: int = 0
+
+
+class LaimForumAdminStatsDto(BaseModel):
+    """Estadísticas globales del foro (panel admin)."""
+
+    categorias: int = 0
+    subcategorias: int = 0
+    hilos: int = 0
+    respuestas: int = 0
+    valoraciones: int = 0
+    valoracion_promedio: float = 0.0
+    usuarios_activos: int = 0
+    baneos_activos: int = 0
+    infracciones_hoy: int = 0
+    adjuntos: int = 0
+    subcategorias_detalle: list[LaimForumAdminSubcategoryStatsDto] = Field(
+        default_factory=list
+    )
+    top_reputacion: list[LaimForumAdminTopUserDto] = Field(default_factory=list)

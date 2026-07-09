@@ -852,6 +852,11 @@ def forum_admin_panel() -> rx.Component:
             font_size=FONT_SIZE_SMALL,
             margin_bottom="1em",
         ),
+        rx.button(
+            "Estadísticas del foro",
+            on_click=LaimWebState.forum_open_stats_dialog,
+            class_name="crt-btn crt-btn-inline",
+        ),
         rx.cond(
             LaimWebState.forum_admin_message != "",
             rx.text(LaimWebState.forum_admin_message, color=COLORS["accent"]),
@@ -913,6 +918,19 @@ def forum_admin_panel() -> rx.Component:
                     value=LaimWebState.forum_admin_subcategory_desc,
                     on_change=LaimWebState.forum_admin_set_subcategory_desc,
                     class_name="crt-input",
+                ),
+                rx.input(
+                    placeholder="Duración ban automático (segundos, ej: 86400)",
+                    value=LaimWebState.forum_admin_subcategory_ban_seconds,
+                    on_change=LaimWebState.forum_admin_set_subcategory_ban_seconds,
+                    class_name="crt-input",
+                ),
+                rx.select(
+                    ["weekly", "daily", "none"],
+                    value=LaimWebState.forum_admin_subcategory_log_rotation,
+                    on_change=LaimWebState.forum_admin_set_subcategory_log_rotation,
+                    class_name="crt-input",
+                    width="100%",
                 ),
                 rx.button(
                     "Guardar subcategoría",
