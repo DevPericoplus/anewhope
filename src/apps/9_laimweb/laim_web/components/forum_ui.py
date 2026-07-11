@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import reflex as rx
 
 from laim_web.components.crt_theme import (
@@ -56,13 +58,30 @@ def forum_image_preview_modal() -> rx.Component:
     )
 
 
-def _attachment_button(image_id) -> rx.Component:
-    """Botón para previsualizar un adjunto."""
-    return rx.button(
-        rx.fragment("Adjunto #", image_id),
-        on_click=LaimWebState.forum_preview_image(image_id),
-        class_name="crt-btn crt-btn-inline",
-        size="1",
+def _attachment_thumb(attachment) -> rx.Component:
+    """Miniatura clicable de un adjunto. Al pulsar abre el modal a tamaño completo."""
+    return rx.cond(
+        attachment["thumb_url"] != "",
+        rx.box(
+            rx.image(
+                src=attachment["thumb_url"],
+                width="80px",
+                height="80px",
+                object_fit="cover",
+                border_radius="4px",
+                border=f"1px solid {COLORS['border']}",
+                cursor="pointer",
+                opacity="0.85",
+                _hover={"opacity": "1", "border_color": COLORS["accent"]},
+            ),
+            on_click=LaimWebState.forum_preview_image(attachment["id"]),
+        ),
+        rx.button(
+            rx.fragment("Adjunto #", attachment["id"]),
+            on_click=LaimWebState.forum_preview_image(attachment["id"]),
+            class_name="crt-btn crt-btn-inline",
+            size="1",
+        ),
     )
 
 
@@ -424,7 +443,7 @@ def forum_threads_sidebar() -> rx.Component:
 
 def _post_row(post) -> rx.Component:
     """Fila de respuesta en detalle de hilo (Var reactivo)."""
-    image_ids = post["image_ids"].to(list[int])
+    attachments = post["attachments"].to(list[dict[str, Any]])
     return rx.box(
         rx.hstack(
             rx.cond(
@@ -465,11 +484,11 @@ def _post_row(post) -> rx.Component:
         ),
         rx.hstack(
             rx.foreach(
-                image_ids,
-                _attachment_button,
+                attachments,
+                _attachment_thumb,
             ),
             flex_wrap="wrap",
-            spacing="1",
+            spacing="2",
             margin_top="0.35em",
         ),
         padding="0.85em 1em",
@@ -596,8 +615,8 @@ def forum_thread_content_panel() -> rx.Component:
                                 ),
                                 rx.hstack(
                                     rx.foreach(
-                                        LaimWebState.forum_thread_image_ids,
-                                        _attachment_button,
+                                        LaimWebState.forum_thread_attachments,
+                                        _attachment_thumb,
                                     ),
                                     flex_wrap="wrap",
                                     spacing="2",

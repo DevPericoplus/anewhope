@@ -99,6 +99,7 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_new_thread_image_ids: list[int] = []
     forum_reply_image_ids: list[int] = []
     forum_thread_image_ids: list[int] = []
+    forum_thread_attachments: list[dict[str, Any]] = []
 
     # Perfil de foro
     forum_profile_display_name: str = ""
@@ -350,7 +351,7 @@ class LaimForumMixin(rx.State, mixin=True):
     @rx.var
     def forum_thread_has_attachments(self) -> bool:
         """True si el hilo activo tiene adjuntos."""
-        return len(self.forum_thread_image_ids) > 0
+        return len(self.forum_thread_attachments) > 0
 
     _FORUM_THREAD_ATTACHMENT_SCRIPT = """
 (() => {
@@ -829,6 +830,9 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_thread_image_ids = [
             int(i) for i in raw_images if i is not None
         ] if isinstance(raw_images, list) else []
+        self.forum_thread_attachments = self._forum_build_attachments_with_thumbs(
+            self.forum_thread_image_ids, access, session,
+        )
 
         posts_result = laim_forum_list_posts(thread_id, access, session)
         if posts_result.get("success"):
@@ -852,6 +856,8 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_posts = []
         self.forum_reply_body = ""
         self.forum_reply_image_ids = []
+        self.forum_thread_image_ids = []
+        self.forum_thread_attachments = []
 
     @forum_event
     def forum_refresh(self) -> None:
@@ -1563,11 +1569,32 @@ class LaimForumMixin(rx.State, mixin=True):
         access_token: str,
         session_token: str,
     ) -> list[dict[str, Any]]:
-        """Enriquece respuestas con avatar y markdown legible para el visor."""
+        """Enriquece respuestas con avatar, miniaturas y markdown legible."""
         with_avatars = self._forum_enrich_posts_author_avatars(
             posts, access_token, session_token
         )
-        return self._forum_enrich_posts_display(with_avatars)
+        with_thumbs = self._forum_enrich_posts_attachment_thumbs(
+            with_avatars, access_token, session_token
+        )
+        return self._forum_enrich_posts_display(with_thumbs)
+
+    def _forum_enrich_posts_attachment_thumbs(
+        self,
+        posts: list[dict[str, Any]],
+        access_token: str,
+        session_token: str,
+    ) -> list[dict[str, Any]]:
+        """Reemplaza image_ids por attachments con miniaturas pre-cargadas."""
+        enriched: list[dict[str, Any]] = []
+        for post in posts:
+            row = dict(post)
+            raw_ids = row.get("image_ids", [])
+            ids = [int(i) for i in raw_ids if i is not None] if isinstance(raw_ids, list) else []
+            row["attachments"] = self._forum_build_attachments_with_thumbs(
+                ids, access_token, session_token,
+            )
+            enriched.append(row)
+        return enriched
 
     @staticmethod
     def _forum_enrich_posts_display(posts: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1575,6 +1602,21 @@ class LaimForumMixin(rx.State, mixin=True):
         from laim_web.components.forum_message_viewer import enrich_forum_message_row
 
         return [enrich_forum_message_row(post) for post in posts]
+
+    @staticmethod
+    def _forum_build_attachments_with_thumbs(
+        image_ids: list[int],
+        access_token: str,
+        session_token: str,
+    ) -> list[dict[str, Any]]:
+        """Convierte lista de image_ids en lista de dicts con miniatura pre-cargada."""
+        from laim_web.adapters.laim_api_client import laim_forum_get_image_data_url
+
+        attachments: list[dict[str, Any]] = []
+        for img_id in image_ids:
+            thumb_url = laim_forum_get_image_data_url(img_id, access_token, session_token)
+            attachments.append({"id": img_id, "thumb_url": thumb_url})
+        return attachments
 
     def _forum_enrich_posts_author_avatars(
         self,
