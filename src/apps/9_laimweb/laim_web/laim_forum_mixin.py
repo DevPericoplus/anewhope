@@ -167,6 +167,24 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_admin_subcategory_log_rotation: str = "weekly"
     forum_admin_logs_subcategory_id: str = ""
     forum_admin_logs_lines: list[dict[str, Any]] = []
+
+    # Árbol de categorías/subcategorías
+    forum_cat_tree_expanded: list[str] = []
+    forum_cat_tree_nodes: list[dict[str, Any]] = []
+    forum_cat_tree_rename_open: bool = False
+    forum_cat_tree_rename_id: str = ""
+    forum_cat_tree_rename_name: str = ""
+    forum_cat_tree_rename_cat_id: str = ""
+    forum_cat_tree_delete_open: bool = False
+    forum_cat_tree_delete_id: str = ""
+    forum_cat_tree_delete_name: str = ""
+    forum_cat_tree_delete_is_cat: bool = False
+    forum_cat_tree_add_sub_open: bool = False
+    forum_cat_tree_add_sub_cat_id: str = ""
+    forum_cat_tree_add_sub_id: str = ""
+    forum_cat_tree_add_sub_name: str = ""
+    forum_cat_tree_add_sub_desc: str = ""
+
     forum_rule_action_options: list[str] = [
         "Agradecimientos",
         "Amonestaciones",
@@ -1083,6 +1101,8 @@ class LaimForumMixin(rx.State, mixin=True):
             if sub_result.get("success"):
                 self.forum_subcategories = sub_result.get("items", [])
 
+        self._forum_rebuild_cat_tree()
+
     @forum_event
     def forum_admin_set_category_id(self, value: str) -> None:
         self.forum_admin_category_id = value
@@ -1172,8 +1192,213 @@ class LaimForumMixin(rx.State, mixin=True):
         if result.get("success"):
             self.forum_admin_message = "Subcategoría guardada."
             self.forum_load_admin_panel()
+            self._forum_rebuild_cat_tree()
         else:
             self.forum_admin_message = result.get("error", "Error al guardar subcategoría")
+
+    # ── Árbol de categorías / subcategorías ──────────────────────────
+
+    def _forum_rebuild_cat_tree(self) -> None:
+        """Reconstruye nodos del árbol a partir de categorías y subcategorías cargadas."""
+        from laim_web.adapters.laim_api_client import laim_forum_list_subcategories
+
+        access, session = self._forum_auth_tokens()
+        nodes: list[dict[str, Any]] = []
+
+        for cat in self.forum_categories:
+            cat_id = str(cat.get("id", ""))
+            cat_name = str(cat.get("nombre") or cat_id)
+            is_expanded = cat_id in self.forum_cat_tree_expanded
+
+            sub_result = laim_forum_list_subcategories(access, session, cat_id)
+            subs = sub_result.get("items", []) if sub_result.get("success") else []
+            total_threads = 0
+
+            children: list[dict[str, Any]] = []
+            for sub in subs:
+                sub_id = str(sub.get("id", ""))
+                sub_name = str(sub.get("nombre") or sub_id)
+                t_count = int(sub.get("hilos", 0) or sub.get("threads_count", 0) or 0)
+                total_threads += t_count
+                children.append({
+                    "id": sub_id,
+                    "name": sub_name,
+                    "thread_count": t_count,
+                    "cat_id": cat_id,
+                    "is_category": False,
+                })
+
+            nodes.append({
+                "id": cat_id,
+                "name": cat_name,
+                "thread_count": total_threads,
+                "is_expanded": is_expanded,
+                "has_children": len(children) > 0,
+                "is_category": True,
+                "children": children,
+            })
+
+        self.forum_cat_tree_nodes = nodes
+
+    @forum_event
+    def forum_cat_tree_toggle(self, cat_id: str) -> None:
+        """Expande o contrae una categoría en el árbol."""
+        expanded = list(self.forum_cat_tree_expanded)
+        if cat_id in expanded:
+            expanded.remove(cat_id)
+        else:
+            expanded.append(cat_id)
+        self.forum_cat_tree_expanded = expanded
+        self._forum_rebuild_cat_tree()
+
+    @forum_event
+    def forum_cat_tree_open_add_sub(self, cat_id: str) -> None:
+        """Abre diálogo para crear subcategoría en una categoría."""
+        self.forum_cat_tree_add_sub_open = True
+        self.forum_cat_tree_add_sub_cat_id = cat_id
+        self.forum_cat_tree_add_sub_id = ""
+        self.forum_cat_tree_add_sub_name = ""
+        self.forum_cat_tree_add_sub_desc = ""
+
+    @forum_event
+    def forum_cat_tree_close_add_sub(self) -> None:
+        self.forum_cat_tree_add_sub_open = False
+
+    @forum_event
+    def forum_cat_tree_set_add_sub_id(self, value: str) -> None:
+        self.forum_cat_tree_add_sub_id = value
+
+    @forum_event
+    def forum_cat_tree_set_add_sub_name(self, value: str) -> None:
+        self.forum_cat_tree_add_sub_name = value
+
+    @forum_event
+    def forum_cat_tree_set_add_sub_desc(self, value: str) -> None:
+        self.forum_cat_tree_add_sub_desc = value
+
+    @forum_event
+    def forum_cat_tree_save_new_sub(self) -> None:
+        """Guarda nueva subcategoría desde el diálogo del árbol."""
+        from laim_web.adapters.laim_api_client import laim_forum_upsert_subcategory
+
+        sub_id = self.forum_cat_tree_add_sub_id.strip()
+        sub_name = self.forum_cat_tree_add_sub_name.strip()
+        if not sub_id or not sub_name:
+            self.forum_admin_message = "ID y nombre son obligatorios."
+            return
+
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_upsert_subcategory(
+            {
+                "id": sub_id,
+                "categoria_id": self.forum_cat_tree_add_sub_cat_id,
+                "nombre": sub_name,
+                "descripcion": self.forum_cat_tree_add_sub_desc.strip(),
+                "orden": 0,
+                "activa": True,
+                "ban_seconds": 86400,
+                "log_rotation": "weekly",
+            },
+            access,
+            session,
+        )
+        if result.get("success"):
+            self.forum_admin_message = f"Subcategoría «{sub_name}» creada."
+            self.forum_cat_tree_add_sub_open = False
+            self.forum_load_admin_panel()
+            if self.forum_cat_tree_add_sub_cat_id not in self.forum_cat_tree_expanded:
+                self.forum_cat_tree_expanded = [
+                    *self.forum_cat_tree_expanded,
+                    self.forum_cat_tree_add_sub_cat_id,
+                ]
+            self._forum_rebuild_cat_tree()
+        else:
+            self.forum_admin_message = result.get("error", "Error al crear subcategoría")
+
+    @forum_event
+    def forum_cat_tree_open_rename(self, sub_id: str, current_name: str, cat_id: str) -> None:
+        """Abre diálogo para renombrar subcategoría."""
+        self.forum_cat_tree_rename_open = True
+        self.forum_cat_tree_rename_id = sub_id
+        self.forum_cat_tree_rename_name = current_name
+        self.forum_cat_tree_rename_cat_id = cat_id
+
+    @forum_event
+    def forum_cat_tree_close_rename(self) -> None:
+        self.forum_cat_tree_rename_open = False
+
+    @forum_event
+    def forum_cat_tree_set_rename_name(self, value: str) -> None:
+        self.forum_cat_tree_rename_name = value
+
+    @forum_event
+    def forum_cat_tree_save_rename(self) -> None:
+        """Guarda el nuevo nombre de la subcategoría."""
+        from laim_web.adapters.laim_api_client import laim_forum_upsert_subcategory
+
+        new_name = self.forum_cat_tree_rename_name.strip()
+        if not new_name:
+            self.forum_admin_message = "El nombre no puede estar vacío."
+            return
+
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_upsert_subcategory(
+            {
+                "id": self.forum_cat_tree_rename_id,
+                "categoria_id": self.forum_cat_tree_rename_cat_id,
+                "nombre": new_name,
+                "orden": 0,
+                "activa": True,
+            },
+            access,
+            session,
+        )
+        if result.get("success"):
+            self.forum_admin_message = f"Subcategoría renombrada a «{new_name}»."
+            self.forum_cat_tree_rename_open = False
+            self.forum_load_admin_panel()
+            self._forum_rebuild_cat_tree()
+        else:
+            self.forum_admin_message = result.get("error", "Error al renombrar")
+
+    @forum_event
+    def forum_cat_tree_open_delete(self, item_id: str, item_name: str, is_cat: bool) -> None:
+        """Abre diálogo de confirmación para eliminar categoría o subcategoría."""
+        self.forum_cat_tree_delete_open = True
+        self.forum_cat_tree_delete_id = item_id
+        self.forum_cat_tree_delete_name = item_name
+        self.forum_cat_tree_delete_is_cat = is_cat
+
+    @forum_event
+    def forum_cat_tree_close_delete(self) -> None:
+        self.forum_cat_tree_delete_open = False
+
+    @forum_event
+    def forum_cat_tree_confirm_delete(self) -> None:
+        """Ejecuta la eliminación confirmada."""
+        from laim_web.adapters.laim_api_client import (
+            laim_forum_delete_category,
+            laim_forum_delete_subcategory,
+        )
+
+        access, session = self._forum_auth_tokens()
+        if self.forum_cat_tree_delete_is_cat:
+            result = laim_forum_delete_category(
+                self.forum_cat_tree_delete_id, access, session
+            )
+        else:
+            result = laim_forum_delete_subcategory(
+                self.forum_cat_tree_delete_id, access, session
+            )
+
+        if result.get("success"):
+            label = "Categoría" if self.forum_cat_tree_delete_is_cat else "Subcategoría"
+            self.forum_admin_message = f"{label} «{self.forum_cat_tree_delete_name}» eliminada."
+            self.forum_cat_tree_delete_open = False
+            self.forum_load_admin_panel()
+            self._forum_rebuild_cat_tree()
+        else:
+            self.forum_admin_message = result.get("error", "Error al eliminar")
 
     @forum_event
     def forum_preview_image(self, image_id: int) -> None:
