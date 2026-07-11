@@ -1302,7 +1302,7 @@ class LaimForumMixin(rx.State, mixin=True):
             access,
             session,
         )
-        if result.get("success"):
+        if result.get("success") or (isinstance(result, dict) and "error" not in result):
             self.forum_admin_message = f"Subcategoría «{sub_name}» creada."
             self.forum_cat_tree_add_sub_open = False
             self.forum_load_admin_panel()
@@ -1314,6 +1314,7 @@ class LaimForumMixin(rx.State, mixin=True):
             self._forum_rebuild_cat_tree()
         else:
             self.forum_admin_message = result.get("error", "Error al crear subcategoría")
+            self.forum_cat_tree_add_sub_open = False
 
     @forum_event
     def forum_cat_tree_open_rename(self, sub_id: str, current_name: str, cat_id: str) -> None:
@@ -1353,13 +1354,14 @@ class LaimForumMixin(rx.State, mixin=True):
             access,
             session,
         )
-        if result.get("success"):
+        if result.get("success") or (isinstance(result, dict) and "error" not in result):
             self.forum_admin_message = f"Subcategoría renombrada a «{new_name}»."
             self.forum_cat_tree_rename_open = False
             self.forum_load_admin_panel()
             self._forum_rebuild_cat_tree()
         else:
             self.forum_admin_message = result.get("error", "Error al renombrar")
+            self.forum_cat_tree_rename_open = False
 
     @forum_event
     def forum_cat_tree_open_delete(self, item_id: str, item_name: str, is_cat: bool) -> None:
@@ -1391,7 +1393,7 @@ class LaimForumMixin(rx.State, mixin=True):
                 self.forum_cat_tree_delete_id, access, session
             )
 
-        if result.get("success"):
+        if result.get("success") or (isinstance(result, dict) and "error" not in result):
             label = "Categoría" if self.forum_cat_tree_delete_is_cat else "Subcategoría"
             self.forum_admin_message = f"{label} «{self.forum_cat_tree_delete_name}» eliminada."
             self.forum_cat_tree_delete_open = False
@@ -1399,6 +1401,7 @@ class LaimForumMixin(rx.State, mixin=True):
             self._forum_rebuild_cat_tree()
         else:
             self.forum_admin_message = result.get("error", "Error al eliminar")
+            self.forum_cat_tree_delete_open = False
 
     @forum_event
     def forum_preview_image(self, image_id: int) -> None:
