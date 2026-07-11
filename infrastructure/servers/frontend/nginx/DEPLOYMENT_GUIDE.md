@@ -138,21 +138,21 @@ docker-compose logs nginx | grep -i ssl
 ## 🌐 Entorno PRE (AWS - IP Pública)
 
 ### Características
-- **Dominio**: `getmyllm.com`
+- **Dominio**: `getmylllm.com`
 - **Ubicación**: AWS EC2 con IP pública
 - **Certificados**: Let's Encrypt (válidos, gratuitos, renovación automática)
 - **Navegadores**: Sin advertencias (certificados válidos)
 
 ### Requisitos Previos
 
-1. **DNS configurado**: `getmyllm.com` debe apuntar a la IP pública de AWS
+1. **DNS configurado**: `getmylllm.com` debe apuntar a la IP pública de AWS
 2. **Firewall/Security Group**: Puertos 80 y 443 abiertos
 3. **Nginx corriendo**: Al menos en puerto 80
 
 **Verificar DNS**:
 ```bash
 # En tu máquina local
-dig +short getmyllm.com
+dig +short getmylllm.com
 # Debe mostrar la IP pública del servidor PRE en AWS
 ```
 
@@ -206,8 +206,8 @@ sudo bash setup_letsencrypt.sh
 ```
 ✓ Certificados obtenidos exitosamente
 ✓ Symlinks creados:
-  /etc/nginx/ssl/getmyllm.com.crt -> /etc/letsencrypt/live/getmyllm.com/fullchain.pem
-  /etc/nginx/ssl/getmyllm.com.key -> /etc/letsencrypt/live/getmyllm.com/privkey.pem
+  /etc/nginx/ssl/getmylllm.com.crt -> /etc/letsencrypt/live/getmylllm.com/fullchain.pem
+  /etc/nginx/ssl/getmylllm.com.key -> /etc/letsencrypt/live/getmylllm.com/privkey.pem
 ```
 
 ### Paso 4: Desplegar nginx.conf para PRE
@@ -254,11 +254,11 @@ docker-compose logs -f nginx
 
 ```bash
 # Desde el servidor PRE
-curl -Ik https://getmyllm.com
-curl -Ik https://www.getmyllm.com
+curl -Ik https://getmylllm.com
+curl -Ik https://www.getmylllm.com
 
 # Desde tu navegador
-# Ir a: https://www.getmyllm.com
+# Ir a: https://www.getmylllm.com
 # NO debe mostrar advertencias de seguridad
 ```
 
@@ -279,11 +279,11 @@ Congratulations, all simulated renewals succeeded
 **Problema**: "Failed to obtain certificate"
 ```bash
 # Verificar DNS
-dig +short getmyllm.com
+dig +short getmylllm.com
 # Debe mostrar la IP del servidor
 
 # Verificar que nginx está corriendo en puerto 80
-curl -I http://getmyllm.com
+curl -I http://getmylllm.com
 
 # Ver logs de certbot
 sudo tail -100 /var/log/letsencrypt/letsencrypt.log
@@ -312,7 +312,7 @@ sudo crontab -l | grep certbot
 ## 🚀 Entorno PRO (AWS - Producción)
 
 ### Características
-- **Dominio**: `getmyllm.com` (mismo que PRE)
+- **Dominio**: `getmylllm.com` (mismo que PRE)
 - **Ubicación**: AWS EC2 con IP pública
 - **Certificados**: Let's Encrypt (válidos, gratuitos)
 - **Proceso**: Idéntico a PRE
@@ -381,7 +381,7 @@ sudo crontab -l | grep certbot
 - [ ] nginx.conf.pre/pro desplegado
 - [ ] docker-compose.yml actualizado (volumen letsencrypt)
 - [ ] Nginx reiniciado sin errores
-- [ ] `curl -Ik https://www.getmyllm.com` retorna 200 OK
+- [ ] `curl -Ik https://www.getmylllm.com` retorna 200 OK
 - [ ] Navegador muestra la aplicación SIN advertencias
 - [ ] WebSocket funciona (UI interactiva)
 - [ ] Backoffice accesible en `/backoffice/`

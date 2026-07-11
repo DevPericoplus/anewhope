@@ -1,7 +1,7 @@
 """Variables protegidas para el entorno pre."""
 
 # Dominio interno: anewhope.aws
-# Dominio público: getmyllm.com (solo nginx frontend)
+# Dominio público: getmylllm.com (solo nginx frontend)
 # Servidores: frontend.anewhope.aws, backend.anewhope.aws, trainer.anewhope.aws
 #
 # INSTRUCCIONES:

@@ -17,8 +17,8 @@ http {
     # usando las variables de env.yaml (public_name, private_name)
     #
     # Entorno DEV:    public_name=house.loc
-    # Entorno PRE:    public_name=getmyllm.com
-    # Entorno PRO:    public_name=getmyllm.com
+    # Entorno PRE:    public_name=getmylllm.com
+    # Entorno PRO:    public_name=getmylllm.com
     # ============================================================================
 
     # Configuración SSL recomendada (si SSL está habilitado)

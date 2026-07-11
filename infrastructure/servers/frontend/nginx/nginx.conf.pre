@@ -24,7 +24,7 @@ http {
     # Servidor HTTP (puerto 80)
     server {
         listen 80;
-        server_name getmyllm.com *.getmyllm.com;
+        server_name getmylllm.com *.getmylllm.com;
 
         # Redirigir todo el tráfico HTTP a HTTPS en pre/pro
         return 301 https://$host$request_uri;
@@ -33,11 +33,11 @@ http {
     # Servidor HTTPS (puerto 443)
     server {
         listen 443 ssl;
-        server_name getmyllm.com *.getmyllm.com;
+        server_name getmylllm.com *.getmylllm.com;
 
         # Certificados SSL
-        ssl_certificate /etc/nginx/ssl/getmyllm.com.crt;
-        ssl_certificate_key /etc/nginx/ssl/getmyllm.com.key;
+        ssl_certificate /etc/nginx/ssl/getmylllm.com.crt;
+        ssl_certificate_key /etc/nginx/ssl/getmylllm.com.key;
 
         # Headers de seguridad
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;

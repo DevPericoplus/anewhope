@@ -31,7 +31,7 @@ def get_public_domain() -> str:
     Obtiene el dominio público del entorno activo desde env.yaml.
 
     Returns:
-        str: Dominio público (ej: 'tfmmyllm.ai', 'house.loc', 'getmyllm.com')
+        str: Dominio público (ej: 'tfmmyllm.ai', 'house.loc', 'getmylllm.com')
     """
     try:
         public_name = env_settings.get_env_value("public_name", "localhost")

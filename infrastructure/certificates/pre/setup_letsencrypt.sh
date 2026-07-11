@@ -5,10 +5,10 @@
 #
 # Propósito:
 #   Obtiene certificados SSL válidos de Let's Encrypt para el dominio
-#   getmyllm.com en el entorno PRE (AWS con IP pública).
+#   getmylllm.com en el entorno PRE (AWS con IP pública).
 #
 # Requisitos previos:
-#   1. Dominio getmyllm.com debe apuntar a la IP pública del servidor
+#   1. Dominio getmylllm.com debe apuntar a la IP pública del servidor
 #   2. Puerto 80 debe estar abierto en el firewall/security group
 #   3. Nginx debe estar corriendo (certbot usa el método webroot)
 #
@@ -16,7 +16,7 @@
 #   sudo bash setup_letsencrypt.sh
 #
 # Salida:
-#   Certificados en: /etc/letsencrypt/live/getmyllm.com/
+#   Certificados en: /etc/letsencrypt/live/getmylllm.com/
 #     - fullchain.pem: Certificado + cadena
 #     - privkey.pem: Clave privada
 #
@@ -38,7 +38,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuración
-DOMAIN="getmyllm.com"
+DOMAIN="getmylllm.com"
 WWW_DOMAIN="www.${DOMAIN}"
 EMAIL="admin@${DOMAIN}"  # Cambiar por email real del administrador
 WEBROOT="/var/www/html"  # Directorio webroot para validación

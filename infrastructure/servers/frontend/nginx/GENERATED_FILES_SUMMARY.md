@@ -12,8 +12,8 @@
 | Entorno | Archivo | Ubicación | Dominio | SSL |
 |---------|---------|-----------|---------|-----|
 | **DEV** | `nginx.conf.dev` | `/infrastructure/servers/frontend/nginx/` | house.loc | ✅ Autofirmado |
-| **PRE** | `nginx.conf.pre` | `/infrastructure/servers/frontend/nginx/` | getmyllm.com | ✅ Let's Encrypt |
-| **PRO** | `nginx.conf.pro` | `/infrastructure/servers/frontend/nginx/` | getmyllm.com | ✅ Let's Encrypt |
+| **PRE** | `nginx.conf.pre` | `/infrastructure/servers/frontend/nginx/` | getmylllm.com | ✅ Let's Encrypt |
+| **PRO** | `nginx.conf.pro` | `/infrastructure/servers/frontend/nginx/` | getmylllm.com | ✅ Let's Encrypt |
 
 **Características de todas las configuraciones**:
 - ✅ WebSocket support completo (Reflex)
@@ -46,7 +46,7 @@ bash generate_self_signed_certs.sh
 
 **Archivo**: `setup_letsencrypt.sh`
 **Ubicación**: `/infrastructure/certificates/{pre,pro}/`
-**Propósito**: Obtiene certificados válidos de Let's Encrypt para getmyllm.com
+**Propósito**: Obtiene certificados válidos de Let's Encrypt para getmylllm.com
 
 **Uso**:
 ```bash
@@ -55,8 +55,8 @@ sudo bash setup_letsencrypt.sh
 ```
 
 **Salida**:
-- Certificados en: `/etc/letsencrypt/live/getmyllm.com/`
-- Symlinks en: `/etc/nginx/ssl/getmyllm.com.{crt,key}`
+- Certificados en: `/etc/letsencrypt/live/getmylllm.com/`
+- Symlinks en: `/etc/nginx/ssl/getmylllm.com.{crt,key}`
 - Renovación automática configurada
 
 ---
@@ -203,8 +203,8 @@ sudo bash setup_letsencrypt.sh
 
 4. **Verificar**:
    ```bash
-   curl -Ik https://www.getmyllm.com
-   # Abrir en navegador: https://www.getmyllm.com
+   curl -Ik https://www.getmylllm.com
+   # Abrir en navegador: https://www.getmylllm.com
    ```
 
 ---
@@ -231,10 +231,10 @@ grep "server_name" nginx.conf.dev
 # Debe mostrar: house.loc *.house.loc
 
 grep "server_name" nginx.conf.pre
-# Debe mostrar: getmyllm.com *.getmyllm.com
+# Debe mostrar: getmylllm.com *.getmylllm.com
 
 grep "server_name" nginx.conf.pro
-# Debe mostrar: getmyllm.com *.getmyllm.com
+# Debe mostrar: getmylllm.com *.getmylllm.com
 ```
 
 ### Verificar que tienen WebSocket support
@@ -273,7 +273,7 @@ ls -l /Users/administrator/develop/anewhope/infrastructure/certificates/pro/setu
 
 | Aspecto | DEV | PRE/PRO |
 |---------|-----|---------|
-| **Dominio** | house.loc | getmyllm.com |
+| **Dominio** | house.loc | getmylllm.com |
 | **Certificados** | Autofirmados | Let's Encrypt |
 | **Redirección HTTP→HTTPS** | ❌ No | ✅ Sí |
 | **Ubicación certs** | `/etc/nginx/ssl/` | `/etc/letsencrypt/live/` |

@@ -183,12 +183,15 @@ El proyecto soporta configuración personalizada por entorno usando cuatro nivel
 |---------|-------------|------------|-----------------|-----------------|
 | `macbook` | Desarrollo local | macOS 14.8.1 | tfmmyllm.ai | tfmmyllm.ai |
 | `dev` | Desarrollo en servidor | Oracle Linux 10 (VirtualBox) | house.loc | house.loc |
-| `pre` | Preproducción | Oracle Linux 10 (AWS) | anewhope.aws | getmyllm.com |
-| `pro` | Producción | Oracle Linux 10 (AWS) | anewhope.aws | getmyllm.com |
+| `pre` | Preproducción | Oracle Linux 10 (AWS) | anewhope.aws | getmylllm.com |
+| `pro` | Producción | Oracle Linux 10 (AWS) | anewhope.aws | getmylllm.com |
 
 **Nota sobre dominios en pre/pro:**
-- **Dominio público (`getmyllm.com`):** Utilizado solo por nginx para exponer el frontend al exterior.
+- **Dominio público (`getmylllm.com`):** Utilizado solo por nginx para exponer el frontend al exterior.
 - **Dominio interno (`anewhope.aws`):** Utilizado para la comunicación entre servicios dentro de AWS.
+
+**¿Por qué `getmylllm.com` lleva tres "l"?**
+El nombre del dominio se compone de cuatro palabras en inglés: **get** (obtén) + **my** (mi) + **lllm** (Local Large Language Model) + **.com** (comercial). La "l" aparece tres veces porque corresponde a las iniciales de **L**ocal, **L**arge y **L**anguage, cada una aportando una "l" al acrónimo. No es un error tipográfico: `getmylllm.com` (tres eles) es el dominio correcto; `getmyllm.com` (dos eles) es incorrecto.
 
 **Convención de hostnames (IMPORTANTE):**
 
@@ -225,8 +228,8 @@ Cada entorno utiliza diferentes dominios para acceder a las aplicaciones web. Es
 |---------|-------------|-------------------------------|
 | macbook | tfmmyllm.ai | `http://tfmmyllm.ai:8005` → localhost:8005 (directo) |
 | dev | house.loc | `http://anewhope.house.local` → nginx → `frontend.house.loc:8005` |
-| pre | getmyllm.com | `https://www.getmyllm.com` → nginx → `frontend.anewhope.aws:8005` |
-| pro | getmyllm.com | `https://www.getmyllm.com` → nginx → `frontend.anewhope.aws:8005` |
+| pre | getmylllm.com | `https://www.getmylllm.com` → nginx → `frontend.anewhope.aws:8005` |
+| pro | getmylllm.com | `https://www.getmylllm.com` → nginx → `frontend.anewhope.aws:8005` |
 
 **Configuración de Vite:**
 
@@ -6489,7 +6492,7 @@ Cada entorno debe definir su `public_ip` según su infraestructura:
 | `pre` | `<AWS_PUBLIC_IP>` | IP elástica de AWS o dominio con SSL |
 | `pro` | `<AWS_PUBLIC_IP>` | IP elástica de AWS o dominio con SSL |
 
-**Para pre/pro:** Considerar usar un dominio específico para fmanagement (ej: `files.getmyllm.com`) con certificado SSL válido.
+**Para pre/pro:** Considerar usar un dominio específico para fmanagement (ej: `files.getmylllm.com`) con certificado SSL válido.
 
 ### Opción Alternativa: Proxy a través de Nginx
 
@@ -7364,8 +7367,8 @@ Cada servidor recibe su carpeta de datos comprimida en `/data`:
 |---------|----------------|-----------------|
 | macbook | Auto-firmado (tfmmyllm.ai) | tfmmyllm.ai |
 | dev | Auto-firmado (house.loc) | house.loc |
-| pre | Let's Encrypt | getmyllm.com |
-| pro | Let's Encrypt | getmyllm.com |
+| pre | Let's Encrypt | getmylllm.com |
+| pro | Let's Encrypt | getmylllm.com |
 
 ### Despliegue de Ollama (servidor trainer)
 
@@ -11263,7 +11266,7 @@ LAIM Web (`www.laim.app`) es el **portal de descarga y orientación** para usuar
 | **Instaladores** | Descarga del cliente LAIM para Windows, macOS y Linux (`.deb` / `.rpm`) |
 | **Manuales** | Guías de instalación, uso, seguridad y referencia CLI |
 | **Modelos base** | Catálogo orientativo de modelos adaptados al hardware local |
-| **Modelos especializados** | Modelos enriquecidos por dominio; enlace a proyectos en [getmyllm.com](https://www.getmyllm.com/) |
+| **Modelos especializados** | Modelos enriquecidos por dominio; enlace a proyectos en [getmylllm.com](https://www.getmylllm.com/) |
 | **Modelos personalizados** | Modelos entrenados con datos privados; creación de proyectos vía ecosistema myllm |
 | **Skills** | Extensiones modulares de capacidades del cliente |
 | **Complementos** | Integraciones y utilidades adicionales |
@@ -11272,7 +11275,7 @@ LAIM Web (`www.laim.app`) es el **portal de descarga y orientación** para usuar
 
 **Área pública (sin sesión):** Inicio, Servicios, Documentación y Contacto (`static_pages/*.md`).
 
-**Área autenticada:** Las nueve secciones anteriores. El contenido se muestra en el **panel derecho** (markdown estilo terminal CRT) con **botones de acción** bajo el texto. Los enlaces a [getmyllm.com](https://www.getmyllm.com/) aparecen en modelos especializados y personalizados para solicitar proyectos a medida.
+**Área autenticada:** Las nueve secciones anteriores. El contenido se muestra en el **panel derecho** (markdown estilo terminal CRT) con **botones de acción** bajo el texto. Los enlaces a [getmylllm.com](https://www.getmylllm.com/) aparecen en modelos especializados y personalizados para solicitar proyectos a medida.
 
 **Autenticación:** Registro público con hCaptcha (site key en `env.yaml`, secret en `protected_values.py`). Tras el login, la vista inicial es **Instaladores**.
 

@@ -1253,11 +1253,16 @@ la comunicación entre servicios según el entorno de despliegue.
 |---------|-----------------|-----------------|----------------------|
 | macbook | tfmmyllm.ai | tfmmyllm.ai | `<servidor>.tfmmyllm.ai` |
 | dev | house.loc | house.loc | `<servidor>.house.loc` |
-| pre | anewhope.aws | getmyllm.com | `<servidor>.anewhope.aws` |
-| pro | anewhope.aws | getmyllm.com | `<servidor>.anewhope.aws` |
+| pre | anewhope.aws | getmylllm.com | `<servidor>.anewhope.aws` |
+| pro | anewhope.aws | getmylllm.com | `<servidor>.anewhope.aws` |
 
-**Nota pre/pro:** El dominio público `getmyllm.com` solo lo usa nginx para exponer el frontend.
+**Nota pre/pro:** El dominio público `getmylllm.com` solo lo usa nginx para exponer el frontend.
 Los servicios internos se comunican usando el dominio interno `anewhope.aws`.
+
+**¿Por qué `getmylllm.com` lleva tres "l"?**
+El dominio se compone de: **get** (obtén) + **my** (mi) + **lllm** (Local Large Language Model) + **.com**.
+La "l" aparece tres veces porque corresponde a las iniciales de **L**ocal, **L**arge y **L**anguage.
+`getmylllm.com` (tres eles) es correcto; `getmyllm.com` (dos eles) es **INCORRECTO**.
 
 **⚠️ REGLA CRÍTICA - Prohibido usar `localhost` en configuración:**
 
@@ -10319,7 +10324,7 @@ vars_files:
 |---------|-----|---------|
 | macbook | Auto-firmado | tfmmyllm.ai |
 | dev | Auto-firmado | house.loc |
-| pre/pro | Let's Encrypt (certbot) | getmyllm.com |
+| pre/pro | Let's Encrypt (certbot) | getmylllm.com |
 
 ### 32.14. Reglas obligatorias de despliegue
 

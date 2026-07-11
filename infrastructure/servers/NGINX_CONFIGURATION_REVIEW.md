@@ -104,8 +104,8 @@ server_name localhost;  # ❌ Incorrecto
 
 **Debería ser** (según `env.yaml`):
 - **DEV**: `server_name house.loc *.house.loc;`
-- **PRE**: `server_name getmyllm.com *.getmyllm.com;`
-- **PRO**: `server_name getmyllm.com *.getmyllm.com;`
+- **PRE**: `server_name getmylllm.com *.getmylllm.com;`
+- **PRO**: `server_name getmylllm.com *.getmylllm.com;`
 
 **Impacto**: ⚠️ **CRÍTICO** - Nginx rechazará peticiones del dominio configurado
 
@@ -174,10 +174,10 @@ La configuración actual solo soporta HTTP (puerto 80). Para pre/pro esto es **i
 # Servidor HTTPS (puerto 443)
 server {
     listen 443 ssl;
-    server_name getmyllm.com *.getmyllm.com;
+    server_name getmylllm.com *.getmylllm.com;
 
-    ssl_certificate /etc/nginx/ssl/getmyllm.com.crt;
-    ssl_certificate_key /etc/nginx/ssl/getmyllm.com.key;
+    ssl_certificate /etc/nginx/ssl/getmylllm.com.crt;
+    ssl_certificate_key /etc/nginx/ssl/getmylllm.com.key;
 
     # ... (configuración completa)
 }
@@ -185,7 +185,7 @@ server {
 # Servidor HTTP (redirigir a HTTPS)
 server {
     listen 80;
-    server_name getmyllm.com *.getmyllm.com;
+    server_name getmylllm.com *.getmylllm.com;
     return 301 https://$host$request_uri;
 }
 ```
@@ -347,12 +347,12 @@ Contiene una configuración completa y comentada que incluye:
    ```bash
    # En el servidor PRE/PRO
    sudo apt install certbot python3-certbot-nginx
-   sudo certbot --nginx -d getmyllm.com -d www.getmyllm.com
+   sudo certbot --nginx -d getmylllm.com -d www.getmylllm.com
    ```
 
    **Opción B: Certificados corporativos**
    - Solicitar certificados al equipo de infraestructura
-   - Colocar en `/etc/nginx/ssl/getmyllm.com.crt` y `.key`
+   - Colocar en `/etc/nginx/ssl/getmylllm.com.crt` y `.key`
 
 2. **Generar nginx.conf con SSL**:
    ```bash
@@ -383,8 +383,8 @@ Contiene una configuración completa y comentada que incluye:
 
 5. **Verificar HTTPS**:
    ```bash
-   curl -I https://www.getmyllm.com
-   curl -I https://www.getmyllm.com/backoffice/
+   curl -I https://www.getmylllm.com
+   curl -I https://www.getmylllm.com/backoffice/
    ```
 
 ---
