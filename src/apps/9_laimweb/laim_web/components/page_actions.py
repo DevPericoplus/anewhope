@@ -62,7 +62,7 @@ PAGE_ACTIONS: dict[str, tuple[PageAction, ...]] = {
     "soporte": (
         PageAction("Abrir ticket de soporte", "support_ticket"),
         PageAction("Estado de servicios", "support_status"),
-        PageAction("Contactar por email", "support_email", "mailto:soporte@laim.app"),
+        PageAction("Contactar por email", "support_email", "mailto:support@laim.app"),
     ),
     "faq": (
         PageAction("Privacidad y datos locales", "faq_privacy"),

@@ -6,7 +6,7 @@ Para incidencias técnicas, solicitudes de acceso o consultas sobre el despliegu
 
 ### Canales de contacto
 
-- **Email:** soporte@laim.local
+- **Email:** support@laim.app
 - **Horario:** Lunes a Viernes, 09:00–18:00 (CET)
 
 ### Información útil al contactar
