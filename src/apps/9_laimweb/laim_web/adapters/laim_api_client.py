@@ -343,6 +343,22 @@ def laim_forum_create_post(
     )
 
 
+def laim_forum_update_post(
+    post_id: int,
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Actualiza una respuesta (post)."""
+    return _request_forum(
+        "PATCH",
+        f"/laim/forum/posts/{post_id}",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
 def laim_forum_rate_thread(
     thread_id: int,
     valoracion: int,

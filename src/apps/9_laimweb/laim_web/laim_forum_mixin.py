@@ -76,6 +76,12 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_posts: list[dict[str, Any]] = []
     forum_reply_body: str = ""
 
+    # Edición de hilo / respuesta
+    forum_edit_thread_open: bool = False
+    forum_edit_thread_body: str = ""
+    forum_edit_post_id: int = 0
+    forum_edit_post_body: str = ""
+
     # Nuevo hilo
     forum_new_thread_open: bool = False
     forum_new_title: str = ""
@@ -226,6 +232,15 @@ class LaimForumMixin(rx.State, mixin=True):
         if self.forum_thread_author_id <= 0:
             return False
         return self.user_id != self.forum_thread_author_id
+
+    @rx.var
+    def forum_is_thread_author(self) -> bool:
+        """True si el usuario logueado es el autor del hilo abierto."""
+        if not self.is_logged_in or self.forum_active_thread_id <= 0:
+            return False
+        if self.forum_thread_author_id <= 0:
+            return False
+        return self.user_id == self.forum_thread_author_id
 
     @rx.var
     def forum_thread_rating_summary(self) -> str:
@@ -876,6 +891,10 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_reply_image_ids = []
         self.forum_thread_image_ids = []
         self.forum_thread_attachments = []
+        self.forum_edit_thread_open = False
+        self.forum_edit_thread_body = ""
+        self.forum_edit_post_id = 0
+        self.forum_edit_post_body = ""
 
     @forum_event
     def forum_refresh(self) -> None:
@@ -1007,6 +1026,92 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_error = ""
         self.forum_open_thread(self.forum_active_thread_id)
         return None
+
+    # --- Edición de hilo ---
+
+    @forum_event
+    def forum_start_edit_thread(self) -> None:
+        """Abre el formulario de edición del cuerpo del hilo."""
+        self.forum_edit_thread_body = self.forum_thread_body
+        self.forum_edit_thread_open = True
+
+    @forum_event
+    def forum_cancel_edit_thread(self) -> None:
+        """Cancela la edición del hilo."""
+        self.forum_edit_thread_open = False
+        self.forum_edit_thread_body = ""
+
+    @forum_event
+    def forum_set_edit_thread_body(self, value: str) -> None:
+        self.forum_edit_thread_body = value
+
+    @forum_event
+    def forum_save_edit_thread(self) -> None:
+        """Guarda la edición del cuerpo del hilo."""
+        from laim_web.adapters.laim_api_client import laim_forum_update_thread
+
+        new_body = self.forum_edit_thread_body.strip()
+        if not new_body:
+            self._forum_set_error("El contenido no puede estar vacío.")
+            return
+
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_update_thread(
+            self.forum_active_thread_id,
+            {"cuerpo_md": new_body},
+            access,
+            session,
+        )
+        if result.get("success") or (isinstance(result, dict) and "error" not in result):
+            self.forum_edit_thread_open = False
+            self.forum_edit_thread_body = ""
+            self.forum_error = ""
+            self.forum_open_thread(self.forum_active_thread_id)
+        else:
+            self._forum_set_error(result.get("error", "No se pudo guardar la edición"))
+
+    # --- Edición de respuesta (post) ---
+
+    @forum_event
+    def forum_start_edit_post(self, post_id: int, current_body: str) -> None:
+        """Abre la edición inline de una respuesta."""
+        self.forum_edit_post_id = post_id
+        self.forum_edit_post_body = current_body
+
+    @forum_event
+    def forum_cancel_edit_post(self) -> None:
+        """Cancela la edición de la respuesta."""
+        self.forum_edit_post_id = 0
+        self.forum_edit_post_body = ""
+
+    @forum_event
+    def forum_set_edit_post_body(self, value: str) -> None:
+        self.forum_edit_post_body = value
+
+    @forum_event
+    def forum_save_edit_post(self) -> None:
+        """Guarda la edición de una respuesta."""
+        from laim_web.adapters.laim_api_client import laim_forum_update_post
+
+        new_body = self.forum_edit_post_body.strip()
+        if not new_body:
+            self._forum_set_error("El contenido no puede estar vacío.")
+            return
+
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_update_post(
+            self.forum_edit_post_id,
+            {"cuerpo_md": new_body},
+            access,
+            session,
+        )
+        if result.get("success") or (isinstance(result, dict) and "error" not in result):
+            self.forum_edit_post_id = 0
+            self.forum_edit_post_body = ""
+            self.forum_error = ""
+            self.forum_open_thread(self.forum_active_thread_id)
+        else:
+            self._forum_set_error(result.get("error", "No se pudo guardar la edición"))
 
     @forum_event
     def forum_rate_thread(self, rating: int) -> None:

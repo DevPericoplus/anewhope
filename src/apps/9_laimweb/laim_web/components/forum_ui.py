@@ -444,6 +444,11 @@ def forum_threads_sidebar() -> rx.Component:
 def _post_row(post) -> rx.Component:
     """Fila de respuesta en detalle de hilo (Var reactivo)."""
     attachments = post["attachments"].to(list[dict[str, Any]])
+    post_id = post["id"].to(int)
+    post_user_id = post["user_id"].to(int)
+    is_editing = LaimWebState.forum_edit_post_id == post_id
+    is_author = LaimWebState.user_id == post_user_id
+
     return rx.box(
         rx.hstack(
             rx.cond(
@@ -471,16 +476,57 @@ def _post_row(post) -> rx.Component:
                 color=COLORS["accent"],
             ),
             rx.box(flex_grow="1"),
+            rx.cond(
+                is_author & ~is_editing,
+                rx.icon(
+                    "pencil",
+                    size=14,
+                    color=COLORS["muted"],
+                    cursor="pointer",
+                    _hover={"color": COLORS["accent"]},
+                    on_click=LaimWebState.forum_start_edit_post(post_id, post["cuerpo_md"]),
+                ),
+                rx.fragment(),
+            ),
             width="100%",
             align_items="center",
             flex_wrap="wrap",
             spacing="1",
         ),
-        rx.box(
-            forum_message_body(post["display_md"]),
-            class_name="forum-post-body",
-            width="100%",
-            margin_top="0.5em",
+        rx.cond(
+            is_editing,
+            rx.vstack(
+                rx.el.textarea(
+                    value=LaimWebState.forum_edit_post_body,
+                    on_change=LaimWebState.forum_set_edit_post_body,
+                    class_name="crt-input",
+                    width="100%",
+                    min_height="100px",
+                    style={"resize": "vertical"},
+                ),
+                rx.hstack(
+                    rx.button(
+                        "Guardar",
+                        on_click=LaimWebState.forum_save_edit_post,
+                        class_name="crt-btn crt-btn-inline",
+                    ),
+                    rx.button(
+                        "Cancelar",
+                        on_click=LaimWebState.forum_cancel_edit_post,
+                        class_name="crt-btn crt-btn-inline",
+                    ),
+                    spacing="2",
+                ),
+                spacing="2",
+                width="100%",
+                margin_top="0.5em",
+            ),
+            rx.box(
+                forum_message_body(post["display_md"]),
+                class_name="forum-post-body",
+                width="100%",
+                margin_top="0.5em",
+            ),
         ),
         rx.hstack(
             rx.foreach(
@@ -590,18 +636,75 @@ def forum_thread_content_panel() -> rx.Component:
                     class_name="forum-thread-author-block",
                 ),
                 forum_thread_star_rating_panel(),
-                rx.box(
-                    forum_message_body(
-                        LaimWebState.forum_thread_body_display,
-                        class_name="forum-post-body forum-thread-op-body",
+                rx.cond(
+                    LaimWebState.forum_edit_thread_open,
+                    rx.box(
+                        rx.vstack(
+                            rx.el.textarea(
+                                value=LaimWebState.forum_edit_thread_body,
+                                on_change=LaimWebState.forum_set_edit_thread_body,
+                                class_name="crt-input",
+                                width="100%",
+                                min_height="150px",
+                                style={"resize": "vertical"},
+                            ),
+                            rx.hstack(
+                                rx.button(
+                                    "Guardar",
+                                    on_click=LaimWebState.forum_save_edit_thread,
+                                    class_name="crt-btn crt-btn-inline",
+                                ),
+                                rx.button(
+                                    "Cancelar",
+                                    on_click=LaimWebState.forum_cancel_edit_thread,
+                                    class_name="crt-btn crt-btn-inline",
+                                ),
+                                spacing="2",
+                            ),
+                            spacing="2",
+                            width="100%",
+                        ),
+                        padding="0.85em 1em",
+                        margin_bottom="0.65em",
+                        border=f"1px solid {COLORS['accent']}",
+                        border_radius="6px",
+                        background="rgba(255, 255, 255, 0.03)",
+                        width="100%",
                     ),
-                    padding="0.85em 1em",
-                    margin_bottom="0.65em",
-                    border=f"1px solid {COLORS['border']}",
-                    border_radius="6px",
-                    background="rgba(255, 255, 255, 0.03)",
-                    width="100%",
-                    class_name="forum-post-row forum-thread-op-row",
+                    rx.box(
+                        rx.hstack(
+                            rx.box(
+                                forum_message_body(
+                                    LaimWebState.forum_thread_body_display,
+                                    class_name="forum-post-body forum-thread-op-body",
+                                ),
+                                flex="1",
+                            ),
+                            rx.cond(
+                                LaimWebState.forum_is_thread_author,
+                                rx.icon(
+                                    "pencil",
+                                    size=14,
+                                    color=COLORS["muted"],
+                                    cursor="pointer",
+                                    flex_shrink="0",
+                                    _hover={"color": COLORS["accent"]},
+                                    on_click=LaimWebState.forum_start_edit_thread,
+                                ),
+                                rx.fragment(),
+                            ),
+                            width="100%",
+                            align_items="flex-start",
+                            spacing="2",
+                        ),
+                        padding="0.85em 1em",
+                        margin_bottom="0.65em",
+                        border=f"1px solid {COLORS['border']}",
+                        border_radius="6px",
+                        background="rgba(255, 255, 255, 0.03)",
+                        width="100%",
+                        class_name="forum-post-row forum-thread-op-row",
+                    ),
                 ),
                 rx.box(
                     rx.vstack(
