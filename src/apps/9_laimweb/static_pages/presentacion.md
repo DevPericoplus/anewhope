@@ -1,5 +1,15 @@
 # Presentación
 
+## Conceptos y propuesta.
+
+Para aprovechar al máximo las oportunidades de la revolución tecnológica actual, es fundamental desarrollar una nueva habilidad: saber comunicarnos con la Inteligencia Artificial. Debemos verla como un compañero o compañera capaz de asistirnos en nuestras necesidades diarias, ayudándonos a adquirir conocimientos, perfeccionar nuestras habilidades y experimentar un crecimiento conjunto.
+ 
+Bajo esta premisa nace **Laim**. Nuestro objetivo es actuar como un puente y traductor entre las personas y la tecnología. Queremos ser ese asistente profesional que optimiza los recursos de hardware actuales mediante una propuesta de software diseñada para extraer lo mejor del ecosistema de la IA.
+ 
+Damos nuestros primeros pasos con humildad, pero con el espíritu pionero de explorar el universo de la IA y descubrir qué capacidades aportan más valor en cada situación. En esta primera versión, nos enfocamos en la gestión de sistemas operativos. Sin embargo, la meta es expandirnos hacia otros campos de la informática: documentos, servicios, aplicaciones, gestión de dispositivos, bases de datos, seguridad informática y redes. El abanico está abierto y todo lo que se nutre de tecnología está en nuestro radar para futuras evoluciones.
+ 
+Con el apoyo y la colaboración de la comunidad de usuarios y desarrolladores, esperamos expandir las capacidades de Laim para que se convierta en una herramienta complementaria ideal. Al fin y al cabo, contar con más opciones y saber sacarles partido es lo que marca la diferencia para alcanzar mejores resultados, evolucionar en lo que hacemos y tener un aliado confiable en nuestra interacción con el mundo digital.
+
 ## El camino hacia un entendimiento compartido
 
 Durante décadas, la tecnología y las personas han avanzado en paralelo: potentes por separado, pero a menudo desalineadas en intención, ritmo y lenguaje. **LAIM** nace de una convicción sencilla y exigente: el futuro no consiste en sustituir al ser humano, sino en **construir puentes de comprensión** entre nuestra experiencia y las capacidades de la inteligencia artificial.
