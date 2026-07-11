@@ -286,9 +286,10 @@ def portal_page(
             rx.hstack(
                 rx.box(
                     portal_sidebar(),
-                    width="25%",
-                    min_width="220px",
-                    max_width="320px",
+                    width="auto",
+                    min_width="180px",
+                    max_width="220px",
+                    flex_shrink="0",
                     background=COLORS["panel_bg"],
                     border_right=f"1px solid {COLORS['border']}",
                     height="100%",
