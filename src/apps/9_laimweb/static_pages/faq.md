@@ -8,7 +8,7 @@ En el **modo local** estándar, el procesamiento puede realizarse íntegramente 
 
 ### ¿LAIM es gratuito?
 
-El cliente y los recursos incluidos en su cuenta de portal están sujetos a las condiciones de su organización o plan. Los modelos personalizados y proyectos avanzados se gestionan a través de [getmyllm.com](https://www.getmyllm.com/).
+El cliente y los recursos incluidos en su cuenta de portal están sujetos a las condiciones de su organización o plan. Los modelos personalizados y proyectos avanzados se gestionan a través de [getmylllm.com](https://www.getmylllm.com/).
 
 ### ¿Qué diferencia hay entre modelos base, especializados y personalizados?
 

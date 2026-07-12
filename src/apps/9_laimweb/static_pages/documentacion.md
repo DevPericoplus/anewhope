@@ -163,7 +163,7 @@ Para guías paso a paso (instalación, seguridad, uso diario), use la sección *
 ## Enlaces útiles
 
 - [Ollama — Modelos locales](https://ollama.com/)
-- [getmyllm.com — Proyectos y modelos a medida](https://www.getmyllm.com/)
+- [getmylllm.com — Proyectos y modelos a medida](https://www.getmylllm.com/)
 - [Reflex — Documentación](https://reflex.dev/docs/) *(interfaz web local del cliente)*
 
 > La referencia CLI se ampliará en próximas revisiones con ejemplos, opciones y casos de uso por comando.

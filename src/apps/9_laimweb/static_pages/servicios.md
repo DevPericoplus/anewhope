@@ -30,7 +30,7 @@ Guías pensadas para usuarios finales: instalación rápida, manual de usuario, 
 | **Modelos especializados** | Conocimiento enriquecido para dominios concretos (normativa, procesos, documentación sectorial) |
 | **Modelos personalizados** | Entrenados con información privada de su organización, para uso interno bajo su control |
 
-Los modelos base y especializados asignados a su cuenta se descargan e instalan desde el cliente LAIM. Para **proyectos a medida** con datos propios, pipelines de entrenamiento y acompañamiento experto, nuestro ecosistema en **[getmyllm.com](https://www.getmyllm.com/)** le guía en propuesta, preparación, entrenamiento y entrega.
+Los modelos base y especializados asignados a su cuenta se descargan e instalan desde el cliente LAIM. Para **proyectos a medida** con datos propios, pipelines de entrenamiento y acompañamiento experto, nuestro ecosistema en **[getmylllm.com](https://www.getmylllm.com/)** le guía en propuesta, preparación, entrenamiento y entrega.
 
 ---
 
@@ -103,6 +103,6 @@ Puede configurar, según sus necesidades y suscripción, modelos de **Google (Ge
 
 - **Privacidad** — En modo local estándar, sus datos pueden permanecer en su infraestructura
 - **Seguridad** — Autenticación protegida, descargas desde canales verificados y buenas prácticas documentadas
-- **Proyección** — Una herramienta pensada para crecer con usted: desde un primer modelo base hasta proyectos avanzados con myllm
+- **Proyección** — Una herramienta pensada para crecer con usted: desde un primer modelo base hasta proyectos avanzados con mylllm
 
 > ¿Listo para empezar? Cree una cuenta, descargue el instalador en **Instaladores** y consulte **Manuales** para la configuración inicial. Para profundizar en aspectos técnicos, visite **Documentación**.

@@ -10,9 +10,9 @@ Los **modelos personalizados** están pensados para uso **interno**: conocimient
 - Separación clara entre entornos de prueba y producción
 - Alineación con políticas de **privacidad** y cumplimiento interno
 
-### Crear un proyecto a medida con myllm
+### Crear un proyecto a medida con mylllm
 
-LAIM se integra con **[getmyllm.com](https://www.getmyllm.com/)**, la plataforma de nuestro ecosistema para diseñar, entrenar y evaluar modelos LLM con metodología profesional:
+LAIM se integra con **[getmylllm.com](https://www.getmylllm.com/)**, la plataforma de nuestro ecosistema para diseñar, entrenar y evaluar modelos LLM con metodología profesional:
 
 | Fase | Descripción |
 |------|-------------|
@@ -25,4 +25,4 @@ LAIM se integra con **[getmyllm.com](https://www.getmyllm.com/)**, la plataforma
 
 Desde este portal podrá **descargar** el modelo aprobado, consultar manuales de operación y recibir soporte si necesita ayuda en el despliegue local.
 
-> ¿Listo para dar el siguiente paso? Pulse **Abrir portal de proyectos myllm** o **Contactar con un especialista** para una primera conversación sin compromiso.
+> ¿Listo para dar el siguiente paso? Pulse **Abrir portal de proyectos mylllm** o **Contactar con un especialista** para una primera conversación sin compromiso.

@@ -12,7 +12,7 @@ Los **modelos especializados** incorporan información sectorial o funcional: do
 
 ### ¿Necesita un modelo hecho a medida?
 
-Si su caso requiere datos propios, pipelines de entrenamiento o acompañamiento experto, puede crear **proyectos a medida** con nuestro ecosistema en **[getmyllm.com](https://www.getmyllm.com/)**:
+Si su caso requiere datos propios, pipelines de entrenamiento o acompañamiento experto, puede crear **proyectos a medida** con nuestro ecosistema en **[getmylllm.com](https://www.getmylllm.com/)**:
 
 1. Defina el objetivo del proyecto y el volumen de documentación
 2. Trabaje con especialistas en preparación de datos y evaluación
@@ -20,6 +20,6 @@ Si su caso requiere datos propios, pipelines de entrenamiento o acompañamiento 
 
 ### Relación con LAIM
 
-Este portal le permite **descargar, registrar y operar** los modelos que formen parte de su suscripción o proyecto. La generación avanzada y el ciclo de vida completo se gestionan en la plataforma myllm, integrada con la misma filosofía de **seguridad y trazabilidad**.
+Este portal le permite **descargar, registrar y operar** los modelos que formen parte de su suscripción o proyecto. La generación avanzada y el ciclo de vida completo se gestionan en la plataforma mylllm, integrada con la misma filosofía de **seguridad y trazabilidad**.
 
-> Para iniciar un proyecto especializado, utilice el botón **Solicitar proyecto a medida** o visite [getmyllm.com](https://www.getmyllm.com/).
+> Para iniciar un proyecto especializado, utilice el botón **Solicitar proyecto a medida** o visite [getmylllm.com](https://www.getmylllm.com/).

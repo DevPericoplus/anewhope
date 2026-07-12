@@ -22,4 +22,4 @@ Si tiene dudas sobre instalación, modelos, skills o configuración segura, pued
 
 Tratamos su información con cuidado. **No comparta contraseñas ni datos personales** en tickets públicos; le indicaremos un canal seguro si hace falta un intercambio detallado.
 
-> Para proyectos de modelos a medida o servicios avanzados, también puede acudir a [getmyllm.com](https://www.getmyllm.com/) como parte del mismo ecosistema.
+> Para proyectos de modelos a medida o servicios avanzados, también puede acudir a [getmylllm.com](https://www.getmylllm.com/) como parte del mismo ecosistema.

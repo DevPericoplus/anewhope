@@ -8,7 +8,7 @@ import reflex as rx
 
 from laim_web.laim_state import LaimWebState
 
-GETMYLLM_URL = "https://www.getmyllm.com/"
+GETMYLLM_URL = "https://www.getmylllm.com/"
 
 
 @dataclass(frozen=True)
@@ -42,11 +42,11 @@ PAGE_ACTIONS: dict[str, tuple[PageAction, ...]] = {
     "modelos_especializados": (
         PageAction("Explorar modelos especializados", "catalog_specialized"),
         PageAction("Solicitar proyecto a medida", "specialized_project", GETMYLLM_URL),
-        PageAction("Conocer el ecosistema myllm", "myllm_ecosystem", GETMYLLM_URL),
+        PageAction("Conocer el ecosistema mylllm", "myllm_ecosystem", GETMYLLM_URL),
     ),
     "modelos_personalizados": (
         PageAction("Cómo crear un modelo personalizado", "custom_howto"),
-        PageAction("Abrir portal de proyectos myllm", "myllm_projects", GETMYLLM_URL),
+        PageAction("Abrir portal de proyectos mylllm", "myllm_projects", GETMYLLM_URL),
         PageAction("Contactar con un especialista", "contact_specialist", GETMYLLM_URL),
     ),
     "skills": (
