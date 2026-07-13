@@ -131,7 +131,7 @@ def test_ensure_valid_tokens_renews_when_near_expiry() -> None:
 def test_hcaptcha_widget_without_site_key() -> None:
     from laim_web.components import hcaptcha
 
-    with patch.object(hcaptcha, "get_hcaptcha_site_key", return_value=""):
+    with patch.object(hcaptcha, "get_cap_api_endpoint", return_value=""):
         component = hcaptcha.hcaptcha_widget()
         assert component is not None
         assert hcaptcha.is_hcaptcha_configured() is False

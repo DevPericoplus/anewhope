@@ -176,13 +176,53 @@ services:
         condition: service_started
     networks:
       - macbook-network
-    restart: unless-stopped# ====================
+    restart: unless-stopped
+
+  # ====================
+  # Cap CAPTCHA - Servidor self-hosted
+  # ====================
+  cap:
+    image: tiago2/cap:latest
+    container_name: cap-captcha-macbook
+    environment:
+      ADMIN_KEY: ${CAP_ADMIN_KEY:-dev_admin_key_32chars_minimum_ok!}
+      REDIS_URL: redis://cap-valkey:6379
+    ports:
+      - "3300:3000"
+    depends_on:
+      cap-valkey:
+        condition: service_healthy
+    networks:
+      - macbook-network
+    restart: unless-stopped
+
+  cap-valkey:
+    image: valkey/valkey:9-alpine
+    container_name: cap-valkey-macbook
+    volumes:
+      - cap-valkey-data:/data
+    command: valkey-server --save 60 1 --loglevel warning --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - macbook-network
+    restart: unless-stopped
+
+# ====================
 # Volúmenes persistentes
 # ====================
 volumes:
   redis-data:
     name: redis-macbook-data
-    driver: local# ====================
+    driver: local
+  cap-valkey-data:
+    name: cap-valkey-macbook-data
+    driver: local
+
+# ====================
 # Red interna
 # ====================
 networks:

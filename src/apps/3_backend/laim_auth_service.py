@@ -320,7 +320,7 @@ class LaimAuthService:
             return {"success": False, "error": "La contraseña debe tener al menos 8 caracteres"}
 
         if not self._verify_hcaptcha(hcaptcha_token, ip_address):
-            return {"success": False, "error": "Verificación hCaptcha fallida"}
+            return {"success": False, "error": "Verificación CAPTCHA fallida"}
 
         org_id = self._user_repo.get_organization_id_by_name(self.DEFAULT_ORG_NAME)
         if org_id is None:
@@ -393,14 +393,24 @@ class LaimAuthService:
         return parts[0], " ".join(parts[1:])
 
     def _verify_hcaptcha(self, token: str, remote_ip: str) -> bool:
-        """Valida token hCaptcha (omitido si no hay secret configurado)."""
+        """Valida token Cap CAPTCHA contra el servidor self-hosted.
+
+        Mantiene el nombre ``_verify_hcaptcha`` por compatibilidad con
+        las llamadas existentes en ``register()``.
+        """
+        cap_api_endpoint = str(
+            _env_settings.get_env_value("laim_cap_api_endpoint", "") or ""
+        ).strip()
         protected = _env_settings.load_protected_settings() or {}
-        secret = protected.get("laim_hcaptcha_secret") or protected.get("hcaptcha_secret")
-        if not secret:
-            self._logger.warning("hCaptcha secret no configurado — registro sin verificación")
+        secret = protected.get("laim_cap_secret") or protected.get("laim_hcaptcha_secret")
+        if not cap_api_endpoint or not secret:
+            self._logger.warning(
+                "Cap CAPTCHA no configurado — registro sin verificación"
+            )
             return True
         if not token:
             return False
+        siteverify_url = cap_api_endpoint.rstrip("/") + "/siteverify"
         proxy_url = str(_env_settings.get_env_value("proxy_url", "") or "").strip()
         try:
             client_kwargs: dict[str, Any] = {"timeout": 10.0}
@@ -408,18 +418,17 @@ class LaimAuthService:
                 client_kwargs["proxy"] = proxy_url
             with httpx.Client(**client_kwargs) as client:
                 response = client.post(
-                    "https://hcaptcha.com/siteverify",
-                    data={
+                    siteverify_url,
+                    json={
                         "secret": secret,
                         "response": token,
-                        "remoteip": remote_ip,
                     },
                 )
             response.raise_for_status()
             payload = response.json()
             return bool(payload.get("success"))
         except httpx.HTTPError as exc:
-            self._logger.error("Error verificando hCaptcha: %s", exc)
+            self._logger.error("Error verificando Cap CAPTCHA: %s", exc)
             return False
 
     def resolve_optional_session_context(

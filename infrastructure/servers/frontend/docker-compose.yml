@@ -154,6 +154,42 @@ services:
       - frontend-network
     restart: always
 
+  # ====================
+  # Cap CAPTCHA - Servidor self-hosted
+  # ====================
+  cap:
+    image: tiago2/cap:latest
+    container_name: cap-captcha
+    environment:
+      ADMIN_KEY: ${CAP_ADMIN_KEY:-changeme_admin_key_32chars_minimum!}
+      REDIS_URL: redis://cap-valkey:6379
+    ports:
+      - "3300:3000"
+    depends_on:
+      cap-valkey:
+        condition: service_healthy
+    networks:
+      - frontend-network
+    restart: unless-stopped
+
+  # ====================
+  # Valkey (Redis para Cap)
+  # ====================
+  cap-valkey:
+    image: valkey/valkey:9-alpine
+    container_name: cap-valkey
+    volumes:
+      - cap-valkey-data:/data
+    command: valkey-server --save 60 1 --loglevel warning --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - frontend-network
+    restart: unless-stopped
+
 # ====================
 # Volúmenes persistentes
 # ====================
@@ -163,6 +199,9 @@ volumes:
     driver: local
   redis-logs:
     name: redis-${ENVIRONMENT:-dev}-logs
+    driver: local
+  cap-valkey-data:
+    name: cap-valkey-${ENVIRONMENT:-dev}-data
     driver: local
 
 # ====================

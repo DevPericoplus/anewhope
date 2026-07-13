@@ -60,25 +60,24 @@ def forum_image_preview_modal() -> rx.Component:
 
 def _attachment_thumb(attachment) -> rx.Component:
     """Miniatura clicable de un adjunto. Al pulsar abre el modal a tamaño completo."""
+    img_id = attachment["id"]
     return rx.cond(
         attachment["thumb_url"] != "",
-        rx.box(
-            rx.image(
-                src=attachment["thumb_url"],
-                width="80px",
-                height="80px",
-                object_fit="cover",
-                border_radius="4px",
-                border=f"1px solid {COLORS['border']}",
-                cursor="pointer",
-                opacity="0.85",
-                _hover={"opacity": "1", "border_color": COLORS["accent"]},
-            ),
-            on_click=LaimWebState.forum_preview_image(attachment["id"]),
+        rx.image(
+            src=attachment["thumb_url"],
+            width="80px",
+            height="80px",
+            object_fit="cover",
+            border_radius="4px",
+            border=f"1px solid {COLORS['border']}",
+            cursor="pointer",
+            opacity="0.85",
+            _hover={"opacity": "1", "border_color": COLORS["accent"]},
+            on_click=LaimWebState.forum_preview_image(img_id),
         ),
         rx.button(
-            rx.fragment("Adjunto #", attachment["id"]),
-            on_click=LaimWebState.forum_preview_image(attachment["id"]),
+            rx.fragment("Adjunto #", img_id),
+            on_click=LaimWebState.forum_preview_image(img_id),
             class_name="crt-btn crt-btn-inline",
             size="1",
         ),

@@ -1510,13 +1510,14 @@ class LaimForumMixin(rx.State, mixin=True):
 
     @forum_event
     def forum_preview_image(self, image_id: int) -> None:
-        """Carga imagen adjunta como data URL."""
-        from laim_web.adapters.laim_api_client import laim_forum_get_image_data_url
+        """Muestra imagen adjunta a tamaño completo en el modal de preview.
 
-        access, session = self._forum_auth_tokens()
-        self.forum_preview_image_url = laim_forum_get_image_data_url(
-            image_id, access, session
-        )
+        Usa la misma URL proxy que las miniaturas; el navegador ya tiene
+        la imagen en su caché HTTP, así que la visualización es instantánea.
+        """
+        from laim_web.forum_image_cache import get_image_proxy_url
+
+        self.forum_preview_image_url = get_image_proxy_url(image_id)
 
     @forum_event
     def forum_admin_set_prefix_id(self, value: str) -> None:
@@ -1942,13 +1943,23 @@ class LaimForumMixin(rx.State, mixin=True):
         access_token: str,
         session_token: str,
     ) -> list[dict[str, Any]]:
-        """Convierte lista de image_ids en lista de dicts con miniatura pre-cargada."""
-        from laim_web.adapters.laim_api_client import laim_forum_get_image_data_url
+        """Convierte lista de image_ids en URLs proxy ligeras.
+
+        Pre-carga las imágenes en el caché servidor usando los tokens
+        del usuario, luego genera URLs proxy ``/api/forum-img/{id}``
+        que el navegador carga directamente (ya cacheadas).
+        """
+        from laim_web.forum_image_cache import get_image_proxy_url, prewarm_images
+
+        if image_ids:
+            prewarm_images(image_ids, access_token, session_token)
 
         attachments: list[dict[str, Any]] = []
         for img_id in image_ids:
-            thumb_url = laim_forum_get_image_data_url(img_id, access_token, session_token)
-            attachments.append({"id": img_id, "thumb_url": thumb_url})
+            attachments.append({
+                "id": img_id,
+                "thumb_url": get_image_proxy_url(img_id),
+            })
         return attachments
 
     def _forum_enrich_posts_author_avatars(

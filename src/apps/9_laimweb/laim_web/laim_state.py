@@ -40,7 +40,7 @@ SCHEDULE_LAIM_HCAPTCHA_RENDER_SCRIPT = """
 READ_LAIM_HCAPTCHA_TOKEN_SCRIPT = """
 (function() {
   var input = document.getElementById('laim-hcaptcha-token-input');
-  var token = window.__LAIM_HCAPTCHA_TOKEN__ || (input && input.value) || '';
+  var token = window.__LAIM_CAP_TOKEN__ || (input && input.value) || '';
   return String(token).trim();
 })();
 """
@@ -176,7 +176,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         resolved_token = (token or "").strip()
         if is_hcaptcha_configured() and not resolved_token:
             self.error_message = (
-                "Debe completar la verificación anti-bot (hCaptcha) antes de registrarse."
+                "Debe completar la verificación anti-bot antes de registrarse."
             )
             return None
 
@@ -197,7 +197,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
 
             if is_hcaptcha_configured() and not self.reg_hcaptcha_token.strip():
                 self.error_message = (
-                    "Debe completar la verificación anti-bot (hCaptcha) antes de registrarse."
+                    "Debe completar la verificación anti-bot antes de registrarse."
                 )
                 return
 
