@@ -290,8 +290,13 @@ body::after {
 }
 
 .crt-btn {
-  width: 100%;
-  text-align: left;
+  width: auto;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  text-align: center;
   margin-bottom: 0.35rem;
   padding: 0.45rem 0.55rem;
   border: 1px solid var(--crt-border-strong);
@@ -300,6 +305,19 @@ body::after {
   cursor: pointer;
   font-family: inherit;
   font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+.crt-btn-block {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  text-align: center;
+}
+
+.crt-panel .crt-btn-block,
+.crt-auth-sidebar-cta .crt-btn-block {
+  width: 100%;
 }
 
 .crt-btn:hover {
@@ -351,9 +369,41 @@ body::after {
 
 .crt-btn-inline {
   width: auto;
-  flex: 1;
+  flex: 0 0 auto;
   margin-bottom: 0;
   text-align: center;
+}
+
+.crt-menu-item {
+  width: 100%;
+  padding: 0.75em;
+  border-radius: 0.5em;
+  cursor: pointer;
+  text-align: left;
+  font-size: 1.1em;
+  font-weight: bold;
+  color: var(--crt-text);
+  background: transparent;
+  border-left: 3px solid transparent;
+  box-sizing: border-box;
+}
+
+.crt-menu-item:hover {
+  background: var(--crt-link-hover-bg);
+}
+
+.crt-menu-item--active {
+  background: var(--crt-title) !important;
+  color: #000000 !important;
+  border-left-color: var(--crt-accent-strong);
+}
+
+.crt-text-on-accent {
+  color: #000000 !important;
+}
+
+.crt-icon-on-accent {
+  color: #000000 !important;
 }
 
 .crt-error {
@@ -921,4 +971,18 @@ body::after {
   background: var(--crt-panel-bg) !important;
   color: var(--crt-text) !important;
   border: 1px solid var(--crt-border) !important;
+}
+
+/* Texto legible sobre fondos claros de acento (botones y badges sólidos) */
+.crt-shell .rt-Button:not([data-variant="outline"]):not([data-variant="ghost"]):not([data-variant="surface"])[data-accent-color="green"],
+.crt-shell .rt-Button:not([data-variant="outline"]):not([data-variant="ghost"]):not([data-variant="surface"])[data-accent-color="orange"],
+.crt-shell .rt-Button:not([data-variant="outline"]):not([data-variant="ghost"]):not([data-variant="surface"])[data-accent-color="amber"],
+.crt-shell .rt-Button:not([data-variant="outline"]):not([data-variant="ghost"]):not([data-variant="surface"])[data-accent-color="cyan"] {
+  color: #000000 !important;
+  font-weight: 700;
+}
+
+.crt-shell .rt-Badge[data-variant="solid"] {
+  color: #000000 !important;
+  font-weight: 600;
 }

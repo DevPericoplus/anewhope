@@ -2166,8 +2166,7 @@ def login_panel() -> rx.Component:
             rx.button(
                 "Iniciar Sesión",
                 on_click=State.user_login,
-                class_name="crt-btn",
-                width="100%",
+                class_name="crt-btn crt-btn-block",
                 font_size="1.1em",
             ),
             rx.text(
@@ -2223,24 +2222,11 @@ def sidebar_menu(is_logged_in: bool) -> rx.Component:
                     lambda item: rx.box(
                         item.title(),
                         on_click=lambda _, i=item: State.set_user_menu(i),
-                        background_color=rx.cond(
+                        class_name=rx.cond(
                             State.user_active_menu == item,
-                            COLORS["primary"],
-                            "transparent"
+                            "crt-menu-item crt-menu-item--active",
+                            "crt-menu-item",
                         ),
-                        color=rx.cond(
-                            State.user_active_menu == item,
-                            "white",
-                            COLORS["foreground"]
-                        ),
-                        width="100%",
-                        padding="0.75em",
-                        border_radius="0.5em",
-                        cursor="pointer",
-                        text_align="left",
-                        font_size="1.1em",
-                        font_weight="bold",
-                        _hover={"opacity": "0.8"},
                     ),
                 ),
                 spacing="1",
@@ -3321,7 +3307,7 @@ def tecnologia_item(tech: dict) -> rx.Component:
             rx.box(
                 rx.cond(
                     is_selected,
-                    rx.icon("check", size=20, color="white"),
+                    rx.icon("check", size=20, color="black"),
                     rx.fragment(),
                 ),
                 width="32px",
@@ -4251,20 +4237,25 @@ def user_portal() -> rx.Component:
             rx.hstack(
                 logo(),
                 rx.box(flex_grow="1"),
-                # Botón Backoffice (solo si tiene permiso training_create)
-                rx.cond(
-                    State.can_access_backoffice,
-                    crt_cross_portal_button(
-                        "Backoffice",
-                        State.go_to_backoffice,
-                        "amber",
+                rx.hstack(
+                    # Botón Backoffice (solo si tiene permiso training_create)
+                    rx.cond(
+                        State.can_access_backoffice,
+                        crt_cross_portal_button(
+                            "Backoffice",
+                            State.go_to_backoffice,
+                            "amber",
+                        ),
                     ),
-                ),
-                rx.button(
-                    "Desconectar",
-                    on_click=State.user_logout,
-                    class_name="crt-btn",
-                    font_size="1.1em",
+                    rx.button(
+                        "Desconectar",
+                        on_click=State.user_logout,
+                        class_name="crt-btn crt-btn-inline",
+                        font_size="1.1em",
+                    ),
+                    spacing="2",
+                    align_items="center",
+                    class_name="crt-header-actions",
                 ),
                 width="100%",
                 padding="1em",

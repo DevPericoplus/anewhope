@@ -87,6 +87,7 @@ FONT_SIZE_TITLE = "1.4em"
 FONT_SIZE_BODY = "0.95em"
 FONT_SIZE_SMALL = "0.85em"
 CONTENT_PADDING = "1.5em"
+TEXT_ON_ACCENT = "#000000"
 
 
 def get_crt_colors(variant: CrtVariant = "green") -> dict[str, str]:
@@ -232,9 +233,9 @@ def get_active_menu_style(variant: CrtVariant = "green") -> dict[str, str]:
     """Estilo inline para ítem de menú lateral activo."""
     colors = get_crt_colors(variant)
     return {
-        "background": colors["menu_active_bg"],
+        "background": colors["title"],
         "borderLeft": f"3px solid {colors['accent_strong']}",
-        "color": colors["title"],
+        "color": TEXT_ON_ACCENT,
         "padding": "0.45rem 0.55rem",
         "cursor": "pointer",
     }

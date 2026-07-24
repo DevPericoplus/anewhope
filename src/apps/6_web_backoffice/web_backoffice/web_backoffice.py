@@ -5930,8 +5930,7 @@ def login_panel() -> rx.Component:
             rx.button(
                 "Iniciar Sesión",
                 on_click=State.user_login,
-                class_name="crt-btn",
-                width="100%",
+                class_name="crt-btn crt-btn-block",
                 font_size="1.1em",
             ),
             rx.text(
@@ -5992,24 +5991,11 @@ def sidebar_menu(is_logged_in: bool) -> rx.Component:
                     lambda item: rx.box(
                         item.title(),
                         on_click=lambda _, i=item: State.set_user_menu(i),
-                        background_color=rx.cond(
+                        class_name=rx.cond(
                             (State.user_active_menu == item) & (State.internal_active_menu == ""),
-                            COLORS["primary"],
-                            "transparent"
+                            "crt-menu-item crt-menu-item--active",
+                            "crt-menu-item",
                         ),
-                        color=rx.cond(
-                            (State.user_active_menu == item) & (State.internal_active_menu == ""),
-                            "white",
-                            COLORS["foreground"]
-                        ),
-                        width="100%",
-                        padding="0.75em",
-                        border_radius="0.5em",
-                        cursor="pointer",
-                        text_align="left",
-                        font_size="1.1em",
-                        font_weight="bold",
-                        _hover={"opacity": "0.8"},
                     ),
                 ),
                 spacing="1",
@@ -6059,24 +6045,11 @@ def internal_menu(is_logged_in: bool) -> rx.Component:
                                     item.replace("_", " ").title(),
                                 ),
                                 on_click=lambda _, i=item: State.set_internal_menu(i),
-                                background_color=rx.cond(
+                                class_name=rx.cond(
                                     State.internal_active_menu == item,
-                                    COLORS["primary"],
-                                    "transparent"
+                                    "crt-menu-item crt-menu-item--active",
+                                    "crt-menu-item",
                                 ),
-                                color=rx.cond(
-                                    State.internal_active_menu == item,
-                                    "white",
-                                    COLORS["foreground"]
-                                ),
-                                width="100%",
-                                padding="0.75em",
-                                border_radius="0.5em",
-                                cursor="pointer",
-                                text_align="left",
-                                font_size="1.1em",
-                                font_weight="bold",
-                                _hover={"opacity": "0.8"},
                             ),
                             rx.fragment(),  # No mostrar nada si no es super admin
                         ),
@@ -6088,24 +6061,11 @@ def internal_menu(is_logged_in: bool) -> rx.Component:
                                 item.replace("_", " ").title(),
                             ),
                             on_click=lambda _, i=item: State.set_internal_menu(i),
-                            background_color=rx.cond(
+                            class_name=rx.cond(
                                 State.internal_active_menu == item,
-                                COLORS["primary"],
-                                "transparent"
+                                "crt-menu-item crt-menu-item--active",
+                                "crt-menu-item",
                             ),
-                            color=rx.cond(
-                                State.internal_active_menu == item,
-                                "white",
-                                COLORS["foreground"]
-                            ),
-                            width="100%",
-                            padding="0.75em",
-                            border_radius="0.5em",
-                            cursor="pointer",
-                            text_align="left",
-                            font_size="1.1em",
-                            font_weight="bold",
-                            _hover={"opacity": "0.8"},
                         ),
                     ),
                 ),
@@ -7322,7 +7282,7 @@ def tecnologia_item(tech: dict) -> rx.Component:
             rx.box(
                 rx.cond(
                     is_selected,
-                    rx.icon("check", size=20, color="white"),
+                    rx.icon("check", size=20, color="black"),
                     rx.fragment(),
                 ),
                 width="32px",
@@ -7694,7 +7654,8 @@ def asistente_panel() -> rx.Component:
                 disabled=State.asistente_is_loading,
                 size="3",
                 background_color=COLORS["primary"],
-                color="white",
+                color="black",
+                font_weight="bold",
                 width="100%",
                 _hover={"opacity": "0.9"},
             ),
@@ -10889,7 +10850,7 @@ def _org_assignments_tab() -> rx.Component:
                         variant="outline",
                         size="2",
                         font_weight="bold",
-                        color="white",  # Cambiado a blanco para más contraste
+                        color=COLORS["foreground"],
                     ),
                     spacing="2",
                     margin_top="1em",
@@ -10974,8 +10935,7 @@ def _org_assignments_tab() -> rx.Component:
                                                 on_click=State.toggle_org_assignment(assignment["id"]),
                                                 size="1",
                                                 variant="soft",
-                                                color="white",  # Cambiado a blanco para más contraste
-                                                font_weight="bold",
+                                                style={"font_weight": "bold", "color": "black"},
                                             ),
                                             rx.button(
                                                 "Eliminar",
@@ -10983,8 +10943,7 @@ def _org_assignments_tab() -> rx.Component:
                                                 color_scheme="red",
                                                 size="1",
                                                 variant="soft",
-                                                color="white",  # Cambiado a blanco para más contraste
-                                                font_weight="bold",
+                                                style={"font_weight": "bold", "color": "black"},
                                             ),
                                             spacing="1",
                                         ),
@@ -11164,8 +11123,8 @@ def _project_assignments_tab() -> rx.Component:
                         on_click=State.load_project_assignments,
                         variant="outline",
                         size="2",
-                        font_weight="bold",  # Agregado negrita
-                        color="white",  # Agregado color blanco
+                        font_weight="bold",
+                        color=COLORS["foreground"],
                     ),
                     spacing="2",
                     margin_top="1em",
@@ -11251,8 +11210,7 @@ def _project_assignments_tab() -> rx.Component:
                                                 on_click=State.toggle_project_assignment(assignment["id"]),
                                                 size="1",
                                                 variant="soft",
-                                                color="white",  # Agregado color blanco
-                                                font_weight="bold",  # Agregado negrita
+                                                style={"font_weight": "bold", "color": "black"},
                                             ),
                                             rx.button(
                                                 "Eliminar",
@@ -11260,8 +11218,7 @@ def _project_assignments_tab() -> rx.Component:
                                                 color_scheme="red",
                                                 size="1",
                                                 variant="soft",
-                                                color="white",  # Agregado color blanco
-                                                font_weight="bold",  # Agregado negrita
+                                                style={"font_weight": "bold", "color": "black"},
                                             ),
                                             spacing="1",
                                         ),
@@ -12010,17 +11967,22 @@ def user_portal() -> rx.Component:
             rx.hstack(
                 logo(),
                 rx.box(flex_grow="1"),
-                # Botón Volver al Frontend
-                crt_cross_portal_button(
-                    "Volver al Frontend",
-                    State.go_to_frontend,
-                    "green",
-                ),
-                rx.button(
-                    "Desconectar",
-                    on_click=State.user_logout,
-                    class_name="crt-btn",
-                    font_size="1.1em",
+                rx.hstack(
+                    # Botón Volver al Frontend
+                    crt_cross_portal_button(
+                        "Volver al Frontend",
+                        State.go_to_frontend,
+                        "green",
+                    ),
+                    rx.button(
+                        "Desconectar",
+                        on_click=State.user_logout,
+                        class_name="crt-btn crt-btn-inline",
+                        font_size="1.1em",
+                    ),
+                    spacing="2",
+                    align_items="center",
+                    class_name="crt-header-actions",
                 ),
                 width="100%",
                 padding="1em",

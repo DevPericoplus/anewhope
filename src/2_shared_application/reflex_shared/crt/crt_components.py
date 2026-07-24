@@ -30,6 +30,7 @@ def _load_crt_theme():
 _crt_theme = _load_crt_theme()
 CrtVariant = _crt_theme.CrtVariant
 FONT_FAMILY = _crt_theme.FONT_FAMILY
+TEXT_ON_ACCENT = _crt_theme.TEXT_ON_ACCENT
 get_crt_colors = _crt_theme.get_crt_colors
 get_select_style = _crt_theme.get_select_style
 get_markdown_component_map = _crt_theme.get_markdown_component_map
@@ -79,6 +80,8 @@ def crt_button(
     classes = ["crt-btn"]
     if variant == "inline":
         classes.append("crt-btn-inline")
+    elif variant == "block":
+        classes.append("crt-btn-block")
     elif variant == "danger":
         classes.append("crt-btn-danger")
     elif variant == "link":
