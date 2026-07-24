@@ -39,7 +39,7 @@ Tienes derecho a:
 ### Contacto
 
 Para ejercer tus derechos o consultas sobre privacidad:
-**privacidad@myllm.ai**
+**privacidad@getmylllm.com**
 
 ---
 

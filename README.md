@@ -10921,7 +10921,7 @@ Variables sensibles para SMS API:
 ```python
 sms_api_key = "d93dd9d323662d761b21dddb626b9f2d-cf9b562a-6590-419b-8318-8ab3de06611b"
 sms_api_url = "https://pdy6d3.api.infobip.com"
-sms_sender_id = "myllm.ia"
+sms_sender_id = "getmylllm.com"
 ```
 
 ##### Carga de variables en el backoffice

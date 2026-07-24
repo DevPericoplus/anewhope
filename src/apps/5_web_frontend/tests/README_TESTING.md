@@ -132,7 +132,7 @@ Si el test **pasa** pero los SMS **no llegan** en la aplicación real:
 
 **Solución**: Verificar en el portal de Infobip:
 - Saldo de créditos SMS
-- Estado del Sender ID "myllm.ia" (debe estar aprobado)
+- Estado del Sender ID "getmylllm.com" (debe estar aprobado)
 - Número de destino verificado (si es cuenta trial)
 - Logs de entrega de mensajes
 

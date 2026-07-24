@@ -14,7 +14,7 @@ Estamos aquí para ayudarte con cualquier duda o incidencia.
 
 ### Contacto
 
-- **Email**: soporte@myllm.ai
+- **Email**: soporte@getmylllm.com
 - **Teléfono**: +34 900 123 456 (Plan Enterprise)
 
 ### Recursos de Autoayuda

@@ -39,7 +39,7 @@ Requerido para el cumplimiento de GDPR:
 
 Para obtener copias de los contratos o negociar condiciones especiales:
 
-**contratos@myllm.ai**
+**contratos@getmylllm.com**
 
 ---
 

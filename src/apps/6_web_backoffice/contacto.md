@@ -36,7 +36,7 @@ Para toda mejora, sugerencia o corrección tiene a su disposición:
 
 ### 📧 Email de Contacto
 
-> **contacto@myllm.ia**
+> **contacto@getmylllm.com**
 
 ---
 

@@ -14,7 +14,7 @@
 global_shared_key_raw = "CHANGE_ME_shared_key_min_32_chars_production"
 sms_api_key = "CHANGE_ME_infobip_api_key"
 sms_api_url = "https://CHANGE_ME.api.infobip.com"
-sms_sender_id = "myllm.ia"
+sms_sender_id = "getmylllm.com"
 
 # JWT (middleware) - USAR CLAVES FUERTES Y ÚNICAS EN PRODUCCIÓN
 jwt_access_secret_key = "CHANGE_ME_jwt_access_secret_min_32_chars_production"

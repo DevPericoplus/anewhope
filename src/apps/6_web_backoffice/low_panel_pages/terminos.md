@@ -43,4 +43,4 @@ Nos reservamos el derecho de modificar estos términos con previo aviso.
 
 ---
 
-*Para consultas legales: legal@myllm.ai*
+*Para consultas legales: legal@getmylllm.com*
