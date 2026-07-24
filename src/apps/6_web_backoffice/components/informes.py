@@ -25,16 +25,7 @@ _org_helpers_module = importlib.util.module_from_spec(_org_helpers_spec)
 _org_helpers_spec.loader.exec_module(_org_helpers_module)
 load_organizations_for_selector = _org_helpers_module.load_organizations_for_selector
 
-# Colores del tema
-COLORS = {
-    "primary": "#FF8C00",
-    "background": "#1A1A1A",
-    "foreground": "#FFFFFF",
-    "card": "#2A2A2A",
-    "border": "#3A3A3A",
-    "input": "#3a3a3a",
-    "muted_foreground": "#A0A0A0",
-}
+from portal_crt import COLORS, SELECT_STYLE
 
 
 def _load_cambios_adapter():

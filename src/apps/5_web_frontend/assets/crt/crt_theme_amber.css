@@ -1,0 +1,35 @@
+/* Variables tema ámbar fósforo (Backoffice) */
+.crt-theme-amber,
+body.crt-theme-amber {
+  --crt-bg: black;
+  --crt-radial: rgba(180, 90, 0, 0.65);
+  --crt-text: #ffe8c8;
+  --crt-text-glow: rgba(255, 200, 120, 0.55);
+  --crt-title: #ffb000;
+  --crt-accent: #ffc966;
+  --crt-accent-strong: #ff8c00;
+  --crt-btn-text: #ffd59a;
+  --crt-muted: rgba(255, 220, 180, 0.65);
+  --crt-panel-bg: rgba(40, 18, 0, 0.55);
+  --crt-border: rgba(255, 140, 0, 0.35);
+  --crt-border-strong: rgba(255, 120, 0, 0.45);
+  --crt-input-bg: rgba(50, 25, 0, 0.8);
+  --crt-btn-bg: rgba(60, 30, 0, 0.65);
+  --crt-btn-hover: rgba(90, 45, 0, 0.75);
+  --crt-btn-hover-glow: rgba(255, 140, 0, 0.35);
+  --crt-panel-glow: rgba(255, 120, 0, 0.25);
+  --crt-success: #ffc966;
+  --crt-success-glow: rgba(255, 180, 80, 0.45);
+  --crt-error: #ff8a8a;
+  --crt-error-glow: rgba(255, 100, 100, 0.6);
+  --crt-danger-border: rgba(255, 80, 80, 0.55);
+  --crt-danger-text: #ffbdbd;
+  --crt-selection: #cc6600;
+  --crt-chart-stroke: #ffb000;
+  --crt-table-head: #ffd59a;
+  --crt-table-cell: #ffe8c8;
+  --crt-link-hover-bg: rgba(120, 60, 0, 0.45);
+  --crt-scanline: rgba(0, 0, 0, 0.15);
+  --crt-presentacion-inset: rgba(255, 140, 0, 0.06);
+  --crt-presentacion-outer: rgba(255, 120, 0, 0.12);
+}

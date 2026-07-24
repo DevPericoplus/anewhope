@@ -47,6 +47,14 @@ from branding import (
     LOGO_OFFICIAL_PATH,
     MSG_COPYRIGHT,
 )
+from portal_crt import (
+    COLORS,
+    CRT_SHELL_CLASS,
+    CRT_STYLESHEETS,
+    MARKDOWN_COMPONENT_MAP,
+    crt_app_style,
+    crt_cross_portal_button,
+)
 from low_panel_pages.show_md import show_md  # noqa: F401 - Importado para registrar la ruta
 from web_frontend.shared_state import SharedSessionState
 from components.explorador import explorador_panel, ExploradorState
@@ -134,18 +142,6 @@ if not std_logging.getLogger().handlers:
     activity_handler.setLevel(std_logging.INFO)
     activity_handler.setFormatter(console_formatter)
     root_logger.addHandler(activity_handler)
-
-COLORS = {
-    "background": "#1a1a1a",
-    "card": "#2d2d2d",
-    "foreground": "#f2f2f5",
-    "primary": "#22c55e",
-    "secondary": "#383854",
-    "border": "#404040",
-    "input": "#3a3a3a",
-    "muted_foreground": "#E0E0E0",
-    "accent": "#22c55e",
-}
 
 # Define the State class for managing application state
 class State(SharedSessionState):
@@ -2052,12 +2048,31 @@ def load_menu_content(filename: str, fallback_text: str) -> str:
 
 
 def logo() -> rx.Component:
-    """Logo de cabecera (GET + mylllm)."""
+    """Logo oficial GETmylllm en cabecera CRT."""
     return rx.hstack(
-        rx.text("GET", font_weight="bold", font_size="1.8em", color=COLORS["primary"]),
-        rx.text("mylllm", font_size="1.8em", color=COLORS["foreground"]),
-        spacing="0",
-        align_items="baseline",
+        rx.image(
+            src=LOGO_OFFICIAL_PATH,
+            alt=APP_BRAND_NAME,
+            height="2.4em",
+            width="auto",
+        ),
+        rx.vstack(
+            rx.hstack(
+                rx.text("GET", font_weight="bold", font_size="1.5em", class_name="crt-title"),
+                rx.text("mylllm", font_size="1.5em", color=COLORS["foreground"]),
+                spacing="0",
+                align_items="baseline",
+            ),
+            rx.text(
+                "www.getmylllm.com",
+                font_size="0.85em",
+                class_name="crt-muted",
+            ),
+            spacing="0",
+            align_items="flex-start",
+        ),
+        spacing="3",
+        align_items="center",
     )
 
 
@@ -2067,13 +2082,18 @@ def login_panel() -> rx.Component:
     label_width = "100px"
     
     return rx.vstack(
-            rx.text("Acceso de Usuario", font_size="1.3em", font_weight="bold", color=COLORS["foreground"]),
+            rx.text(
+                "Acceso de Usuario",
+                font_size="1.3em",
+                font_weight="bold",
+                class_name="crt-title",
+            ),
             rx.vstack(
                 rx.hstack(
                     rx.text(
                         "Usuario",
                         font_size="1.1em",
-                        color=COLORS["muted_foreground"],
+                        class_name="crt-label",
                         min_width=label_width,
                         text_align="left",
                     ),
@@ -2081,12 +2101,9 @@ def login_panel() -> rx.Component:
                         placeholder="Ingrese su usuario",
                         on_change=State.set_user_username,
                         value=State.user_username,
-                        background_color=COLORS["input"],
-                        border_color=COLORS["border"],
-                        color=COLORS["foreground"],
+                        class_name="crt-input",
                         font_size="1.05em",
                         flex="1",
-                        border_radius="5px",
                     ),
                     width="100%",
                     align_items="center",
@@ -2096,7 +2113,7 @@ def login_panel() -> rx.Component:
                     rx.text(
                         "Contraseña",
                         font_size="1.1em",
-                        color=COLORS["muted_foreground"],
+                        class_name="crt-label",
                         min_width=label_width,
                         text_align="left",
                     ),
@@ -2105,12 +2122,9 @@ def login_panel() -> rx.Component:
                         type_="password",
                         on_change=State.set_user_password,
                         value=State.user_password,
-                        background_color=COLORS["input"],
-                        border_color=COLORS["border"],
-                        color=COLORS["foreground"],
+                        class_name="crt-input",
                         font_size="1.05em",
                         flex="1",
-                        border_radius="5px",
                     ),
                     width="100%",
                     align_items="center",
@@ -2124,13 +2138,14 @@ def login_panel() -> rx.Component:
                     text_align="left",
                     font_size="1.1em",
                     cursor="pointer",
+                    class_name="crt-btn-link",
                     _hover={"text_decoration": "underline"},
                 ),
                 rx.hstack(
                     rx.text(
                         "OTP",
                         font_size="1.1em",
-                        color=COLORS["muted_foreground"],
+                        class_name="crt-label",
                         min_width=label_width,
                         text_align="left",
                     ),
@@ -2138,12 +2153,9 @@ def login_panel() -> rx.Component:
                         placeholder="Ingrese su OTP",
                         on_change=State.set_user_otp,
                         value=State.user_otp,
-                        background_color=COLORS["input"],
-                        border_color=COLORS["border"],
-                        color=COLORS["foreground"],
+                        class_name="crt-input",
                         font_size="1.05em",
                         flex="1",
-                        border_radius="5px",
                     ),
                     width="100%",
                     align_items="center",
@@ -2151,19 +2163,12 @@ def login_panel() -> rx.Component:
                 ),
                 spacing="3",
             ),
-            rx.box(
+            rx.button(
                 "Iniciar Sesión",
                 on_click=State.user_login,
-                background_color=COLORS["primary"],
-                color="black",
+                class_name="crt-btn",
                 width="100%",
-                font_weight="bold",
                 font_size="1.1em",
-                padding="0.6em",
-                border_radius="0.5em",
-                text_align="center",
-                cursor="pointer",
-                _hover={"opacity": "0.9"},
             ),
             rx.text(
                 State.login_error,
@@ -2189,9 +2194,7 @@ def login_panel() -> rx.Component:
             ),
             spacing="2",
             padding="1.5em",
-            background_color=COLORS["card"],
-            border=f"1px solid {COLORS['border']}",
-            border_radius="0.5em",
+            class_name="crt-panel",
             width="100%",
         )
 
@@ -3753,7 +3756,7 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
         # No mostrar heading para informes (lo incluye el propio componente)
         rx.cond(
             active_item != "informes",
-            rx.heading(heading_text, size="8", color=COLORS["accent"], margin_bottom="0.5em"),
+            rx.heading(heading_text, size="8", class_name="crt-title", margin_bottom="0.5em"),
             rx.box(height="0"),
         ),
         rx.cond(
@@ -3780,36 +3783,7 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             rx.cond(content_text != "", active_item != "proyecciones", False),
             rx.markdown(
                 content_text,
-                component_map={
-                    "h1": lambda text: rx.heading(text, size="7", color=COLORS["primary"], margin_bottom="0.5em"),
-                    "h2": lambda text: rx.heading(text, size="6", color=COLORS["primary"], margin_top="1em", margin_bottom="0.5em"),
-                    "h3": lambda text: rx.heading(text, size="5", color=COLORS["primary"], margin_top="0.8em", margin_bottom="0.4em"),
-                    "p": lambda text: rx.text(text, color=COLORS["muted_foreground"], font_size="1.3em", line_height="1.6", margin_bottom="0.6em"),
-                    "li": lambda text: rx.list_item(rx.text(text, color=COLORS["muted_foreground"], font_size="1.3em", line_height="1.5")),
-                    "strong": lambda text: rx.text(text, font_weight="bold", color=COLORS["foreground"], as_="span"),
-                    "em": lambda text: rx.text(text, font_style="italic", as_="span"),
-                    "blockquote": lambda text: rx.box(
-                        rx.text(text, color=COLORS["primary"], font_style="italic", font_size="1.35em"),
-                        border_left=f"4px solid {COLORS['primary']}",
-                        padding_left="1.2em",
-                        margin_y="1.2em",
-                        background_color=f"{COLORS['primary']}10",
-                        padding="1em",
-                        border_radius="0.3em",
-                    ),
-                    "table": lambda children: rx.box(
-                        children,
-                        width="100%",
-                        overflow_x="auto",
-                        margin_y="1.2em",
-                    ),
-                    "th": lambda text: rx.table.column_header_cell(
-                        rx.text(text, font_weight="bold", color=COLORS["foreground"], font_size="1.25em"),
-                    ),
-                    "td": lambda text: rx.table.cell(
-                        rx.text(text, color=COLORS["muted_foreground"], font_size="1.2em"),
-                    ),
-                },
+                component_map=MARKDOWN_COMPONENT_MAP,
             ),
             rx.box(height="0"),
         ),
@@ -4261,6 +4235,7 @@ def footer() -> rx.Component:
         border_top=f"1px solid {COLORS['border']}",
         width="100%",
         spacing="0",
+        class_name="crt-panel",
     )
 
 
@@ -4275,22 +4250,16 @@ def user_portal() -> rx.Component:
                 # Botón Backoffice (solo si tiene permiso training_create)
                 rx.cond(
                     State.can_access_backoffice,
-                    rx.button(
+                    crt_cross_portal_button(
                         "Backoffice",
-                        on_click=State.go_to_backoffice,
-                        background_color="#FF8C00",  # Naranja
-                        color="black",
-                        font_weight="bold",
-                        font_size="1.1em",
-                        _hover={"background_color": "#FF7000"},
+                        State.go_to_backoffice,
+                        "amber",
                     ),
                 ),
                 rx.button(
                     "Desconectar",
                     on_click=State.user_logout,
-                    background_color=COLORS["primary"],
-                    color="black",
-                    font_weight="bold",
+                    class_name="crt-btn",
                     font_size="1.1em",
                 ),
                 width="100%",
@@ -4330,6 +4299,7 @@ def user_portal() -> rx.Component:
             width="100%",
             min_height="100vh",
             spacing="0",
+            class_name=CRT_SHELL_CLASS,
         ),
         rx.vstack(
             rx.hstack(
@@ -4378,19 +4348,19 @@ def user_portal() -> rx.Component:
             width="100%",
             min_height="100vh",
             spacing="0",
+            class_name=CRT_SHELL_CLASS,
         ),
     )
 
 
 # Crear la aplicación
 app = rx.App(
+    stylesheets=CRT_STYLESHEETS,
     theme=rx.theme(
         appearance="dark",
         accent_color="green",
     ),
-    style={
-        "font_family": "Inter, system-ui, sans-serif",
-    },
+    style=crt_app_style(),
 )
 
 # User portal route

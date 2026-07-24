@@ -6,15 +6,7 @@ import reflex as rx
 
 from branding import APP_BRAND_NAME, MSG_COPYRIGHT
 
-# Colores del tema (consistentes con la aplicación principal)
-COLORS = {
-    "background": "#1a1a2e",
-    "foreground": "#eaeaea",
-    "card": "#2d2d2d",
-    "primary": "#4ade80",  # Verde para frontend
-    "muted_foreground": "#a0a0a0",
-    "border": "#404040",
-}
+from portal_crt import COLORS, MARKDOWN_COMPONENT_MAP, SELECT_STYLE
 
 
 def load_markdown_content(filename: str) -> str:

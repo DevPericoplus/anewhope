@@ -25,17 +25,10 @@ from adapters.api_client import (
 
 
 # ============================================================================
-# COLORS
+# COLORS (tema CRT compartido)
 # ============================================================================
 
-COLORS = {
-    "background": "#0B1120",
-    "card": "#141b2d",
-    "border": "#1e2744",
-    "primary": "#22c55e",  # Verde del tema frontend
-    "foreground": "#ffffff",
-    "muted_foreground": "#94a3b8",
-}
+from portal_crt import COLORS, SELECT_STYLE
 
 
 # ============================================================================

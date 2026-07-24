@@ -116,18 +116,7 @@ def _log_security_action(action: str, entity_id: Optional[int], ip: str, user_ag
 # OTP bypass temporal - vaciar set para reactivar OTP para todos
 OTP_EXEMPT_USERS: set[str] = {"brais"}
 
-# Importar los colores de la página principal
-COLORS = {
-    "background": "#1a1a1a",
-    "card": "#6B6B6B",
-    "foreground": "#f2f2f5",
-    "primary": "#22c55e",
-    "secondary": "#383854",
-    "border": "#000000",
-    "input": "#383854",
-    "muted_foreground": "#E0E0E0",
-    "accent": "#22c55e",
-}
+from portal_crt import COLORS, CRT_SHELL_CLASS, SELECT_STYLE
 
 
 class ChangePasswordState(rx.State):

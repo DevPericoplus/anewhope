@@ -7,12 +7,7 @@ import reflex as rx
 from laim_web.components.markdown_viewer import crt_markdown_viewer
 from laim_web.laim_state import LaimWebState
 
-COLORS = {
-    "border": "rgba(0, 200, 0, 0.35)",
-    "muted": "rgba(200, 255, 200, 0.65)",
-    "title": "#9dff9d",
-}
-
+from laim_web.components.crt_theme import COLORS
 
 def presentation_hero_viewer() -> rx.Component:
     """Visor superior con la imagen de diálogo humano–IA."""

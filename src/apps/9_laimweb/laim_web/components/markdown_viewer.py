@@ -4,16 +4,7 @@ from __future__ import annotations
 
 import reflex as rx
 
-COLORS = {
-    "text": "#e8ffe8",
-    "title": "#9dff9d",
-    "muted": "rgba(200, 255, 200, 0.65)",
-    "accent": "#7dff7d",
-    "border": "rgba(0, 200, 0, 0.35)",
-    "code_bg": "rgba(0, 40, 0, 0.65)",
-}
-
-CONTENT_PADDING = "1.5em"
+from laim_web.components.crt_theme import COLORS, CONTENT_PADDING
 
 CRT_MARKDOWN_COMPONENT_MAP = {
     "h1": lambda text: rx.heading(

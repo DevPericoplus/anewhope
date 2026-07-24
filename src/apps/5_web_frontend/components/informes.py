@@ -11,17 +11,7 @@ from adapters.api_client import (
     get_informe_content,
 )
 
-# Colores del tema
-COLORS = {
-    "primary": "#FF8C00",
-    "accent": "#22c55e",  # Verde para frontend
-    "background": "#1A1A1A",
-    "foreground": "#FFFFFF",
-    "card": "#2A2A2A",
-    "border": "#3A3A3A",
-    "input": "#3a3a3a",
-    "muted_foreground": "#A0A0A0",
-}
+from portal_crt import COLORS, SELECT_STYLE
 
 
 class InformesState(rx.State):

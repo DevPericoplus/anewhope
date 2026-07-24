@@ -1,0 +1,36 @@
+/* Variables tema verde fósforo (LAIM + Frontend) */
+:root,
+.crt-theme-green,
+body.crt-theme-green {
+  --crt-bg: black;
+  --crt-radial: rgba(0, 150, 0, 0.75);
+  --crt-text: #e8ffe8;
+  --crt-text-glow: #c8c8c8;
+  --crt-title: #9dff9d;
+  --crt-accent: #7dff7d;
+  --crt-accent-strong: #00b400;
+  --crt-btn-text: #d6ffd6;
+  --crt-muted: rgba(200, 255, 200, 0.65);
+  --crt-panel-bg: rgba(0, 20, 0, 0.55);
+  --crt-border: rgba(0, 200, 0, 0.35);
+  --crt-border-strong: rgba(0, 180, 0, 0.45);
+  --crt-input-bg: rgba(0, 30, 0, 0.8);
+  --crt-btn-bg: rgba(0, 40, 0, 0.65);
+  --crt-btn-hover: rgba(0, 80, 0, 0.75);
+  --crt-btn-hover-glow: rgba(0, 200, 0, 0.35);
+  --crt-panel-glow: rgba(0, 180, 0, 0.25);
+  --crt-success: #9dff9d;
+  --crt-success-glow: rgba(120, 255, 120, 0.45);
+  --crt-error: #ff8a8a;
+  --crt-error-glow: rgba(255, 100, 100, 0.6);
+  --crt-danger-border: rgba(255, 80, 80, 0.55);
+  --crt-danger-text: #ffbdbd;
+  --crt-selection: #0080ff;
+  --crt-chart-stroke: #5cff5c;
+  --crt-table-head: #b8ffb8;
+  --crt-table-cell: #e2ffe2;
+  --crt-link-hover-bg: rgba(0, 60, 0, 0.45);
+  --crt-scanline: rgba(0, 0, 0, 0.15);
+  --crt-presentacion-inset: rgba(0, 255, 0, 0.06);
+  --crt-presentacion-outer: rgba(0, 180, 0, 0.12);
+}

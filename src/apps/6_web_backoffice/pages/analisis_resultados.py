@@ -67,17 +67,11 @@ def _build_pat_version(id_org: int, id_proj: int, id_ver: int) -> str:
     ver_folder = helpers.get_folder_by_id_version(id_ver)
     return f"{base_storage}/{org_folder}/{prj_folder}/{ver_folder}"
 
-# Colores del tema (alineados con backoffice naranja)
+from portal_crt import COLORS, SELECT_STYLE
+
 COLORS = {
-    "background": "#0A0A0A",
-    "card": "#1A1A1A",
-    "border": "#2A2A2A",
-    "foreground": "#FFFFFF",
-    "muted_foreground": "#A0A0A0",
-    "primary": "#3B82F6",
-    "success": "#10B981",
-    "warning": "#F59E0B",
-    "error": "#EF4444",
+    **COLORS,
+    "warning": "#ffc966",
 }
 
 

@@ -45,21 +45,13 @@ try:
 except Exception as e:
     logger.error(f"Error al cargar módulo de SMS: {e}")
 
-# Colores del tema (textos oscuros para contraste en paneles gris claro)
+from portal_crt import COLORS, CRT_SHELL_CLASS, MARKDOWN_COMPONENT_MAP, SELECT_STYLE
+
 COLORS = {
-    "background": "#1a1a1a",
-    "card": "#6B6B6B",
-    "foreground": "#15803d",       # Verde oscuro - headings y labels
-    "text": "#2d3748",             # Gris oscuro - texto principal
-    "primary": "#22c55e",
-    "secondary": "#383854",
-    "border": "#000000",
-    "input": "#383854",
-    "muted_foreground": "#4a5568", # Gris medio - textos secundarios
-    "accent": "#15803d",           # Verde oscuro - acentos
-    "success": "#15803d",
-    "error": "#ef4444",
-    "warning": "#f59e0b",
+    **COLORS,
+    "text": COLORS["foreground"],
+    "heading": COLORS["primary"],
+    "warning": "#ffc966",
 }
 
 

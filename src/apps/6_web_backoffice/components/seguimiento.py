@@ -48,15 +48,7 @@ load_organizations_for_selector = _org_helpers_module.load_organizations_for_sel
 # COLORS
 # ============================================================================
 
-COLORS = {
-    "background": "#0B1120",
-    "card": "#141b2d",
-    "border": "#1e2744",
-    "input": "#3a3a3a",
-    "primary": "#FF8C00",  # Naranja del tema backoffice
-    "foreground": "#ffffff",
-    "muted_foreground": "#94a3b8",
-}
+from portal_crt import COLORS, SELECT_STYLE
 
 
 # ============================================================================

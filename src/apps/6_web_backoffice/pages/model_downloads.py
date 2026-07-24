@@ -46,22 +46,13 @@ try:
 except Exception as e:
     logger.error(f"Error al cargar módulo de SMS: {e}")
 
-# Colores del tema backoffice (fondo oscuro)
+from portal_crt import COLORS, CRT_SHELL_CLASS, SELECT_STYLE
+
 COLORS = {
-    "background": "#1a1a1a",
-    "card": "#6B6B6B",
-    "foreground": "#f2f2f5",
-    "primary": "#FF8C00",
-    "text": "#f2f2f5",
-    "secondary": "#383854",
-    "border": "#555",
-    "input": "#3a3a3a",
-    "muted_foreground": "#E0E0E0",
-    "accent": "#FF8C00",
-    "success": "#22c55e",
-    "error": "#ef4444",
-    "warning": "#f59e0b",
-    "heading": "#c2410c",
+    **COLORS,
+    "text": COLORS["foreground"],
+    "heading": COLORS["primary"],
+    "warning": "#ffc966",
 }
 
 

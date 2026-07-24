@@ -1,39 +1,30 @@
-"""Paleta y constantes visuales CRT compartidas en LAIM Web."""
+"""Paleta y constantes visuales CRT — reexportación desde capa compartida."""
 
 from __future__ import annotations
 
-COLORS = {
-    "bg": "black",
-    "panel_bg": "rgba(0, 20, 0, 0.55)",
-    "border": "rgba(0, 200, 0, 0.35)",
-    "text": "#e8ffe8",
-    "title": "#9dff9d",
-    "muted": "rgba(200, 255, 200, 0.65)",
-    "accent": "#00b400",
-    "input_bg": "rgba(0, 30, 0, 0.8)",
-    "btn_bg": "rgba(0, 40, 0, 0.65)",
-    "btn_hover": "rgba(0, 80, 0, 0.75)",
-    "danger": "rgba(255, 80, 80, 0.55)",
-}
+import importlib.util
+from pathlib import Path
 
-FONT_SIZE_TITLE = "1.4em"
-FONT_SIZE_BODY = "0.95em"
-FONT_SIZE_SMALL = "0.85em"
-CONTENT_PADDING = "1.5em"
+_shared_crt = (
+    Path(__file__).resolve().parents[4]
+    / "2_shared_application"
+    / "reflex_shared"
+    / "crt"
+    / "crt_theme.py"
+)
+_spec = importlib.util.spec_from_file_location("shared_crt_theme", _shared_crt)
+if _spec is None or _spec.loader is None:
+    raise ImportError(f"No se pudo cargar CRT theme compartido: {_shared_crt}")
+_module = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_module)
 
-# Estilo estándar para selectores en tema oscuro CRT
-SELECT_STYLE = {
-    "backgroundColor": COLORS["input_bg"],
-    "color": COLORS["text"],
-    "borderColor": COLORS["border"],
-}
-
-FORUM_PROFILE_PANEL_STYLE = {
-    "width": "100%",
-    "maxWidth": "100%",
-    "gap": "1rem",
-}
-
+COLORS = _module.get_crt_colors("green")
+FONT_SIZE_TITLE = _module.FONT_SIZE_TITLE
+FONT_SIZE_BODY = _module.FONT_SIZE_BODY
+FONT_SIZE_SMALL = _module.FONT_SIZE_SMALL
+CONTENT_PADDING = _module.CONTENT_PADDING
+SELECT_STYLE = _module.get_select_style("green")
+FORUM_PROFILE_PANEL_STYLE = _module.get_portal_colors("green")
 FORUM_PROFILE_AVATAR_GRID_STYLE = {
     "display": "flex",
     "flexWrap": "wrap",
@@ -44,7 +35,6 @@ FORUM_PROFILE_AVATAR_GRID_STYLE = {
     "marginBottom": "2rem",
     "minHeight": "9.5rem",
 }
-
 FORUM_PROFILE_AVATAR_TILE_STYLE = {
     "display": "flex",
     "flexDirection": "column",
@@ -60,7 +50,6 @@ FORUM_PROFILE_AVATAR_TILE_STYLE = {
     "background": COLORS["panel_bg"],
     "cursor": "pointer",
 }
-
 FORUM_PROFILE_AVATAR_SECTION_STYLE = {
     "display": "block",
     "width": "100%",
@@ -69,7 +58,6 @@ FORUM_PROFILE_AVATAR_SECTION_STYLE = {
     "position": "relative",
     "zIndex": "1",
 }
-
 FORUM_PROFILE_UPLOAD_SECTION_STYLE = {
     "display": "block",
     "width": "100%",
@@ -80,7 +68,6 @@ FORUM_PROFILE_UPLOAD_SECTION_STYLE = {
     "position": "relative",
     "zIndex": "2",
 }
-
 FORUM_PROFILE_UPLOAD_ROW_STYLE = {
     "display": "flex",
     "flexWrap": "wrap",
@@ -88,7 +75,6 @@ FORUM_PROFILE_UPLOAD_ROW_STYLE = {
     "gap": "0.75rem",
     "width": "100%",
 }
-
 FORUM_PROFILE_UPLOAD_BTN_STYLE = {
     "flex": "0 0 auto",
     "width": "auto",

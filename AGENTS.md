@@ -10750,3 +10750,126 @@ pip install -r src/apps/9_laimweb/requirements.txt
 
 ---
 
+## 35. Sistema Visual CRT Retro-Moderno (OBLIGATORIO en portales Reflex)
+
+**DESCRIPCIÓN:** Los tres portales web (`5_web_frontend`, `6_web_backoffice`, `9_laimweb`) comparten
+una gramática visual CRT (scanlines, glow fósforo, Inconsolata, paneles translúcidos) con paletas
+diferenciadas por aplicación.
+
+### 35.1. Paletas por portal
+
+| Portal | Variante CRT | Color identidad | Clase shell |
+|--------|--------------|-----------------|-------------|
+| **Frontend** (8005) | `green` | Verde fósforo `#9dff9d` | `crt-shell crt-theme-green` |
+| **LAIM Web** (8009) | `green` | Verde fósforo (misma referencia) | `crt-shell crt-theme-green` |
+| **Backoffice** (8006) | `amber` | Ámbar/naranja fósforo `#ffb000` | `crt-shell crt-theme-amber` |
+
+**Branding Frontend:** nombre **GETmylllm**, dominio público **www.getmylllm.com** (tres «l»).
+Logo: `src/apps/5_web_frontend/assets/logo_getmylllm_official.png`.
+
+### 35.2. Módulo compartido (fuente de verdad)
+
+```
+src/2_shared_application/reflex_shared/crt/
+├── crt_base.css           # Scanlines, shell, tipografía, componentes base
+├── crt_theme_green.css    # Variables CSS verde
+├── crt_theme_amber.css    # Variables CSS ámbar
+├── crt_theme.py           # Paletas, get_portal_colors(), MARKDOWN maps
+└── crt_components.py      # Helpers Reflex (crt_button, crt_input, …)
+```
+
+**Wrappers por app** (import vía `importlib`, carpetas numeradas):
+
+| App | Wrapper | Variante |
+|-----|---------|----------|
+| Frontend | `src/apps/5_web_frontend/portal_crt.py` | `green` |
+| Backoffice | `src/apps/6_web_backoffice/portal_crt.py` | `amber` |
+| LAIM | `src/apps/9_laimweb/laim_web/components/crt_theme.py` | reexport `green` |
+
+**Sincronización CSS a assets Reflex** (obligatorio tras cambiar CSS compartido):
+
+```bash
+./scripts/sync_crt_assets.sh
+```
+
+Copia a `assets/crt/` en frontend, backoffice y laimweb.
+
+### 35.3. Configuración obligatoria de `rx.App`
+
+```python
+from portal_crt import CRT_STYLESHEETS, crt_app_style
+
+app = rx.App(
+    stylesheets=CRT_STYLESHEETS,
+    theme=rx.theme(appearance="dark", accent_color="green"),  # o "orange" en backoffice
+    style=crt_app_style(),
+)
+```
+
+**LAIM Web** (sin wrapper `portal_crt`):
+
+```python
+stylesheets=["/crt/crt_base.css", "/crt/crt_theme_green.css"]
+```
+
+### 35.4. Layout shell
+
+Todo layout raíz de página debe incluir:
+
+```python
+class_name=CRT_SHELL_CLASS  # "crt-shell crt-theme-green" | crt-theme-amber
+```
+
+Paneles: `class_name="crt-panel"`. Entradas: `class_name="crt-input"`. Etiquetas: `crt-label`.
+Títulos: `crt-title`. Texto secundario: `crt-muted`.
+
+### 35.5. Colores en Python — PROHIBIDO duplicar dict `COLORS`
+
+**REGLA:** No definir bloques `COLORS = {...}` locales en componentes. Importar:
+
+```python
+from portal_crt import COLORS, SELECT_STYLE, MARKDOWN_COMPONENT_MAP, CRT_SHELL_CLASS
+```
+
+`COLORS` mapea claves legacy (`primary`, `foreground`, `card`, `input`, …) a tokens CRT.
+
+Markdown en paneles informativos:
+
+```python
+rx.markdown(content_text, component_map=MARKDOWN_COMPONENT_MAP)
+```
+
+### 35.6. Botones CRT (superseden regla anterior de texto negro)
+
+La estética CRT **reemplaza** la regla «texto negro sobre fondo verde/naranja» de botones
+`color_scheme="green"|"orange"` cuando se usa el sistema CRT.
+
+| Uso | Clase / helper | Texto |
+|-----|----------------|-------|
+| Acción principal | `class_name="crt-btn"` | `#d6ffd6` (verde) / `#ffd59a` (ámbar) vía CSS |
+| Enlace acción | `crt-btn-link` | Color accent del tema |
+| Peligro | `crt-btn-danger` | Rojo suave CRT |
+| Navegación entre portales | `crt_cross_portal_button(..., "amber"|"green")` | Color del portal destino |
+
+**Excepción temporal:** botones legacy con `color_scheme` + `style={"color": "black"}` pueden
+coexistir durante migración; al tocar un botón, migrarlo a `crt-btn`.
+
+### 35.7. Selectores
+
+Usar `SELECT_STYLE` de `portal_crt` o `class_name="crt-input"` en `rx.select` / `rx.select.root`.
+
+### 35.8. Archivos legacy
+
+- `src/apps/9_laimweb/assets/crt.css` — **deprecado**; no añadir estilos nuevos ahí.
+- Usar siempre `/crt/crt_base.css` + tema por variante.
+
+### 35.9. Checklist al modificar UI de portales
+
+- [ ] ¿Importa desde `portal_crt` (o `crt_theme` en LAIM)?
+- [ ] ¿`rx.App` carga `CRT_STYLESHEETS`?
+- [ ] ¿Layout raíz usa `CRT_SHELL_CLASS`?
+- [ ] ¿Markdown usa `MARKDOWN_COMPONENT_MAP`?
+- [ ] ¿Ejecutado `./scripts/sync_crt_assets.sh` si cambió CSS compartido?
+- [ ] ¿Títulos usan `crt-title` / `COLORS["primary"]`, no blanco puro?
+
+

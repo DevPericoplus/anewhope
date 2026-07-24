@@ -58,11 +58,14 @@ try:
     get_required_permission = _mapping_module.get_required_permission
     is_action_allowed = _mapping_module.is_action_allowed
 
+    from portal_crt import COLORS, SELECT_STYLE
+
     logger.info("Módulos de permisos cargados exitosamente")
 except Exception as e:
     logger.error(f"Error al cargar módulos de permisos: {e}")
     import traceback
     traceback.print_exc()
+    from portal_crt import COLORS, SELECT_STYLE
     # Fallback functions
     def get_user_permissions(user_id, engine=None):
         return {}
@@ -2590,8 +2593,8 @@ def explorador_page_internal() -> rx.Component:
             ),
             flex="1",
             height="100vh",
-            border_right="2px solid #ddd",
-            bg="#fdfdfd",
+            border_right=f"2px solid {COLORS['border']}",
+            class_name="explorador-crt-panel",
         ),
         
         rx.cond(
@@ -2600,7 +2603,12 @@ def explorador_page_internal() -> rx.Component:
                 # Columnas 2 y 3: Área del Explorador (Solo si está autorizado)
                 rx.box(
                     rx.vstack(
-                        rx.heading("Explorador de versiones", size="6", margin_bottom="1em", color="#444"),
+                        rx.heading(
+                            "Explorador de versiones",
+                            size="6",
+                            margin_bottom="1em",
+                            color=COLORS["primary"],
+                        ),
                         
                         # Contenedor del Explorador (Estilo Windows)
                         rx.box(

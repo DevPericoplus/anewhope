@@ -16,7 +16,7 @@ from laim_web.pages.my_forum_posts import my_forum_posts_page
 from laim_web.pages.my_forum_threads import my_forum_threads_page
 
 app = rx.App(
-    stylesheets=["/crt.css"],
+    stylesheets=["/crt/crt_base.css", "/crt/crt_theme_green.css"],
     theme=rx.theme(
         appearance="dark",
     ),
