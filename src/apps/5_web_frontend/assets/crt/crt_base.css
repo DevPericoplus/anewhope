@@ -962,6 +962,33 @@ body::after {
   font-weight: bold;
 }
 
+/* Navegación entre portales: color del destino (no del tema actual) */
+.crt-btn-cross-portal {
+  font-weight: bold;
+}
+
+.crt-btn-cross-portal--green {
+  border-color: #00b400 !important;
+  background: rgba(0, 40, 0, 0.65) !important;
+  color: #d6ffd6 !important;
+}
+
+.crt-btn-cross-portal--green:hover {
+  background: rgba(0, 80, 0, 0.75) !important;
+  box-shadow: 0 0 8px rgba(0, 200, 0, 0.35) !important;
+}
+
+.crt-btn-cross-portal--amber {
+  border-color: #ff8c00 !important;
+  background: rgba(60, 30, 0, 0.65) !important;
+  color: #ffd59a !important;
+}
+
+.crt-btn-cross-portal--amber:hover {
+  background: rgba(90, 45, 0, 0.75) !important;
+  box-shadow: 0 0 8px rgba(255, 140, 0, 0.35) !important;
+}
+
 .crt-readable-zone,
 .crt-readable-zone * {
   text-shadow: none !important;
