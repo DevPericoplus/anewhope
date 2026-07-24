@@ -4245,6 +4245,7 @@ def user_portal() -> rx.Component:
                             "Backoffice",
                             State.go_to_backoffice,
                             "amber",
+                            host_variant="green",
                         ),
                     ),
                     rx.button(

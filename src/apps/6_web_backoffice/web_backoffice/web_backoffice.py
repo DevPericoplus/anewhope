@@ -11998,6 +11998,7 @@ def user_portal() -> rx.Component:
                         "Volver al Frontend",
                         State.go_to_frontend,
                         "green",
+                        host_variant="amber",
                     ),
                     rx.button(
                         "Desconectar",

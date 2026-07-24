@@ -103,26 +103,30 @@ def crt_button(
 def crt_cross_portal_button(
     label: str,
     on_click: Callable[..., Any],
-    target_variant: CrtVariant,
+    border_variant: CrtVariant,
+    *,
+    host_variant: CrtVariant,
 ) -> rx.Component:
-    """Botón de navegación entre portales (paleta del destino: verde o ámbar)."""
-    colors = get_crt_colors(target_variant)
-    portal_class = f"crt-btn-cross-portal crt-btn-cross-portal--{target_variant}"
+    """Botón de navegación entre portales: estilo del host, contorno del destino."""
+    host_colors = get_crt_colors(host_variant)
+    border_colors = get_crt_colors(border_variant)
+    portal_class = f"crt-btn-cross-portal crt-btn-cross-portal--{border_variant}"
     return rx.button(
         label,
         on_click=on_click,
         class_name=f"crt-btn crt-btn-inline {portal_class}",
         style={
-            "borderColor": colors["accent_strong"],
-            "background": colors["btn_bg"],
-            "color": colors["btn_text"],
+            "borderColor": border_colors["accent_strong"],
+            "borderWidth": "2px",
+            "background": host_colors["btn_bg"],
+            "color": host_colors["btn_text"],
             "fontWeight": "bold",
             "fontSize": "1.05em",
         },
         _hover={
-            "background": colors["btn_hover"],
-            "borderColor": colors["accent_strong"],
-            "boxShadow": f"0 0 8px {colors['btn_hover_glow']}",
+            "background": host_colors["btn_hover"],
+            "borderColor": border_colors["accent_strong"],
+            "boxShadow": f"0 0 8px {border_colors['btn_hover_glow']}",
         },
     )
 
