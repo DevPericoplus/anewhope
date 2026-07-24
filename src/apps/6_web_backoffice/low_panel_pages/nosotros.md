@@ -1,6 +1,6 @@
 # Nosotros
 
-## Sobre Myllm
+## Sobre GETmylllm
 
 Somos una empresa especializada en soluciones de inteligencia artificial para empresas.
 
@@ -24,7 +24,7 @@ Nuestro equipo está formado por expertos en:
 
 ### Historia
 
-El proyecto Myllm surge como resultado de un proceso de brainstorming realizado a principios de octubre de 2025, donde se seleccionó esta idea con el objetivo de desarrollar una solución que permitiera consolidar los conocimientos adquiridos a lo largo de los diferentes módulos del programa de máster, poniendo en práctica el aprendizaje obtenido de forma integral.
+El proyecto GETmylllm surge como resultado de un proceso de brainstorming realizado a principios de octubre de 2025, donde se seleccionó esta idea con el objetivo de desarrollar una solución que permitiera consolidar los conocimientos adquiridos a lo largo de los diferentes módulos del programa de máster, poniendo en práctica el aprendizaje obtenido de forma integral.
 
 A principios del año 2026 se inicia el trabajo de modelado de componentes, estableciendo un diseño arquitectónico que incorpora todos los conceptos técnicos aplicables sobre las funcionalidades previstas. Durante el mes de enero se intensifica el desarrollo e implementación de los módulos básicos del sistema.
 

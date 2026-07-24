@@ -2,7 +2,7 @@
 
 ## Plataforma de Personalización de Modelos LLM
 
-Myllm ofrece una plataforma completa para la personalización y entrenamiento de modelos de lenguaje.
+GETmylllm ofrece una plataforma completa para la personalización y entrenamiento de modelos de lenguaje.
 
 ### Tecnologías
 

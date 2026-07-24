@@ -57,6 +57,12 @@ from components.explorador import explorador_panel, ExploradorState
 from components.org_selector import org_selector_bar, org_project_selector_bar, org_project_version_selector_bar
 from components.seguimiento import seguimiento_panel, SeguimientoState
 from components.informes import informes_panel, InformesState
+from branding import (
+    APP_BRAND_NAME,
+    APP_PUBLIC_DOMAIN,
+    LOGO_OFFICIAL_PATH,
+    MSG_COPYRIGHT,
+)
 from portal_crt import (
     COLORS,
     CRT_SHELL_CLASS,
@@ -5836,13 +5842,32 @@ def load_menu_content(filename: str, fallback_text: str) -> str:
 
 
 def logo() -> rx.Component:
-    """Logo backoffice con estilo CRT ámbar."""
+    """Logo oficial GETmylllm en cabecera CRT (backoffice)."""
     return rx.hstack(
-        rx.text("MY", font_weight="bold", font_size="1.8em", class_name="crt-title"),
-        rx.text("llm", font_size="1.8em", color=COLORS["foreground"]),
-        rx.text("Backoffice", font_size="0.85em", class_name="crt-muted"),
-        spacing="2",
-        align_items="baseline",
+        rx.image(
+            src=LOGO_OFFICIAL_PATH,
+            alt=APP_BRAND_NAME,
+            height="2.4em",
+            width="auto",
+        ),
+        rx.vstack(
+            rx.hstack(
+                rx.text("GET", font_weight="bold", font_size="1.5em", class_name="crt-title"),
+                rx.text("mylllm", font_size="1.5em", color=COLORS["foreground"]),
+                rx.text("Backoffice", font_size="0.85em", class_name="crt-muted"),
+                spacing="2",
+                align_items="baseline",
+            ),
+            rx.text(
+                APP_PUBLIC_DOMAIN,
+                font_size="0.85em",
+                class_name="crt-muted",
+            ),
+            spacing="0",
+            align_items="flex-start",
+        ),
+        spacing="3",
+        align_items="center",
     )
 
 
@@ -11412,8 +11437,8 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             rx.cond(is_logged_in, False, active_item == "inicio"),
             rx.box(
                 rx.image(
-                    src="/logo.jpg",
-                    alt="Myllm Logo",
+                    src=LOGO_OFFICIAL_PATH,
+                    alt=f"{APP_BRAND_NAME} Logo",
                     width="150px",
                     max_width="100%",
                     height="auto",
@@ -11941,7 +11966,7 @@ def footer() -> rx.Component:
                 rx.spacer(),
                 # Copyright en el centro
                 rx.text(
-                    "© 2025 Myllm. Todos los derechos reservados.",
+                    MSG_COPYRIGHT,
                     color=COLORS["muted_foreground"],
                     font_size="1.25em",
                 ),
@@ -12095,7 +12120,7 @@ app = rx.App(
 app.add_page(
     user_portal,
     route="/",
-    title="Myllm - Pagina principal",
+    title=f"{APP_BRAND_NAME} - Pagina principal",
     on_load=State.on_page_load,
 )
 
@@ -12103,7 +12128,7 @@ app.add_page(
 # NOTA: sys.path ya está configurado al inicio del archivo
 try:
     from pages.user_creation import user_creation_page
-    app.add_page(user_creation_page, route="/user_creation", title="Myllm - Crear Usuario")
+    app.add_page(user_creation_page, route="/user_creation", title=f"{APP_BRAND_NAME} - Crear Usuario")
     print("✅ Ruta /user_creation registrada exitosamente")
 except ImportError as e:
     print(f"⚠️ Warning: Could not import user_creation_page: {e}")
@@ -12116,7 +12141,7 @@ except Exception as e:
 
 try:
     from pages.change_password import change_password_page
-    app.add_page(change_password_page, route="/change_password", title="Myllm - Recordar Contraseña")
+    app.add_page(change_password_page, route="/change_password", title=f"{APP_BRAND_NAME} - Recordar Contraseña")
     print("✅ Ruta /change_password registrada exitosamente")
 except ImportError as e:
     print(f"⚠️ Warning: Could not import change_password_page: {e}")
@@ -12127,7 +12152,7 @@ except Exception as e:
 
 try:
     from pages.model_downloads import model_downloads_page
-    app.add_page(model_downloads_page, route="/model_downloads", title="Myllm - Descargas de Modelos")
+    app.add_page(model_downloads_page, route="/model_downloads", title=f"{APP_BRAND_NAME} - Descargas de Modelos")
     print("✅ Ruta /model_downloads registrada exitosamente")
 except ImportError as e:
     print(f"⚠️ Warning: Could not import model_downloads_page: {e}")
@@ -12138,7 +12163,7 @@ except Exception as e:
 
 try:
     from pages.analisis_resultados import analisis_resultados_page
-    app.add_page(analisis_resultados_page, route="/analisis_resultados", title="Myllm - Análisis de Resultados")
+    app.add_page(analisis_resultados_page, route="/analisis_resultados", title=f"{APP_BRAND_NAME} - Análisis de Resultados")
     print("✅ Ruta /analisis_resultados registrada exitosamente")
 except ImportError as e:
     print(f"⚠️ Warning: Could not import analisis_resultados_page: {e}")

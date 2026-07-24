@@ -44,7 +44,7 @@ Los repositorios necesarios para el despliegue de esta solución estarán dispon
 
 #### Servicios de Asesoramiento
 
-Myllm ofrecerá servicios profesionales de **asesoramiento técnico** orientados a:
+GETmylllm ofrecerá servicios profesionales de **asesoramiento técnico** orientados a:
 
 - Implementaciones personalizadas que se integren en proyectos existentes
 - Adaptación de la solución a requisitos específicos de cada organización
@@ -64,4 +64,4 @@ Este enfoque garantiza que la solución evolucione de manera segura y mantenga s
 
 ---
 
-*La comunidad es el corazón de Myllm.*
+*La comunidad es el corazón de GETmylllm.*

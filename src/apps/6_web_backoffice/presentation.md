@@ -1,4 +1,4 @@
-# 🚀 Impulse su Transformación Digital con Myllm
+# 🚀 Impulse su Transformación Digital con GETmylllm
 
 ## 🤖 Modelos de Lenguaje (LLM) a Medida
 Desarrollamos **agentes de IA personalizados** mediante:

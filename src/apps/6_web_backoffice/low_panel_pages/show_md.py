@@ -5,6 +5,7 @@ from pathlib import Path
 import reflex as rx
 
 from portal_crt import COLORS, MARKDOWN_COMPONENT_MAP, SELECT_STYLE
+from branding import APP_BRAND_NAME
 
 
 def load_markdown_content(filename: str) -> str:
@@ -76,7 +77,7 @@ def markdown_viewer() -> rx.Component:
             rx.divider(color=COLORS["border"]),
             rx.hstack(
                 rx.text(
-                    "© 2025 Myllm - Contenido informativo",
+                    f"© 2025 {APP_BRAND_NAME} - Contenido informativo",
                     color=COLORS["muted_foreground"],
                     font_size="1.1em",
                 ),
