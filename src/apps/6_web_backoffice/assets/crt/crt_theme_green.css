@@ -33,4 +33,6 @@ body.crt-theme-green {
   --crt-scanline: rgba(0, 0, 0, 0.15);
   --crt-presentacion-inset: rgba(0, 255, 0, 0.06);
   --crt-presentacion-outer: rgba(0, 180, 0, 0.12);
+  --crt-cross-portal-border: #ff8c00;
+  --crt-cross-portal-glow: rgba(255, 140, 0, 0.35);
 }

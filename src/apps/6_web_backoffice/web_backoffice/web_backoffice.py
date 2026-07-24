@@ -11997,8 +11997,7 @@ def user_portal() -> rx.Component:
                     crt_cross_portal_button(
                         "Volver al Frontend",
                         State.go_to_frontend,
-                        "green",
-                        host_variant="amber",
+                        "amber",
                     ),
                     rx.button(
                         "Desconectar",

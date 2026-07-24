@@ -4244,8 +4244,7 @@ def user_portal() -> rx.Component:
                         crt_cross_portal_button(
                             "Backoffice",
                             State.go_to_backoffice,
-                            "amber",
-                            host_variant="green",
+                            "green",
                         ),
                     ),
                     rx.button(

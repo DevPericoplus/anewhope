@@ -32,4 +32,6 @@ body.crt-theme-amber {
   --crt-scanline: rgba(0, 0, 0, 0.15);
   --crt-presentacion-inset: rgba(255, 140, 0, 0.06);
   --crt-presentacion-outer: rgba(255, 120, 0, 0.12);
+  --crt-cross-portal-border: #00b400;
+  --crt-cross-portal-glow: rgba(0, 200, 0, 0.35);
 }

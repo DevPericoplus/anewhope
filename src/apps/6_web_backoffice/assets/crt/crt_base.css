@@ -962,10 +962,17 @@ body::after {
   font-weight: bold;
 }
 
-/* Navegación entre portales: contorno del destino, resto del tema actual */
-.crt-btn-cross-portal {
+/* Navegación entre portales: contorno del destino vía variable de tema */
+.crt-shell .crt-btn.crt-btn-cross-portal,
+.crt-shell button.crt-btn-cross-portal {
   font-weight: bold;
-  border-width: 2px !important;
+  border: 2px solid var(--crt-cross-portal-border) !important;
+}
+
+.crt-shell .crt-btn.crt-btn-cross-portal:hover,
+.crt-shell button.crt-btn-cross-portal:hover {
+  border-color: var(--crt-cross-portal-border) !important;
+  box-shadow: 0 0 8px var(--crt-cross-portal-glow) !important;
 }
 
 .crt-btn-cross-portal--green {
