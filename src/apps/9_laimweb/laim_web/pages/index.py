@@ -7,6 +7,7 @@ from laim_web.components.contact_form import contact_form_panel
 from laim_web.components.markdown_viewer import crt_markdown_viewer
 from laim_web.components.presentation_panel import presentation_content_panel
 from laim_web.components.page_actions import page_action_panel
+from laim_web.components.laim_logo import laim_logo_sidebar
 from laim_web.components.portal_shell import forum_nav_section, sidebar_config_menu
 from laim_web.laim_state import LaimWebState
 
@@ -64,7 +65,7 @@ LOGGED_IN_MENU_ITEMS = [
 
 
 def logo() -> rx.Component:
-    """Logo LAIM con estilo CRT."""
+    """Logo LAIM con estilo CRT (texto en cabecera)."""
     return rx.hstack(
         rx.text(
             "LAIM",
@@ -135,6 +136,7 @@ def header() -> rx.Component:
 def auth_cta_panel() -> rx.Component:
     """Acceso compacto en sidebar — abre modales de autenticación."""
     return rx.vstack(
+        laim_logo_sidebar(),
         rx.text("Acceso al portal", class_name="crt-title", font_size="1em"),
         rx.text(
             "Inicie sesión o cree una cuenta para acceder al panel de gestión de IA local.",

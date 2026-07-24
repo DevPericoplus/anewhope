@@ -4,6 +4,8 @@ from pathlib import Path
 
 import reflex as rx
 
+from branding import APP_BRAND_NAME, MSG_COPYRIGHT
+
 # Colores del tema (consistentes con la aplicación principal)
 COLORS = {
     "background": "#1a1a2e",
@@ -172,7 +174,7 @@ def markdown_viewer() -> rx.Component:
             rx.divider(color=COLORS["border"]),
             rx.hstack(
                 rx.text(
-                    "© 2025 Myllm - Contenido informativo",
+                    f"© 2025 {APP_BRAND_NAME} - Contenido informativo",
                     color=COLORS["muted_foreground"],
                     font_size="1.1em",
                 ),

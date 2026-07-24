@@ -2,7 +2,7 @@
 
 ## Centro de Documentación y Guías de Usuario
 
-La plataforma Myllm pone a disposición de sus usuarios un completo conjunto de recursos documentales diseñados para facilitar el uso eficiente de todos nuestros servicios. A continuación se describen las principales áreas cubiertas por nuestra documentación.
+La plataforma GETmylllm pone a disposición de sus usuarios un completo conjunto de recursos documentales diseñados para facilitar el uso eficiente de todos nuestros servicios. A continuación se describen las principales áreas cubiertas por nuestra documentación.
 
 ---
 

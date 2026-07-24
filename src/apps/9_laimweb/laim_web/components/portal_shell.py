@@ -41,7 +41,7 @@ ADMIN_CONFIG_ROUTE_LINKS: tuple[tuple[str, str], ...] = (
 
 
 def logo() -> rx.Component:
-    """Logo LAIM con estilo CRT."""
+    """Logo LAIM con estilo CRT (texto en cabecera)."""
     return rx.link(
         rx.hstack(
             rx.text(

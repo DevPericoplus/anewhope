@@ -2,7 +2,7 @@
 
 ## Novedades del Proyecto
 
-Seguimiento del desarrollo del proyecto Myllm como Trabajo de Fin de Máster.
+Seguimiento del desarrollo del proyecto GETmylllm como Trabajo de Fin de Máster.
 
 ### Publicaciones Recientes
 
@@ -16,10 +16,10 @@ Durante este mes se intensifica el desarrollo e implementación de los módulos 
 
 Finalizado el diseño arquitectónico que incorpora todos los conceptos técnicos aplicables sobre las funcionalidades previstas: frontend, backoffice, middleware, broker y backends.
 
-#### Inicio del Proyecto Myllm
+#### Inicio del Proyecto GETmylllm
 *Octubre 2025*
 
-Tras un proceso de brainstorming, se selecciona la idea de Myllm con el objetivo de consolidar los conocimientos adquiridos durante el programa de máster, poniendo en práctica el aprendizaje obtenido de forma integral.
+Tras un proceso de brainstorming, se selecciona la idea de GETmylllm con el objetivo de consolidar los conocimientos adquiridos durante el programa de máster, poniendo en práctica el aprendizaje obtenido de forma integral.
 
 ### Próximos Hitos
 

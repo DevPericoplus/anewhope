@@ -42,6 +42,11 @@ from pages.model_downloads import ModelDownloadState, model_downloads_panel
 from pages.organizacion import load_organizacion_content
 from pages.proyecciones import load_proyecciones_content
 from pages.tecnologias import load_tecnologias_content
+from branding import (
+    APP_BRAND_NAME,
+    LOGO_OFFICIAL_PATH,
+    MSG_COPYRIGHT,
+)
 from low_panel_pages.show_md import show_md  # noqa: F401 - Importado para registrar la ruta
 from web_frontend.shared_state import SharedSessionState
 from components.explorador import explorador_panel, ExploradorState
@@ -2047,11 +2052,12 @@ def load_menu_content(filename: str, fallback_text: str) -> str:
 
 
 def logo() -> rx.Component:
-    """Logo component."""
+    """Logo de cabecera (GET + mylllm)."""
     return rx.hstack(
-        rx.text("MY", font_weight="bold", font_size="1.8em", color=COLORS["primary"]),
-        rx.text("llm", font_size="1.8em", color=COLORS["foreground"]),
-        spacing="1",
+        rx.text("GET", font_weight="bold", font_size="1.8em", color=COLORS["primary"]),
+        rx.text("mylllm", font_size="1.8em", color=COLORS["foreground"]),
+        spacing="0",
+        align_items="baseline",
     )
 
 
@@ -3754,8 +3760,8 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
             rx.cond(is_logged_in, False, active_item == "inicio"),
             rx.box(
                 rx.image(
-                    src="/logo.jpg",
-                    alt="Myllm Logo",
+                    src=LOGO_OFFICIAL_PATH,
+                    alt=f"{APP_BRAND_NAME} Logo",
                     width="150px",
                     max_width="100%",
                     height="auto",
@@ -4240,7 +4246,7 @@ def footer() -> rx.Component:
                 rx.spacer(),
                 # Copyright en el centro
                 rx.text(
-                    "© 2025 Myllm. Todos los derechos reservados.",
+                    MSG_COPYRIGHT,
                     color=COLORS["muted_foreground"],
                     font_size="1.25em",
                 ),
@@ -4391,7 +4397,7 @@ app = rx.App(
 app.add_page(
     user_portal,
     route="/",
-    title="Myllm - Pagina principal",
+    title=f"{APP_BRAND_NAME} - Pagina principal",
     on_load=State.on_page_load,
 )
 
@@ -4405,7 +4411,7 @@ if str(frontend_dir) not in sys.path:
 
 try:
     from pages.user_creation import user_creation_page
-    app.add_page(user_creation_page, route="/user_creation", title="Myllm - Crear Usuario")
+    app.add_page(user_creation_page, route="/user_creation", title=f"{APP_BRAND_NAME} - Crear Usuario")
     print("✅ Ruta /user_creation registrada exitosamente")
 except ImportError as e:
     print(f"⚠️ Warning: Could not import user_creation_page: {e}")
@@ -4418,7 +4424,7 @@ except Exception as e:
 
 try:
     from pages.change_password import change_password_page
-    app.add_page(change_password_page, route="/change_password", title="Myllm - Recordar Contraseña")
+    app.add_page(change_password_page, route="/change_password", title=f"{APP_BRAND_NAME} - Recordar Contraseña")
     print("✅ Ruta /change_password registrada exitosamente")
 except ImportError as e:
     print(f"⚠️ Warning: Could not import change_password_page: {e}")
@@ -4431,7 +4437,7 @@ except Exception as e:
 
 try:
     from pages.model_downloads import model_downloads_page
-    app.add_page(model_downloads_page, route="/model_downloads", title="Myllm - Descargas de Modelos")
+    app.add_page(model_downloads_page, route="/model_downloads", title=f"{APP_BRAND_NAME} - Descargas de Modelos")
     print("✅ Ruta /model_downloads registrada exitosamente")
 except ImportError as e:
     print(f"⚠️ Warning: Could not import model_downloads_page: {e}")

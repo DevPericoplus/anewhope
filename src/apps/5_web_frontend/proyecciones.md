@@ -9,7 +9,7 @@ El sistema de versionado permite mantener un historial completo de las iteracion
 - **Crear versiones**: Define nuevas versiones con nombre descriptivo y notas de cambio
 - **Comparar versiones**: Visualiza diferencias entre versiones consecutivas
 - **Restaurar versiones**: Vuelve a un estado anterior si es necesario
-- **Aprobar versiones**: Flujo de aprobación cliente/myllm antes de entrenar
+- **Aprobar versiones**: Flujo de aprobación cliente/GETmylllm antes de entrenar
 
 ## Repositorio de Contenidos
 
@@ -29,9 +29,9 @@ Cada versión pasa por diferentes estados durante su ciclo de vida:
 1. **Borrador**: En edición, se pueden añadir/modificar contenidos
 2. **En revisión**: Pendiente de revisión por el equipo
 3. **Aprobado cliente**: El cliente ha validado el contenido
-4. **Aprobado myllm**: El equipo técnico ha validado la estructura
+4. **Aprobado GETmylllm**: El equipo técnico ha validado la estructura
 5. **Listo para entrenar**: Ambas aprobaciones completadas
 6. **Entrenando**: Proceso de fine-tuning en curso
 7. **Entrenado**: Modelo disponible para uso
 
-> **Nota**: Solo las versiones con doble aprobación (cliente + myllm) pueden iniciar el entrenamiento.
+> **Nota**: Solo las versiones con doble aprobación (cliente + GETmylllm) pueden iniciar el entrenamiento.

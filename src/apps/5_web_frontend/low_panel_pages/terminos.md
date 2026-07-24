@@ -6,11 +6,11 @@
 
 ### 1. Aceptación de los Términos
 
-Al utilizar la plataforma Myllm, aceptas estos términos de servicio.
+Al utilizar la plataforma GETmylllm, aceptas estos términos de servicio.
 
 ### 2. Descripción del Servicio
 
-Myllm proporciona una plataforma para la personalización y entrenamiento de modelos de lenguaje.
+GETmylllm proporciona una plataforma para la personalización y entrenamiento de modelos de lenguaje.
 
 ### 3. Cuenta de Usuario
 
@@ -30,7 +30,7 @@ No está permitido:
 ### 5. Propiedad Intelectual
 
 - Los modelos entrenados con tus datos son de tu propiedad
-- La plataforma y su código son propiedad de Myllm
+- La plataforma y su código son propiedad de GETmylllm
 - Respetamos tus derechos sobre los datos de entrenamiento
 
 ### 6. Limitación de Responsabilidad
