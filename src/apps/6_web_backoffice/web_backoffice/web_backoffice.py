@@ -11473,9 +11473,13 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
         # Backoffice usa tamaños aumentados para legibilidad de textos y emojis
         rx.cond(
             content_text != "",
-            rx.markdown(
-                content_text,
-                component_map=MARKDOWN_COMPONENT_MAP,
+            rx.box(
+                rx.markdown(
+                    content_text,
+                    component_map=MARKDOWN_COMPONENT_MAP,
+                ),
+                class_name="crt-markdown",
+                width="100%",
             ),
             rx.box(height="0"),
         ),

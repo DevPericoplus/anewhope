@@ -68,4 +68,6 @@ def test_markdown_component_map_uses_codeblock_not_pre() -> None:
 
     assert "codeblock" in CRT_MARKDOWN_COMPONENT_MAP
     assert "pre" not in CRT_MARKDOWN_COMPONENT_MAP
+    assert "table" in CRT_MARKDOWN_COMPONENT_MAP
+    assert "li" in CRT_MARKDOWN_COMPONENT_MAP
 

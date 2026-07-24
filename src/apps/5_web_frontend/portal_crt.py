@@ -38,3 +38,4 @@ FONT_FAMILY: str = _crt_theme.FONT_FAMILY
 
 crt_cross_portal_button = _crt_components.crt_cross_portal_button
 crt_app_style = _crt_components.crt_app_style
+crt_markdown_viewer = _crt_components.crt_markdown_viewer

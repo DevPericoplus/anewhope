@@ -3781,9 +3781,13 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
         # EXCEPTO para "informes" y "proyecciones" que tienen su propia estructura
         rx.cond(
             rx.cond(content_text != "", active_item != "proyecciones", False),
-            rx.markdown(
-                content_text,
-                component_map=MARKDOWN_COMPONENT_MAP,
+            rx.box(
+                rx.markdown(
+                    content_text,
+                    component_map=MARKDOWN_COMPONENT_MAP,
+                ),
+                class_name="crt-markdown",
+                width="100%",
             ),
             rx.box(height="0"),
         ),

@@ -162,14 +162,31 @@ def get_markdown_component_map(
             color=colors["muted"],
             font_size=body_font_size,
             line_height="1.6",
+            width="100%",
         ),
-        "li": lambda text: rx.text(
+        "li": lambda text: rx.list_item(
+            rx.text(
+                text,
+                color=colors["muted"],
+                font_size=body_font_size,
+                line_height="1.6",
+            ),
+            margin_bottom="0.35em",
+        ),
+        "strong": lambda text: rx.text(
             text,
-            color=colors["muted"],
-            font_size=body_font_size,
-            line_height="1.6",
+            color=colors["text"],
+            font_weight="bold",
+            as_="span",
         ),
-        "strong": lambda text: rx.text(text, color=colors["text"], font_weight="bold"),
+        "em": lambda text: rx.text(text, color=colors["muted"], font_style="italic", as_="span"),
+        "blockquote": lambda text: rx.box(
+            rx.text(text, color=colors["muted"], font_style="italic", line_height="1.6"),
+            border_left=f"3px solid {colors['border']}",
+            padding_left="1em",
+            margin_y="1em",
+            width="100%",
+        ),
         "code": lambda text: rx.code(
             text,
             color=colors["accent"],
@@ -177,10 +194,36 @@ def get_markdown_component_map(
             padding="0.15em 0.35em",
             border_radius="3px",
         ),
-        "a": lambda text: rx.link(
+        "a": lambda text, **props: rx.link(
             text,
             color=colors["accent"],
             text_decoration="underline",
+            **props,
+        ),
+        "table": lambda *children, **props: rx.table.root(
+            *children,
+            **props,
+            variant="surface",
+            width="100%",
+            margin_y="1em",
+        ),
+        "thead": lambda *children, **props: rx.table.header(*children, **props),
+        "tbody": lambda *children, **props: rx.table.body(*children, **props),
+        "tr": lambda *children, **props: rx.table.row(*children, **props),
+        "th": lambda *children, **props: rx.table.column_header_cell(
+            *children,
+            **props,
+            color=colors["title"],
+            font_weight="bold",
+            font_size="1.05em",
+            padding="0.6em",
+        ),
+        "td": lambda *children, **props: rx.table.cell(
+            *children,
+            **props,
+            color=colors["muted"],
+            font_size=body_font_size,
+            padding="0.55em",
         ),
     }
 

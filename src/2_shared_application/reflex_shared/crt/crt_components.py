@@ -32,6 +32,8 @@ CrtVariant = _crt_theme.CrtVariant
 FONT_FAMILY = _crt_theme.FONT_FAMILY
 get_crt_colors = _crt_theme.get_crt_colors
 get_select_style = _crt_theme.get_select_style
+get_markdown_component_map = _crt_theme.get_markdown_component_map
+CONTENT_PADDING = _crt_theme.CONTENT_PADDING
 
 
 def crt_label(text: str, **kwargs: Any) -> rx.Component:
@@ -119,3 +121,27 @@ def crt_cross_portal_button(
 def crt_app_style() -> dict[str, str]:
     """Estilo global para rx.App."""
     return {"font_family": FONT_FAMILY}
+
+
+def crt_markdown_viewer(
+    content: str,
+    *,
+    variant: CrtVariant = "green",
+    component_map: dict[str, Any] | None = None,
+    class_name: str = "crt-markdown",
+    padding: str | None = None,
+    **box_kwargs: Any,
+) -> rx.Component:
+    """Renderiza markdown CRT ocupando todo el ancho del contenedor padre."""
+    markdown_map = component_map or get_markdown_component_map(variant)
+    box_props: dict[str, Any] = {
+        "class_name": class_name,
+        "width": "100%",
+        **box_kwargs,
+    }
+    if padding is not None:
+        box_props["padding"] = padding
+    return rx.box(
+        rx.markdown(content, component_map=markdown_map),
+        **box_props,
+    )

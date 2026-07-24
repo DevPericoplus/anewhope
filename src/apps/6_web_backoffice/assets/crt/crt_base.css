@@ -479,8 +479,29 @@ body::after {
 /* Visor markdown — páginas estáticas */
 .crt-markdown {
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   color: var(--crt-text);
   line-height: 1.6;
+}
+
+.crt-markdown > div,
+.crt-markdown [data-slot="markdown"] {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.crt-markdown h1,
+.crt-markdown h2,
+.crt-markdown h3,
+.crt-markdown p,
+.crt-markdown blockquote,
+.crt-markdown ul,
+.crt-markdown ol {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .crt-markdown ul,
@@ -490,8 +511,14 @@ body::after {
   color: rgba(200, 255, 200, 0.85);
 }
 
+.crt-markdown table,
+.crt-markdown .rt-TableRoot {
+  width: 100% !important;
+  max-width: 100%;
+  table-layout: auto;
+}
+
 .crt-markdown table {
-  width: 100%;
   border-collapse: collapse;
   margin: 1em 0;
   font-size: 0.9rem;
