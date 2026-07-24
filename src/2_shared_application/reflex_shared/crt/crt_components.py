@@ -2,12 +2,36 @@
 
 from __future__ import annotations
 
+import importlib.util
+import sys
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import reflex as rx
 
-from .crt_theme import CrtVariant, FONT_FAMILY, get_crt_colors, get_select_style
+_CRT_THEME_MODULE = "reflex_shared_crt_theme"
+
+
+def _load_crt_theme():
+    """Carga crt_theme (compatible con importlib desde portal_crt)."""
+    if _CRT_THEME_MODULE in sys.modules:
+        return sys.modules[_CRT_THEME_MODULE]
+    theme_path = Path(__file__).resolve().parent / "crt_theme.py"
+    spec = importlib.util.spec_from_file_location(_CRT_THEME_MODULE, theme_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"No se pudo cargar módulo CRT: {theme_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[_CRT_THEME_MODULE] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_crt_theme = _load_crt_theme()
+CrtVariant = _crt_theme.CrtVariant
+FONT_FAMILY = _crt_theme.FONT_FAMILY
+get_crt_colors = _crt_theme.get_crt_colors
+get_select_style = _crt_theme.get_select_style
 
 
 def crt_label(text: str, **kwargs: Any) -> rx.Component:
