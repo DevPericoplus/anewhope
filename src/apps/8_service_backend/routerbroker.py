@@ -35,6 +35,18 @@ except ImportError:  # pragma: no cover - soporte para ejecuciones fuera de paqu
     TrainerBackendCommunicationError = _trainer_module.TrainerBackendCommunicationError
 
 
+MSG_LAIM_INVALID_CREDENTIALS = "Credenciales no válidas"
+MSG_LAIM_LOGIN_UNAVAILABLE = "No se pudo iniciar sesión. Inténtelo más tarde."
+
+
+def _laim_login_user_message(detail: str) -> str:
+    """Traduce fallos de login LAIM a un mensaje seguro para el usuario."""
+    lowered = detail.lower()
+    if "400" in detail or "credenciales" in lowered:
+        return MSG_LAIM_INVALID_CREDENTIALS
+    return MSG_LAIM_LOGIN_UNAVAILABLE
+
+
 class BrokerBusinessError(Exception):
     """Error de reglas de negocio del broker."""
 
@@ -2242,7 +2254,7 @@ class BrokerBackendRouter:
         try:
             return self._core_client.laim_login(payload, extra_headers=extra_headers)
         except CoreBackendCommunicationError as exc:
-            raise BrokerBusinessError(f"Error en login LAIM: {exc}") from exc
+            raise BrokerBusinessError(_laim_login_user_message(str(exc))) from exc
 
     def laim_register(
         self,

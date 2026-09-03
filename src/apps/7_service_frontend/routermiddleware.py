@@ -135,10 +135,20 @@ UserSessionContext = _session_entities_module.UserSessionContext
 
 MSG_UNSUPPORTED_TOKEN_ALGORITHM = "Algoritmo de token no soportado"
 MSG_INVALID_CREDENTIALS = "Usuario o credenciales inválidas"
+MSG_LAIM_INVALID_CREDENTIALS = "Credenciales no válidas"
+MSG_LAIM_LOGIN_UNAVAILABLE = "No se pudo iniciar sesión. Inténtelo más tarde."
 MSG_USER_BLOCKED_OR_INACTIVE = "Usuario bloqueado o inactivo"
 MSG_USER_BLOCKED_TOO_MANY_ATTEMPTS = "Usuario bloqueado por intentos fallidos"
 MSG_INVALID_OTP = "OTP inválido"
 MSG_USER_NOT_FOUND = "Usuario no encontrado"
+
+
+def _laim_login_user_message(detail: str) -> str:
+    """Traduce fallos de login LAIM a un mensaje seguro para el usuario."""
+    lowered = detail.lower()
+    if "400" in detail or "credenciales" in lowered:
+        return MSG_LAIM_INVALID_CREDENTIALS
+    return MSG_LAIM_LOGIN_UNAVAILABLE
 
 
 @dataclass(frozen=True)
@@ -5446,7 +5456,7 @@ class RouterMiddleware:
         try:
             return self._broker_client.laim_login(payload, extra_headers=extra_headers)
         except BrokerBackendCommunicationError as exc:
-            raise BusinessRuleError(f"No se pudo iniciar sesión LAIM: {exc}") from exc
+            raise BusinessRuleError(_laim_login_user_message(str(exc))) from exc
 
     def laim_register(
         self,

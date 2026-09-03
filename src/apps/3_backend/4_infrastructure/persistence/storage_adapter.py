@@ -155,6 +155,75 @@ def load_mariadb_settings() -> dict[str, Any]:
     }
 
 
+def _build_mariadb_cli_cmd(
+    settings: dict[str, Any],
+    db_user: str,
+    db_password: str,
+    db_name: str,
+    *,
+    extra_args: list[str] | None = None,
+) -> list[str]:
+    """Construye comando mariadb CLI incluyendo host y puerto."""
+
+    host = str(settings.get("host") or "localhost")
+    port = str(settings.get("port") or 3306)
+    cmd = [
+        settings["cli_path"],
+        "-h",
+        host,
+        "-P",
+        port,
+        "-u",
+        db_user,
+        f"-p{db_password}",
+        "--database",
+        db_name,
+    ]
+    if extra_args:
+        cmd.extend(extra_args)
+    return cmd
+
+
+def _fetch_mariadb_rows(
+    settings: dict[str, Any],
+    query: str,
+    *,
+    use_writer: bool = False,
+) -> list[tuple[Any, ...]]:
+    """Ejecuta una consulta SELECT usando PyMySQL (preferido en Docker)."""
+
+    import pymysql
+
+    db_user = settings["writer_user"] if use_writer else settings["reader_user"]
+    db_password = (
+        settings["writer_password"] if use_writer else settings["reader_password"]
+    )
+    if not db_user:
+        raise StorageAdapterError("Faltan credenciales de MariaDB")
+
+    try:
+        connection = pymysql.connect(
+            host=str(settings.get("host") or "localhost"),
+            port=int(settings.get("port") or 3306),
+            user=db_user,
+            password=db_password,
+            database=settings["core_database"],
+            charset="utf8mb4",
+        )
+    except pymysql.Error as exc:
+        raise StorageAdapterError(f"No se pudo conectar a MariaDB: {exc}") from exc
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            return list(rows)
+    except pymysql.Error as exc:
+        raise StorageAdapterError(f"Error ejecutando consulta MariaDB: {exc}") from exc
+    finally:
+        connection.close()
+
+
 def load_laim_mariadb_settings() -> dict[str, Any]:
     """Carga configuración de MariaDB para laim_core_db."""
 
@@ -436,11 +505,8 @@ def _load_users_from_mariadb() -> list[dict[str, Any]]:
     """Carga usuarios desde MariaDB (users + contact/billing)."""
 
     settings = load_mariadb_settings()
-    cli_path = settings["cli_path"]
-    db_name = settings["core_database"]
     db_user = settings["reader_user"]
-    db_password = settings["reader_password"]
-    if not cli_path or not db_user:
+    if not db_user:
         raise StorageAdapterError("Faltan credenciales de lectura para MariaDB")
 
     query = (
@@ -453,29 +519,9 @@ def _load_users_from_mariadb() -> list[dict[str, Any]]:
         "LEFT JOIN user_billing_info b ON b.user_id = u.user_id "
         "ORDER BY u.user_id"
     )
-    cmd = [
-        cli_path,
-        "-u",
-        db_user,
-        f"-p{db_password}",
-        "--database",
-        db_name,
-        "-N",
-        "-B",
-        "-e",
-        query,
-    ]
-    try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError as exc:
-        raise StorageAdapterError(
-            f"No se pudo leer usuarios desde MariaDB: {exc}"
-        ) from exc
+    rows = _fetch_mariadb_rows(settings, query)
     records: list[dict[str, Any]] = []
-    for line in result.stdout.splitlines():
-        if not line.strip():
-            continue
-        row = line.split("\t")
+    for row in rows:
         records.append(
             {
                 "user_id": int(row[0]),
@@ -513,32 +559,11 @@ def _load_low_level_permissions_from_mariadb() -> list[dict[str, Any]]:
     """Carga permisos de bajo nivel desde MariaDB."""
 
     settings = load_mariadb_settings()
-    cli_path = settings["cli_path"]
-    db_name = settings["core_database"]
-    db_user = settings["reader_user"]
-    db_password = settings["reader_password"]
-    if not cli_path or not db_user:
+    if not settings["reader_user"]:
         raise StorageAdapterError("Faltan credenciales de lectura para MariaDB")
 
     query = "SELECT * FROM low_level_permissions ORDER BY id_permissions"
-    cmd = [
-        cli_path,
-        "-u",
-        db_user,
-        f"-p{db_password}",
-        "--database",
-        db_name,
-        "-N",
-        "-B",
-        "-e",
-        query,
-    ]
-    try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError as exc:
-        raise StorageAdapterError(
-            f"No se pudo leer low_level_permissions desde MariaDB: {exc}"
-        ) from exc
+    rows = _fetch_mariadb_rows(settings, query)
     records: list[dict[str, Any]] = []
     # Campos de la tabla low_level_permissions
     fields = [
@@ -553,10 +578,9 @@ def _load_low_level_permissions_from_mariadb() -> list[dict[str, Any]]:
         "user_create", "user_read", "user_update", "user_delete", "user_enable",
         "user_disable", "folder_list", "file_list", "project_list", "version_list"
     ]
-    for line in result.stdout.splitlines():
-        if not line.strip():
+    for row in rows:
+        if not row:
             continue
-        row = line.split("\t")
         record: dict[str, Any] = {}
         for idx, field in enumerate(fields):
             if idx < len(row):
@@ -573,40 +597,18 @@ def _load_roles_from_mariadb() -> list[dict[str, Any]]:
     """Carga roles desde MariaDB."""
 
     settings = load_mariadb_settings()
-    cli_path = settings["cli_path"]
-    db_name = settings["core_database"]
-    db_user = settings["reader_user"]
-    db_password = settings["reader_password"]
-    if not cli_path or not db_user:
+    if not settings["reader_user"]:
         raise StorageAdapterError("Faltan credenciales de lectura para MariaDB")
 
     query = (
         "SELECT identity_type_id, identity_type_name, identity_type_rol, "
         "identity_type_group_permission FROM roles ORDER BY identity_type_id"
     )
-    cmd = [
-        cli_path,
-        "-u",
-        db_user,
-        f"-p{db_password}",
-        "--database",
-        db_name,
-        "-N",
-        "-B",
-        "-e",
-        query,
-    ]
-    try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError as exc:
-        raise StorageAdapterError(
-            f"No se pudo leer roles desde MariaDB: {exc}"
-        ) from exc
+    rows = _fetch_mariadb_rows(settings, query)
     records: list[dict[str, Any]] = []
-    for line in result.stdout.splitlines():
-        if not line.strip():
+    for row in rows:
+        if not row:
             continue
-        row = line.split("\t")
         perm_id = int(row[3]) if len(row) > 3 and row[3] else 0
         records.append({
             "identity_type_id": int(row[0]) if row[0] else 0,
@@ -621,11 +623,7 @@ def _load_organizations_from_mariadb() -> list[dict[str, Any]]:
     """Carga organizaciones desde MariaDB."""
 
     settings = load_mariadb_settings()
-    cli_path = settings["cli_path"]
-    db_name = settings["core_database"]
-    db_user = settings["reader_user"]
-    db_password = settings["reader_password"]
-    if not cli_path or not db_user:
+    if not settings["reader_user"]:
         raise StorageAdapterError("Faltan credenciales de lectura para MariaDB")
 
     query = (
@@ -634,29 +632,11 @@ def _load_organizations_from_mariadb() -> list[dict[str, Any]]:
         "organization_state, active "
         "FROM organizations ORDER BY organization_id"
     )
-    cmd = [
-        cli_path,
-        "-u",
-        db_user,
-        f"-p{db_password}",
-        "--database",
-        db_name,
-        "-N",
-        "-B",
-        "-e",
-        query,
-    ]
-    try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError as exc:
-        raise StorageAdapterError(
-            f"No se pudo leer organizations desde MariaDB: {exc}"
-        ) from exc
+    rows = _fetch_mariadb_rows(settings, query)
     records: list[dict[str, Any]] = []
-    for line in result.stdout.splitlines():
-        if not line.strip():
+    for row in rows:
+        if not row:
             continue
-        row = line.split("\t")
         if len(row) >= 8:
             records.append({
                 "organization_id": int(row[0]) if row[0] else 0,
@@ -720,16 +700,13 @@ def _sync_organizations_to_mariadb(organizations: list[OrganizationDto]) -> None
             f"active={active};"
         )
 
-        cmd = [
-            cli_path,
-            "-u",
+        cmd = _build_mariadb_cli_cmd(
+            settings,
             db_user,
-            f"-p{db_password}",
-            "--database",
+            db_password,
             db_name,
-            "-e",
-            sql,
-        ]
+            extra_args=["-e", sql],
+        )
         try:
             subprocess.run(cmd, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as exc:
@@ -769,16 +746,13 @@ def _sync_users_to_mariadb(users: list[UserDto]) -> None:
         sqls = _build_user_upsert_sqls(payload, sql_escape)
         # Unir todos los SQLs en un solo comando
         combined_sql = " ".join(sqls)
-        cmd = [
-            cli_path,
-            "-u",
+        cmd = _build_mariadb_cli_cmd(
+            settings,
             db_user,
-            f"-p{db_password}",
-            "--database",
+            db_password,
             db_name,
-            "-e",
-            combined_sql,
-        ]
+            extra_args=["-e", combined_sql],
+        )
         try:
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
             if result.stderr:

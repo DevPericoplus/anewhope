@@ -40,6 +40,7 @@ try:
     from .interfacetobackend import BackendCommunicationError, InterfaceToBackend
     from .routermiddleware import (
         BusinessRuleError,
+        MSG_LAIM_INVALID_CREDENTIALS,
         RouterMiddleware,
         SessionContext,
         TokenExpiredError,
@@ -52,6 +53,7 @@ except ImportError:  # pragma: no cover - soporte para ejecuciones fuera de paqu
     from interfacetobackend import BackendCommunicationError, InterfaceToBackend
     from routermiddleware import (
         BusinessRuleError,
+        MSG_LAIM_INVALID_CREDENTIALS,
         RouterMiddleware,
         SessionContext,
         TokenExpiredError,
@@ -5028,14 +5030,17 @@ async def laim_login_endpoint(
         if not result.get("success"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=result.get("error", "Credenciales inválidas"),
+                detail=MSG_LAIM_INVALID_CREDENTIALS,
             )
         return result
     except BusinessRuleError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
+        detail = str(exc)
+        status_code = (
+            status.HTTP_400_BAD_REQUEST
+            if detail == MSG_LAIM_INVALID_CREDENTIALS
+            else status.HTTP_502_BAD_GATEWAY
+        )
+        raise HTTPException(status_code=status_code, detail=detail) from exc
 
 
 @app.post("/laim/register")

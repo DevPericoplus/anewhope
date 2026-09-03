@@ -22,6 +22,8 @@ import httpx
 from laim_web.dynamic_import import load_module_from_path
 
 RENEWAL_THRESHOLD_SECONDS = 120
+MSG_INVALID_CREDENTIALS = "Credenciales no válidas"
+MSG_AUTH_UNAVAILABLE = "No se pudo conectar con el servicio de autenticación."
 
 # Cargar env_settings para obtener URL del middleware
 _env_settings_path = (
@@ -915,16 +917,30 @@ def laim_forum_get_poll_interval_seconds() -> int:
         return 30
 
 
+def _sanitize_login_error(raw: object) -> str:
+    """Oculta la cadena técnica broker/backend/core en fallos de login."""
+    text = str(raw or "").lower()
+    if "error de conexión" in text or "no se pudo contactar" in text:
+        return MSG_AUTH_UNAVAILABLE
+    return MSG_INVALID_CREDENTIALS
+
+
 def laim_login(username: str, password: str) -> dict[str, Any]:
     """Autentica un usuario a través del middleware.
 
     Flujo: LAIM Web → Middleware /laim/login → Broker → Backend Core
     """
-    return _request_middleware(
+    result = _request_middleware(
         "POST",
         "/laim/login",
         payload={"username": username, "password": password},
     )
+    if result.get("success"):
+        return result
+    return {
+        "success": False,
+        "error": _sanitize_login_error(result.get("error")),
+    }
 
 
 def laim_register(

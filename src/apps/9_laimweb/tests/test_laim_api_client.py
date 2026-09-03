@@ -41,6 +41,38 @@ def test_laim_login_success() -> None:
     assert result["access_token"] == "access"
 
 
+def test_laim_login_hides_broker_chain_on_400() -> None:
+    from laim_web.adapters import laim_api_client
+
+    wrapped = (
+        "No se pudo iniciar sesión LAIM: Error del broker backend: 400 - "
+        "Error en login LAIM: Error del backend core: 400 - "
+        "Usuario o credenciales inválidas"
+    )
+    mock_response = MagicMock()
+    mock_response.status_code = 400
+    mock_response.text = wrapped
+    mock_response.json.return_value = {"detail": wrapped}
+    mock_response.raise_for_status.side_effect = laim_api_client.httpx.HTTPStatusError(
+        "400",
+        request=MagicMock(),
+        response=mock_response,
+    )
+
+    with patch.object(laim_api_client.httpx, "Client") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client.__enter__.return_value = mock_client
+        mock_client.request.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        result = laim_api_client.laim_login("perico", "secret")
+
+    assert result["success"] is False
+    assert result["error"] == laim_api_client.MSG_INVALID_CREDENTIALS
+    assert "broker" not in result["error"].lower()
+    assert "core" not in result["error"].lower()
+
+
 def test_laim_register_sends_hcaptcha_token() -> None:
     from laim_web.adapters import laim_api_client
 
