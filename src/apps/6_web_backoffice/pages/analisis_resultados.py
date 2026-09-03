@@ -38,16 +38,21 @@ def _load_env_settings():
     return module
 
 
-# Configuración - resolución dinámica desde entorno
+# Configuración - resolución dinámica desde entorno.
+# CRÍTICO: las URLs de servicio salen de env.yaml / compose (get_env_value),
+# nunca de protected_values.py. En silicon/dev/macbook ese fichero replica
+# hosts de PRE (*.anewhope.aws) y provoca "Name or service not known".
 try:
     _env_settings = _load_env_settings()
     MIDDLEWARE_URL = (
         _env_settings.get_env_value("MIDDLEWARE_BASE_URL", "http://localhost:8007")
-        if _env_settings else "http://localhost:8007"
+        if _env_settings
+        else "http://localhost:8007"
     )
     CORE_URL = (
-        _env_settings.get_protected_value("core_backend_base_url", "http://localhost:8003")
-        if _env_settings else "http://localhost:8003"
+        _env_settings.get_env_value("CORE_BACKEND_BASE_URL", "http://localhost:8003")
+        if _env_settings
+        else "http://localhost:8003"
     )
 except Exception:
     MIDDLEWARE_URL = "http://localhost:8007"
