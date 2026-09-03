@@ -10966,6 +10966,11 @@ sobrescriben en runtime por `env.yaml` y variables de compose
 (`MARIADB_HOST=mariadb`, DSN al servicio). Pro tendrá su propio
 `protected_values.py`.
 
+**Contrato compose (silicon):** cargar YAML no inyecta vars/volúmenes en el
+contenedor. Ver `anh_ansible_environments/readme_silicon_deploy.md` §10
+(`PERMISSIONS_SOURCE`/`BASEPATH`, `CORE_BACKEND_BASE_URL`, `DB_*`, volumen
+de informes). Tests: `test/test_silicon_deploy.yml --tags compose-contract`.
+
 Usuarios MariaDB: `myllm_admin` / `myllm_writer` / `myllm_reader` y
 `laim_admin` / `laim_writer` / `laim_reader`. En Docker el host es `'%'`
 (los contenedores no son localhost). Reader solo SELECT.
