@@ -29,10 +29,10 @@ CRT_SHELL_CLASS: str = _crt_theme.CRT_SHELL_CLASS["green"]
 SELECT_STYLE: dict[str, str] = _crt_theme.get_select_style("green")
 MARKDOWN_COMPONENT_MAP: dict[str, Any] = _crt_theme.get_markdown_component_map(
     "green",
-    body_font_size="1.15em",
-    h1_size="9",
-    h2_size="7",
-    h3_size="5",
+    body_font_size="1em",
+    h1_size="7",
+    h2_size="5",
+    h3_size="4",
 )
 FONT_FAMILY: str = _crt_theme.FONT_FAMILY
 

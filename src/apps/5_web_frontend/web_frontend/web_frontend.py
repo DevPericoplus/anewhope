@@ -3379,7 +3379,7 @@ def tecnologias_management_panel() -> rx.Component:
     return rx.vstack(
         rx.hstack(
             rx.icon("cpu", size=36, color=COLORS["primary"]),
-            rx.heading("Asignación de Tecnología", size="7", color=COLORS["primary"]),
+            rx.heading("Asignación de Tecnología", size="6", color=COLORS["primary"]),
             spacing="4",
             align="center",
         ),
@@ -3563,7 +3563,7 @@ def proyecciones_management_panel() -> rx.Component:
         rx.vstack(
             rx.hstack(
                 rx.icon("folder-git-2", size=36, color=COLORS["primary"]),
-                rx.heading("Gestión de Versiones", size="7", color=COLORS["primary"]),
+                rx.heading("Gestión de Versiones", size="6", color=COLORS["primary"]),
                 spacing="4",
                 align="center",
             ),
@@ -3809,36 +3809,7 @@ def info_panel(active_item: str, is_logged_in: bool) -> rx.Component:
                 # 2. Visor de contenido markdown (después)
                 rx.markdown(
                     projections_text,
-                    component_map={
-                        "h1": lambda text: rx.heading(text, size="7", color=COLORS["primary"], margin_bottom="0.5em"),
-                        "h2": lambda text: rx.heading(text, size="6", color=COLORS["primary"], margin_top="1em", margin_bottom="0.5em"),
-                        "h3": lambda text: rx.heading(text, size="5", color=COLORS["primary"], margin_top="0.8em", margin_bottom="0.4em"),
-                        "p": lambda text: rx.text(text, color=COLORS["muted_foreground"], font_size="1.3em", line_height="1.6", margin_bottom="0.6em"),
-                        "li": lambda text: rx.list_item(rx.text(text, color=COLORS["muted_foreground"], font_size="1.3em", line_height="1.5")),
-                        "strong": lambda text: rx.text(text, font_weight="bold", color=COLORS["foreground"], as_="span"),
-                        "em": lambda text: rx.text(text, font_style="italic", as_="span"),
-                        "blockquote": lambda text: rx.box(
-                            rx.text(text, color=COLORS["primary"], font_style="italic", font_size="1.35em"),
-                            border_left=f"4px solid {COLORS['primary']}",
-                            padding_left="1.2em",
-                            margin_y="1.2em",
-                            background_color=f"{COLORS['primary']}10",
-                            padding="1em",
-                            border_radius="0.3em",
-                        ),
-                        "table": lambda children: rx.box(
-                            children,
-                            width="100%",
-                            overflow_x="auto",
-                            margin_y="1.2em",
-                        ),
-                        "th": lambda text: rx.table.column_header_cell(
-                            rx.text(text, font_weight="bold", color=COLORS["foreground"], font_size="1.25em"),
-                        ),
-                        "td": lambda text: rx.table.cell(
-                            rx.text(text, color=COLORS["muted_foreground"], font_size="1.2em"),
-                        ),
-                    },
+                    component_map=MARKDOWN_COMPONENT_MAP,
                 ),
                 width="100%",
                 spacing="4",

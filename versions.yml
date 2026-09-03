@@ -3,11 +3,11 @@
 # App versions (fuente de verdad para imágenes Docker y despliegue selectivo)
 # Manifiesto de paths: infrastructure/docker/service_manifest.yml
 # Incrementar con: python scripts/bump_service_version.py <servicio> --level fix|minor|major
-version_frontend: 0.7.2
+version_frontend: 0.7.3
 version_backoffice: 0.7.1
 version_middleware: 0.7.2
 version_broker: 0.7.3
-version_backend_core: 0.7.5
+version_backend_core: 0.7.6
 version_backend_ia: 0.7.2
 version_fmanagement: 0.7.1
 version_laimweb: 0.7.3

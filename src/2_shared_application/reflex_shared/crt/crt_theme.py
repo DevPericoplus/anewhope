@@ -136,10 +136,10 @@ def get_select_style(variant: CrtVariant = "green") -> dict[str, str]:
 def get_markdown_component_map(
     variant: CrtVariant = "green",
     *,
-    body_font_size: str = "1.15em",
+    body_font_size: str = "1em",
     h1_size: str = "7",
-    h2_size: str = "6",
-    h3_size: str = "5",
+    h2_size: str = "5",
+    h3_size: str = "4",
 ) -> dict[str, Any]:
     """Component map CRT para rx.markdown."""
     colors = get_crt_colors(variant)

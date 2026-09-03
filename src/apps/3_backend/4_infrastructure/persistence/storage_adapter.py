@@ -6,7 +6,6 @@ import importlib.util
 import json
 import logging
 import os
-import subprocess
 import sys
 from pathlib import Path
 from dataclasses import dataclass
@@ -155,33 +154,30 @@ def load_mariadb_settings() -> dict[str, Any]:
     }
 
 
-def _build_mariadb_cli_cmd(
-    settings: dict[str, Any],
-    db_user: str,
-    db_password: str,
-    db_name: str,
-    *,
-    extra_args: list[str] | None = None,
-) -> list[str]:
-    """Construye comando mariadb CLI incluyendo host y puerto."""
+def _connect_mariadb(settings: dict[str, Any], *, use_writer: bool = False) -> Any:
+    """Abre una conexión PyMySQL a myllm_core_db."""
 
-    host = str(settings.get("host") or "localhost")
-    port = str(settings.get("port") or 3306)
-    cmd = [
-        settings["cli_path"],
-        "-h",
-        host,
-        "-P",
-        port,
-        "-u",
-        db_user,
-        f"-p{db_password}",
-        "--database",
-        db_name,
-    ]
-    if extra_args:
-        cmd.extend(extra_args)
-    return cmd
+    import pymysql
+
+    db_user = settings["writer_user"] if use_writer else settings["reader_user"]
+    db_password = (
+        settings["writer_password"] if use_writer else settings["reader_password"]
+    )
+    if not db_user:
+        raise StorageAdapterError("Faltan credenciales de MariaDB")
+
+    try:
+        return pymysql.connect(
+            host=str(settings.get("host") or "localhost"),
+            port=int(settings.get("port") or 3306),
+            user=db_user,
+            password=db_password,
+            database=settings["core_database"],
+            charset="utf8mb4",
+            autocommit=False,
+        )
+    except pymysql.Error as exc:
+        raise StorageAdapterError(f"No se pudo conectar a MariaDB: {exc}") from exc
 
 
 def _fetch_mariadb_rows(
@@ -194,25 +190,7 @@ def _fetch_mariadb_rows(
 
     import pymysql
 
-    db_user = settings["writer_user"] if use_writer else settings["reader_user"]
-    db_password = (
-        settings["writer_password"] if use_writer else settings["reader_password"]
-    )
-    if not db_user:
-        raise StorageAdapterError("Faltan credenciales de MariaDB")
-
-    try:
-        connection = pymysql.connect(
-            host=str(settings.get("host") or "localhost"),
-            port=int(settings.get("port") or 3306),
-            user=db_user,
-            password=db_password,
-            database=settings["core_database"],
-            charset="utf8mb4",
-        )
-    except pymysql.Error as exc:
-        raise StorageAdapterError(f"No se pudo conectar a MariaDB: {exc}") from exc
-
+    connection = _connect_mariadb(settings, use_writer=use_writer)
     try:
         with connection.cursor() as cursor:
             cursor.execute(query)
@@ -220,6 +198,24 @@ def _fetch_mariadb_rows(
             return list(rows)
     except pymysql.Error as exc:
         raise StorageAdapterError(f"Error ejecutando consulta MariaDB: {exc}") from exc
+    finally:
+        connection.close()
+
+
+def _execute_mariadb_sqls(settings: dict[str, Any], sqls: list[str]) -> None:
+    """Ejecuta sentencias SQL de escritura con el usuario writer."""
+
+    import pymysql
+
+    connection = _connect_mariadb(settings, use_writer=True)
+    try:
+        with connection.cursor() as cursor:
+            for sql in sqls:
+                cursor.execute(sql)
+        connection.commit()
+    except pymysql.Error as exc:
+        connection.rollback()
+        raise StorageAdapterError(f"Error escribiendo en MariaDB: {exc}") from exc
     finally:
         connection.close()
 
@@ -659,11 +655,7 @@ def _sync_organizations_to_mariadb(organizations: list[OrganizationDto]) -> None
     """
 
     settings = load_mariadb_settings()
-    cli_path = settings["cli_path"]
-    db_name = settings["core_database"]
-    db_user = settings["writer_user"]
-    db_password = settings["writer_password"]
-    if not cli_path or not db_user:
+    if not settings["writer_user"]:
         raise StorageAdapterError(
             "Faltan credenciales de escritura para MariaDB (organizations)"
         )
@@ -700,24 +692,16 @@ def _sync_organizations_to_mariadb(organizations: list[OrganizationDto]) -> None
             f"active={active};"
         )
 
-        cmd = _build_mariadb_cli_cmd(
-            settings,
-            db_user,
-            db_password,
-            db_name,
-            extra_args=["-e", sql],
-        )
         try:
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
-        except subprocess.CalledProcessError as exc:
-            error_msg = exc.stderr if exc.stderr else str(exc)
+            _execute_mariadb_sqls(settings, [sql])
+        except StorageAdapterError as exc:
             logging.getLogger("backend_core.storage").error(
                 "Error sincronizando org_id=%s a MariaDB: %s",
                 org_id,
-                error_msg,
+                exc,
             )
             raise StorageAdapterError(
-                f"No se pudo sincronizar organización {org_id} a MariaDB: {error_msg}"
+                f"No se pudo sincronizar organización {org_id} a MariaDB: {exc}"
             ) from exc
 
 
@@ -730,11 +714,7 @@ def _sync_users_to_mariadb(users: list[UserDto]) -> None:
     """
 
     settings = load_mariadb_settings()
-    cli_path = settings["cli_path"]
-    db_name = settings["core_database"]
-    db_user = settings["writer_user"]
-    db_password = settings["writer_password"]
-    if not cli_path or not db_user:
+    if not settings["writer_user"]:
         raise StorageAdapterError("Faltan credenciales de escritura para MariaDB")
 
     def sql_escape(value: str) -> str:
@@ -742,35 +722,17 @@ def _sync_users_to_mariadb(users: list[UserDto]) -> None:
 
     for user in users:
         payload = user.model_dump()
-        # Construir un solo comando SQL con todas las operaciones
         sqls = _build_user_upsert_sqls(payload, sql_escape)
-        # Unir todos los SQLs en un solo comando
-        combined_sql = " ".join(sqls)
-        cmd = _build_mariadb_cli_cmd(
-            settings,
-            db_user,
-            db_password,
-            db_name,
-            extra_args=["-e", combined_sql],
-        )
         try:
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-            if result.stderr:
-                # MariaDB puede enviar warnings a stderr incluso con éxito
-                logging.getLogger("backend_core.storage").warning(
-                    "MariaDB warning para user_id=%s: %s",
-                    payload.get("user_id"),
-                    result.stderr.strip(),
-                )
-        except subprocess.CalledProcessError as exc:
-            error_msg = exc.stderr if exc.stderr else str(exc)
+            _execute_mariadb_sqls(settings, sqls)
+        except StorageAdapterError as exc:
             logging.getLogger("backend_core.storage").error(
                 "Error sincronizando user_id=%s a MariaDB: %s",
                 payload.get("user_id"),
-                error_msg,
+                exc,
             )
             raise StorageAdapterError(
-                f"No se pudo sincronizar usuario {payload.get('user_id')} a MariaDB: {error_msg}"
+                f"No se pudo sincronizar usuario {payload.get('user_id')} a MariaDB: {exc}"
             ) from exc
 
 
