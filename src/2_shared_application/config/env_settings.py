@@ -17,7 +17,7 @@ _PROTECTED_CACHE: ModuleType | None = None
 _CURRENT_ENVIRONMENT: str | None = None
 
 # Constantes
-VALID_ENVIRONMENTS = ("macbook", "dev", "pre", "pro")
+VALID_ENVIRONMENTS = ("macbook", "dev", "pre", "pro", "silicon")
 ENV_YAML_FILENAME = "env.yaml"
 PROTECTED_VALUES_FILENAME = "protected_values.py"
 ENVGLOBAL_FILENAME = ".envglobal"

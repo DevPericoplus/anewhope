@@ -480,6 +480,15 @@ class JobCompleteResponse(BaseModel):
     message: str = ""
 
 
+class TrainerJobContextResponse(BaseModel):
+    """Contexto de negocio resuelto en Core para el Trainer."""
+
+    organization_name: str = ""
+    project_name: str = ""
+    prompt: str = ""
+    prompt_name: str = ""
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Gestiona el ciclo de vida de la aplicación."""
@@ -3683,6 +3692,35 @@ def update_notification_phase_endpoint(
 # ============================================================================
 # Jobs - Actualización de estado desde Trainer
 # ============================================================================
+
+
+@app.get(
+    "/trainer/job-context",
+    response_model=TrainerJobContextResponse,
+    tags=["trainer"],
+)
+def get_trainer_job_context_endpoint(
+    organization_id: int = 0,
+    project_id: int = 0,
+    prompt_name: str = "",
+    router: BackendCoreRouter = Depends(get_router_core),
+) -> TrainerJobContextResponse:
+    """Resuelve nombres y prompt de fusión para el Backend IA.
+
+    Flujo: Trainer → Broker → Backend Core → MariaDB (solo lectura).
+    """
+    try:
+        result = router.get_trainer_job_context(
+            organization_id=organization_id,
+            project_id=project_id,
+            prompt_name=prompt_name,
+        )
+        return TrainerJobContextResponse(**result)
+    except BackendCoreBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
 
 
 @app.patch("/jobs/{job_id}/complete", response_model=JobCompleteResponse, tags=["jobs"])

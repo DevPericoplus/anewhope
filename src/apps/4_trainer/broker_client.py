@@ -86,12 +86,16 @@ class TrainerBrokerClient:
             timeout: Timeout para peticiones HTTP.
         """
         if broker_url:
-            self._broker_url = broker_url
+            self._broker_url = broker_url.rstrip("/")
         else:
-            # Leer de protected_values (ya existe broker_backend_base_url)
-            self._broker_url = get_protected_value(
-                "broker_backend_base_url", "http://localhost:8008"
+            self._broker_url = (
+                get_env_value("BROKER_BACKEND_BASE_URL", "")
+                or get_env_value("broker_backend_base_url", "")
+                or get_protected_value(
+                    "broker_backend_base_url", "http://localhost:8008"
+                )
             )
+            self._broker_url = str(self._broker_url).rstrip("/")
         self._timeout = timeout
         self._client_app = "trainer"
         logger.info(
@@ -168,6 +172,73 @@ class TrainerBrokerClient:
             raise TrainerBrokerClientError(
                 f"Error de conexión con Broker: {exc}"
             ) from exc
+
+    def get_job_context(
+        self,
+        organization_id: int = 0,
+        project_id: int = 0,
+        prompt_name: str = "",
+    ) -> dict[str, Any]:
+        """Obtiene nombres y prompt de fusión via Broker → Backend Core.
+
+        Args:
+            organization_id: ID de organización (0 para omitir).
+            project_id: ID de proyecto (0 para omitir).
+            prompt_name: Nombre del prompt en prompts_identidades.
+
+        Returns:
+            Diccionario con organization_name, project_name y prompt.
+        """
+        from urllib.parse import quote
+
+        path = (
+            f"/trainer/job-context?organization_id={organization_id}"
+            f"&project_id={project_id}"
+        )
+        if prompt_name:
+            path = f"{path}&prompt_name={quote(prompt_name)}"
+        return self._request("GET", path)
+
+    def complete_job(
+        self,
+        job_id: int,
+        id_organizacion: int,
+        id_proyecto: int,
+        id_version: int,
+        descripcion: str,
+        referencia_salida: str = "",
+        tipo_cambio: str = "evaluacion_documental",
+        id_estado: int = 4,
+    ) -> dict[str, Any]:
+        """Completa un job via Broker → Backend Core → MariaDB.
+
+        Args:
+            job_id: ID del job.
+            id_organizacion: ID de organización.
+            id_proyecto: ID de proyecto.
+            id_version: ID de versión.
+            descripcion: Descripción del resultado.
+            referencia_salida: Ruta del informe generado.
+            tipo_cambio: Tipo para la tabla cambios.
+            id_estado: 4=finalizado, 3=error.
+
+        Returns:
+            Diccionario con success, id_cambio y message.
+        """
+        return self._request(
+            "PATCH",
+            f"/jobs/{job_id}/complete",
+            payload={
+                "job_id": job_id,
+                "id_organizacion": id_organizacion,
+                "id_proyecto": id_proyecto,
+                "id_version": id_version,
+                "descripcion": descripcion,
+                "referencia_salida": referencia_salida,
+                "tipo_cambio": tipo_cambio,
+                "id_estado": id_estado,
+            },
+        )
 
     # ================================================================
     # Operaciones de entrenamientos

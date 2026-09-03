@@ -1927,6 +1927,53 @@ class BrokerBackendRouter:
                 f"Error listando modelos activos: {str(exc)}"
             ) from exc
 
+    def get_trainer_job_context(
+        self,
+        organization_id: int = 0,
+        project_id: int = 0,
+        prompt_name: str = "",
+    ) -> dict[str, Any]:
+        """Resuelve contexto de job para el Trainer via Backend Core."""
+        self._logger.info(
+            "[%s] Contexto trainer: org=%s prj=%s prompt=%s",
+            self._client_app,
+            organization_id,
+            project_id,
+            prompt_name,
+        )
+        try:
+            return self._core_client.get_trainer_job_context(
+                organization_id=organization_id,
+                project_id=project_id,
+                prompt_name=prompt_name,
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error obteniendo contexto de job: {str(exc)}"
+            ) from exc
+
+    def complete_job(
+        self,
+        job_id: int,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Completa un job de análisis via Backend Core.
+
+        Enruta: Trainer → Broker → Backend Core → MariaDB
+        """
+        self._logger.info(
+            "[%s] Completando job=%s tipo=%s",
+            self._client_app,
+            job_id,
+            payload.get("tipo_cambio"),
+        )
+        try:
+            return self._core_client.complete_job(job_id, payload)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error completando job: {str(exc)}"
+            ) from exc
+
     def register_entrenamiento(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Registra un nuevo entrenamiento via Backend Core.
 

@@ -6425,6 +6425,97 @@ class BackendCoreRouter:
     # Gestión de Jobs (actualización de estado desde Trainer)
     # ================================================================
 
+    def get_trainer_job_context(
+        self,
+        organization_id: int = 0,
+        project_id: int = 0,
+        prompt_name: str = "",
+    ) -> dict[str, Any]:
+        """Resuelve nombres y prompt de fusión para el Trainer (solo lectura).
+
+        El Backend IA no accede a MariaDB. Consulta este método via
+        Broker → Backend Core.
+        """
+        from sqlalchemy import text
+
+        organization_name = (
+            f"Organización {organization_id}" if organization_id > 0 else ""
+        )
+        project_name = f"Proyecto {project_id}" if project_id > 0 else ""
+        prompt_text = ""
+
+        with self._get_projects_db_connection() as conn:
+            if organization_id > 0:
+                organization_name = self._lookup_organization_name(
+                    conn, text, organization_id, organization_name
+                )
+            if project_id > 0:
+                project_name = self._lookup_project_name(
+                    conn, text, project_id, project_name
+                )
+            if prompt_name:
+                prompt_text = self._lookup_active_prompt(conn, text, prompt_name)
+
+        return {
+            "organization_name": organization_name,
+            "project_name": project_name,
+            "prompt": prompt_text,
+            "prompt_name": prompt_name,
+        }
+
+    def _lookup_organization_name(
+        self,
+        conn: Any,
+        text: Any,
+        organization_id: int,
+        fallback: str,
+    ) -> str:
+        """Obtiene organization_name desde myllm_core_db."""
+        row = conn.execute(
+            text(
+                "SELECT organization_name FROM myllm_core_db.organizations "
+                "WHERE organization_id = :id"
+            ),
+            {"id": organization_id},
+        ).fetchone()
+        if row and row[0]:
+            return str(row[0])
+        return fallback
+
+    def _lookup_project_name(
+        self,
+        conn: Any,
+        text: Any,
+        project_id: int,
+        fallback: str,
+    ) -> str:
+        """Obtiene el nombre del proyecto desde myllm_projects_db."""
+        row = conn.execute(
+            text("SELECT nombre FROM proyectos WHERE id = :id"),
+            {"id": project_id},
+        ).fetchone()
+        if row and row[0]:
+            return str(row[0])
+        return fallback
+
+    def _lookup_active_prompt(
+        self,
+        conn: Any,
+        text: Any,
+        prompt_name: str,
+    ) -> str:
+        """Obtiene un prompt activo de prompts_identidades."""
+        row = conn.execute(
+            text(
+                "SELECT prompt FROM prompts_identidades "
+                "WHERE name = :name AND active = 1"
+            ),
+            {"name": prompt_name},
+        ).fetchone()
+        if row and row[0]:
+            return str(row[0])
+        return ""
+
     def complete_job(
         self,
         job_id: int,

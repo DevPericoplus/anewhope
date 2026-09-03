@@ -105,7 +105,6 @@ _env_settings = _load_shared_module(
     "2_shared_application/config/env_settings.py",
 )
 get_env_value = _env_settings.get_env_value
-get_protected_value = _env_settings.get_protected_value
 
 
 # ---------------------------------------------------------------------------
@@ -1243,77 +1242,6 @@ def _phase_entrenamiento(
 
 
 # ---------------------------------------------------------------------------
-# Funciones auxiliares de lectura de BD (solo lectura, vía PyMySQL directo)
-# ---------------------------------------------------------------------------
-
-
-def _get_db_reader_connection(database: str) -> Any:
-    """Crea una conexión de solo lectura a MariaDB para nombres legibles."""
-    import pymysql
-    import pymysql.cursors
-
-    host = get_protected_value("mariadb_host", "localhost")
-    port = int(get_protected_value("mariadb_port", 3306))
-    user = get_protected_value("mariadb_reader_user", "myllm_reader")
-    password = get_protected_value("mariadb_reader_password", "")
-
-    return pymysql.connect(
-        host=host,
-        port=port,
-        user=user,
-        password=password,
-        database=database,
-        charset="utf8mb4",
-        cursorclass=pymysql.cursors.DictCursor,
-    )
-
-
-def _fetch_organization_name(id_organizacion: int) -> str:
-    """Obtiene el nombre de la organización desde myllm_core_db."""
-    try:
-        conn = _get_db_reader_connection("myllm_core_db")
-        with conn:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "SELECT organization_name FROM organizations "
-                    "WHERE organization_id = %s",
-                    (id_organizacion,),
-                )
-                row = cursor.fetchone()
-                if row:
-                    return str(row["organization_name"])
-        return f"Organización {id_organizacion}"
-    except Exception as exc:
-        logger.warning(
-            "[ENTRENAMIENTO] No se pudo obtener nombre de organización %s: %s",
-            id_organizacion, exc,
-        )
-        return f"Organización {id_organizacion}"
-
-
-def _fetch_project_name(id_proyecto: int) -> str:
-    """Obtiene el nombre del proyecto desde myllm_projects_db."""
-    try:
-        conn = _get_db_reader_connection("myllm_projects_db")
-        with conn:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "SELECT nombre FROM proyectos WHERE id = %s",
-                    (id_proyecto,),
-                )
-                row = cursor.fetchone()
-                if row:
-                    return str(row["nombre"])
-        return f"Proyecto {id_proyecto}"
-    except Exception as exc:
-        logger.warning(
-            "[ENTRENAMIENTO] No se pudo obtener nombre de proyecto %s: %s",
-            id_proyecto, exc,
-        )
-        return f"Proyecto {id_proyecto}"
-
-
-# ---------------------------------------------------------------------------
 # PROCESO PRINCIPAL (ejecutado en background thread)
 # ---------------------------------------------------------------------------
 
@@ -1475,9 +1403,16 @@ def process_entrenamiento(data: dict[str, Any]) -> None:
             time.time() - phase5_start,
         )
 
-        # Obtener nombres legibles para el system prompt
-        org_name = _fetch_organization_name(id_org)
-        prj_name = _fetch_project_name(id_prj)
+        # Obtener nombres legibles via Broker → Backend Core
+        from trainer_core_lookup import fetch_job_context
+
+        ctx = fetch_job_context(
+            organization_id=id_org,
+            project_id=id_prj,
+            client=broker,
+        )
+        org_name = str(ctx.get("organization_name") or f"Organización {id_org}")
+        prj_name = str(ctx.get("project_name") or f"Proyecto {id_prj}")
 
         _notify_progress(
             broker,
@@ -1806,9 +1741,16 @@ def process_entrenamiento_with_id(data: dict[str, Any]) -> None:
             time.time() - phase5_start,
         )
 
-        # Obtener nombres legibles para el system prompt
-        org_name = _fetch_organization_name(id_org)
-        prj_name = _fetch_project_name(id_prj)
+        # Obtener nombres legibles via Broker → Backend Core
+        from trainer_core_lookup import fetch_job_context
+
+        ctx = fetch_job_context(
+            organization_id=id_org,
+            project_id=id_prj,
+            client=broker,
+        )
+        org_name = str(ctx.get("organization_name") or f"Organización {id_org}")
+        prj_name = str(ctx.get("project_name") or f"Proyecto {id_prj}")
 
         _notify_progress(
             broker,

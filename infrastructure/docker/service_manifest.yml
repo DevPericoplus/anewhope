@@ -1,0 +1,118 @@
+# Manifiesto de servicios Docker / compose.
+# Fuente de verdad para:
+#   - scripts/bump_service_version.py
+#   - scripts/changed_docker_services.py
+#   - playbooks de anh_ansible_environments (rebuild selectivo)
+#
+# version_key  → clave en versions.yml (raíz de anewhope)
+# image        → tag Docker: {image}:{version}
+# compose      → nombre del servicio en docker-compose
+# server       → frontend | backend | trainer
+# paths        → rutas cuyo cambio obliga a reconstruir este servicio
+#
+# Si cambia src/1_shared_domain/ o src/2_shared_application/, TODOS los
+# servicios Python deben reconstruirse (dependen de las capas compartidas).
+
+shared_python_paths:
+  - src/1_shared_domain/
+  - src/2_shared_application/
+
+services:
+  frontend:
+    version_key: version_frontend
+    image: anewhope-frontend
+    compose: web_frontend
+    server: frontend
+    dockerfile: src/apps/5_web_frontend/Dockerfile
+    paths:
+      - src/apps/5_web_frontend/
+      - src/1_shared_domain/
+      - src/2_shared_application/
+
+  backoffice:
+    version_key: version_backoffice
+    image: anewhope-backoffice
+    compose: web_backoffice
+    server: frontend
+    dockerfile: src/apps/6_web_backoffice/Dockerfile
+    paths:
+      - src/apps/6_web_backoffice/
+      - src/1_shared_domain/
+      - src/2_shared_application/
+
+  middleware:
+    version_key: version_middleware
+    image: anewhope-middleware
+    compose: service_frontend
+    server: frontend
+    dockerfile: src/apps/7_service_frontend/Dockerfile
+    paths:
+      - src/apps/7_service_frontend/
+      - src/1_shared_domain/
+      - src/2_shared_application/
+
+  laimweb:
+    version_key: version_laimweb
+    image: anewhope-laimweb
+    compose: laimweb
+    server: frontend
+    dockerfile: src/apps/9_laimweb/Dockerfile
+    paths:
+      - src/apps/9_laimweb/
+      - src/1_shared_domain/
+      - src/2_shared_application/
+
+  broker:
+    version_key: version_broker
+    image: anewhope-broker
+    compose: service_backend
+    server: backend
+    dockerfile: src/apps/8_service_backend/Dockerfile
+    paths:
+      - src/apps/8_service_backend/
+      - src/1_shared_domain/
+      - src/2_shared_application/
+
+  backend_core:
+    version_key: version_backend_core
+    image: anewhope-backend-core
+    compose: backend_core
+    server: backend
+    dockerfile: src/apps/3_backend/Dockerfile
+    paths:
+      - src/apps/3_backend/
+      - src/1_shared_domain/
+      - src/2_shared_application/
+
+  laim_forum:
+    version_key: version_laim_forum
+    image: anewhope-laim-forum
+    compose: laim_forum
+    server: backend
+    dockerfile: src/apps/9_laimweb/laim_forum_daemon/Dockerfile
+    paths:
+      - src/apps/9_laimweb/laim_forum_daemon/
+      - src/1_shared_domain/
+      - src/2_shared_application/
+
+  backend_ia:
+    version_key: version_backend_ia
+    image: anewhope-trainer
+    compose: trainer_api
+    server: trainer
+    dockerfile: src/apps/4_trainer/Dockerfile
+    paths:
+      - src/apps/4_trainer/
+      - src/1_shared_domain/
+      - src/2_shared_application/
+    notes: "En silicon el trainer corre nativo (hybrid); la imagen solo se usa si deploy_mode=docker-compose"
+
+  fmanagement:
+    version_key: version_fmanagement
+    image: fmanagement
+    compose: fmanagement
+    server: backend
+    dockerfile: Dockerfile
+    repo: fmanagement
+    paths:
+      - ../fmanagement/

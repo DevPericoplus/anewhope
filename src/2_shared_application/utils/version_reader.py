@@ -156,5 +156,7 @@ if __name__ == "__main__":
     print(f"Middleware: {get_version('middleware')}")
     print(f"Broker: {get_version('broker')}")
     print(f"fmanagement: {get_version('fmanagement')}")
+    print(f"LAIM Web: {get_version('laimweb')}")
+    print(f"LAIM Forum: {get_version('laim_forum')}")
     print("\nTodas las versiones:")
     print(get_all_versions())

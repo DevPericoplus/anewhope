@@ -4000,6 +4000,36 @@ class TrainingParamsResponse(BaseModel):
     message: str = ""
 
 
+class TrainerJobContextResponse(BaseModel):
+    """Contexto de negocio resuelto en Core para el Trainer."""
+
+    organization_name: str = ""
+    project_name: str = ""
+    prompt: str = ""
+    prompt_name: str = ""
+
+
+class JobCompleteRequest(BaseModel):
+    """Payload para completar un job desde el Trainer."""
+
+    job_id: int
+    id_organizacion: int
+    id_proyecto: int
+    id_version: int
+    descripcion: str = ""
+    referencia_salida: str = ""
+    tipo_cambio: str = "evaluacion_documental"
+    id_estado: int = Field(default=4, description="4=Finalizado, 3=Error")
+
+
+class JobCompleteResponse(BaseModel):
+    """Respuesta de completado de job."""
+
+    success: bool
+    id_cambio: int | None = None
+    message: str = ""
+
+
 class EntrenamientoRegisterRequest(BaseModel):
     """Payload para registrar un nuevo entrenamiento."""
 
@@ -4126,6 +4156,59 @@ def list_active_models_endpoint(
     """
     try:
         return router.list_active_models()
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get(
+    "/trainer/job-context",
+    response_model=TrainerJobContextResponse,
+    tags=["trainer"],
+)
+def get_trainer_job_context_endpoint(
+    organization_id: int = 0,
+    project_id: int = 0,
+    prompt_name: str = "",
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> TrainerJobContextResponse:
+    """Resuelve nombres y prompt de fusión para el Backend IA.
+
+    Flujo: Trainer → Broker → Backend Core → MariaDB
+    """
+    try:
+        result = router.get_trainer_job_context(
+            organization_id=organization_id,
+            project_id=project_id,
+            prompt_name=prompt_name,
+        )
+        return TrainerJobContextResponse(**result)
+    except BrokerBusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch(
+    "/jobs/{job_id}/complete",
+    response_model=JobCompleteResponse,
+    tags=["jobs"],
+)
+def complete_job_endpoint(
+    job_id: int,
+    payload: JobCompleteRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> JobCompleteResponse:
+    """Completa un job de análisis desde el Trainer.
+
+    Flujo: Trainer → Broker → Backend Core → MariaDB
+    """
+    try:
+        result = router.complete_job(job_id, payload.model_dump())
+        return JobCompleteResponse(**result)
     except BrokerBusinessError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

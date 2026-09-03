@@ -3,23 +3,26 @@ FROM python:${PYTHON_VERSION}-slim
 
 WORKDIR /app
 
-# Argumento para definir el entorno (dev, pre, pro)
-# Para producción: docker build --build-arg ENVIRONMENT=pro ...
+# Argumento para definir el entorno (dev, pre, pro, silicon)
 ARG ENVIRONMENT=dev
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     ENVIRONMENT=${ENVIRONMENT}
 
-# Herramientas de compilación y runtime de Reflex:
-# - build-essential/python3-dev: compilar wheels sin binario arm64 (hiredis).
-# - curl/unzip: Reflex los usa para descargar e instalar bun en runtime.
+# Dependencias de sistema que Reflex/Vite necesitan en runtime
+# (bun/node se descargan por Reflex; curl/unzip/bash son requeridos).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential python3-dev curl unzip \
+    && apt-get install -y --no-install-recommends \
+        curl \
+        unzip \
+        bash \
+        build-essential \
+        python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY src/apps/6_web_backoffice/requirements.txt /app/requirements.txt
-COPY src/apps/6_web_backoffice/entrypoint.sh /app/entrypoint.sh
+COPY src/apps/9_laimweb/requirements.txt /app/requirements.txt
+COPY src/apps/9_laimweb/entrypoint.sh /app/entrypoint.sh
 
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r /app/requirements.txt
@@ -28,8 +31,8 @@ COPY . /app
 
 # Pre-generar el frontend Reflex (.web) y parchear Vite (allowedHosts) en build.
 ENV PYTHONPATH=/app
-RUN cd /app/src/apps/6_web_backoffice \
-    && reflex init --name web_backoffice --loglevel info \
+RUN cd /app/src/apps/9_laimweb \
+    && reflex init --name laim_web --loglevel info \
     && python patch_vite_config.py || true
 
 # SEGURIDAD: En producción, eliminar archivos JSON de moks
@@ -39,7 +42,8 @@ RUN if [ "$ENVIRONMENT" = "pro" ]; then \
         echo "Moks eliminados correctamente"; \
     fi
 
-EXPOSE 8006
+# Puertos: 8010 (backend Reflex), 3110 (frontend Vite)
+EXPOSE 8010 3110
 
 RUN chmod +x /app/entrypoint.sh
 

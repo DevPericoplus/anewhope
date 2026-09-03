@@ -1,0 +1,131 @@
+# ============================================================================
+# fmanagement - File Management Operations API
+# Configuración de rutas y operaciones para entorno: silicon
+# ============================================================================
+# Nomenclatura de persistencia: /data/<server>/<service-or-app>/
+#   - Datos de un servicio/app:  /data/<server>/<app>/
+#   - Logs de ese servicio/app:  /data/<server>/<app>/logs/   (anidados)
+# Ejemplos:
+#   - Redis del frontend:   datos /data/frontend/redis/       logs /data/frontend/redis/logs/
+#   - MariaDB del backend:  datos /data/backend/mariadb/      logs /data/backend/mariadb/logs/
+#   - Ollama del trainer:   datos /data/trainer/ollama/       logs /data/trainer/ollama/logs/
+# ============================================================================
+
+# --------------------------------------------------------------------------
+# Configuración de permisos
+# --------------------------------------------------------------------------
+permissions_source: db_only
+middleware_base_url: http://frontend.anewhope.silicon.loc:8007
+core_backend_base_url: http://backend.anewhope.silicon.loc:8003
+
+# --------------------------------------------------------------------------
+# Rutas base de almacenamiento - External (contenido de clientes)
+# En backend es el origen; en trainer es la copia sincronizada (RO).
+# --------------------------------------------------------------------------
+backend_core_base_storage: /data/backend/external
+backend_ia_base_storage: /data/trainer/external
+
+# --------------------------------------------------------------------------
+# Rutas base de almacenamiento - Internal (contenido generado por sistema)
+# En trainer es el origen (modelos/reportes); en backend es la copia.
+# --------------------------------------------------------------------------
+backend_core_internal_storage: /data/backend/internal
+backend_ia_internal_storage: /data/trainer/internal
+
+# Rutas específicas dentro de internal
+backend_core_models_storage: /data/backend/internal/models
+backend_core_reports_storage: /data/backend/internal/reports
+backend_ia_models_storage: /data/trainer/internal/models
+backend_ia_reports_storage: /data/trainer/internal/reports
+
+# --------------------------------------------------------------------------
+# Rutas de logs por servicio (anidadas bajo /data/<server>/<app>/logs)
+# --------------------------------------------------------------------------
+# Backend server
+backend_core_logs_path: /data/backend/backend_core/logs
+service_backend_logs_path: /data/backend/broker/logs
+fmanagement_logs_path: /data/backend/fmanagement/logs
+
+# Frontend server
+backoffice_logs_path: /data/frontend/backoffice/logs
+frontend_logs_path: /data/frontend/frontend/logs
+middleware_logs_path: /data/frontend/middleware/logs
+
+# Trainer server
+backend_ia_logs_path: /data/trainer/backend_ia/logs
+
+# --------------------------------------------------------------------------
+# Rutas de persistencia de bases de datos / servicios de infraestructura
+# (contenerizados en frontend/backend; volúmenes bind-mount a estas rutas)
+# --------------------------------------------------------------------------
+mariadb_data_path: /data/backend/mariadb
+redis_data_path: /data/frontend/redis
+chroma_data_path: /data/trainer/chroma
+
+# --------------------------------------------------------------------------
+# Rutas de imágenes Docker (tar.gz) por servidor
+# --------------------------------------------------------------------------
+backend_images_path: /data/backend/images
+frontend_images_path: /data/frontend/images
+trainer_images_path: /data/trainer/images
+
+# --------------------------------------------------------------------------
+# Versiones de imágenes Docker
+# --------------------------------------------------------------------------
+docker_image_name_prefix: anewhope
+backend_core_image_version: 1.0.0
+service_backend_image_version: 1.0.0
+fmanagement_image_version: 1.0.0
+frontend_image_version: 1.0.0
+backoffice_image_version: 1.0.0
+middleware_image_version: 1.0.0
+backend_ia_image_version: 1.0.0
+
+# --------------------------------------------------------------------------
+# Configuración de transferencia de versiones
+# --------------------------------------------------------------------------
+transfer_mode: remote
+
+# --------------------------------------------------------------------------
+# Configuración de sincronización rsync (over SSH) backend <-> trainer
+# --------------------------------------------------------------------------
+rsync_enabled: true
+
+# Direcciones de sincronización (idénticas a pre):
+#   external:  backend  -> trainer   (/data/backend/external  -> /data/trainer/external)
+#   models:    trainer  -> backend   (/data/trainer/internal/models   -> /data/backend/internal/models)
+#   reports:   trainer  -> backend   (/data/trainer/internal/reports  -> /data/backend/internal/reports)
+rsync_external_direction: backend_to_trainer
+rsync_external_trigger: automatic
+rsync_models_direction: trainer_to_backend
+rsync_models_trigger: automatic
+rsync_reports_direction: trainer_to_backend
+rsync_reports_trigger: automatic
+
+# Intervalo de sincronización automática (segundos)
+rsync_automatic_interval: 300
+
+# --------------------------------------------------------------------------
+# Configuración SSH para transferencias remotas
+# --------------------------------------------------------------------------
+# Trainer server SSH (destino de external, origen de models/reports)
+trainer_ssh_host: trainer.anewhope.silicon.loc
+trainer_ssh_user: rsync_user
+trainer_ssh_key_path: /opt/anewhope/keys/rsync_key
+trainer_ssh_port: 22
+
+# Backend server SSH (para sincronización inversa)
+core_ssh_host: backend.anewhope.silicon.loc
+core_ssh_user: rsync_user
+core_ssh_key_path: /opt/anewhope/keys/rsync_key
+core_ssh_port: 22
+
+# --------------------------------------------------------------------------
+# Notas de configuración
+# --------------------------------------------------------------------------
+# Entorno: silicon (VMs locales Oracle Linux 10 arm64 en UTM)
+# - TRANSFER_MODE=remote (rsync over SSH entre backend y trainer)
+# - RSYNC_ENABLED=true (sincronización automática + bajo demanda)
+# - PERMISSIONS_SOURCE=db_only
+# - Nomenclatura /data/<server>/<app> con logs anidados
+# - Backend (backend.anewhope.silicon.loc) y Trainer (trainer.anewhope.silicon.loc) VMs separadas

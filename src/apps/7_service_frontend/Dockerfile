@@ -11,6 +11,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     ENVIRONMENT=${ENVIRONMENT}
 
+# Herramientas de compilación: en arm64 algunos paquetes (p.ej. hiredis) no
+# tienen wheel y deben compilarse desde fuente (requieren gcc + headers).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY src/apps/7_service_frontend/requirements.txt /app/requirements.txt
 COPY src/apps/7_service_frontend/.env.example /app/.env.example
 COPY src/apps/7_service_frontend/entrypoint.sh /app/entrypoint.sh

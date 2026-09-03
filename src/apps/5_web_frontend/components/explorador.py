@@ -36,22 +36,16 @@ if not logger.handlers:
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-# Importar adaptador de permisos y mapeo desde capa compartida
+# Mapeo de acciones → permisos (sin acceso a MariaDB)
 try:
-    # Cargar adaptador de permisos
-    # Path: explorador.py -> components -> 5_web_frontend -> apps -> src
-    # parents[3] nos lleva a "src", luego accedemos a 2_shared_application
-    _perms_adapter_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "adapters" / "user_permissions_adapter.py"
-    _perms_spec = importlib.util.spec_from_file_location("user_permissions_adapter", _perms_adapter_path)
-    _perms_module = importlib.util.module_from_spec(_perms_spec)
-    sys.modules["user_permissions_adapter"] = _perms_module
-    _perms_spec.loader.exec_module(_perms_module)
-    get_user_permissions = _perms_module.get_user_permissions
-    get_user_identity_type_id = _perms_module.get_user_identity_type_id
-
-    # Cargar mapeo de permisos
-    _mapping_path = Path(__file__).resolve().parents[3] / "2_shared_application" / "explorador_permissions_mapping.py"
-    _mapping_spec = importlib.util.spec_from_file_location("explorador_permissions_mapping", _mapping_path)
+    _mapping_path = (
+        Path(__file__).resolve().parents[3]
+        / "2_shared_application"
+        / "explorador_permissions_mapping.py"
+    )
+    _mapping_spec = importlib.util.spec_from_file_location(
+        "explorador_permissions_mapping", _mapping_path
+    )
     _mapping_module = importlib.util.module_from_spec(_mapping_spec)
     sys.modules["explorador_permissions_mapping"] = _mapping_module
     _mapping_spec.loader.exec_module(_mapping_module)
@@ -62,43 +56,14 @@ try:
 
     logger.info("Módulos de permisos cargados exitosamente")
 except Exception as e:
-    logger.error(f"Error al cargar módulos de permisos: {e}")
-    import traceback
-    traceback.print_exc()
+    logger.error("Error al cargar módulos de permisos: %s", e)
     from portal_crt import COLORS, SELECT_STYLE
-    # Fallback functions
-    def get_user_permissions(user_id, engine=None):
-        return {}
-    def get_user_identity_type_id(user_id, engine=None):
-        return None
+
     def get_required_permission(action, item_type):
         return None
+
     def is_action_allowed(action, item_type, user_permissions):
         return True
-
-
-def _load_storage_module():
-    """Carga el módulo de almacenamiento desde infraestructura."""
-    module_path = (
-        Path(__file__).resolve().parents[3]
-        / "src/apps/3_backend/4_infrastructure/persistence/storage_adapter.py"
-    )
-    spec = importlib.util.spec_from_file_location("frontend_storage_module", module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("No se pudo cargar el módulo de almacenamiento")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["frontend_storage_module"] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-# Cargar módulo de almacenamiento para acceso a BD
-try:
-    _storage_module = _load_storage_module()
-    load_mariadb_settings = _storage_module.load_mariadb_settings
-except Exception as e:
-    logger.warning(f"No se pudo cargar módulo de almacenamiento: {e}")
-    load_mariadb_settings = None
 
 
 class FolderItem(pydantic.BaseModel):
@@ -332,13 +297,11 @@ class ExploradorState(rx.State):
             print(f"Error en validación de seguridad capa 2: {e}")
 
     def load_security_profile(self):
-        """Carga el perfil de seguridad del usuario desde la base de datos.
+        """Carga el perfil de seguridad desde la sesión (Middleware → Core).
 
-        Consulta proyectos_roles para obtener el id_rol del usuario en el proyecto actual,
-        y luego consulta low_level_permissions para obtener los permisos específicos.
+        No abre MariaDB. Los permisos llegan al frontend via login.
         """
         try:
-            # Intentar obtener user_id y organization_id del parent state (web_frontend.State)
             try:
                 from web_frontend.web_frontend import State as MainState
                 main_state = self.get_state(MainState)
@@ -348,30 +311,33 @@ class ExploradorState(rx.State):
                     self.user_name = main_state.user_name
                     self.access_token = main_state.access_token
                     self.session_token = main_state.session_token
-                    logger.info(f"✓ Datos de sesión obtenidos: user_id={self.user_id}, org_id={self.id_organizacion}, project_id={self.id_proyecto}")
-                    print(f"✓ Datos de sesión obtenidos: user_id={self.user_id}, org_id={self.id_organizacion}, project_id={self.id_proyecto}")
+                    self.user_identity_type_id = int(
+                        getattr(main_state, "identity_type_id", 0) or 0
+                    )
+                    logger.info(
+                        "Datos de sesión: user_id=%s org_id=%s project_id=%s",
+                        self.user_id,
+                        self.id_organizacion,
+                        self.id_proyecto,
+                    )
                 else:
-                    logger.warning(f"Estado principal no disponible o user_id=0")
-                    print(f"⚠ Estado principal no disponible o user_id=0")
+                    logger.warning("Estado principal no disponible o user_id=0")
             except Exception as e:
-                logger.warning(f"No se pudo obtener datos del estado principal: {e}")
-                print(f"⚠ No se pudo obtener datos del estado principal: {e}")
+                logger.warning("No se pudo obtener datos del estado principal: %s", e)
 
-            # Si no tenemos user_id o project_id, usar permisos por defecto de desarrollo
             if self.user_id <= 0 or self.id_proyecto <= 0:
-                logger.warning(f"⚠ No se puede cargar permisos desde BD: user_id={self.user_id}, project_id={self.id_proyecto}")
-                print(f"⚠ Usando permisos por defecto (modo desarrollo): user_id={self.user_id}, project_id={self.id_proyecto}")
-                # Habilitar todos los permisos por defecto para desarrollo
+                logger.warning(
+                    "Sin contexto de sesión: user_id=%s project_id=%s",
+                    self.user_id,
+                    self.id_proyecto,
+                )
                 self._set_default_permissions()
                 return
 
-            # Cargar permisos desde la base de datos
-            self._load_permissions_from_database()
+            self._load_permissions_from_session()
 
         except Exception as e:
-            logger.error(f"✗ Error cargando perfil de seguridad: {e}")
-            print(f"✗ Error cargando perfil de seguridad: {e}")
-            # En caso de error, usar permisos por defecto
+            logger.error("Error cargando perfil de seguridad: %s", e)
             self._set_default_permissions()
 
     def _set_default_permissions(self):
@@ -393,166 +359,30 @@ class ExploradorState(rx.State):
         logger.info("✓ Permisos por defecto establecidos (modo desarrollo)")
         print("✓ Permisos por defecto establecidos: todos los permisos habilitados")
 
-    def _load_permissions_from_database(self):
-        """
-        Consulta la base de datos para obtener permisos del usuario.
-
-        Flujo:
-        1. Obtener identity_type_id desde users usando user_id
-        2. Obtener permisos desde low_level_permissions usando identity_type_id
-        3. Almacenar todos los permisos en memoria
-
-        Los permisos se cargan una vez al iniciar el explorador y se mantienen
-        en memoria durante toda la sesión.
-        """
-        if not load_mariadb_settings:
-            logger.warning("⚠ Función load_mariadb_settings no disponible")
-            print("⚠ Función load_mariadb_settings no disponible")
-            self._set_default_permissions()
-            return
-
+    def _load_permissions_from_session(self):
+        """Copia permisos de SharedSessionState (ya resueltos en Backend Core)."""
         try:
-            from sqlalchemy import create_engine, text
+            from web_frontend.web_frontend import State as MainState
 
-            # Obtener configuración de la base de datos
-            mariadb_config = load_mariadb_settings()
-            dsn = mariadb_config.get("reader_dsn", "")
-
-            if not dsn:
-                logger.warning("⚠ No hay DSN configurado para consultar permisos")
-                print("⚠ No hay DSN configurado - usando permisos por defecto")
+            main_state = self.get_state(MainState)
+            if main_state is None or main_state.user_id <= 0:
+                logger.warning("Sesión no disponible para permisos del explorador")
                 self._set_default_permissions()
                 return
 
-            logger.info(f"→ Cargando permisos para user_id={self.user_id}")
-            print(f"→ Consultando permisos en BD para user_id={self.user_id}")
-            engine = create_engine(dsn)
-
-            with engine.connect() as conn:
-                # 1. Obtener identity_type_id del usuario desde tabla users
-                query_identity = text("""
-                    SELECT identity_type_id
-                    FROM myllm_core_db.users
-                    WHERE user_id = :user_id
-                    LIMIT 1
-                """)
-
-                result_identity = conn.execute(query_identity, {"user_id": self.user_id})
-                row_identity = result_identity.fetchone()
-
-                if not row_identity:
-                    logger.warning(f"⚠ No se encontró usuario con user_id={self.user_id}")
-                    print(f"⚠ Usuario no encontrado - usando permisos por defecto")
-                    self._set_default_permissions()
-                    return
-
-                identity_type_id = row_identity[0]
-                self.user_identity_type_id = identity_type_id
-                logger.info(f"✓ Usuario encontrado: identity_type_id={identity_type_id}")
-                print(f"✓ Identity type: {identity_type_id}")
-
-                # 2. Obtener TODOS los permisos desde low_level_permissions
-                query_perms = text("""
-                    SELECT
-                        folder_create, folder_delete, folder_rename, folder_read, folder_list,
-                        file_create, file_read, file_update, file_delete, file_list,
-                        project_create, project_read, project_update, project_delete, project_list,
-                        version_create, version_read, version_update, version_delete, version_list,
-                        training_create, training_read, training_update, training_delete,
-                        training_start, training_stop,
-                        parameters_create, parameters_read, parameters_update, parameters_delete,
-                        notifications_create, notifications_read, notifications_update, notifications_delete,
-                        user_create, user_read, user_update, user_delete, user_enable, user_disable
-                    FROM myllm_core_db.low_level_permissions
-                    WHERE id_permissions = :identity_type_id
-                    LIMIT 1
-                """)
-
-                result_perms = conn.execute(query_perms, {"identity_type_id": identity_type_id})
-                row_perms = result_perms.fetchone()
-
-                if not row_perms:
-                    logger.warning(f"⚠ No se encontraron permisos para identity_type_id={identity_type_id}")
-                    print(f"⚠ No hay permisos en low_level_permissions - usando permisos por defecto")
-                    self._set_default_permissions()
-                    return
-
-                # 3. Actualizar matriz de permisos con TODOS los valores de la BD
-                self.permisos = {
-                    # Carpetas
-                    "folder_create": bool(row_perms[0]),
-                    "folder_delete": bool(row_perms[1]),
-                    "folder_rename": bool(row_perms[2]),
-                    "folder_read": bool(row_perms[3]),
-                    "folder_list": bool(row_perms[4]),
-                    # Archivos
-                    "file_create": bool(row_perms[5]),
-                    "file_read": bool(row_perms[6]),
-                    "file_update": bool(row_perms[7]),
-                    "file_delete": bool(row_perms[8]),
-                    "file_list": bool(row_perms[9]),
-                    # Proyectos
-                    "project_create": bool(row_perms[10]),
-                    "project_read": bool(row_perms[11]),
-                    "project_update": bool(row_perms[12]),
-                    "project_delete": bool(row_perms[13]),
-                    "project_list": bool(row_perms[14]),
-                    # Versiones
-                    "version_create": bool(row_perms[15]),
-                    "version_read": bool(row_perms[16]),
-                    "version_update": bool(row_perms[17]),
-                    "version_delete": bool(row_perms[18]),
-                    "version_list": bool(row_perms[19]),
-                    # Entrenamiento
-                    "training_create": bool(row_perms[20]),
-                    "training_read": bool(row_perms[21]),
-                    "training_update": bool(row_perms[22]),
-                    "training_delete": bool(row_perms[23]),
-                    "training_start": bool(row_perms[24]),
-                    "training_stop": bool(row_perms[25]),
-                    # Parámetros
-                    "parameters_create": bool(row_perms[26]),
-                    "parameters_read": bool(row_perms[27]),
-                    "parameters_update": bool(row_perms[28]),
-                    "parameters_delete": bool(row_perms[29]),
-                    # Notificaciones
-                    "notifications_create": bool(row_perms[30]),
-                    "notifications_read": bool(row_perms[31]),
-                    "notifications_update": bool(row_perms[32]),
-                    "notifications_delete": bool(row_perms[33]),
-                    # Usuarios
-                    "user_create": bool(row_perms[34]),
-                    "user_read": bool(row_perms[35]),
-                    "user_update": bool(row_perms[36]),
-                    "user_delete": bool(row_perms[37]),
-                    "user_enable": bool(row_perms[38]),
-                    "user_disable": bool(row_perms[39]),
-                }
-
-                # Determinar si es admin: Solo identity_type_id 1 o 2 pueden gestionar versiones
-                self.is_admin = identity_type_id in (1, 2)
-
-                logger.info(
-                    f"✓ Permisos cargados para user_id={self.user_id}, "
-                    f"identity_type_id={identity_type_id}, is_admin={self.is_admin}"
-                )
-                logger.info(f"Permisos explorador: folder_create={self.permisos['folder_create']}, "
-                           f"file_create={self.permisos['file_create']}, "
-                           f"folder_delete={self.permisos['folder_delete']}")
-
-                print(
-                    f"✓ Permisos cargados: Identity={identity_type_id}, "
-                    f"Admin={self.is_admin}, "
-                    f"folder_create={self.permisos['folder_create']}, "
-                    f"file_create={self.permisos['file_create']}"
-                )
-
+            self.user_identity_type_id = int(
+                getattr(main_state, "identity_type_id", 0) or 0
+            )
+            self.permisos = dict(main_state.get_all_permissions())
+            self.is_admin = self.user_identity_type_id in (1, 2)
+            logger.info(
+                "Permisos de sesión: user_id=%s identity_type_id=%s is_admin=%s",
+                self.user_id,
+                self.user_identity_type_id,
+                self.is_admin,
+            )
         except Exception as e:
-            logger.error(f"✗ Error consultando permisos en BD: {e}")
-            print(f"✗ Error consultando permisos: {e}")
-            import traceback
-            traceback.print_exc()
-            # En caso de error, usar permisos por defecto
+            logger.error("Error copiando permisos de sesión: %s", e)
             self._set_default_permissions()
 
     def interpretacion_estados(self):
@@ -1743,8 +1573,8 @@ class ExploradorState(rx.State):
         logger.info(f"✓ Contexto de usuario: user_id={self.user_id}, identity_type_id={self.user_identity_type_id}")
         print(f"✓ Contexto de usuario: user_id={self.user_id}, identity_type_id={self.user_identity_type_id}")
 
-        # Recargar permisos para el nuevo proyecto
-        self._load_permissions_from_database()
+        # Recargar permisos desde la sesión (sin MariaDB)
+        self._load_permissions_from_session()
 
         # Cargar desde API
         if self.access_token and self.session_token and self.id_proyecto > 0:

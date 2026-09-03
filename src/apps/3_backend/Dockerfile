@@ -11,6 +11,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     ENVIRONMENT=${ENVIRONMENT}
 
+# Herramientas de compilación por si algún paquete no tiene wheel arm64.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY src/apps/3_backend/requirements.txt /app/requirements.txt
 COPY src/apps/3_backend/entrypoint.sh /app/entrypoint.sh
 

@@ -34,8 +34,14 @@ _env_settings = load_module_from_path(_env_settings_path, "env_settings_laim_api
 
 
 def _get_middleware_base_url() -> str:
-    """Obtiene la URL base del middleware desde env.yaml."""
-    return _env_settings.get_env_value("middleware_base_url", "http://localhost:8007")
+    """Obtiene la URL base del middleware.
+
+    Prioridad: MIDDLEWARE_BASE_URL (compose) → middleware_base_url (env.yaml).
+    """
+    return (
+        _env_settings.get_env_value("MIDDLEWARE_BASE_URL", "")
+        or _env_settings.get_env_value("middleware_base_url", "http://localhost:8007")
+    ).rstrip("/")
 
 
 def get_laim_site_asset_url(asset_key: str) -> str:

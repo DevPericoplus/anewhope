@@ -3,8 +3,7 @@ FROM python:${PYTHON_VERSION}-slim
 
 WORKDIR /app
 
-# Argumento para definir el entorno (dev, pre, pro)
-# Para producción: docker build --build-arg ENVIRONMENT=pro ...
+# Entorno (dev, pre, pro, silicon)
 ARG ENVIRONMENT=dev
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -16,22 +15,22 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY src/apps/8_service_backend/requirements.txt /app/requirements.txt
-COPY src/apps/8_service_backend/entrypoint.sh /app/entrypoint.sh
+# El daemon del foro reutiliza el router de backend_core y capas compartidas,
+# por lo que sus dependencias son las del backend_core (fastapi, uvicorn,
+# SQLAlchemy, PyMySQL, ...).
+COPY src/apps/3_backend/requirements.txt /app/requirements.txt
+COPY src/apps/9_laimweb/laim_forum_daemon/entrypoint.sh /app/entrypoint.sh
 
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r /app/requirements.txt
 
 COPY . /app
 
-# SEGURIDAD: En producción, eliminar archivos JSON de moks
 RUN if [ "$ENVIRONMENT" = "pro" ]; then \
-        echo "PRODUCCIÓN: Eliminando archivos moks por seguridad..." && \
-        rm -rf /app/src/2_shared_application/moks && \
-        echo "Moks eliminados correctamente"; \
+        rm -rf /app/src/2_shared_application/moks; \
     fi
 
-EXPOSE 8008
+EXPOSE 8766
 
 RUN chmod +x /app/entrypoint.sh
 

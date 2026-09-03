@@ -1205,6 +1205,33 @@ class CoreBackendClient:
         data = self._request("GET", "/models/active")
         return dict(data or {})
 
+    def get_trainer_job_context(
+        self,
+        organization_id: int = 0,
+        project_id: int = 0,
+        prompt_name: str = "",
+    ) -> dict[str, Any]:
+        """Obtiene nombres y prompt de fusión desde Backend Core."""
+        from urllib.parse import quote
+
+        path = (
+            f"/trainer/job-context?organization_id={organization_id}"
+            f"&project_id={project_id}"
+        )
+        if prompt_name:
+            path = f"{path}&prompt_name={quote(prompt_name)}"
+        data = self._request("GET", path)
+        return dict(data or {})
+
+    def complete_job(self, job_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        """Completa un job de análisis via Backend Core."""
+        data = self._request(
+            "PATCH",
+            f"/jobs/{job_id}/complete",
+            payload=payload,
+        )
+        return dict(data or {})
+
     def register_entrenamiento(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Registra un nuevo entrenamiento en Backend Core."""
         data = self._request("POST", "/entrenamientos/register", payload=payload)

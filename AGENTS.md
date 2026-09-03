@@ -1165,7 +1165,7 @@ docker build --build-arg ENVIRONMENT=pro -t mi-app:pro .
 current_environment: macbook
 ```
 
-**Valores válidos:** `macbook`, `dev`, `pre`, `pro`
+**Valores válidos:** `macbook`, `dev`, `pre`, `pro`, `silicon`
 
 **Orden de carga:**
 1. `.envglobal` (define el entorno base)
@@ -8019,9 +8019,9 @@ num_ctx = min(65536, max(8192, ((estimated_tokens + 4096) // 2048 + 1) * 2048))
 Este es el paso más complejo. Se realiza en sub-pasos:
 
 **4a. Obtener datos de BD:**
-- Nombre de la organización: `SELECT organization_name FROM myllm_core_db.organizations`
-- Nombre del proyecto: `SELECT nombre FROM myllm_projects_db.proyectos`
-- Usa `pymysql` con credenciales de `mariadb_reader` desde `protected_values.py`
+- Nombre de la organización y del proyecto, y prompt de fusión
+- Flujo: Trainer → Broker (`GET /trainer/job-context`) → Backend Core → MariaDB
+- El Trainer **no** abre conexiones a MariaDB
 
 **4b. Calcular ruta de salida:**
 - Usa `_compute_output_path()` con `backend_ia_internal_storage`
@@ -8034,8 +8034,8 @@ Este es el paso más complejo. Se realiza en sub-pasos:
 - Variables: payload del job + nombres de BD + estadísticas + respuesta de Ollama + tiempos
 - Resultado: `plantilla_informe` (markdown temporal con estructura formal)
 
-**4d. Obtener prompt de fusión desde BD:**
-- `SELECT prompt FROM myllm_projects_db.prompts_identidades WHERE name = :prompt_name`
+**4d. Prompt de fusión (mismo GET `/trainer/job-context` del paso 4a):**
+- Backend Core lee `prompts_identidades` (activo) por `name`
 - Documentación: `formateador_documental_documentos`
 - Metadatos: `formateador_documental_metadatos`
 
@@ -8174,7 +8174,7 @@ Cada flujo usa su propio prefijo:
 | Prompt construido | INFO | `[DOCUMENTACION] Prompt de análisis construido: 25000 caracteres` |
 | Ollama análisis [1/2] | INFO | `[DOCUMENTACION] [1/2] Enviando a Ollama: modelo=llama3.1:8b num_ctx=26624` |
 | Respuesta análisis | INFO | `[DOCUMENTACION] [1/2] Respuesta recibida: 8500 caracteres en 5m 32s` |
-| Datos de BD | INFO | `[DOCUMENTACION] Datos de BD: org='myllm', prj='dptocomercial'` |
+| Contexto via Broker | INFO | `[DOCUMENTACION] Contexto via Broker: org='myllm', prj='dptocomercial'` |
 | Plantilla renderizada | INFO | `[DOCUMENTACION] Plantilla Jinja2 renderizada: 7078 caracteres` |
 | Prompt fusión obtenido | INFO | `[DOCUMENTACION] Prompt de fusión obtenido: 4109 caracteres` |
 | Ollama fusión [2/2] | INFO | `[DOCUMENTACION] [2/2] Enviando fusión a Ollama: modelo=llama3.1:8b num_ctx=8192` |
@@ -8190,16 +8190,8 @@ Cada flujo usa su propio prefijo:
 |----------|-----|-------------------|
 | `backend_ia_base_storage` | Ruta de lectura (external) | `~/data/anewhope/files/trainer_server/external` |
 | `backend_ia_internal_storage` | Ruta de escritura (internal) | `~/data/anewhope/files/trainer_server/internal` |
-| `backend_core_base_url` | URL del Backend Core para notificaciones | `http://localhost:8003` |
-
-**Credenciales de BD (solo lectura, desde `protected_values.py`):**
-
-| Variable | Uso |
-|----------|-----|
-| `mariadb_host` | Host de MariaDB |
-| `mariadb_port` | Puerto de MariaDB |
-| `mariadb_reader_user` | Usuario de solo lectura (myllm_reader) |
-| `mariadb_reader_password` | Contraseña del reader |
+| `backend_core_base_url` | Legacy; el Trainer notifica via Broker | `http://localhost:8003` |
+| `broker_backend_base_url` | URL del Broker (lecturas y jobs) | `http://backend.tfmmyllm.ai:8008` |
 
 ### 28.10. Timeout de Ollama
 
@@ -8281,12 +8273,11 @@ Los siguientes tipos de job seguirán el mismo patrón arquitectónico:
 5. Plantilla Jinja2 dedicada (`evaluacion_xxx.j2`)
 6. Prompt de fusión dedicado en BD (`prompts_identidades`)
 7. Procesamiento en background thread (daemon=True) con logging `[XXX]`
-8. Notificación al Backend Core via `PATCH /jobs/{job_id}/complete`
+8. Notificación via Broker `PATCH /jobs/{job_id}/complete` → Backend Core
 9. INSERT en tabla `cambios` + UPDATE en tabla `jobs` (transacción atómica)
 
-**Regla #52**: El Trainer accede a la BD SOLO en modo lectura (con `myllm_reader`) para
-obtener nombres de organización/proyecto y prompts de fusión. Las escrituras se hacen
-siempre via HTTP al Backend Core.
+**Regla #52**: El Trainer **NUNCA** accede a MariaDB. Lecturas (nombres, prompts)
+y escrituras (jobs, entrenamientos) van siempre Trainer → Broker → Backend Core.
 
 **Regla #53**: Cada tipo de job DEBE crear un servicio COMPLETAMENTE independiente:
 - `documentacion_service.py` → Análisis de documentación (**implementado**)
@@ -9787,7 +9778,25 @@ version_broker: 0.7.1
 version_backend_core: 0.7.1
 version_backend_ia: 0.7.1
 version_fmanagement: 0.7.1
+version_laimweb: 0.7.1
+version_laim_forum: 0.7.1
 ```
+
+Cada `version_*` es el tag de la imagen Docker (`anewhope-frontend:0.7.1`, etc.).
+El manifiesto `infrastructure/docker/service_manifest.yml` mapea servicio → paths → compose → servidor.
+
+**Incremento automático (estilo LAIM):** al cerrar un cambio que toque una app o capa compartida, el agente DEBE incrementar la versión del servicio afectado:
+
+```bash
+python scripts/bump_service_version.py frontend --level fix
+python scripts/changed_docker_services.py --since origin/develop --bump fix
+```
+
+- `fix`: bug / ajuste interno (no requiere tag git)
+- `minor`: funcionalidad nueva (requiere tag)
+- `major`: incompatibilidad (requiere tag + release notes)
+
+Si cambia `src/1_shared_domain/` o `src/2_shared_application/`, incrementar **todas** las apps Python que las consumen. El plan de despliegue (`anh_ansible_environments`) lee `versions.yml` y solo reconstruye imágenes cuyo tag no existe en el servidor.
 
 ### 31.3. Nomenclatura: version.subversion.fix
 
@@ -10871,5 +10880,109 @@ Usar `SELECT_STYLE` de `portal_crt` o `class_name="crt-input"` en `rx.select` / 
 - [ ] ¿Markdown usa `MARKDOWN_COMPONENT_MAP`?
 - [ ] ¿Ejecutado `./scripts/sync_crt_assets.sh` si cambió CSS compartido?
 - [ ] ¿Títulos usan `crt-title` / `COLORS["primary"]`, no blanco puro?
+
+---
+
+## 36. Entorno silicon y despliegue Docker (plantilla)
+
+**silicon** es el primer entorno Docker/compose (VMs UTM Oracle Linux 10 arm64).
+Sirve de plantilla para dockerizar `dev` y `pre`. En el futuro, `pro` usará
+Kubernetes en frontend y backend. Trainer permanece híbrido (Ollama nativo).
+
+### 36.1. Entornos válidos
+
+`VALID_ENVIRONMENTS` en `src/2_shared_application/config/env_settings.py`:
+`macbook`, `dev`, `pre`, `pro`, `silicon`.
+
+`.envglobal` puede usar `current_environment: silicon`.
+
+### 36.2. Versiones → imágenes Docker
+
+| Clave `versions.yml` | Imagen | Compose | Servidor |
+|----------------------|--------|---------|----------|
+| `version_frontend` | `anewhope-frontend` | `web_frontend` | frontend |
+| `version_backoffice` | `anewhope-backoffice` | `web_backoffice` | frontend |
+| `version_middleware` | `anewhope-middleware` | `service_frontend` | frontend |
+| `version_laimweb` | `anewhope-laimweb` | `laimweb` | frontend |
+| `version_broker` | `anewhope-broker` | `service_backend` | backend |
+| `version_backend_core` | `anewhope-backend-core` | `backend_core` | backend |
+| `version_laim_forum` | `anewhope-laim-forum` | `laim_forum` | backend |
+| `version_fmanagement` | `fmanagement` | `fmanagement` | backend |
+| `version_backend_ia` | `anewhope-trainer` | `trainer_api` | trainer (solo si compose) |
+
+Manifiesto: `infrastructure/docker/service_manifest.yml`.
+
+**Regla del agente (como LAIM):** al cambiar código de una app, incrementar su
+`version_*` con `scripts/bump_service_version.py`. El playbook de
+`anh_ansible_environments` lee `versions.yml` y Compose reconstruye solo el tag
+ausente. Si no cambió la versión, no se reconstruye.
+
+Despliegue de un solo servicio:
+
+```bash
+ansible-playbook -i env/silicon/host frontend.yml -e deploy_env=silicon \
+  --tags docker-compose -e deploy_service=web_frontend
+```
+
+Despliegue solo de ficheros persistidos en `/data` (sin rebuild): sincronizar
+el path afectado; no hace falta `docker-compose up` si el contenedor ya monta
+ese volumen.
+
+### 36.3. DNS y FQDN (PROHIBIDO localhost)
+
+Comunicación **entre servidores** siempre por FQDN:
+
+| Destino | FQDN silicon | Puerto |
+|---------|--------------|--------|
+| Middleware | (misma red compose: `service_frontend`) | 8007 |
+| Broker | `backend.anewhope.silicon.loc` | 8008 |
+| Backend Core | `backend.anewhope.silicon.loc` / `backend_core` | 8003 |
+| Trainer | `trainer.anewhope.silicon.loc` | 8004 |
+| fmanagement | `backend.anewhope.silicon.loc` | 1666 |
+| LAIM | `laim.anewhope.silicon.loc` | 443 |
+
+Flujo estándar: Frontend/Backoffice/LAIM → Middleware (8007) → Broker (8008)
+→ Core (8003) o Trainer (8004). Las respuestas vuelven por HTTP (no hay
+callback inverso). El broker resuelve el trainer por FQDN (`extra_hosts`).
+El trainer nativo lee `broker_backend_base_url` de `env.yaml` (FQDN) y
+opera contra el Broker. No usa `mariadb_host` ni DSN de `protected_values.py`.
+
+**Excepción:** apps web y nginx pueden hablar con fmanagement (1666) en el
+backend. Requiere routing + `extra_hosts` en nginx y en los contenedores web.
+
+Dentro del mismo compose usar **nombre de servicio** (`cap:3000`,
+`service_frontend:8007`, `mariadb`, `backend_core`). Nunca `127.0.0.1` ni
+`localhost` en nginx de compose.
+
+`/etc/hosts` idéntico en util01, frontend, backend, trainer y el Mac
+(`env/silicon/hosts_map.yml` + `scripts/setup_silicon_hosts_mac.sh`).
+Bind en util01 debe tener el registro `laim` → 192.168.64.11.
+
+### 36.4. protected_values.py (desarrollo)
+
+silicon, macbook y dev **replican credenciales de pre** para alinear datos.
+No inventar secretos nuevos. Los hosts `.anewhope.aws` del fichero se
+sobrescriben en runtime por `env.yaml` y variables de compose
+(`MARIADB_HOST=mariadb`, DSN al servicio). Pro tendrá su propio
+`protected_values.py`.
+
+Usuarios MariaDB: `myllm_admin` / `myllm_writer` / `myllm_reader` y
+`laim_admin` / `laim_writer` / `laim_reader`. En Docker el host es `'%'`
+(los contenedores no son localhost). Reader solo SELECT.
+
+### 36.5. Trainer híbrido (silicon)
+
+- Nativo: Ollama + `4_trainer` (systemd, `ENVIRONMENT=silicon`).
+- Docker `--tags docker`: solo ChromaDB `--network host`.
+- **NO** ejecutar el compose completo del trainer (`when: deploy_mode == docker-compose`).
+
+```bash
+ansible-playbook -i env/silicon/host trainer.yml -e deploy_env=silicon --tags native,docker
+```
+
+### 36.6. Repositorio de despliegue
+
+Reglas gemelas en `anh_ansible_environments/AGENTS.md`. Playbooks cargan
+`../anewhope/versions.yml`. Mapa de hosts: `env/silicon/hosts_map.yml`.
 
 

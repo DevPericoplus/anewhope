@@ -20,9 +20,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import pymysql
-import pymysql.cursors
 from jinja2 import Environment, FileSystemLoader
+
+from trainer_core_lookup import fetch_job_context, notify_job_complete
 
 logger = logging.getLogger("trainer_api")
 
@@ -63,141 +63,10 @@ _env_settings = _load_shared_module(
     "2_shared_application/config/env_settings.py",
 )
 get_env_value = _env_settings.get_env_value
-get_protected_value = _env_settings.get_protected_value
 
 # Ruta al directorio de plantillas Jinja2
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
-
-
-# ---------------------------------------------------------------------------
-# Funciones auxiliares de base de datos (solo lectura)
-# ---------------------------------------------------------------------------
-
-
-def _get_db_connection(database: str) -> pymysql.Connection:
-    """Crea una conexión de solo lectura a MariaDB.
-
-    Usa las credenciales del usuario reader definidas en protected_values.py.
-
-    Args:
-        database: Nombre de la base de datos (myllm_core_db o myllm_projects_db)
-
-    Returns:
-        Conexión pymysql lista para usar
-    """
-    host = get_protected_value("mariadb_host", "localhost")
-    port = int(get_protected_value("mariadb_port", 3306))
-    user = get_protected_value("mariadb_reader_user", "myllm_reader")
-    password = get_protected_value("mariadb_reader_password", "")
-
-    return pymysql.connect(
-        host=host,
-        port=port,
-        user=user,
-        password=password,
-        database=database,
-        charset="utf8mb4",
-        cursorclass=pymysql.cursors.DictCursor,
-    )
-
-
-def _fetch_organization_name(id_organizacion: int) -> str:
-    """Obtiene el nombre de la organización desde myllm_core_db.organizations.
-
-    Args:
-        id_organizacion: ID de la organización
-
-    Returns:
-        Nombre de la organización o fallback con el ID
-    """
-    try:
-        conn = _get_db_connection("myllm_core_db")
-        with conn:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "SELECT organization_name FROM organizations "
-                    "WHERE organization_id = %s",
-                    (id_organizacion,),
-                )
-                row = cursor.fetchone()
-                if row:
-                    return str(row["organization_name"])
-        return f"Organización {id_organizacion}"
-    except Exception as e:
-        logger.warning(
-            "[DOCUMENTACION] No se pudo obtener nombre de organización %s: %s",
-            id_organizacion, e,
-        )
-        return f"Organización {id_organizacion}"
-
-
-def _fetch_project_name(id_proyecto: int) -> str:
-    """Obtiene el nombre del proyecto desde myllm_projects_db.proyectos.
-
-    Args:
-        id_proyecto: ID del proyecto
-
-    Returns:
-        Nombre del proyecto o fallback con el ID
-    """
-    try:
-        conn = _get_db_connection("myllm_projects_db")
-        with conn:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "SELECT nombre FROM proyectos WHERE id = %s",
-                    (id_proyecto,),
-                )
-                row = cursor.fetchone()
-                if row:
-                    return str(row["nombre"])
-        return f"Proyecto {id_proyecto}"
-    except Exception as e:
-        logger.warning(
-            "[DOCUMENTACION] No se pudo obtener nombre de proyecto %s: %s",
-            id_proyecto, e,
-        )
-        return f"Proyecto {id_proyecto}"
-
-
-def _fetch_fusion_prompt(
-    prompt_name: str = "formateador_documental_documentos",
-) -> str:
-    """Obtiene el prompt de fusión desde prompts_identidades en myllm_projects_db.
-
-    Args:
-        prompt_name: Nombre del prompt en la tabla prompts_identidades
-
-    Returns:
-        Contenido del campo prompt o cadena vacía si no se encuentra
-    """
-    try:
-        conn = _get_db_connection("myllm_projects_db")
-        with conn:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "SELECT prompt FROM prompts_identidades "
-                    "WHERE name = %s AND active = 1",
-                    (prompt_name,),
-                )
-                row = cursor.fetchone()
-                if row:
-                    logger.info(
-                        "[DOCUMENTACION] Prompt de fusión '%s' obtenido: %d caracteres",
-                        prompt_name, len(str(row["prompt"])),
-                    )
-                    return str(row["prompt"])
-        logger.error(
-            "[DOCUMENTACION] Prompt '%s' no encontrado o inactivo en BD",
-            prompt_name,
-        )
-        return ""
-    except Exception as e:
-        logger.error(
-            "[DOCUMENTACION] Error al obtener prompt de fusión '%s': %s",
-            prompt_name, e,
-        )
-        return ""
+PROMPT_FUSION_DOCUMENTOS = "formateador_documental_documentos"
 
 
 # ---------------------------------------------------------------------------
@@ -566,12 +435,19 @@ def process_documentacion(data: dict[str, Any]) -> None:
             "[DOCUMENTACION] Iniciando enriquecimiento del informe con Jinja2",
         )
 
-        # --- 4a: Obtener nombres legibles de organización y proyecto ---
-        nombre_organizacion = _fetch_organization_name(id_org)
-        nombre_proyecto = _fetch_project_name(id_prj)
+        # --- 4a: Nombres y prompt de fusión via Broker → Backend Core ---
+        job_ctx = fetch_job_context(
+            organization_id=id_org,
+            project_id=id_prj,
+            prompt_name=PROMPT_FUSION_DOCUMENTOS,
+        )
+        nombre_organizacion = str(job_ctx.get("organization_name") or "")
+        nombre_proyecto = str(job_ctx.get("project_name") or "")
+        fusion_prompt = str(job_ctx.get("prompt") or "")
         logger.info(
-            "[DOCUMENTACION] Datos de BD: org='%s', prj='%s'",
-            nombre_organizacion, nombre_proyecto,
+            "[DOCUMENTACION] Contexto via Broker: org='%s', prj='%s'",
+            nombre_organizacion,
+            nombre_proyecto,
         )
 
         # --- 4b: Calcular ruta de salida (antes de renderizar, para incluirla) ---
@@ -626,9 +502,7 @@ def process_documentacion(data: dict[str, Any]) -> None:
             len(plantilla_informe),
         )
 
-        # --- 4d: Obtener prompt de fusión desde BD ---
-        fusion_prompt = _fetch_fusion_prompt("formateador_documental_documentos")
-
+        # --- 4d: Prompt de fusión (obtenido en 4a via Broker) ---
         if not fusion_prompt:
             # Fallback: si no hay prompt de fusión, escribir la plantilla directamente
             logger.warning(
@@ -756,29 +630,16 @@ def _notify_backend_core_complete(
     descripcion: str,
     referencia_salida: str,
 ) -> dict[str, Any]:
-    """Notifica al Backend Core que el job se completó exitosamente.
-
-    Llama a PATCH /jobs/{job_id}/complete en Backend Core.
-    """
-    import httpx
-
-    core_base_url = get_env_value("backend_core_base_url", "http://localhost:8003")
-    url = f"{core_base_url}/jobs/{job_id}/complete"
-
-    payload = {
-        "job_id": job_id,
-        "id_organizacion": id_organizacion,
-        "id_proyecto": id_proyecto,
-        "id_version": id_version,
-        "descripcion": descripcion,
-        "referencia_salida": referencia_salida,
-        "tipo_cambio": "evaluacion_documental",
-    }
-
-    with httpx.Client(timeout=30.0) as client:
-        response = client.patch(url, json=payload)
-        response.raise_for_status()
-        return response.json()
+    """Notifica el cierre exitoso del job via Broker → Backend Core."""
+    return notify_job_complete(
+        job_id=job_id,
+        id_organizacion=id_organizacion,
+        id_proyecto=id_proyecto,
+        id_version=id_version,
+        descripcion=descripcion,
+        referencia_salida=referencia_salida,
+        tipo_cambio="evaluacion_documental",
+    )
 
 
 def _notify_backend_core_error(
@@ -788,26 +649,20 @@ def _notify_backend_core_error(
     id_version: int,
     error_message: str,
 ) -> None:
-    """Notifica al Backend Core que el job falló (actualiza estado a error=3)."""
-    import httpx
-
-    core_base_url = get_env_value("backend_core_base_url", "http://localhost:8003")
-    url = f"{core_base_url}/jobs/{job_id}/complete"
-
-    payload = {
-        "job_id": job_id,
-        "id_organizacion": id_organizacion,
-        "id_proyecto": id_proyecto,
-        "id_version": id_version,
-        "descripcion": f"Error en evaluación documental: {error_message}",
-        "referencia_salida": "",
-        "tipo_cambio": "evaluacion_documental_error",
-        "id_estado": 3,  # Error
-    }
-
+    """Notifica el fallo del job via Broker → Backend Core (estado=3)."""
     try:
-        with httpx.Client(timeout=30.0) as client:
-            response = client.patch(url, json=payload)
-            response.raise_for_status()
+        notify_job_complete(
+            job_id=job_id,
+            id_organizacion=id_organizacion,
+            id_proyecto=id_proyecto,
+            id_version=id_version,
+            descripcion=f"Error en evaluación documental: {error_message}",
+            referencia_salida="",
+            tipo_cambio="evaluacion_documental_error",
+            id_estado=3,
+        )
     except Exception as e:
-        logger.error("[DOCUMENTACION][ERROR] Fallo al notificar error al Backend Core: %s", e)
+        logger.error(
+            "[DOCUMENTACION][ERROR] Fallo al notificar error via Broker: %s",
+            e,
+        )
