@@ -7,20 +7,35 @@ servicio ``mariadb``. Las credenciales y el host se resuelven en runtime
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 import os
+import sys
+from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 import mysql.connector
 from mysql.connector import Error
 
-from src.2_shared_application.config.env_settings import (
-    get_env_value,
-    get_protected_value,
-    load_env_file,
-)
-
 logger = logging.getLogger(__name__)
+
+
+def _load_env_settings() -> ModuleType:
+    """Carga env_settings sin importar el paquete numerado ``2_shared_application``."""
+    module_path = (
+        Path(__file__).resolve().parents[2]
+        / "2_shared_application"
+        / "config"
+        / "env_settings.py"
+    )
+    spec = importlib.util.spec_from_file_location("env_settings_analysis_db", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"No se pudo cargar env_settings desde {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["env_settings_analysis_db"] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _first_non_empty(*values: Any) -> str:
@@ -41,33 +56,34 @@ def _build_db_config() -> dict[str, Any]:
     ``protected_values.py`` (solo credenciales; el host de PRE no aplica
     dentro de un contenedor).
     """
-    load_env_file()
+    env_settings = _load_env_settings()
+    env_settings.load_env_file()
     host = _first_non_empty(
         os.environ.get("DB_HOST"),
-        get_env_value("MARIADB_HOST", ""),
-        get_protected_value("mariadb_host", "localhost"),
+        env_settings.get_env_value("MARIADB_HOST", ""),
+        env_settings.get_protected_value("mariadb_host", "localhost"),
         "localhost",
     )
     port_raw = _first_non_empty(
         os.environ.get("DB_PORT"),
-        get_env_value("MARIADB_PORT", ""),
-        get_protected_value("mariadb_port", "3306"),
+        env_settings.get_env_value("MARIADB_PORT", ""),
+        env_settings.get_protected_value("mariadb_port", "3306"),
         "3306",
     )
     user = _first_non_empty(
         os.environ.get("DB_USER"),
-        get_env_value("MARIADB_WRITER_USER", ""),
-        get_protected_value("mariadb_writer_user", ""),
+        env_settings.get_env_value("MARIADB_WRITER_USER", ""),
+        env_settings.get_protected_value("mariadb_writer_user", ""),
     )
     password = _first_non_empty(
         os.environ.get("DB_PASSWORD"),
-        get_env_value("MARIADB_WRITER_PASSWORD", ""),
-        get_protected_value("mariadb_writer_password", ""),
+        env_settings.get_env_value("MARIADB_WRITER_PASSWORD", ""),
+        env_settings.get_protected_value("mariadb_writer_password", ""),
     )
     database = _first_non_empty(
         os.environ.get("DB_NAME"),
-        get_env_value("MARIADB_PROJECTS_DATABASE", ""),
-        get_protected_value("mariadb_ai_database", "myllm_projects_db"),
+        env_settings.get_env_value("MARIADB_PROJECTS_DATABASE", ""),
+        env_settings.get_protected_value("mariadb_ai_database", "myllm_projects_db"),
         "myllm_projects_db",
     )
     return {
@@ -92,7 +108,11 @@ def get_db_connection() -> Any:
     try:
         connection = mysql.connector.connect(**config)
         if connection.is_connected():
-            logger.debug("Connected to database: %s@%s", config["database"], config["host"])
+            logger.debug(
+                "Connected to database: %s@%s",
+                config["database"],
+                config["host"],
+            )
             return connection
         raise Error("Failed to connect to database")
     except Error as exc:
