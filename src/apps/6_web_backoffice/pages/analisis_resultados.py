@@ -59,7 +59,9 @@ except Exception:
     CORE_URL = "http://localhost:8003"
 
 
-def _build_pat_version(id_org: int, id_proj: int, id_ver: int) -> str:
+def _build_pat_version(
+    id_org: int, id_proj: int, id_ver: int, id_user: int = 0
+) -> str:
     """Construye la ruta estática completa de la versión para el trainer."""
     helpers = importlib.import_module("src.2_shared_application.storage_access_structure")
     env_mod = importlib.import_module("src.2_shared_application.config.env_settings")
@@ -67,7 +69,7 @@ def _build_pat_version(id_org: int, id_proj: int, id_ver: int) -> str:
         "backend_ia_base_storage",
         "~/data/anewhope/files/trainer_server/external",
     )
-    org_folder = helpers.get_folder_by_id_organization(id_org)
+    org_folder = helpers.get_account_storage_folder(id_org, id_user)
     prj_folder = helpers.get_folder_by_id_project(id_proj)
     ver_folder = helpers.get_folder_by_id_version(id_ver)
     return f"{base_storage}/{org_folder}/{prj_folder}/{ver_folder}"
@@ -855,8 +857,8 @@ Overall Quality: {round(overall_quality * 100, 1)}%"""
                 "backend_ia_base_storage",
                 "~/data/anewhope/files/trainer_server/external",
             )
-            org_folder = helpers_mod.get_folder_by_id_organization(
-                metadata["id_organizacion"]
+            org_folder = helpers_mod.get_account_storage_folder(
+                metadata["id_organizacion"], 0
             )
             prj_folder = helpers_mod.get_folder_by_id_project(
                 metadata["id_proyecto"]
@@ -870,6 +872,7 @@ Overall Quality: {round(overall_quality * 100, 1)}%"""
                 "id_organizacion": metadata["id_organizacion"],
                 "id_proyecto": metadata["id_proyecto"],
                 "id_version": metadata["id_version"],
+                "id_user": 0,
                 "pat_version": pat_version,
                 "learning_rate": float(params.get("learning_rate", 0.001)),
                 "batch_size": int(params.get("batch_size", 32)),

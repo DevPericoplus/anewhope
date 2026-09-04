@@ -32,6 +32,8 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader
 
+from trainer_core_lookup import fetch_job_context, payload_owner_user_id
+
 logger = logging.getLogger("trainer_api")
 
 # ---------------------------------------------------------------------------
@@ -873,6 +875,7 @@ def _save_evaluation_report(
     id_org: int,
     id_prj: int,
     id_ver: int,
+    id_user: int = 0,
 ) -> Path:
     """Guarda el informe de evaluación en la ruta internal storage.
 
@@ -909,7 +912,7 @@ def _save_evaluation_report(
         "storage_structure_entrenamiento",
         "2_shared_application/storage_access_structure.py",
     )
-    org_folder = _storage_structure.get_folder_by_id_organization(id_org)
+    org_folder = _storage_structure.get_account_storage_folder(id_org, id_user)
     prj_folder = _storage_structure.get_folder_by_id_project(id_prj)
     ver_folder = _storage_structure.get_folder_by_id_version(id_ver)
 
@@ -1071,7 +1074,9 @@ def _phase_entrenamiento(
         "storage_structure_ent",
         "2_shared_application/storage_access_structure.py",
     )
-    org_folder = _storage_structure.get_folder_by_id_organization(id_org)
+    org_folder = _storage_structure.get_account_storage_folder(
+        id_org, payload_owner_user_id(payload)
+    )
     prj_folder = _storage_structure.get_folder_by_id_project(id_prj)
     ver_folder = _storage_structure.get_folder_by_id_version(id_ver)
 
@@ -1403,12 +1408,10 @@ def process_entrenamiento(data: dict[str, Any]) -> None:
             time.time() - phase5_start,
         )
 
-        # Obtener nombres legibles via Broker → Backend Core
-        from trainer_core_lookup import fetch_job_context
-
         ctx = fetch_job_context(
             organization_id=id_org,
             project_id=id_prj,
+            owner_user_id=payload_owner_user_id(data),
             client=broker,
         )
         org_name = str(ctx.get("organization_name") or f"Organización {id_org}")
@@ -1531,6 +1534,7 @@ def process_entrenamiento(data: dict[str, Any]) -> None:
                 id_org,
                 id_prj,
                 id_ver,
+                payload_owner_user_id(data),
             )
 
             logger.info(
@@ -1741,12 +1745,10 @@ def process_entrenamiento_with_id(data: dict[str, Any]) -> None:
             time.time() - phase5_start,
         )
 
-        # Obtener nombres legibles via Broker → Backend Core
-        from trainer_core_lookup import fetch_job_context
-
         ctx = fetch_job_context(
             organization_id=id_org,
             project_id=id_prj,
+            owner_user_id=payload_owner_user_id(data),
             client=broker,
         )
         org_name = str(ctx.get("organization_name") or f"Organización {id_org}")
@@ -1869,6 +1871,7 @@ def process_entrenamiento_with_id(data: dict[str, Any]) -> None:
                 id_org,
                 id_prj,
                 id_ver,
+                payload_owner_user_id(data),
             )
 
             logger.info(

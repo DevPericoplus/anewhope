@@ -51,6 +51,7 @@ class OrganizationDto(BaseModel):
     organization_address: str
     organization_country: str
     organization_state: str
+    organization_acronym: str = ""
 
     def to_domain(self) -> Organization:
         """Convierte el DTO a entidad de dominio."""
@@ -63,6 +64,7 @@ class OrganizationDto(BaseModel):
             organization_address=self.organization_address,
             organization_country=self.organization_country,
             organization_state=self.organization_state,
+            organization_acronym=self.organization_acronym,
         )
 
     @classmethod
@@ -77,6 +79,7 @@ class OrganizationDto(BaseModel):
             organization_address=organization.organization_address,
             organization_country=organization.organization_country,
             organization_state=organization.organization_state,
+            organization_acronym=organization.organization_acronym,
         )
 
 

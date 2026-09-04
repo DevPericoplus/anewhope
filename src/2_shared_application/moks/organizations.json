@@ -2,6 +2,7 @@
   {
     "organization_id": 1,
     "organization_name": "myllm",
+    "organization_acronym": "myllm",
     "organization_email": "global@myllm.ai",
     "organization_tlf": "+34639775978",
     "organization_address": "1 AI Plaza, San Francisco, CA 94105",
@@ -11,6 +12,7 @@
   {
     "organization_id": 2,
     "organization_name": "ong",
+    "organization_acronym": "ongong",
     "organization_email": "info@globex.com",
     "organization_tlf": "+34639775978",
     "organization_address": "100 Tower Bridge, London, SE1 2UP",
@@ -20,6 +22,7 @@
   {
     "organization_id": 3,
     "organization_name": "gubernamental",
+    "organization_acronym": "gubernamental",
     "organization_email": "admin@nascar.com",
     "organization_tlf": "+34639775978",
     "organization_address": "Calle Innovación 10, 28043 Madrid",
@@ -29,6 +32,7 @@
   {
     "organization_id": 4,
     "organization_name": "asociacion",
+    "organization_acronym": "asociacion",
     "organization_email": "admin@menthol.com",
     "organization_tlf": "+34639775978",
     "organization_address": "calle huertas 16",
@@ -38,6 +42,7 @@
   {
     "organization_id": 5,
     "organization_name": "centro_investigacion",
+    "organization_acronym": "centroinvestigacion",
     "organization_email": "admin@pleox.com",
     "organization_tlf": "+34639775978",
     "organization_address": "Calle velazquez 33",
@@ -47,6 +52,7 @@
   {
     "organization_id": 6,
     "organization_name": "myllm_experimental",
+    "organization_acronym": "myllmexperimental",
     "organization_email": "experimental@myllm.ia",
     "organization_tlf": "+34639775978",
     "organization_address": "c/ base 19",
@@ -56,6 +62,7 @@
   {
     "organization_id": 7,
     "organization_name": "Big_School",
+    "organization_acronym": "bigschool",
     "organization_email": "alternative@myllm.ai",
     "organization_tlf": "+34639775978",
     "organization_address": "calle segunda base 18",
@@ -65,6 +72,7 @@
   {
     "organization_id": 8,
     "organization_name": "mouredev",
+    "organization_acronym": "mouredev",
     "organization_email": "another@myllm.ai",
     "organization_tlf": "+34639775978",
     "organization_address": "c alle uno",
@@ -74,6 +82,7 @@
   {
     "organization_id": 9,
     "organization_name": "universidad",
+    "organization_acronym": "universidad",
     "organization_email": "ifo@cuatro.es",
     "organization_tlf": "+34639775978",
     "organization_address": "calle no se",
@@ -83,6 +92,7 @@
   {
     "organization_id": 10,
     "organization_name": "local",
+    "organization_acronym": "local",
     "organization_email": "admin@local.loc",
     "organization_tlf": "+34639775978",
     "organization_address": "calle aguas 34",
@@ -92,6 +102,7 @@
   {
     "organization_id": 11,
     "organization_name": "fujitsusupercomputer",
+    "organization_acronym": "fujitsusupercomputer",
     "organization_email": "admin@fujitsusupercomputer.com",
     "organization_tlf": "",
     "organization_address": "",
@@ -101,6 +112,7 @@
   {
     "organization_id": 12,
     "organization_name": "rigby",
+    "organization_acronym": "rigby",
     "organization_email": "admin@rigby.com",
     "organization_tlf": "",
     "organization_address": "",

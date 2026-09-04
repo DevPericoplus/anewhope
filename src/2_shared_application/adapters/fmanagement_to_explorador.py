@@ -33,7 +33,42 @@ Dado que la página ya tiene selectores de proyecto y versión, el adaptador
 construye la jerarquía a partir del nivel de versión.
 """
 
+from pathlib import Path
 from typing import Any
+import importlib.util
+
+
+def _load_storage_helpers():
+    """Carga helpers de carpetas de storage."""
+
+    module_path = Path(__file__).resolve().parent.parent / "storage_access_structure.py"
+    spec = importlib.util.spec_from_file_location(
+        "storage_access_structure_fmo_adapter", module_path
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("No se pudo cargar storage_access_structure")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_storage_helpers = _load_storage_helpers()
+
+
+def _resolve_account_folder(org_folder: str, org_id: int, user_id: int = 0) -> str:
+    """Usa la carpeta recibida o resuelve ORG##### / USER#####."""
+
+    if org_folder:
+        return org_folder
+    return _storage_helpers.get_account_storage_folder(org_id, user_id)
+
+
+def _resolve_project_folder(prj_folder: str, project_id: int) -> str:
+    """Usa la carpeta recibida o resuelve PRJ#####."""
+
+    if prj_folder:
+        return prj_folder
+    return _storage_helpers.get_folder_by_id_project(project_id)
 
 
 def convert_fmanagement_to_explorador(
@@ -106,14 +141,15 @@ def convert_fmanagement_to_explorador(
     # Construir el proyecto (que contiene la versión)
     project_size = version_size  # Por ahora solo una versión
     project_item = {
-        "name": prj_folder or f"PRJ{str(project_id).zfill(5)}",
+        "name": _resolve_project_folder(prj_folder, project_id),
         "is_dir": True,
         "size_bytes": project_size,
         "items": [version_item]
     }
 
-    # Construir respuesta final
-    base_path = f"/data/external/{org_folder or f'ORG{str(org_id).zfill(5)}'}/{prj_folder or f'PRJ{str(project_id).zfill(5)}'}"
+    resolved_org = _resolve_account_folder(org_folder, org_id)
+    resolved_prj = _resolve_project_folder(prj_folder, project_id)
+    base_path = f"/data/external/{resolved_org}/{resolved_prj}"
 
     return {
         "status": "success",
@@ -277,14 +313,15 @@ def convert_multiple_versions_to_explorador(
 
     # Construir el proyecto con todas las versiones
     project_item = {
-        "name": prj_folder or f"PRJ{str(project_id).zfill(5)}",
+        "name": _resolve_project_folder(prj_folder, project_id),
         "is_dir": True,
         "size_bytes": total_project_size,
         "items": version_items
     }
 
-    # Construir respuesta final
-    base_path = f"/data/external/{org_folder or f'ORG{str(org_id).zfill(5)}'}/{prj_folder or f'PRJ{str(project_id).zfill(5)}'}"
+    resolved_org = _resolve_account_folder(org_folder, org_id)
+    resolved_prj = _resolve_project_folder(prj_folder, project_id)
+    base_path = f"/data/external/{resolved_org}/{resolved_prj}"
 
     return {
         "status": "success",

@@ -51,6 +51,7 @@ def test_fetch_job_context_uses_broker(mock_env: None) -> None:
         organization_id=1,
         project_id=2,
         prompt_name="formateador_documental_documentos",
+        owner_user_id=0,
     )
     assert result["organization_name"] == "Acme"
     assert result["prompt"] == "fusion"
@@ -90,3 +91,53 @@ def test_fetch_job_context_fallback_on_error(mock_env: None) -> None:
     assert result["organization_name"] == "Organización 7"
     assert result["project_name"] == "Proyecto 8"
     assert result["prompt"] == ""
+    assert result["account_folder"] == "ORG00007"
+
+
+def test_resolve_account_folder_uses_core_folder(mock_env: None) -> None:
+    """La carpeta de cuenta la resuelve Core, no el Trainer."""
+    from trainer_core_lookup import resolve_account_folder
+
+    fake = MagicMock()
+    fake.get_job_context.return_value = {
+        "organization_id": 0,
+        "owner_user_id": 9,
+        "account_folder": "USER00009",
+        "organization_name": "",
+        "project_name": "Demo",
+        "prompt": "",
+    }
+
+    folder, ctx = resolve_account_folder(
+        organization_id=0,
+        owner_user_id=9,
+        project_id=4,
+        client=fake,
+    )
+
+    fake.get_job_context.assert_called_once_with(
+        organization_id=0,
+        project_id=4,
+        prompt_name="",
+        owner_user_id=9,
+    )
+    assert folder == "USER00009"
+    assert ctx["account_folder"] == "USER00009"
+
+
+def test_resolve_account_folder_fallback_local_helper(mock_env: None) -> None:
+    """Si Core no envía carpeta, se usa el helper compartido."""
+    from broker_client import TrainerBrokerClientError
+    from trainer_core_lookup import resolve_account_folder
+
+    fake = MagicMock()
+    fake.get_job_context.side_effect = TrainerBrokerClientError("down")
+
+    folder, ctx = resolve_account_folder(
+        organization_id=0,
+        owner_user_id=12,
+        project_id=3,
+        client=fake,
+    )
+    assert folder == "USER00012"
+    assert ctx["account_folder"] == "USER00012"

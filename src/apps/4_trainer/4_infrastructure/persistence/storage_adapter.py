@@ -29,6 +29,7 @@ def _load_storage_structure_module():
 _storage_structure = _load_storage_structure_module()
 get_folder_by_id_organization = _storage_structure.get_folder_by_id_organization
 get_folder_by_id_project = _storage_structure.get_folder_by_id_project
+build_fmo_path_segments = _storage_structure.build_fmo_path_segments
 
 
 class StorageAdapterError(Exception):
@@ -55,16 +56,24 @@ def load_fmanagement_settings() -> FmanagementSettings:
 
 
 def build_storage_paths(
-    id_organization: int, id_project: int, version_path: str, subfolders: str = ""
+    id_organization: int,
+    id_project: int,
+    version_path: str,
+    subfolders: str = "",
+    id_user: int = 0,
 ) -> dict[str, str]:
-    """Construye rutas para operaciones de ficheros a partir de IDs."""
+    """Construye rutas para operaciones de ficheros a partir de IDs.
 
-    return {
-        "orgpath": get_folder_by_id_organization(id_organization),
-        "prjpath": get_folder_by_id_project(id_project),
-        "versionpath": version_path,
-        "subfolders": subfolders,
-    }
+    Si `id_organization` > 0 usa ORG#####; si no, USER##### del dueño.
+    """
+
+    return build_fmo_path_segments(
+        organization_id=id_organization,
+        user_id=id_user,
+        project_id=id_project,
+        version_path=version_path,
+        subfolders=subfolders,
+    )
 
 
 def _load_env_settings_module(module_name: str) -> Any:
@@ -83,7 +92,11 @@ def _load_env_settings_module(module_name: str) -> Any:
 
 
 def load_mariadb_settings() -> dict[str, Any]:
-    """Carga configuración de MariaDB desde entorno o protected_values."""
+    """Carga configuración de MariaDB (solo settings, no consultas).
+
+    El Trainer no abre MariaDB. Las lecturas/escrituras de negocio van
+    Trainer → Broker → Backend Core.
+    """
 
     env_settings = _load_env_settings_module("backend_trainer_env_settings")
     protected = env_settings.load_protected_settings()

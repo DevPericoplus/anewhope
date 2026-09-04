@@ -63,6 +63,35 @@ PermissionContext = _permission_module.PermissionContext
 _domain_dtos = _load_dto_module("shared_domain_dtos_core_router", "domain_dtos.py")
 _security_dtos = _load_dto_module("shared_security_dtos_core_router", "security_dtos.py")
 
+def _load_account_identity() -> Any:
+    """Carga reglas de identidad de cuentas (individual vs organización)."""
+
+    module_path = (
+        Path(__file__).resolve().parents[3]
+        / "src/1_shared_domain/account_identity.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "account_identity_core", module_path
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("No se pudo cargar account_identity")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["account_identity_core"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_account_identity = _load_account_identity()
+generate_organization_acronym = _account_identity.generate_organization_acronym
+resolve_public_registration_identity = (
+    _account_identity.resolve_public_registration_identity
+)
+reject_internal_identity_from_public_ui = (
+    _account_identity.reject_internal_identity_from_public_ui
+)
+AccountIdentityError = _account_identity.AccountIdentityError
+IDENTITY_INDIVIDUAL = _account_identity.IDENTITY_INDIVIDUAL
+
 OrganizationDto = _domain_dtos.OrganizationDto
 UserDto = _domain_dtos.UserDto
 RoleDto = _security_dtos.RoleDto
@@ -94,6 +123,9 @@ _storage_module = _load_storage_module("backend_core_storage")
 JsonMockStorageAdapter = _storage_module.JsonMockStorageAdapter
 StorageAdapterError = _storage_module.StorageAdapterError
 build_storage_paths = _storage_module.build_storage_paths
+get_account_storage_folder = _storage_module.get_account_storage_folder
+get_folder_by_id_project = _storage_module.get_folder_by_id_project
+get_folder_by_id_version = _storage_module.get_folder_by_id_version
 load_fmanagement_settings = _storage_module.load_fmanagement_settings
 load_mariadb_settings = _storage_module.load_mariadb_settings
 
@@ -553,6 +585,11 @@ class BackendCoreRouter:
         organizations = self.list_organizations()
         existing_ids = [org.organization_id for org in organizations]
         next_id = max(existing_ids, default=0) + 1
+        existing_acronyms = {
+            (org.organization_acronym or "").lower()
+            for org in organizations
+            if getattr(org, "organization_acronym", "")
+        }
         record = OrganizationDto(
             organization_id=next_id,
             organization_name=organization_name,
@@ -561,6 +598,9 @@ class BackendCoreRouter:
             organization_address=payload.get("organization_address", "").strip(),
             organization_country=payload.get("organization_country", "").strip(),
             organization_state=payload.get("organization_state", "").strip(),
+            organization_acronym=generate_organization_acronym(
+                organization_name, existing_acronyms
+            ),
         )
         organizations.append(record)
         self.store_organizations(organizations)
@@ -619,10 +659,28 @@ class BackendCoreRouter:
         users = self.list_users()
         existing_ids = [user.user_id for user in users]
         next_id = max(existing_ids, default=0) + 1
-        organization_id = int(payload.get("organization_id", 1))
-        identity_type_id = self._resolve_identity_type_id(
-            organization_id, payload.get("identity_type_id")
-        )
+        account_kind = str(payload.get("account_kind") or "").strip().lower()
+        organization_id = int(payload.get("organization_id") or 0)
+        requested = payload.get("identity_type_id")
+        if account_kind:
+            try:
+                identity_type_id = resolve_public_registration_identity(account_kind)
+                reject_internal_identity_from_public_ui(identity_type_id)
+            except AccountIdentityError as exc:
+                raise BackendCoreBusinessError(str(exc)) from exc
+            if identity_type_id == IDENTITY_INDIVIDUAL:
+                organization_id = 0
+        elif organization_id <= 0:
+            identity_type_id = IDENTITY_INDIVIDUAL
+            organization_id = 0
+        else:
+            identity_type_id = self._resolve_identity_type_id(
+                organization_id, requested
+            )
+            try:
+                reject_internal_identity_from_public_ui(int(identity_type_id))
+            except AccountIdentityError as exc:
+                raise BackendCoreBusinessError(str(exc)) from exc
 
         user_record = UserDto(
             user_id=next_id,
@@ -640,7 +698,8 @@ class BackendCoreRouter:
         )
         users.append(user_record)
         self.store_users(users)
-        self._append_manage_role_entry(next_id, organization_id, identity_type_id)
+        if organization_id > 0:
+            self._append_manage_role_entry(next_id, organization_id, identity_type_id)
         self._logger.info(
             "Usuario creado user_id=%s org_id=%s role_id=%s",
             next_id,
@@ -1170,6 +1229,7 @@ class BackendCoreRouter:
             id_project=id_project,
             version_path=version_path,
             subfolders="",
+            id_user=int(payload.get("id_user", 0)),
         )
         
         transfer_params = {
@@ -1287,6 +1347,7 @@ class BackendCoreRouter:
             id_project=id_project,
             version_path=version_path,
             subfolders=subfolders,
+            id_user=int(payload.get("id_user", 0)),
         )
         params = {
             "iduser": str(payload.get("id_user", 0)),
@@ -4196,9 +4257,9 @@ class BackendCoreRouter:
             user_id,
         )
 
-        # Obtener carpetas formateadas
-        org_folder = f"ORG{org_id:05d}"
-        prj_folder = f"PRJ{project_id:05d}"
+        # Obtener carpetas formateadas (ORG##### o USER#####)
+        org_folder = get_account_storage_folder(org_id, user_id)
+        prj_folder = get_folder_by_id_project(project_id)
 
         version_id = None
         version_folder = None
@@ -6400,28 +6461,37 @@ class BackendCoreRouter:
         organization_id: int = 0,
         project_id: int = 0,
         prompt_name: str = "",
+        owner_user_id: int = 0,
     ) -> dict[str, Any]:
-        """Resuelve nombres y prompt de fusión para el Trainer (solo lectura).
+        """Resuelve nombres, carpeta de cuenta y prompt para el Trainer.
 
-        El Backend IA no accede a MariaDB. Consulta este método via
+        El Backend IA no abre MariaDB. Consulta este método via
         Broker → Backend Core.
         """
         from sqlalchemy import text
 
+        resolved_org_id = max(int(organization_id or 0), 0)
+        resolved_owner_id = max(int(owner_user_id or 0), 0)
         organization_name = (
-            f"Organización {organization_id}" if organization_id > 0 else ""
+            f"Organización {resolved_org_id}" if resolved_org_id > 0 else ""
         )
         project_name = f"Proyecto {project_id}" if project_id > 0 else ""
         prompt_text = ""
 
         with self._get_projects_db_connection() as conn:
-            if organization_id > 0:
-                organization_name = self._lookup_organization_name(
-                    conn, text, organization_id, organization_name
-                )
             if project_id > 0:
-                project_name = self._lookup_project_name(
-                    conn, text, project_id, project_name
+                project_org, project_owner, project_name = (
+                    self._lookup_project_storage_owner(
+                        conn, text, project_id, project_name
+                    )
+                )
+                if project_org > 0:
+                    resolved_org_id = project_org
+                if project_owner > 0:
+                    resolved_owner_id = project_owner
+            if resolved_org_id > 0:
+                organization_name = self._lookup_organization_name(
+                    conn, text, resolved_org_id, organization_name
                 )
             if prompt_name:
                 prompt_text = self._lookup_active_prompt(conn, text, prompt_name)
@@ -6431,6 +6501,11 @@ class BackendCoreRouter:
             "project_name": project_name,
             "prompt": prompt_text,
             "prompt_name": prompt_name,
+            "organization_id": resolved_org_id,
+            "owner_user_id": resolved_owner_id,
+            "account_folder": get_account_storage_folder(
+                resolved_org_id, resolved_owner_id
+            ),
         }
 
     def _lookup_organization_name(
@@ -6467,6 +6542,39 @@ class BackendCoreRouter:
         if row and row[0]:
             return str(row[0])
         return fallback
+
+    def _lookup_project_storage_owner(
+        self,
+        conn: Any,
+        text: Any,
+        project_id: int,
+        fallback_name: str,
+    ) -> tuple[int, int, str]:
+        """Resuelve org, dueño individual y nombre del proyecto."""
+        row = conn.execute(
+            text(
+                "SELECT id_organizacion, nombre FROM proyectos WHERE id = :id"
+            ),
+            {"id": project_id},
+        ).fetchone()
+        if not row:
+            return 0, 0, fallback_name
+
+        org_id = int(row[0] or 0)
+        project_name = str(row[1] or "").strip() or fallback_name
+        owner_user_id = 0
+        if org_id <= 0:
+            owner_row = conn.execute(
+                text(
+                    "SELECT id_usuario FROM proyectos_roles "
+                    "WHERE id_proyecto = :id AND active = 1 AND id_rol > 0 "
+                    "ORDER BY id ASC LIMIT 1"
+                ),
+                {"id": project_id},
+            ).fetchone()
+            if owner_row:
+                owner_user_id = int(owner_row[0] or 0)
+        return org_id, owner_user_id, project_name
 
     def _lookup_active_prompt(
         self,
@@ -8417,17 +8525,22 @@ class BackendCoreRouter:
             if not models_path.exists():
                 return {"models": models, "total": 0}
 
-            # Determinar qué directorios ORG escanear
-            if org_id is not None:
-                org_folders = [models_path / f"ORG{org_id:05d}"]
+            # Escanear raíces de cuenta: ORG##### (organización) y USER##### (individual)
+            if org_id is not None and org_id > 0:
+                account_folders = [models_path / get_account_storage_folder(org_id, 0)]
             else:
-                org_folders = sorted(models_path.glob("ORG*"))
+                account_folders = sorted(models_path.glob("ORG*")) + sorted(
+                    models_path.glob("USER*")
+                )
 
-            for org_dir in org_folders:
+            for org_dir in account_folders:
                 if not org_dir.is_dir():
                     continue
                 try:
-                    oid = int(org_dir.name.replace("ORG", ""))
+                    if org_dir.name.startswith("USER"):
+                        oid = 0
+                    else:
+                        oid = int(org_dir.name.replace("ORG", ""))
                 except ValueError:
                     continue
 
@@ -8479,7 +8592,12 @@ class BackendCoreRouter:
             raise BackendCoreBusinessError(f"Error listando modelos: {str(exc)}") from exc
 
     def get_model_package_path(
-        self, org_id: int, project_id: int, version_id: int, filename: str
+        self,
+        org_id: int,
+        project_id: int,
+        version_id: int,
+        filename: str,
+        owner_user_id: int = 0,
     ) -> Path:
         """Obtiene el path absoluto a un paquete ZIP de modelo.
 
@@ -8495,9 +8613,9 @@ class BackendCoreRouter:
 
             base_path = Path(informes_mod.get_backend_storage_path())
             models_path = base_path / "models"
-            org_folder = f"ORG{org_id:05d}"
-            prj_folder = f"PRJ{project_id:05d}"
-            ver_folder = f"v{version_id:03d}"
+            org_folder = get_account_storage_folder(org_id, owner_user_id)
+            prj_folder = get_folder_by_id_project(project_id)
+            ver_folder = get_folder_by_id_version(version_id)
 
             file_path = models_path / org_folder / prj_folder / ver_folder / filename
 

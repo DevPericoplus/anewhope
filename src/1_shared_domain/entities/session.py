@@ -28,6 +28,22 @@ def _load_domain_models() -> Any:
 _domain_models = _load_domain_models()
 DomainError = _domain_models.DomainError
 
+IDENTITY_INDIVIDUAL = 6
+
+
+def _validate_session_organization_id(
+    organization_id: int, identity_type_id: int
+) -> None:
+    """Permite organization_id=0 solo en cuentas individuales (tipo 6)."""
+    if identity_type_id == IDENTITY_INDIVIDUAL:
+        if organization_id != 0:
+            raise DomainError("Cuenta individual no puede tener organización")
+        return
+    if organization_id <= 0:
+        raise DomainError(
+            f"organization_id debe ser positivo, recibido: {organization_id}"
+        )
+
 
 class SessionStatus(str, Enum):
     """Estados válidos de una sesión."""
@@ -159,15 +175,14 @@ class JwtPayload:
         if self.user_id <= 0:
             raise DomainError(f"user_id debe ser positivo, recibido: {self.user_id}")
 
-        if self.organization_id <= 0:
-            raise DomainError(
-                f"organization_id debe ser positivo, recibido: {self.organization_id}"
-            )
-
         if self.identity_type_id <= 0:
             raise DomainError(
                 f"identity_type_id debe ser positivo, recibido: {self.identity_type_id}"
             )
+
+        _validate_session_organization_id(
+            self.organization_id, self.identity_type_id
+        )
 
         if not self.jti or not self.jti.strip():
             raise DomainError("jti no puede estar vacío")
@@ -296,10 +311,9 @@ class TokenPair:
         if self.user_id <= 0:
             raise DomainError(f"user_id debe ser positivo, recibido: {self.user_id}")
 
-        if self.organization_id <= 0:
-            raise DomainError(
-                f"organization_id debe ser positivo, recibido: {self.organization_id}"
-            )
+        _validate_session_organization_id(
+            self.organization_id, self.identity_type_id
+        )
 
     def is_access_expired(self, now: int | None = None) -> bool:
         """Verifica si el access_token está expirado."""
@@ -366,8 +380,9 @@ class Session:
             raise DomainError("session_id no puede estar vacío")
         if self.user_id <= 0:
             raise DomainError("user_id debe ser positivo")
-        if self.organization_id <= 0:
-            raise DomainError("organization_id debe ser positivo")
+        _validate_session_organization_id(
+            self.organization_id, self.identity_type_id
+        )
         if self.identity_type_id <= 0:
             raise DomainError("identity_type_id debe ser positivo")
         if not isinstance(self.status, SessionStatus):

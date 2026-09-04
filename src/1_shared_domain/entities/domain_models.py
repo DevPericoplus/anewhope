@@ -63,6 +63,7 @@ class Organization:
         organization_address: str,
         organization_country: str,
         organization_state: str,
+        organization_acronym: str = "",
     ) -> None:
         # Validaciones
         if organization_id <= 0:
@@ -87,6 +88,7 @@ class Organization:
         self._organization_address = organization_address.strip()
         self._organization_country = organization_country.strip()
         self._organization_state = organization_state.strip()
+        self._organization_acronym = (organization_acronym or "").strip().lower()
 
     def __eq__(self, other: object) -> bool:
         """Compara dos Organization por su ID."""
@@ -180,6 +182,15 @@ class Organization:
         if not value or not value.strip():
             raise DomainError("Organization state cannot be empty")
         self._organization_state = value.strip()
+
+    @property
+    def organization_acronym(self) -> str:
+        """Acrónimo cosmético de login (generado por la aplicación)."""
+        return self._organization_acronym
+
+    @organization_acronym.setter
+    def organization_acronym(self, value: str) -> None:
+        self._organization_acronym = (value or "").strip().lower()
 
     def update_contact_info(self, email: str, phone: str) -> None:
         """Actualiza la información de contacto de la organización."""
@@ -595,10 +606,14 @@ class User:
         # Validaciones
         if user_id <= 0:
             raise DomainError(f"User ID must be positive, got: {user_id}")
-        if organization_id <= 0:
-            raise DomainError(f"Organization ID must be positive, got: {organization_id}")
         if identity_type_id <= 0:
             raise DomainError(f"Identity type ID must be positive, got: {identity_type_id}")
+        org_id = organization_id or 0
+        if identity_type_id == 6:
+            if org_id != 0:
+                raise DomainError("La cuenta individual no puede tener organización")
+        elif org_id <= 0:
+            raise DomainError(f"Organization ID must be positive, got: {organization_id}")
         if not user_name or not user_name.strip():
             raise DomainError("Username cannot be empty")
         if not password or len(password) < 8:
@@ -615,7 +630,7 @@ class User:
             raise DomainError("User cannot be both active and blocked")
         
         self._id = user_id
-        self._id_org = organization_id
+        self._id_org = org_id
         self._id_type = identity_type_id
         self._user_name = user_name.strip()
         self._user_password = password
@@ -657,9 +672,15 @@ class User:
 
     @id_org.setter
     def id_org(self, value: int) -> None:
-        if value <= 0:
+        org_id = value or 0
+        if self._id_type == 6:
+            if org_id != 0:
+                raise DomainError("La cuenta individual no puede tener organización")
+            self._id_org = 0
+            return
+        if org_id <= 0:
             raise DomainError(f"Organization ID must be positive, got: {value}")
-        self._id_org = value
+        self._id_org = org_id
 
     @property
     def id_type(self) -> int:

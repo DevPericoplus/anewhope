@@ -115,6 +115,9 @@ _json_session_repository_module = _load_ddd_module(
 _session_entities_module = _load_ddd_module(
     "ddd_session_entities", "src/1_shared_domain/entities/session.py"
 )
+_account_identity_module = _load_ddd_module(
+    "ddd_account_identity", "src/1_shared_domain/account_identity.py"
+)
 
 # Extraer clases de los módulos cargados
 JwtService = _jwt_service_module.JwtService
@@ -133,6 +136,19 @@ JwtAlgorithm = _session_entities_module.JwtAlgorithm
 TokenType = _session_entities_module.TokenType
 UserSessionContext = _session_entities_module.UserSessionContext
 
+AccountIdentityError = _account_identity_module.AccountIdentityError
+IDENTITY_INDIVIDUAL = _account_identity_module.IDENTITY_INDIVIDUAL
+IDENTITY_ORG_ADMIN = _account_identity_module.IDENTITY_ORG_ADMIN
+parse_login_identifier = _account_identity_module.parse_login_identifier
+generate_organization_acronym = _account_identity_module.generate_organization_acronym
+resolve_public_registration_identity = (
+    _account_identity_module.resolve_public_registration_identity
+)
+reject_internal_identity_from_public_ui = (
+    _account_identity_module.reject_internal_identity_from_public_ui
+)
+match_user_record_for_login = _account_identity_module.match_user_record_for_login
+
 MSG_UNSUPPORTED_TOKEN_ALGORITHM = "Algoritmo de token no soportado"
 MSG_INVALID_CREDENTIALS = "Usuario o credenciales inválidas"
 MSG_LAIM_INVALID_CREDENTIALS = "Credenciales no válidas"
@@ -141,6 +157,9 @@ MSG_USER_BLOCKED_OR_INACTIVE = "Usuario bloqueado o inactivo"
 MSG_USER_BLOCKED_TOO_MANY_ATTEMPTS = "Usuario bloqueado por intentos fallidos"
 MSG_INVALID_OTP = "OTP inválido"
 MSG_USER_NOT_FOUND = "Usuario no encontrado"
+MSG_EMAIL_ALREADY_REGISTERED = "Ese email ya está registrado"
+MSG_USERNAME_ALREADY_EXISTS = "Ese nombre de usuario ya existe en este ámbito"
+MSG_INTERNAL_ROLE_FORBIDDEN = "No se puede asignar un rol interno desde esta interfaz"
 
 
 def _laim_login_user_message(detail: str) -> str:
@@ -1473,6 +1492,29 @@ class RouterMiddleware:
         )
         return _load_common_security_module(common_security_path)
 
+    def _find_user_for_login(self, user_name: str) -> UserDto | None:
+        """Resuelve usuario por `nombre` o `nombre@acronimo`."""
+        users = self._load_users(self._get_users_file_path())
+        try:
+            login_identifier = parse_login_identifier(user_name)
+        except AccountIdentityError:
+            return None
+        org_acronyms = {
+            org.organization_id: (org.organization_acronym or "").lower()
+            for org in self._load_organizations(self._get_organizations_file_path())
+        }
+        matched = match_user_record_for_login(
+            [entry.model_dump() for entry in users],
+            login_identifier,
+            org_acronyms,
+        )
+        if matched is None:
+            return None
+        matched_id = int(matched.get("user_id") or 0)
+        return next(
+            (entry for entry in users if entry.user_id == matched_id), None
+        )
+
     def request_login_otp(
         self,
         user_name: str,
@@ -1486,9 +1528,7 @@ class RouterMiddleware:
         users = self._load_users(users_path)
         sessions_path = self._get_sessions_file_path()
         sessions_data = self._load_sessions_data(sessions_path)
-        user_record = next(
-            (entry for entry in users if entry.user_name == user_name), None
-        )
+        user_record = self._find_user_for_login(user_name)
         if user_record is None:
             self._raise_auth_failure(
                 sessions_data,
@@ -1619,9 +1659,7 @@ class RouterMiddleware:
         users = self._load_users(users_path)
         sessions_path = self._get_sessions_file_path()
         sessions_data = self._load_sessions_data(sessions_path)
-        user_record = next(
-            (entry for entry in users if entry.user_name == user_name), None
-        )
+        user_record = self._find_user_for_login(user_name)
         if user_record is None:
             self._append_auth_log(
                 sessions_data,
@@ -2036,6 +2074,15 @@ class RouterMiddleware:
         organizations = self._load_organizations(organizations_path)
         existing_ids = [org.organization_id for org in organizations]
         next_id = max(existing_ids, default=0) + 1
+        existing_acronyms = {
+            (org.organization_acronym or "").lower()
+            for org in organizations
+            if org.organization_acronym
+        }
+        generated_acronym = generate_organization_acronym(
+            organization_data.get("organization_name", ""),
+            existing_acronyms,
+        )
         org_record = OrganizationDto(
             organization_id=next_id,
             organization_name=organization_data.get("organization_name", "").strip(),
@@ -2044,6 +2091,7 @@ class RouterMiddleware:
             organization_address=organization_data.get("organization_address", "").strip(),
             organization_country=organization_data.get("organization_country", "").strip(),
             organization_state=organization_data.get("organization_state", "").strip(),
+            organization_acronym=generated_acronym,
         )
         organizations.append(org_record)
         self._store_organizations(organizations_path, organizations)
@@ -2063,11 +2111,140 @@ class RouterMiddleware:
                 )
 
         self._logger.info(
-            "Organización creada org_id=%s nombre=%s",
+            "Organización creada org_id=%s nombre=%s acronimo=%s",
             next_id,
             org_record.organization_name,
+            org_record.organization_acronym,
         )
         return next_id
+
+    def get_organization_acronym(self, organization_id: int) -> str:
+        """Devuelve el acrónimo de login de una organización."""
+        organizations = self._load_organizations(self._get_organizations_file_path())
+        for org in organizations:
+            if org.organization_id == organization_id:
+                return org.organization_acronym or ""
+        return ""
+
+    def _find_user_by_id(self, user_id: int) -> UserDto | None:
+        """Busca un usuario por identificador."""
+        users = self._load_users(self._get_users_file_path())
+        return next((user for user in users if user.user_id == user_id), None)
+
+    def _find_organization_by_id(self, organization_id: int) -> OrganizationDto | None:
+        """Busca una organización por identificador."""
+        if organization_id <= 0:
+            return None
+        organizations = self._load_organizations(self._get_organizations_file_path())
+        return next(
+            (org for org in organizations if org.organization_id == organization_id),
+            None,
+        )
+
+    def get_my_profile(self, session: SessionContext) -> dict[str, Any]:
+        """Devuelve la ficha del usuario autenticado y su organización."""
+        user = self._find_user_by_id(session.user_id)
+        if user is None:
+            raise BusinessRuleError("Usuario no encontrado")
+        organization = self._find_organization_by_id(int(user.organization_id or 0))
+        can_edit_organization = session.identity_type_id == 2 and int(
+            user.organization_id or 0
+        ) > 0
+        return {
+            "user_id": user.user_id,
+            "user_name": user.user_name,
+            "user_email": user.user_email,
+            "user_mobile": user.user_mobile,
+            "organization_id": int(user.organization_id or 0),
+            "identity_type_id": user.identity_type_id,
+            "contact_info": user.contact_info or {},
+            "billing_info": user.billing_info or {},
+            "can_edit_organization": can_edit_organization,
+            "organization": None
+            if organization is None
+            else {
+                "organization_id": organization.organization_id,
+                "organization_name": organization.organization_name,
+                "organization_email": organization.organization_email,
+                "organization_tlf": organization.organization_tlf,
+                "organization_address": organization.organization_address,
+                "organization_country": organization.organization_country,
+                "organization_state": organization.organization_state,
+                "organization_acronym": organization.organization_acronym or "",
+            },
+        }
+
+    def update_my_profile(
+        self, session: SessionContext, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Actualiza email, móvil y contacto del usuario autenticado."""
+        users_path = self._get_users_file_path()
+        users = self._load_users(users_path)
+        user = next((entry for entry in users if entry.user_id == session.user_id), None)
+        if user is None:
+            raise BusinessRuleError("Usuario no encontrado")
+        email = str(payload.get("user_email", user.user_email)).strip().lower()
+        if email and any(
+            entry.user_email.lower() == email and entry.user_id != user.user_id
+            for entry in users
+        ):
+            raise BusinessRuleError(MSG_EMAIL_ALREADY_REGISTERED)
+        user.user_email = email
+        user.user_mobile = str(payload.get("user_mobile", user.user_mobile)).strip()
+        if isinstance(payload.get("contact_info"), dict):
+            user.contact_info = payload["contact_info"]
+        if isinstance(payload.get("billing_info"), dict):
+            user.billing_info = payload["billing_info"]
+        self._store_users(users_path, users)
+        return self.get_my_profile(session)
+
+    def update_my_organization(
+        self, session: SessionContext, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Actualiza datos de organización. Solo identity_type_id=2. Sin acrónimo."""
+        if session.identity_type_id != 2:
+            raise BusinessRuleError(
+                "Solo el administrador de la organización puede modificar estos datos"
+            )
+        org_id = int(session.organization_id or 0)
+        if org_id <= 0:
+            raise BusinessRuleError("Esta cuenta no pertenece a una organización")
+        organizations_path = self._get_organizations_file_path()
+        organizations = self._load_organizations(organizations_path)
+        organization = next(
+            (org for org in organizations if org.organization_id == org_id),
+            None,
+        )
+        if organization is None:
+            raise BusinessRuleError("Organización no encontrada")
+        new_name = str(
+            payload.get("organization_name", organization.organization_name)
+        ).strip()
+        if new_name and self._normalize_text(new_name) != self._normalize_text(
+            organization.organization_name
+        ):
+            if self.check_organization_name_exists(new_name):
+                raise BusinessRuleError(
+                    "Esa organización ya existe en nuestro sistema, por favor contacte con su administrador."
+                )
+            organization.organization_name = new_name
+        organization.organization_email = str(
+            payload.get("organization_email", organization.organization_email)
+        ).strip()
+        organization.organization_tlf = str(
+            payload.get("organization_tlf", organization.organization_tlf)
+        ).strip()
+        organization.organization_address = str(
+            payload.get("organization_address", organization.organization_address)
+        ).strip()
+        organization.organization_country = str(
+            payload.get("organization_country", organization.organization_country)
+        ).strip()
+        organization.organization_state = str(
+            payload.get("organization_state", organization.organization_state)
+        ).strip()
+        self._store_organizations(organizations_path, organizations)
+        return self.get_my_profile(session)
 
     def _get_manage_roles_path(self) -> Path:
         """Resuelve la ruta del archivo de roles por organización."""
@@ -2936,6 +3113,75 @@ class RouterMiddleware:
         
         return filtered_users
 
+    def _prepare_user_creation_payload(
+        self, user_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Resuelve tipo de cuenta, rechaza roles internos y valida unicidad."""
+        account_kind = str(user_data.get("account_kind") or "").strip().lower()
+        requested_raw = user_data.get("identity_type_id")
+        requested_id: int | None
+        if requested_raw is None or requested_raw == "":
+            requested_id = None
+        else:
+            requested_id = int(requested_raw)
+            try:
+                reject_internal_identity_from_public_ui(requested_id)
+            except AccountIdentityError as exc:
+                raise BusinessRuleError(MSG_INTERNAL_ROLE_FORBIDDEN) from exc
+
+        organization_id = int(user_data.get("organization_id") or 0)
+
+        if account_kind:
+            try:
+                identity_type_id = resolve_public_registration_identity(account_kind)
+            except AccountIdentityError as exc:
+                raise BusinessRuleError(str(exc)) from exc
+            if identity_type_id == IDENTITY_INDIVIDUAL:
+                organization_id = 0
+            elif organization_id <= 0:
+                raise BusinessRuleError(
+                    "La cuenta de organización requiere una organización"
+                )
+        else:
+            if organization_id <= 0:
+                raise BusinessRuleError(
+                    "La organización es obligatoria para este alta"
+                )
+            identity_type_id = self._get_manage_roles_identity_type_id(
+                organization_id, requested_id
+            )
+            try:
+                reject_internal_identity_from_public_ui(identity_type_id)
+            except AccountIdentityError as exc:
+                raise BusinessRuleError(MSG_INTERNAL_ROLE_FORBIDDEN) from exc
+
+        users = self._load_users(self._get_users_file_path())
+        email = str(user_data.get("user_email", "")).strip().lower()
+        if email and any(user.user_email.lower() == email for user in users):
+            raise BusinessRuleError(MSG_EMAIL_ALREADY_REGISTERED)
+        user_name = str(user_data.get("user_name", "")).strip()
+        if organization_id == 0:
+            name_clash = any(
+                user.user_name == user_name and int(user.organization_id or 0) == 0
+                for user in users
+            )
+        else:
+            name_clash = any(
+                user.user_name == user_name
+                and int(user.organization_id or 0) == organization_id
+                for user in users
+            )
+        if name_clash:
+            raise BusinessRuleError(MSG_USERNAME_ALREADY_EXISTS)
+
+        return {
+            **user_data,
+            "organization_id": organization_id,
+            "identity_type_id": identity_type_id,
+            "user_email": email,
+            "user_name": user_name,
+        }
+
     def create_user(self, user_data: dict[str, Any]) -> UserCreationResult:
         """Crea un usuario y registra su rol por organización.
         
@@ -2944,18 +3190,7 @@ class RouterMiddleware:
         - mock_and_db: Guarda en JSON y envía al broker->core->DB
         - db_only: Solo envía al broker->core->DB
         """
-        organization_id = int(user_data.get("organization_id", 1))
-        requested_identity_type_id = user_data.get("identity_type_id")
-        identity_type_id = self._get_manage_roles_identity_type_id(
-            organization_id, requested_identity_type_id
-        )
-        
-        # Preparar datos con identity_type_id resuelto
-        user_data_resolved = {
-            **user_data,
-            "organization_id": organization_id,
-            "identity_type_id": identity_type_id,
-        }
+        user_data_resolved = self._prepare_user_creation_payload(user_data)
         
         # Determinar flujo según STORAGE_MODE
         if self._storage_mode == StorageMode.DB_ONLY:
@@ -2985,8 +3220,8 @@ class RouterMiddleware:
         users = self._load_users(users_path)
         existing_ids = [user.user_id for user in users]
         next_id = max(existing_ids, default=0) + 1
-        organization_id = int(user_data.get("organization_id", 1))
-        identity_type_id = int(user_data.get("identity_type_id", 5))
+        organization_id = int(user_data.get("organization_id") or 0)
+        identity_type_id = int(user_data.get("identity_type_id") or 5)
 
         user_record = UserDto(
             user_id=next_id,
@@ -3004,7 +3239,8 @@ class RouterMiddleware:
         )
         users.append(user_record)
         self._store_users(users_path, users)
-        self._create_manage_role_entry(next_id, organization_id, identity_type_id)
+        if organization_id > 0:
+            self._create_manage_role_entry(next_id, organization_id, identity_type_id)
         self._logger.info(
             "Usuario creado (local) user_id=%s org_id=%s role_id=%s",
             next_id,
@@ -3380,6 +3616,14 @@ class RouterMiddleware:
                 "No se pudo obtener los permisos de entrenamiento"
             ) from exc
 
+    @staticmethod
+    def _ensure_job_owner_user_id(
+        payload: dict[str, Any], session: SessionContext
+    ) -> None:
+        """Inyecta el dueño de sesión si el payload no lo trae."""
+        if int(payload.get("id_user") or 0) <= 0:
+            payload["id_user"] = session.user_id
+
     def send_documentacion(
         self,
         payload: dict[str, Any],
@@ -3402,8 +3646,9 @@ class RouterMiddleware:
 
         self._configure_broker_security(session)
 
-        # Añadir identity_type_id al payload
+        # Añadir identity_type_id y dueño al payload
         payload["identity_type_id"] = session.identity_type_id
+        self._ensure_job_owner_user_id(payload, session)
 
         try:
             return self._broker_client.send_documentacion(payload)
@@ -3494,6 +3739,7 @@ class RouterMiddleware:
             )
 
         self._configure_broker_security(session)
+        self._ensure_job_owner_user_id(payload, session)
 
         try:
             return self._broker_client.send_entrenamiento(payload)
@@ -3524,8 +3770,9 @@ class RouterMiddleware:
 
         self._configure_broker_security(session)
 
-        # Añadir identity_type_id al payload
+        # Añadir identity_type_id y dueño al payload
         payload["identity_type_id"] = session.identity_type_id
+        self._ensure_job_owner_user_id(payload, session)
 
         try:
             return self._broker_client.send_metadatos(payload)
@@ -3557,6 +3804,7 @@ class RouterMiddleware:
             )
 
         self._configure_broker_security(session)
+        self._ensure_job_owner_user_id(payload, session)
 
         try:
             return self._broker_client.send_autonomous_training(payload)

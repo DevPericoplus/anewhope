@@ -1944,13 +1944,15 @@ class BrokerBackendRouter:
         organization_id: int = 0,
         project_id: int = 0,
         prompt_name: str = "",
+        owner_user_id: int = 0,
     ) -> dict[str, Any]:
         """Resuelve contexto de job para el Trainer via Backend Core."""
         self._logger.info(
-            "[%s] Contexto trainer: org=%s prj=%s prompt=%s",
+            "[%s] Contexto trainer: org=%s prj=%s owner=%s prompt=%s",
             self._client_app,
             organization_id,
             project_id,
+            owner_user_id,
             prompt_name,
         )
         try:
@@ -1958,6 +1960,7 @@ class BrokerBackendRouter:
                 organization_id=organization_id,
                 project_id=project_id,
                 prompt_name=prompt_name,
+                owner_user_id=owner_user_id,
             )
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(

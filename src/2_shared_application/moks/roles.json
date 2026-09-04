@@ -41,8 +41,8 @@
   },
   {
     "identity_type_id": 6,
-    "identity_type_name": "Tipo reservado 0",
-    "identity_type_rol": "Reserverd type 0",
+    "identity_type_name": "Usuario individual",
+    "identity_type_rol": "Individual User",
     "identity_type_group_permissions": [
       6
     ]

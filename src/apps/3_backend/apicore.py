@@ -108,8 +108,9 @@ class OrganizationCreateResponse(BaseModel):
 class UserCreateRequest(BaseModel):
     """Payload para crear usuario."""
 
-    organization_id: int
+    organization_id: int = 0
     identity_type_id: int | None = None
+    account_kind: str | None = None
     user_name: str
     user_password: str
     user_email: str
@@ -487,6 +488,9 @@ class TrainerJobContextResponse(BaseModel):
     project_name: str = ""
     prompt: str = ""
     prompt_name: str = ""
+    organization_id: int = 0
+    owner_user_id: int = 0
+    account_folder: str = ""
 
 
 @asynccontextmanager
@@ -3703,9 +3707,10 @@ def get_trainer_job_context_endpoint(
     organization_id: int = 0,
     project_id: int = 0,
     prompt_name: str = "",
+    owner_user_id: int = 0,
     router: BackendCoreRouter = Depends(get_router_core),
 ) -> TrainerJobContextResponse:
-    """Resuelve nombres y prompt de fusión para el Backend IA.
+    """Resuelve nombres, dueño de storage y prompt de fusión para el Backend IA.
 
     Flujo: Trainer → Broker → Backend Core → MariaDB (solo lectura).
     """
@@ -3714,6 +3719,7 @@ def get_trainer_job_context_endpoint(
             organization_id=organization_id,
             project_id=project_id,
             prompt_name=prompt_name,
+            owner_user_id=owner_user_id,
         )
         return TrainerJobContextResponse(**result)
     except BackendCoreBusinessError as exc:

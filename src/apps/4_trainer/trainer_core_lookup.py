@@ -1,12 +1,15 @@
 """Lecturas y escrituras de negocio del Trainer via Broker → Backend Core.
 
 El Backend IA no abre conexiones a MariaDB. Todas las consultas de nombres,
-prompts de fusión y el cierre de jobs pasan por el Broker.
+dueño de storage, prompts de fusión y el cierre de jobs pasan por el Broker.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import logging
+import sys
+from pathlib import Path
 from typing import Any
 
 from broker_client import TrainerBrokerClient
@@ -17,10 +20,37 @@ MSG_ORG_FALLBACK = "Organización {id_organizacion}"
 MSG_PRJ_FALLBACK = "Proyecto {id_proyecto}"
 
 
+def _load_account_folder_helper() -> Any:
+    """Carga get_account_storage_folder sin importar MariaDB."""
+    module_path = (
+        Path(__file__).resolve().parents[2]
+        / "2_shared_application"
+        / "storage_access_structure.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "storage_access_structure_trainer_lookup", module_path
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError("No se pudo cargar storage_access_structure")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["storage_access_structure_trainer_lookup"] = module
+    spec.loader.exec_module(module)
+    return module.get_account_storage_folder
+
+
+_get_account_storage_folder = _load_account_folder_helper()
+
+
+def payload_owner_user_id(data: dict[str, Any]) -> int:
+    """Lee el dueño individual del payload enviado por Broker."""
+    return int(data.get("id_user") or data.get("owner_user_id") or 0)
+
+
 def fetch_job_context(
     organization_id: int = 0,
     project_id: int = 0,
     prompt_name: str = "",
+    owner_user_id: int = 0,
     client: TrainerBrokerClient | None = None,
 ) -> dict[str, Any]:
     """Obtiene contexto de job via Broker → Backend Core."""
@@ -30,6 +60,7 @@ def fetch_job_context(
             organization_id=organization_id,
             project_id=project_id,
             prompt_name=prompt_name,
+            owner_user_id=owner_user_id,
         )
         return result
     except Exception as exc:
@@ -52,7 +83,38 @@ def fetch_job_context(
             ),
             "prompt": "",
             "prompt_name": prompt_name,
+            "organization_id": organization_id,
+            "owner_user_id": owner_user_id,
+            "account_folder": _get_account_storage_folder(
+                organization_id, owner_user_id
+            ),
         }
+
+
+def resolve_account_folder(
+    organization_id: int = 0,
+    owner_user_id: int = 0,
+    project_id: int = 0,
+    prompt_name: str = "",
+    client: TrainerBrokerClient | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """Resuelve ORG##### o USER##### via Broker → Core, con fallback local."""
+    ctx = fetch_job_context(
+        organization_id=organization_id,
+        project_id=project_id,
+        prompt_name=prompt_name,
+        owner_user_id=owner_user_id,
+        client=client,
+    )
+    resolved_org = int(ctx.get("organization_id") or 0) or organization_id
+    resolved_user = int(ctx.get("owner_user_id") or 0) or owner_user_id
+    folder = str(ctx.get("account_folder") or "").strip()
+    if not folder:
+        folder = _get_account_storage_folder(resolved_org, resolved_user)
+    ctx["organization_id"] = resolved_org
+    ctx["owner_user_id"] = resolved_user
+    ctx["account_folder"] = folder
+    return folder, ctx
 
 
 def fetch_organization_name(

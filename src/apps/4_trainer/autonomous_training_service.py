@@ -83,6 +83,14 @@ _storage_module = _load_shared_module(
 )
 _load_fmanagement_settings = _storage_module.load_fmanagement_settings
 
+_storage_structure = _load_shared_module(
+    "storage_structure_auto",
+    "2_shared_application/storage_access_structure.py",
+)
+get_account_storage_folder = _storage_structure.get_account_storage_folder
+get_folder_by_id_project = _storage_structure.get_folder_by_id_project
+get_folder_by_id_version = _storage_structure.get_folder_by_id_version
+
 
 # ---------------------------------------------------------------------------
 # Funciones auxiliares
@@ -157,6 +165,7 @@ def _upload_package_to_fmanagement(
     id_prj: int,
     id_ver: int,
     id_ent: int,
+    id_user: int = 0,
 ) -> bool:
     """Sube el paquete ZIP del modelo autónomo a fmanagement.
 
@@ -182,7 +191,7 @@ def _upload_package_to_fmanagement(
 
     now = int(time.time())
     claims = {
-        "user_id": 0,
+        "user_id": id_user,
         "organization_id": id_org,
         "identity_type_id": 0,
         "project_id": id_prj,
@@ -198,9 +207,14 @@ def _upload_package_to_fmanagement(
     file_bytes = package_path.read_bytes()
     filename = package_path.name
 
+    account_folder = get_account_storage_folder(id_org, id_user)
     logger.info(
-        f"[AUTONOMOUS] Upload: {filename} ({len(file_bytes)} bytes) "
-        f"-> ORG{id_org:05d}/PRJ{id_prj:05d}/v{id_ver:03d}/modelos/"
+        "[AUTONOMOUS] Upload: %s (%s bytes) -> %s/%s/%s/modelos/",
+        filename,
+        len(file_bytes),
+        account_folder,
+        get_folder_by_id_project(id_prj),
+        get_folder_by_id_version(id_ver),
     )
 
     settings = _load_fmanagement_settings()
@@ -270,10 +284,13 @@ def process_autonomous_training(data: dict[str, Any]) -> None:
     start_time = time.time()
 
     # Extraer datos del payload
+    from trainer_core_lookup import payload_owner_user_id
+
     id_org = data.get("id_organizacion", 0)
     id_prj = data.get("id_proyecto", 0)
     id_ver = data.get("id_version", 0)
     id_ent = data.get("id_entrenamiento", 0)
+    id_user = payload_owner_user_id(data)
     pat_version = data.get("pat_version", "")
     collection_name = data.get("collection_name", "")
 
@@ -298,6 +315,7 @@ def process_autonomous_training(data: dict[str, Any]) -> None:
             id_version=id_ver,
             id_entrenamiento=id_ent,
             pat_version=pat_version,
+            owner_user_id=id_user,
         )
 
         logger.info(f"[AUTONOMOUS] Jerarquía: {path_mgr.get_hierarchy_path()}")
@@ -413,6 +431,7 @@ def process_autonomous_training(data: dict[str, Any]) -> None:
                     id_prj=id_prj,
                     id_ver=id_ver,
                     id_ent=id_ent,
+                    id_user=id_user,
                 )
             except Exception as upload_exc:
                 logger.warning(

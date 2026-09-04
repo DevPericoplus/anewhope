@@ -79,6 +79,29 @@ except Exception as e:
         return None
 
 
+def _load_storage_helpers():
+    """Carga helpers de carpetas de storage."""
+
+    module_path = (
+        Path(__file__).resolve().parents[3]
+        / "2_shared_application"
+        / "storage_access_structure.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "storage_access_structure_explorador_bo", module_path
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("No se pudo cargar storage_access_structure")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_storage_helpers = _load_storage_helpers()
+get_account_storage_folder = _storage_helpers.get_account_storage_folder
+get_folder_by_id_project = _storage_helpers.get_folder_by_id_project
+
+
 # ============================================================================
 # Modelos de Datos
 # ============================================================================
@@ -340,14 +363,13 @@ class ExploradorState(SharedSessionState):
                Backoffice → Middleware → Broker → Backend Core → fmanagement (contenido)
 
         Construye los nombres de carpetas según convención:
-        - org_folder: "ORG{organization_id:05d}"  (ej: "ORG00001")
-        - prj_folder: "PRJ{id_proyecto:05d}"      (ej: "PRJ00001")
+        - org_folder: ORG##### si hay organización, USER##### si es cuenta individual
+        - prj_folder: PRJ#####
         """
         try:
-            # Construir nombres de carpetas - usar la variable que esté establecida
             org_id_to_use = self.id_organizacion if self.id_organizacion > 0 else self.organization_id
-            org_folder = f"ORG{str(org_id_to_use).zfill(5)}"
-            prj_folder = f"PRJ{str(self.id_proyecto).zfill(5)}"
+            org_folder = get_account_storage_folder(org_id_to_use, self.user_id)
+            prj_folder = get_folder_by_id_project(self.id_proyecto)
 
             logger.info(
                 "Cargando todas las versiones del proyecto: org=%s, prj=%s (org_id=%s)",
@@ -362,6 +384,7 @@ class ExploradorState(SharedSessionState):
                 project_id=self.id_proyecto,
                 org_folder=org_folder,
                 prj_folder=prj_folder,
+                owner_user_id=self.user_id,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
@@ -1770,6 +1793,7 @@ class ExploradorState(SharedSessionState):
                 item_path=item_path,
                 item_name=item_name,
                 is_folder=(item.item_type == "folder"),
+                user_id=self.user_id,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )

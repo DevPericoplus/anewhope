@@ -77,8 +77,9 @@ class OrganizationCreateResponse(BaseModel):
 class UserCreateRequest(BaseModel):
     """Payload para crear usuario."""
 
-    organization_id: int
+    organization_id: int = 0
     identity_type_id: int | None = None
+    account_kind: str | None = None
     user_name: str
     user_password: str
     user_email: str
@@ -300,6 +301,7 @@ class DocumentacionRequest(BaseModel):
     id_organizacion: int
     id_proyecto: int
     id_version: int
+    id_user: int = 0
     nombre_job: str = ""
     descripcion_job: str = ""
     id_template: int = 0
@@ -325,6 +327,7 @@ class EntrenamientoRequest(BaseModel):
     id_organizacion: int
     id_proyecto: int
     id_version: int
+    id_user: int = 0
     pat_version: str = ""
     # Parámetros opcionales de entrenamiento
     learning_rate: float | None = None
@@ -363,6 +366,7 @@ class MetadatosRequest(BaseModel):
     id_organizacion: int
     id_proyecto: int
     id_version: int
+    id_user: int = 0
     nombre_job: str = ""
     descripcion_job: str = ""
     id_template: int = 0
@@ -389,6 +393,7 @@ class AutonomousTrainingRequest(BaseModel):
     id_proyecto: int
     id_version: int
     id_entrenamiento: int
+    id_user: int = 0
     pat_version: str = ""
     collection_name: str = ""
 
@@ -4007,6 +4012,9 @@ class TrainerJobContextResponse(BaseModel):
     project_name: str = ""
     prompt: str = ""
     prompt_name: str = ""
+    organization_id: int = 0
+    owner_user_id: int = 0
+    account_folder: str = ""
 
 
 class JobCompleteRequest(BaseModel):
@@ -4172,9 +4180,10 @@ def get_trainer_job_context_endpoint(
     organization_id: int = 0,
     project_id: int = 0,
     prompt_name: str = "",
+    owner_user_id: int = 0,
     router: BrokerBackendRouter = Depends(get_router_broker),
 ) -> TrainerJobContextResponse:
-    """Resuelve nombres y prompt de fusión para el Backend IA.
+    """Resuelve nombres, dueño de storage y prompt para el Backend IA.
 
     Flujo: Trainer → Broker → Backend Core → MariaDB
     """
@@ -4183,6 +4192,7 @@ def get_trainer_job_context_endpoint(
             organization_id=organization_id,
             project_id=project_id,
             prompt_name=prompt_name,
+            owner_user_id=owner_user_id,
         )
         return TrainerJobContextResponse(**result)
     except BrokerBusinessError as exc:

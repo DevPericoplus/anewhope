@@ -32,6 +32,45 @@ def _load_env_settings_module():
 
 _env_settings = _load_env_settings_module()
 
+
+def _load_storage_structure_module():
+    """Carga helpers de carpetas de storage (ORG##### / USER#####)."""
+
+    module_path = (
+        Path(__file__).resolve().parents[3]
+        / "2_shared_application"
+        / "storage_access_structure.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "storage_access_structure_backoffice_api", module_path
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("No se pudo cargar storage_access_structure")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_storage_structure = _load_storage_structure_module()
+
+
+def _account_storage_folder(org_id: int, user_id: int = 0) -> str:
+    """Raíz de cuenta: ORG##### o USER#####."""
+
+    return _storage_structure.get_account_storage_folder(org_id, user_id)
+
+
+def _project_storage_folder(project_id: int) -> str:
+    """Carpeta de proyecto PRJ#####."""
+
+    return _storage_structure.get_folder_by_id_project(project_id)
+
+
+def _version_storage_folder(version_id: int) -> str:
+    """Carpeta de versión v###."""
+
+    return _storage_structure.get_folder_by_id_version(version_id)
+
 # Ruta al módulo de dominio de usuarios y organizaciones
 _domain_entities_path = (
     Path(__file__).parent.parent.parent.parent / "1_shared_domain" / "entities"
@@ -513,6 +552,43 @@ def ensure_valid_tokens(
         logger.error(f"Error al renovar tokens: {e}")
     
     return result
+
+
+def get_my_profile(access_token: str, session_token: str) -> dict[str, Any]:
+    """Obtiene la ficha del usuario autenticado."""
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "X-Session-Token": session_token,
+    }
+    return _request_middleware("GET", "/users/me", headers=headers)
+
+
+def update_my_profile(
+    access_token: str,
+    session_token: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Actualiza email, móvil y contacto del usuario autenticado."""
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "X-Session-Token": session_token,
+    }
+    return _request_middleware("PATCH", "/users/me", payload=payload, headers=headers)
+
+
+def update_my_organization(
+    access_token: str,
+    session_token: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Actualiza datos de organización (solo administrador identity 2)."""
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "X-Session-Token": session_token,
+    }
+    return _request_middleware(
+        "PATCH", "/organizations/me", payload=payload, headers=headers
+    )
 
 
 def logout_user(access_token: str, session_token: str) -> dict[str, Any]:
@@ -2209,6 +2285,7 @@ def fmanagement_list_for_explorador(
     version_name: str,
     org_folder: str = "",
     prj_folder: str = "",
+    owner_user_id: int = 0,
     access_token: str = "",
     session_token: str = "",
 ) -> dict[str, Any]:
@@ -2253,9 +2330,9 @@ def fmanagement_list_for_explorador(
     """
     # Generar nombres de carpetas si no se proveen
     if not org_folder:
-        org_folder = f"ORG{str(org_id).zfill(5)}"
+        org_folder = _account_storage_folder(org_id, owner_user_id)
     if not prj_folder:
-        prj_folder = f"PRJ{str(project_id).zfill(5)}"
+        prj_folder = _project_storage_folder(project_id)
 
     # Llamar a fmanagement_list
     fmanagement_response = fmanagement_list(
@@ -2326,6 +2403,7 @@ def fmanagement_list_all_project_versions(
     project_id: int,
     org_folder: str = "",
     prj_folder: str = "",
+    owner_user_id: int = 0,
     access_token: str = "",
     session_token: str = "",
 ) -> dict[str, Any]:
@@ -2376,9 +2454,9 @@ def fmanagement_list_all_project_versions(
     """
     # Generar nombres de carpetas si no se proveen
     if not org_folder:
-        org_folder = f"ORG{str(org_id).zfill(5)}"
+        org_folder = _account_storage_folder(org_id, owner_user_id)
     if not prj_folder:
-        prj_folder = f"PRJ{str(project_id).zfill(5)}"
+        prj_folder = _project_storage_folder(project_id)
 
     # 1. Obtener lista de versiones desde DISCO vía fmanagement (no desde BD)
     #    Llamamos a fmanagement_list con version_folder="" para listar el
@@ -2691,9 +2769,9 @@ def fmanagement_create_folder(
     """
     headers = _build_auth_headers(access_token, session_token)
 
-    org_folder = f"ORG{org_id:05d}"
-    prj_folder = f"PRJ{project_id:05d}"
-    version_folder = f"v{version_id:03d}"
+    org_folder = _account_storage_folder(org_id, user_id)
+    prj_folder = _project_storage_folder(project_id)
+    version_folder = _version_storage_folder(version_id)
 
     subfolders = f"{folder_path}/{folder_name}" if folder_path else folder_name
 
@@ -2749,9 +2827,9 @@ def fmanagement_rename_folder(
     """
     headers = _build_auth_headers(access_token, session_token)
 
-    org_folder = f"ORG{org_id:05d}"
-    prj_folder = f"PRJ{project_id:05d}"
-    version_folder = f"v{version_id:03d}"
+    org_folder = _account_storage_folder(org_id, user_id)
+    prj_folder = _project_storage_folder(project_id)
+    version_folder = _version_storage_folder(version_id)
 
     subfolders = f"{folder_path}/{old_name}" if folder_path else old_name
 
@@ -2806,9 +2884,9 @@ def fmanagement_delete_folder(
     """
     headers = _build_auth_headers(access_token, session_token)
 
-    org_folder = f"ORG{org_id:05d}"
-    prj_folder = f"PRJ{project_id:05d}"
-    version_folder = f"v{version_id:03d}"
+    org_folder = _account_storage_folder(org_id, user_id)
+    prj_folder = _project_storage_folder(project_id)
+    version_folder = _version_storage_folder(version_id)
 
     subfolders = f"{folder_path}/{folder_name}" if folder_path else folder_name
 
@@ -2864,9 +2942,9 @@ def fmanagement_rename_file(
     """
     headers = _build_auth_headers(access_token, session_token)
 
-    org_folder = f"ORG{org_id:05d}"
-    prj_folder = f"PRJ{project_id:05d}"
-    version_folder = f"v{version_id:03d}"
+    org_folder = _account_storage_folder(org_id, user_id)
+    prj_folder = _project_storage_folder(project_id)
+    version_folder = _version_storage_folder(version_id)
 
     import os
     name_part, ext_part = os.path.splitext(old_filename)
@@ -2927,9 +3005,9 @@ def fmanagement_delete_file(
     """
     headers = _build_auth_headers(access_token, session_token)
 
-    org_folder = f"ORG{org_id:05d}"
-    prj_folder = f"PRJ{project_id:05d}"
-    version_folder = f"v{version_id:03d}"
+    org_folder = _account_storage_folder(org_id, user_id)
+    prj_folder = _project_storage_folder(project_id)
+    version_folder = _version_storage_folder(version_id)
 
     import os
     name_part, ext_part = os.path.splitext(filename)
@@ -2965,6 +3043,7 @@ def fmanagement_get_properties(
     item_path: str,
     item_name: str,
     is_folder: bool,
+    user_id: int = 0,
     access_token: str = "",
     session_token: str = "",
 ) -> dict[str, Any]:
@@ -2985,9 +3064,9 @@ def fmanagement_get_properties(
     """
     headers = _build_auth_headers(access_token, session_token)
 
-    org_folder = f"ORG{org_id:05d}"
-    prj_folder = f"PRJ{project_id:05d}"
-    version_folder = f"v{version_id:03d}"
+    org_folder = _account_storage_folder(org_id, user_id)
+    prj_folder = _project_storage_folder(project_id)
+    version_folder = _version_storage_folder(version_id)
 
     payload = {
         "operation": "get_properties",

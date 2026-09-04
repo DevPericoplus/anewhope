@@ -17,6 +17,9 @@ sys.path.pop(0)
 from adapters.api_client import (
     get_organization_projects,
     get_project_versions,
+    _account_storage_folder,
+    _project_storage_folder,
+    _version_storage_folder,
 )
 
 # Importar el adaptador para hacer llamadas HTTP
@@ -297,7 +300,7 @@ class ModelDownloadState(SharedSessionState):
         prj_id = self.dl_selected_project_id
         ver_id = self.dl_selected_version_id
 
-        if not all([org_id, prj_id, ver_id]):
+        if prj_id <= 0 or ver_id <= 0:
             async with self:
                 self.gguf_packages = []
                 self.gguf_loaded = True
@@ -320,9 +323,9 @@ class ModelDownloadState(SharedSessionState):
                 headers["Authorization"] = f"Bearer {self.access_token}"
 
             payload = {
-                "org_folder": f"ORG{org_id:05d}",
-                "prj_folder": f"PRJ{prj_id:05d}",
-                "version_folder": f"v{ver_id:03d}",
+                "org_folder": _account_storage_folder(org_id, self.user_id),
+                "prj_folder": _project_storage_folder(prj_id),
+                "version_folder": _version_storage_folder(ver_id),
             }
 
             async with httpx.AsyncClient(timeout=15.0) as client:

@@ -66,6 +66,29 @@ except Exception as e:
         return True
 
 
+def _load_storage_helpers():
+    """Carga helpers de carpetas de storage."""
+
+    module_path = (
+        Path(__file__).resolve().parents[3]
+        / "2_shared_application"
+        / "storage_access_structure.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "storage_access_structure_explorador_fe", module_path
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("No se pudo cargar storage_access_structure")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_storage_helpers = _load_storage_helpers()
+get_account_storage_folder = _storage_helpers.get_account_storage_folder
+get_folder_by_id_project = _storage_helpers.get_folder_by_id_project
+
+
 class FolderItem(pydantic.BaseModel):
     id: str
     name: str
@@ -1350,6 +1373,7 @@ class ExploradorState(rx.State):
                 item_path=item_path,
                 item_name=item_name,
                 is_folder=(item.item_type == "folder"),
+                user_id=self.user_id,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )
@@ -1612,8 +1636,7 @@ class ExploradorState(rx.State):
         if user_id > 0:
             self.user_id = user_id
             self.user_identity_type_id = identity_type_id
-            if org_id > 0:
-                self.id_organizacion = org_id
+            self.id_organizacion = org_id
             if access_token:
                 self.access_token = access_token
             if session_token:
@@ -1652,9 +1675,10 @@ class ExploradorState(rx.State):
             self.error_message = ""
             logger.info(f"Cargando todas las versiones del proyecto: org={self.id_organizacion}, prj={self.id_proyecto}")
 
-            # Generar nombres de carpetas
-            org_folder = f"ORG{str(self.id_organizacion).zfill(5)}"
-            prj_folder = f"PRJ{str(self.id_proyecto).zfill(5)}"
+            org_folder = get_account_storage_folder(
+                self.id_organizacion, self.user_id
+            )
+            prj_folder = get_folder_by_id_project(self.id_proyecto)
 
             # Llamar al adaptador que carga todas las versiones
             response = fmanagement_list_all_project_versions(
@@ -1662,6 +1686,7 @@ class ExploradorState(rx.State):
                 project_id=self.id_proyecto,
                 org_folder=org_folder,
                 prj_folder=prj_folder,
+                owner_user_id=self.user_id,
                 access_token=self.access_token,
                 session_token=self.session_token,
             )

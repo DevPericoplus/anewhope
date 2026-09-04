@@ -17,6 +17,8 @@ if str(domain_entities_path) not in sys.path:
 if str(domain_entities_parent) not in sys.path:
     sys.path.insert(0, str(domain_entities_parent))
 
+create_organization = None
+
 # Intentar importar el adaptador para organizaciones
 try:
     import importlib.util
@@ -34,15 +36,21 @@ try:
                 save_organization_to_json = api_client_module.save_organization_to_json
             else:
                 save_organization_to_json = None
+            if hasattr(api_client_module, "create_organization"):
+                create_organization = api_client_module.create_organization
+            else:
+                create_organization = None
             print("INFO: Funciones de organización del adaptador cargadas exitosamente")
             logger.debug("Funciones de organización del adaptador cargadas exitosamente")
         else:
             check_organization_name_exists = None
             save_organization_to_json = None
+            create_organization = None
             logger.warning("No se pudo cargar el adaptador de organizaciones")
     else:
         check_organization_name_exists = None
         save_organization_to_json = None
+        create_organization = None
         logger.warning("El adaptador no existe")
 except Exception as e:
     error_msg = f"Error al importar adaptador de organizaciones: {e}"
@@ -53,6 +61,7 @@ except Exception as e:
     logger.error(error_msg, exc_info=True)
     check_organization_name_exists = None
     save_organization_to_json = None
+    create_organization = None
 
 # Intentar importar las funciones de validación de usuario
 try:
@@ -297,6 +306,8 @@ class UserCreationState(rx.State):
     organization_id: str = ""
     organization_name: str = ""
     identity_type_id: str = ""
+    account_kind: str = ""
+    organization_acronym: str = ""
     user_name: str = ""
     user_password: str = ""
     user_password_confirm: str = ""
@@ -332,6 +343,8 @@ class UserCreationState(rx.State):
     show_password_match_error_modal: bool = False  # Controla si se muestra el modal de error de coincidencia de contraseñas
     show_username_validation_modal: bool = False  # Controla si se muestra el modal de validación de nombre de usuario
     show_username_duplicate_modal: bool = False  # Controla si se muestra el modal de error de nombre de usuario duplicado
+    show_account_kind_modal: bool = True
+    show_contact_modal: bool = False
     
     # Campos para el formulario de creación de organización
     org_email: str = ""
@@ -357,6 +370,8 @@ class UserCreationState(rx.State):
         self.organization_id = ""
         self.organization_name = ""
         self.identity_type_id = ""
+        self.account_kind = ""
+        self.organization_acronym = ""
         self.user_name = ""
         self.user_password = ""
         self.user_password_confirm = ""
@@ -398,6 +413,8 @@ class UserCreationState(rx.State):
         self.show_password_match_error_modal = False
         self.show_username_validation_modal = False
         self.show_username_duplicate_modal = False
+        self.show_account_kind_modal = True
+        self.show_contact_modal = False
         self.created_user = None
         
         # Validar acceso desde la página principal
@@ -561,7 +578,8 @@ class UserCreationState(rx.State):
                 return
             
             # Verificar que el adaptador esté disponible
-            if save_organization_to_json is None:
+            save_org = create_organization or save_organization_to_json
+            if save_org is None:
                 self.message = "Error: adaptador de organizaciones no disponible"
                 self.message_type = "error"
                 logger.error("El adaptador save_organization_to_json no está disponible")
@@ -578,8 +596,15 @@ class UserCreationState(rx.State):
             }
             
             # Llamar al adaptador para guardar la organización
-            organization_id = save_organization_to_json(organization_data)
+            created = save_org(organization_data)
+            organization_id = (
+                created.get("organization_id") if isinstance(created, dict) else created
+            )
             if organization_id is not None:
+                if isinstance(created, dict):
+                    self.organization_acronym = str(
+                        created.get("organization_acronym") or ""
+                    )
                 self.message = f"Organización '{self.organization_name.strip()}' creada exitosamente"
                 self.message_type = "success"
                 logger.info(f"Organización '{self.organization_name.strip()}' creada exitosamente a través del adaptador con ID: {organization_id}")
@@ -668,6 +693,34 @@ class UserCreationState(rx.State):
     
     def set_identity_type_id(self, value: str):
         self.identity_type_id = value
+
+    def choose_individual_account(self):
+        """Alta pública de cuenta individual (identity 6, sin organización)."""
+        self.account_kind = "individual"
+        self.identity_type_id = "6"
+        self.organization_id = ""
+        self.organization_name = ""
+        self.organization_acronym = ""
+        self.show_account_kind_modal = False
+        self.show_org_creation_modal = False
+
+    def choose_organization_account(self):
+        """Alta pública del primer administrador de organización (identity 2)."""
+        self.account_kind = "organization"
+        self.identity_type_id = "2"
+        self.show_account_kind_modal = False
+
+    def open_contact_modal(self):
+        self.show_contact_modal = True
+
+    def close_contact_modal(self):
+        self.show_contact_modal = False
+
+    def open_organization_modal(self):
+        self.show_org_creation_modal = True
+
+    def reopen_account_kind_modal(self):
+        self.show_account_kind_modal = True
     
     def set_user_name(self, value: str):
         """Establece el nombre de usuario y elimina espacios en blanco automáticamente."""
@@ -1047,10 +1100,23 @@ class UserCreationState(rx.State):
                 self.message_type = "error"
                 return
             
-            # Convertir IDs a enteros
+            # Convertir IDs a enteros según tipo de cuenta pública
             try:
-                org_id_int = int(self.organization_id) if self.organization_id else 1
-                identity_id_int = int(self.identity_type_id) if self.identity_type_id else 1
+                if self.account_kind == "individual":
+                    org_id_int = 0
+                    identity_id_int = 6
+                elif self.account_kind == "organization":
+                    org_id_int = int(self.organization_id) if self.organization_id else 0
+                    identity_id_int = 2
+                    if org_id_int <= 0:
+                        self.message = "Debe crear o asociar una organización"
+                        self.message_type = "error"
+                        return
+                else:
+                    self.message = "Seleccione el tipo de cuenta"
+                    self.message_type = "error"
+                    self.show_account_kind_modal = True
+                    return
             except ValueError:
                 self.message = "Los IDs deben ser números válidos"
                 self.message_type = "error"
@@ -1126,7 +1192,7 @@ class UserCreationState(rx.State):
                 )
                 
                 # Guardar el usuario usando el adaptador
-                if save_user_to_json(user_extended):
+                if save_user_to_json(user_extended, account_kind=self.account_kind):
                     # Convertir UserExtended a diccionario para almacenarlo en el estado (serializable)
                     self.created_user = {
                         "user_id": user_extended.id,
@@ -1155,6 +1221,63 @@ class UserCreationState(rx.State):
         except Exception as e:
             self.message = f"Error al crear el usuario: {str(e)}"
             self.message_type = "error"
+
+
+def account_kind_modal() -> rx.Component:
+    """Modal inicial: cuenta individual o de organización."""
+    return rx.cond(
+        UserCreationState.show_account_kind_modal,
+        rx.fragment(
+            rx.box(
+                width="100vw",
+                height="100vh",
+                background_color="rgba(0, 0, 0, 0.75)",
+                position="fixed",
+                top="0",
+                left="0",
+                z_index="1100",
+            ),
+            rx.box(
+                rx.vstack(
+                    rx.heading(
+                        "Tipo de cuenta",
+                        size="6",
+                        color=COLORS["primary"],
+                    ),
+                    rx.text(
+                        "Una cuenta individual no pertenece a ninguna organización. "
+                        "Si más adelante necesita organización, cree otro usuario.",
+                        color=COLORS["muted_foreground"],
+                    ),
+                    rx.hstack(
+                        rx.button(
+                            "Cuenta individual",
+                            on_click=UserCreationState.choose_individual_account,
+                            class_name="crt-btn",
+                        ),
+                        rx.button(
+                            "Cuenta de organización",
+                            on_click=UserCreationState.choose_organization_account,
+                            class_name="crt-btn",
+                        ),
+                        spacing="4",
+                    ),
+                    spacing="4",
+                    align_items="center",
+                ),
+                padding="2em",
+                background_color=COLORS["card"],
+                border=f"1px solid {COLORS['border']}",
+                border_radius="1em",
+                position="fixed",
+                top="50%",
+                left="50%",
+                transform="translate(-50%, -50%)",
+                z_index="1101",
+                min_width="420px",
+            ),
+        ),
+    )
 
 
 def organization_error_modal() -> rx.Component:
@@ -1697,6 +1820,7 @@ def user_creation_page() -> rx.Component:
     # on_mount se ejecutará automáticamente cuando se monte el componente
     return rx.vstack(
         # Modal de error de organización (si está activo)
+        account_kind_modal(),
         organization_error_modal(),
         # Modal de creación de organización (si está activo)
         organization_creation_modal(),
@@ -1739,21 +1863,68 @@ def user_creation_page() -> rx.Component:
                             spacing="1",
                             flex="1",
                         ),
-                        rx.vstack(
-                            rx.text("Nombre de organización", font_size="0.9em", color=COLORS["muted_foreground"]),
-                            rx.input(
-                                placeholder="Ingrese el nombre de la organización",
-                                on_change=UserCreationState.set_organization_name,
-                                on_blur=UserCreationState.on_organization_name_blur,
-                                value=UserCreationState.organization_name,
-                                background_color=COLORS["input"],
-                                border_color=COLORS["border"],
-                                color=COLORS["foreground"],
-                                width="100%",
-                                border_radius="5px",
+                        rx.cond(
+                            UserCreationState.account_kind == "organization",
+                            rx.vstack(
+                                rx.text(
+                                    "Organización",
+                                    font_size="0.9em",
+                                    color=COLORS["muted_foreground"],
+                                ),
+                                rx.button(
+                                    rx.cond(
+                                        UserCreationState.organization_name != "",
+                                        UserCreationState.organization_name,
+                                        "Completar datos de organización",
+                                    ),
+                                    on_click=UserCreationState.open_organization_modal,
+                                    class_name="crt-btn",
+                                    width="100%",
+                                ),
+                                rx.cond(
+                                    UserCreationState.organization_acronym != "",
+                                    rx.hstack(
+                                        rx.text(
+                                            "Login:",
+                                            font_size="0.85em",
+                                            color=COLORS["primary"],
+                                        ),
+                                        rx.text(
+                                            UserCreationState.user_name,
+                                            font_size="0.85em",
+                                            color=COLORS["primary"],
+                                        ),
+                                        rx.text(
+                                            "@",
+                                            font_size="0.85em",
+                                            color=COLORS["primary"],
+                                        ),
+                                        rx.text(
+                                            UserCreationState.organization_acronym,
+                                            font_size="0.85em",
+                                            color=COLORS["primary"],
+                                        ),
+                                        spacing="1",
+                                    ),
+                                ),
+                                spacing="1",
+                                flex="1",
                             ),
-                            spacing="1",
-                            flex="1",
+                            rx.vstack(
+                                rx.text(
+                                    "Cuenta individual",
+                                    font_size="0.9em",
+                                    color=COLORS["primary"],
+                                    font_weight="bold",
+                                ),
+                                rx.text(
+                                    "Accederás solo con tu nombre de usuario (sin @).",
+                                    font_size="0.85em",
+                                    color=COLORS["muted_foreground"],
+                                ),
+                                spacing="1",
+                                flex="1",
+                            ),
                         ),
                         spacing="4",
                         width="100%",
@@ -1946,6 +2117,19 @@ def user_creation_page() -> rx.Component:
                         spacing="2",
                         width="100%",
                     ),
+                    rx.hstack(
+                        rx.button(
+                            "Contacto y facturación",
+                            on_click=UserCreationState.open_contact_modal,
+                            class_name="crt-btn",
+                        ),
+                        rx.button(
+                            "Cambiar tipo de cuenta",
+                            on_click=UserCreationState.reopen_account_kind_modal,
+                            class_name="crt-btn",
+                        ),
+                        spacing="3",
+                    ),
                     spacing="2",
                 ),
                 padding="1.5em",
@@ -1955,9 +2139,20 @@ def user_creation_page() -> rx.Component:
                 width="100%",
                 margin_bottom="1em",
             ),
-            # Sección: Información de Contacto
-            rx.vstack(
-                rx.heading("Información de Contacto", size="6", color=COLORS["primary"], margin_bottom="1em"),
+            # Modal: Información de Contacto
+            rx.cond(
+                UserCreationState.show_contact_modal,
+                rx.vstack(
+                rx.hstack(
+                    rx.heading("Información de Contacto", size="6", color=COLORS["primary"], margin_bottom="1em"),
+                    rx.button(
+                        "Cerrar",
+                        on_click=UserCreationState.close_contact_modal,
+                        class_name="crt-btn",
+                    ),
+                    justify_content="between",
+                    width="100%",
+                ),
                 rx.vstack(
                     rx.hstack(
                         rx.vstack(
@@ -2065,13 +2260,6 @@ def user_creation_page() -> rx.Component:
                     ),
                     spacing="2",
                 ),
-                padding="1.5em",
-                background_color=COLORS["card"],
-                border=f"1px solid {COLORS['border']}",
-                border_radius="0.5em",
-                width="100%",
-                margin_bottom="1em",
-            ),
             # Sección: Información de Facturación (Opcional) - Solo se muestra si el checkbox está marcado
             rx.cond(
                 UserCreationState.has_different_billing_address,
@@ -2183,13 +2371,15 @@ def user_creation_page() -> rx.Component:
                     ),
                     spacing="2",
                 ),
-                    padding="1.5em",
-                    background_color=COLORS["card"],
-                    border=f"1px solid {COLORS['border']}",
-                    border_radius="0.5em",
-                    width="100%",
-                    margin_bottom="1em",
                 ),
+            ),
+                padding="1.5em",
+                background_color=COLORS["card"],
+                border=f"1px solid {COLORS['border']}",
+                border_radius="0.5em",
+                width="100%",
+                margin_bottom="1em",
+            ),
             ),
             # Mensaje de estado (solo para mensajes que no sean de organización)
             # Si show_org_error_modal es True, no mostrar el mensaje normal (se muestra en el modal)
@@ -2323,6 +2513,7 @@ def user_creation_page() -> rx.Component:
         width="100%",
         min_height="100vh",
         spacing="0",
+        class_name=CRT_SHELL_CLASS,
     )
 
 

@@ -167,3 +167,215 @@ def test_create_user_uses_requested_role_for_existing_org(
     manage_roles = _load_json(roles_path)
     assert len(manage_roles) == 2
     assert manage_roles[1]["identity_type_id"] == 3
+
+
+def test_create_individual_user_has_no_organization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Alta pública individual: identity 6, org 0, sin manage_roles."""
+    users_path = tmp_path / "users.json"
+    roles_path = tmp_path / "manage_roles_by_org.json"
+    _create_empty_json(users_path)
+    _create_empty_json(roles_path)
+    monkeypatch.setenv("STORAGE_MODE", "mock")
+    monkeypatch.setenv("USERS_DATA_PATH", str(users_path))
+    monkeypatch.setenv("MANAGE_ROLES_BY_ORG_PATH", str(roles_path))
+
+    result = _get_router().create_user(
+        {
+            "account_kind": "individual",
+            "user_name": "jluis",
+            "user_password": "password",
+            "user_email": "jluis@example.com",
+            "user_mobile": "+34000000010",
+            "user_otp": "1234",
+        }
+    )
+
+    assert result.user_id == 1
+    assert result.organization_id == 0
+    assert result.identity_type_id == 6
+    assert _load_json(roles_path) == []
+
+
+def test_create_user_rejects_internal_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """La UI pública no puede asignar SuperAdmin."""
+    users_path = tmp_path / "users.json"
+    _create_empty_json(users_path)
+    monkeypatch.setenv("STORAGE_MODE", "mock")
+    monkeypatch.setenv("USERS_DATA_PATH", str(users_path))
+    monkeypatch.setenv(
+        "MANAGE_ROLES_BY_ORG_PATH", str(tmp_path / "manage_roles_by_org.json")
+    )
+    _create_empty_json(tmp_path / "manage_roles_by_org.json")
+
+    with pytest.raises(routermiddleware.BusinessRuleError, match="rol interno"):
+        _get_router().create_user(
+            {
+                "organization_id": 10,
+                "identity_type_id": 1,
+                "user_name": "rootlike",
+                "user_password": "password",
+                "user_email": "root@example.com",
+                "user_mobile": "+34000000011",
+                "user_otp": "1234",
+            }
+        )
+
+
+def test_create_user_rejects_duplicate_email(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """El email es único en todo el sistema."""
+    users_path = tmp_path / "users.json"
+    roles_path = tmp_path / "manage_roles_by_org.json"
+    _create_empty_json(users_path)
+    _create_empty_json(roles_path)
+    monkeypatch.setenv("STORAGE_MODE", "mock")
+    monkeypatch.setenv("USERS_DATA_PATH", str(users_path))
+    monkeypatch.setenv("MANAGE_ROLES_BY_ORG_PATH", str(roles_path))
+    router = _get_router()
+    router.create_user(
+        {
+            "account_kind": "individual",
+            "user_name": "ana",
+            "user_password": "password",
+            "user_email": "ana@example.com",
+            "user_mobile": "+34000000012",
+            "user_otp": "1234",
+        }
+    )
+    with pytest.raises(routermiddleware.BusinessRuleError, match="email"):
+        router.create_user(
+            {
+                "organization_id": 30,
+                "identity_type_id": 2,
+                "user_name": "anaorg",
+                "user_password": "password",
+                "user_email": "ana@example.com",
+                "user_mobile": "+34000000013",
+                "user_otp": "1234",
+            }
+        )
+
+
+def test_login_resolves_user_at_acronym(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """usuario@acronimo localiza al usuario de esa organización."""
+    users_path = tmp_path / "users.json"
+    orgs_path = tmp_path / "organizations.json"
+    roles_path = tmp_path / "manage_roles_by_org.json"
+    _create_empty_json(users_path)
+    _create_empty_json(roles_path)
+    orgs_path.write_text("[]", encoding="utf-8")
+    monkeypatch.setenv("STORAGE_MODE", "mock")
+    monkeypatch.setenv("USERS_DATA_PATH", str(users_path))
+    monkeypatch.setenv("ORGANIZATIONS_DATA_PATH", str(orgs_path))
+    monkeypatch.setenv("MANAGE_ROLES_BY_ORG_PATH", str(roles_path))
+    router = _get_router()
+    org_id = router.create_organization(
+        {
+            "organization_name": "Spacio Ingenieria",
+            "organization_email": "org@spacio.test",
+        }
+    )
+    router.create_user(
+        {
+            "account_kind": "organization",
+            "organization_id": org_id,
+            "user_name": "jluis",
+            "user_password": "password",
+            "user_email": "jluis@spacio.test",
+            "user_mobile": "+34000000014",
+            "user_otp": "1234",
+        }
+    )
+    router.create_user(
+        {
+            "account_kind": "individual",
+            "user_name": "jluis",
+            "user_password": "password",
+            "user_email": "jluis.ind@example.com",
+            "user_mobile": "+34000000016",
+            "user_otp": "1234",
+        }
+    )
+    acronym = router.get_organization_acronym(org_id)
+    assert acronym == "spacio"
+    matched = router._find_user_for_login(f"jluis@{acronym}")
+    assert matched is not None
+    assert matched.user_name == "jluis"
+    assert matched.organization_id == org_id
+    individual = router._find_user_for_login("jluis")
+    assert individual is not None
+    assert individual.organization_id == 0
+    assert individual.identity_type_id == 6
+
+
+def test_profile_org_edit_only_for_admin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Solo identity 2 puede cambiar datos de organización."""
+    users_path = tmp_path / "users.json"
+    orgs_path = tmp_path / "organizations.json"
+    roles_path = tmp_path / "manage_roles_by_org.json"
+    _create_empty_json(users_path)
+    _create_empty_json(roles_path)
+    orgs_path.write_text("[]", encoding="utf-8")
+    monkeypatch.setenv("STORAGE_MODE", "mock")
+    monkeypatch.setenv("USERS_DATA_PATH", str(users_path))
+    monkeypatch.setenv("ORGANIZATIONS_DATA_PATH", str(orgs_path))
+    monkeypatch.setenv("MANAGE_ROLES_BY_ORG_PATH", str(roles_path))
+    router = _get_router()
+    org_id = router.create_organization(
+        {
+            "organization_name": "Centro Investigacion",
+            "organization_email": "centro@test.com",
+        }
+    )
+    created = router.create_user(
+        {
+            "account_kind": "organization",
+            "organization_id": org_id,
+            "user_name": "adminorg",
+            "user_password": "password",
+            "user_email": "adminorg@test.com",
+            "user_mobile": "+34000000015",
+            "user_otp": "1234",
+        }
+    )
+    admin_session = routermiddleware.SessionContext(
+        user_id=created.user_id,
+        organization_id=org_id,
+        identity_type_id=2,
+        access_payload={},
+        session_payload={},
+    )
+    reader_session = routermiddleware.SessionContext(
+        user_id=created.user_id,
+        organization_id=org_id,
+        identity_type_id=5,
+        access_payload={},
+        session_payload={},
+    )
+    profile = router.get_my_profile(admin_session)
+    assert profile["can_edit_organization"] is True
+    assert profile["organization"]["organization_acronym"]
+    updated = router.update_my_organization(
+        admin_session,
+        {
+            "organization_name": "Centro Investigacion Norte",
+            "organization_email": "norte@test.com",
+        },
+    )
+    assert updated["organization"]["organization_name"] == "Centro Investigacion Norte"
+    original_acronym = profile["organization"]["organization_acronym"]
+    assert updated["organization"]["organization_acronym"] == original_acronym
+    with pytest.raises(routermiddleware.BusinessRuleError, match="administrador"):
+        router.update_my_organization(
+            reader_session,
+            {"organization_name": "Hack"},
+        )

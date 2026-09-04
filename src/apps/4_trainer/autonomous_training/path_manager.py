@@ -25,14 +25,45 @@ Fecha: 2026-02-13
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
 
 logger = logging.getLogger(__name__)
+
+_ACCOUNT_FOLDER_RE = r"((?:ORG|USER)\d{5})"
+_VERSION_PATH_RE = re.compile(
+    rf"{_ACCOUNT_FOLDER_RE}/(PRJ\d{{5}})/(v\d{{3}})"
+)
+
+
+def _load_storage_helpers() -> Any:
+    """Carga helpers de carpetas de storage compartidos."""
+    module_path = (
+        Path(__file__).resolve().parents[3]
+        / "2_shared_application"
+        / "storage_access_structure.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "storage_access_structure_path_manager", module_path
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError("No se pudo cargar storage_access_structure")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["storage_access_structure_path_manager"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_storage_helpers = _load_storage_helpers()
+get_account_storage_folder = _storage_helpers.get_account_storage_folder
+get_folder_by_id_project = _storage_helpers.get_folder_by_id_project
+get_folder_by_id_version = _storage_helpers.get_folder_by_id_version
 
 
 class PathManager:
@@ -49,6 +80,7 @@ class PathManager:
         id_version: int,
         id_entrenamiento: int,
         pat_version: str | None = None,
+        owner_user_id: int = 0,
     ):
         """Inicializa el gestor de rutas.
 
@@ -58,11 +90,13 @@ class PathManager:
             id_version: ID de la versión
             id_entrenamiento: ID del entrenamiento
             pat_version: Path completo con estructura (opcional, se usa para extraer nombres)
+            owner_user_id: Dueño individual si no hay organización
         """
         self.id_organizacion = id_organizacion
         self.id_proyecto = id_proyecto
         self.id_version = id_version
         self.id_entrenamiento = id_entrenamiento
+        self.owner_user_id = owner_user_id
 
         # Extraer nombres de carpeta del pat_version si está disponible
         if pat_version:
@@ -70,10 +104,11 @@ class PathManager:
                 pat_version
             )
         else:
-            # Generar nombres por defecto
-            self.org_folder = f"ORG{id_organizacion:05d}"
-            self.prj_folder = f"PRJ{id_proyecto:05d}"
-            self.ver_folder = f"v{id_version:03d}"
+            self.org_folder = get_account_storage_folder(
+                id_organizacion, owner_user_id
+            )
+            self.prj_folder = get_folder_by_id_project(id_proyecto)
+            self.ver_folder = get_folder_by_id_version(id_version)
 
         # Obtener base path desde env
         self.base_storage_path = self._get_internal_storage_path()
@@ -141,9 +176,7 @@ class PathManager:
         Returns:
             Tupla (org_folder, prj_folder, ver_folder)
         """
-        # Buscar patrón ORG#####/PRJ#####/v###
-        pattern = r"(ORG\d{5})/(PRJ\d{5})/(v\d{3})"
-        match = re.search(pattern, pat_version)
+        match = _VERSION_PATH_RE.search(pat_version)
 
         if match:
             org_folder, prj_folder, ver_folder = match.groups()
@@ -158,9 +191,11 @@ class PathManager:
                 "Usando formato por defecto."
             )
             return (
-                f"ORG{self.id_organizacion:05d}",
-                f"PRJ{self.id_proyecto:05d}",
-                f"v{self.id_version:03d}",
+                get_account_storage_folder(
+                    self.id_organizacion, self.owner_user_id
+                ),
+                get_folder_by_id_project(self.id_proyecto),
+                get_folder_by_id_version(self.id_version),
             )
 
     def get_hierarchy_path(self) -> str:

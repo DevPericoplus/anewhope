@@ -178,6 +178,7 @@ class DocumentacionRequest(BaseModel):
     id_organizacion: int
     id_proyecto: int
     id_version: int
+    id_user: int = 0
     nombre_job: str = ""
     descripcion_job: str = ""
     id_template: int = 0
@@ -203,6 +204,7 @@ class EntrenamientoRequest(BaseModel):
     id_organizacion: int
     id_proyecto: int
     id_version: int
+    id_user: int = 0
     pat_version: str = ""
     # Parámetros opcionales de entrenamiento (enviados desde modal del backoffice)
     learning_rate: float | None = None
@@ -241,6 +243,7 @@ class AutonomousTrainingRequest(BaseModel):
     id_proyecto: int
     id_version: int
     id_entrenamiento: int  # ID del entrenamiento RAG previo (con ChromaDB)
+    id_user: int = 0
     pat_version: str = ""
     collection_name: str = ""  # Nombre de colección ChromaDB con chunks
 
@@ -262,6 +265,7 @@ class MetadatosRequest(BaseModel):
     id_organizacion: int
     id_proyecto: int
     id_version: int
+    id_user: int = 0
     nombre_job: str = ""
     descripcion_job: str = ""
     id_template: int = 0

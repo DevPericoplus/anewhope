@@ -45,6 +45,9 @@ def _load_env_settings_module():
 _storage_structure = _load_storage_structure_module()
 get_folder_by_id_organization = _storage_structure.get_folder_by_id_organization
 get_folder_by_id_project = _storage_structure.get_folder_by_id_project
+get_folder_by_id_version = _storage_structure.get_folder_by_id_version
+get_account_storage_folder = _storage_structure.get_account_storage_folder
+build_fmo_path_segments = _storage_structure.build_fmo_path_segments
 
 _env_settings = _load_env_settings_module()
 
@@ -79,16 +82,26 @@ def load_fmanagement_settings() -> FmanagementSettings:
 
 
 def build_storage_paths(
-    id_organization: int, id_project: int, version_path: str, subfolders: str = ""
+    id_organization: int,
+    id_project: int,
+    version_path: str,
+    subfolders: str = "",
+    id_user: int = 0,
 ) -> dict[str, str]:
-    """Construye rutas para operaciones de ficheros a partir de IDs."""
+    """Construye rutas para operaciones de ficheros a partir de IDs.
 
-    return {
-        "orgpath": get_folder_by_id_organization(id_organization),
-        "prjpath": get_folder_by_id_project(id_project),
-        "versionpath": version_path,
-        "subfolders": subfolders,
-    }
+    Si `id_organization` > 0 usa ORG#####; si no, USER##### del dueño.
+    """
+
+    return build_fmo_path_segments(
+        organization_id=id_organization,
+        user_id=id_user,
+        project_id=id_project,
+        version_path=version_path,
+        subfolders=subfolders,
+    )
+
+
 def load_mariadb_settings() -> dict[str, Any]:
     """Carga configuración de MariaDB desde entorno o protected_values."""
 
@@ -521,7 +534,7 @@ def _load_users_from_mariadb() -> list[dict[str, Any]]:
         records.append(
             {
                 "user_id": int(row[0]),
-                "organization_id": int(row[1]),
+                "organization_id": int(row[1]) if row[1] is not None else 0,
                 "identity_type_id": int(row[2]),
                 "user_name": row[3] or "",
                 "user_password": row[4] or "",
@@ -625,7 +638,7 @@ def _load_organizations_from_mariadb() -> list[dict[str, Any]]:
     query = (
         "SELECT organization_id, organization_name, organization_email, "
         "organization_tlf, organization_address, organization_country, "
-        "organization_state, active "
+        "organization_state, active, organization_acronym "
         "FROM organizations ORDER BY organization_id"
     )
     rows = _fetch_mariadb_rows(settings, query)
@@ -643,6 +656,7 @@ def _load_organizations_from_mariadb() -> list[dict[str, Any]]:
                 "organization_country": row[5] if row[5] and row[5] != "NULL" else "",
                 "organization_state": row[6] if row[6] and row[6] != "NULL" else "",
                 "active": bool(int(row[7])) if row[7] else False,
+                "organization_acronym": (row[8] or "") if len(row) > 8 else "",
             })
     return records
 
@@ -672,16 +686,17 @@ def _sync_organizations_to_mariadb(organizations: list[OrganizationDto]) -> None
         org_address = sql_escape(str(payload.get("organization_address", "")))
         org_country = sql_escape(str(payload.get("organization_country", "")))
         org_state = sql_escape(str(payload.get("organization_state", "")))
+        org_acronym = sql_escape(str(payload.get("organization_acronym", "")).lower())
         active = 1 if payload.get("active", True) else 0
 
         sql = (
             f"INSERT INTO organizations "
             f"(organization_id, organization_name, organization_email, "
             f"organization_tlf, organization_address, organization_country, "
-            f"organization_state, active) "
+            f"organization_state, organization_acronym, active) "
             f"VALUES ({org_id}, '{org_name}', '{org_email}', "
             f"'{org_tlf}', '{org_address}', '{org_country}', "
-            f"'{org_state}', {active}) "
+            f"'{org_state}', '{org_acronym}', {active}) "
             f"ON DUPLICATE KEY UPDATE "
             f"organization_name='{org_name}', "
             f"organization_email='{org_email}', "
@@ -689,6 +704,7 @@ def _sync_organizations_to_mariadb(organizations: list[OrganizationDto]) -> None
             f"organization_address='{org_address}', "
             f"organization_country='{org_country}', "
             f"organization_state='{org_state}', "
+            f"organization_acronym='{org_acronym}', "
             f"active={active};"
         )
 
@@ -772,7 +788,8 @@ def _build_user_upsert_sqls(payload: dict[str, Any], escape: Any) -> list[str]:
         (
             "REPLACE INTO users (user_id, organization_id, identity_type_id, user_name, "
             "user_password, user_email, user_mobile, user_otp, active, blocked) VALUES "
-            f"({user_id}, {org_id}, {identity_id}, '{user_name}', '{user_password}', "
+            f"({user_id}, {'NULL' if org_id == 0 else org_id}, {identity_id}, "
+            f"'{user_name}', '{user_password}', "
             f"'{user_email}', '{user_mobile}', '{user_otp}', {active}, {blocked});"
         ),
         # 2. REPLACE en user_contact_info

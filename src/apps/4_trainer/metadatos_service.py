@@ -25,7 +25,11 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader
 
-from trainer_core_lookup import fetch_job_context, notify_job_complete
+from trainer_core_lookup import (
+    notify_job_complete,
+    payload_owner_user_id,
+    resolve_account_folder,
+)
 
 logger = logging.getLogger("trainer_api")
 
@@ -57,7 +61,6 @@ _storage_structure = _load_shared_module(
     "storage_structure_meta",
     "2_shared_application/storage_access_structure.py",
 )
-get_folder_by_id_organization = _storage_structure.get_folder_by_id_organization
 get_folder_by_id_project = _storage_structure.get_folder_by_id_project
 get_folder_by_id_version = _storage_structure.get_folder_by_id_version
 
@@ -134,7 +137,7 @@ def _calculate_num_ctx(prompt_text: str) -> int:
 
 def _compute_output_path(
     internal_base: str,
-    id_organizacion: int,
+    account_folder: str,
     id_proyecto: int,
     id_version: int,
 ) -> Path:
@@ -142,14 +145,14 @@ def _compute_output_path(
 
     Args:
         internal_base: Ruta base del storage interno
-        id_organizacion: ID de la organización
+        account_folder: Carpeta de cuenta (ORG##### o USER#####)
         id_proyecto: ID del proyecto
         id_version: ID de la versión
 
     Returns:
         Ruta absoluta completa del archivo de salida (aún no creado)
     """
-    org_folder = get_folder_by_id_organization(id_organizacion)
+    org_folder = account_folder
     prj_folder = get_folder_by_id_project(id_proyecto)
     ver_folder = get_folder_by_id_version(id_version)
 
@@ -269,6 +272,7 @@ def process_metadatos(data: dict[str, Any]) -> None:
     id_org = data.get("id_organizacion", 0)
     id_prj = data.get("id_proyecto", 0)
     id_ver = data.get("id_version", 0)
+    id_user = payload_owner_user_id(data)
     prompt_final = data.get("prompt_final", "")
     modelo_nombre = data.get("modelo_nombre", "")
 
@@ -279,14 +283,22 @@ def process_metadatos(data: dict[str, Any]) -> None:
     )
 
     try:
-        # === PASO 1: Leer archivos del storage externo ===
+        # === PASO 1: Resolver carpeta de cuenta via Broker → Core ===
+        org_folder, job_ctx = resolve_account_folder(
+            organization_id=id_org,
+            owner_user_id=id_user,
+            project_id=id_prj,
+            prompt_name=PROMPT_FUSION_METADATOS,
+        )
+        id_org = int(job_ctx.get("organization_id") or id_org)
+        prj_folder = get_folder_by_id_project(id_prj)
+        ver_folder = get_folder_by_id_version(id_ver)
+
+        # === PASO 1b: Leer archivos del storage externo ===
         external_base = get_env_value(
             "backend_ia_base_storage",
             "~/data/anewhope/files/trainer_server/external",
         )
-        org_folder = get_folder_by_id_organization(id_org)
-        prj_folder = get_folder_by_id_project(id_prj)
-        ver_folder = get_folder_by_id_version(id_ver)
 
         version_path = (
             Path(os.path.expanduser(external_base))
@@ -372,19 +384,15 @@ def process_metadatos(data: dict[str, Any]) -> None:
             "[METADATOS] Iniciando enriquecimiento del informe con Jinja2",
         )
 
-        # --- 4a: Nombres y prompt de fusión via Broker → Backend Core ---
-        job_ctx = fetch_job_context(
-            organization_id=id_org,
-            project_id=id_prj,
-            prompt_name=PROMPT_FUSION_METADATOS,
-        )
+        # --- 4a: Reutilizar contexto resuelto via Broker → Backend Core ---
         nombre_organizacion = str(job_ctx.get("organization_name") or "")
         nombre_proyecto = str(job_ctx.get("project_name") or "")
         fusion_prompt = str(job_ctx.get("prompt") or "")
         logger.info(
-            "[METADATOS] Contexto via Broker: org='%s', prj='%s'",
+            "[METADATOS] Contexto via Broker: org='%s', prj='%s' folder='%s'",
             nombre_organizacion,
             nombre_proyecto,
+            org_folder,
         )
 
         # --- 4b: Calcular ruta de salida (antes de renderizar, para incluirla) ---
@@ -392,7 +400,7 @@ def process_metadatos(data: dict[str, Any]) -> None:
             "backend_ia_reports_storage",
             "~/data/anewhope/files/trainer_server/internal/reports",
         )
-        output_path = _compute_output_path(internal_base, id_org, id_prj, id_ver)
+        output_path = _compute_output_path(internal_base, org_folder, id_prj, id_ver)
 
         # --- 4c: Renderizar plantilla Jinja2 → "plantilla_informe" ---
         now = datetime.now(timezone.utc)

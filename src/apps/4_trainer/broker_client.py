@@ -178,22 +178,26 @@ class TrainerBrokerClient:
         organization_id: int = 0,
         project_id: int = 0,
         prompt_name: str = "",
+        owner_user_id: int = 0,
     ) -> dict[str, Any]:
-        """Obtiene nombres y prompt de fusión via Broker → Backend Core.
+        """Obtiene nombres, carpeta de cuenta y prompt via Broker → Core.
 
         Args:
             organization_id: ID de organización (0 para omitir).
             project_id: ID de proyecto (0 para omitir).
             prompt_name: Nombre del prompt en prompts_identidades.
+            owner_user_id: Dueño individual (0 si el proyecto es de org).
 
         Returns:
-            Diccionario con organization_name, project_name y prompt.
+            Diccionario con organization_name, project_name, account_folder
+            y prompt.
         """
         from urllib.parse import quote
 
         path = (
             f"/trainer/job-context?organization_id={organization_id}"
             f"&project_id={project_id}"
+            f"&owner_user_id={owner_user_id}"
         )
         if prompt_name:
             path = f"{path}&prompt_name={quote(prompt_name)}"

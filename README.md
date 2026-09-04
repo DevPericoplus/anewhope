@@ -60,14 +60,14 @@ Todas las aplicaciones siguen el formato **`version.subversion.fix`** (ejemplo: 
 Contiene las versiones actuales de todas las aplicaciones del sistema:
 
 ```yaml
-# Versions of software used
-version_frontend: 0.7.1
-version_backoffice: 0.7.1
-version_middleware: 0.7.1
-version_broker: 0.7.1
-version_backend_core: 0.7.1
-version_backend_ia: 0.7.1
-version_fmanagement: 0.7.1
+# Versions of software used (ver versions.yml en la raíz)
+version_frontend: 0.8.1
+version_backoffice: 0.8.2
+version_middleware: 0.8.1
+version_broker: 0.8.1
+version_backend_core: 0.8.2
+version_backend_ia: 0.8.0
+version_fmanagement: 0.8.0
 ```
 
 ### Cómo Leer Versiones en el Código
@@ -713,7 +713,7 @@ El proyecto utiliza una estructura de carpetas específica para organizar logs, 
 | **internal** | Modelos LLM y reportes generados | Solo sistema | Trainer → Backend (automático cada 5 min) |
 
 **Estructura de external:**
-- Jerarquía: `ORG#####/PRJ#####/v###/` (los usuarios pueden crear cualquier estructura dentro de cada versión)
+- Jerarquía: `ORG#####/PRJ#####/v###/` o `USER#####/PRJ#####/v###/` (los usuarios pueden crear cualquier estructura dentro de cada versión)
 - Ejemplo: `external/ORG00001/PRJ00001/v001/images/logo.png`
 
 **Estructura de internal:**
@@ -811,9 +811,11 @@ Los informes generados durante el entrenamiento siguen un flujo específico de c
 
 **1. Generación en Trainer Server:**
 ```
-Ruta: {backend_ia_internal_storage}/ORG#####/PRJ#####/v###/*.md
+Ruta: {backend_ia_internal_storage}/ORG#####|USER#####/PRJ#####/v###/*.md
 Ejemplo macbook: ~/data/anewhope/files/trainer_server/internal/ORG00001/PRJ00001/v001/
 Ejemplo prod: /data/files/internal/ORG00001/PRJ00001/v001/
+El Trainer resuelve ORG vs USER via Broker → Backend Core (`GET /trainer/job-context`).
+No abre MariaDB.
 ```
 
 Los informes se generan como archivos markdown con formato de timestamp:
@@ -824,13 +826,13 @@ Los informes se generan como archivos markdown con formato de timestamp:
 ```bash
 # Trainer → Backend (cada 5 minutos)
 rsync -avz --delete \
-  {trainer_internal}/ORG#####/PRJ#####/v###/ \
-  {backend_internal}/ORG#####/PRJ#####/v###/
+  {trainer_internal}/ORG#####|USER#####/PRJ#####/v###/ \
+  {backend_internal}/ORG#####|USER#####/PRJ#####/v###/
 ```
 
 **3. Lectura por Visor de Informes:**
 ```
-Ruta: {backend_core_internal_storage}/ORG#####/PRJ#####/v###/*.md
+Ruta: {backend_core_internal_storage}/ORG#####|USER#####/PRJ#####/v###/*.md
 Ejemplo macbook: ~/data/anewhope/files/backend_server/internal/ORG00001/PRJ00001/v001/
 Ejemplo prod: /data/files/internal/ORG00001/PRJ00001/v001/
 ```
@@ -2475,11 +2477,20 @@ Ruta de almacenamiento esperada en producción: `/data/files/external`.
 Estructura esperada:
 ```
 /data/files/external/
-  ORG00001/
+  ORG00001/          # organización (organization_id > 0)
     PRJ00001/
       v001/
       v002/
+  USER00009/         # cuenta individual (organization_id = 0)
+    PRJ00012/
+      v001/
 ```
+
+El campo `orgpath` de fmanagement acepta **ORG#####** o **USER#####**.
+No formatear esas carpetas a mano: usar `get_account_storage_folder` /
+`build_fmo_path_segments` en `storage_access_structure.py`.
+Los upload/download por JWT en fmanagement resuelven USER##### cuando
+`organization_id` del token es 0.
 
 En desarrollo existe un ejemplo en `fmanagement/example`, pero la implementación final
 no debe depender de esa ruta.

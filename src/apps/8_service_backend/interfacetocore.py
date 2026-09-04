@@ -1210,13 +1210,15 @@ class CoreBackendClient:
         organization_id: int = 0,
         project_id: int = 0,
         prompt_name: str = "",
+        owner_user_id: int = 0,
     ) -> dict[str, Any]:
-        """Obtiene nombres y prompt de fusión desde Backend Core."""
+        """Obtiene nombres, dueño de storage y prompt desde Backend Core."""
         from urllib.parse import quote
 
         path = (
             f"/trainer/job-context?organization_id={organization_id}"
             f"&project_id={project_id}"
+            f"&owner_user_id={owner_user_id}"
         )
         if prompt_name:
             path = f"{path}&prompt_name={quote(prompt_name)}"

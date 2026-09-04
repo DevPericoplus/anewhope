@@ -277,13 +277,35 @@ class OrganizationCreateResponse(BaseModel):
     """Respuesta de creación de organización."""
 
     organization_id: int
+    organization_acronym: str = ""
+
+
+class UserProfileUpdateRequest(BaseModel):
+    """Payload para actualizar la ficha del usuario autenticado."""
+
+    user_email: str
+    user_mobile: str
+    contact_info: dict[str, Any] = Field(default_factory=dict)
+    billing_info: dict[str, Any] = Field(default_factory=dict)
+
+
+class OrganizationProfileUpdateRequest(BaseModel):
+    """Payload para actualizar datos de organización (sin acrónimo)."""
+
+    organization_name: str
+    organization_email: str = ""
+    organization_tlf: str = ""
+    organization_address: str = ""
+    organization_country: str = ""
+    organization_state: str = ""
 
 
 class UserCreateRequest(BaseModel):
     """Payload para crear usuario."""
 
-    organization_id: int
+    organization_id: int = 0
     identity_type_id: int | None = None
+    account_kind: str | None = None
     user_name: str
     user_password: str
     user_email: str
@@ -813,7 +835,57 @@ async def organization_create_endpoint(
             ip=ip_address,
             user_agent=user_agent,
         )
-        return OrganizationCreateResponse(organization_id=organization_id)
+        return OrganizationCreateResponse(
+            organization_id=organization_id,
+            organization_acronym=router.get_organization_acronym(organization_id),
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/users/me")
+def get_my_profile_endpoint(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> dict[str, Any]:
+    """Devuelve la ficha del usuario autenticado."""
+    try:
+        return router.get_my_profile(session)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/users/me")
+def update_my_profile_endpoint(
+    request: UserProfileUpdateRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> dict[str, Any]:
+    """Actualiza email, móvil y contacto del usuario autenticado."""
+    try:
+        return router.update_my_profile(session, request.model_dump())
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@app.patch("/organizations/me")
+def update_my_organization_endpoint(
+    request: OrganizationProfileUpdateRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    session: Annotated[SessionContext, Depends(get_session_context)],
+) -> dict[str, Any]:
+    """Actualiza la organización. Solo el administrador (identity 2)."""
+    try:
+        return router.update_my_organization(session, request.model_dump())
     except BusinessRuleError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1193,6 +1265,7 @@ class DocumentacionRequest(BaseModel):
     id_organizacion: int
     id_proyecto: int
     id_version: int
+    id_user: int = 0
     nombre_job: str = ""
     descripcion_job: str = ""
     id_template: int = 0
@@ -1217,6 +1290,7 @@ class EntrenamientoRequest(BaseModel):
     id_organizacion: int
     id_proyecto: int
     id_version: int
+    id_user: int = 0
     pat_version: str = ""
     # Parámetros opcionales de entrenamiento
     learning_rate: float | None = None
@@ -1269,6 +1343,7 @@ class AutonomousTrainingRequest(BaseModel):
     id_proyecto: int
     id_version: int
     id_entrenamiento: int  # ID del entrenamiento RAG previo
+    id_user: int = 0
     pat_version: str = ""
     collection_name: str = ""  # Nombre de colección ChromaDB
 
@@ -1290,6 +1365,7 @@ class MetadatosRequest(BaseModel):
     id_organizacion: int
     id_proyecto: int
     id_version: int
+    id_user: int = 0
     nombre_job: str = ""
     descripcion_job: str = ""
     id_template: int = 0

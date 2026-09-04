@@ -84,6 +84,7 @@ _storage_spec = importlib.util.spec_from_file_location("storage_access_structure
 _storage_module = importlib.util.module_from_spec(_storage_spec)
 _storage_spec.loader.exec_module(_storage_module)
 get_folder_by_id_organization = _storage_module.get_folder_by_id_organization
+get_account_storage_folder = _storage_module.get_account_storage_folder
 get_folder_by_id_project = _storage_module.get_folder_by_id_project
 get_folder_by_id_version = _storage_module.get_folder_by_id_version
 
@@ -1216,7 +1217,9 @@ class State(SharedSessionState):
                 self.proyecciones_project_name = value
 
                 # Generar carpetas formateadas
-                self.proyecciones_org_folder = get_folder_by_id_organization(self.organization_id)
+                self.proyecciones_org_folder = get_account_storage_folder(
+                    self.organization_id, self.user_id
+                )
                 self.proyecciones_prj_folder = get_folder_by_id_project(self.proyecciones_project_id)
 
                 # Cargar versiones del proyecto
@@ -2098,7 +2101,7 @@ def login_panel() -> rx.Component:
                         text_align="left",
                     ),
                     rx.input(
-                        placeholder="Ingrese su usuario",
+                        placeholder="usuario  o  usuario@acronimo",
                         on_change=State.set_user_username,
                         value=State.user_username,
                         class_name="crt-input",
@@ -4218,6 +4221,14 @@ def user_portal() -> rx.Component:
                             "green",
                         ),
                     ),
+                    rx.link(
+                        rx.button(
+                            "Mis datos",
+                            class_name="crt-btn crt-btn-inline",
+                            font_size="1.1em",
+                        ),
+                        href="/mis_datos",
+                    ),
                     rx.button(
                         "Desconectar",
                         on_click=State.user_logout,
@@ -4357,6 +4368,18 @@ except Exception as e:
     print(f"❌ Error al registrar ruta /user_creation: {e}")
     import traceback
     traceback.print_exc()
+
+try:
+    from pages.my_profile import UserProfileState, my_profile_page
+    app.add_page(
+        my_profile_page,
+        route="/mis_datos",
+        title=f"{APP_BRAND_NAME} - Mis datos",
+        on_load=UserProfileState.on_page_load,
+    )
+    print("✅ Ruta /mis_datos registrada exitosamente")
+except Exception as e:
+    print(f"⚠️ Warning: Could not import my_profile_page: {e}")
 
 try:
     from pages.change_password import change_password_page

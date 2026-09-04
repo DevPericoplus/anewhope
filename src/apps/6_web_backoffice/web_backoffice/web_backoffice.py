@@ -88,6 +88,7 @@ _storage_spec = importlib.util.spec_from_file_location("storage_access_structure
 _storage_module = importlib.util.module_from_spec(_storage_spec)
 _storage_spec.loader.exec_module(_storage_module)
 get_folder_by_id_organization = _storage_module.get_folder_by_id_organization
+get_account_storage_folder = _storage_module.get_account_storage_folder
 get_folder_by_id_project = _storage_module.get_folder_by_id_project
 get_folder_by_id_version = _storage_module.get_folder_by_id_version
 
@@ -2180,7 +2181,9 @@ class State(SharedSessionState):
                 self.proyecciones_project_name = value
 
                 # Generar carpetas formateadas
-                self.proyecciones_org_folder = get_folder_by_id_organization(self.bo_selected_org_id)
+                self.proyecciones_org_folder = get_account_storage_folder(
+                    self.bo_selected_org_id, self.user_id
+                )
                 self.proyecciones_prj_folder = get_folder_by_id_project(self.proyecciones_project_id)
 
                 # Cargar versiones del proyecto
@@ -4195,7 +4198,9 @@ class State(SharedSessionState):
             "backend_ia_base_storage",
             "~/data/anewhope/files/trainer_server/external",
         )
-        org_folder = get_folder_by_id_organization(version_data["id_organizacion"])
+        org_folder = get_account_storage_folder(
+            version_data["id_organizacion"], self.user_id
+        )
         prj_folder = get_folder_by_id_project(version_data["id_proyecto"])
         ver_folder = get_folder_by_id_version(version_data["id_version"])
         pat_version = f"{base_storage}/{org_folder}/{prj_folder}/{ver_folder}"
@@ -4205,6 +4210,7 @@ class State(SharedSessionState):
             "id_organizacion": version_data["id_organizacion"],
             "id_proyecto": version_data["id_proyecto"],
             "id_version": version_data["id_version"],
+            "id_user": self.user_id,
             "pat_version": pat_version,
             # Parámetros del modal
             "learning_rate": float(self.ent_modal_learning_rate),
@@ -4712,6 +4718,7 @@ class State(SharedSessionState):
             "id_proyecto": entrenamiento_data.get("id_proyecto", 0),
             "id_version": entrenamiento_data.get("id_version", 0),
             "id_entrenamiento": entrenamiento_data.get("id_entrenamiento", 0),
+            "id_user": self.user_id,
             "pat_version": entrenamiento_data.get("pat_version", ""),
             "collection_name": entrenamiento_data.get("collection_name", ""),
         }
@@ -5630,7 +5637,7 @@ class State(SharedSessionState):
             "backend_ia_base_storage",
             "~/data/anewhope/files/trainer_server/external",
         )
-        org_folder = get_folder_by_id_organization(self.ad_org_id)
+        org_folder = get_account_storage_folder(self.ad_org_id, self.user_id)
         prj_folder = get_folder_by_id_project(self.ad_project_id)
         ver_folder = get_folder_by_id_version(self.ad_version_id)
         return f"{base}/{org_folder}/{prj_folder}/{ver_folder}"
@@ -5758,6 +5765,7 @@ class State(SharedSessionState):
             "id_organizacion": self.ad_org_id,
             "id_proyecto": self.ad_project_id,
             "id_version": self.ad_version_id,
+            "id_user": self.user_id,
             "nombre_job": self.ad_modal_job.get("nombre", ""),
             "descripcion_job": self.ad_modal_job.get("descripcion", ""),
             "id_template": self.ad_modal_job.get("id_template", 0),
@@ -5890,7 +5898,7 @@ def login_panel() -> rx.Component:
                         min_width=label_width,
                     ),
                     rx.input(
-                        placeholder="Ingrese su usuario",
+                        placeholder="usuario  o  usuario@acronimo",
                         on_change=State.set_user_username,
                         value=State.user_username,
                         class_name="crt-input",
@@ -11999,6 +12007,14 @@ def user_portal() -> rx.Component:
                         State.go_to_frontend,
                         "amber",
                     ),
+                    rx.link(
+                        rx.button(
+                            "Mis datos",
+                            class_name="crt-btn crt-btn-inline",
+                            font_size="1.1em",
+                        ),
+                        href="/mis_datos",
+                    ),
                     rx.button(
                         "Desconectar",
                         on_click=State.user_logout,
@@ -12138,6 +12154,18 @@ except Exception as e:
     print(f"❌ Error al registrar ruta /user_creation: {e}")
     import traceback
     traceback.print_exc()
+
+try:
+    from pages.my_profile import UserProfileState, my_profile_page
+    app.add_page(
+        my_profile_page,
+        route="/mis_datos",
+        title=f"{APP_BRAND_NAME} - Mis datos",
+        on_load=UserProfileState.on_page_load,
+    )
+    print("✅ Ruta /mis_datos registrada exitosamente")
+except Exception as e:
+    print(f"⚠️ Warning: Could not import my_profile_page: {e}")
 
 try:
     from pages.change_password import change_password_page
