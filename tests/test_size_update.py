@@ -6,7 +6,12 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
-from tests.helpers import get_service_urls, get_db_connection
+from tests.helpers import (
+    get_db_connection,
+    get_org_folder,
+    get_prj_folder,
+    get_service_urls,
+)
 from tests.import_aliases import register_repo_helpers
 
 register_repo_helpers()
@@ -43,8 +48,8 @@ print("Llamando a fmanagement_list_all_project_versions para proyecto 2...")
 response = fmanagement_list_all_project_versions(
     org_id=1,
     project_id=2,
-    org_folder="ORG0001",
-    prj_folder="PRJ00002",
+    org_folder=get_org_folder(1),
+    prj_folder=get_prj_folder(2),
     access_token=access_token,
     session_token=session_token,
 )
@@ -55,9 +60,15 @@ if response.get("status") == "success" and response.get("items"):
     project_item = response["items"][0]
     versions = project_item.get("items", [])
     print(f"Versiones encontradas: {len(versions)}\n")
+    if not versions:
+        print("❌ No se encontraron versiones en disco para el proyecto 2")
+        sys.exit(1)
 
     for v in versions[:3]:  # Solo primeras 3 para no saturar
         print(f"  → {v.get('name')}: {v.get('size_bytes', 0)} bytes")
+else:
+    print("❌ No se obtuvo listado de versiones del proyecto 2")
+    sys.exit(1)
 
 # Verificar en BD
 print("\n" + "="*80)

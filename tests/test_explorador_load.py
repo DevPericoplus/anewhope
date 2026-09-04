@@ -6,7 +6,12 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
-from tests.helpers import get_service_urls, get_db_connection
+from tests.helpers import (
+    get_db_connection,
+    get_org_folder,
+    get_prj_folder,
+    get_service_urls,
+)
 from tests.import_aliases import register_repo_helpers
 
 register_repo_helpers()
@@ -41,9 +46,9 @@ print("="*80 + "\n")
 from adapters.api_client import fmanagement_list_all_project_versions
 
 org_id = 1
-project_id = 1
-org_folder = f"ORG{str(org_id).zfill(4)}"
-prj_folder = f"PRJ{str(project_id).zfill(5)}"
+project_id = 2
+org_folder = get_org_folder(org_id)
+prj_folder = get_prj_folder(project_id)
 
 print(f"Llamando a fmanagement_list_all_project_versions...")
 print(f"  org_id: {org_id}")
@@ -73,12 +78,18 @@ if items:
 
     versions = project_item.get("items", [])
     print(f"  Versiones encontradas: {len(versions)}\n")
+    if not versions:
+        print("❌ No se encontraron versiones en disco con la ruta canónica")
+        sys.exit(1)
 
     for ver in versions:
         print(f"  → {ver.get('name')}")
         print(f"     is_dir: {ver.get('is_dir')}")
         print(f"     size_bytes: {ver.get('size_bytes')}")
         print(f"     sub-items: {len(ver.get('items', []))}")
+else:
+    print("❌ Listado de proyecto vacío (ruta canónica ORG#####/PRJ#####)")
+    sys.exit(1)
 
 print("\n" + "="*80)
 print("FIN DEL TEST")

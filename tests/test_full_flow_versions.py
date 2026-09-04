@@ -4,7 +4,12 @@
 import requests
 import pymysql
 
-from tests.helpers import get_service_urls, get_db_connection
+from tests.helpers import (
+    get_db_connection,
+    get_org_folder,
+    get_prj_folder,
+    get_service_urls,
+)
 _urls = get_service_urls()
 
 print("\n" + "="*80)
@@ -113,8 +118,8 @@ for version_info in versiones:
                 "X-Session-Token": session_token
             },
             json={
-                "org_folder": f"ORG{str(org_id).zfill(4)}",
-                "prj_folder": "PRJ00001",
+                "org_folder": get_org_folder(int(org_id)),
+                "prj_folder": get_prj_folder(1),
                 "version_folder": version_name,
                 "user_id": user_id,
                 "identity_type_id": identity_type_id

@@ -61,11 +61,11 @@ Contiene las versiones actuales de todas las aplicaciones del sistema:
 
 ```yaml
 # Versions of software used (ver versions.yml en la raíz)
-version_frontend: 0.8.1
-version_backoffice: 0.8.2
-version_middleware: 0.8.1
+version_frontend: 0.8.2
+version_backoffice: 0.8.3
+version_middleware: 0.8.2
 version_broker: 0.8.1
-version_backend_core: 0.8.2
+version_backend_core: 0.8.4
 version_backend_ia: 0.8.0
 version_fmanagement: 0.8.0
 ```

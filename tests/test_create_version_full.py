@@ -198,19 +198,20 @@ def verify_version_in_database(project_id: int, expected_version_id: int) -> boo
 
             version_db_id = version['id']
 
-            # Verificar en tabla estado
+            # estado.id_version es el número de versión (1, 2, 17), no el PK
             cursor.execute("""
                 SELECT id, id_organizacion, id_proyecto, id_version
                 FROM estado
-                WHERE id_version = %s
-            """, (version_db_id,))
+                WHERE id_proyecto = %s AND id_version = %s
+            """, (project_id, expected_version_id))
             estado = cursor.fetchone()
 
             if estado:
                 print_step("Estado inicial creado correctamente", "ok")
                 print(f"  • Estado ID: {estado['id']}")
             else:
-                print_step("Estado NO encontrado", "warning")
+                print_step("Estado NO encontrado", "error")
+                return False
 
             # Verificar en tabla cambios
             cursor.execute("""
@@ -243,10 +244,12 @@ def verify_version_in_filesystem(
     """Verifica que la carpeta de versión exista en el filesystem."""
     print_step("Verificando carpeta en filesystem...", "info")
 
+    from tests.helpers import get_org_folder, get_prj_folder, get_ver_folder
+
     base_path = get_base_path()
-    org_folder = f"ORG{org_id:04d}"
-    prj_folder = f"PRJ{project_id:05d}"
-    version_folder = f"v{version_id:03d}"
+    org_folder = get_org_folder(org_id)
+    prj_folder = get_prj_folder(project_id)
+    version_folder = get_ver_folder(version_id)
 
     version_path = base_path / org_folder / prj_folder / version_folder
 
@@ -330,10 +333,12 @@ def cleanup_test_version(
             print_step("Versión eliminada de BD", "ok")
 
             # Eliminar carpeta del filesystem
+            from tests.helpers import get_org_folder, get_prj_folder, get_ver_folder
+
             base_path = get_base_path()
-            org_folder = f"ORG{org_id:04d}"
-            prj_folder = f"PRJ{project_id:05d}"
-            version_folder = f"v{version_id:03d}"
+            org_folder = get_org_folder(org_id)
+            prj_folder = get_prj_folder(project_id)
+            version_folder = get_ver_folder(version_id)
             version_path = base_path / org_folder / prj_folder / version_folder
 
             if version_path.exists():
@@ -413,7 +418,13 @@ def main():
         print_step("\n✅ TODOS LOS TESTS PASARON", "ok")
         print(f"\n{GREEN}La versión v{next_version_id:03d} fue creada correctamente en:{RESET}")
         print(f"  • Base de datos: tabla versiones, estado, cambios")
-        print(f"  • Filesystem: ~/data/anewhope/files/backend_server/external/ORG{TEST_ORG_ID:04d}/PRJ{TEST_PROJECT_ID:05d}/v{next_version_id:03d}/")
+        from tests.helpers import get_org_folder, get_prj_folder, get_ver_folder
+
+        print(
+            f"  • Filesystem: .../external/"
+            f"{get_org_folder(TEST_ORG_ID)}/{get_prj_folder(TEST_PROJECT_ID)}/"
+            f"{get_ver_folder(next_version_id)}/"
+        )
 
         # Preguntar si limpiar
         print(f"\n{YELLOW}¿Deseas eliminar esta versión de prueba? (s/n):{RESET} ", end="")

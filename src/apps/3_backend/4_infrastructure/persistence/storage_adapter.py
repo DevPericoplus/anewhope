@@ -628,6 +628,43 @@ def _load_roles_from_mariadb() -> list[dict[str, Any]]:
     return records
 
 
+_ORGS_SELECT_COLUMNS = (
+    "organization_id, organization_name, organization_email, "
+    "organization_tlf, organization_address, organization_country, "
+    "organization_state, active"
+)
+_ORGS_ACRONYM_COLUMN = "organization_acronym"
+
+
+def _organizations_have_acronym_column(settings: dict[str, Any]) -> bool:
+    """True si myllm_core_db.organizations ya tiene organization_acronym."""
+
+    rows = _fetch_mariadb_rows(
+        settings,
+        "SELECT COUNT(*) FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA = DATABASE() "
+        f"AND TABLE_NAME = 'organizations' "
+        f"AND COLUMN_NAME = '{_ORGS_ACRONYM_COLUMN}'",
+    )
+    return bool(rows and int(rows[0][0] or 0) > 0)
+
+
+def _map_organization_row(row: tuple[Any, ...]) -> dict[str, Any]:
+    """Convierte una fila de organizations en el dict del adaptador."""
+
+    return {
+        "organization_id": int(row[0]) if row[0] else 0,
+        "organization_name": row[1] or "",
+        "organization_email": row[2] or "",
+        "organization_tlf": row[3] if row[3] and row[3] != "NULL" else "",
+        "organization_address": row[4] if row[4] and row[4] != "NULL" else "",
+        "organization_country": row[5] if row[5] and row[5] != "NULL" else "",
+        "organization_state": row[6] if row[6] and row[6] != "NULL" else "",
+        "active": bool(int(row[7])) if row[7] else False,
+        "organization_acronym": (row[8] or "") if len(row) > 8 else "",
+    }
+
+
 def _load_organizations_from_mariadb() -> list[dict[str, Any]]:
     """Carga organizaciones desde MariaDB."""
 
@@ -635,29 +672,17 @@ def _load_organizations_from_mariadb() -> list[dict[str, Any]]:
     if not settings["reader_user"]:
         raise StorageAdapterError("Faltan credenciales de lectura para MariaDB")
 
-    query = (
-        "SELECT organization_id, organization_name, organization_email, "
-        "organization_tlf, organization_address, organization_country, "
-        "organization_state, active, organization_acronym "
-        "FROM organizations ORDER BY organization_id"
-    )
+    select_columns = _ORGS_SELECT_COLUMNS
+    if _organizations_have_acronym_column(settings):
+        select_columns = f"{_ORGS_SELECT_COLUMNS}, {_ORGS_ACRONYM_COLUMN}"
+    query = f"SELECT {select_columns} FROM organizations ORDER BY organization_id"
     rows = _fetch_mariadb_rows(settings, query)
     records: list[dict[str, Any]] = []
     for row in rows:
         if not row:
             continue
         if len(row) >= 8:
-            records.append({
-                "organization_id": int(row[0]) if row[0] else 0,
-                "organization_name": row[1] or "",
-                "organization_email": row[2] or "",
-                "organization_tlf": row[3] if row[3] and row[3] != "NULL" else "",
-                "organization_address": row[4] if row[4] and row[4] != "NULL" else "",
-                "organization_country": row[5] if row[5] and row[5] != "NULL" else "",
-                "organization_state": row[6] if row[6] and row[6] != "NULL" else "",
-                "active": bool(int(row[7])) if row[7] else False,
-                "organization_acronym": (row[8] or "") if len(row) > 8 else "",
-            })
+            records.append(_map_organization_row(row))
     return records
 
 
@@ -677,6 +702,8 @@ def _sync_organizations_to_mariadb(organizations: list[OrganizationDto]) -> None
     def sql_escape(value: str) -> str:
         return value.replace("\\", "\\\\").replace("'", "''")
 
+    include_acronym = _organizations_have_acronym_column(settings)
+
     for org in organizations:
         payload = org.model_dump()
         org_id = int(payload.get("organization_id", 0))
@@ -689,24 +716,43 @@ def _sync_organizations_to_mariadb(organizations: list[OrganizationDto]) -> None
         org_acronym = sql_escape(str(payload.get("organization_acronym", "")).lower())
         active = 1 if payload.get("active", True) else 0
 
-        sql = (
-            f"INSERT INTO organizations "
-            f"(organization_id, organization_name, organization_email, "
-            f"organization_tlf, organization_address, organization_country, "
-            f"organization_state, organization_acronym, active) "
-            f"VALUES ({org_id}, '{org_name}', '{org_email}', "
-            f"'{org_tlf}', '{org_address}', '{org_country}', "
-            f"'{org_state}', '{org_acronym}', {active}) "
-            f"ON DUPLICATE KEY UPDATE "
-            f"organization_name='{org_name}', "
-            f"organization_email='{org_email}', "
-            f"organization_tlf='{org_tlf}', "
-            f"organization_address='{org_address}', "
-            f"organization_country='{org_country}', "
-            f"organization_state='{org_state}', "
-            f"organization_acronym='{org_acronym}', "
-            f"active={active};"
-        )
+        if include_acronym:
+            sql = (
+                f"INSERT INTO organizations "
+                f"(organization_id, organization_name, organization_email, "
+                f"organization_tlf, organization_address, organization_country, "
+                f"organization_state, {_ORGS_ACRONYM_COLUMN}, active) "
+                f"VALUES ({org_id}, '{org_name}', '{org_email}', "
+                f"'{org_tlf}', '{org_address}', '{org_country}', "
+                f"'{org_state}', '{org_acronym}', {active}) "
+                f"ON DUPLICATE KEY UPDATE "
+                f"organization_name='{org_name}', "
+                f"organization_email='{org_email}', "
+                f"organization_tlf='{org_tlf}', "
+                f"organization_address='{org_address}', "
+                f"organization_country='{org_country}', "
+                f"organization_state='{org_state}', "
+                f"{_ORGS_ACRONYM_COLUMN}='{org_acronym}', "
+                f"active={active};"
+            )
+        else:
+            sql = (
+                f"INSERT INTO organizations "
+                f"(organization_id, organization_name, organization_email, "
+                f"organization_tlf, organization_address, organization_country, "
+                f"organization_state, active) "
+                f"VALUES ({org_id}, '{org_name}', '{org_email}', "
+                f"'{org_tlf}', '{org_address}', '{org_country}', "
+                f"'{org_state}', {active}) "
+                f"ON DUPLICATE KEY UPDATE "
+                f"organization_name='{org_name}', "
+                f"organization_email='{org_email}', "
+                f"organization_tlf='{org_tlf}', "
+                f"organization_address='{org_address}', "
+                f"organization_country='{org_country}', "
+                f"organization_state='{org_state}', "
+                f"active={active};"
+            )
 
         try:
             _execute_mariadb_sqls(settings, [sql])

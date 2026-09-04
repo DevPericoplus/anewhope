@@ -1796,7 +1796,10 @@ def get_project_versions(
                         "id_organizacion": int, "version_folder": str}],
          "total": int}
     """
-    url = f"{_get_middleware_base_url()}/proyectos/{project_id}/versiones?org_id={organization_id}"
+    versions_path = f"/proyectos/{project_id}/versiones"
+    if organization_id > 0:
+        versions_path = f"{versions_path}?org_id={organization_id}"
+    url = f"{_get_middleware_base_url()}{versions_path}"
     request_headers = {
         "Content-Type": "application/json",
         "X-Client-App": "backoffice",

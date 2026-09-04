@@ -1856,10 +1856,13 @@ def get_project_versions(
          "total": int}
     """
     headers = _build_auth_headers(access_token, session_token)
-    
+    versions_path = f"/proyectos/{project_id}/versiones"
+    if organization_id > 0:
+        versions_path = f"{versions_path}?org_id={organization_id}"
+
     response = _request_middleware(
         "GET",
-        f"/proyectos/{project_id}/versiones?org_id={organization_id}",
+        versions_path,
         headers=headers,
     )
     

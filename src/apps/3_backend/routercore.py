@@ -4435,7 +4435,11 @@ class BackendCoreRouter:
                 version_row = version_result.fetchone()
                 self._logger.info("[backend-core] version_row obtenida: %s", version_row)
 
-                self._logger.info("[backend-core] Consultando estado con id_version=%s (versiones.id)", version_db_id)
+                self._logger.info(
+                    "[backend-core] Consultando estado proyecto=%s id_version=%s",
+                    project_id,
+                    version_id,
+                )
                 estado_result = conn.execute(
                     text("""
                         SELECT id, id_organizacion, id_proyecto, id_version,
@@ -4445,9 +4449,10 @@ class BackendCoreRouter:
                                aprobacion_calidad, generacion_llm, notificacion_descarga,
                                creado_at, actualizado_at
                         FROM estado
-                        WHERE id_version = :version_db_id
+                        WHERE id_proyecto = :project_id
+                          AND id_version = :version_id
                     """),
-                    {"version_db_id": version_db_id},
+                    {"project_id": project_id, "version_id": version_id},
                 )
                 estado_row = estado_result.fetchone()
                 self._logger.info("[backend-core] estado_row obtenida: %s", estado_row)

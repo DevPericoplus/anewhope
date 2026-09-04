@@ -3399,20 +3399,22 @@ def get_tecnologias_asignadas_org_endpoint(
 )
 def get_project_versions_endpoint(
     project_id: int,
-    org_id: int,
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
     session: Annotated[SessionContext, Depends(get_session_context)],
+    org_id: int = 0,
 ) -> VersionesListResponse:
     """Obtiene todas las versiones de un proyecto.
 
     Args:
         project_id: ID del proyecto
-        org_id: ID de la organización (del selector en backoffice)
+        org_id: ID de la organización (0 = organización de la sesión)
     """
     _logger = logging.getLogger(__name__)
 
+    resolved_org_id = org_id if org_id > 0 else int(session.organization_id or 0)
+
     # Validación de permisos: SuperAdmin puede ver cualquier org, otros solo la suya
-    if session.identity_type_id != 1 and org_id != session.organization_id:
+    if session.identity_type_id != 1 and resolved_org_id != session.organization_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tiene permisos para ver versiones de esta organización",
@@ -3421,13 +3423,13 @@ def get_project_versions_endpoint(
     _logger.info(
         "[middleware] Consultando versiones proyecto=%s org=%s (session_org=%s, identity=%s)",
         project_id,
-        org_id,
+        resolved_org_id,
         session.organization_id,
         session.identity_type_id,
     )
 
     try:
-        response = router.get_project_versions(project_id, org_id, session)
+        response = router.get_project_versions(project_id, resolved_org_id, session)
         return VersionesListResponse(**response)
     except BusinessRuleError as exc:
         raise HTTPException(

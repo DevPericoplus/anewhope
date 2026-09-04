@@ -22,6 +22,33 @@ def get_project_root() -> Path:
     return Path(__file__).parent.parent
 
 
+def get_org_folder(organization_id: int) -> str:
+    """Carpeta de organización (ORG#####) vía helper canónico."""
+    module = load_module_from_path(
+        "storage_access_structure_tests",
+        get_project_root() / "src/2_shared_application/storage_access_structure.py",
+    )
+    return module.get_folder_by_id_organization(organization_id)
+
+
+def get_prj_folder(project_id: int) -> str:
+    """Carpeta de proyecto (PRJ#####) vía helper canónico."""
+    module = load_module_from_path(
+        "storage_access_structure_tests",
+        get_project_root() / "src/2_shared_application/storage_access_structure.py",
+    )
+    return module.get_folder_by_id_project(project_id)
+
+
+def get_ver_folder(version_id: int) -> str:
+    """Carpeta de versión (v###) vía helper canónico."""
+    module = load_module_from_path(
+        "storage_access_structure_tests",
+        get_project_root() / "src/2_shared_application/storage_access_structure.py",
+    )
+    return module.get_folder_by_id_version(version_id)
+
+
 def get_active_test_environment() -> str:
     """Resuelve el entorno de tests (silicon-ready).
 

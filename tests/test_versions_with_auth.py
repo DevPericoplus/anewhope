@@ -48,8 +48,10 @@ try:
         project_id = 1
         print(f"\n2. Llamando a get_project_versions(project_id={project_id})...")
 
+        org_id = int(login_data.get("organization_id") or 0)
         result = get_project_versions(
             project_id=project_id,
+            organization_id=org_id,
             access_token=access_token,
             session_token=session_token
         )
@@ -63,6 +65,7 @@ try:
                 print(f"  Versión {idx+1}: {ver}")
         else:
             print("\n⚠️  No se encontraron versiones!")
+            sys.exit(1)
 
     else:
         print(f"❌ Error en login: {login_response.status_code} - {login_response.text}")

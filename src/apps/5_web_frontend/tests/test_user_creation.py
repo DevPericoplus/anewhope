@@ -102,6 +102,7 @@ def test_user_creation_successful(temp_users_file, mock_domain_models):
         
         # Llenar todos los campos requeridos con datos válidos
         state.from_page = "main"
+        state.account_kind = "organization"
         state.user_name = "testuser"
         state.user_password = "Test1234@Password"
         state.user_password_confirm = "Test1234@Password"
@@ -188,6 +189,7 @@ def test_user_creation_with_security_logging(temp_users_file, mock_domain_models
         
         # Llenar todos los campos requeridos
         state.from_page = "main"
+        state.account_kind = "organization"
         state.user_name = "integratedtest"
         state.user_password = "SecurePass123@"
         state.user_password_confirm = "SecurePass123@"
@@ -250,8 +252,10 @@ def test_organization_creation_with_security_logging():
     state.org_state = "Madrid"
     
     # Mock de save_organization_to_json para retornar un organization_id
-    with patch("pages.user_creation.save_organization_to_json") as mock_save, \
+    with patch("pages.user_creation.create_organization") as mock_create, \
+         patch("pages.user_creation.save_organization_to_json") as mock_save, \
          patch("pages.user_creation.log_security_action") as mock_log:
+        mock_create.return_value = 11
         mock_save.return_value = 11
         mock_log.return_value = True
         
@@ -260,7 +264,7 @@ def test_organization_creation_with_security_logging():
         
         # Verificar creación exitosa
         assert state.message_type == "success"
-        assert mock_save.called
+        assert mock_create.called or mock_save.called
         assert mock_log.called
         
         print("✅ Test de creación de organización con logging exitoso.")
@@ -281,10 +285,12 @@ def test_user_and_organization_logging_integration(temp_users_file, mock_domain_
     with patch("pages.user_creation.User", MockUser), \
          patch("pages.user_creation.ContactInfo", MockContactInfo), \
          patch("pages.user_creation.UserExtended", MockUserExtended), \
+         patch("pages.user_creation.create_organization") as mock_create_org, \
          patch("pages.user_creation.save_organization_to_json") as mock_save_org, \
          patch("pages.user_creation.save_user_to_json") as mock_save_user, \
          patch("pages.user_creation.log_security_action") as mock_log:
         
+        mock_create_org.return_value = 12
         mock_save_org.return_value = 12
         mock_save_user.return_value = True
         mock_log.return_value = True
@@ -313,6 +319,7 @@ def test_user_and_organization_logging_integration(temp_users_file, mock_domain_
         
         # 2. Crear un usuario
         state.from_page = "main"
+        state.account_kind = "organization"
         state.user_name = "integrationuser"
         state.user_password = "Integration123@Pass"
         state.user_password_confirm = "Integration123@Pass"
