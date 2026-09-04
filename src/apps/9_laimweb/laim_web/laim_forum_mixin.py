@@ -2,28 +2,36 @@
 
 from __future__ import annotations
 
+import base64
+from pathlib import Path
 from typing import Any
 
 import reflex as rx
 from reflex.event import event
 
+from laim_web.dynamic_import import load_module_from_path
+
 EventHandlerReturn = Any
+
+_BORING_AVATARS = load_module_from_path(
+    Path(__file__).resolve().parents[3]
+    / "2_shared_application"
+    / "laim_forum_boring_avatars.py",
+    "laim_forum_boring_avatars",
+)
+_ALOHE_AVATARS = load_module_from_path(
+    Path(__file__).resolve().parents[3]
+    / "2_shared_application"
+    / "laim_forum_alohe_avatars.py",
+    "laim_forum_alohe_avatars",
+)
 
 # Reflex 0.8+ solo registra @event en métodos del State, no en mixins.
 FORUM_EVENT_HANDLER_NAMES: list[str] = []
 
-# Previews del catálogo: assets estáticos empaquetados con laimweb (iconos con dibujo).
+# Previews del catálogo: assets estáticos empaquetados con laimweb.
 # El image_id sigue viniendo del backend para guardar la selección del usuario.
-_CATALOG_AVATAR_STATIC_URLS: dict[str, str] = {
-    "Terminal": "/forum_avatars/avatar_01_terminal.png?v=2",
-    "Cipher": "/forum_avatars/avatar_02_cipher.png?v=2",
-    "Node": "/forum_avatars/avatar_03_node.png?v=2",
-    "Pulse": "/forum_avatars/avatar_04_pulse.png?v=2",
-    "Signal": "/forum_avatars/avatar_05_signal.png?v=2",
-    "Vector": "/forum_avatars/avatar_06_vector.png?v=2",
-    "Matrix": "/forum_avatars/avatar_07_matrix.png?v=2",
-    "Proxy": "/forum_avatars/avatar_08_proxy.png?v=2",
-}
+_CATALOG_AVATAR_STATIC_URLS: dict[str, str] = _ALOHE_AVATARS.build_static_url_map()
 
 
 def forum_event(func):
@@ -118,6 +126,10 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_profile_notify_replies: bool = True
     forum_profile_message: str = ""
     forum_avatar_catalog: list[dict[str, Any]] = []
+    forum_avatar_catalog_style: str = "laim"
+    forum_avatar_variant: str = "marble"
+    forum_avatar_palette_id: str = "crt"
+    forum_avatar_square: bool = False
 
     # Admin extendido
     forum_admin_tab: str = "categories"
@@ -309,6 +321,32 @@ class LaimForumMixin(rx.State, mixin=True):
         return len(self.forum_avatar_catalog) > 0
 
     @rx.var
+    def forum_has_filtered_avatar_catalog(self) -> bool:
+        """True si el filtro de colección actual tiene retratos."""
+        return (
+            len(
+                _ALOHE_AVATARS.filter_catalog_items(
+                    self.forum_avatar_catalog,
+                    self.forum_avatar_catalog_style,
+                )
+            )
+            > 0
+        )
+
+    @rx.var
+    def forum_avatar_catalog_style_options(self) -> list[dict[str, str]]:
+        """Chips de estilo del catálogo (LAIM, colecciones alohe y Todos)."""
+        return _ALOHE_AVATARS.build_collection_options()
+
+    @rx.var
+    def forum_filtered_avatar_catalog(self) -> list[dict[str, Any]]:
+        """Catálogo visible según el estilo seleccionado."""
+        return _ALOHE_AVATARS.filter_catalog_items(
+            self.forum_avatar_catalog,
+            self.forum_avatar_catalog_style,
+        )
+
+    @rx.var
     def forum_has_thread_author_avatar(self) -> bool:
         """True si hay URL de avatar para el autor del hilo activo."""
         return self.forum_thread_author_avatar_url != ""
@@ -317,6 +355,35 @@ class LaimForumMixin(rx.State, mixin=True):
     def forum_has_profile_avatar(self) -> bool:
         """True si el perfil tiene avatar asignado con vista previa."""
         return self.forum_profile_avatar_preview_url != ""
+
+    @rx.var
+    def forum_avatar_seed(self) -> str:
+        """Semilla del avatar generativo (nombre visible o de sesión)."""
+        display = self.forum_profile_display_name.strip()
+        if display:
+            return display
+        session_name = str(getattr(self, "user_name", "") or "").strip()
+        if session_name:
+            return session_name
+        return _BORING_AVATARS.DEFAULT_NAME
+
+    @rx.var
+    def forum_generative_avatar_tiles(self) -> list[dict[str, str]]:
+        """Fichas de preview para las 6 variantes generativas."""
+        return _BORING_AVATARS.build_variant_preview_tiles(
+            self.forum_avatar_seed,
+            palette_id=self.forum_avatar_palette_id,
+            square=self.forum_avatar_square,
+            size=80,
+        )
+
+    @rx.var
+    def forum_avatar_palette_options(self) -> list[dict[str, str]]:
+        """Paletas disponibles para el selector generativo."""
+        return [
+            {"id": palette_id, "label": label}
+            for palette_id, label in _BORING_AVATARS.PALETTE_LABELS.items()
+        ]
 
     @rx.var
     def forum_has_prefixes(self) -> bool:
@@ -2062,9 +2129,13 @@ class LaimForumMixin(rx.State, mixin=True):
         for item in items:
             row = dict(item)
             label = str(row.get("label") or "")
+            collection = _ALOHE_AVATARS.collection_for_label(label)
+            row["collection"] = collection
             static_url = _CATALOG_AVATAR_STATIC_URLS.get(label, "")
             if static_url:
                 row["preview_url"] = static_url
+            elif collection:
+                row["preview_url"] = ""
             else:
                 image_id = int(row.get("image_id") or 0)
                 if image_id > 0:
@@ -2121,6 +2192,41 @@ class LaimForumMixin(rx.State, mixin=True):
         self._forum_persist_avatar_selection(image_id)
 
     @forum_event
+    def forum_set_avatar_catalog_style(self, style_id: str) -> None:
+        """Filtra el catálogo por colección ilustrada."""
+        self.forum_avatar_catalog_style = _ALOHE_AVATARS.resolve_collection(style_id)
+
+    @forum_event
+    def forum_set_avatar_palette(self, palette_id: str) -> None:
+        """Cambia la paleta del avatar generativo (solo preview)."""
+        if palette_id in _BORING_AVATARS.PALETTES:
+            self.forum_avatar_palette_id = palette_id
+
+    @forum_event
+    def forum_set_avatar_square(self, square: bool) -> None:
+        """Alterna recorte cuadrado o circular del preview generativo."""
+        self.forum_avatar_square = square
+
+    @forum_event
+    def forum_select_generative_avatar(self, variant: str) -> None:
+        """Genera un SVG determinista, lo sube y lo asigna al perfil."""
+        chosen = _BORING_AVATARS.resolve_variant(variant)
+        self.forum_avatar_variant = chosen
+        svg = _BORING_AVATARS.build_avatar_svg(
+            self.forum_avatar_seed,
+            variant=chosen,
+            palette_id=self.forum_avatar_palette_id,
+            square=self.forum_avatar_square,
+            size=128,
+        )
+        encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+        self._forum_upload_and_assign_avatar(
+            file_name=f"avatar_{chosen}.svg",
+            mime_type="image/svg+xml",
+            data_base64=encoded,
+        )
+
+    @forum_event
     def forum_save_profile(self) -> None:
         """Guarda perfil de foro."""
         from laim_web.adapters.laim_api_client import laim_forum_update_profile
@@ -2156,27 +2262,25 @@ class LaimForumMixin(rx.State, mixin=True):
             callback=LaimWebState.forum_process_avatar_upload,
         )
 
-    @forum_event
-    def forum_process_avatar_upload(self, payload: dict[str, object] | None) -> None:
-        """Procesa subida de avatar personal."""
+    def _forum_upload_and_assign_avatar(
+        self,
+        *,
+        file_name: str,
+        mime_type: str,
+        data_base64: str,
+    ) -> bool:
+        """Sube un avatar de usuario y lo asigna al perfil."""
         from laim_web.adapters.laim_api_client import (
             laim_forum_update_profile,
             laim_forum_upload_image,
         )
 
-        if not isinstance(payload, dict):
-            return
-        raw = payload.get("avatar")
-        if not isinstance(raw, dict):
-            self._forum_set_error("No se seleccionó imagen de avatar.")
-            return
-
         access, session = self._forum_auth_tokens()
         upload = laim_forum_upload_image(
             {
-                "file_name": str(raw.get("file_name", "")),
-                "mime_type": str(raw.get("mime_type", "")),
-                "data_base64": str(raw.get("data_base64", "")),
+                "file_name": file_name,
+                "mime_type": mime_type,
+                "data_base64": data_base64,
                 "image_kind": "avatar_user",
             },
             access,
@@ -2184,30 +2288,46 @@ class LaimForumMixin(rx.State, mixin=True):
         )
         if not upload.get("success"):
             self._forum_set_error(upload.get("error", "No se pudo subir el avatar."))
-            return
+            return False
 
         image_id = int(upload.get("image", {}).get("id", 0))
         if image_id <= 0:
-            return
+            self._forum_set_error("El servidor no devolvió un avatar válido.")
+            return False
 
         self.forum_profile_avatar_id = image_id
         update = laim_forum_update_profile(
             {"avatar_image_id": image_id}, access, session
         )
-        if update.get("success"):
-            profile = update.get("profile", {})
-            if profile:
-                self._forum_apply_profile_from_api(profile, access, session)
-            else:
-                preview = self._forum_resolve_avatar_preview_url(
-                    image_id, access, session
-                )
-                self.forum_profile_avatar_preview_url = preview
-                self.forum_my_avatar_preview_url = preview
-            self.forum_profile_message = "Avatar actualizado."
-            self.forum_error = ""
-        else:
+        if not update.get("success"):
             self._forum_set_error(update.get("error", "No se pudo asignar el avatar."))
+            return False
+
+        profile = update.get("profile", {})
+        if profile:
+            self._forum_apply_profile_from_api(profile, access, session)
+        else:
+            preview = self._forum_resolve_avatar_preview_url(image_id, access, session)
+            self.forum_profile_avatar_preview_url = preview
+            self.forum_my_avatar_preview_url = preview
+        self.forum_profile_message = "Avatar actualizado."
+        self.forum_error = ""
+        return True
+
+    @forum_event
+    def forum_process_avatar_upload(self, payload: dict[str, object] | None) -> None:
+        """Procesa subida de avatar personal."""
+        if not isinstance(payload, dict):
+            return
+        raw = payload.get("avatar")
+        if not isinstance(raw, dict):
+            self._forum_set_error("No se seleccionó imagen de avatar.")
+            return
+        self._forum_upload_and_assign_avatar(
+            file_name=str(raw.get("file_name", "")),
+            mime_type=str(raw.get("mime_type", "")),
+            data_base64=str(raw.get("data_base64", "")),
+        )
 
     @forum_event
     def forum_mod_on_load(self) -> EventHandlerReturn:

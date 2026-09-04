@@ -47,6 +47,27 @@ def test_save_and_read_post_attachment(tmp_path) -> None:
     assert read_back == png_bytes
 
 
+def test_save_svg_avatar(tmp_path) -> None:
+    module = _load_image_storage()
+    storage = module.LaimForumImageStorage(base_path=tmp_path)
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"></svg>'
+    encoded = base64.b64encode(svg).decode("ascii")
+
+    stored, error = storage.save_image(
+        image_kind="avatar_user",
+        file_name="avatar_marble.svg",
+        mime_type="image/svg+xml",
+        data_base64=encoded,
+        uploaded_by_user_id=7,
+    )
+
+    assert error is None
+    assert stored is not None
+    assert stored.mime_type == "image/svg+xml"
+    assert stored.storage_key.endswith(".svg")
+    assert stored.absolute_path.read_bytes() == svg
+
+
 def test_rejects_invalid_mime_type(tmp_path) -> None:
     module = _load_image_storage()
     storage = module.LaimForumImageStorage(base_path=tmp_path)

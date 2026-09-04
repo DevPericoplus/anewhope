@@ -19,7 +19,14 @@ _logger = logging.getLogger(__name__)
 ImageKind = Literal["avatar_catalog", "avatar_user", "post_attachment"]
 
 ALLOWED_IMAGE_MIME_TYPES = frozenset(
-    {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"}
+    {
+        "image/png",
+        "image/jpeg",
+        "image/jpg",
+        "image/webp",
+        "image/gif",
+        "image/svg+xml",
+    }
 )
 
 MIME_TO_EXTENSION: dict[str, str] = {
@@ -28,6 +35,7 @@ MIME_TO_EXTENSION: dict[str, str] = {
     "image/jpg": ".jpg",
     "image/webp": ".webp",
     "image/gif": ".gif",
+    "image/svg+xml": ".svg",
 }
 
 
@@ -100,7 +108,7 @@ class LaimForumImageStorage:
         """Valida y decodifica una subida de imagen."""
         normalized_mime = mime_type.strip().lower()
         if normalized_mime not in ALLOWED_IMAGE_MIME_TYPES:
-            return None, "Formato de imagen no permitido. Use PNG, JPG, WEBP o GIF."
+            return None, "Formato de imagen no permitido. Use PNG, JPG, WEBP, GIF o SVG."
 
         safe_name = Path(file_name.strip() or "upload.bin").name
         if not safe_name:

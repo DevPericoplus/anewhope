@@ -76,6 +76,75 @@ def _forum_avatar_catalog_tile(item) -> rx.Component:
     )
 
 
+def _forum_generative_avatar_tile(item) -> rx.Component:
+    """Celda de una variante generativa (mármol, haz, pixel…)."""
+    radius = rx.cond(LaimWebState.forum_avatar_square, "8px", "50%")
+    return rx.box(
+        rx.vstack(
+            rx.image(
+                src=item["preview_url"],
+                width="64px",
+                height="64px",
+                border_radius=radius,
+                alt=item["label"],
+            ),
+            rx.text(
+                item["label"],
+                class_name="forum-profile-avatar-label",
+                font_size=FONT_SIZE_SMALL,
+            ),
+            spacing="1",
+            align_items="center",
+        ),
+        on_click=LaimWebState.forum_select_generative_avatar(item["variant"]),
+        class_name="forum-profile-avatar-tile forum-profile-generative-tile",
+        style=rx.cond(
+            LaimWebState.forum_avatar_variant == item["variant"],
+            {
+                **FORUM_PROFILE_AVATAR_TILE_STYLE,
+                "width": "6.25rem",
+                "maxWidth": "6.25rem",
+                "borderColor": "rgba(157, 255, 157, 0.85)",
+                "boxShadow": "0 0 12px rgba(120, 255, 120, 0.35)",
+                "background": "rgba(0, 50, 0, 0.55)",
+            },
+            {
+                **FORUM_PROFILE_AVATAR_TILE_STYLE,
+                "width": "6.25rem",
+                "maxWidth": "6.25rem",
+            },
+        ),
+    )
+
+
+def _forum_palette_chip(item) -> rx.Component:
+    """Chip de paleta de color para el generador."""
+    return rx.button(
+        item["label"],
+        on_click=LaimWebState.forum_set_avatar_palette(item["id"]),
+        class_name="crt-btn crt-btn-inline forum-profile-palette-chip",
+        style=rx.cond(
+            LaimWebState.forum_avatar_palette_id == item["id"],
+            {"font_weight": "bold", "border": f"1px solid {COLORS['accent']}"},
+            {},
+        ),
+    )
+
+
+def _forum_catalog_style_chip(item) -> rx.Component:
+    """Chip de colección del catálogo ilustrado."""
+    return rx.button(
+        item["label"],
+        on_click=LaimWebState.forum_set_avatar_catalog_style(item["id"]),
+        class_name="crt-btn crt-btn-inline forum-profile-catalog-style-chip",
+        style=rx.cond(
+            LaimWebState.forum_avatar_catalog_style == item["id"],
+            {"font_weight": "bold", "border": f"1px solid {COLORS['accent']}"},
+            {},
+        ),
+    )
+
+
 def forum_profile_panel() -> rx.Component:
     """Formulario de perfil de foro."""
     return rx.vstack(
@@ -130,7 +199,9 @@ def forum_profile_panel() -> rx.Component:
                         src=LaimWebState.forum_profile_avatar_preview_url,
                         width="72px",
                         height="72px",
-                        border_radius="50%",
+                        border_radius=rx.cond(
+                            LaimWebState.forum_avatar_square, "8px", "50%"
+                        ),
                         alt="Avatar del perfil",
                         border=f"2px solid {COLORS['accent']}",
                     ),
@@ -149,7 +220,8 @@ def forum_profile_panel() -> rx.Component:
                     margin_top="0.5em",
                 ),
                 rx.text(
-                    "Aún no tienes avatar. Elige uno del catálogo o sube uno personalizado.",
+                    "Aún no tienes avatar. Elige un estilo generativo, "
+                    "uno del catálogo o sube una imagen.",
                     color=COLORS["muted"],
                     font_size=FONT_SIZE_SMALL,
                     margin_top="0.5em",
@@ -160,20 +232,118 @@ def forum_profile_panel() -> rx.Component:
             margin_top="0.25em",
         ),
         rx.box(
+            rx.text("Avatar generativo", class_name="crt-title", font_size="1em"),
+            rx.text(
+                "Se dibuja a partir de tu nombre visible (o el de sesión). "
+                "Misma semilla, mismo retrato. Pulsa un estilo para usarlo.",
+                color=COLORS["muted"],
+                font_size=FONT_SIZE_SMALL,
+                margin_top="0.35em",
+            ),
+            rx.text(
+                LaimWebState.forum_avatar_seed,
+                color=COLORS["accent"],
+                font_size=FONT_SIZE_SMALL,
+                margin_top="0.25em",
+            ),
+            rx.hstack(
+                rx.foreach(
+                    LaimWebState.forum_avatar_palette_options,
+                    _forum_palette_chip,
+                ),
+                spacing="2",
+                flex_wrap="wrap",
+                class_name="forum-profile-palette-row",
+                margin_top="0.65em",
+            ),
+            rx.hstack(
+                rx.button(
+                    "Circular",
+                    on_click=LaimWebState.forum_set_avatar_square(False),
+                    class_name="crt-btn crt-btn-inline",
+                    style=rx.cond(
+                        ~LaimWebState.forum_avatar_square,
+                        {
+                            "font_weight": "bold",
+                            "border": f"1px solid {COLORS['accent']}",
+                        },
+                        {},
+                    ),
+                ),
+                rx.button(
+                    "Cuadrado",
+                    on_click=LaimWebState.forum_set_avatar_square(True),
+                    class_name="crt-btn crt-btn-inline",
+                    style=rx.cond(
+                        LaimWebState.forum_avatar_square,
+                        {
+                            "font_weight": "bold",
+                            "border": f"1px solid {COLORS['accent']}",
+                        },
+                        {},
+                    ),
+                ),
+                spacing="2",
+                margin_top="0.5em",
+            ),
+            rx.flex(
+                rx.foreach(
+                    LaimWebState.forum_generative_avatar_tiles,
+                    _forum_generative_avatar_tile,
+                ),
+                direction="row",
+                wrap="wrap",
+                spacing="3",
+                class_name="forum-profile-avatar-grid",
+                style=FORUM_PROFILE_AVATAR_GRID_STYLE,
+                width="100%",
+            ),
+            class_name="forum-profile-avatar-section forum-profile-generative-section",
+            style=FORUM_PROFILE_AVATAR_SECTION_STYLE,
+            width="100%",
+        ),
+        rx.box(
             rx.text("Avatares del catálogo", class_name="crt-title", font_size="1em"),
+            rx.text(
+                "Retratos originales LAIM y colecciones ilustradas libres "
+                "(alohe/avatars, MIT). Elige un estilo para ver sus retratos.",
+                color=COLORS["muted"],
+                font_size=FONT_SIZE_SMALL,
+                margin_top="0.35em",
+            ),
+            rx.hstack(
+                rx.foreach(
+                    LaimWebState.forum_avatar_catalog_style_options,
+                    _forum_catalog_style_chip,
+                ),
+                spacing="2",
+                flex_wrap="wrap",
+                class_name="forum-profile-catalog-style-row",
+                margin_top="0.65em",
+            ),
             rx.cond(
                 LaimWebState.forum_has_avatar_catalog,
-                rx.flex(
-                    rx.foreach(
-                        LaimWebState.forum_avatar_catalog,
-                        _forum_avatar_catalog_tile,
+                rx.cond(
+                    LaimWebState.forum_has_filtered_avatar_catalog,
+                    rx.flex(
+                        rx.foreach(
+                            LaimWebState.forum_filtered_avatar_catalog,
+                            _forum_avatar_catalog_tile,
+                        ),
+                        direction="row",
+                        wrap="wrap",
+                        spacing="3",
+                        class_name="forum-profile-avatar-grid",
+                        style=FORUM_PROFILE_AVATAR_GRID_STYLE,
+                        width="100%",
                     ),
-                    direction="row",
-                    wrap="wrap",
-                    spacing="3",
-                    class_name="forum-profile-avatar-grid",
-                    style=FORUM_PROFILE_AVATAR_GRID_STYLE,
-                    width="100%",
+                    rx.text(
+                        "Esta colección aún no está cargada en el servidor. "
+                        "El administrador debe ejecutar el seed del catálogo.",
+                        color=COLORS["muted"],
+                        font_size=FONT_SIZE_SMALL,
+                        margin_top="0.5em",
+                    ),
                 ),
                 rx.text(
                     "No hay avatares en el catálogo. El administrador debe cargarlos "
@@ -198,7 +368,7 @@ def forum_profile_panel() -> rx.Component:
                 rx.input(
                     type="file",
                     id="forum_avatar_file_input",
-                    accept="image/*",
+                    accept="image/png,image/jpeg,image/webp,image/gif",
                     style={"flex": "1 1 14rem", "minWidth": "0", "maxWidth": "100%"},
                 ),
                 rx.button(

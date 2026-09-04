@@ -2,47 +2,137 @@
 
 ## Local Artificial Intelligence Management
 
-LAIM es tu plataforma de gestión de inteligencia artificial local. Accede a tus sistemas, servicios, bases de datos o aplicaciones para gestionarlos con soporte de IA.
+**LAIM** es una forma cercana de trabajar con inteligencia artificial **en tu propio equipo**.
+No hace falta enviar tus conversaciones, documentos o contraseñas a un servicio lejano:
+la IA puede quedarse contigo, en casa o en la red de tu organización.
 
-### ¿Qué puedes hacer?
+Piensa en LAIM como un compañero técnico que entiende lo que pides en lenguaje natural
+y te ayuda a **gestionar sistemas, servicios y aplicaciones**. Habla con él desde la
+línea de comandos o desde una web local. Tú decides el ritmo; la herramienta acompaña.
 
-- **Gestionar sistemas** Gestion de tu sistema local y sistemas remotos.
-- **Gestionar servicios** Gestion de servicios en uso y soporte a evolutivos.
-- **Gestionar bases de datos** Interactuar con motores de bases de datos.
-- **Gestionar aplicaciones** Configura aplicaciones y gestion de recursos.
+> Si es tu primera visita, respira: no necesitas ser experto en modelos.
+> Esta página te cuenta, con calma, qué es LAIM y por qué existe.
 
-### ¿Que modalidades de uso estan disponibles?
+---
 
-- **cli** Ejecucion desde una linea de comandos
-- **web** Pagina web local de apoyo con interface extendido
+## ¿Qué problema resuelve?
 
-### ¿Que sistemas estan soportados?
+Durante años, usar IA ha significado elegir entre dos extremos: un chat en la nube
+(cómodo, pero lejos de tus datos) o un modelo suelto en el ordenador (privado, pero
+difícil de orquestar).
 
-- **Plataformas linux** Disponible para versiones de linux basadas en red had o debian.
-- **Plataformas OSX** Aplicacion para equipos apple portatiles y de escritorio.
-- **Microsoft Windows** Disponible para versiones con poweshell y WSL.
+LAIM ocupa el espacio de en medio. Te ofrece:
 
-### ¿Que modalidades de uso de IA estan disponibles en uso seguro?
+- **Privacidad por defecto.** El trabajo cotidiano puede ejecutarse en local con [Ollama](https://ollama.com/).
+- **Control.** Tú eliges el modelo, el equipo y si compartes la IA con compañeros de la red.
+- **Utilidad real.** No solo «preguntar a un chat»: también administrar el sistema,
+  conectar por SSH, generar informes o pedir que te escriba un script.
 
-- **IA local con Hardware basico** Opcion recomendada para equipos con hardware avanzado.
-- **IA local sin Hardware basico** Posibilidad de uso de cliente ligero conectado a otros equipos.
-- **IA modo laim generica cloud** Disponible para usar nuestro modelos extendidos en cloud.
+La misión es sencilla: **gestionar tecnología con el apoyo de la inteligencia artificial**,
+sin perder de vista quién manda (tú) y dónde viven los datos (donde tú elijas).
 
-### ¿Que tipos de modelos locales puedo utilizar?
+---
 
-- **Modelos base** Gama de modelos adpatados al hardware local disponible.
-- **Modelos especializados** Modelos enrriquecidos con informacion especializada.
-- **Modelos personalizados** Modelos creados a medida con informacion privada para uso interno.
+## MOM: Mixture of Models
 
-**Nota:** Generacion de modelos con tecnologia propia en https://www.getmylllm.com.
+En el mundo de la IA se habla mucho de **MoE** (*Mixture of Experts*): un solo modelo
+grande que, por dentro, enciende «expertos» especializados según el trozo de la tarea.
 
-### ¿Que modalidades de uso de IA estan disponibles en uso alternativo?
+En LAIM hacemos algo parecido… pero a otra escala. Lo llamamos **MOM** (*Mixture of Models*).
 
-- **Modelos de google** Posibilidad de configurar en los tiers modelos gemini.
-- **Modelos Mistral** Indicados para necesidades especificas en el ambito europeo.
-- **Modelo Kimi** Alternativa cualificada para necesidades exigentes.
+En lugar de activar expertos internos de **un** modelo, **activamos modelos distintos**
+según el caso: uno más ágil para una respuesta rápida, otro más capaz para razonar,
+otro afinado en un dominio o entrenado con tu información. Cada petición puede
+encender la mezcla que mejor encaja: funcionalidad, contenido y contexto.
 
-**Nota:** Algunos de estos modelos requiren servicios de suscripcion con terceros.
+| Idea | MoE (Mixture of Experts) | MOM (Mixture of Models) en LAIM |
+|------|--------------------------|----------------------------------|
+| ¿Qué se enciende? | Expertos *dentro* de un mismo modelo | **Modelos enteros**, elegidos para la ocasión |
+| ¿Para qué? | Especializar capas internas | Adaptar *qué cerebro* usa cada tarea |
+| ¿Quién decide? | El propio modelo, en tiempo de inferencia | LAIM, según el caso, el hardware y tu configuración |
 
+No hace falta memorizar la tabla. Quédate con esta imagen:
 
-> Informacion base como `inicio` para localizar informacion extendida recomendamos acceder a la pagina de documentacion.
+> MoE es un equipo de especialistas **dentro de una misma cabeza**.
+> MOM es un **estante de cabezas distintas**: LAIM acerca la que conviene
+> a cada conversación, cada sistema y cada tipo de contenido.
+
+Así la IA no es «un modelo para todo». Es una **orquesta de modelos** que se
+activa de forma adaptada: diagnóstico del equipo, redacción, código, seguridad,
+documentos o una pregunta rápida.
+
+---
+
+## Qué puedes hacer con LAIM
+
+Cuando instales el cliente en tu ordenador, estas son las puertas más usadas:
+
+- **Conversar** con la IA en tu idioma, también por voz si lo prefieres.
+- **Preguntar al sistema**: memoria, discos, procesos, red… con respuestas ancladas
+  a lo que realmente hay en la máquina.
+- **Administrar equipos remotos** por SSH, desde la web o desde la terminal.
+- **Compartir la IA en la red local** (modo Share) o **conectarte** a un servidor
+  de tu organización (modo Connect) sin convertir tu portátil en el único cerebro.
+- **Generar informes** de una sesión, editar Markdown con ayuda de IA y pedir
+  scripts o pequeñas aplicaciones.
+- **Enseñar correcciones**: si la IA se equivoca en un comando, puedes decirle
+  cómo hacerlo bien para la próxima vez.
+
+Todo eso vive en **dos formas de uso**, según te sientas más cómodo:
+
+| Modalidad | Cuándo te encaja |
+|-----------|------------------|
+| **CLI** | Automatizar, administrar y trabajar desde la terminal (`laim chat`, `laim remote`…) |
+| **Web local** | Una interfaz amable en tu equipo para el día a día, sin renunciar al control local |
+
+---
+
+## En qué equipos funciona
+
+LAIM está pensado para el escritorio de verdad, no solo para un laboratorio:
+
+- **Linux** — distribuciones tipo Debian/Ubuntu y Red Hat.
+- **macOS** — portátiles y equipos de escritorio Apple (Intel y Apple Silicon).
+- **Windows** — con PowerShell; también puedes apoyarte en WSL si lo necesitas.
+
+La IA local se apoya en **Ollama** cuando quieres modelos en tu hardware.
+Si el equipo es más ligero, puedes usar LAIM como **cliente** conectado a otro
+nodo de tu red que sí tenga GPU o más memoria. Y, si un día lo necesitas,
+puedes configurar proveedores externos (por ejemplo Gemini, Mistral o Kimi):
+siempre como **opción**, nunca como obligación.
+
+Los **modelos** se organizan en tres familias que irás conociendo al registrarte:
+
+1. **Base** — punto de partida adaptado a tu hardware.
+2. **Especializados** — enriquecidos para un dominio concreto.
+3. **Personalizados** — creados a medida con información privada, en el ecosistema
+   [getmylllm.com](https://www.getmylllm.com/).
+
+MOM encaja aquí de forma natural: no es un único fichero mágico, sino **la
+capacidad de combinar esas familias** según lo que estés haciendo.
+
+---
+
+## Cómo te proponemos empezar
+
+1. Lee **Presentación** si quieres el porqué (la visión humana + IA).
+2. Mira **Servicios** para el catálogo práctico: instaladores, manuales y modelos.
+3. Consulta **Documentación** cuando necesites la referencia de comandos.
+4. Crea tu cuenta y, cuando estés listo, descarga el cliente e inicia con calma.
+
+No hay que hacerlo todo el primer día. LAIM está diseñado para crecer contigo:
+primero una conversación local, después un equipo remoto, más adelante una red
+compartida o un modelo personalizado.
+
+---
+
+## Una última idea para llevarte
+
+La inteligencia artificial no sustituye tu criterio. **LAIM** solo intenta que
+esa inteligencia esté **cerca, comprensible y bien elegida**: el modelo adecuado,
+en el momento adecuado, sobre tus datos y tus sistemas.
+
+Si algo no está claro, pasa a Documentación o escribe en **Contacto**.
+Estamos para que esta puerta de entrada se sienta tan cómoda como el resto del proyecto.
+
+> *Bienvenido. Aquí la IA trabaja a tu lado, no por encima de ti.*

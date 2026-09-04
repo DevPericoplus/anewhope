@@ -42,6 +42,9 @@ def test_load_inicio_markdown() -> None:
     """Carga el contenido de inicio.md."""
     content = load_static_page_markdown("inicio")
     assert "# Bienvenido a LAIM" in content
+    assert "MOM" in content
+    assert "Mixture of Models" in content
+    assert "Mixture of Experts" in content
 
 
 def test_load_presentacion_markdown() -> None:
@@ -49,6 +52,18 @@ def test_load_presentacion_markdown() -> None:
     content = load_static_page_markdown("presentacion")
     assert "# Presentación" in content
     assert "traductor de conocimiento" in content.lower()
+
+
+def test_load_documentacion_markdown() -> None:
+    """Carga el contenido actualizado de documentacion.md."""
+    content = load_static_page_markdown("documentacion")
+    assert "# Documentación" in content
+    assert "laim help" in content
+    assert "laim.exe help" in content
+    assert "./bin/" not in content
+    assert "**`agents`**" in content
+    assert "**`webdebug`**" in content
+    assert "Mixture of Models" in content
 
 
 def test_load_instaladores_markdown() -> None:

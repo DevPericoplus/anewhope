@@ -746,6 +746,32 @@ body::after {
   z-index: 1;
 }
 
+.forum-profile-generative-section {
+  padding-top: 0.25rem;
+}
+
+.forum-profile-palette-row {
+  width: 100%;
+}
+
+.forum-profile-palette-chip {
+  min-width: 6.5rem;
+}
+
+.forum-profile-catalog-style-row {
+  width: 100%;
+}
+
+.forum-profile-catalog-style-chip {
+  min-width: 5.25rem;
+}
+
+.forum-profile-generative-tile {
+  width: 6.25rem;
+  max-width: 6.25rem;
+  flex: 0 0 6.25rem;
+}
+
 .forum-profile-avatar-grid {
   display: flex;
   flex-wrap: wrap;

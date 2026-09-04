@@ -1,0 +1,8 @@
+Ilustraciones del catálogo «Avatares del catálogo» de LAIM Web.
+
+Origen: https://github.com/alohe/avatars
+Licencia: MIT (ver LICENCE)
+Copyright (c) 2022 Alohe
+
+Los retratos Terminal, Cipher, Node, Pulse, Signal, Vector, Matrix y Proxy
+son originales de LAIM y no forman parte de ese repositorio.
