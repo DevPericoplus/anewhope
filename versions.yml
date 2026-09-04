@@ -10,8 +10,8 @@ version_broker: 0.7.3
 version_backend_core: 0.7.8
 version_backend_ia: 0.7.2
 version_fmanagement: 0.7.1
-version_laimweb: 0.7.3
-version_laim_forum: 0.7.1
+version_laimweb: 0.7.4
+version_laim_forum: 0.7.3
 
 # Infrastructure versions
 python_version: "3.13"

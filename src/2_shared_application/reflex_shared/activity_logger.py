@@ -313,6 +313,7 @@ class ActivityLogger:
 
 _frontend_logger: Optional[ActivityLogger] = None
 _backoffice_logger: Optional[ActivityLogger] = None
+_laimweb_logger: Optional[ActivityLogger] = None
 
 
 def get_frontend_logger() -> ActivityLogger:
@@ -331,3 +332,12 @@ def get_backoffice_logger() -> ActivityLogger:
         logs_dir = Path(__file__).resolve().parents[2] / "apps" / "6_web_backoffice" / "logs"
         _backoffice_logger = ActivityLogger("backoffice", logs_dir)
     return _backoffice_logger
+
+
+def get_laimweb_logger() -> ActivityLogger:
+    """Obtiene el logger de LAIM Web (singleton)."""
+    global _laimweb_logger
+    if _laimweb_logger is None:
+        logs_dir = Path(__file__).resolve().parents[2] / "apps" / "9_laimweb" / "logs"
+        _laimweb_logger = ActivityLogger("laimweb", logs_dir)
+    return _laimweb_logger

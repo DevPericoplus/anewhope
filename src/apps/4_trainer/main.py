@@ -101,10 +101,18 @@ def _configure_uvicorn_logging(
     }
 
 
+def _resolve_logs_dir() -> Path:
+    """Usa ANEWHOPE_LOGS_DIR si está definido (persistencia en /data)."""
+    override = os.environ.get("ANEWHOPE_LOGS_DIR", "").strip()
+    if override:
+        return Path(override)
+    return Path(__file__).parent / "logs"
+
+
 def main() -> None:
     """Inicia el servidor ASGI para el backend IA."""
 
-    logs_dir = Path(__file__).parent / "logs"
+    logs_dir = _resolve_logs_dir()
     
     file_handler, console_handler = _setup_unified_logging(logs_dir)
     
