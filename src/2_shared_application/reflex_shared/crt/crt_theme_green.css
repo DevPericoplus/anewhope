@@ -12,6 +12,7 @@ body.crt-theme-green {
   --crt-btn-text: #d6ffd6;
   --crt-muted: rgba(200, 255, 200, 0.65);
   --crt-panel-bg: rgba(0, 20, 0, 0.55);
+  --crt-panel-bg-solid: #061206;
   --crt-border: rgba(0, 200, 0, 0.35);
   --crt-border-strong: rgba(0, 180, 0, 0.45);
   --crt-input-bg: rgba(0, 30, 0, 0.8);

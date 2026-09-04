@@ -1667,8 +1667,9 @@ class State(SharedSessionState):
         self.user_password = password
 
     def set_user_otp(self, otp: str):
-        """Set user OTP."""
-        self.user_otp = otp
+        """Guarda el OTP como texto (conserva ceros a la izquierda)."""
+        digits = "".join(char for char in str(otp or "") if char.isdigit())
+        self.user_otp = digits[:4]
     
     def user_login(self):
         """Handle user portal login."""
@@ -1990,7 +1991,8 @@ class State(SharedSessionState):
         try:
             sms_sent = _send_message_by_sms(otp, phone_number)
             if sms_sent:
-                self.otp_request_message = "Código OTP enviado por SMS"
+                self.user_otp = ""
+                self.otp_request_message = "Código OTP enviado por SMS. Introdúzcalo tal como llegó (4 dígitos)."
                 self.login_error = ""
             else:
                 self.otp_request_message = "No se pudo enviar el SMS"
@@ -2154,6 +2156,8 @@ def login_panel() -> rx.Component:
                     ),
                     rx.input(
                         placeholder="Ingrese su OTP",
+                        type="text",
+                        max_length=4,
                         on_change=State.set_user_otp,
                         value=State.user_otp,
                         class_name="crt-input",

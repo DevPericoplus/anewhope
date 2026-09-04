@@ -292,7 +292,143 @@ def _log_security_action(action: str, entity_id: Optional[int], ip: str, user_ag
     except Exception as exc:
         logger.error(f"Error al registrar log en middleware: {exc}", exc_info=True)
 
-from portal_crt import COLORS, CRT_SHELL_CLASS, SELECT_STYLE
+from portal_crt import COLORS, CRT_SHELL_CLASS
+
+MODAL_SURFACE = COLORS.get("modal", "#061206")
+MODAL_OVERLAY = "rgba(0, 0, 0, 0.88)"
+LABEL_FONT_SIZE = "1.1em"
+BODY_FONT_SIZE = "1.05em"
+USERNAME_REQUIREMENTS = (
+    "Mínimo 3 caracteres, máximo 20 caracteres",
+    "Solo letras, números y guiones bajos (_)",
+    "Sin espacios en blanco",
+)
+PASSWORD_REQUIREMENTS = (
+    "Mínimo 8 caracteres",
+    "Al menos una letra mayúscula",
+    "Al menos un número",
+    "Al menos un carácter especial (@ # | . $ % &)",
+)
+
+
+def _field_label(text: str) -> rx.Component:
+    """Etiqueta de campo con tipografía de registro."""
+    return rx.text(
+        text,
+        font_size=LABEL_FONT_SIZE,
+        color=COLORS["primary"],
+        font_weight="bold",
+    )
+
+
+def _text_input(**kwargs) -> rx.Component:
+    """Input de registro con tamaño y contraste CRT."""
+    return rx.input(
+        size="3",
+        width="100%",
+        border_radius="6px",
+        class_name="crt-input",
+        background_color=COLORS["input"],
+        border_color=COLORS["border"],
+        color=COLORS["foreground"],
+        **kwargs,
+    )
+
+
+def _modal_overlay(z_index: str = "1000") -> rx.Component:
+    """Fondo oscuro opaco detrás de un modal."""
+    return rx.box(
+        width="100vw",
+        height="100vh",
+        background_color=MODAL_OVERLAY,
+        position="fixed",
+        top="0",
+        left="0",
+        z_index=z_index,
+    )
+
+
+def _modal_panel(
+    content: rx.Component,
+    *,
+    min_width: str = "440px",
+    max_width: str = "640px",
+    z_index: str = "1001",
+) -> rx.Component:
+    """Contenedor de modal con fondo opaco para leer el texto."""
+    return rx.box(
+        content,
+        class_name="crt-modal-surface crt-panel",
+        background_color=MODAL_SURFACE,
+        border=f"2px solid {COLORS['border']}",
+        border_radius="0.85em",
+        box_shadow="0 16px 48px rgba(0, 0, 0, 0.85)",
+        position="fixed",
+        top="50%",
+        left="50%",
+        transform="translate(-50%, -50%)",
+        z_index=z_index,
+        min_width=min_width,
+        max_width=max_width,
+        max_height="90vh",
+        overflow_y="auto",
+    )
+
+
+def _collapsible_requirements(
+    title: str,
+    items: tuple[str, ...],
+    is_open,
+    toggle,
+) -> rx.Component:
+    """Acordeón de requisitos contraído por defecto."""
+    return rx.vstack(
+        rx.box(
+            rx.hstack(
+                rx.text(
+                    title,
+                    font_size=LABEL_FONT_SIZE,
+                    font_weight="bold",
+                    color=COLORS["primary"],
+                ),
+                rx.cond(
+                    is_open,
+                    rx.icon("chevron-down", size=20, color=COLORS["primary"]),
+                    rx.icon("chevron-right", size=20, color=COLORS["primary"]),
+                ),
+                justify="between",
+                align_items="center",
+                width="100%",
+            ),
+            class_name="crt-accordion-trigger",
+            on_click=toggle,
+            cursor="pointer",
+            width="100%",
+        ),
+        rx.cond(
+            is_open,
+            rx.vstack(
+                *[
+                    rx.hstack(
+                        rx.text("•", color=COLORS["primary"], font_weight="bold"),
+                        rx.text(
+                            item,
+                            font_size=BODY_FONT_SIZE,
+                            color=COLORS["foreground"],
+                        ),
+                        spacing="2",
+                        align_items="start",
+                    )
+                    for item in items
+                ],
+                spacing="2",
+                class_name="crt-accordion-body",
+                width="100%",
+            ),
+        ),
+        spacing="0",
+        width="100%",
+    )
 
 
 class UserCreationState(rx.State):
@@ -345,6 +481,8 @@ class UserCreationState(rx.State):
     show_username_duplicate_modal: bool = False  # Controla si se muestra el modal de error de nombre de usuario duplicado
     show_account_kind_modal: bool = True
     show_contact_modal: bool = False
+    show_username_requirements: bool = False
+    show_password_requirements: bool = False
     
     # Campos para el formulario de creación de organización
     org_email: str = ""
@@ -415,6 +553,8 @@ class UserCreationState(rx.State):
         self.show_username_duplicate_modal = False
         self.show_account_kind_modal = True
         self.show_contact_modal = False
+        self.show_username_requirements = False
+        self.show_password_requirements = False
         self.created_user = None
         
         # Validar acceso desde la página principal
@@ -715,6 +855,14 @@ class UserCreationState(rx.State):
 
     def close_contact_modal(self):
         self.show_contact_modal = False
+
+    def toggle_username_requirements(self):
+        """Expande o contrae los requisitos del nombre de usuario."""
+        self.show_username_requirements = not self.show_username_requirements
+
+    def toggle_password_requirements(self):
+        """Expande o contrae los requisitos de la contraseña."""
+        self.show_password_requirements = not self.show_password_requirements
 
     def open_organization_modal(self):
         self.show_org_creation_modal = True
@@ -1228,16 +1376,8 @@ def account_kind_modal() -> rx.Component:
     return rx.cond(
         UserCreationState.show_account_kind_modal,
         rx.fragment(
-            rx.box(
-                width="100vw",
-                height="100vh",
-                background_color="rgba(0, 0, 0, 0.75)",
-                position="fixed",
-                top="0",
-                left="0",
-                z_index="1100",
-            ),
-            rx.box(
+            _modal_overlay("1100"),
+            _modal_panel(
                 rx.vstack(
                     rx.heading(
                         "Tipo de cuenta",
@@ -1247,7 +1387,8 @@ def account_kind_modal() -> rx.Component:
                     rx.text(
                         "Una cuenta individual no pertenece a ninguna organización. "
                         "Si más adelante necesita organización, cree otro usuario.",
-                        color=COLORS["muted_foreground"],
+                        color=COLORS["foreground"],
+                        font_size=BODY_FONT_SIZE,
                     ),
                     rx.hstack(
                         rx.button(
@@ -1264,17 +1405,11 @@ def account_kind_modal() -> rx.Component:
                     ),
                     spacing="4",
                     align_items="center",
+                    padding="2em",
                 ),
-                padding="2em",
-                background_color=COLORS["card"],
-                border=f"1px solid {COLORS['border']}",
-                border_radius="1em",
-                position="fixed",
-                top="50%",
-                left="50%",
-                transform="translate(-50%, -50%)",
+                min_width="480px",
+                max_width="640px",
                 z_index="1101",
-                min_width="420px",
             ),
         ),
     )
@@ -1285,18 +1420,8 @@ def organization_error_modal() -> rx.Component:
     return rx.cond(
         UserCreationState.show_org_error_modal,
         rx.fragment(
-            # Overlay oscuro de fondo
-            rx.box(
-                width="100vw",
-                height="100vh",
-                background_color="rgba(0, 0, 0, 0.7)",
-                position="fixed",
-                top="0",
-                left="0",
-                z_index="1000",
-            ),
-            # Modal centrado
-            rx.box(
+            _modal_overlay(),
+            _modal_panel(
                 rx.vstack(
                     rx.heading(
                         "La Organización ya existe en el sistema",
@@ -1307,35 +1432,20 @@ def organization_error_modal() -> rx.Component:
                     rx.text(
                         UserCreationState.message,
                         color=COLORS["foreground"],
-                        font_size="1em",
+                        font_size=BODY_FONT_SIZE,
                         text_align="center",
                         margin_bottom="2em",
                     ),
                     rx.button(
                         "Entendido",
                         on_click=UserCreationState.close_org_error_modal,
-                        background_color=COLORS["primary"],
-                        color="black",
-                        font_weight="bold",
-                        padding="0.75em 2em",
-                        border_radius="0.5em",
+                        class_name="crt-btn",
                         width="200px",
                     ),
                     spacing="2",
                     align_items="center",
                     padding="2em",
                 ),
-                background_color=COLORS["card"],
-                border=f"2px solid {COLORS['border']}",
-                border_radius="1em",
-                box_shadow="0 10px 40px rgba(0, 0, 0, 0.5)",
-                position="fixed",
-                top="50%",
-                left="50%",
-                transform="translate(-50%, -50%)",
-                z_index="1001",
-                min_width="400px",
-                max_width="600px",
             ),
         ),
     )
@@ -1346,18 +1456,8 @@ def organization_creation_modal() -> rx.Component:
     return rx.cond(
         UserCreationState.show_org_creation_modal,
         rx.fragment(
-            # Overlay oscuro de fondo
-            rx.box(
-                width="100vw",
-                height="120vh",
-                background_color="rgba(0, 0, 0, 0.7)",
-                position="fixed",
-                top="0",
-                left="0",
-                z_index="1000",
-            ),
-            # Modal centrado con formulario
-            rx.box(
+            _modal_overlay(),
+            _modal_panel(
                 rx.vstack(
                     rx.heading(
                         "Crear Nueva Organización",
@@ -1366,143 +1466,94 @@ def organization_creation_modal() -> rx.Component:
                         margin_bottom="0.5em",
                     ),
                     rx.text(
-                        f"Nombre: {UserCreationState.organization_name}",
-                        color=COLORS["muted_foreground"],
-                        font_size="1em",
+                        UserCreationState.organization_name,
+                        color=COLORS["foreground"],
+                        font_size=BODY_FONT_SIZE,
                         font_weight="bold",
-                        margin_bottom="1.5em",
+                        margin_bottom="1.2em",
                     ),
-                    # Formulario de organización
                     rx.vstack(
                         rx.vstack(
-                            rx.text("Email *", font_size="0.9em", color=COLORS["muted_foreground"]),
-                            rx.input(
+                            _field_label("Email *"),
+                            _text_input(
                                 placeholder="email@organizacion.com",
                                 on_change=UserCreationState.set_org_email,
                                 value=UserCreationState.org_email,
-                                background_color=COLORS["input"],
-                                border_color=COLORS["border"],
-                                color=COLORS["foreground"],
-                                width="100%",
-                                border_radius="5px",
                             ),
                             spacing="1",
+                            width="100%",
                         ),
                         rx.vstack(
-                            rx.text("Teléfono", font_size="0.9em", color=COLORS["muted_foreground"]),
-                            rx.input(
+                            _field_label("Teléfono"),
+                            _text_input(
                                 placeholder="+1234567890",
                                 on_change=UserCreationState.set_org_tlf,
                                 value=UserCreationState.org_tlf,
-                                background_color=COLORS["input"],
-                                border_color=COLORS["border"],
-                                color=COLORS["foreground"],
-                                width="100%",
-                                border_radius="5px",
                             ),
                             spacing="1",
+                            width="100%",
                         ),
                         rx.vstack(
-                            rx.text("Dirección", font_size="0.9em", color=COLORS["muted_foreground"]),
-                            rx.input(
+                            _field_label("Dirección"),
+                            _text_input(
                                 placeholder="Dirección de la organización",
                                 on_change=UserCreationState.set_org_address,
                                 value=UserCreationState.org_address,
-                                background_color=COLORS["input"],
-                                border_color=COLORS["border"],
-                                color=COLORS["foreground"],
-                                width="100%",
-                                border_radius="5px",
                             ),
                             spacing="1",
+                            width="100%",
                         ),
                         rx.hstack(
                             rx.vstack(
-                                rx.text("País", font_size="0.9em", color=COLORS["muted_foreground"]),
-                                rx.input(
+                                _field_label("País"),
+                                _text_input(
                                     placeholder="País",
                                     on_change=UserCreationState.set_org_country,
                                     value=UserCreationState.org_country,
-                                    background_color=COLORS["input"],
-                                    border_color=COLORS["border"],
-                                    color=COLORS["foreground"],
-                                    width="100%",
-                                    border_radius="5px",
                                 ),
                                 spacing="1",
                                 flex="1",
                             ),
                             rx.vstack(
-                                rx.text("Estado/Provincia", font_size="0.9em", color=COLORS["muted_foreground"]),
-                                rx.input(
+                                _field_label("Estado/Provincia"),
+                                _text_input(
                                     placeholder="Estado o Provincia",
                                     on_change=UserCreationState.set_org_state,
                                     value=UserCreationState.org_state,
-                                    background_color=COLORS["input"],
-                                    border_color=COLORS["border"],
-                                    color=COLORS["foreground"],
-                                    width="100%",
-                                    border_radius="5px",
                                 ),
                                 spacing="1",
                                 flex="1",
                             ),
-                            spacing="2",
+                            spacing="3",
                             width="100%",
-                            border_radius="5px",
                         ),
-                        spacing="2",
+                        spacing="3",
                         width="100%",
                     ),
-                    # Botones
                     rx.hstack(
                         rx.button(
                             "Guardar",
                             on_click=UserCreationState.save_organization,
-                            background_color=COLORS["primary"],
-                            color="black",
-                            font_weight="bold",
-                            padding="0.75em 2em",
-                            border_radius="0.5em",
+                            class_name="crt-btn",
                         ),
                         rx.button(
                             "Cancelar",
                             on_click=UserCreationState.close_org_creation_modal,
-                            background_color=COLORS["secondary"],
-                            color=COLORS["foreground"],
-                            font_weight="bold",
-                            padding="0.75em 2em",
-                            border_radius="0.5em",
+                            class_name="crt-btn",
                         ),
-                        spacing="2",
+                        spacing="3",
                         justify_content="center",
                         width="100%",
                         margin_top="1em",
                     ),
-                    spacing="2",
+                    spacing="3",
                     align_items="center",
                     padding="2em",
+                    width="100%",
                 ),
-                background_color=COLORS["card"],
-                border=f"2px solid {COLORS['border']}",
-                border_radius="1em",
-                box_shadow="0 10px 40px rgba(0, 0, 0, 0.5)",
-                position="fixed",
-                top="50%",
-                left="50%",
-                transform="translate(-50%, -50%)",
-                z_index="1001",
-                min_width="500px",
-                max_width="700px",
-                max_height="90vh",
-                overflow_y="auto",
+                min_width="560px",
+                max_width="720px",
             ),
-            width="100%",
-            height="100%",
-            position="fixed",
-            top="0",
-            left="0",
-            z_index="1000",
         ),
     )
 def password_match_error_modal() -> rx.Component:
@@ -1510,18 +1561,8 @@ def password_match_error_modal() -> rx.Component:
     return rx.cond(
         UserCreationState.show_password_match_error_modal,
         rx.fragment(
-            # Overlay oscuro de fondo
-            rx.box(
-                width="100vw",
-                height="100vh",
-                background_color="rgba(0, 0, 0, 0.7)",
-                position="fixed",
-                top="0",
-                left="0",
-                z_index="1000",
-            ),
-            # Modal centrado
-            rx.box(
+            _modal_overlay(),
+            _modal_panel(
                 rx.vstack(
                     rx.heading(
                         "Error de Contraseña",
@@ -1532,35 +1573,20 @@ def password_match_error_modal() -> rx.Component:
                     rx.text(
                         "La contraseña no coincide",
                         color=COLORS["foreground"],
-                        font_size="1em",
+                        font_size=BODY_FONT_SIZE,
                         text_align="center",
                         margin_bottom="2em",
                     ),
                     rx.button(
                         "Entendido",
                         on_click=UserCreationState.close_password_match_error_modal,
-                        background_color=COLORS["primary"],
-                        color="black",
-                        font_weight="bold",
-                        padding="0.75em 2em",
-                        border_radius="0.5em",
+                        class_name="crt-btn",
                         width="200px",
                     ),
                     spacing="2",
                     align_items="center",
                     padding="2em",
                 ),
-                background_color=COLORS["card"],
-                border=f"2px solid {COLORS['border']}",
-                border_radius="1em",
-                box_shadow="0 10px 40px rgba(0, 0, 0, 0.5)",
-                position="fixed",
-                top="50%",
-                left="50%",
-                transform="translate(-50%, -50%)",
-                z_index="1001",
-                min_width="400px",
-                max_width="600px",
             ),
         ),
     )
@@ -1571,18 +1597,8 @@ def password_validation_modal() -> rx.Component:
     return rx.cond(
         UserCreationState.show_password_validation_modal,
         rx.fragment(
-            # Overlay oscuro de fondo
-            rx.box(
-                width="100vw",
-                height="100vh",
-                background_color="rgba(0, 0, 0, 0.7)",
-                position="fixed",
-                top="0",
-                left="0",
-                z_index="1000",
-            ),
-            # Modal centrado
-            rx.box(
+            _modal_overlay(),
+            _modal_panel(
                 rx.vstack(
                     rx.heading(
                         "Requisitos de Contraseña",
@@ -1592,60 +1608,33 @@ def password_validation_modal() -> rx.Component:
                     ),
                     rx.text(
                         "La contraseña debe cumplir las siguientes reglas:",
-                        color=COLORS["muted_foreground"],
-                        font_size="1em",
+                        color=COLORS["foreground"],
+                        font_size=BODY_FONT_SIZE,
                         margin_bottom="1em",
                     ),
                     rx.vstack(
-                        rx.text(
-                            "• Longitud mínima de 8 caracteres",
-                            color=COLORS["foreground"],
-                            font_size="0.95em",
-                        ),
-                        rx.text(
-                            "• Al menos un carácter en mayúsculas",
-                            color=COLORS["foreground"],
-                            font_size="0.95em",
-                        ),
-                        rx.text(
-                            "• Al menos un carácter numérico",
-                            color=COLORS["foreground"],
-                            font_size="0.95em",
-                        ),
-                        rx.text(
-                            "• Al menos uno de los siguientes caracteres especiales: @ # | . $ % &",
-                            color=COLORS["foreground"],
-                            font_size="0.95em",
-                        ),
-                        spacing="1",
+                        *[
+                            rx.text(
+                                f"• {item}",
+                                color=COLORS["foreground"],
+                                font_size=BODY_FONT_SIZE,
+                            )
+                            for item in PASSWORD_REQUIREMENTS
+                        ],
+                        spacing="2",
                         align_items="flex-start",
                         margin_bottom="2em",
                     ),
                     rx.button(
                         "Entendido",
                         on_click=UserCreationState.close_password_validation_modal,
-                        background_color=COLORS["primary"],
-                        color="black",
-                        font_weight="bold",
-                        padding="0.75em 2em",
-                        border_radius="0.5em",
+                        class_name="crt-btn",
                         width="200px",
                     ),
                     spacing="2",
                     align_items="center",
                     padding="2em",
                 ),
-                background_color=COLORS["card"],
-                border=f"2px solid {COLORS['border']}",
-                border_radius="1em",
-                box_shadow="0 10px 40px rgba(0, 0, 0, 0.5)",
-                position="fixed",
-                top="50%",
-                left="50%",
-                transform="translate(-50%, -50%)",
-                z_index="1001",
-                min_width="400px",
-                max_width="600px",
             ),
         ),
     )
@@ -1656,18 +1645,8 @@ def username_validation_modal() -> rx.Component:
     return rx.cond(
         UserCreationState.show_username_validation_modal,
         rx.fragment(
-            # Overlay oscuro de fondo
-            rx.box(
-                width="100vw",
-                height="100vh",
-                background_color="rgba(0, 0, 0, 0.7)",
-                position="fixed",
-                top="0",
-                left="0",
-                z_index="1000",
-            ),
-            # Modal centrado
-            rx.box(
+            _modal_overlay(),
+            _modal_panel(
                 rx.vstack(
                     rx.heading(
                         "Requisitos de Nombre de Usuario",
@@ -1677,60 +1656,33 @@ def username_validation_modal() -> rx.Component:
                     ),
                     rx.text(
                         "El nombre de usuario debe cumplir las siguientes reglas:",
-                        color=COLORS["muted_foreground"],
-                        font_size="1em",
+                        color=COLORS["foreground"],
+                        font_size=BODY_FONT_SIZE,
                         margin_bottom="1em",
                     ),
                     rx.vstack(
-                        rx.text(
-                            "• Longitud mínima de 3 caracteres",
-                            color=COLORS["foreground"],
-                            font_size="0.95em",
-                        ),
-                        rx.text(
-                            "• Longitud máxima de 20 caracteres",
-                            color=COLORS["foreground"],
-                            font_size="0.95em",
-                        ),
-                        rx.text(
-                            "• Solo caracteres alfanuméricos y guiones bajos (_)",
-                            color=COLORS["foreground"],
-                            font_size="0.95em",
-                        ),
-                        rx.text(
-                            "• Sin espacios en blanco",
-                            color=COLORS["foreground"],
-                            font_size="0.95em",
-                        ),
-                        spacing="1",
+                        *[
+                            rx.text(
+                                f"• {item}",
+                                color=COLORS["foreground"],
+                                font_size=BODY_FONT_SIZE,
+                            )
+                            for item in USERNAME_REQUIREMENTS
+                        ],
+                        spacing="2",
                         align_items="flex-start",
                         margin_bottom="2em",
                     ),
                     rx.button(
                         "Entendido",
                         on_click=UserCreationState.close_username_validation_modal,
-                        background_color=COLORS["primary"],
-                        color="black",
-                        font_weight="bold",
-                        padding="0.75em 2em",
-                        border_radius="0.5em",
+                        class_name="crt-btn",
                         width="200px",
                     ),
                     spacing="2",
                     align_items="center",
                     padding="2em",
                 ),
-                background_color=COLORS["card"],
-                border=f"2px solid {COLORS['border']}",
-                border_radius="1em",
-                box_shadow="0 10px 40px rgba(0, 0, 0, 0.5)",
-                position="fixed",
-                top="50%",
-                left="50%",
-                transform="translate(-50%, -50%)",
-                z_index="1001",
-                min_width="400px",
-                max_width="600px",
             ),
         ),
     )
@@ -1741,18 +1693,8 @@ def username_duplicate_error_modal() -> rx.Component:
     return rx.cond(
         UserCreationState.show_username_duplicate_modal,
         rx.fragment(
-            # Overlay oscuro de fondo
-            rx.box(
-                width="100vw",
-                height="100vh",
-                background_color="rgba(0, 0, 0, 0.7)",
-                position="fixed",
-                top="0",
-                left="0",
-                z_index="1000",
-            ),
-            # Modal centrado
-            rx.box(
+            _modal_overlay(),
+            _modal_panel(
                 rx.vstack(
                     rx.heading(
                         "Nombre de Usuario No Disponible",
@@ -1764,357 +1706,419 @@ def username_duplicate_error_modal() -> rx.Component:
                         rx.text(
                             "El nombre de usuario",
                             color=COLORS["foreground"],
-                            font_size="1em",
+                            font_size=BODY_FONT_SIZE,
                             text_align="center",
                         ),
                         rx.text(
                             UserCreationState.user_name,
                             color=COLORS["primary"],
-                            font_size="1.1em",
+                            font_size="1.2em",
                             font_weight="bold",
                             text_align="center",
                         ),
                         rx.text(
                             "ya está registrado en el sistema. Por favor, elija otro nombre de usuario.",
                             color=COLORS["foreground"],
-                            font_size="1em",
+                            font_size=BODY_FONT_SIZE,
                             text_align="center",
                         ),
-                        spacing="1",
+                        spacing="2",
                         align_items="center",
                         margin_bottom="2em",
                     ),
                     rx.button(
                         "Entendido",
                         on_click=UserCreationState.close_username_duplicate_modal,
-                        background_color=COLORS["primary"],
-                        color="black",
-                        font_weight="bold",
-                        padding="0.75em 2em",
-                        border_radius="0.5em",
+                        class_name="crt-btn",
                         width="200px",
                     ),
                     spacing="2",
                     align_items="center",
                     padding="2em",
                 ),
-                background_color=COLORS["card"],
-                border=f"2px solid {COLORS['border']}",
-                border_radius="1em",
-                box_shadow="0 10px 40px rgba(0, 0, 0, 0.5)",
-                position="fixed",
-                top="50%",
-                left="50%",
-                transform="translate(-50%, -50%)",
-                z_index="1001",
-                min_width="400px",
-                max_width="600px",
             ),
+        ),
+    )
+
+
+def contact_billing_modal() -> rx.Component:
+    """Modal opaco de contacto y facturación."""
+    return rx.cond(
+        UserCreationState.show_contact_modal,
+        rx.fragment(
+            _modal_overlay("1100"),
+            _modal_panel(
+                rx.vstack(
+                    rx.hstack(
+                        rx.heading(
+                            "Información de Contacto",
+                            size="6",
+                            color=COLORS["primary"],
+                        ),
+                        rx.button(
+                            "Cerrar",
+                            on_click=UserCreationState.close_contact_modal,
+                            class_name="crt-btn",
+                        ),
+                        justify="between",
+                        align_items="center",
+                        width="100%",
+                    ),
+                    rx.hstack(
+                        rx.vstack(
+                            _field_label("Nombre *"),
+                            _text_input(
+                                placeholder="Nombre",
+                                on_change=UserCreationState.set_contact_first_name,
+                                value=UserCreationState.contact_first_name,
+                            ),
+                            spacing="1",
+                            flex="1",
+                        ),
+                        rx.vstack(
+                            _field_label("Apellidos *"),
+                            _text_input(
+                                placeholder="Apellidos",
+                                on_change=UserCreationState.set_contact_sur_name,
+                                value=UserCreationState.contact_sur_name,
+                            ),
+                            spacing="1",
+                            flex="1",
+                        ),
+                        spacing="3",
+                        width="100%",
+                    ),
+                    rx.hstack(
+                        rx.vstack(
+                            _field_label("País *"),
+                            _text_input(
+                                placeholder="País",
+                                on_change=UserCreationState.set_contact_country,
+                                value=UserCreationState.contact_country,
+                            ),
+                            spacing="1",
+                            flex="1",
+                        ),
+                        rx.vstack(
+                            _field_label("Estado/Provincia *"),
+                            _text_input(
+                                placeholder="Estado o Provincia",
+                                on_change=UserCreationState.set_contact_state,
+                                value=UserCreationState.contact_state,
+                            ),
+                            spacing="1",
+                            flex="1",
+                        ),
+                        spacing="3",
+                        width="100%",
+                    ),
+                    rx.vstack(
+                        _field_label("Código Postal *"),
+                        _text_input(
+                            placeholder="Código Postal",
+                            on_change=UserCreationState.set_contact_zip_code,
+                            value=UserCreationState.contact_zip_code,
+                        ),
+                        spacing="1",
+                        width="100%",
+                    ),
+                    rx.vstack(
+                        _field_label("Dirección *"),
+                        _text_input(
+                            placeholder="Dirección completa",
+                            on_change=UserCreationState.set_contact_address,
+                            value=UserCreationState.contact_address,
+                        ),
+                        spacing="1",
+                        width="100%",
+                    ),
+                    rx.checkbox(
+                        "Tengo una dirección de facturación diferente",
+                        checked=UserCreationState.has_different_billing_address,
+                        on_change=UserCreationState.set_has_different_billing_address,
+                        color=COLORS["foreground"],
+                        margin_top="0.5em",
+                    ),
+                    rx.cond(
+                        UserCreationState.has_different_billing_address,
+                        rx.vstack(
+                            rx.heading(
+                                "Información de Facturación",
+                                size="6",
+                                color=COLORS["primary"],
+                            ),
+                            rx.text(
+                                "Si no se completa, se usará la información de contacto",
+                                font_size=BODY_FONT_SIZE,
+                                color=COLORS["foreground"],
+                            ),
+                            rx.hstack(
+                                rx.vstack(
+                                    _field_label("Nombre"),
+                                    _text_input(
+                                        placeholder="Nombre de facturación",
+                                        on_change=UserCreationState.set_billing_first_name,
+                                        value=UserCreationState.billing_first_name,
+                                    ),
+                                    spacing="1",
+                                    flex="1",
+                                ),
+                                rx.vstack(
+                                    _field_label("Apellidos"),
+                                    _text_input(
+                                        placeholder="Apellidos de facturación",
+                                        on_change=UserCreationState.set_billing_sur_name,
+                                        value=UserCreationState.billing_sur_name,
+                                    ),
+                                    spacing="1",
+                                    flex="1",
+                                ),
+                                spacing="3",
+                                width="100%",
+                            ),
+                            rx.hstack(
+                                rx.vstack(
+                                    _field_label("País"),
+                                    _text_input(
+                                        placeholder="País de facturación",
+                                        on_change=UserCreationState.set_billing_country,
+                                        value=UserCreationState.billing_country,
+                                    ),
+                                    spacing="1",
+                                    flex="1",
+                                ),
+                                rx.vstack(
+                                    _field_label("Estado/Provincia"),
+                                    _text_input(
+                                        placeholder="Estado o Provincia de facturación",
+                                        on_change=UserCreationState.set_billing_state,
+                                        value=UserCreationState.billing_state,
+                                    ),
+                                    spacing="1",
+                                    flex="1",
+                                ),
+                                spacing="3",
+                                width="100%",
+                            ),
+                            rx.vstack(
+                                _field_label("Código Postal"),
+                                _text_input(
+                                    placeholder="Código Postal de facturación",
+                                    on_change=UserCreationState.set_billing_zip_code,
+                                    value=UserCreationState.billing_zip_code,
+                                ),
+                                spacing="1",
+                                width="100%",
+                            ),
+                            rx.vstack(
+                                _field_label("Dirección"),
+                                _text_input(
+                                    placeholder="Dirección de facturación",
+                                    on_change=UserCreationState.set_billing_address,
+                                    value=UserCreationState.billing_address,
+                                ),
+                                spacing="1",
+                                width="100%",
+                            ),
+                            spacing="3",
+                            width="100%",
+                        ),
+                    ),
+                    rx.button(
+                        "Listo",
+                        on_click=UserCreationState.close_contact_modal,
+                        class_name="crt-btn",
+                    ),
+                    spacing="4",
+                    align_items="stretch",
+                    padding="2em",
+                    width="100%",
+                ),
+                min_width="640px",
+                max_width="820px",
+                z_index="1101",
+            ),
+        ),
+    )
+
+
+def _account_kind_card() -> rx.Component:
+    """Tarjeta lateral con el tipo de cuenta seleccionado."""
+    return rx.cond(
+        UserCreationState.account_kind == "organization",
+        rx.vstack(
+            _field_label("Organización"),
+            rx.button(
+                rx.cond(
+                    UserCreationState.organization_name != "",
+                    UserCreationState.organization_name,
+                    "Completar datos de organización",
+                ),
+                on_click=UserCreationState.open_organization_modal,
+                class_name="crt-btn",
+                width="100%",
+            ),
+            rx.cond(
+                UserCreationState.organization_acronym != "",
+                rx.hstack(
+                    rx.text("Login:", font_size=BODY_FONT_SIZE, color=COLORS["primary"]),
+                    rx.text(UserCreationState.user_name, font_size=BODY_FONT_SIZE, color=COLORS["primary"]),
+                    rx.text("@", font_size=BODY_FONT_SIZE, color=COLORS["primary"]),
+                    rx.text(
+                        UserCreationState.organization_acronym,
+                        font_size=BODY_FONT_SIZE,
+                        color=COLORS["primary"],
+                    ),
+                    spacing="1",
+                ),
+            ),
+            spacing="2",
+            flex="1",
+            width="100%",
+        ),
+        rx.vstack(
+            rx.text(
+                "Cuenta individual",
+                font_size=LABEL_FONT_SIZE,
+                color=COLORS["primary"],
+                font_weight="bold",
+            ),
+            rx.text(
+                "Accederás solo con tu nombre de usuario, sin @ ni acrónimo.",
+                font_size=BODY_FONT_SIZE,
+                color=COLORS["foreground"],
+            ),
+            spacing="2",
+            flex="1",
+            width="100%",
         ),
     )
 
 
 def user_creation_page() -> rx.Component:
     """Página de creación de usuario."""
-    # Ejecutar secure_access al cargar la página
-    # on_mount se ejecutará automáticamente cuando se monte el componente
     return rx.vstack(
-        # Modal de error de organización (si está activo)
         account_kind_modal(),
         organization_error_modal(),
-        # Modal de creación de organización (si está activo)
         organization_creation_modal(),
-        # Modal de validación de contraseña (si está activo)
         password_validation_modal(),
-        # Modal de error de coincidencia de contraseñas (si está activo)
         password_match_error_modal(),
-        # Modal de validación de nombre de usuario (si está activo)
         username_validation_modal(),
-        # Modal de error de nombre de usuario duplicado (si está activo)
         username_duplicate_error_modal(),
-        # Header
-        rx.hstack(
-            rx.heading("Crear Nuevo Usuario", size="6", color=COLORS["primary"]),
+        contact_billing_modal(),
+        rx.box(
+            rx.heading(
+                "Crear Nuevo Usuario",
+                size="8",
+                color=COLORS["primary"],
+                margin_bottom="0.25em",
+            ),
+            rx.text(
+                "Completa tus datos. Los requisitos se muestran al pulsar cada apartado.",
+                font_size=BODY_FONT_SIZE,
+                color=COLORS["foreground"],
+            ),
             width="100%",
-            padding="1em",
-            background_color=COLORS["card"],
-            border_bottom=f"1px solid {COLORS['border']}",
+            max_width="1080px",
+            padding="1.5em 2em 0.5em",
+            margin="0 auto",
         ),
-        # Formulario
         rx.vstack(
-            rx.vstack(
-                # Sección: Información de Usuario
-                rx.heading("Información de Usuario", size="6", color=COLORS["primary"], margin_bottom="1em"),
+            rx.box(
                 rx.vstack(
+                    rx.heading(
+                        "Información de Usuario",
+                        size="6",
+                        color=COLORS["primary"],
+                    ),
                     rx.hstack(
                         rx.vstack(
-                            rx.text("Nombre de Usuario *", font_size="0.9em", color=COLORS["muted_foreground"]),
-                            rx.input(
+                            _field_label("Nombre de Usuario *"),
+                            _text_input(
                                 placeholder="Mínimo 3 caracteres, solo letras, números y _",
                                 on_change=UserCreationState.set_user_name,
                                 on_blur=UserCreationState.on_user_name_blur,
                                 value=UserCreationState.user_name,
-                                background_color=COLORS["input"],
-                                border_color=COLORS["border"],
-                                color=COLORS["foreground"],
-                                width="100%",
-                                border_radius="5px",
                             ),
                             spacing="1",
                             flex="1",
-                        ),
-                        rx.cond(
-                            UserCreationState.account_kind == "organization",
-                            rx.vstack(
-                                rx.text(
-                                    "Organización",
-                                    font_size="0.9em",
-                                    color=COLORS["muted_foreground"],
-                                ),
-                                rx.button(
-                                    rx.cond(
-                                        UserCreationState.organization_name != "",
-                                        UserCreationState.organization_name,
-                                        "Completar datos de organización",
-                                    ),
-                                    on_click=UserCreationState.open_organization_modal,
-                                    class_name="crt-btn",
-                                    width="100%",
-                                ),
-                                rx.cond(
-                                    UserCreationState.organization_acronym != "",
-                                    rx.hstack(
-                                        rx.text(
-                                            "Login:",
-                                            font_size="0.85em",
-                                            color=COLORS["primary"],
-                                        ),
-                                        rx.text(
-                                            UserCreationState.user_name,
-                                            font_size="0.85em",
-                                            color=COLORS["primary"],
-                                        ),
-                                        rx.text(
-                                            "@",
-                                            font_size="0.85em",
-                                            color=COLORS["primary"],
-                                        ),
-                                        rx.text(
-                                            UserCreationState.organization_acronym,
-                                            font_size="0.85em",
-                                            color=COLORS["primary"],
-                                        ),
-                                        spacing="1",
-                                    ),
-                                ),
-                                spacing="1",
-                                flex="1",
-                            ),
-                            rx.vstack(
-                                rx.text(
-                                    "Cuenta individual",
-                                    font_size="0.9em",
-                                    color=COLORS["primary"],
-                                    font_weight="bold",
-                                ),
-                                rx.text(
-                                    "Accederás solo con tu nombre de usuario (sin @).",
-                                    font_size="0.85em",
-                                    color=COLORS["muted_foreground"],
-                                ),
-                                spacing="1",
-                                flex="1",
-                            ),
-                        ),
-                        spacing="4",
-                        width="100%",
-                    ),
-                    # Subpanel informativo con reglas de validación de nombre de usuario
-                    rx.vstack(
-                        rx.text(
-                            "Requisitos del nombre de usuario:",
-                            font_size="0.85em",
-                            font_weight="bold",
-                            color=COLORS["foreground"],
-                            margin_top="0.5em",
-                        ),
-                        rx.vstack(
-                            rx.hstack(
-                                rx.text("•", color=COLORS["primary"], font_weight="bold", margin_right="0.5em"),
-                                rx.text(
-                                    "Mínimo 3 caracteres, máximo 20 caracteres",
-                                    font_size="0.8em",
-                                    color=COLORS["muted_foreground"],
-                                ),
-                                spacing="1",
-                                align_items="start",
-                            ),
-                            rx.hstack(
-                                rx.text("•", color=COLORS["primary"], font_weight="bold", margin_right="0.5em"),
-                                rx.text(
-                                    "Solo letras, números y guiones bajos (_)",
-                                    font_size="0.8em",
-                                    color=COLORS["muted_foreground"],
-                                ),
-                                spacing="1",
-                                align_items="start",
-                            ),
-                            rx.hstack(
-                                rx.text("•", color=COLORS["primary"], font_weight="bold", margin_right="0.5em"),
-                                rx.text(
-                                    "Sin espacios en blanco",
-                                    font_size="0.8em",
-                                    color=COLORS["muted_foreground"],
-                                ),
-                                spacing="1",
-                                align_items="start",
-                            ),
-                            spacing="1",
-                            padding="0.75em",
-                            background_color=COLORS["secondary"],
-                            border_radius="0.5em",
-                            border=f"1px solid {COLORS['border']}",
                             width="100%",
                         ),
-                        spacing="1",
+                        _account_kind_card(),
+                        spacing="5",
                         width="100%",
-                        margin_bottom="0.5em",
+                        align_items="start",
+                    ),
+                    _collapsible_requirements(
+                        "Requisitos del nombre de usuario:",
+                        USERNAME_REQUIREMENTS,
+                        UserCreationState.show_username_requirements,
+                        UserCreationState.toggle_username_requirements,
                     ),
                     rx.hstack(
                         rx.vstack(
-                            rx.text("Contraseña *", font_size="0.9em", color=COLORS["muted_foreground"]),
-                            rx.input(
+                            _field_label("Contraseña *"),
+                            _text_input(
                                 placeholder="Mínimo 8 caracteres",
                                 type_="password",
                                 id="user_password_input",
                                 on_change=UserCreationState.set_user_password,
                                 on_blur=UserCreationState.on_password_blur,
                                 value=UserCreationState.user_password,
-                                background_color=COLORS["input"],
-                                border_color=COLORS["border"],
-                                color=COLORS["foreground"],
-                                width="100%",
-                                border_radius="5px",
                             ),
                             spacing="1",
                             flex="1",
+                            width="100%",
                         ),
                         rx.vstack(
-                            rx.text("Repita la contraseña *", font_size="0.9em", color=COLORS["muted_foreground"]),
-                            rx.input(
+                            _field_label("Repita la contraseña *"),
+                            _text_input(
                                 placeholder="Repita la contraseña",
                                 type_="password",
                                 id="user_password_confirm_input",
                                 on_change=UserCreationState.set_user_password_confirm,
                                 on_blur=UserCreationState.on_password_confirm_blur,
                                 value=UserCreationState.user_password_confirm,
-                                background_color=COLORS["input"],
-                                border_color=COLORS["border"],
-                                color=COLORS["foreground"],
-                                width="100%",
-                                border_radius="5px",
                             ),
                             spacing="1",
                             flex="1",
-                        ),
-                        spacing="2",
-                        width="100%",
-                    ),
-                    # Subpanel informativo con reglas de validación de contraseña
-                    rx.vstack(
-                        rx.text(
-                            "Requisitos de la contraseña:",
-                            font_size="0.85em",
-                            font_weight="bold",
-                            color=COLORS["foreground"],
-                            margin_top="0.5em",
-                        ),
-                        rx.vstack(
-                            rx.hstack(
-                                rx.text("•", color=COLORS["primary"], font_weight="bold", margin_right="0.5em"),
-                                rx.text(
-                                    "Mínimo 8 caracteres",
-                                    font_size="0.8em",
-                                    color=COLORS["muted_foreground"],
-                                ),
-                                spacing="1",
-                                align_items="start",
-                            ),
-                            rx.hstack(
-                                rx.text("•", color=COLORS["primary"], font_weight="bold", margin_right="0.5em"),
-                                rx.text(
-                                    "Al menos una letra mayúscula",
-                                    font_size="0.8em",
-                                    color=COLORS["muted_foreground"],
-                                ),
-                                spacing="1",
-                                align_items="start",
-                            ),
-                            rx.hstack(
-                                rx.text("•", color=COLORS["primary"], font_weight="bold", margin_right="0.5em"),
-                                rx.text(
-                                    "Al menos un número",
-                                    font_size="0.8em",
-                                    color=COLORS["muted_foreground"],
-                                ),
-                                spacing="1",
-                                align_items="start",
-                            ),
-                            rx.hstack(
-                                rx.text("•", color=COLORS["primary"], font_weight="bold", margin_right="0.5em"),
-                                rx.text(
-                                    "Al menos un carácter especial (@ # | . $ % &)",
-                                    font_size="0.8em",
-                                    color=COLORS["muted_foreground"],
-                                ),
-                                spacing="1",
-                                align_items="start",
-                            ),
-                            spacing="1",
-                            padding="0.75em",
-                            background_color=COLORS["secondary"],
-                            border_radius="0.5em",
-                            border=f"1px solid {COLORS['border']}",
                             width="100%",
                         ),
-                        spacing="1",
+                        spacing="5",
                         width="100%",
-                        margin_bottom="0.5em",
+                    ),
+                    _collapsible_requirements(
+                        "Requisitos de la contraseña:",
+                        PASSWORD_REQUIREMENTS,
+                        UserCreationState.show_password_requirements,
+                        UserCreationState.toggle_password_requirements,
                     ),
                     rx.hstack(
                         rx.vstack(
-                            rx.text("Email *", font_size="0.9em", color=COLORS["muted_foreground"]),
-                            rx.input(
+                            _field_label("Email *"),
+                            _text_input(
                                 placeholder="usuario@ejemplo.com",
                                 on_change=UserCreationState.set_user_email,
                                 on_blur=UserCreationState.on_user_email_blur,
                                 value=UserCreationState.user_email,
-                                background_color=COLORS["input"],
-                                border_color=COLORS["border"],
-                                color=COLORS["foreground"],
-                                width="100%",
-                                border_radius="5px",
                             ),
                             spacing="1",
                             flex="1",
+                            width="100%",
                         ),
                         rx.vstack(
-                            rx.text("Teléfono Móvil *", font_size="0.9em", color=COLORS["muted_foreground"]),
-                            rx.input(
+                            _field_label("Teléfono Móvil *"),
+                            _text_input(
                                 placeholder="+1234567890",
                                 on_change=UserCreationState.set_user_mobile,
                                 on_blur=UserCreationState.on_user_mobile_blur,
                                 value=UserCreationState.user_mobile,
-                                background_color=COLORS["input"],
-                                border_color=COLORS["border"],
-                                color=COLORS["foreground"],
-                                width="100%",
-                                border_radius="5px",
                             ),
                             spacing="1",
                             flex="1",
+                            width="100%",
                         ),
-                        spacing="2",
+                        spacing="5",
                         width="100%",
                     ),
                     rx.hstack(
@@ -2128,386 +2132,63 @@ def user_creation_page() -> rx.Component:
                             on_click=UserCreationState.reopen_account_kind_modal,
                             class_name="crt-btn",
                         ),
+                        rx.spacer(),
+                        rx.button(
+                            "Guardar",
+                            on_click=UserCreationState.save_user,
+                            class_name="crt-btn",
+                        ),
+                        rx.link(
+                            rx.button("Regresar", class_name="crt-btn"),
+                            href="/",
+                        ),
                         spacing="3",
-                    ),
-                    spacing="2",
-                ),
-                padding="1.5em",
-                background_color=COLORS["card"],
-                border=f"1px solid {COLORS['border']}",
-                border_radius="0.5em",
-                width="100%",
-                margin_bottom="1em",
-            ),
-            # Modal: Información de Contacto
-            rx.cond(
-                UserCreationState.show_contact_modal,
-                rx.vstack(
-                rx.hstack(
-                    rx.heading("Información de Contacto", size="6", color=COLORS["primary"], margin_bottom="1em"),
-                    rx.button(
-                        "Cerrar",
-                        on_click=UserCreationState.close_contact_modal,
-                        class_name="crt-btn",
-                    ),
-                    justify_content="between",
-                    width="100%",
-                ),
-                rx.vstack(
-                    rx.hstack(
-                        rx.vstack(
-                            rx.text("Nombre *", font_size="0.9em", color=COLORS["muted_foreground"]),
-                            rx.input(
-                                placeholder="Nombre",
-                                on_change=UserCreationState.set_contact_first_name,
-                                value=UserCreationState.contact_first_name,
-                                background_color=COLORS["input"],
-                                border_color=COLORS["border"],
-                                color=COLORS["foreground"],
-                                width="100%",
-                                border_radius="5px",
-                            ),
-                            spacing="1",
-                            flex="1",
-                        ),
-                        rx.vstack(
-                            rx.text("Apellidos *", font_size="0.9em", color=COLORS["muted_foreground"]),
-                            rx.input(
-                                placeholder="Apellidos",
-                                on_change=UserCreationState.set_contact_sur_name,
-                                value=UserCreationState.contact_sur_name,
-                                background_color=COLORS["input"],
-                                border_color=COLORS["border"],
-                                color=COLORS["foreground"],
-                                width="100%",
-                                border_radius="5px",
-                            ),
-                            spacing="1",
-                            flex="1",
-                        ),
-                        spacing="2",
                         width="100%",
+                        align_items="center",
                     ),
-                    rx.hstack(
-                        rx.vstack(
-                            rx.text("País *", font_size="0.9em", color=COLORS["muted_foreground"]),
-                            rx.input(
-                                placeholder="País",
-                                on_change=UserCreationState.set_contact_country,
-                                value=UserCreationState.contact_country,
-                                background_color=COLORS["input"],
-                                border_color=COLORS["border"],
-                                color=COLORS["foreground"],
-                                width="100%",
-                                border_radius="5px",
-                            ),
-                            spacing="1",
-                            flex="1",
-                        ),
-                        rx.vstack(
-                            rx.text("Estado/Provincia *", font_size="0.9em", color=COLORS["muted_foreground"]),
-                            rx.input(
-                                placeholder="Estado o Provincia",
-                                on_change=UserCreationState.set_contact_state,
-                                value=UserCreationState.contact_state,
-                                background_color=COLORS["input"],
-                                border_color=COLORS["border"],
-                                color=COLORS["foreground"],
-                                width="100%",
-                                border_radius="5px",
-                            ),
-                            spacing="1",
-                            flex="1",
-                        ),
-                        spacing="2",
-                        width="100%",
-                    ),
-                    rx.vstack(
-                        rx.text("Código Postal *", font_size="0.9em", color=COLORS["muted_foreground"]),
-                        rx.input(
-                            placeholder="Código Postal",
-                            on_change=UserCreationState.set_contact_zip_code,
-                            value=UserCreationState.contact_zip_code,
-                            background_color=COLORS["input"],
-                            border_color=COLORS["border"],
-                            color=COLORS["foreground"],
-                            width="100%",
-                            border_radius="5px",
-                        ),
-                        spacing="1",
-                    ),
-                    rx.vstack(
-                        rx.text("Dirección *", font_size="0.9em", color=COLORS["muted_foreground"]),
-                        rx.input(
-                            placeholder="Dirección completa",
-                            on_change=UserCreationState.set_contact_address,
-                            value=UserCreationState.contact_address,
-                            background_color=COLORS["input"],
-                            border_color=COLORS["border"],
-                            color=COLORS["foreground"],
-                            width="110%",
-                            border_radius="5px",
-                        ),
-                        spacing="1",
-                        width="110%",
-                    ),
-                    rx.checkbox(
-                        "Tengo una dirección de facturación diferente",
-                        checked=UserCreationState.has_different_billing_address,
-                        on_change=UserCreationState.set_has_different_billing_address,
-                        color=COLORS["foreground"],
-                        margin_top="1em",
-                    ),
-                    spacing="2",
-                ),
-            # Sección: Información de Facturación (Opcional) - Solo se muestra si el checkbox está marcado
-            rx.cond(
-                UserCreationState.has_different_billing_address,
-                rx.vstack(
-                    rx.heading("Información de Facturación (Opcional)", size="6", color=COLORS["primary"], margin_bottom="1em"),
-                    rx.text(
-                        "Si no se completa, se usará la información de contacto",
-                        font_size="0.9em",
-                        color=COLORS["muted_foreground"],
-                        margin_bottom="1em",
-                    ),
-                rx.vstack(
-                    rx.hstack(
-                        rx.vstack(
-                            rx.text("Nombre", font_size="0.9em", color=COLORS["muted_foreground"]),
-                            rx.input(
-                                placeholder="Nombre de facturación",
-                                on_change=UserCreationState.set_billing_first_name,
-                                value=UserCreationState.billing_first_name,
-                                background_color=COLORS["input"],
-                                border_color=COLORS["border"],
-                                color=COLORS["foreground"],
-                                width="100%",
-                                border_radius="5px",
-                            ),
-                            spacing="1",
-                            flex="1",
-                        ),
-                        rx.vstack(
-                            rx.text("Apellidos", font_size="0.9em", color=COLORS["muted_foreground"]),
-                            rx.input(
-                                placeholder="Apellidos de facturación",
-                                on_change=UserCreationState.set_billing_sur_name,
-                                value=UserCreationState.billing_sur_name,
-                                background_color=COLORS["input"],
-                                border_color=COLORS["border"],
-                                color=COLORS["foreground"],
-                                width="100%",
-                                border_radius="5px",
-                            ),
-                            spacing="1",
-                            flex="1",
-                        ),
-                        spacing="2",
-                        width="100%",
-                    ),
-                    rx.hstack(
-                        rx.vstack(
-                            rx.text("País", font_size="0.9em", color=COLORS["muted_foreground"]),
-                            rx.input(
-                                placeholder="País de facturación",
-                                on_change=UserCreationState.set_billing_country,
-                                value=UserCreationState.billing_country,
-                                background_color=COLORS["input"],
-                                border_color=COLORS["border"],
-                                color=COLORS["foreground"],
-                                width="100%",
-                                border_radius="5px",
-                            ),
-                            spacing="1",
-                            flex="1",
-                        ),
-                        rx.vstack(
-                            rx.text("Estado/Provincia", font_size="0.9em", color=COLORS["muted_foreground"]),
-                            rx.input(
-                                placeholder="Estado o Provincia de facturación",
-                                on_change=UserCreationState.set_billing_state,
-                                value=UserCreationState.billing_state,
-                                background_color=COLORS["input"],
-                                border_color=COLORS["border"],
-                                color=COLORS["foreground"],
-                                width="100%",
-                                border_radius="5px",
-                            ),
-                            spacing="1",
-                            flex="1",
-                        ),
-                        spacing="2",
-                        width="100%",
-                    ),
-                    rx.vstack(
-                        rx.text("Código Postal", font_size="0.9em", color=COLORS["muted_foreground"]),
-                        rx.input(
-                            placeholder="Código Postal de facturación",
-                            on_change=UserCreationState.set_billing_zip_code,
-                            value=UserCreationState.billing_zip_code,
-                            background_color=COLORS["input"],
-                            border_color=COLORS["border"],
-                            color=COLORS["foreground"],
-                            width="100%",
-                            border_radius="5px",
-                        ),
-                        spacing="1",
-                    ),
-                    rx.vstack(
-                        rx.text("Dirección", font_size="0.9em", color=COLORS["muted_foreground"]),
-                        rx.input(
-                            placeholder="Dirección de facturación",
-                            on_change=UserCreationState.set_billing_address,
-                            value=UserCreationState.billing_address,
-                            background_color=COLORS["input"],
-                            border_color=COLORS["border"],
-                            color=COLORS["foreground"],
-                            width="110%",
-                            border_radius="5px",
-                        ),
-                        spacing="1",
-                        width="110%",
-                    ),
-                    spacing="2",
-                ),
-                ),
-            ),
-                padding="1.5em",
-                background_color=COLORS["card"],
-                border=f"1px solid {COLORS['border']}",
-                border_radius="0.5em",
-                width="100%",
-                margin_bottom="1em",
-            ),
-            ),
-            # Mensaje de estado (solo para mensajes que no sean de organización)
-            # Si show_org_error_modal es True, no mostrar el mensaje normal (se muestra en el modal)
-            rx.cond(
-                rx.cond(
-                    UserCreationState.message != "",
                     rx.cond(
-                        UserCreationState.show_org_error_modal,
-                        False,  # No mostrar si el modal está activo
-                        True,   # Mostrar si no es error de organización
-                    ),
-                    False,
-                ),
-                rx.box(
-                    rx.text(
-                        UserCreationState.message,
-                        color=rx.cond(
-                            UserCreationState.message_type == "success",
-                            COLORS["primary"],
-                            "#ff4444",
+                        rx.cond(
+                            UserCreationState.message != "",
+                            rx.cond(
+                                UserCreationState.show_org_error_modal,
+                                False,
+                                True,
+                            ),
+                            False,
                         ),
-                        font_size="0.9em",
-                        font_weight="bold",
+                        rx.box(
+                            rx.text(
+                                UserCreationState.message,
+                                color=rx.cond(
+                                    UserCreationState.message_type == "success",
+                                    COLORS["primary"],
+                                    COLORS["error"],
+                                ),
+                                font_size=BODY_FONT_SIZE,
+                                font_weight="bold",
+                            ),
+                            padding="0.9em 1em",
+                            background_color=MODAL_SURFACE,
+                            border=f"1px solid {COLORS['border']}",
+                            border_radius="0.45em",
+                            width="100%",
+                        ),
                     ),
-                    padding="1em",
-                    background_color=COLORS["card"],
-                    border=f"1px solid {COLORS['border']}",
-                    border_radius="0.5em",
+                    spacing="4",
                     width="100%",
-                    margin_bottom="1em",
                 ),
+                class_name="crt-register-card crt-panel",
+                background_color=MODAL_SURFACE,
+                border=f"1px solid {COLORS['border']}",
+                border_radius="0.75em",
+                padding="2em",
+                width="100%",
             ),
             spacing="2",
-            padding="2em",
+            padding="1em 2em 2.5em",
             width="100%",
-            max_width="1200px",
+            max_width="1080px",
             margin="0 auto",
-        ),
-        # Botones de acción
-        rx.hstack(
-            rx.button(
-                "Guardar",
-                on_click=UserCreationState.save_user,
-                background_color=COLORS["primary"],
-                color="black",
-                font_weight="bold",
-                padding="0.75em 2em",
-                border_radius="0.5em",
-            ),
-            rx.link(
-                rx.button(
-                    "Regresar",
-                    background_color=COLORS["secondary"],
-                    color=COLORS["foreground"],
-                    font_weight="bold",
-                    padding="0.75em 2em",
-                    border_radius="0.5em",
-                ),
-                href="/",
-            ),
-            spacing="4",
-            justify_content="center",
-            padding="2em",
-            width="100%",
-        ),
-        # Script para devolver el foco al input de contraseña cuando se cierra el modal
-        rx.script(
-            """
-            // Observar cambios en el estado del modal y devolver el foco cuando se cierre
-            if (typeof window.previousPasswordModalState === 'undefined') {
-                window.previousPasswordModalState = false;
-            }
-            const checkModalState = () => {
-                // El estado se actualiza en el servidor, así que usamos un pequeño delay
-                setTimeout(() => {
-                    const input = document.getElementById('user_password_input');
-                    if (input) {
-                        input.focus();
-                    }
-                }, 150);
-            };
-            // Ejecutar el check periódicamente cuando el modal está visible
-            setInterval(() => {
-                const modal = document.querySelector('[data-modal="password_validation"]');
-                if (modal && modal.style.display !== 'none' && !window.previousPasswordModalState) {
-                    window.previousPasswordModalState = true;
-                } else if ((!modal || modal.style.display === 'none') && window.previousPasswordModalState) {
-                    window.previousPasswordModalState = false;
-                    checkModalState();
-                }
-            }, 100);
-            """,
-        ),
-        # Script para devolver el foco al input de confirmación de contraseña cuando se cierra el modal
-        rx.script(
-            """
-            // Observar cambios en el estado del modal de coincidencia y devolver el foco cuando se cierre
-            if (typeof window.previousPasswordMatchModalState === 'undefined') {
-                window.previousPasswordMatchModalState = false;
-            }
-            const checkPasswordMatchModalState = () => {
-                // El estado se actualiza en el servidor, así que usamos un pequeño delay
-                setTimeout(() => {
-                    const input = document.getElementById('user_password_confirm_input');
-                    if (input) {
-                        input.focus();
-                    }
-                }, 150);
-            };
-            // Ejecutar el check periódicamente cuando el modal está visible
-            setInterval(() => {
-                // Buscar el modal por su contenido único (texto "La contraseña no coincide")
-                const modals = document.querySelectorAll('[style*="z-index: 1001"]');
-                let passwordMatchModal = null;
-                for (let modal of modals) {
-                    if (modal.textContent && modal.textContent.includes('La contraseña no coincide')) {
-                        passwordMatchModal = modal;
-                        break;
-                    }
-                }
-                if (passwordMatchModal && passwordMatchModal.style.display !== 'none' && !window.previousPasswordMatchModalState) {
-                    window.previousPasswordMatchModalState = true;
-                } else if ((!passwordMatchModal || passwordMatchModal.style.display === 'none') && window.previousPasswordMatchModalState) {
-                    window.previousPasswordMatchModalState = false;
-                    checkPasswordMatchModalState();
-                }
-            }, 100);
-            """,
         ),
         background_color=COLORS["background"],
         width="100%",
@@ -2515,5 +2196,3 @@ def user_creation_page() -> rx.Component:
         spacing="0",
         class_name=CRT_SHELL_CLASS,
     )
-
-

@@ -19,6 +19,7 @@ GREEN_THEME: dict[str, str] = {
     "btn_text": "#d6ffd6",
     "muted": "rgba(200, 255, 200, 0.65)",
     "panel_bg": "rgba(0, 20, 0, 0.55)",
+    "panel_bg_solid": "#061206",
     "border": "rgba(0, 200, 0, 0.35)",
     "border_strong": "rgba(0, 180, 0, 0.45)",
     "input_bg": "rgba(0, 30, 0, 0.8)",
@@ -51,6 +52,7 @@ AMBER_THEME: dict[str, str] = {
     "btn_text": "#ffd59a",
     "muted": "rgba(255, 220, 180, 0.65)",
     "panel_bg": "rgba(40, 18, 0, 0.55)",
+    "panel_bg_solid": "#1a0e00",
     "border": "rgba(255, 140, 0, 0.35)",
     "border_strong": "rgba(255, 120, 0, 0.45)",
     "input_bg": "rgba(50, 25, 0, 0.8)",
@@ -103,6 +105,7 @@ def get_portal_colors(variant: CrtVariant = "green") -> dict[str, str]:
     return {
         "background": colors["bg"],
         "card": colors["panel_bg"],
+        "modal": colors["panel_bg_solid"],
         "foreground": colors["text"],
         "primary": colors["title"],
         "secondary": colors["panel_bg"],

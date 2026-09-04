@@ -11,6 +11,7 @@ body.crt-theme-amber {
   --crt-btn-text: #ffd59a;
   --crt-muted: rgba(255, 220, 180, 0.65);
   --crt-panel-bg: rgba(40, 18, 0, 0.55);
+  --crt-panel-bg-solid: #1a0e00;
   --crt-border: rgba(255, 140, 0, 0.35);
   --crt-border-strong: rgba(255, 120, 0, 0.45);
   --crt-input-bg: rgba(50, 25, 0, 0.8);

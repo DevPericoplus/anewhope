@@ -162,6 +162,21 @@ MSG_USERNAME_ALREADY_EXISTS = "Ese nombre de usuario ya existe en este ámbito"
 MSG_INTERNAL_ROLE_FORBIDDEN = "No se puede asignar un rol interno desde esta interfaz"
 
 
+def _normalize_otp_code(value: str | int | None) -> str:
+    """Normaliza un OTP a 4 dígitos (conserva ceros a la izquierda)."""
+    text = str(value or "").strip()
+    if text.isdigit() and 1 <= len(text) <= 4:
+        return text.zfill(4)
+    return text
+
+
+def _otp_codes_match(stored: str | int | None, submitted: str | int | None) -> bool:
+    """Compara OTP almacenado y enviado sin perder ceros iniciales."""
+    left = _normalize_otp_code(stored)
+    right = _normalize_otp_code(submitted)
+    return bool(left) and left == right
+
+
 def _laim_login_user_message(detail: str) -> str:
     """Traduce fallos de login LAIM a un mensaje seguro para el usuario."""
     lowered = detail.lower()
@@ -1492,9 +1507,12 @@ class RouterMiddleware:
         )
         return _load_common_security_module(common_security_path)
 
-    def _find_user_for_login(self, user_name: str) -> UserDto | None:
+    def _find_user_for_login(
+        self, user_name: str, users: list[UserDto] | None = None
+    ) -> UserDto | None:
         """Resuelve usuario por `nombre` o `nombre@acronimo`."""
-        users = self._load_users(self._get_users_file_path())
+        if users is None:
+            users = self._load_users(self._get_users_file_path())
         try:
             login_identifier = parse_login_identifier(user_name)
         except AccountIdentityError:
@@ -1528,7 +1546,7 @@ class RouterMiddleware:
         users = self._load_users(users_path)
         sessions_path = self._get_sessions_file_path()
         sessions_data = self._load_sessions_data(sessions_path)
-        user_record = self._find_user_for_login(user_name)
+        user_record = self._find_user_for_login(user_name, users=users)
         if user_record is None:
             self._raise_auth_failure(
                 sessions_data,
@@ -1596,7 +1614,8 @@ class RouterMiddleware:
             self._store_sessions_data(sessions_path, sessions_data)
             return {"success": True, "otp_exempt": True}
 
-        user_otp = str(user_record.user_otp)
+        user_otp = self._rotate_otp(user_record)
+        self._store_users(users_path, users)
         if len(user_otp) != 4 or not user_otp.isdigit():
             self._raise_auth_failure(
                 sessions_data,
@@ -1659,7 +1678,7 @@ class RouterMiddleware:
         users = self._load_users(users_path)
         sessions_path = self._get_sessions_file_path()
         sessions_data = self._load_sessions_data(sessions_path)
-        user_record = self._find_user_for_login(user_name)
+        user_record = self._find_user_for_login(user_name, users=users)
         if user_record is None:
             self._append_auth_log(
                 sessions_data,
@@ -1718,7 +1737,7 @@ class RouterMiddleware:
             raise BusinessRuleError(MSG_INVALID_CREDENTIALS)
 
         if not self._is_otp_exempt(user_name):
-            if str(user_record.user_otp) != str(otp):
+            if not _otp_codes_match(user_record.user_otp, otp):
                 self._append_auth_log(
                     sessions_data,
                     user_name=user_name,
@@ -5535,11 +5554,12 @@ class RouterMiddleware:
 
         # Validar OTP (saltar para usuarios exentos)
         if not self._is_otp_exempt(user_record.user_name):
-            user_otp = str(user_record.user_otp)
-            if user_otp != otp:
+            if not _otp_codes_match(user_record.user_otp, otp):
                 self._logger.warning(
-                    "OTP inválido para descarga modelo: user_id=%s expected=%s got=%s",
-                    session.user_id, user_otp, otp
+                    "OTP inválido para descarga modelo: user_id=%s stored_len=%s got_len=%s",
+                    session.user_id,
+                    len(_normalize_otp_code(user_record.user_otp)),
+                    len(_normalize_otp_code(otp)),
                 )
                 raise BusinessRuleError(MSG_INVALID_OTP)
 

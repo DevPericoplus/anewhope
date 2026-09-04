@@ -346,6 +346,19 @@ def test_user_and_organization_logging_integration(temp_users_file, mock_domain_
         print("✅ Test integrado de logging de usuario y organización exitoso.")
 
 
+def test_requirements_accordions_start_collapsed():
+    """Los requisitos de usuario y contraseña arrancan contraídos."""
+    state = UserCreationState()
+    assert state.show_username_requirements is False
+    assert state.show_password_requirements is False
+    state.toggle_username_requirements()
+    state.toggle_password_requirements()
+    assert state.show_username_requirements is True
+    assert state.show_password_requirements is True
+    state.toggle_username_requirements()
+    assert state.show_username_requirements is False
+
+
 if __name__ == "__main__":
     # Ejecutar los tests directamente
     import sys
