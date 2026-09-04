@@ -8,7 +8,11 @@ import pytest
 import requests
 from typing import Any
 
-from tests.helpers import get_service_urls, get_db_connection as _get_db_connection
+from tests.helpers import (
+    get_service_urls,
+    get_db_connection as _get_db_connection,
+    row_value,
+)
 
 
 # Configuración
@@ -50,7 +54,7 @@ class TestEstadoProyectosIntegration:
                 result = cursor.fetchone()
 
                 if result:
-                    estado_id = result[0]
+                    estado_id = row_value(result, "id", 0)
                     print(f"✓ Usando estado_version existente: id={estado_id}")
                 else:
                     # Crear nuevo estado
@@ -118,21 +122,35 @@ class TestEstadoProyectosIntegration:
                     raise ValueError(f"Estado {estado_id} no encontrado")
 
                 return {
-                    "state": row[0],
-                    "protected": bool(row[1]),
-                    "final_c": bool(row[2]),
-                    "final_i": bool(row[3]),
-                    "revision_interna": bool(row[4]),
-                    "propuesta_mejoras": bool(row[5]),
-                    "entrenamiento_inicial_solicitado": bool(row[6]),
-                    "entrenamiento_inicial_completado": bool(row[7]),
-                    "evaluacion_entrenamiento": bool(row[8]),
-                    "reentrenamiento": bool(row[9]),
-                    "optimizacion": bool(row[10]),
-                    "control_calidad_aprobado": bool(row[11]),
-                    "generacion_llm_solicitada": bool(row[12]),
-                    "generacion_llm_completada": bool(row[13]),
-                    "notificacion_descarga_enviada": bool(row[14]),
+                    "state": row_value(row, "state", 0),
+                    "protected": bool(row_value(row, "protected", 1)),
+                    "final_c": bool(row_value(row, "final_c", 2)),
+                    "final_i": bool(row_value(row, "final_i", 3)),
+                    "revision_interna": bool(row_value(row, "revision_interna", 4)),
+                    "propuesta_mejoras": bool(row_value(row, "propuesta_mejoras", 5)),
+                    "entrenamiento_inicial_solicitado": bool(
+                        row_value(row, "entrenamiento_inicial_solicitado", 6)
+                    ),
+                    "entrenamiento_inicial_completado": bool(
+                        row_value(row, "entrenamiento_inicial_completado", 7)
+                    ),
+                    "evaluacion_entrenamiento": bool(
+                        row_value(row, "evaluacion_entrenamiento", 8)
+                    ),
+                    "reentrenamiento": bool(row_value(row, "reentrenamiento", 9)),
+                    "optimizacion": bool(row_value(row, "optimizacion", 10)),
+                    "control_calidad_aprobado": bool(
+                        row_value(row, "control_calidad_aprobado", 11)
+                    ),
+                    "generacion_llm_solicitada": bool(
+                        row_value(row, "generacion_llm_solicitada", 12)
+                    ),
+                    "generacion_llm_completada": bool(
+                        row_value(row, "generacion_llm_completada", 13)
+                    ),
+                    "notificacion_descarga_enviada": bool(
+                        row_value(row, "notificacion_descarga_enviada", 14)
+                    ),
                 }
         finally:
             conn.close()
@@ -166,9 +184,9 @@ class TestEstadoProyectosIntegration:
         estado = self._get_estado_from_db(estado_id)
         assert estado["final_c"] is True, "final_c debe ser True"
         assert estado["final_i"] is False, "final_i debe ser False"
-        assert estado["state"] == "Protegida", f"state debe ser 'Protegida', es '{estado['state']}'"
+        assert estado["state"] == "Entrenar", f"state debe ser 'Entrenar', es '{estado['state']}'"
         assert estado["protected"] is True, "protected debe ser True"
-        print("  ✓ Verificado en BD: final_c=True, state='Protegida', protected=True")
+        print("  ✓ Verificado en BD: final_c=True, state='Entrenar', protected=True")
 
         # 2. Activar Aceptación Interna (final_i = True)
         print("\n[2/2] Activando Aceptación Interna...")

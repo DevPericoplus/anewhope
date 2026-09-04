@@ -38,7 +38,6 @@ BACKEND_CORE_URL = _urls["backend_core"]
 # Datos de prueba
 TEST_USER = "adminone"  # user_id=1, identity_type_id=1 (superadmin), org_id=1
 TEST_PASSWORD = "Password01"
-TEST_OTP = "0205"  # OTP from database
 TEST_PROJECT_ID = 2  # botweb
 TEST_ORG_ID = 1  # myllm
 
@@ -51,33 +50,21 @@ def print_step(step: str, status: str = "info"):
 
 
 def get_db_connection():
-    """Crea conexión a la base de datos."""
-    import importlib.util
-    protected_path = Path(__file__).parent.parent / "infrastructure" / "environments" / "macbook" / "protected_values.py"
-    spec = importlib.util.spec_from_file_location("protected_values", protected_path)
-    protected = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(protected)
+    """Crea conexión a la base de datos del entorno activo."""
+    from tests.helpers import get_db_connection as _get_db_connection
 
-    return pymysql.connect(
-        host=protected.mariadb_host,
-        port=protected.mariadb_port,
-        user=protected.mariadb_admin_user,
-        password=protected.mariadb_admin_password,
-        database=protected.mariadb_ai_database,  # myllm_projects_db
-        cursorclass=pymysql.cursors.DictCursor
-    )
+    return _get_db_connection(database="myllm_projects_db")
 
 
 def get_base_path() -> Path:
-    """Obtiene la ruta base de almacenamiento."""
-    env_yaml_path = Path(__file__).parent.parent / "infrastructure" / "environments" / "macbook" / "env.yaml"
-    with open(env_yaml_path) as f:
-        for line in f:
-            line = line.strip()
-            if line.startswith("fmanagement_base_path:"):
-                path_str = line.split(":", 1)[1].strip()
-                return Path(os.path.expanduser(path_str))
-    raise ValueError("fmanagement_base_path not found in env.yaml")
+    """Obtiene la ruta base de almacenamiento del entorno activo."""
+    from tests.helpers import load_env_yaml
+
+    data = load_env_yaml()
+    path_str = data.get("fmanagement_base_path") or data.get("backend_core_base_storage")
+    if not path_str:
+        raise ValueError("fmanagement_base_path not found in env.yaml")
+    return Path(os.path.expanduser(str(path_str)))
 
 
 def test_login() -> dict[str, Any] | None:
@@ -85,12 +72,15 @@ def test_login() -> dict[str, Any] | None:
     print_step(f"Haciendo login con usuario '{TEST_USER}'...", "info")
 
     try:
+        from tests.helpers import fetch_user_otp
+
+        otp = fetch_user_otp(TEST_USER)
         response = requests.post(
             f"{MIDDLEWARE_URL}/login",
             json={
                 "user_name": TEST_USER,
                 "password": TEST_PASSWORD,
-                "otp": TEST_OTP,
+                "otp": otp,
             },
             timeout=10,
         )
@@ -262,6 +252,15 @@ def verify_version_in_filesystem(
 
     print(f"  • Ruta esperada: {version_path}")
 
+    from tests.helpers import is_local_storage_path
+
+    if not is_local_storage_path(base_path):
+        print_step(
+            "Storage no es local (silicon/remoto); se omite comprobación de disco",
+            "warning",
+        )
+        return True
+
     if not version_path.exists():
         print_step("Carpeta de versión NO existe", "error")
         return False
@@ -419,10 +418,13 @@ def main():
         # Preguntar si limpiar
         print(f"\n{YELLOW}¿Deseas eliminar esta versión de prueba? (s/n):{RESET} ", end="")
         try:
-            response = input().strip().lower()
-            if response == 's':
-                cleanup_test_version(TEST_PROJECT_ID, next_version_id, TEST_ORG_ID)
-        except KeyboardInterrupt:
+            if sys.stdin.isatty():
+                response = input().strip().lower()
+                if response == "s":
+                    cleanup_test_version(TEST_PROJECT_ID, next_version_id, TEST_ORG_ID)
+            else:
+                print("sin TTY: se conserva la versión de prueba")
+        except (KeyboardInterrupt, EOFError):
             print("\n")
 
         return 0

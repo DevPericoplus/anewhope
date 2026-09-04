@@ -115,10 +115,27 @@ def test_logout_invalidates_tokens(
         password="secret123",
         otp="1234",
     )
+    stored = json.loads(sessions_path.read_text(encoding="utf-8"))
+    session_record = next(
+        (
+            item
+            for item in stored.get("sessions", [])
+            if item.get("session_id") == tokens.session_id
+        ),
+        None,
+    )
+    assert session_record is not None, stored
+    persisted = router._session_repository.get_by_session_id(tokens.session_id)
+    assert persisted is not None
+    assert persisted.is_active(), {
+        "status": getattr(persisted.status, "value", persisted.status),
+        "expires_at": str(persisted.expires_at),
+        "record": session_record,
+    }
     session_context = router.validate_session(
         tokens.access_token, tokens.session_token
     )
     assert router.logout_session(session_context) is True
 
-    with pytest.raises(routermiddleware.TokenValidationError):
+    with pytest.raises(routermiddleware.TokenExpiredError):
         router.validate_session(tokens.access_token, tokens.session_token)

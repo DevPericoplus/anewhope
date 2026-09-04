@@ -98,6 +98,35 @@ load_fmanagement_settings = _storage_module.load_fmanagement_settings
 load_mariadb_settings = _storage_module.load_mariadb_settings
 
 
+def _load_shared_module(module_name: str, relative_path: str) -> Any:
+    """Carga un módulo de ``2_shared_application`` por ruta (carpetas numeradas)."""
+    module_path = Path(__file__).resolve().parents[3] / relative_path
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"No se pudo cargar {relative_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_pvs_repo_module = _load_shared_module(
+    "mariadb_project_version_state_repository_core",
+    "src/2_shared_application/adapters/mariadb_project_version_state_repository.py",
+)
+_pvs_service_module = _load_shared_module(
+    "project_version_state_service_core",
+    "src/2_shared_application/services/project_version_state_service.py",
+)
+MariaDBProjectVersionStateRepository = (
+    _pvs_repo_module.MariaDBProjectVersionStateRepository
+)
+ProjectVersionStateService = _pvs_service_module.ProjectVersionStateService
+PermissionDeniedError = _pvs_service_module.PermissionDeniedError
+NotFoundError = _pvs_service_module.NotFoundError
+ProjectVersionStatePermissionDeniedError = PermissionDeniedError
+
+
 def _load_fmanagement_module(module_name: str) -> Any:
     """Carga el cliente de fmanagement desde clients/."""
 
@@ -5371,15 +5400,6 @@ class BackendCoreRouter:
         dsn = self._build_dsn(settings, database)
         engine = create_engine(dsn)
 
-        # Importar dinámicamente
-        from src.shared_application.adapters.mariadb_project_version_state_repository import (
-            MariaDBProjectVersionStateRepository,
-        )
-        from src.shared_application.services.project_version_state_service import (
-            ProjectVersionStateService,
-            PermissionDeniedError,
-        )
-
         repository = MariaDBProjectVersionStateRepository(engine)
         service = ProjectVersionStateService(repository, engine)
 
@@ -5422,13 +5442,6 @@ class BackendCoreRouter:
             Diccionario con datos del estado o None si no existe
         """
         from sqlalchemy import create_engine
-        from src.shared_application.adapters.mariadb_project_version_state_repository import (
-            MariaDBProjectVersionStateRepository,
-        )
-        from src.shared_application.services.project_version_state_service import (
-            ProjectVersionStateService,
-            PermissionDeniedError,
-        )
 
         settings = load_mariadb_settings()
         database = settings.get("projects_database", "myllm_projects_db")
@@ -5479,12 +5492,6 @@ class BackendCoreRouter:
             Lista de estados visibles para el usuario
         """
         from sqlalchemy import create_engine
-        from src.shared_application.adapters.mariadb_project_version_state_repository import (
-            MariaDBProjectVersionStateRepository,
-        )
-        from src.shared_application.services.project_version_state_service import (
-            ProjectVersionStateService,
-        )
 
         settings = load_mariadb_settings()
         database = settings.get("projects_database", "myllm_projects_db")
@@ -5525,14 +5532,6 @@ class BackendCoreRouter:
             Diccionario con resultado de la operación
         """
         from sqlalchemy import create_engine
-        from src.shared_application.adapters.mariadb_project_version_state_repository import (
-            MariaDBProjectVersionStateRepository,
-        )
-        from src.shared_application.services.project_version_state_service import (
-            ProjectVersionStateService,
-            PermissionDeniedError,
-            NotFoundError,
-        )
 
         settings = load_mariadb_settings()
         database = settings.get("projects_database", "myllm_projects_db")
@@ -5615,14 +5614,6 @@ class BackendCoreRouter:
             Diccionario con resultado de la operación
         """
         from sqlalchemy import create_engine
-        from src.shared_application.adapters.mariadb_project_version_state_repository import (
-            MariaDBProjectVersionStateRepository,
-        )
-        from src.shared_application.services.project_version_state_service import (
-            ProjectVersionStateService,
-            PermissionDeniedError,
-            NotFoundError,
-        )
 
         settings = load_mariadb_settings()
         database = settings.get("projects_database", "myllm_projects_db")
@@ -5696,13 +5687,6 @@ class BackendCoreRouter:
             Diccionario con resultado de la operación
         """
         from sqlalchemy import create_engine
-        from src.shared_application.adapters.mariadb_project_version_state_repository import (
-            MariaDBProjectVersionStateRepository,
-        )
-        from src.shared_application.services.project_version_state_service import (
-            ProjectVersionStateService,
-            PermissionDeniedError,
-        )
 
         settings = load_mariadb_settings()
         database = settings.get("projects_database", "myllm_projects_db")
@@ -5771,13 +5755,6 @@ class BackendCoreRouter:
             Diccionario con resultado de la operación
         """
         from sqlalchemy import create_engine
-        from src.shared_application.adapters.mariadb_project_version_state_repository import (
-            MariaDBProjectVersionStateRepository,
-        )
-        from src.shared_application.services.project_version_state_service import (
-            ProjectVersionStateService,
-            PermissionDeniedError,
-        )
 
         settings = load_mariadb_settings()
         database = settings.get("projects_database", "myllm_projects_db")
@@ -5860,13 +5837,6 @@ class BackendCoreRouter:
             Diccionario con resultado de la operación
         """
         from sqlalchemy import create_engine
-        from src.shared_application.adapters.mariadb_project_version_state_repository import (
-            MariaDBProjectVersionStateRepository,
-        )
-        from src.shared_application.services.project_version_state_service import (
-            ProjectVersionStateService,
-            PermissionDeniedError,
-        )
 
         settings = load_mariadb_settings()
         database = settings.get("projects_database", "myllm_projects_db")

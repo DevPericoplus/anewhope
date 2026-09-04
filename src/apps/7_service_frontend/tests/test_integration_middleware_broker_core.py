@@ -293,8 +293,11 @@ def test_middleware_broker_core_flow(tmp_path: Path, monkeypatch: Any) -> None:
 
     apife.app.dependency_overrides[apife.get_broker_client] = _get_broker_client
 
-    monkeypatch.setenv("STORAGE_MODE", "db_only")
+    monkeypatch.setenv("STORAGE_MODE", "mock")
     monkeypatch.setenv("BROKER_BACKEND_BASE_URL", "http://broker")
+    monkeypatch.setenv("ORGANIZATIONS_DATA_PATH", str(organizations_path))
+    monkeypatch.setenv("USERS_DATA_PATH", str(users_path))
+    monkeypatch.setenv("ROLES_DATA_PATH", str(roles_path))
 
     client = TestClient(apife.app)
     response = client.post(

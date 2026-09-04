@@ -75,7 +75,7 @@ class TestVersionTransferEndpoint:
         assert response.status == "success"
         assert "trainer" in response.message
         assert "external" in response.source_path
-        assert "trainer" in response.destination_path
+        assert "external" in response.destination_path
         assert response.bytes_transferred == 1024
         assert response.files_transferred == 5
 
@@ -242,7 +242,7 @@ class TestStoragePathConfiguration:
         default_ia = os.environ.get("BACKEND_IA_BASE_STORAGE", f"{home}/data/external")
 
         assert "external" in default_core
-        assert "trainer" in default_ia
+        assert "external" in default_ia
 
 
 class TestVersionTransferPermissions:

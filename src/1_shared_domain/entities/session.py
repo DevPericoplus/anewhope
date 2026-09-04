@@ -386,7 +386,9 @@ class Session:
     def is_active(self, now: datetime | None = None) -> bool:
         """Indica si la sesión está activa y vigente."""
 
-        return self.status == SessionStatus.ACTIVE and not self.is_expired(now)
+        # Comparar por valor: SessionStatus se carga varias veces via importlib
+        status_value = getattr(self.status, "value", str(self.status))
+        return status_value == SessionStatus.ACTIVE.value and not self.is_expired(now)
 
     def mark_inactive(self, at: datetime | None = None) -> None:
         """Marca la sesión como inactiva."""

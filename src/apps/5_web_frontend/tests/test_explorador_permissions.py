@@ -9,26 +9,29 @@ Verifica:
 5. Actualización de permisos al cambiar de proyecto
 """
 
+import os
+
 import pytest
+
+if os.environ.get("STORAGE_MODE", "").lower() == "mock":
+    pytest.skip(
+        "Explorador E2E requiere servicios vivos; no forma parte de --unit",
+        allow_module_level=True,
+    )
+
 import requests
 import mysql.connector
 from typing import Dict, Any
 
 
 # ============================================================================
-# Configuración
+# Configuración (URLs y BD del entorno activo: silicon/macbook/dev/pre)
 # ============================================================================
 
-MIDDLEWARE_URL = "http://localhost:8007"
+from tests.helpers import get_db_connect_kwargs, get_service_urls
 
-# Credenciales de base de datos
-DB_CONFIG = {
-    "host": "localhost",
-    "port": 3306,
-    "user": "myllm_reader",
-    "password": "Us3r@r3@d3rP@ss",
-    "database": "myllm_core_db",
-}
+MIDDLEWARE_URL = get_service_urls()["middleware"]
+DB_CONFIG = get_db_connect_kwargs("myllm_core_db", role="reader")
 
 
 # ============================================================================

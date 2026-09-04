@@ -13,8 +13,33 @@ Uso:
         # Usuario puede crear carpetas
 """
 
-from sqlalchemy import create_engine, text
+import importlib.util
+import sys
+from pathlib import Path
 from typing import Any
+
+from sqlalchemy import create_engine, text
+
+
+def _load_mariadb_settings() -> dict[str, Any]:
+    """Carga ajustes MariaDB desde el adapter de persistencia del Backend Core."""
+    module_path = (
+        Path(__file__).resolve().parents[2]
+        / "apps"
+        / "3_backend"
+        / "4_infrastructure"
+        / "persistence"
+        / "storage_adapter.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "user_permissions_storage_adapter", module_path
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError("No se pudo cargar storage_adapter para MariaDB")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("user_permissions_storage_adapter", module)
+    spec.loader.exec_module(module)
+    return module.load_mariadb_settings()
 
 
 def get_user_permissions(
@@ -48,8 +73,7 @@ def get_user_permissions(
         ...     print("Puede crear carpetas")
     """
     if engine is None:
-        from src.apps.backend.config.mariadb_settings import load_mariadb_settings
-        settings = load_mariadb_settings()
+        settings = _load_mariadb_settings()
 
         # Construir DSN
         host = settings.get("host", "localhost")
@@ -192,8 +216,7 @@ def get_user_identity_type_id(user_id: int, engine=None) -> int | None:
         identity_type_id del usuario o None si no se encuentra
     """
     if engine is None:
-        from src.apps.backend.config.mariadb_settings import load_mariadb_settings
-        settings = load_mariadb_settings()
+        settings = _load_mariadb_settings()
 
         host = settings.get("host", "localhost")
         port = settings.get("port", 3306)

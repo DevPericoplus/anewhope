@@ -1,0 +1,16 @@
+[
+  {
+    "user_id": 10,
+    "organization_id": 5,
+    "identity_type_id": 2,
+    "user_name": "demo",
+    "user_password": "gAAAAABqmgxCCtWqdVLUQIr4zyo58QxVDH5MjAe3nBzrfN71qkBFQm2Nw1bKs1GJfi1aLTWyMRIN1jm_cyyohtBJwUdB_zuitA==",
+    "user_email": "demo@example.com",
+    "user_mobile": "+34000000000",
+    "user_otp": "7025",
+    "active": true,
+    "blocked": false,
+    "contact_info": {},
+    "billing_info": {}
+  }
+]

@@ -1,4 +1,4 @@
-"""Configuración de pytest para el broker backend."""
+"""Configuración de pytest para la capa de aplicación compartida."""
 
 from __future__ import annotations
 
@@ -14,8 +14,7 @@ def _ensure_path(path: Path) -> None:
         sys.path.insert(0, resolved)
 
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_ensure_path(Path(__file__).parent)
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 _ensure_path(_REPO_ROOT)
 
 _spec = importlib.util.spec_from_file_location(

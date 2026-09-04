@@ -1,17 +1,10 @@
-"""Tests para entidades de dominio de ProjectVersionState.
-
-Este módulo prueba:
-- Inmutabilidad de Value Objects
-- Métodos de transición de estado
-- Validaciones de negocio en el dominio
-"""
+"""Tests para entidades de dominio de ProjectVersionState."""
 
 import pytest
-from datetime import datetime, timezone
+from datetime import datetime
 import sys
 from pathlib import Path
 
-# Agregar path de entidades de dominio
 domain_path = Path(__file__).resolve().parents[2] / "1_shared_domain/entities"
 sys.path.insert(0, str(domain_path))
 
@@ -27,66 +20,79 @@ from project_version_state import (
 )
 
 
-# ============================================================================
-# Tests de Value Objects - ProposalPhase
-# ============================================================================
+def _sample_state() -> ProjectVersionState:
+    """Construye un estado de versión con valores por defecto actuales."""
+    return ProjectVersionState(
+        id=1,
+        organization_id=1,
+        project_id=1,
+        version_id=1,
+        state=ExplorerState.STABLE,
+        state_internal=StateInternal.PROPUESTA_CLIENTE,
+        proposal=ProposalPhase(aceptacion_cliente=False, aceptacion_interna=False),
+        training=TrainingPhase(solicitado=False, completado=False),
+        evaluation=EvaluationPhase(
+            evaluacion_en_curso=False,
+            reentrenamiento_en_curso=False,
+            optimizacion_en_curso=False,
+            calidad_aprobada=False,
+        ),
+        generation=GenerationPhase(solicitada=False, completada=False),
+        notification=NotificationPhase(enviada=False),
+    )
 
 
 class TestProposalPhase:
     """Tests para ProposalPhase Value Object."""
 
-    def test_proposal_phase_is_frozen(self):
+    def test_proposal_phase_is_frozen(self) -> None:
         """Verifica que ProposalPhase es inmutable."""
         phase = ProposalPhase(aceptacion_cliente=False, aceptacion_interna=False)
 
         with pytest.raises(AttributeError):
             phase.aceptacion_cliente = True
 
-    def test_approve_by_client_returns_new_object(self):
+    def test_approve_by_client_returns_new_object(self) -> None:
         """Verifica que approve_by_client retorna nuevo objeto sin mutar original."""
         phase = ProposalPhase(aceptacion_cliente=False, aceptacion_interna=False)
 
-        # Aprobar por cliente
-        approved = phase.approve_by_client(user_id=1)
+        approved = phase.approve_by_client()
 
-        # Verificar que retorna nuevo objeto
         assert approved.aceptacion_cliente is True
         assert approved.aceptacion_interna is False
-
-        # Verificar que original NO se modificó (inmutabilidad)
         assert phase.aceptacion_cliente is False
         assert phase.aceptacion_interna is False
 
-    def test_approve_by_internal_returns_new_object(self):
+    def test_approve_by_internal_returns_new_object(self) -> None:
         """Verifica que approve_by_internal retorna nuevo objeto."""
         phase = ProposalPhase(aceptacion_cliente=False, aceptacion_interna=False)
 
-        approved = phase.approve_by_internal(user_id=1)
+        approved = phase.approve_by_internal()
 
         assert approved.aceptacion_cliente is False
         assert approved.aceptacion_interna is True
-        assert phase.aceptacion_interna is False  # Original inmutable
+        assert phase.aceptacion_interna is False
 
-    def test_revoke_client_approval(self):
+    def test_revoke_client_approval(self) -> None:
         """Verifica que se puede revocar aprobación del cliente."""
         phase = ProposalPhase(aceptacion_cliente=True, aceptacion_interna=True)
 
-        revoked = phase.revoke_client_approval(user_id=1)
+        revoked = phase.revoke_client_approval()
 
         assert revoked.aceptacion_cliente is False
         assert revoked.aceptacion_interna is True
 
-    def test_revoke_internal_approval(self):
+    def test_revoke_internal_approval(self) -> None:
         """Verifica que se puede revocar aprobación interna."""
         phase = ProposalPhase(aceptacion_cliente=True, aceptacion_interna=True)
 
-        revoked = phase.revoke_internal_approval(user_id=1)
+        revoked = phase.revoke_internal_approval()
 
         assert revoked.aceptacion_cliente is True
         assert revoked.aceptacion_interna is False
 
-    def test_is_fully_approved(self):
-        """Verifica que is_fully_approved detecta cuando ambas aprobaciones están activas."""
+    def test_is_approved(self) -> None:
+        """Verifica que is_approved detecta doble aceptación."""
         phase_not_approved = ProposalPhase(
             aceptacion_cliente=True, aceptacion_interna=False
         )
@@ -94,289 +100,127 @@ class TestProposalPhase:
             aceptacion_cliente=True, aceptacion_interna=True
         )
 
-        assert phase_not_approved.is_fully_approved() is False
-        assert phase_fully_approved.is_fully_approved() is True
-
-
-# ============================================================================
-# Tests de Value Objects - TrainingPhase
-# ============================================================================
+        assert phase_not_approved.is_approved is False
+        assert phase_fully_approved.is_approved is True
 
 
 class TestTrainingPhase:
     """Tests para TrainingPhase Value Object."""
 
-    def test_training_phase_is_frozen(self):
+    def test_training_phase_is_frozen(self) -> None:
         """Verifica que TrainingPhase es inmutable."""
-        phase = TrainingPhase(
-            entrenamiento_solicitado=False, entrenamiento_completado=False
-        )
+        phase = TrainingPhase(solicitado=False, completado=False)
 
         with pytest.raises(AttributeError):
-            phase.entrenamiento_solicitado = True
+            phase.solicitado = True
 
-    def test_request_training_returns_new_object(self):
-        """Verifica que request_training retorna nuevo objeto."""
-        phase = TrainingPhase(
-            entrenamiento_solicitado=False, entrenamiento_completado=False
-        )
+    def test_mark_completed_returns_new_object(self) -> None:
+        """Verifica que mark_completed retorna nuevo objeto."""
+        phase = TrainingPhase(solicitado=True, completado=False)
 
-        requested = phase.request_training(user_id=1)
+        completed = phase.mark_completed()
 
-        assert requested.entrenamiento_solicitado is True
-        assert requested.entrenamiento_completado is False
-        assert phase.entrenamiento_solicitado is False  # Original inmutable
-
-    def test_complete_training_returns_new_object(self):
-        """Verifica que complete_training retorna nuevo objeto."""
-        phase = TrainingPhase(entrenamiento_solicitado=True, entrenamiento_completado=False)
-
-        completed = phase.complete_training(user_id=1)
-
-        assert completed.entrenamiento_solicitado is True
-        assert completed.entrenamiento_completado is True
-        assert phase.entrenamiento_completado is False  # Original inmutable
-
-    def test_reset_training(self):
-        """Verifica que reset_training resetea ambos campos."""
-        phase = TrainingPhase(entrenamiento_solicitado=True, entrenamiento_completado=True)
-
-        reset = phase.reset_training(user_id=1)
-
-        assert reset.entrenamiento_solicitado is False
-        assert reset.entrenamiento_completado is False
-
-
-# ============================================================================
-# Tests de Value Objects - EvaluationPhase
-# ============================================================================
+        assert completed.solicitado is True
+        assert completed.completado is True
+        assert phase.completado is False
 
 
 class TestEvaluationPhase:
     """Tests para EvaluationPhase Value Object."""
 
-    def test_evaluation_phase_is_frozen(self):
+    def test_evaluation_phase_is_frozen(self) -> None:
         """Verifica que EvaluationPhase es inmutable."""
         phase = EvaluationPhase(
-            evaluacion=False,
-            reentrenamiento=False,
-            optimizacion=False,
+            evaluacion_en_curso=False,
+            reentrenamiento_en_curso=False,
+            optimizacion_en_curso=False,
             calidad_aprobada=False,
         )
 
         with pytest.raises(AttributeError):
-            phase.evaluacion = True
+            phase.evaluacion_en_curso = True
 
-    def test_start_evaluation_returns_new_object(self):
-        """Verifica que start_evaluation retorna nuevo objeto."""
-        phase = EvaluationPhase(
-            evaluacion=False,
-            reentrenamiento=False,
-            optimizacion=False,
-            calidad_aprobada=False,
-        )
-
-        started = phase.start_evaluation(user_id=1)
-
-        assert started.evaluacion is True
-        assert phase.evaluacion is False  # Original inmutable
-
-    def test_approve_quality_returns_new_object(self):
+    def test_approve_quality_returns_new_object(self) -> None:
         """Verifica que approve_quality retorna nuevo objeto."""
         phase = EvaluationPhase(
-            evaluacion=True,
-            reentrenamiento=False,
-            optimizacion=False,
+            evaluacion_en_curso=True,
+            reentrenamiento_en_curso=False,
+            optimizacion_en_curso=False,
             calidad_aprobada=False,
         )
 
-        approved = phase.approve_quality(user_id=1)
+        approved = phase.approve_quality()
 
         assert approved.calidad_aprobada is True
-        assert phase.calidad_aprobada is False  # Original inmutable
-
-    def test_reject_quality_triggers_retraining(self):
-        """Verifica que reject_quality activa reentrenamiento."""
-        phase = EvaluationPhase(
-            evaluacion=True,
-            reentrenamiento=False,
-            optimizacion=False,
-            calidad_aprobada=False,
-        )
-
-        rejected = phase.reject_quality(user_id=1)
-
-        assert rejected.calidad_aprobada is False
-        assert rejected.reentrenamiento is True
-
-
-# ============================================================================
-# Tests de Value Objects - GenerationPhase
-# ============================================================================
+        assert phase.calidad_aprobada is False
 
 
 class TestGenerationPhase:
     """Tests para GenerationPhase Value Object."""
 
-    def test_generation_phase_is_frozen(self):
+    def test_generation_phase_is_frozen(self) -> None:
         """Verifica que GenerationPhase es inmutable."""
-        phase = GenerationPhase(
-            generacion_solicitada=False, generacion_completada=False
-        )
+        phase = GenerationPhase(solicitada=False, completada=False)
 
         with pytest.raises(AttributeError):
-            phase.generacion_solicitada = True
+            phase.solicitada = True
 
-    def test_request_generation_returns_new_object(self):
-        """Verifica que request_generation retorna nuevo objeto."""
-        phase = GenerationPhase(
-            generacion_solicitada=False, generacion_completada=False
-        )
+    def test_mark_completed_returns_new_object(self) -> None:
+        """Verifica que mark_completed retorna nuevo objeto."""
+        phase = GenerationPhase(solicitada=True, completada=False)
 
-        requested = phase.request_generation(user_id=1)
+        completed = phase.mark_completed("/tmp/model.gguf")
 
-        assert requested.generacion_solicitada is True
-        assert phase.generacion_solicitada is False  # Original inmutable
-
-    def test_complete_generation_returns_new_object(self):
-        """Verifica que complete_generation retorna nuevo objeto."""
-        phase = GenerationPhase(generacion_solicitada=True, generacion_completada=False)
-
-        completed = phase.complete_generation(user_id=1)
-
-        assert completed.generacion_completada is True
-        assert phase.generacion_completada is False  # Original inmutable
-
-
-# ============================================================================
-# Tests de Value Objects - NotificationPhase
-# ============================================================================
+        assert completed.completada is True
+        assert completed.ruta_fichero == "/tmp/model.gguf"
+        assert phase.completada is False
 
 
 class TestNotificationPhase:
     """Tests para NotificationPhase Value Object."""
 
-    def test_notification_phase_is_frozen(self):
+    def test_notification_phase_is_frozen(self) -> None:
         """Verifica que NotificationPhase es inmutable."""
-        phase = NotificationPhase(notificacion_enviada=False)
+        phase = NotificationPhase(enviada=False)
 
         with pytest.raises(AttributeError):
-            phase.notificacion_enviada = True
+            phase.enviada = True
 
-    def test_send_notification_returns_new_object(self):
-        """Verifica que send_notification retorna nuevo objeto."""
-        phase = NotificationPhase(notificacion_enviada=False)
+    def test_mark_sent_returns_new_object(self) -> None:
+        """Verifica que mark_sent retorna nuevo objeto."""
+        phase = NotificationPhase(enviada=False)
 
-        sent = phase.send_notification(user_id=1)
+        sent = phase.mark_sent()
 
-        assert sent.notificacion_enviada is True
-        assert phase.notificacion_enviada is False  # Original inmutable
-
-
-# ============================================================================
-# Tests de Aggregate Root - ProjectVersionState
-# ============================================================================
+        assert sent.enviada is True
+        assert phase.enviada is False
 
 
 class TestProjectVersionState:
     """Tests para ProjectVersionState Aggregate Root."""
 
-    def test_can_create_project_version_state(self):
+    def test_can_create_project_version_state(self) -> None:
         """Verifica que se puede crear instancia de ProjectVersionState."""
-        state = ProjectVersionState(
-            id=1,
-            organization_id=1,
-            project_id=1,
-            version_id=1,
-            state=ExplorerState.PROPUESTA,
-            state_internal=StateInternal.PROPUESTA_CLIENTE,
-            proposal=ProposalPhase(aceptacion_cliente=False, aceptacion_interna=False),
-            training=TrainingPhase(
-                entrenamiento_solicitado=False, entrenamiento_completado=False
-            ),
-            evaluation=EvaluationPhase(
-                evaluacion=False,
-                reentrenamiento=False,
-                optimizacion=False,
-                calidad_aprobada=False,
-            ),
-            generation=GenerationPhase(
-                generacion_solicitada=False, generacion_completada=False
-            ),
-            notification=NotificationPhase(notificacion_enviada=False),
-        )
+        state = _sample_state()
 
         assert state.id == 1
         assert state.organization_id == 1
-        assert state.state == ExplorerState.PROPUESTA
+        assert state.state == ExplorerState.STABLE
 
-    def test_approve_proposal_by_client_updates_proposal_phase(self):
+    def test_approve_proposal_by_client_updates_proposal_phase(self) -> None:
         """Verifica que aprobar por cliente actualiza la fase de propuesta."""
-        state = ProjectVersionState(
-            id=1,
-            organization_id=1,
-            project_id=1,
-            version_id=1,
-            state=ExplorerState.PROPUESTA,
-            state_internal=StateInternal.PROPUESTA_CLIENTE,
-            proposal=ProposalPhase(aceptacion_cliente=False, aceptacion_interna=False),
-            training=TrainingPhase(
-                entrenamiento_solicitado=False, entrenamiento_completado=False
-            ),
-            evaluation=EvaluationPhase(
-                evaluacion=False,
-                reentrenamiento=False,
-                optimizacion=False,
-                calidad_aprobada=False,
-            ),
-            generation=GenerationPhase(
-                generacion_solicitada=False, generacion_completada=False
-            ),
-            notification=NotificationPhase(notificacion_enviada=False),
-        )
+        state = _sample_state()
 
-        # Aprobar por cliente
         state.approve_proposal_by_client(user_id=1)
 
-        # Verificar que proposal se actualizó
         assert state.proposal.aceptacion_cliente is True
         assert state.proposal.aceptacion_interna is False
 
-    def test_state_tracks_updated_by(self):
+    def test_state_tracks_updated_by(self) -> None:
         """Verifica que updated_by se actualiza al hacer cambios."""
-        state = ProjectVersionState(
-            id=1,
-            organization_id=1,
-            project_id=1,
-            version_id=1,
-            state=ExplorerState.PROPUESTA,
-            state_internal=StateInternal.PROPUESTA_CLIENTE,
-            proposal=ProposalPhase(aceptacion_cliente=False, aceptacion_interna=False),
-            training=TrainingPhase(
-                entrenamiento_solicitado=False, entrenamiento_completado=False
-            ),
-            evaluation=EvaluationPhase(
-                evaluacion=False,
-                reentrenamiento=False,
-                optimizacion=False,
-                calidad_aprobada=False,
-            ),
-            generation=GenerationPhase(
-                generacion_solicitada=False, generacion_completada=False
-            ),
-            notification=NotificationPhase(notificacion_enviada=False),
-            updated_by=None,
-        )
+        state = _sample_state()
 
-        # Aprobar y verificar que updated_by se setea
         state.approve_proposal_by_client(user_id=10)
 
         assert state.updated_by == 10
-
-
-# ============================================================================
-# Ejecución de tests
-# ============================================================================
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+        assert isinstance(state.updated_at, datetime)

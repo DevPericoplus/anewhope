@@ -8,7 +8,16 @@ Verifica:
 4. Solo administradores (identity_type_id 1, 2) pueden cambiar estados
 """
 
+import os
+
 import pytest
+
+if os.environ.get("STORAGE_MODE", "").lower() == "mock":
+    pytest.skip(
+        "Explorador E2E requiere servicios vivos; no forma parte de --unit",
+        allow_module_level=True,
+    )
+
 import requests
 import time
 from typing import Dict, Any
@@ -16,19 +25,13 @@ import mysql.connector
 
 
 # ============================================================================
-# Configuración de URLs
+# Configuración (URLs y BD del entorno activo: silicon/macbook/dev/pre)
 # ============================================================================
 
-MIDDLEWARE_URL = "http://localhost:8007"
+from tests.helpers import get_db_connect_kwargs, get_service_urls
 
-# Credenciales de base de datos (ajustar según env)
-DB_CONFIG = {
-    "host": "localhost",
-    "port": 3306,
-    "user": "myllm_writer",
-    "password": "Us3r@wr1t3rP@ss",
-    "database": "myllm_projects_db",
-}
+MIDDLEWARE_URL = get_service_urls()["middleware"]
+DB_CONFIG = get_db_connect_kwargs("myllm_projects_db", role="writer")
 
 
 # ============================================================================

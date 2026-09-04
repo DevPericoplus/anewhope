@@ -3,9 +3,14 @@
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src/apps/5_web_frontend"))
 
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
 from tests.helpers import get_service_urls, get_db_connection
+from tests.import_aliases import register_repo_helpers
+
+register_repo_helpers()
+sys.path.insert(0, str(_ROOT / "src/apps/5_web_frontend"))
 
 # Obtener OTP y login
 conn = get_db_connection(database="myllm_core_db")

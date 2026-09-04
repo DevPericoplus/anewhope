@@ -19,25 +19,48 @@ if TYPE_CHECKING:
     from ...interfaces.session_repository import SessionRepository
 
 
-# Cargar módulos dinámicamente
+_SESSION_ENTITY_ALIASES = (
+    "src.shared_domain.entities.session",
+    "_session_entities_repo",
+    "_session_entities_service",
+    "_session_entities_jwt",
+    "ddd_session_entities",
+    "_laim_session_entities",
+)
+
+
 def _load_session_entities():
-    """Carga entities/session.py dinámicamente."""
+    """Carga entities/session.py una sola vez (evita clases Session duplicadas)."""
+    for name in _SESSION_ENTITY_ALIASES:
+        existing = sys.modules.get(name)
+        if existing is not None and hasattr(existing, "Session"):
+            for alias in _SESSION_ENTITY_ALIASES:
+                sys.modules.setdefault(alias, existing)
+            return existing
+
     module_path = (
         Path(__file__).resolve().parents[2] / "1_shared_domain/entities/session.py"
     )
     spec = importlib.util.spec_from_file_location(
-        "_session_entities_service", module_path
+        "src.shared_domain.entities.session", module_path
     )
     if spec is None or spec.loader is None:
         raise RuntimeError("No se pudo cargar session entities")
     module = importlib.util.module_from_spec(spec)
-    sys.modules["_session_entities_service"] = module
+    for alias in _SESSION_ENTITY_ALIASES:
+        sys.modules[alias] = module
     spec.loader.exec_module(module)
     return module
 
 
 def _load_jwt_service():
-    """Carga jwt_service.py dinámicamente."""
+    """Reutiliza jwt_service si ya está cargado (p. ej. como ddd_jwt_service)."""
+    for name in ("ddd_jwt_service", "_jwt_service_for_session"):
+        existing = sys.modules.get(name)
+        if existing is not None and hasattr(existing, "JwtService"):
+            sys.modules.setdefault("_jwt_service_for_session", existing)
+            return existing
+
     module_path = Path(__file__).resolve().parent / "jwt_service.py"
     spec = importlib.util.spec_from_file_location("_jwt_service_for_session", module_path)
     if spec is None or spec.loader is None:

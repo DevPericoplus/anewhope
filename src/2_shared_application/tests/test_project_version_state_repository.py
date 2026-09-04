@@ -9,27 +9,17 @@ Este módulo prueba:
 import pytest
 from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime, timezone
-import sys
-from pathlib import Path
 
-# Agregar paths necesarios
-domain_path = Path(__file__).resolve().parents[2] / "1_shared_domain/entities"
-sys.path.insert(0, str(domain_path))
-
-from project_version_state import (
-    ProposalPhase,
-    TrainingPhase,
+from src.shared_application.adapters.mariadb_project_version_state_repository import (
     EvaluationPhase,
+    ExplorerState,
     GenerationPhase,
+    MariaDBProjectVersionStateRepository,
     NotificationPhase,
     ProjectVersionState,
+    ProposalPhase,
     StateInternal,
-    ExplorerState,
-)
-
-# Importar Repository
-from src.shared_application.adapters.mariadb_project_version_state_repository import (
-    MariaDBProjectVersionStateRepository,
+    TrainingPhase,
 )
 
 
@@ -41,7 +31,7 @@ from src.shared_application.adapters.mariadb_project_version_state_repository im
 @pytest.fixture
 def mock_engine():
     """Mock del SQLAlchemy Engine."""
-    return Mock()
+    return MagicMock()
 
 
 @pytest.fixture
@@ -52,7 +42,7 @@ def mock_sql_row():
     row.id_organizacion = 100
     row.id_proyecto = 200
     row.id_version = 1
-    row.estado = "propuesta"
+    row.state = "stable"
     row.state_internal = "propuesta_cliente"
 
     # Fase de propuesta
@@ -64,7 +54,7 @@ def mock_sql_row():
     row.entrenamiento_inicial_completado = 0
 
     # Fase de evaluación
-    row.evaluacion = 0
+    row.evaluacion_entrenamiento = 0
     row.reentrenamiento = 0
     row.optimizacion = 0
     row.control_calidad_aprobado = 0
@@ -79,6 +69,9 @@ def mock_sql_row():
     # Auditoría
     row.updated_by = None
     row.updated_at = None
+    row.protected = 0
+    row.size = 0
+    row.created_at = None
 
     return row
 
@@ -91,22 +84,18 @@ def sample_project_version_state():
         organization_id=100,
         project_id=200,
         version_id=1,
-        state=ExplorerState.PROPUESTA,
+        state=ExplorerState.STABLE,
         state_internal=StateInternal.PROPUESTA_CLIENTE,
         proposal=ProposalPhase(aceptacion_cliente=False, aceptacion_interna=False),
-        training=TrainingPhase(
-            entrenamiento_solicitado=False, entrenamiento_completado=False
-        ),
+        training=TrainingPhase(solicitado=False, completado=False),
         evaluation=EvaluationPhase(
-            evaluacion=False,
-            reentrenamiento=False,
-            optimizacion=False,
+            evaluacion_en_curso=False,
+            reentrenamiento_en_curso=False,
+            optimizacion_en_curso=False,
             calidad_aprobada=False,
         ),
-        generation=GenerationPhase(
-            generacion_solicitada=False, generacion_completada=False
-        ),
-        notification=NotificationPhase(notificacion_enviada=False),
+        generation=GenerationPhase(solicitada=False, completada=False),
+        notification=NotificationPhase(enviada=False),
         updated_by=None,
         updated_at=None,
     )
@@ -131,7 +120,7 @@ class TestRowToEntity:
         assert entity.organization_id == 100
         assert entity.project_id == 200
         assert entity.version_id == 1
-        assert entity.state == ExplorerState.PROPUESTA
+        assert entity.state == ExplorerState.STABLE
         assert entity.state_internal == StateInternal.PROPUESTA_CLIENTE
 
         # Verificar Value Objects
@@ -160,12 +149,12 @@ class TestRowToEntity:
         repository = MariaDBProjectVersionStateRepository(mock_engine)
         entity = repository._row_to_entity(mock_sql_row)
 
-        assert entity.training.entrenamiento_solicitado is True
-        assert entity.training.entrenamiento_completado is True
+        assert entity.training.solicitado is True
+        assert entity.training.completado is True
 
     def test_row_to_entity_converts_evaluation_phase(self, mock_engine, mock_sql_row):
         """Verifica conversión de EvaluationPhase."""
-        mock_sql_row.evaluacion = 1
+        mock_sql_row.evaluacion_entrenamiento = 1
         mock_sql_row.reentrenamiento = 0
         mock_sql_row.optimizacion = 1
         mock_sql_row.control_calidad_aprobado = 1
@@ -173,9 +162,9 @@ class TestRowToEntity:
         repository = MariaDBProjectVersionStateRepository(mock_engine)
         entity = repository._row_to_entity(mock_sql_row)
 
-        assert entity.evaluation.evaluacion is True
-        assert entity.evaluation.reentrenamiento is False
-        assert entity.evaluation.optimizacion is True
+        assert entity.evaluation.evaluacion_en_curso is True
+        assert entity.evaluation.reentrenamiento_en_curso is False
+        assert entity.evaluation.optimizacion_en_curso is True
         assert entity.evaluation.calidad_aprobada is True
 
     def test_row_to_entity_converts_generation_phase(self, mock_engine, mock_sql_row):
@@ -186,8 +175,8 @@ class TestRowToEntity:
         repository = MariaDBProjectVersionStateRepository(mock_engine)
         entity = repository._row_to_entity(mock_sql_row)
 
-        assert entity.generation.generacion_solicitada is True
-        assert entity.generation.generacion_completada is False
+        assert entity.generation.solicitada is True
+        assert entity.generation.completada is False
 
     def test_row_to_entity_converts_notification_phase(
         self, mock_engine, mock_sql_row
@@ -198,7 +187,7 @@ class TestRowToEntity:
         repository = MariaDBProjectVersionStateRepository(mock_engine)
         entity = repository._row_to_entity(mock_sql_row)
 
-        assert entity.notification.notificacion_enviada is True
+        assert entity.notification.enviada is True
 
     def test_row_to_entity_converts_audit_fields(self, mock_engine, mock_sql_row):
         """Verifica conversión de campos de auditoría."""
@@ -277,8 +266,8 @@ class TestSave:
         # Ejecutar save
         repository.save(sample_project_version_state)
 
-        # Verificar que se ejecutó UPDATE
-        mock_conn.execute.assert_called_once()
+        # Verificar que se ejecutó SELECT de existencia + UPDATE
+        assert mock_conn.execute.call_count >= 1
         mock_conn.commit.assert_called_once()
 
     def test_save_updates_proposal_phase_fields(
@@ -309,7 +298,7 @@ class TestSave:
         """save actualiza campos de TrainingPhase."""
         # Modificar entrenamiento
         sample_project_version_state.training = TrainingPhase(
-            entrenamiento_solicitado=True, entrenamiento_completado=True
+            solicitado=True, completado=True
         )
 
         mock_conn = MagicMock()
@@ -330,9 +319,9 @@ class TestSave:
         """save actualiza campos de EvaluationPhase."""
         # Modificar evaluación
         sample_project_version_state.evaluation = EvaluationPhase(
-            evaluacion=True,
-            reentrenamiento=False,
-            optimizacion=True,
+            evaluacion_en_curso=True,
+            reentrenamiento_en_curso=False,
+            optimizacion_en_curso=True,
             calidad_aprobada=True,
         )
 
@@ -345,7 +334,7 @@ class TestSave:
         call_args = mock_conn.execute.call_args
         params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1]
 
-        assert params["evaluacion"] == 1
+        assert params["evaluacion_entrenamiento"] == 1
         assert params["reentrenamiento"] == 0
         assert params["optimizacion"] == 1
         assert params["control_calidad_aprobado"] == 1
@@ -464,8 +453,8 @@ class TestRoundTrip:
             == sample_project_version_state.proposal.aceptacion_cliente
         )
         assert (
-            reconstructed_entity.training.entrenamiento_solicitado
-            == sample_project_version_state.training.entrenamiento_solicitado
+            reconstructed_entity.training.solicitado
+            == sample_project_version_state.training.solicitado
         )
         assert (
             reconstructed_entity.evaluation.calidad_aprobada

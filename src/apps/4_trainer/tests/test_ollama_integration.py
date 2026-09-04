@@ -5,9 +5,17 @@ Estos tests verifican que los endpoints de Ollama funcionan correctamente
 con modelos reales instalados en el sistema.
 """
 
-import pytest
-import httpx
+import os
 import time
+
+import httpx
+import pytest
+
+if os.environ.get("STORAGE_MODE", "").lower() == "mock":
+    pytest.skip(
+        "Integración Ollama requiere trainer real; no forma parte de --unit",
+        allow_module_level=True,
+    )
 
 
 # Configuración

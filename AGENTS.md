@@ -324,7 +324,13 @@ reales de cada aplicación y evitar falsos positivos o negativos.
 |-----------------|-------------------|------------------------|
 | `.venv_frontend313` | `2_shared_application/tests`, `5_web_frontend/tests` | Capa compartida, Frontend |
 | `.venv_backoffice313` | `6_web_backoffice/tests` | Backoffice |
-| `.venv_middleware313` | `7_service_frontend/tests`, `8_service_backend/tests`, `3_backend/tests` | Middleware, Broker, Backend Core |
+| `.venv_middleware313` | `7_service_frontend/tests`, `8_service_backend/tests`, `3_backend/tests`, `tests/unit/`, `tests/integration/` | Middleware, Broker, Backend Core |
+| `.venv_trainer312` | `4_trainer/tests` | Trainer |
+| `.venv_laimweb313` | `9_laimweb/tests` | LAIM Web |
+
+El **entorno de despliegue** (`--env silicon|macbook|dev|pre`) es independiente del venv.
+Los unitarios usan `STORAGE_MODE=mock`. Integración/E2E usan FQDN de `env.yaml` (en silicon:
+`*.anewhope.silicon.loc`). Ver §36.8.
 
 #### Reglas obligatorias:
 
@@ -10989,5 +10995,91 @@ ansible-playbook -i env/silicon/host trainer.yml -e deploy_env=silicon --tags na
 
 Reglas gemelas en `anh_ansible_environments/AGENTS.md`. Playbooks cargan
 `../anewhope/versions.yml`. Mapa de hosts: `env/silicon/hosts_map.yml`.
+
+### 36.7. Roadmap de alineación (OBLIGATORIO)
+
+silicon es el **estándar compose** para todos los entornos **excepto pro**.
+
+```
+desarrollar y certificar en silicon
+        │
+        ├── replicar avances a pre (sigue legacy nativo hasta migrar)
+        │
+        ├── silicon estable → migrar dev al formato silicon
+        │
+        ├── alinear macbook al mismo contrato
+        │
+        └── después: pro = Kubernetes (frontend + backend); trainer híbrido
+```
+
+| Entorno | Estado actual | Acción del agente |
+|---------|---------------|-------------------|
+| **silicon** | Docker/compose (trainer híbrido) | Banco de pruebas. Prioridad: consolidar contratos. |
+| **pre** | Legacy nativo AWS | Replicar features desde silicon **sin** asumir compose aún. Estudiar cómo será el pre compose. |
+| **dev** | Legacy | No migrar hasta que silicon no dé problemas. Luego copiar el modelo silicon. |
+| **macbook** | Nativo local | Alinear helpers/tests/FQDN; compose opcional después de dev. |
+| **pro** | Fuera de alcance ahora | Frontend/backend → Kubernetes más adelante. |
+
+**Regla:** desarrollar contra silicon. No tratar `localhost` ni hosts PRE (`*.anewhope.aws`)
+como destino de tests o compose. `protected_values.py` de silicon replica credenciales PRE;
+los **hosts** salen de `env.yaml` (`*.anewhope.silicon.loc`).
+
+### 36.8. Tests del proyecto con entorno silicon
+
+Los tests DEBEN poder ejecutarse con `ENVIRONMENT=silicon` / `ANEWHOPE_ENV=silicon`.
+
+```bash
+./full_test.sh --env silicon --unit
+./full_test.sh --env silicon --all
+./full_test.sh --env silicon --deploy
+```
+
+| Tipo | Aislamiento | Destino |
+|------|-------------|---------|
+| `--unit` | `STORAGE_MODE=mock` | Contrato `env.yaml` silicon; sin MariaDB/Redis vivos |
+| `--integration` / `--e2e` | Servicios reales | FQDN silicon (`backend.anewhope.silicon.loc`, etc.) |
+| `--deploy` | VMs silicon | `test/test_silicon_deploy.yml --tags compose-contract` |
+
+**Helpers (`tests/helpers.py`):**
+
+1. Entorno: `ANEWHOPE_ENV` → `ENVIRONMENT` → `.envglobal` → `macbook`
+2. URLs y `mariadb_host` desde `infrastructure/environments/<env>/env.yaml`
+3. Credenciales desde `protected_values.py` (nunca hosts AWS para silicon)
+4. PROHIBIDO hardcodear `localhost` o `environments/macbook/` en tests nuevos
+
+**Regla de venvs (sin cambio):** unitarios de cada app en su venv. Silicon no cambia
+la matriz de entornos virtuales; solo el destino de configuración.
+
+**Arquitectura del host:** los `.venv_*` deben ser **arm64** en Mac Apple Silicon.
+Venvs copiados de una máquina Intel (`x86_64`) o con shebang
+`/Users/administrator/...` fallan al importar `cffi`/`pydantic`. Recrear con
+`python3.13` de Homebrew. No usar Python 3.14.
+
+### 36.9. Contrato compose (plantilla para dev/pre)
+
+Cargar YAML en el playbook **no** inyecta vars en el contenedor. Cada clave del
+nativo debe existir en compose (env + volúmenes + `extra_hosts`).
+
+Checklist al añadir un servicio o variable:
+
+- [ ] ¿Existe en `env.yaml` / `fmanagement_paths.yml` de silicon?
+- [ ] ¿El template compose la exporta al contenedor (`environment:` / `.env.j2`)?
+- [ ] ¿Los volúmenes de datos (`external`, `internal/reports`, logs) están montados?
+- [ ] ¿`load_hosts_map.yml` usa `apply: { tags: [always] }`?
+- [ ] ¿Hay test en `test_silicon_deploy.yml` o `tests/unit/test_silicon_environment.py`?
+- [ ] ¿La misma clave se documentó para el futuro compose de `dev`/`pre`?
+
+### 36.10. Cómo orientar trabajo silicon → pre / dev / macbook
+
+1. **Implementar y verificar en silicon** (código + compose + `./full_test.sh --env silicon --unit`).
+2. **Replicar el cambio de código** a las apps (git). El código es idéntico entre entornos.
+3. **Adaptar configuración** de `pre` (hosts `*.anewhope.aws`, rutas `/data/`, nativo por ahora).
+4. **No dockerizar pre ni dev** hasta que el contrato silicon esté certificado (`--deploy` PASS).
+5. **Cuando silicon esté estable:** copiar plantillas compose + `hosts_map` + tests de contrato a `dev`, luego a `pre`.
+6. **macbook:** mismos helpers y tests; FQDN `*.tfmmyllm.ai` resolviendo a loopback.
+7. **pro:** no usar este modelo compose como destino final; planificar Kubernetes para frontend/backend.
+
+Documentación de usuario: `README.md` sección «Entorno silicon (estándar Docker/compose)».
+Plan operativo: `anh_ansible_environments/readme_silicon_deploy.md`.
 
 

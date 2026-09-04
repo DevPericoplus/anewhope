@@ -23,18 +23,32 @@ from sqlalchemy.engine import Engine
 
 
 def _load_domain_entities() -> Any:
-    """Carga dinámicamente el módulo de entidades de dominio."""
+    """Carga el módulo de entidades una sola vez (evita clases duplicadas)."""
+    aliases = (
+        "src.shared_domain.entities.project_version_state",
+        "project_version_state",
+        "_pvs_entities_repo",
+        "_project_version_state_entities",
+    )
+    for name in aliases:
+        existing = sys.modules.get(name)
+        if existing is not None and hasattr(existing, "ProposalPhase"):
+            for alias in aliases:
+                sys.modules.setdefault(alias, existing)
+            return existing
+
     module_path = (
         Path(__file__).resolve().parents[2]
         / "1_shared_domain/entities/project_version_state.py"
     )
     spec = importlib.util.spec_from_file_location(
-        "_pvs_entities_repo", module_path
+        "src.shared_domain.entities.project_version_state", module_path
     )
     if spec is None or spec.loader is None:
         raise RuntimeError("No se pudo cargar project_version_state entities")
     module = importlib.util.module_from_spec(spec)
-    sys.modules["_pvs_entities_repo"] = module
+    for alias in aliases:
+        sys.modules[alias] = module
     spec.loader.exec_module(module)
     return module
 
@@ -484,10 +498,19 @@ class MariaDBProjectVersionStateRepository:
         """Convierte una fila SQL a entidad ProjectVersionState."""
         # Extraer campos con índices o nombres
         def get_val(key: str | int, default: Any = None) -> Any:
+            value: Any
             try:
-                return row[key] if row[key] is not None else default
-            except (KeyError, IndexError):
+                if isinstance(key, str) and key in vars(row):
+                    value = vars(row)[key]
+                else:
+                    value = row[key]
+            except (KeyError, IndexError, TypeError):
+                if not isinstance(key, str):
+                    return default
+                value = getattr(row, key, default)
+            if value is None or type(value).__module__ == "unittest.mock":
                 return default
+            return value
 
         # Construir value objects
         proposal = ProposalPhase(

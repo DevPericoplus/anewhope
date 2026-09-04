@@ -70,21 +70,10 @@ def print_json(data: dict, title: str = ""):
 
 
 def get_db_connection():
-    """Crea conexión a la base de datos."""
-    import importlib.util
-    protected_path = Path(__file__).parent.parent / "infrastructure" / "environments" / "macbook" / "protected_values.py"
-    spec = importlib.util.spec_from_file_location("protected_values", protected_path)
-    protected = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(protected)
+    """Crea conexión a la base de datos del entorno activo."""
+    from tests.helpers import get_db_connection as _get_db_connection
 
-    return pymysql.connect(
-        host=protected.mariadb_host,
-        port=protected.mariadb_port,
-        user=protected.mariadb_admin_user,
-        password=protected.mariadb_admin_password,
-        database=protected.mariadb_core_database,  # Usuarios están en core_db
-        cursorclass=pymysql.cursors.DictCursor
-    )
+    return _get_db_connection(database="myllm_core_db")
 
 
 def get_current_otp(user_name: str) -> str | None:
@@ -151,21 +140,19 @@ def test_fmanagement_direct() -> dict[str, Any] | None:
     print_step("Llamando directamente a fmanagement /fmo/list...", "info")
 
     # Obtener basepath de configuración
-    env_yaml = Path(__file__).parent.parent / "infrastructure" / "environments" / "macbook" / "env.yaml"
-    basepath = None
-    with open(env_yaml) as f:
-        for line in f:
-            if line.strip().startswith("fmanagement_base_path:"):
-                basepath = line.split(":", 1)[1].strip()
-                import os
-                basepath = os.path.expanduser(basepath)
-                break
+    from tests.helpers import load_env_yaml
+
+    data = load_env_yaml()
+    basepath = data.get("fmanagement_base_path") or data.get("backend_core_base_storage")
+    if basepath:
+        import os
+        basepath = os.path.expanduser(str(basepath))
 
     if not basepath:
         print_step("No se pudo obtener basepath", "error")
         return None
 
-    org_folder = f"ORG{TEST_ORG_ID:04d}"
+    org_folder = f"ORG{TEST_ORG_ID:05d}"
     prj_folder = f"PRJ{TEST_PROJECT_ID:05d}"
     version_folder = f"v{TEST_VERSION_ID:03d}"
 
@@ -177,6 +164,7 @@ def test_fmanagement_direct() -> dict[str, Any] | None:
             f"{FMANAGEMENT_URL}/fmo/list",
             params={
                 "iduser": 1,
+                "identity_type_id": 1,
                 "basepath": basepath,
                 "orgpath": org_folder,
                 "prjpath": prj_folder,
@@ -207,7 +195,7 @@ def test_fmanagement_via_middleware(user_data: dict[str, Any]) -> dict[str, Any]
     """Llama a fmanagement a través del middleware."""
     print_step("Llamando a fmanagement vía middleware...", "info")
 
-    org_folder = f"ORG{TEST_ORG_ID:04d}"
+    org_folder = f"ORG{TEST_ORG_ID:05d}"
     prj_folder = f"PRJ{TEST_PROJECT_ID:05d}"
     version_folder = f"v{TEST_VERSION_ID:03d}"
 
@@ -292,15 +280,13 @@ def verify_explorador_state():
 
     content = explorador_path.read_text()
 
-    # Verificar is_internal_user
-    if "return False  # Frontend = Cliente" in content:
-        print_step("✓ is_internal_user configurado correctamente (retorna False)", "ok")
+    if "is_internal_user: bool = False" in content:
+        print_step("✓ is_internal_user definido en el State (cliente por defecto)", "ok")
     else:
-        print_step("✗ is_internal_user NO está configurado correctamente", "error")
+        print_step("✗ is_internal_user no está definido en ExploradorState", "error")
         return False
 
-    # Verificar que existe init_page
-    if "def init_page(self, project_id: int, version_id: int):" in content:
+    if "def init_page(" in content:
         print_step("✓ Método init_page() existe", "ok")
     else:
         print_step("✗ Método init_page() NO existe", "error")
@@ -328,11 +314,14 @@ def verify_web_frontend_state():
 
     content = web_frontend_path.read_text()
 
-    # Verificar que set_proyecciones_version llama a reload_version
-    if "ExploradorState.reload_version(" in content:
-        print_step("✓ set_proyecciones_version() llama a reload_version()", "ok")
+    if (
+        "ExploradorState.reload_project_with_tokens(" in content
+        or "ExploradorState.init_page(" in content
+        or "ExploradorState.reload_version(" in content
+    ):
+        print_step("✓ web_frontend inicializa el Explorador (init_page/reload)", "ok")
     else:
-        print_step("✗ set_proyecciones_version() NO llama a reload_version()", "error")
+        print_step("✗ web_frontend no inicializa ExploradorState", "error")
         return False
 
     return True

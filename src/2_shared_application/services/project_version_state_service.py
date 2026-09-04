@@ -24,18 +24,32 @@ from typing import Any
 
 
 def _load_domain_entities() -> Any:
-    """Carga dinámicamente el módulo de entidades de dominio."""
+    """Carga el módulo de entidades una sola vez (evita clases duplicadas)."""
+    aliases = (
+        "src.shared_domain.entities.project_version_state",
+        "project_version_state",
+        "_pvs_entities_repo",
+        "_project_version_state_entities",
+    )
+    for name in aliases:
+        existing = sys.modules.get(name)
+        if existing is not None and hasattr(existing, "ProjectVersionState"):
+            for alias in aliases:
+                sys.modules.setdefault(alias, existing)
+            return existing
+
     module_path = (
         Path(__file__).resolve().parents[2]
         / "1_shared_domain/entities/project_version_state.py"
     )
     spec = importlib.util.spec_from_file_location(
-        "_project_version_state_entities", module_path
+        "src.shared_domain.entities.project_version_state", module_path
     )
     if spec is None or spec.loader is None:
         raise RuntimeError("No se pudo cargar project_version_state entities")
     module = importlib.util.module_from_spec(spec)
-    sys.modules["_project_version_state_entities"] = module
+    for alias in aliases:
+        sys.modules[alias] = module
     spec.loader.exec_module(module)
     return module
 

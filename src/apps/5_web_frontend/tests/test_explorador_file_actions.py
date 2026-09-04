@@ -14,29 +14,32 @@ Verifica todas las operaciones CRUD sobre archivos y carpetas:
 Flujo: Frontend → Middleware → Broker → Backend Core → fmanagement
 """
 
+import os
+
 import pytest
+
+if os.environ.get("STORAGE_MODE", "").lower() == "mock":
+    pytest.skip(
+        "Explorador E2E requiere servicios vivos; no forma parte de --unit",
+        allow_module_level=True,
+    )
+
 import requests
 import time
-import os
 from typing import Dict, Any
 import mysql.connector
 
 
 # ============================================================================
-# Configuración
+# Configuración (URLs y BD del entorno activo: silicon/macbook/dev/pre)
 # ============================================================================
 
-MIDDLEWARE_URL = "http://localhost:8007"
-FMANAGEMENT_URL = "http://localhost:1666"
+from tests.helpers import get_db_connect_kwargs, get_service_urls
 
-# Credenciales de base de datos
-DB_CONFIG = {
-    "host": "localhost",
-    "port": 3306,
-    "user": "myllm_writer",
-    "password": "Us3r@wr1t3rP@ss",
-    "database": "myllm_projects_db",
-}
+_URLS = get_service_urls()
+MIDDLEWARE_URL = _URLS["middleware"]
+FMANAGEMENT_URL = _URLS["fmanagement"]
+DB_CONFIG = get_db_connect_kwargs("myllm_projects_db", role="writer")
 
 
 # ============================================================================

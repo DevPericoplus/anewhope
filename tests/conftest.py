@@ -1,9 +1,8 @@
 """
 Configuración pytest compartida para tests/ (unit, integration, e2e).
 
-Proporciona fixtures para:
-- Raíz del proyecto
-- Carga dinámica de módulos con prefijos numéricos
+Fixtures multi-entorno (silicon, macbook, dev, pre, pro):
+- Entorno activo, env.yaml, URLs de servicios
 - Protected values del entorno activo
 - Engines de base de datos (scope=session)
 """
@@ -11,19 +10,46 @@ Proporciona fixtures para:
 import sys
 from pathlib import Path
 
-# Asegurar que el project root está en sys.path para que 'tests.helpers' sea importable
 _project_root = Path(__file__).parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
+from tests.import_aliases import bootstrap_test_imports
+
+bootstrap_test_imports(_project_root)
+
 import pytest
-from tests.helpers import load_module_from_path, load_protected_values, get_db_engine
+from tests.helpers import (
+    get_active_test_environment,
+    get_db_engine,
+    get_service_urls,
+    load_env_yaml,
+    load_protected_values,
+)
 
 
 @pytest.fixture(scope="session")
 def project_root():
     """Raíz del proyecto."""
     return _project_root
+
+
+@pytest.fixture(scope="session")
+def test_environment():
+    """Entorno activo de la suite (ANEWHOPE_ENV / ENVIRONMENT / .envglobal)."""
+    return get_active_test_environment()
+
+
+@pytest.fixture(scope="session")
+def env_yaml(test_environment):
+    """Variables públicas del entorno activo."""
+    return load_env_yaml(test_environment)
+
+
+@pytest.fixture(scope="session")
+def service_urls(test_environment):
+    """URLs de servicios resueltas desde env.yaml."""
+    return get_service_urls(env=test_environment)
 
 
 @pytest.fixture(scope="session")

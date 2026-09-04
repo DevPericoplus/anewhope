@@ -15,17 +15,36 @@ from pathlib import Path
 from typing import Any
 
 
-# Cargar módulo de dominio dinámicamente
+_SESSION_ENTITY_ALIASES = (
+    "src.shared_domain.entities.session",
+    "_session_entities_repo",
+    "_session_entities_service",
+    "_session_entities_jwt",
+    "ddd_session_entities",
+    "_laim_session_entities",
+)
+
+
 def _load_session_entities():
-    """Carga entities/session.py dinámicamente."""
+    """Carga entities/session.py una sola vez (evita clases Session duplicadas)."""
+    for name in _SESSION_ENTITY_ALIASES:
+        existing = sys.modules.get(name)
+        if existing is not None and hasattr(existing, "Session"):
+            for alias in _SESSION_ENTITY_ALIASES:
+                sys.modules.setdefault(alias, existing)
+            return existing
+
     module_path = (
         Path(__file__).resolve().parents[2] / "1_shared_domain/entities/session.py"
     )
-    spec = importlib.util.spec_from_file_location("_session_entities_repo", module_path)
+    spec = importlib.util.spec_from_file_location(
+        "src.shared_domain.entities.session", module_path
+    )
     if spec is None or spec.loader is None:
         raise RuntimeError("No se pudo cargar session entities")
     module = importlib.util.module_from_spec(spec)
-    sys.modules["_session_entities_repo"] = module
+    for alias in _SESSION_ENTITY_ALIASES:
+        sys.modules[alias] = module
     spec.loader.exec_module(module)
     return module
 

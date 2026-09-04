@@ -1,4 +1,4 @@
-"""Configuración de pytest para el broker backend."""
+"""Configuración de pytest para LAIM Web."""
 
 from __future__ import annotations
 

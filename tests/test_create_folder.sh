@@ -1,29 +1,16 @@
 #!/bin/bash
-# Test de creación de carpeta en fmanagement
+# Test de creación de carpeta en fmanagement (verifica vía API, no disco local).
 
-set -e
+set -euo pipefail
 
 echo "==================================================="
 echo "Test: Crear carpeta en fmanagement"
 echo "==================================================="
 
-# Configuración - obtener BASE_DIR dinámicamente
-BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-FMANAGEMENT_URL=$(python3 -c "
-import importlib.util, os
-env = os.environ.get('ANEWHOPE_ENV', 'macbook')
-spec = importlib.util.spec_from_file_location('pv', '$BASE_DIR/infrastructure/environments/' + env + '/protected_values.py')
-pv = importlib.util.module_from_spec(spec); spec.loader.exec_module(pv)
-from urllib.parse import urlparse
-p = urlparse(pv.broker_backend_base_url)
-print(f'http://{p.hostname}:1666')
-")
-BASE_PATH=$(python3 -c "
-import yaml
-with open('$BASE_DIR/infrastructure/environments/${ANEWHOPE_ENV:-macbook}/env.yaml') as f:
-    d = yaml.safe_load(f)
-import os; print(os.path.expanduser(d.get('fmanagement_base_path', '/tmp')))
-" 2>/dev/null || echo "/Users/administrator/data/anewhope/files/backend_server")
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=e2e_env.sh
+source "${SCRIPT_DIR}/e2e_env.sh"
+
 FOLDER_NAME="test_$(date +%s)"
 ORG_PATH="ORG00001"
 PRJ_PATH="PRJ00001"
@@ -31,47 +18,28 @@ VERSION_PATH="v001"
 USER_ID=1
 IDENTITY_TYPE_ID=1
 
-FULL_PATH="${BASE_PATH}/external/${ORG_PATH}/${PRJ_PATH}/${VERSION_PATH}"
-
 echo ""
-echo "1. Estado inicial del directorio:"
+echo "1. Llamando a fmanagement para crear carpeta '${FOLDER_NAME}':"
+echo "   URL: ${TEST_FMANAGEMENT_URL}"
 echo "-----------------------------------"
-ls -la "${FULL_PATH}" | head -15
-
-echo ""
-echo "2. Llamando a fmanagement para crear carpeta '${FOLDER_NAME}':"
-echo "-----------------------------------"
-RESPONSE=$(curl -s -X POST "${FMANAGEMENT_URL}/fmo/createfolder?iduser=${USER_ID}&basepath=default&orgpath=${ORG_PATH}&prjpath=${PRJ_PATH}&versionpath=${VERSION_PATH}&subfolders=${FOLDER_NAME}&identity_type_id=${IDENTITY_TYPE_ID}")
-
+RESPONSE=$(curl -sS --max-time 20 -X POST \
+    "${TEST_FMANAGEMENT_URL}/fmo/createfolder?iduser=${USER_ID}&basepath=${FMO_BASEPATH}&orgpath=${ORG_PATH}&prjpath=${PRJ_PATH}&versionpath=${VERSION_PATH}&subfolders=${FOLDER_NAME}&identity_type_id=${IDENTITY_TYPE_ID}")
 echo "Response: ${RESPONSE}"
-echo ""
 
-# Esperar un momento
 sleep 2
 
-echo "3. Verificando si la carpeta se creó en disco:"
+echo ""
+echo "2. Verificando carpeta vía GET /fmo/list:"
 echo "-----------------------------------"
-if [ -d "${FULL_PATH}/${FOLDER_NAME}" ]; then
-    echo "✓ ÉXITO: La carpeta '${FOLDER_NAME}' existe en disco"
-    ls -la "${FULL_PATH}/${FOLDER_NAME}"
+LISTING=$(fmo_list "${ORG_PATH}" "${PRJ_PATH}" "${VERSION_PATH}")
+if fmo_contains "${LISTING}" "${FOLDER_NAME}"; then
+    echo "✓ ÉXITO: La carpeta '${FOLDER_NAME}' aparece en /fmo/list"
 else
-    echo "✗ FALLO: La carpeta '${FOLDER_NAME}' NO existe en disco"
+    echo "✗ FALLO: La carpeta '${FOLDER_NAME}' NO aparece en /fmo/list"
+    echo "${LISTING}" | head -c 2000
     echo ""
-    echo "Contenido actual del directorio:"
-    ls -la "${FULL_PATH}"
+    exit 1
 fi
-
-echo ""
-echo "4. Verificando permisos del directorio padre:"
-echo "-----------------------------------"
-ls -ld "${FULL_PATH}"
-stat -f "Owner: %Su:%Sg Permissions: %Sp" "${FULL_PATH}"
-
-echo ""
-echo "5. Verificando permisos del usuario actual:"
-echo "-----------------------------------"
-whoami
-id
 
 echo ""
 echo "==================================================="

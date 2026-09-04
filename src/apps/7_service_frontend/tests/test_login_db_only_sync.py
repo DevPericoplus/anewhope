@@ -11,6 +11,12 @@ from typing import Any
 
 import pytest
 
+if os.environ.get("STORAGE_MODE", "").lower() == "mock":
+    pytest.skip(
+        "Login db_only requiere MariaDB; no forma parte de --unit",
+        allow_module_level=True,
+    )
+
 
 MYSQL_PATH = "/usr/local/opt/mariadb@10.6/bin/mysql"
 DB_NAME = "myllm_core_db"

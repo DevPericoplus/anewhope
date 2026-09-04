@@ -72,23 +72,25 @@ def obtener_organizaciones_asignadas(engine: Engine, id_usuario_interno: int) ->
     with engine.connect() as conn:
         query = text("""
             SELECT DISTINCT
-                o.id,
-                o.nombre,
-                o.email,
-                r.nombre as rol_nombre,
+                o.organization_id AS id,
+                o.organization_name AS nombre,
+                o.organization_email AS email,
+                r.nombre_rol AS rol_nombre,
                 aoi.fecha_asignacion,
                 COUNT(DISTINCT c.id_conversacion) as conversaciones_activas
-            FROM myllm_projects_db.organizaciones o
+            FROM myllm_core_db.organizations o
             JOIN myllm_projects_db.asignaciones_organizaciones_internas aoi
-                ON o.id = aoi.id_organizacion
+                ON o.organization_id = aoi.id_organizacion
             LEFT JOIN myllm_projects_db.proyectos_roles_base r
                 ON aoi.id_rol = r.id
             LEFT JOIN myllm_projects_db.conversaciones c
-                ON o.id = c.id_organizacion AND c.estado IN ('abierta', 'en_curso')
+                ON o.organization_id = c.id_organizacion
+               AND c.estado IN ('abierta', 'en_curso')
             WHERE aoi.id_usuario_interno = :user_id
               AND aoi.activo = TRUE
-            GROUP BY o.id
-            ORDER BY o.nombre
+            GROUP BY o.organization_id, o.organization_name, o.organization_email,
+                     r.nombre_rol, aoi.fecha_asignacion
+            ORDER BY o.organization_name
         """)
         result = conn.execute(query, {"user_id": id_usuario_interno})
         return [dict(row._mapping) for row in result]
@@ -508,10 +510,10 @@ def obtener_tickets_conversacion(
                 t.prioridad,
                 ctr.tipo_relacion,
                 ctr.fecha_vinculacion,
-                u.nombre as vinculado_por
+                u.user_name as vinculado_por
             FROM myllm_projects_db.conversaciones_tickets_relacionados ctr
             JOIN myllm_projects_db.tickets t ON ctr.id_ticket = t.id
-            LEFT JOIN myllm_projects_db.users u ON ctr.mencionado_por = u.id
+            LEFT JOIN myllm_core_db.users u ON ctr.mencionado_por = u.user_id
             WHERE ctr.id_conversacion = :id_conversacion
             ORDER BY ctr.fecha_vinculacion DESC
         """)

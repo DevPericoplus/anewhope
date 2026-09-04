@@ -9,7 +9,16 @@ Verifica:
 5. Flags de estado (protected, final_c, final_i)
 """
 
+import os
+
 import pytest
+
+if os.environ.get("STORAGE_MODE", "").lower() == "mock":
+    pytest.skip(
+        "Explorador E2E requiere servicios vivos; no forma parte de --unit",
+        allow_module_level=True,
+    )
+
 import requests
 import time
 from typing import Dict, Any
@@ -17,20 +26,15 @@ import mysql.connector
 
 
 # ============================================================================
-# Configuración de URLs
+# Configuración (URLs y BD del entorno activo: silicon/macbook/dev/pre)
 # ============================================================================
 
-MIDDLEWARE_URL = "http://localhost:8007"
-BACKEND_URL = "http://localhost:8003"
+from tests.helpers import get_db_connect_kwargs, get_service_urls
 
-# Credenciales de base de datos (ajustar según env)
-DB_CONFIG = {
-    "host": "localhost",
-    "port": 3306,
-    "user": "myllm_writer",
-    "password": "Us3r@wr1t3rP@ss",
-    "database": "myllm_projects_db",
-}
+_URLS = get_service_urls()
+MIDDLEWARE_URL = _URLS["middleware"]
+BACKEND_URL = _URLS["backend_core"]
+DB_CONFIG = get_db_connect_kwargs("myllm_projects_db", role="writer")
 
 
 # ============================================================================

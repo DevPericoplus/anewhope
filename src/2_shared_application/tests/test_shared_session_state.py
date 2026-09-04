@@ -192,9 +192,11 @@ class TestSharedSessionStateContentVerification:
         assert "def go_to_backoffice" in content, (
             "El archivo debe definir go_to_backoffice()"
         )
-        # El backoffice está en puerto dedicado 8443
-        assert "https://tfmmyllm.ai:8443" in content, (
-            "go_to_backoffice debe redirigir al backoffice (puerto 8443)"
+        assert "_get_nav_urls" in content, (
+            "go_to_backoffice debe resolver la URL desde env_settings"
+        )
+        assert 'nav_urls["backoffice"]' in content, (
+            "go_to_backoffice debe redirigir a la URL de backoffice del entorno"
         )
 
     def test_file_contains_go_to_frontend_method(self):
@@ -211,8 +213,8 @@ class TestSharedSessionStateContentVerification:
         assert "def go_to_frontend" in content, (
             "El archivo debe definir go_to_frontend()"
         )
-        assert "https://tfmmyllm.ai" in content, (
-            "go_to_frontend debe redirigir al frontend"
+        assert 'nav_urls["frontend"]' in content, (
+            "go_to_frontend debe redirigir a la URL de frontend del entorno"
         )
 
     def test_file_contains_can_access_backoffice_property(self):

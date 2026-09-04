@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from broker_client import TrainerBrokerClient, TrainerBrokerClientError
+from broker_client import TrainerBrokerClient
 
 logger = logging.getLogger("trainer_api")
 
@@ -32,7 +32,7 @@ def fetch_job_context(
             prompt_name=prompt_name,
         )
         return result
-    except TrainerBrokerClientError as exc:
+    except Exception as exc:
         logger.warning(
             "[TRAINER-CORE] Error obteniendo contexto org=%s prj=%s: %s",
             organization_id,

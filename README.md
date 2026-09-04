@@ -181,10 +181,11 @@ El proyecto soporta configuración personalizada por entorno usando cuatro nivel
 
 | Entorno | Descripción | Plataforma | Dominio interno | Dominio público |
 |---------|-------------|------------|-----------------|-----------------|
-| `macbook` | Desarrollo local | macOS 14.8.1 | tfmmyllm.ai | tfmmyllm.ai |
-| `dev` | Desarrollo en servidor | Oracle Linux 10 (VirtualBox) | house.loc | house.loc |
-| `pre` | Preproducción | Oracle Linux 10 (AWS) | anewhope.aws | getmylllm.com |
-| `pro` | Producción | Oracle Linux 10 (AWS) | anewhope.aws | getmylllm.com |
+| `macbook` | Desarrollo local nativo | macOS | tfmmyllm.ai | tfmmyllm.ai |
+| `silicon` | **Estándar Docker/compose** (banco de pruebas) | Oracle Linux 10 arm64 (UTM) | anewhope.silicon.loc | (LAN /etc/hosts) |
+| `dev` | Desarrollo en servidor (hoy legacy; migrará a silicon) | Oracle Linux 10 | house.loc | house.loc |
+| `pre` | Preproducción (hoy legacy nativo; se replica desde silicon) | Oracle Linux 10 (AWS) | anewhope.aws | getmylllm.com |
+| `pro` | Producción (futuro: frontend/backend en Kubernetes) | Oracle Linux 10 (AWS) | anewhope.aws | getmylllm.com |
 
 **Nota sobre dominios en pre/pro:**
 - **Dominio público (`getmylllm.com`):** Utilizado solo por nginx para exponer el frontend al exterior.
@@ -201,6 +202,7 @@ Esto garantiza coherencia entre entornos y evita errores de configuración al de
 | Entorno | Formato hostname | Ejemplo |
 |---------|-----------------|---------|
 | `macbook` | `<servidor>.tfmmyllm.ai` | `backend.tfmmyllm.ai:8003` |
+| `silicon` | `<servidor>.anewhope.silicon.loc` | `backend.anewhope.silicon.loc:8003` |
 | `dev` | `<servidor>.house.loc` | `backend.house.loc:8003` |
 | `pre/pro` | `<servidor>.anewhope.aws` | `backend.anewhope.aws:8003` |
 
@@ -546,9 +548,117 @@ python infrastructure/export_env.py --environment macbook --format envfile
 
 ## Entornos y plataformas
 
-- `macbook`: desarrollo local en macOS 14.8.1 (equipo único que asume util01, frontend, backend, trainer).
-- `dev`: virtualización en VirtualBox con Oracle Linux 10 (util01, frontend, backend, trainer).
-- `pre` y `pro`: instancias en AWS con Oracle Linux 10 (util01, frontend, backend, trainer).
+- `macbook`: desarrollo local nativo en macOS (un solo equipo). Se alineará con el contrato compose de silicon.
+- `silicon`: **estándar de despliegue Docker/compose** (VMs UTM Oracle Linux 10 arm64: util01, frontend, backend, trainer híbrido). Es el banco de pruebas para consolidar el modelo que heredarán `dev` y `pre`.
+- `dev`: hoy legacy (nativo / VirtualBox). Se migrará al formato silicon cuando silicon esté estable.
+- `pre`: hoy legacy nativo en AWS. Mientras tanto se **desarrolla en silicon y se replican los avances** a pre.
+- `pro`: producción AWS. **No** se dockeriza ahora: frontend y backend irán a Kubernetes más adelante; el trainer seguirá híbrido.
+
+Ver sección [Entorno silicon (estándar Docker/compose)](#entorno-silicon-estándar-dockercompose).
+
+## Entorno silicon (estándar Docker/compose)
+
+**silicon** es el primer entorno desplegado con Docker Compose por servidor. Es la **plantilla
+oficial** para todos los entornos excepto `pro`. En `pro`, frontend y backend irán a un cluster
+Kubernetes; el trainer permanecerá híbrido (Ollama nativo + ChromaDB). Ese trabajo empieza
+**después** de alinear `macbook` y `dev`.
+
+### Por qué silicon es el estándar
+
+El despliegue nativo (systemd + venv) de `pre` y `dev` funciona, pero cada servicio recibe
+variables y volúmenes de forma distinta. En compose, **cargar `env.yaml` no basta**: cada clave
+del nativo debe llegar al contenedor (env + volúmenes + `extra_hosts`). Silicon concentra esos
+contratos y los tests de certificación.
+
+| Síntoma visto en silicon | Contrato compose |
+|--------------------------|------------------|
+| Explorador / Proyecciones stub `PRJ00001` | fmanagement: `PERMISSIONS_SOURCE` + `BASEPATH` |
+| Análisis de Resultados: DNS `anewhope.aws` | backoffice: `CORE_BACKEND_BASE_URL` de `env.yaml` |
+| `extra_hosts` incompleto | `compose_extra_hosts` + `apply.tags=always` en `load_hosts_map` |
+| Buscar entrenamientos HTTP 500 | core: `MARIADB_HOST` / `DB_*` (MariaDB es el servicio `mariadb`) |
+| Informes vacíos | core: volumen `backend_core_internal_storage` |
+
+Detalle operativo: `anh_ansible_environments/readme_silicon_deploy.md` §10.
+
+### Roadmap de alineación
+
+```
+desarrollar y certificar en silicon
+        │
+        ├── replicar avances a pre (sigue legacy nativo hasta la migración)
+        │
+        ├── cuando silicon no dé problemas → migrar dev al formato silicon
+        │
+        ├── alinear macbook al mismo contrato (compose o nativo equivalente)
+        │
+        └── más adelante: pro = Kubernetes (frontend + backend); trainer híbrido
+```
+
+**Prioridad actual:** estudiar y consolidar el modelo en silicon para saber cómo será `pre`
+cuando deje el legado. Se desarrolla contra silicon y se replican features a pre nativo
+sin romper el entorno AWS hasta que el contrato compose esté estable.
+
+### FQDN silicon (PROHIBIDO localhost)
+
+| Servicio | FQDN | Puerto |
+|----------|------|--------|
+| Frontend / Nginx | `frontend.anewhope.silicon.loc` | 443 / 8005 |
+| Backoffice | `frontend.anewhope.silicon.loc` | 8443 / 8006 |
+| Middleware | `frontend.anewhope.silicon.loc` | 8007 |
+| Backend Core | `backend.anewhope.silicon.loc` | 8003 |
+| Broker | `backend.anewhope.silicon.loc` | 8008 |
+| fmanagement | `backend.anewhope.silicon.loc` | 1666 |
+| MariaDB | `backend.anewhope.silicon.loc` | 3306 |
+| Trainer | `trainer.anewhope.silicon.loc` | 8004 |
+| LAIM | `laim.anewhope.silicon.loc` | 443 |
+
+Dentro del mismo compose usar **nombre de servicio** (`mariadb`, `service_frontend`, `backend_core`).
+Los tests y clientes externos (Mac) usan el FQDN, nunca `localhost`.
+
+### Tests con entorno silicon
+
+Los helpers (`tests/helpers.py`) resuelven URLs y MariaDB desde `env.yaml` del entorno
+(`ANEWHOPE_ENV` / `ENVIRONMENT` / `.envglobal`). No usan los hosts `*.anewhope.aws` de
+`protected_values.py` (legado PRE replicado).
+
+```bash
+# Unitarios aislados (STORAGE_MODE=mock) con contrato silicon
+./full_test.sh --env silicon --unit
+
+# Suite del proyecto contra silicon (unit + integration + e2e + compose-contract)
+./full_test.sh --env silicon --all
+
+# Solo certificación docker-compose en VMs silicon
+./full_test.sh --env silicon --deploy
+```
+
+`full_test.sh --env` **no cambia** `.envglobal`. Solo exporta variables para esa ejecución.
+El desarrollo local en Mac puede seguir con `current_environment: macbook` en `.envglobal`.
+
+**Interprete de tests:** el repo exige Python **3.13** (no 3.14). `full_test.sh` usa el
+Python del venv si arranca; si el shebang apunta a otra máquina o las wheels son
+`x86_64` en un Mac ARM, hay que recrear los venvs con `python3.13` nativo:
+
+```bash
+# Ejemplo (una app)
+/opt/homebrew/bin/python3.13 -m venv .venv_frontend313
+source .venv_frontend313/bin/activate
+pip install -r src/apps/5_web_frontend/requirements.txt
+```
+
+Hasta entonces, el contrato silicon se puede certificar sin esos venvs:
+
+```bash
+./full_test.sh --env silicon --deploy
+python3.13 -m pytest -v tests/unit/test_silicon_environment.py
+```
+
+Certificación Ansible (mismo contrato, desde `anh_ansible_environments`):
+
+```bash
+./ansible-playbook-wrapper.sh -i env/silicon/host test/test_silicon_deploy.yml \
+  -e deploy_env=silicon --tags compose-contract
+```
 
 ## Infraestructura de almacenamiento y datos
 
@@ -3068,35 +3178,45 @@ cd src/apps/5_web_frontend && bash run.sh
 Script de ejecución de tests con interfaz CLI para seleccionar categorías:
 
 ```bash
-./full_test.sh              # Ejecuta todos los tests (equivale a --all)
-./full_test.sh --all        # Ejecuta todos los tests
-./full_test.sh --unit       # Solo tests unitarios
-./full_test.sh --integration # Solo tests de integración
-./full_test.sh --e2e        # Solo tests E2E (end-to-end)
-./full_test.sh --unit --integration  # Combinación de categorías
+./full_test.sh                         # Todo (entorno de .envglobal)
+./full_test.sh --env silicon --unit    # Unitarios con contrato silicon
+./full_test.sh --env silicon --all     # Suite completa + compose-contract
+./full_test.sh --unit                  # Solo unitarios (STORAGE_MODE=mock)
+./full_test.sh --integration           # Integración (BD/servicios del entorno)
+./full_test.sh --e2e                   # E2E standalone
+./full_test.sh --deploy                # Contrato docker-compose (silicon)
+./full_test.sh --unit --integration
 ```
 
 **Categorías de tests:**
 
 | Categoría | Directorio | Descripción |
 |-----------|-----------|-------------|
-| `--unit` | `src/apps/*/tests/` + `tests/unit/` | Tests unitarios in-tree y centralizados |
-| `--integration` | `tests/integration/` | Tests de integración con BD y adaptadores |
-| `--e2e` | `tests/test_*.py` + `tests/test_*.sh` | Tests end-to-end standalone |
+| `--unit` | `src/apps/*/tests/` + `tests/unit/` | Unitarios aislados (`STORAGE_MODE=mock`) |
+| `--integration` | `tests/integration/` | Integración con BD y adaptadores del entorno `--env` |
+| `--e2e` | `tests/test_*.py` + `tests/test_*.sh` | End-to-end standalone (FQDN del entorno) |
+| `--deploy` | `anh_ansible_environments/test/` | Contrato compose (plantilla silicon → futuros dev/pre) |
+| `--env` | — | `macbook` \| `silicon` \| `dev` \| `pre` \| `pro` |
 
 **Características:**
 - Activación automática de entornos virtuales por sección:
   - `.venv_frontend313` para `2_shared_application` y `5_web_frontend`
   - `.venv_backoffice313` para `6_web_backoffice`
   - `.venv_middleware313` para middleware, backend, broker, `tests/unit/` y `tests/integration/`
+  - `.venv_trainer312` para `4_trainer` (si existe)
+  - `.venv_laimweb313` para `9_laimweb` (si existe)
+- `--env silicon` exporta `ANEWHOPE_ENV` / `ENVIRONMENT` y URLs desde `infrastructure/environments/silicon/env.yaml` (FQDN `*.anewhope.silicon.loc`, MariaDB `backend.anewhope.silicon.loc`)
+- Los unitarios fuerzan `STORAGE_MODE=mock` para no depender de MariaDB/Redis
+- Integración y E2E apuntan a los servicios vivos del entorno (`--env`)
 - Resumen final con conteo pass/fail/skip por sección
 - Exit code != 0 si hay fallos en cualquier sección
 - Tests Go de fmanagement incluidos en la sección unit
 
 **Infraestructura de tests (`tests/`):**
 
-- `tests/helpers.py`: utilidades compartidas (carga dinámica de módulos con `importlib.util`, credenciales desde `protected_values.py`, URLs de servicios, conexiones BD)
-- `tests/conftest.py`: fixtures pytest (`project_root`, `protected_values`, `db_engine_core`, `db_engine_projects`)
+- `tests/helpers.py`: entorno activo (silicon-ready), `env.yaml` para URLs/hosts, credenciales desde `protected_values.py`, conexiones BD
+- `tests/conftest.py`: fixtures (`project_root`, `test_environment`, `env_yaml`, `service_urls`, `protected_values`, `db_engine_core`, `db_engine_projects`)
+- `tests/unit/test_silicon_environment.py`: contrato silicon (sin servicios vivos)
 - `tests/requirements_test.txt`: dependencias para ejecutar tests (httpx, pytest, pymysql, SQLAlchemy, requests, PyYAML)
 
 ### clear_caches.sh
@@ -7327,6 +7447,11 @@ El sistema se despliega usando Ansible gestionado desde 4 repositorios coordinad
 Se pasa al ejecutar ansible-playbook para seleccionar el entorno:
 
 ```bash
+# Estándar compose (banco de pruebas; plantilla para migrar dev/pre)
+./ansible-playbook-wrapper.sh -i env/silicon/host frontend.yml \
+  -e deploy_env=silicon --tags docker-compose
+
+# Legacy nativo (pre/dev actuales)
 ansible-playbook -i env/dev/host frontend.yml -e deploy_env=dev
 ansible-playbook -i env/pre/host backend.yml -e deploy_env=pre
 ansible-playbook -i env/pro/host trainer.yml -e deploy_env=pro

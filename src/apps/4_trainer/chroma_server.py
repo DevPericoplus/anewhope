@@ -15,6 +15,7 @@ Configuración:
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 import os
 import subprocess
@@ -32,50 +33,46 @@ _chroma_process: subprocess.Popen[bytes] | None = None
 _chroma_client: chromadb.HttpClient | None = None
 
 
+def _load_env_settings() -> Any | None:
+    """Carga env_settings.py por ruta (el directorio 2_* no es importable)."""
+    module_path = (
+        Path(__file__).resolve().parents[3]
+        / "src"
+        / "2_shared_application"
+        / "config"
+        / "env_settings.py"
+    )
+    if not module_path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("chroma_env_settings", module_path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("chroma_env_settings", module)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _get_env_value(name: str, default: str) -> str:
-    """Obtiene un valor de entorno usando el sistema de configuración del proyecto.
-
-    Intenta cargar desde env_settings.py (patrón obligatorio del proyecto).
-    Si no está disponible, usa os.environ como fallback.
-    """
+    """Obtiene un valor de entorno usando el sistema de configuración del proyecto."""
     try:
-        # Intentar usar el sistema de configuración del proyecto
-        root_dir = Path(__file__).resolve().parents[3]
-        if str(root_dir) not in sys.path:
-            sys.path.insert(0, str(root_dir))
-        from src.config_application.config.env_settings import get_env_value
-        return get_env_value(name.upper(), default)
-    except (ImportError, Exception):
+        settings = _load_env_settings()
+        if settings is not None:
+            return str(settings.get_env_value(name.upper(), default))
+    except (ImportError, OSError, AttributeError, TypeError):
         pass
-
-    try:
-        from src.shared_application.config.env_settings import get_env_value
-        return get_env_value(name.upper(), default)
-    except (ImportError, Exception):
-        pass
-
     return os.environ.get(name.upper(), default)
 
 
 def _get_protected_value(name: str, default: str = "") -> str:
     """Obtiene un valor protegido (credenciales) desde protected_values.py."""
     try:
-        root_dir = Path(__file__).resolve().parents[3]
-        if str(root_dir) not in sys.path:
-            sys.path.insert(0, str(root_dir))
-        from src.config_application.config.env_settings import get_protected_value
-        value = get_protected_value(name, default)
-        return str(value) if value is not None else default
-    except (ImportError, Exception):
+        settings = _load_env_settings()
+        if settings is not None:
+            value = settings.get_protected_value(name, default)
+            return str(value) if value is not None else default
+    except (ImportError, OSError, AttributeError, TypeError):
         pass
-
-    try:
-        from src.shared_application.config.env_settings import get_protected_value
-        value = get_protected_value(name, default)
-        return str(value) if value is not None else default
-    except (ImportError, Exception):
-        pass
-
     return os.environ.get(name.upper(), default)
 
 

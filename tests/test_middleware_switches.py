@@ -8,7 +8,7 @@ import urllib.error
 import json
 import time
 
-from tests.helpers import get_service_urls, get_db_connection as _get_db_connection
+from tests.helpers import get_service_urls, get_db_connection as _get_db_connection, row_value
 
 
 # Configuración
@@ -46,9 +46,11 @@ def get_estado_from_db(estado_id: int) -> dict:
                 raise ValueError(f"Estado {estado_id} no encontrado")
 
             return {
-                "revision_interna": bool(row[0]),
-                "propuesta_mejoras": bool(row[1]),
-                "generacion_llm_solicitada": bool(row[2]),
+                "revision_interna": bool(row_value(row, "revision_interna", 0)),
+                "propuesta_mejoras": bool(row_value(row, "propuesta_mejoras", 1)),
+                "generacion_llm_solicitada": bool(
+                    row_value(row, "generacion_llm_solicitada", 2)
+                ),
             }
     finally:
         conn.close()

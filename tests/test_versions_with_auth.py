@@ -2,30 +2,36 @@
 """Script de prueba para verificar las versiones del proyecto con autenticación"""
 
 import sys
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
+from tests.helpers import fetch_user_otp, get_service_urls, install_requests_shim
+from tests.import_aliases import register_repo_helpers
+
+register_repo_helpers()
+install_requests_shim()
 import requests
 
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src/apps/5_web_frontend"))
-
-# Importar las funciones
+sys.path.insert(0, str(_ROOT / "src/apps/5_web_frontend"))
 from adapters.api_client import get_project_versions
 
 print("\n" + "="*60)
 print("TEST: Verificando versiones del proyecto con auth")
 print("="*60 + "\n")
 
-# 1. Hacer login para obtener tokens
 print("1. Haciendo login...")
-from tests.helpers import get_service_urls
 _urls = get_service_urls()
 MIDDLEWARE_URL = _urls["middleware"]
 
 try:
+    otp = fetch_user_otp("adminone")
     login_response = requests.post(
         f"{MIDDLEWARE_URL}/login",
         json={
             "user_name": "adminone",
-            "password": "password123"
+            "password": "Password01",
+            "otp": otp,
         },
         timeout=10
     )
@@ -60,11 +66,13 @@ try:
 
     else:
         print(f"❌ Error en login: {login_response.status_code} - {login_response.text}")
+        sys.exit(1)
 
 except Exception as e:
     print(f"\n❌ Error: {e}")
     import traceback
     traceback.print_exc()
+    sys.exit(1)
 
 print("\n" + "="*60)
 print("FIN DEL TEST")

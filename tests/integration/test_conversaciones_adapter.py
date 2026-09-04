@@ -36,16 +36,13 @@ def setup_test_data(engine_core, engine_projects):
     test_data = {}
 
     with engine_core.connect() as conn:
-        # Obtener primer usuario
-        result = conn.execute(text("SELECT id FROM users LIMIT 1"))
+        result = conn.execute(text("SELECT user_id FROM users LIMIT 1"))
         test_data['user_id'] = result.fetchone()[0]
 
-        # Obtener primera organización
-        result = conn.execute(text("SELECT id FROM organizations LIMIT 1"))
+        result = conn.execute(text("SELECT organization_id FROM organizations LIMIT 1"))
         test_data['org_id'] = result.fetchone()[0]
 
     with engine_projects.connect() as conn:
-        # Obtener primer ticket (si existe)
         result = conn.execute(text("SELECT id FROM tickets LIMIT 1"))
         row = result.fetchone()
         test_data['ticket_id'] = row[0] if row else None
@@ -62,6 +59,40 @@ def setup_test_data(engine_core, engine_projects):
         conn.commit()
 
 
+TEST_ASIGNACION_ROL = 5
+
+
+def _ensure_test_asignacion(
+    engine_projects,
+    user_id: int,
+    org_id: int,
+    id_rol: int = TEST_ASIGNACION_ROL,
+) -> int:
+    """Reutiliza o crea una asignación de prueba (evita unique_asignacion)."""
+    with engine_projects.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT id FROM asignaciones_organizaciones_internas
+                WHERE id_usuario_interno = :user_id
+                  AND id_organizacion = :org_id
+                  AND id_rol = :id_rol
+                """
+            ),
+            {"user_id": user_id, "org_id": org_id, "id_rol": id_rol},
+        ).fetchone()
+        if row:
+            return int(row[0])
+    return conversaciones_adapter.crear_asignacion_interna(
+        engine=engine_projects,
+        id_usuario_interno=user_id,
+        id_organizacion=org_id,
+        id_rol=id_rol,
+        asignado_por=user_id,
+        notas="TEST: Asignación de prueba",
+    )
+
+
 class TestAsignacionesInternas:
     """Tests para asignaciones de usuarios internos a organizaciones."""
 
@@ -70,13 +101,8 @@ class TestAsignacionesInternas:
         user_id = setup_test_data['user_id']
         org_id = setup_test_data['org_id']
 
-        id_asignacion = conversaciones_adapter.crear_asignacion_interna(
-            engine=engine_projects,
-            id_usuario_interno=user_id,
-            id_organizacion=org_id,
-            id_rol=3,  # Editor
-            asignado_por=user_id,
-            notas="TEST: Asignación de prueba"
+        id_asignacion = _ensure_test_asignacion(
+            engine_projects, user_id, org_id, id_rol=5
         )
 
         assert id_asignacion > 0, "Debería retornar un ID válido"
@@ -92,7 +118,7 @@ class TestAsignacionesInternas:
             assert row is not None
             assert row[1] == user_id  # id_usuario_interno
             assert row[2] == org_id   # id_organizacion
-            assert row[3] == 3        # id_rol
+            assert row[3] == TEST_ASIGNACION_ROL
             assert row[5] == True     # activo
 
         # Cleanup
@@ -109,13 +135,7 @@ class TestAsignacionesInternas:
         org_id = setup_test_data['org_id']
 
         # Crear asignación temporal
-        id_asignacion = conversaciones_adapter.crear_asignacion_interna(
-            engine=engine_projects,
-            id_usuario_interno=user_id,
-            id_organizacion=org_id,
-            id_rol=3,
-            asignado_por=user_id
-        )
+        id_asignacion = _ensure_test_asignacion(engine_projects, user_id, org_id)
 
         # Obtener asignaciones
         organizaciones = conversaciones_adapter.obtener_organizaciones_asignadas(
@@ -140,13 +160,7 @@ class TestAsignacionesInternas:
         org_id = setup_test_data['org_id']
 
         # Crear asignación
-        id_asignacion = conversaciones_adapter.crear_asignacion_interna(
-            engine=engine_projects,
-            id_usuario_interno=user_id,
-            id_organizacion=org_id,
-            id_rol=3,
-            asignado_por=user_id
-        )
+        id_asignacion = _ensure_test_asignacion(engine_projects, user_id, org_id)
 
         # Desactivar
         result = conversaciones_adapter.desactivar_asignacion_interna(
@@ -297,11 +311,11 @@ class TestConversaciones:
             asunto="TEST: Unirse a conversación"
         )
 
-        # Usuario interno se une
+        interno_id = 57 if user_id != 57 else user_id + 1
         result = conversaciones_adapter.unirse_a_conversacion(
             engine=engine_projects,
             id_conversacion=id_conv,
-            id_usuario_interno=user_id
+            id_usuario_interno=interno_id
         )
 
         assert result == True
@@ -312,7 +326,7 @@ class TestConversaciones:
                 text("""SELECT * FROM participantes_conversacion
                         WHERE id_conversacion = :id_conv AND id_usuario = :user_id
                         AND tipo_participante = 'interno'"""),
-                {"id_conv": id_conv, "user_id": user_id}
+                {"id_conv": id_conv, "user_id": interno_id}
             )
             row = result.fetchone()
             assert row is not None

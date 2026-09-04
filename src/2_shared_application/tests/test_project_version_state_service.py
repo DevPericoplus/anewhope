@@ -48,8 +48,7 @@ def mock_repository():
 @pytest.fixture
 def mock_db_engine():
     """Mock del DB Engine para consultas de permisos."""
-    engine = Mock()
-    return engine
+    return MagicMock()
 
 
 @pytest.fixture
@@ -60,22 +59,18 @@ def sample_project_version_state():
         organization_id=100,
         project_id=200,
         version_id=1,
-        state=ExplorerState.PROPUESTA,
+        state=ExplorerState.STABLE,
         state_internal=StateInternal.PROPUESTA_CLIENTE,
         proposal=ProposalPhase(aceptacion_cliente=False, aceptacion_interna=False),
-        training=TrainingPhase(
-            entrenamiento_solicitado=False, entrenamiento_completado=False
-        ),
+        training=TrainingPhase(solicitado=False, completado=False),
         evaluation=EvaluationPhase(
-            evaluacion=False,
-            reentrenamiento=False,
-            optimizacion=False,
+            evaluacion_en_curso=False,
+            reentrenamiento_en_curso=False,
+            optimizacion_en_curso=False,
             calidad_aprobada=False,
         ),
-        generation=GenerationPhase(
-            generacion_solicitada=False, generacion_completada=False
-        ),
-        notification=NotificationPhase(notificacion_enviada=False),
+        generation=GenerationPhase(solicitada=False, completada=False),
+        notification=NotificationPhase(enviada=False),
     )
 
 
@@ -341,22 +336,18 @@ class TestProposalPhaseOperations:
             organization_id=100,
             project_id=200,
             version_id=1,
-            state=ExplorerState.PROPUESTA,
-            state_internal=StateInternal.PROPUESTA_APROBADA,
+            state=ExplorerState.STABLE,
+            state_internal=StateInternal.ACEPTACION_INTERNA,
             proposal=ProposalPhase(aceptacion_cliente=True, aceptacion_interna=True),
-            training=TrainingPhase(
-                entrenamiento_solicitado=False, entrenamiento_completado=False
-            ),
+            training=TrainingPhase(solicitado=False, completado=False),
             evaluation=EvaluationPhase(
-                evaluacion=False,
-                reentrenamiento=False,
-                optimizacion=False,
+                evaluacion_en_curso=False,
+                reentrenamiento_en_curso=False,
+                optimizacion_en_curso=False,
                 calidad_aprobada=False,
             ),
-            generation=GenerationPhase(
-                generacion_solicitada=False, generacion_completada=False
-            ),
-            notification=NotificationPhase(notificacion_enviada=False),
+            generation=GenerationPhase(solicitada=False, completada=False),
+            notification=NotificationPhase(enviada=False),
         )
 
         mock_repository.get_by_id.return_value = state
@@ -391,6 +382,9 @@ class TestTrainingPhaseOperations:
         self, mock_repository, mock_db_engine, sample_project_version_state
     ):
         """Completar entrenamiento actualiza y persiste."""
+        sample_project_version_state.training = TrainingPhase(
+            solicitado=True, completado=False
+        )
         mock_repository.get_by_id.return_value = sample_project_version_state
         mock_repository.save.return_value = sample_project_version_state
 
@@ -408,7 +402,7 @@ class TestTrainingPhaseOperations:
 
         # Verificar entrenamiento_completado=True
         saved_state = mock_repository.save.call_args[0][0]
-        assert saved_state.training.entrenamiento_completado is True
+        assert saved_state.training.completado is True
 
 
 # ============================================================================
@@ -423,6 +417,9 @@ class TestEvaluationPhaseOperations:
         self, mock_repository, mock_db_engine, sample_project_version_state
     ):
         """Aprobar control de calidad actualiza y persiste."""
+        sample_project_version_state.training = TrainingPhase(
+            solicitado=True, completado=True
+        )
         mock_repository.get_by_id.return_value = sample_project_version_state
         mock_repository.save.return_value = sample_project_version_state
 

@@ -7,13 +7,18 @@ Este módulo prueba:
 - Integración entre Backend Core → Service → Repository
 """
 
-import pytest
-from fastapi.testclient import TestClient
-from unittest.mock import Mock, patch, MagicMock
 import os
 
-# Configurar modo mock antes de imports
-os.environ["STORAGE_MODE"] = "mock"
+import pytest
+
+if os.environ.get("STORAGE_MODE", "").lower() == "mock":
+    pytest.skip(
+        "API de estado de versión requiere MariaDB; no forma parte de --unit",
+        allow_module_level=True,
+    )
+
+from fastapi.testclient import TestClient
+from unittest.mock import Mock, patch, MagicMock
 
 
 # ============================================================================
