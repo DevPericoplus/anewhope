@@ -84,7 +84,7 @@ def contact_form_panel() -> rx.Component:
             rx.cond(
                 LaimWebState.contact_form_success,
                 rx.text(
-                    "Mensaje enviado correctamente. Le responderemos a la dirección indicada.",
+                    LaimWebState.contact_success_message,
                     class_name="crt-success",
                     font_size="0.85em",
                 ),

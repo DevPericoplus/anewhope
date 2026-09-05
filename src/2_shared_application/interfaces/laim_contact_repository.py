@@ -20,10 +20,11 @@ class LaimContactRepository(Protocol):
         ip_address: str,
         user_agent: str,
         image: Any | None = None,
+        id_estado: int = 1,
     ) -> tuple[int, int | None]:
-        """Inserta mensaje y opcionalmente imagen adjunta."""
+        """Inserta un caso de contacto (id = número de caso) e imagen opcional."""
         ...
 
     def get_message_by_id(self, message_id: int) -> dict[str, Any] | None:
-        """Obtiene un mensaje por ID."""
+        """Obtiene un caso por número (id)."""
         ...

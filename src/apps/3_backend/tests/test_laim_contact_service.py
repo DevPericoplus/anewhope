@@ -48,7 +48,11 @@ def test_create_contact_message_success_without_image() -> None:
 
     assert result["success"] is True
     assert result["message_id"] == 42
+    assert result["numero_caso"] == 42
+    assert result["id_estado"] == 1
     assert result["image_id"] is None
+    call_kwargs = repository.create_message_with_image.call_args.kwargs
+    assert call_kwargs["id_estado"] == 1
 
 
 def test_create_contact_message_rejects_invalid_usage_mode() -> None:
@@ -92,4 +96,7 @@ def test_create_contact_message_with_png_screenshot() -> None:
 
     assert result["success"] is True
     assert result["message_id"] == 7
+    assert result["numero_caso"] == 7
+    assert result["id_estado"] == 1
     assert result["image_id"] == 3
+    assert repository.create_message_with_image.call_args.kwargs["id_estado"] == 1

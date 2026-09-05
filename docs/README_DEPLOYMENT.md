@@ -134,6 +134,21 @@ CALL sp_avanzar_proyecto_flujo(1, 123, 'Completada revisión interna', '192.168.
 
 **Migración:** `infrastructure/database/migrations/002_flujo_historico_y_trigger.sql`
 
+### Base de datos LAIM (`laim_core_db`) — casos de contacto
+
+✨ *Nuevo 2026-09-05*. El formulario de contacto de LAIM Web persiste un **caso**
+en `casos_contacto`. El `id` autogenerado es el **número de caso**. El estado
+inicial es siempre `id_estado = 1` (Abierto). El envío por correo y el visor
+de casos quedan para una iteración posterior.
+
+| Tabla | Propósito |
+|-------|-----------|
+| `estados_casos_contacto` | Catálogo: 1 Abierto, 2 Gestionando, 3 Escalado, 4 Resuelto |
+| `casos_contacto` | Caso de contacto (`id` = número de caso, FK `id_estado`) |
+| `casos_contacto_imagenes` | Captura opcional (BLOB) vinculada al caso |
+
+**Migración:** `infrastructure/database/migrations/021_casos_contacto.sql`
+
 ## Almacenamiento de ficheros (fmanagement)
 
 La API `fmanagement` opera sobre un volumen dedicado en el servidor backend:

@@ -51,6 +51,7 @@ _storage = _load_module(
 LaimContactMessageCreateDto = _dtos.LaimContactMessageCreateDto
 LaimContactRepository = _repo_mod.LaimContactRepository
 LaimContactImageRecord = _repo_mod.LaimContactImageRecord
+ESTADO_CASO_ABIERTO_ID = _repo_mod.ESTADO_CASO_ABIERTO_ID
 create_laim_session_engine = _session_repo_mod.create_laim_session_engine
 load_laim_mariadb_settings = _storage.load_laim_mariadb_settings
 
@@ -153,9 +154,10 @@ class LaimContactService:
                 ip_address=ip_address,
                 user_agent=user_agent,
                 image=image_record,
+                id_estado=ESTADO_CASO_ABIERTO_ID,
             )
         except Exception as exc:
-            _logger.exception("Error persistiendo mensaje de contacto: %s", exc)
+            _logger.exception("Error persistiendo caso de contacto: %s", exc)
             return {
                 "success": False,
                 "error": "No se pudo registrar el mensaje. Inténtelo más tarde.",
@@ -164,6 +166,8 @@ class LaimContactService:
         return {
             "success": True,
             "message_id": message_id,
+            "numero_caso": message_id,
+            "id_estado": ESTADO_CASO_ABIERTO_ID,
             "image_id": image_id,
         }
 

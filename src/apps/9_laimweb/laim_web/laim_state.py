@@ -248,6 +248,8 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     contact_reply_email: str = ""
     contact_form_error: str = ""
     contact_form_success: bool = False
+    contact_success_message: str = ""
+    contact_case_number: int = 0
     contact_submitting: bool = False
     _pending_contact_screenshot: dict[str, str] | None = None
 
@@ -622,6 +624,8 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
             self.contact_reply_email = self.user_email.strip()
         self.contact_form_error = ""
         self.contact_form_success = False
+        self.contact_success_message = ""
+        self.contact_case_number = 0
 
     @event
     def set_contact_usage_mode(self, value: str) -> None:
@@ -696,6 +700,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
 
         self.contact_form_error = ""
         self.contact_form_success = False
+        self.contact_success_message = ""
         return rx.call_script(
             self._CONTACT_SCREENSHOT_SCRIPT,
             callback=LaimWebState.contact_submit_with_screenshot,
@@ -766,7 +771,14 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         async with self:
             self.contact_submitting = False
             if result.get("success"):
+                numero_caso = int(result.get("numero_caso") or result.get("message_id") or 0)
                 self.contact_form_success = True
+                self.contact_case_number = numero_caso
+                self.contact_success_message = (
+                    f"Caso nº {numero_caso} registrado. Le responderemos a la dirección indicada."
+                    if numero_caso > 0
+                    else "Mensaje enviado correctamente. Le responderemos a la dirección indicada."
+                )
                 self.contact_affected_user = ""
                 self.contact_message_body = ""
                 if not self.is_logged_in:

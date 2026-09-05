@@ -28,9 +28,11 @@ class LaimContactMessageCreateDto(BaseModel):
 
 
 class LaimContactMessageResponseDto(BaseModel):
-    """Respuesta tras crear un mensaje."""
+    """Respuesta tras crear un caso de contacto."""
 
     success: bool = True
     message_id: int = 0
+    numero_caso: int = 0
+    id_estado: int = 1
     image_id: int | None = None
     error: str = ""

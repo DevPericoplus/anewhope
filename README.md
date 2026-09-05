@@ -11516,6 +11516,33 @@ LAIM Web (`www.laim.app`) es el **portal de descarga y orientación** para usuar
 
 **Flujo de datos:** LAIM Web → Middleware (8007) → Broker (8008) → Backend Core (8003) → `laim_core_db`. Header `X-Client-App: laimweb`.
 
+#### Formulario de contacto → casos (`casos_contacto`)
+
+El botón **Enviar** del formulario de Contacto **no envía correo**. Registra un
+caso en MariaDB (`laim_core_db`) para revisión y envío posteriores.
+
+```
+LAIM Web (Enviar)
+  → POST /laim/contact/messages (Middleware 8007)
+    → Broker (8008)
+      → Backend Core (8003)
+        → INSERT casos_contacto (id_estado = 1 Abierto)
+        → INSERT casos_contacto_imagenes (si hay captura)
+```
+
+| Tabla | Rol |
+|-------|-----|
+| `estados_casos_contacto` | Catálogo: **1 Abierto**, 2 Gestionando, 3 Escalado, 4 Resuelto |
+| `casos_contacto` | Caso; el `id` AUTO_INCREMENT es el **número de caso** |
+| `casos_contacto_imagenes` | Captura opcional (PNG/JPG/WEBP/GIF, máx. 5 MB) |
+
+**Alta:** siempre `id_estado = 1` (Abierto). El portal muestra «Caso nº N registrado».
+**Pendiente:** servicio de correo y visor/gestión de estados.
+
+**Migración:** `infrastructure/database/migrations/021_casos_contacto.sql`  
+**Servicio:** `src/apps/3_backend/laim_contact_service.py`  
+**Repositorio:** `src/2_shared_application/adapters/laim_contact_repository.py`
+
 ### 18.7. Roadmap
 
 - [ ] Gestión completa del ciclo de vida de modelos
