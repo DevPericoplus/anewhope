@@ -16,11 +16,15 @@ body,
   background-image: radial-gradient(var(--crt-radial), var(--crt-bg) 120%);
   color: var(--crt-text);
   font: 1.05rem Inconsolata, ui-monospace, monospace;
-  text-shadow: 0 0 5px var(--crt-text-glow);
+  /* Halo corto: el glow amplio (5px) difumina el trazo en textos largos. */
+  text-shadow: 0 0 1px var(--crt-text-glow);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-.crt-shell::after,
-body::after {
+/* Un solo overlay: body + .crt-shell a la vez duplicaba las scanlines. */
+.crt-shell::after {
   content: "";
   pointer-events: none;
   position: fixed;
@@ -34,7 +38,7 @@ body::after {
     var(--crt-scanline),
     var(--crt-scanline) 1px,
     transparent 1px,
-    transparent 2px
+    transparent 4px
   );
 }
 
@@ -322,6 +326,7 @@ body::after {
   text-transform: uppercase;
   font-weight: 700;
   margin-bottom: 0.75rem;
+  text-shadow: 0 0 2px var(--crt-text-glow);
 }
 
 .crt-btn {
@@ -567,7 +572,11 @@ body::after {
   max-width: 100%;
   box-sizing: border-box;
   color: var(--crt-text);
-  line-height: 1.6;
+  line-height: 1.7;
+  text-shadow: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 .crt-markdown > div,
@@ -575,6 +584,23 @@ body::after {
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+}
+
+.crt-markdown h1,
+.crt-markdown h2,
+.crt-markdown h3,
+.crt-markdown p,
+.crt-markdown li,
+.crt-markdown td,
+.crt-markdown th,
+.crt-markdown blockquote,
+.crt-markdown ul,
+.crt-markdown ol,
+.crt-markdown em,
+.crt-markdown i,
+.crt-markdown strong,
+.crt-markdown b {
+  text-shadow: none;
 }
 
 .crt-markdown h1,
@@ -1015,6 +1041,9 @@ body::after {
 
 .crt-presentacion-markdown {
   padding: 0 1.25em 1.5em;
+  text-shadow: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .crt-btn-cross {

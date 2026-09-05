@@ -30,7 +30,7 @@ body.crt-theme-amber {
   --crt-table-head: #ffd59a;
   --crt-table-cell: #ffe8c8;
   --crt-link-hover-bg: rgba(120, 60, 0, 0.45);
-  --crt-scanline: rgba(0, 0, 0, 0.15);
+  --crt-scanline: rgba(0, 0, 0, 0.07);
   --crt-presentacion-inset: rgba(255, 140, 0, 0.06);
   --crt-presentacion-outer: rgba(255, 120, 0, 0.12);
 }

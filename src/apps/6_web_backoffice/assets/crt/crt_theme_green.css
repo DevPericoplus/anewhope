@@ -31,7 +31,7 @@ body.crt-theme-green {
   --crt-table-head: #b8ffb8;
   --crt-table-cell: #e2ffe2;
   --crt-link-hover-bg: rgba(0, 60, 0, 0.45);
-  --crt-scanline: rgba(0, 0, 0, 0.15);
+  --crt-scanline: rgba(0, 0, 0, 0.07);
   --crt-presentacion-inset: rgba(0, 255, 0, 0.06);
   --crt-presentacion-outer: rgba(0, 180, 0, 0.12);
 }
