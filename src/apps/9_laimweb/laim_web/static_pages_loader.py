@@ -11,6 +11,7 @@ PUBLIC_MENU_FILES: dict[str, str] = {
     "presentacion": "presentacion.md",
     "servicios": "servicios.md",
     "documentacion": "documentacion.md",
+    "escenarios": "escenarios.md",
     "contacto": "contacto.md",
 }
 

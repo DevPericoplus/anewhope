@@ -1076,3 +1076,344 @@ body,
   color: #000000 !important;
   font-weight: 600;
 }
+
+/* Guía gráfica de escenarios LAIM */
+.crt-escenarios {
+  box-sizing: border-box;
+}
+
+.esc-intro,
+.esc-caption,
+.esc-command,
+.esc-card-summary,
+.esc-node-label,
+.esc-node-role,
+.esc-step-label {
+  text-shadow: none;
+}
+
+.esc-intro {
+  line-height: 1.55;
+  max-width: 52em;
+}
+
+.esc-selector {
+  flex: 0 0 auto;
+}
+
+.esc-card {
+  border: 1px solid var(--crt-border);
+  background: rgba(0, 24, 0, 0.45);
+  padding: 0.55em 0.7em;
+  box-sizing: border-box;
+}
+
+.esc-card-active {
+  border-color: var(--crt-accent);
+  background: rgba(0, 80, 0, 0.28);
+  border-left: 3px solid var(--crt-accent);
+}
+
+.esc-card-title {
+  color: var(--crt-title);
+  font-size: 0.88em;
+  font-weight: 700;
+  margin-bottom: 0.25em;
+}
+
+.esc-card-summary {
+  color: var(--crt-muted);
+  font-size: 0.78em;
+  line-height: 1.4;
+}
+
+.esc-stage {
+  position: relative;
+  width: 100%;
+  height: 420px;
+  border: 1px solid var(--crt-border);
+  background: rgba(0, 16, 0, 0.4);
+  overflow: hidden;
+}
+
+.esc-wires {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.esc-wire {
+  fill: none;
+  stroke: rgba(120, 200, 120, 0.28);
+  stroke-width: 0.55;
+}
+
+.esc-wire-active {
+  stroke: #9dff9d;
+  stroke-width: 0.95;
+  stroke-dasharray: 3.2 1.8;
+  animation: esc-marching-ants 0.45s linear infinite;
+}
+
+.esc-wire-mesh,
+.esc-wire-wan {
+  stroke-dasharray: 1.6 1.2;
+}
+
+.esc-wire-mesh.esc-wire-active,
+.esc-wire-wan.esc-wire-active {
+  stroke-dasharray: 3.2 1.8;
+}
+
+@keyframes esc-marching-ants {
+  to {
+    stroke-dashoffset: -8;
+  }
+}
+
+.esc-traffic-tail {
+  animation: esc-marching-ants 0.4s linear infinite;
+}
+
+.esc-stage .traffic-packet {
+  filter: drop-shadow(0 0 1.2px rgba(157, 255, 157, 0.55));
+}
+
+.esc-traffic-payload {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.esc-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  min-width: 7.2em;
+  max-width: 9.5em;
+  padding: 0.4em 0.5em;
+  border: 1px solid var(--crt-border);
+  background: rgba(0, 18, 0, 0.92);
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.esc-node-role {
+  display: block;
+  font-size: 0.62em;
+  letter-spacing: 0.08em;
+  color: var(--crt-muted);
+  margin-bottom: 0.15em;
+}
+
+.esc-node-label {
+  display: block;
+  font-size: 0.82em;
+  color: var(--crt-text);
+  line-height: 1.25;
+}
+
+.esc-role-share {
+  border-color: #6adf6a;
+}
+
+.esc-role-connect {
+  border-color: #4a8a4a;
+}
+
+.esc-role-host,
+.esc-role-remote {
+  border-style: dashed;
+}
+
+.esc-role-mesh,
+.esc-role-bastion {
+  border-color: #8cff8c;
+}
+
+.esc-lit {
+  outline: 1px solid rgba(157, 255, 157, 0.45);
+}
+
+.esc-gpu-idle {
+  box-shadow: none;
+}
+
+.esc-gpu-infer {
+  border-color: #7dff7d;
+  box-shadow: 0 0 10px rgba(80, 255, 80, 0.35);
+}
+
+.esc-gpu-queue {
+  border-color: #ffb000;
+  box-shadow: 0 0 10px rgba(255, 176, 0, 0.28);
+}
+
+.esc-gpu-hot {
+  border-color: #ff7a20;
+  box-shadow: 0 0 12px rgba(255, 122, 32, 0.32);
+}
+
+.esc-packet {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  font-size: 0.68em;
+  letter-spacing: 0.06em;
+  padding: 0.12em 0.4em;
+  border: 1px solid #9dff9d;
+  background: rgba(0, 36, 0, 0.92);
+  color: #d6ffd6;
+}
+
+.esc-caption {
+  color: var(--crt-text);
+  line-height: 1.5;
+  min-height: 2.6em;
+}
+
+.esc-command {
+  color: var(--crt-muted);
+  font-size: 0.82em;
+  letter-spacing: 0.04em;
+}
+
+.esc-step-label {
+  color: var(--crt-muted);
+  font-size: 0.85em;
+}
+
+.esc-legend {
+  margin-top: 0.25em;
+}
+
+.esc-legend-swatch {
+  font-size: 0.68em;
+  letter-spacing: 0.04em;
+  padding: 0.2em 0.45em;
+  border: 1px solid var(--crt-border);
+  background: rgba(0, 18, 0, 0.7);
+}
+
+.esc-legend-req {
+  border-color: #a78bfa;
+  color: #c4b5fd;
+}
+
+.esc-legend-res {
+  border-color: #44ffcc;
+  color: #6ee7b7;
+}
+
+.esc-queue {
+  border: 1px solid var(--crt-border);
+  background: rgba(0, 20, 0, 0.5);
+  padding: 0.55em 0.7em;
+  box-sizing: border-box;
+}
+
+.esc-q-title {
+  color: var(--crt-title);
+  font-size: 0.82em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.esc-q-slots-label,
+.esc-q-note,
+.esc-q-empty,
+.esc-q-detail,
+.esc-q-kind,
+.esc-q-client {
+  text-shadow: none;
+}
+
+.esc-q-slots-label {
+  color: var(--crt-muted);
+  font-size: 0.72em;
+  letter-spacing: 0.06em;
+}
+
+.esc-q-slots {
+  color: #d6ffd6;
+  font-size: 0.85em;
+  font-weight: 700;
+}
+
+.esc-q-note,
+.esc-q-empty {
+  color: var(--crt-muted);
+  font-size: 0.75em;
+  line-height: 1.4;
+  margin: 0.25em 0 0.4em;
+}
+
+.esc-q-row {
+  border: 1px solid rgba(120, 200, 120, 0.18);
+  background: rgba(0, 12, 0, 0.45);
+  padding: 0.22em 0.4em;
+  box-sizing: border-box;
+}
+
+.esc-q-client {
+  min-width: 2.4em;
+  color: #d6ffd6;
+  font-weight: 700;
+  font-size: 0.78em;
+}
+
+.esc-q-kind {
+  min-width: 4.2em;
+  color: var(--crt-muted);
+  font-size: 0.72em;
+}
+
+.esc-q-prio,
+.esc-q-st {
+  font-size: 0.62em;
+  letter-spacing: 0.06em;
+  padding: 0.08em 0.35em;
+  border: 1px solid var(--crt-border);
+}
+
+.esc-q-prio-p1 {
+  border-color: #ff7a20;
+  color: #ffb080;
+}
+
+.esc-q-prio-p2 {
+  border-color: #ffb000;
+  color: #ffd59a;
+}
+
+.esc-q-prio-p3 {
+  border-color: #6a8a6a;
+  color: var(--crt-muted);
+}
+
+.esc-q-queued {
+  border-color: #ffb000;
+  color: #ffd59a;
+}
+
+.esc-q-running {
+  border-color: #7dff7d;
+  color: #9dff9d;
+}
+
+.esc-q-done {
+  border-color: #4a8a4a;
+  color: var(--crt-muted);
+}
+
+.esc-q-detail {
+  color: var(--crt-muted);
+  font-size: 0.7em;
+  flex: 1;
+}

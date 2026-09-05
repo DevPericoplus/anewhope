@@ -42,3 +42,11 @@ def test_user_info_panel_hides_organization() -> None:
 
     assert "organization_id" not in source
     assert "Org:" not in source
+
+
+def test_public_menu_places_escenarios_after_documentacion() -> None:
+    """Escenarios queda debajo de Documentación en el menú público."""
+    source_path = laimweb_root / "laim_web" / "pages" / "index.py"
+    source = source_path.read_text(encoding="utf-8")
+    assert '"documentacion",\n    "escenarios",\n    "contacto"' in source
+    assert '"escenarios": "Escenarios"' in source

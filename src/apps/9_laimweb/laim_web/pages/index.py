@@ -5,6 +5,7 @@ import reflex as rx
 from laim_web.components.auth_modals import auth_modals
 from laim_web.components.contact_form import contact_form_panel
 from laim_web.components.markdown_viewer import crt_markdown_viewer
+from laim_web.components.escenarios_panel import escenarios_content_panel
 from laim_web.components.presentation_panel import presentation_content_panel
 from laim_web.components.page_actions import page_action_panel
 from laim_web.components.laim_logo import laim_logo_sidebar
@@ -18,13 +19,21 @@ from laim_web.components.crt_theme import (
     FONT_SIZE_SMALL,
     FONT_SIZE_TITLE,
 )
-MENU_ITEMS_LOGGED_OUT = ["inicio", "presentacion", "servicios", "documentacion", "contacto"]
+MENU_ITEMS_LOGGED_OUT = [
+    "inicio",
+    "presentacion",
+    "servicios",
+    "documentacion",
+    "escenarios",
+    "contacto",
+]
 
 MENU_LABELS: dict[str, str] = {
     "inicio": "Inicio",
     "presentacion": "Presentación",
     "servicios": "Servicios",
     "documentacion": "Documentación",
+    "escenarios": "Escenarios",
     "contacto": "Contacto",
     "instaladores": "Instaladores",
     "manuales": "Manuales",
@@ -38,6 +47,7 @@ MENU_LABELS: dict[str, str] = {
 }
 
 LOGGED_IN_MENU_ITEMS = [
+    "escenarios",
     "instaladores",
     "manuales",
     "modelos_base",
@@ -238,9 +248,10 @@ def sidebar() -> rx.Component:
 def content_static_page() -> rx.Component:
     """Contenido cargado desde static_pages/*.md (panel derecho)."""
     return rx.vstack(
-        rx.cond(
-            LaimWebState.active_menu == "presentacion",
-            presentation_content_panel(),
+        rx.match(
+            LaimWebState.active_menu,
+            ("presentacion", presentation_content_panel()),
+            ("escenarios", escenarios_content_panel()),
             crt_markdown_viewer(LaimWebState.static_page_content),
         ),
         rx.cond(

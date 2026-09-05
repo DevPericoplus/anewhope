@@ -15,6 +15,7 @@ def test_static_page_menus_contains_public_sections() -> None:
         "presentacion",
         "servicios",
         "documentacion",
+        "escenarios",
         "contacto",
     }.issubset(STATIC_PAGE_MENUS)
 

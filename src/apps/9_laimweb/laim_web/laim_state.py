@@ -65,6 +65,159 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     active_menu: str = "inicio"
     static_page_content: str = ""
 
+    # Guía gráfica de escenarios (página pública)
+    escenario_id: str = "share_multi"
+    escenario_step: int = 0
+    escenario_playing: bool = False
+    escenario_play_generation: int = 0
+
+    @rx.var
+    def escenario_cards(self) -> list[dict[str, Any]]:
+        """Tarjetas del selector de escenarios."""
+        from laim_web.escenarios_data import list_escenario_cards
+
+        return list_escenario_cards()
+
+    @rx.var
+    def escenario_title(self) -> str:
+        """Título del escenario activo."""
+        from laim_web.escenarios_data import get_escenario
+
+        return str(get_escenario(self.escenario_id)["title"])
+
+    @rx.var
+    def escenario_summary(self) -> str:
+        """Resumen del escenario activo."""
+        from laim_web.escenarios_data import get_escenario
+
+        return str(get_escenario(self.escenario_id)["summary"])
+
+    @rx.var
+    def escenario_command(self) -> str:
+        """Comandos asociados al escenario activo."""
+        from laim_web.escenarios_data import get_escenario
+
+        return str(get_escenario(self.escenario_id)["command"])
+
+    @rx.var
+    def escenario_step_label(self) -> str:
+        """Indicador de fase actual."""
+        from laim_web.escenarios_data import build_escenario_view
+
+        return str(build_escenario_view(self.escenario_id, self.escenario_step)["step_label"])
+
+    @rx.var
+    def escenario_caption(self) -> str:
+        """Texto de la fase en reproducción."""
+        from laim_web.escenarios_data import build_escenario_view
+
+        return str(build_escenario_view(self.escenario_id, self.escenario_step)["caption"])
+
+    @rx.var
+    def escenario_gpu(self) -> str:
+        """Nivel de carga GPU de la fase (idle/infer/queue/hot)."""
+        from laim_web.escenarios_data import build_escenario_view
+
+        return str(build_escenario_view(self.escenario_id, self.escenario_step)["gpu"])
+
+    @rx.var
+    def escenario_lit_csv(self) -> str:
+        """Nodos iluminados en la fase, delimitados por |."""
+        from laim_web.escenarios_data import build_escenario_view
+
+        return str(build_escenario_view(self.escenario_id, self.escenario_step)["lit_csv"])
+
+    @rx.var
+    def escenario_active_csv(self) -> str:
+        """Cables activos en la fase, delimitados por |."""
+        from laim_web.escenarios_data import build_escenario_view
+
+        return str(build_escenario_view(self.escenario_id, self.escenario_step)["active_csv"])
+
+    @rx.var
+    def escenario_packet_visible(self) -> bool:
+        """Si hay paquete de tráfico en esta fase."""
+        from laim_web.escenarios_data import build_escenario_view
+
+        return bool(build_escenario_view(self.escenario_id, self.escenario_step)["packet_visible"])
+
+    @rx.var
+    def escenario_packet_x(self) -> str:
+        """Posición horizontal del paquete."""
+        from laim_web.escenarios_data import build_escenario_view
+
+        return str(build_escenario_view(self.escenario_id, self.escenario_step)["packet_x"])
+
+    @rx.var
+    def escenario_packet_y(self) -> str:
+        """Posición vertical del paquete."""
+        from laim_web.escenarios_data import build_escenario_view
+
+        return str(build_escenario_view(self.escenario_id, self.escenario_step)["packet_y"])
+
+    @rx.var
+    def escenario_packet_label(self) -> str:
+        """Etiqueta del paquete (SUBMIT, CLAIM, TOKENS, SSH…)."""
+        from laim_web.escenarios_data import build_escenario_view
+
+        return str(build_escenario_view(self.escenario_id, self.escenario_step)["packet_label"])
+
+    @rx.var
+    def escenario_traffic_payload(self) -> str:
+        """JSON de paquetes para el motor SVG (mismo patrón que el Network Monitor)."""
+        import json
+
+        from laim_web.escenarios_data import build_escenario_view
+
+        view = build_escenario_view(self.escenario_id, self.escenario_step)
+        return json.dumps(
+            {
+                "gen": (
+                    f"{view['id']}:{self.escenario_step}:{self.escenario_play_generation}:"
+                    f"{view['packet_edge']}:{view['packet_label']}"
+                ),
+                "packets": view["traffic"],
+            },
+            separators=(",", ":"),
+        )
+
+    @rx.var
+    def escenario_show_queue(self) -> bool:
+        """Si el escenario usa el gestor de colas GPU del Share."""
+        from laim_web.escenarios_data import build_escenario_view
+
+        return bool(build_escenario_view(self.escenario_id, self.escenario_step)["show_queue"])
+
+    @rx.var
+    def escenario_queue_slots(self) -> str:
+        """Slots Ollama ocupados / totales en esta fase."""
+        from laim_web.escenarios_data import build_escenario_view
+
+        return str(build_escenario_view(self.escenario_id, self.escenario_step)["queue_slots"])
+
+    @rx.var
+    def escenario_queue_note(self) -> str:
+        """Nota del claim / prioridad de la fase."""
+        from laim_web.escenarios_data import build_escenario_view
+
+        return str(build_escenario_view(self.escenario_id, self.escenario_step)["queue_note"])
+
+    @rx.var
+    def escenario_queue_jobs(self) -> list[dict[str, str]]:
+        """Jobs de la cola GPU visibles en el panel."""
+        from laim_web.escenarios_data import build_escenario_view
+
+        jobs = build_escenario_view(self.escenario_id, self.escenario_step)["queue_jobs"]
+        return [dict(job) for job in jobs] if isinstance(jobs, list) else []
+
+    @rx.var
+    def escenario_queue_empty(self) -> bool:
+        """Si la cola GPU de esta fase no tiene jobs."""
+        from laim_web.escenarios_data import build_escenario_view
+
+        jobs = build_escenario_view(self.escenario_id, self.escenario_step)["queue_jobs"]
+        return not isinstance(jobs, list) or len(jobs) == 0
+
     @rx.var
     def presentacion_hero_url(self) -> str:
         """URL del asset hero de Presentación (backend con fallback local)."""
@@ -375,6 +528,93 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         self._load_static_page(item)
         if item == "contacto":
             self._prepare_contact_form()
+        if item == "escenarios":
+            self.escenario_playing = False
+
+    def _escenario_clamp_step(self) -> None:
+        """Mantiene el índice de fase dentro del escenario activo."""
+        from laim_web.escenarios_data import escenario_step_count
+
+        last_index = escenario_step_count(self.escenario_id) - 1
+        if self.escenario_step < 0:
+            self.escenario_step = 0
+        elif self.escenario_step > last_index:
+            self.escenario_step = last_index
+
+    @event
+    def escenario_select(self, escenario_id: str) -> None:
+        """Cambia de escenario y vuelve a la primera fase."""
+        self.escenario_playing = False
+        self.escenario_play_generation += 1
+        self.escenario_id = escenario_id
+        self.escenario_step = 0
+
+    @event
+    def escenario_pause(self) -> None:
+        """Detiene la reproducción automática."""
+        self.escenario_playing = False
+        self.escenario_play_generation += 1
+
+    def _start_escenario_playback(self) -> EventHandlerReturn:
+        """Arranca (o reinicia) el bucle de fases."""
+        self.escenario_playing = True
+        self.escenario_play_generation += 1
+        return LaimWebState.escenario_play_loop
+
+    @event
+    def escenario_restart(self) -> EventHandlerReturn:
+        """Vuelve a la fase 1 y vuelve a reproducir el flujo entero."""
+        self.escenario_step = 0
+        return self._start_escenario_playback()
+
+    @event
+    def escenario_prev_step(self) -> None:
+        """Retrocede una fase (modo manual)."""
+        self.escenario_playing = False
+        self.escenario_play_generation += 1
+        self.escenario_step -= 1
+        self._escenario_clamp_step()
+
+    @event
+    def escenario_next_step(self) -> None:
+        """Avanza una fase (modo manual)."""
+        self.escenario_playing = False
+        self.escenario_play_generation += 1
+        self.escenario_step += 1
+        self._escenario_clamp_step()
+
+    @event
+    def escenario_play(self) -> EventHandlerReturn:
+        """Inicia la reproducción automática de fases."""
+        from laim_web.escenarios_data import escenario_step_count
+
+        last_index = escenario_step_count(self.escenario_id) - 1
+        if self.escenario_step >= last_index:
+            self.escenario_step = 0
+        return self._start_escenario_playback()
+
+    @rx.event(background=True)
+    async def escenario_play_loop(self) -> None:
+        """Avanza fases del escenario hasta el final o hasta pausar."""
+        from laim_web.escenarios_data import ESCENARIO_STEP_SECONDS, escenario_step_count
+
+        async with self:
+            generation = self.escenario_play_generation
+            escenario_id = self.escenario_id
+
+        while True:
+            await asyncio.sleep(ESCENARIO_STEP_SECONDS)
+            async with self:
+                if not self.escenario_playing or self.escenario_play_generation != generation:
+                    return
+                if self.escenario_id != escenario_id:
+                    return
+                last_index = escenario_step_count(self.escenario_id) - 1
+                if self.escenario_step >= last_index:
+                    self.escenario_playing = False
+                    return
+                self.escenario_step += 1
+            yield
 
     def _prepare_contact_form(self) -> None:
         """Pre-rellena el formulario de contacto al abrir la página."""
