@@ -34,6 +34,13 @@ _spec = importlib.util.spec_from_file_location("env_settings", _env_settings_pat
 _env_settings_module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_env_settings_module)
 get_env_value = _env_settings_module.get_env_value
+get_environment_name = _env_settings_module.get_environment_name
+_hardening_path = _repo_root / "src" / "2_shared_application" / "security" / "api_hardening.py"
+_hardening_spec = importlib.util.spec_from_file_location("api_hardening_middleware", _hardening_path)
+assert _hardening_spec is not None and _hardening_spec.loader is not None
+_api_hardening = importlib.util.module_from_spec(_hardening_spec)
+sys.modules["api_hardening_middleware"] = _api_hardening
+_hardening_spec.loader.exec_module(_api_hardening)
 
 try:
     from .broker_backend_client import BrokerBackendClient
@@ -599,7 +606,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             broker_client.close()
 
 
-app = FastAPI(title="Middleware Frontend", lifespan=lifespan)
+_API_ENV = get_environment_name()
+app = FastAPI(
+    title="Middleware Frontend",
+    lifespan=lifespan,
+    **_api_hardening.fastapi_docs_kwargs(_API_ENV),
+)
+_api_hardening.harden_fastapi_app(app, service_name="middleware", environment=_API_ENV)
 
 
 @app.post("/login/request-otp", response_model=LoginOtpResponse)

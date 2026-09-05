@@ -3540,6 +3540,103 @@ Esto automáticamente:
 - Elimina la carpeta `src/2_shared_application/moks`
 - El middleware valida y fuerza `db_only`
 
+### Seguridad de las APIs (INCIBE-CERT / OWASP API Top 10)
+
+Referencia: [Seguridad de las API (INCIBE-CERT)](https://www.incibe.es/incibe-cert/blog/seguridad-de-las-api)
+(actualización 20/11/2025). El artículo clasifica los riesgos con el **OWASP API Security Top 10**
+y pide autenticación sólida, autorización por rol/recurso, cifrado en tránsito, inventario de
+endpoints y auditoría continua.
+
+El crawl directo a INCIBE puede ser bloqueado por WAF; el contenido se contrastó con la
+captura pública de la misma URL. Las APIs de anewhope (Middleware 8007, Broker 8008,
+Backend Core 8003, Trainer 8004, LAIM Forum) se endurecen de forma centralizada.
+
+#### Controles ya existentes (API1, API2, API5)
+
+| Riesgo INCIBE / OWASP | Control en anewhope |
+|-----------------------|---------------------|
+| Autorización a nivel de objeto (BOLA) | Permisos `low_level_permissions` + `identity_type_id` en Middleware y Backend Core. Un usuario no opera sobre otra organización. |
+| Autenticación rota | JWT de acceso 15 min + sesión 45 min, `jti` rotatorio, logout invalida sesión, OTP y bloqueo a 3 fallos / 10 min. Secretos en `protected_values.py`. |
+| Autorización a nivel de función | Endpoints administrativos exigen SuperAdmin / `training_create`. La UI oculta y la API rechaza (403). |
+| Cifrado en tránsito | HTTPS en nginx (silicon/dev/pre/pro). Comunicación interna por FQDN, no `localhost` en config. |
+
+#### Controles añadidos (módulo compartido)
+
+**Módulo:** `src/2_shared_application/security/api_hardening.py`  
+**Tests TDD:** `src/2_shared_application/tests/test_api_hardening.py`  
+**Tests ASGI:** `src/apps/7_service_frontend/tests/test_api_hardening_asgi.py`
+
+Se aplica con `harden_fastapi_app(app, service_name=..., environment=...)` en:
+
+- `src/apps/7_service_frontend/apife.py` (`middleware`, borde público)
+- `src/apps/8_service_backend/apibe.py` (`broker`)
+- `src/apps/3_backend/apicore.py` (`backend_core`)
+- `src/apps/4_trainer/apitrainer.py` (`trainer`)
+- `src/apps/9_laimweb/laim_forum_daemon/main.py` (`laim_forum`, borde)
+
+| Riesgo INCIBE / OWASP | Control implementado |
+|-----------------------|----------------------|
+| **API4** Consumo de recursos sin restricciones | Rate limit en servicios de borde (180 req/min por IP; login/refresh 20 req/min). Respuesta **429** + `Retry-After`. Techo de cuerpo: 2 MB JSON, 50 MB rutas de upload (`/fmo/`, `/upload`, adjuntos). **413** si se excede. |
+| **API6** Flujos de negocio sensibles | El bucket `auth` es más estricto que el genérico para `/login`, `/laim/login`, `/refresh` y registro. Complementa el bloqueo de cuenta ya existente. |
+| **API7** SSRF | `is_ssrf_safe_url()` rechaza `localhost`, IPs privadas, link-local (metadatos cloud), `file://` y hostnames que resuelven a red interna. Usar antes de fetchear URLs de usuario o de terceros. |
+| **API8** Configuración insegura | Cabeceras `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, `Permissions-Policy`, `X-Request-ID`. En `pro`/`pre`/`silicon` los 500 no filtran DSN ni trazas. CORS del foro LAIM deja de usar `*` + credentials; orígenes explícitos por entorno. |
+| **API9** Inventario de APIs | En `ENVIRONMENT=pro` se desactivan `/docs`, `/redoc` y `/openapi.json`. `X-Client-App` se valida contra el inventario (`frontend`, `backoffice`, `laimweb`, `middleware`, `broker`, `trainer`). |
+| **API3 / API10** Propiedades y APIs de terceros | Los DTO Pydantic siguen siendo el contrato (no mass-assignment libre). SMS/Infobip y fmanagement no se invocan con URLs de usuario; cualquier URL nueva debe pasar `is_ssrf_safe_url()`. |
+
+#### Rate limit: borde vs interno
+
+| Servicio | Rate limit por defecto | Motivo |
+|----------|------------------------|--------|
+| Middleware, LAIM Forum | Activo | Expuestos detrás de nginx; abuso y fuerza bruta. |
+| Broker, Core, Trainer | Cabeceras + tamaño + 500 sanitizado | Tráfico interno servicio-a-servicio; no se limita para no cortar jobs. |
+
+Se desactiva el rate limit cuando `STORAGE_MODE=mock` (suite unitaria) o
+`API_HARDENING_RATE_LIMIT=0`. Forzar en un test o entorno: `API_HARDENING_RATE_LIMIT=1`.
+
+#### Cómo aplicar el helper en una API nueva
+
+```python
+# Tras crear la app FastAPI
+from pathlib import Path
+import importlib.util
+import sys
+
+root = Path(__file__).resolve().parents[3]
+spec = importlib.util.spec_from_file_location(
+    "api_hardening",
+    root / "src/2_shared_application/security/api_hardening.py",
+)
+hardening = importlib.util.module_from_spec(spec)
+# Obligatorio antes de exec_module: @dataclass falla si el módulo no está en sys.modules
+sys.modules["api_hardening"] = hardening
+spec.loader.exec_module(hardening)
+
+env = os.environ.get("ENVIRONMENT", "macbook")
+app = FastAPI(title="Nueva API", **hardening.fastapi_docs_kwargs(env))
+hardening.harden_fastapi_app(app, service_name="middleware", environment=env)
+```
+
+Antes de llamar a una URL externa:
+
+```python
+if not hardening.is_ssrf_safe_url(user_supplied_url):
+    raise HTTPException(status_code=400, detail="URL no permitida")
+```
+
+#### Auditoría
+
+Cada 429 se registra con prefijo `[API-HARDENING]`. Los 500 no sanitizados (solo macbook/dev)
+siguen yendo a `console.log` del servicio. Las auditorías de login/permisos no cambian
+(siguen en `middleware_secure.log` y `sessions`).
+
+#### Checklist al añadir un endpoint
+
+- [ ] ¿La autorización es por **recurso** (org/proyecto/usuario) y no solo por rol?
+- [ ] ¿El DTO Pydantic no acepta campos de privilegio (`identity_type_id`, `role`) desde el cliente?
+- [ ] ¿Si consume una URL, pasa por `is_ssrf_safe_url()`?
+- [ ] ¿El servicio de borde tiene `harden_fastapi_app`?
+- [ ] ¿Hay test del caso denegado (403/401) además del caso feliz?
+
 ### Base de datos de proyectos (sin mocks)
 
 La base de datos `myllm_projects_db` **no** tiene espejo en ficheros JSON de

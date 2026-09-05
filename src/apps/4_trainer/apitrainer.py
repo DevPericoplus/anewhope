@@ -16,6 +16,17 @@ import sys
 from pathlib import Path
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_hardening_spec = importlib.util.spec_from_file_location(
+    "api_hardening_trainer",
+    _REPO_ROOT / "src/2_shared_application/security/api_hardening.py",
+)
+assert _hardening_spec is not None and _hardening_spec.loader is not None
+_api_hardening = importlib.util.module_from_spec(_hardening_spec)
+sys.modules["api_hardening_trainer"] = _api_hardening
+_hardening_spec.loader.exec_module(_api_hardening)
+
+
 def _load_trainer_module(module_name: str, module_path: Path) -> Any:
     """Carga un módulo dinámicamente desde una ruta."""
     spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -426,7 +437,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logging.warning(f"[CHROMADB] Error deteniendo ChromaDB: {e}")
 
 
-app = FastAPI(title="Backend IA (Trainer)", lifespan=lifespan)
+_API_ENV = os.environ.get("ENVIRONMENT", "macbook")
+app = FastAPI(
+    title="Backend IA (Trainer)",
+    lifespan=lifespan,
+    **_api_hardening.fastapi_docs_kwargs(_API_ENV),
+)
+_api_hardening.harden_fastapi_app(app, service_name="trainer", environment=_API_ENV)
 
 
 # Registrar endpoints de Ollama usando el mismo módulo

@@ -16,6 +16,16 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request, status, Re
 from pydantic import BaseModel, Field
 from typing import Annotated
 
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_hardening_spec = importlib.util.spec_from_file_location(
+    "api_hardening_broker",
+    _REPO_ROOT / "src/2_shared_application/security/api_hardening.py",
+)
+assert _hardening_spec is not None and _hardening_spec.loader is not None
+_api_hardening = importlib.util.module_from_spec(_hardening_spec)
+sys.modules["api_hardening_broker"] = _api_hardening
+_hardening_spec.loader.exec_module(_api_hardening)
+
 try:
     from .interfacetocore import CoreBackendClient
     from .interfacetotrainer import TrainerBackendClient
@@ -602,7 +612,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-app = FastAPI(title="Broker Backend", lifespan=lifespan)
+_API_ENV = os.environ.get("ENVIRONMENT", "macbook")
+app = FastAPI(
+    title="Broker Backend",
+    lifespan=lifespan,
+    **_api_hardening.fastapi_docs_kwargs(_API_ENV),
+)
+_api_hardening.harden_fastapi_app(app, service_name="broker", environment=_API_ENV)
 
 
 @app.get("/users")

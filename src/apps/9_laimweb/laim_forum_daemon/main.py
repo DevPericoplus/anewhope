@@ -34,6 +34,17 @@ sys.modules["env_settings_laim_forum_daemon"] = _env_settings
 _spec.loader.exec_module(_env_settings)
 
 get_env_value = _env_settings.get_env_value
+get_environment_name = _env_settings.get_environment_name
+
+_hardening_path = ROOT_DIR / "src/2_shared_application/security/api_hardening.py"
+_hardening_spec = importlib.util.spec_from_file_location(
+    "api_hardening_laim_forum", _hardening_path
+)
+if _hardening_spec is None or _hardening_spec.loader is None:
+    raise ImportError("No se pudo cargar api_hardening")
+_api_hardening = importlib.util.module_from_spec(_hardening_spec)
+sys.modules["api_hardening_laim_forum"] = _api_hardening
+_hardening_spec.loader.exec_module(_api_hardening)
 
 _router_path = ROOT_DIR / "src/apps/3_backend/router_laim_forum.py"
 _router_spec = importlib.util.spec_from_file_location(
@@ -50,14 +61,20 @@ _logger = logging.getLogger("laim_forum_daemon")
 
 def create_app() -> FastAPI:
     """Construye la aplicación FastAPI del foro."""
-    app = FastAPI(title="LAIM Forum API", version="1.0.0")
+    api_env = get_environment_name()
+    app = FastAPI(
+        title="LAIM Forum API",
+        version="1.0.0",
+        **_api_hardening.fastapi_docs_kwargs(api_env),
+    )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=_api_hardening.cors_allow_origins(api_env),
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        allow_headers=["Authorization", "Content-Type", "X-Session-Token", "X-Client-App"],
     )
+    _api_hardening.harden_fastapi_app(app, service_name="laim_forum", environment=api_env)
     app.include_router(_router_module.router)
 
     @app.get("/")
