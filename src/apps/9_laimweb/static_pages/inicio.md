@@ -126,6 +126,55 @@ compartida o un modelo personalizado.
 
 ---
 
+## Acaricia al jerbo
+
+En la web local (`laim web`), el logo de la barra lateral **es el jerbo**.
+Cuando ya has iniciado sesión, un **doble clic** sobre él abre **otra
+pestaña** del navegador: misma persona, mismo rol, sin volver a escribir
+la contraseña. LAIM crea una **sesión web nueva** para esa pestaña; la
+original sigue viva. Cada pestaña tiene su propia conversación, así que
+puedes hacer dos (o más) cosas a la vez sin que se mezclen los hilos.
+
+Si el navegador bloquea la ventana, permite ventanas emergentes para
+`http://127.0.0.1:4321`. El interruptor de **Connect** (si lo tenías
+fijado) se copia a la pestaña nueva.
+
+Cuatro usos que suelen importar de verdad:
+
+1. **Conversar y vigilar el equipo.** En una pestaña dejas el chat. En la
+   otra abres el monitor o preguntas por memoria, disco o un proceso.
+   Mientras la IA razona, tú no pierdes de vista lo que ocurre en la
+   máquina.
+2. **Este ordenador y un servidor, a la vez.** Una pestaña te ayuda con
+   *este* equipo. Tras otro doble clic, en la nueva entras por **acceso
+   remoto** (SSH) a un servidor de la red. Diagnosticar el portátil y
+   tocar el servidor deja de ser «primero uno, luego el otro».
+3. **Informe sin pausar el trabajo.** En una pestaña pides o revisas un
+   Markdown de la sesión (conclusiones, pasos, capturas). En la otra
+   sigues el hilo operativo: comandos, comprobaciones, «qué queda». El
+   documento no te obliga a cerrar el chat.
+4. **Modelos y configuración, sin soltar el chat.** Una pestaña sigue
+   hablando con la IA. En la otra ajustas tiers, instalas un modelo del
+   catálogo o miras Share/Connect. Cuando vuelves al chat, el otro frente
+   no se ha perdido.
+
+### Hasta dónde se puede llegar
+
+Un laboratorio pequeño —casa u oficina— con **un solo login** y varias
+pestañas nacidas del jerbo: chat pidiendo un diagnóstico de logs (parsers
+en paralelo, hallazgos correlacionados); otra pestaña dentro de un
+servidor remoto; otra con el mapa de la red o el Share sirviendo modelos
+a un compañero en **Connect**; y, si lo tienes activado, un **agente**
+siguiendo un flujo mientras tú confirmas solo lo delicado.
+
+Ahí MOM elige cabezas distintas según la pestaña, y tú no eres un cuello
+de botella: orquestas. Eso es acariciar al jerbo de verdad —no un atajo
+de ratón, sino **varios frentes de LAIM a la vez**, bajo tu criterio.
+
+> *Doble clic en el logo: otra pestaña, otra sesión, el mismo tú.*
+
+---
+
 ## Una última idea para llevarte
 
 La inteligencia artificial no sustituye tu criterio. **LAIM** solo intenta que

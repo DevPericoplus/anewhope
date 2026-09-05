@@ -45,6 +45,10 @@ def test_load_inicio_markdown() -> None:
     assert "MOM" in content
     assert "Mixture of Models" in content
     assert "Mixture of Experts" in content
+    assert "## Acaricia al jerbo" in content
+    assert "doble clic" in content
+    assert "logo" in content
+    assert "Hasta dónde se puede llegar" in content
 
 
 def test_load_presentacion_markdown() -> None:
