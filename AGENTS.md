@@ -10895,6 +10895,40 @@ Usar `SELECT_STYLE` de `portal_crt` o `class_name="crt-input"` en `rx.select` / 
 Sirve de plantilla para dockerizar `dev` y `pre`. En el futuro, `pro` usará
 Kubernetes en frontend y backend. Trainer permanece híbrido (Ollama nativo).
 
+### 36.0. Despliegue obligatorio en silicon (esta estación de trabajo)
+
+**CRÍTICO / OBLIGATORIO:** En este equipo, silicon es el único entorno de
+evaluación. El usuario **no** valida en `run.sh` local ni en macbook. Toda
+implementación, corrección, cambio de UI/CSS, endpoint, migración o
+configuración que altere el runtime **debe quedar desplegada en silicon**
+antes de dar la tarea por cerrada.
+
+| Paso | Acción |
+|------|--------|
+| 1 | Incrementar `version_*` de cada servicio afectado (`scripts/bump_service_version.py`) |
+| 2 | Si cambió CSS CRT compartido, ejecutar `./scripts/sync_crt_assets.sh` |
+| 3 | Desplegar desde `anh_ansible_environments` con `-e deploy_env=silicon` |
+| 4 | Preferir un servicio: `-e deploy_service=<nombre compose>` (tabla §36.2) |
+| 5 | Confirmar recap Ansible (`failed=0`) y que el tag nuevo está en el servidor |
+
+```bash
+# Desde ~/develop/anh_ansible_environments
+export PATH="/opt/homebrew/bin:$PATH"
+./ansible-playbook-wrapper.sh -i env/silicon/host frontend.yml -l frontend \
+  -e deploy_env=silicon --tags docker-compose -e deploy_service=laimweb
+./ansible-playbook-wrapper.sh -i env/silicon/host backend.yml -l backend \
+  -e deploy_env=silicon --tags docker-compose -e deploy_service=backend_core
+./ansible-playbook-wrapper.sh -i env/silicon/host trainer.yml -l trainer \
+  -e deploy_env=silicon --tags native,docker
+```
+
+**Excepción:** cambios que no alteran runtime (solo `AGENTS.md`, README interno,
+tests unitarios, comentarios). Si el texto es visible en un portal (páginas
+estáticas, UI), **sí** desplegar.
+
+**Prohibido:** cerrar un cambio visible diciendo «recarga en local» o «cuando
+quieras despliego». El cierre incluye el despliegue silicon.
+
 ### 36.1. Entornos válidos
 
 `VALID_ENVIRONMENTS` en `src/2_shared_application/config/env_settings.py`:
@@ -10919,9 +10953,9 @@ Kubernetes en frontend y backend. Trainer permanece híbrido (Ollama nativo).
 Manifiesto: `infrastructure/docker/service_manifest.yml`.
 
 **Regla del agente (como LAIM):** al cambiar código de una app, incrementar su
-`version_*` con `scripts/bump_service_version.py`. El playbook de
-`anh_ansible_environments` lee `versions.yml` y Compose reconstruye solo el tag
-ausente. Si no cambió la versión, no se reconstruye.
+`version_*` con `scripts/bump_service_version.py` **y desplegar en silicon**
+(§36.0). El playbook de `anh_ansible_environments` lee `versions.yml` y Compose
+reconstruye solo el tag ausente. Si no cambió la versión, no se reconstruye.
 
 Despliegue de un solo servicio:
 
