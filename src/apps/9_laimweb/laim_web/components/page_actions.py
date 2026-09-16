@@ -21,13 +21,9 @@ class PageAction:
 
 
 PAGE_ACTIONS: dict[str, tuple[PageAction, ...]] = {
-    "instaladores": (
-        PageAction("Descargar para Windows", "download_windows"),
-        PageAction("Descargar para macOS", "download_macos"),
-        PageAction("Descargar Linux (.deb)", "download_linux_deb"),
-        PageAction("Descargar Linux (.rpm)", "download_linux_rpm"),
-        PageAction("Requisitos del sistema", "view_requirements"),
-    ),
+    # "instaladores" ya no usa este panel genérico — ver installers_panel()
+    # en components/installers_panel.py (selector de edición/plataforma +
+    # descarga real vía laim_product).
     "manuales": (
         PageAction("Guía de instalación rápida", "manual_quickstart"),
         PageAction("Manual de usuario", "manual_user"),

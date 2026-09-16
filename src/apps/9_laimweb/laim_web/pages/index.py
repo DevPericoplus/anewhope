@@ -8,6 +8,7 @@ from laim_web.components.markdown_viewer import crt_markdown_viewer
 from laim_web.components.escenarios_panel import escenarios_content_panel
 from laim_web.components.presentation_panel import presentation_content_panel
 from laim_web.components.page_actions import page_action_panel
+from laim_web.components.installers_panel import advance_construction_modal, installers_panel
 from laim_web.components.laim_logo import laim_logo_sidebar
 from laim_web.components.portal_shell import forum_nav_section, sidebar_config_menu
 from laim_web.laim_state import LaimWebState
@@ -261,7 +262,7 @@ def content_static_page() -> rx.Component:
         ),
         rx.match(
             LaimWebState.active_menu,
-            ("instaladores", page_action_panel("instaladores")),
+            ("instaladores", installers_panel()),
             ("manuales", page_action_panel("manuales")),
             ("modelos_base", page_action_panel("modelos_base")),
             ("modelos_especializados", page_action_panel("modelos_especializados")),
@@ -340,6 +341,7 @@ def index_page() -> rx.Component:
             spacing="0",
         ),
         auth_modals(),
+        advance_construction_modal(),
         class_name="crt-shell crt-theme-green",
         width="100%",
     )

@@ -4524,6 +4524,64 @@ def download_model_package_endpoint(
 
 
 # ============================================================================
+# LAIM PRODUCT (instaladores/parches de laim y plugins)
+# ============================================================================
+
+
+@app.get(
+    "/product/list",
+    tags=["laim_product"],
+)
+def list_laim_product_endpoint(
+    edition: str,
+    artifact_type: str,
+    platform: str,
+    plugin_name: str = "",
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Lista versiones publicadas de un artefacto laim_product.
+
+    Flujo: Middleware → Broker → Backend Core → Filesystem
+    """
+    try:
+        return router.list_laim_product(edition, artifact_type, platform, plugin_name)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get(
+    "/product/download",
+    tags=["laim_product"],
+)
+def download_laim_product_endpoint(
+    edition: str,
+    artifact_type: str,
+    platform: str,
+    version: str,
+    filename: str,
+    plugin_name: str = "",
+    router: BrokerBackendRouter = Depends(get_router_broker),
+):
+    """Descarga un artefacto laim_product ya publicado.
+
+    Flujo: Middleware → Broker → Backend Core → Filesystem
+    """
+    try:
+        content = router.download_laim_product(edition, artifact_type, platform, version, filename, plugin_name)
+        return Response(
+            content=content,
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ============================================================================
 # JOB TEMPLATES - Plantillas de jobs
 # ============================================================================
 

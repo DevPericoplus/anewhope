@@ -5457,6 +5457,60 @@ class RouterMiddleware:
                 f"Error descargando modelo: {exc}"
             ) from exc
 
+    def list_laim_product(
+        self,
+        session: SessionContext,
+        edition: str,
+        artifact_type: str,
+        platform: str,
+        plugin_name: str = "",
+    ) -> dict[str, Any]:
+        """Lista versiones publicadas de un artefacto laim_product via broker → backend core.
+
+        Requiere sesión autenticada (botón "Instaladores" solo visible tras login),
+        aunque community_edition en sí sea de descarga gratuita.
+        """
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Listando laim_product edition=%s artifact_type=%s platform=%s user=%s",
+            edition, artifact_type, platform, session.user_id,
+        )
+
+        try:
+            return self._broker_client.list_laim_product(edition, artifact_type, platform, plugin_name)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo listar laim_product: {exc}"
+            ) from exc
+
+    def download_laim_product(
+        self,
+        session: SessionContext,
+        edition: str,
+        artifact_type: str,
+        platform: str,
+        version: str,
+        filename: str,
+        plugin_name: str = "",
+    ) -> bytes:
+        """Descarga un artefacto laim_product via broker → backend core."""
+        self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Descargando laim_product edition=%s platform=%s version=%s file=%s user=%s",
+            edition, platform, version, filename, session.user_id,
+        )
+
+        try:
+            return self._broker_client.download_laim_product(
+                edition, artifact_type, platform, version, filename, plugin_name
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"Error descargando laim_product: {exc}"
+            ) from exc
+
     def request_model_download_otp(
         self,
         session: SessionContext,

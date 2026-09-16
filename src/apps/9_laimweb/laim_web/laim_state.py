@@ -65,6 +65,14 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     active_menu: str = "inicio"
     static_page_content: str = ""
 
+    # Instaladores: modalidad (community_edition/advance) + plataforma elegidas
+    installers_edition: str = "community_edition"
+    installers_platform: str = ""
+    installers_latest: str = ""  # "<version>/<filename>" tal y como lo devuelve el backend
+    installers_error: str = ""
+    installers_loading: bool = False
+    show_advance_construction_modal: bool = False
+
     # Guía gráfica de escenarios (página pública)
     escenario_id: str = "share_multi"
     escenario_step: int = 0
@@ -810,18 +818,6 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
             return None
 
         pending_messages = {
-            "download_windows": (
-                "La descarga para Windows se habilitará en esta sección en breve."
-            ),
-            "download_macos": (
-                "La descarga para macOS se habilitará en esta sección en breve."
-            ),
-            "download_linux_deb": (
-                "La descarga Linux (.deb) se habilitará en esta sección en breve."
-            ),
-            "download_linux_rpm": (
-                "La descarga Linux (.rpm) se habilitará en esta sección en breve."
-            ),
             "view_requirements": (
                 "Consulte Manuales → Configuración segura para requisitos detallados."
             ),
@@ -864,6 +860,74 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
             "Funcionalidad en preparación. Consulte Soporte si lo necesita con urgencia.",
         )
         return rx.toast.info(message)
+
+    # ------------------------------------------------------------------
+    # Instaladores
+    # ------------------------------------------------------------------
+
+    @event
+    def select_installers_edition(self, edition: str) -> None:
+        """Elige community_edition o advance. Advance solo muestra el modal
+        "En construcción / Under construction" — de pago, sin flujo real todavía."""
+        if edition == "advance":
+            self.show_advance_construction_modal = True
+            return
+        self.installers_edition = edition
+        self.installers_platform = ""
+        self.installers_latest = ""
+        self.installers_error = ""
+
+    @event
+    def close_advance_construction_modal(self) -> None:
+        self.show_advance_construction_modal = False
+
+    @rx.event(background=True)
+    async def select_installers_platform(self, platform: str) -> None:
+        """Consulta la última versión publicada para edition/platform elegidos."""
+        async with self:
+            self.installers_platform = platform
+            self.installers_loading = True
+            self.installers_error = ""
+            self.installers_latest = ""
+            edition = self.installers_edition
+            access_token = self.access_token
+            session_token = self.session_token
+
+        from laim_web.adapters.laim_api_client import get_laim_product_list
+
+        data = get_laim_product_list(edition, "installer", platform, access_token, session_token)
+        async with self:
+            if data.get("success") is False:
+                self.installers_error = data.get("error") or "Error obteniendo versiones disponibles."
+            else:
+                latest = data.get("latest") or ""
+                if not latest:
+                    self.installers_error = "Todavía no hay ninguna versión publicada para esta plataforma."
+                self.installers_latest = latest
+            self.installers_loading = False
+
+    @rx.var
+    def installers_download_url(self) -> str:
+        if not self.installers_latest or not self.installers_platform:
+            return ""
+        version, _, filename = self.installers_latest.partition("/")
+        if not filename:
+            return ""
+        from laim_web.adapters.laim_api_client import get_laim_product_download_url
+
+        return get_laim_product_download_url(
+            self.installers_edition, "installer", self.installers_platform, version, filename
+        )
+
+    @rx.var
+    def installers_install_command(self) -> str:
+        """Comando alternativo a la descarga directa, mostrado como
+        "Install command:" con botón "Copiar" (linux/mac; Windows solo ofrece
+        el binario)."""
+        url = self.installers_download_url
+        if not url or self.installers_platform == "windows":
+            return ""
+        return f"curl -sL '{url}' -o laim_installer && chmod +x laim_installer && ./laim_installer"
 
     def _load_permissions_after_login(
         self, identity_type_id: int, access_token: str, session_token: str

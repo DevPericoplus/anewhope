@@ -65,6 +65,46 @@ def get_laim_site_asset_url(asset_key: str) -> str:
     return fallback
 
 
+def get_laim_product_list(
+    edition: str,
+    artifact_type: str,
+    platform: str,
+    access_token: str,
+    session_token: str,
+    plugin_name: str = "",
+) -> dict[str, Any]:
+    """Lista versiones publicadas de un artefacto laim_product (Instaladores)."""
+    params = f"?edition={edition}&artifact_type={artifact_type}&platform={platform}"
+    if plugin_name:
+        params += f"&plugin_name={plugin_name}"
+    return _request_middleware(
+        "GET", f"/laim/product/list{params}", access_token=access_token, session_token=session_token
+    )
+
+
+def get_laim_product_download_url(
+    edition: str,
+    artifact_type: str,
+    platform: str,
+    version: str,
+    filename: str,
+    plugin_name: str = "",
+) -> str:
+    """URL de descarga de un artefacto laim_product a través del middleware.
+
+    La descarga real (bytes) la sirve el propio endpoint del middleware —
+    esta función solo construye la URL, coherente con get_laim_site_asset_url.
+    """
+    base_url = _get_middleware_base_url()
+    params = (
+        f"edition={edition}&artifact_type={artifact_type}&platform={platform}"
+        f"&version={version}&filename={filename}"
+    )
+    if plugin_name:
+        params += f"&plugin_name={plugin_name}"
+    return f"{base_url}/laim/product/download?{params}"
+
+
 def _request_middleware(
     method: str,
     endpoint: str,

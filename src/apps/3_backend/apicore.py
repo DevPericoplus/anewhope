@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, AsyncIterator
 
@@ -4500,6 +4501,124 @@ def download_model_package(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
+
+
+# ========================================================================
+# LAIM PRODUCT (instaladores/parches de laim y sus plugins)
+#
+# Artefactos generados y publicados por el repositorio hermano
+# laim_maintenance (ver laim_maintenance/README.md § Fase 2). Mismo patrón
+# que /models/packages/download arriba: backend_core lee directamente del
+# filesystem compartido (LAIM_PRODUCT_STORAGE), montado con la misma ruta de
+# host tanto aquí como en fmanagement — fmanagement es quien recibe la
+# escritura desde el pipeline de laim_maintenance; backend_core solo lee para
+# servir a los usuarios de laimweb.
+# ========================================================================
+
+_LAIM_PRODUCT_EDITIONS = {"community_edition", "advance"}
+_LAIM_PRODUCT_ARTIFACT_TYPES = {"installer", "patch"}
+_LAIM_PRODUCT_PLATFORMS = {"windows", "linux_deb", "linux_rpm", "mac_intel", "mac_silicon"}
+_LAIM_PRODUCT_SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def _laim_product_storage_base() -> Path:
+    base = os.environ.get("LAIM_PRODUCT_STORAGE", "").strip()
+    if not base:
+        base = str(Path(os.environ.get("HOME", "")) / "data" / "anewhope" / "files" / "laim_product")
+    return Path(base)
+
+
+def _laim_product_leaf_dir(edition: str, artifact_type: str, platform: str, plugin_name: str = "") -> Path:
+    """basePath/edition/[plugins/<name>/]{installers|patches}/<platform segments>."""
+    if edition not in _LAIM_PRODUCT_EDITIONS:
+        raise HTTPException(status_code=400, detail=f"Edición inválida: {edition!r}")
+    if artifact_type not in _LAIM_PRODUCT_ARTIFACT_TYPES:
+        raise HTTPException(status_code=400, detail=f"Tipo de artefacto inválido: {artifact_type!r}")
+    if platform not in _LAIM_PRODUCT_PLATFORMS:
+        raise HTTPException(status_code=400, detail=f"Plataforma inválida: {platform!r}")
+    if plugin_name and not _LAIM_PRODUCT_SAFE_SEGMENT.match(plugin_name):
+        raise HTTPException(status_code=400, detail=f"Nombre de plugin inválido: {plugin_name!r}")
+
+    base = _laim_product_storage_base()
+    edition_root = (base / edition).resolve()
+
+    leaf_dir = edition_root
+    if plugin_name:
+        leaf_dir = leaf_dir / "plugins" / plugin_name
+    leaf_dir = leaf_dir / ("patches" if artifact_type == "patch" else "installers")
+    platform_segments = {
+        "linux_deb": ("linux", "deb"),
+        "linux_rpm": ("linux", "rpm"),
+        "mac_intel": ("mac", "intel"),
+        "mac_silicon": ("mac", "silicon"),
+    }.get(platform, (platform,))
+    for seg in platform_segments:
+        leaf_dir = leaf_dir / seg
+    leaf_dir = leaf_dir.resolve()
+
+    if leaf_dir != edition_root and edition_root not in leaf_dir.parents:
+        raise HTTPException(status_code=403, detail="Path security validation failed")
+    return leaf_dir
+
+
+@app.get("/product/list", tags=["laim_product"])
+def list_laim_product(
+    edition: str,
+    artifact_type: str,
+    platform: str,
+    plugin_name: str = "",
+):
+    """Lista versiones publicadas (y a qué apunta "latest") de un artefacto laim_product."""
+    leaf_dir = _laim_product_leaf_dir(edition, artifact_type, platform, plugin_name)
+    if not leaf_dir.is_dir():
+        return {"versions": [], "latest": None}
+
+    versions = sorted(p.name for p in leaf_dir.iterdir() if p.is_dir())
+    latest: str | None = None
+    latest_link = leaf_dir / "latest"
+    if latest_link.is_symlink():
+        try:
+            latest = os.readlink(latest_link)
+        except OSError:
+            latest = None
+    return {"versions": versions, "latest": latest}
+
+
+@app.get("/product/download", tags=["laim_product"])
+def download_laim_product(
+    edition: str,
+    artifact_type: str,
+    platform: str,
+    version: str,
+    filename: str,
+    plugin_name: str = "",
+):
+    """Descarga un instalador/parche ya publicado.
+
+    Flujo: Middleware → Broker → Backend Core → Filesystem compartido con fmanagement.
+    """
+    from fastapi.responses import FileResponse
+
+    if not _LAIM_PRODUCT_SAFE_SEGMENT.match(version) or not _LAIM_PRODUCT_SAFE_SEGMENT.match(filename):
+        raise HTTPException(status_code=400, detail="version/filename inválidos")
+
+    leaf_dir = _laim_product_leaf_dir(edition, artifact_type, platform, plugin_name)
+
+    # filepath resolution can still walk out of leaf_dir via ".." even though
+    # _LAIM_PRODUCT_SAFE_SEGMENT allows "." — always re-check each resolved
+    # level stayed exactly where expected (same guard as productDownloadHandler
+    # in fmanagement/product.go).
+    version_dir = (leaf_dir / version).resolve()
+    if version_dir.parent != leaf_dir:
+        raise HTTPException(status_code=403, detail="Path security validation failed")
+    file_path = (version_dir / filename).resolve()
+    if file_path.parent != version_dir:
+        raise HTTPException(status_code=403, detail="Path security validation failed")
+
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Artefacto no encontrado")
+
+    return FileResponse(path=str(file_path), filename=filename, media_type="application/octet-stream")
 
 
 # ========================================================================

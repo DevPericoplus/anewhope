@@ -4396,6 +4396,56 @@ def get_pending_training_versions_endpoint(
 
 
 # ============================================================================
+# LAIM PRODUCT - Instaladores/parches de laim y sus plugins
+#
+# A diferencia de /models/*, no requiere identity_type_id de admin: cualquier
+# usuario con sesión válida puede ver y descargar (community_edition es
+# gratuita; advance todavía no ofrece descarga real, ver laimweb § Instaladores).
+# ============================================================================
+
+
+@app.get("/laim/product/list", tags=["laim_product"])
+def list_laim_product_endpoint(
+    edition: str,
+    artifact_type: str,
+    platform: str,
+    plugin_name: str = "",
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Lista versiones publicadas de un artefacto laim_product."""
+    try:
+        return router.list_laim_product(session, edition, artifact_type, platform, plugin_name)
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.get("/laim/product/download", tags=["laim_product"])
+def download_laim_product_endpoint(
+    edition: str,
+    artifact_type: str,
+    platform: str,
+    version: str,
+    filename: str,
+    plugin_name: str = "",
+    session: SessionContext = Depends(get_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+):
+    """Descarga un artefacto laim_product ya publicado."""
+    try:
+        content = router.download_laim_product(
+            session, edition, artifact_type, platform, version, filename, plugin_name
+        )
+        return Response(
+            content=content,
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+# ============================================================================
 # MODEL DOWNLOADS - Descargas de modelos con OTP
 # ============================================================================
 

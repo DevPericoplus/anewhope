@@ -2194,6 +2194,46 @@ class BrokerBackendRouter:
                 f"Error descargando modelo: {str(exc)}"
             ) from exc
 
+    # === LAIM PRODUCT (instaladores/parches de laim y plugins) ===
+
+    def list_laim_product(
+        self, edition: str, artifact_type: str, platform: str, plugin_name: str = ""
+    ) -> dict[str, Any]:
+        """Lista versiones publicadas de un artefacto laim_product."""
+        self._logger.info(
+            "[%s] Listando laim_product edition=%s artifact_type=%s platform=%s plugin=%s",
+            self._client_app, edition, artifact_type, platform, plugin_name,
+        )
+        try:
+            return self._core_client.list_laim_product(edition, artifact_type, platform, plugin_name)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error listando laim_product: {str(exc)}"
+            ) from exc
+
+    def download_laim_product(
+        self,
+        edition: str,
+        artifact_type: str,
+        platform: str,
+        version: str,
+        filename: str,
+        plugin_name: str = "",
+    ) -> bytes:
+        """Descarga un artefacto laim_product."""
+        self._logger.info(
+            "[%s] Descargando laim_product edition=%s artifact_type=%s platform=%s version=%s file=%s",
+            self._client_app, edition, artifact_type, platform, version, filename,
+        )
+        try:
+            return self._core_client.download_laim_product(
+                edition, artifact_type, platform, version, filename, plugin_name
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error descargando laim_product: {str(exc)}"
+            ) from exc
+
     # === JOB TEMPLATES ===
 
     def get_job_template_catalogs(self) -> dict[str, Any]:

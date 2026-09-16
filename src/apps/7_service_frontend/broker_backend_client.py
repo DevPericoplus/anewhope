@@ -1600,6 +1600,53 @@ class BrokerBackendClient:
             ) from exc
 
     # ========================================================================
+    # LAIM PRODUCT (instaladores/parches de laim y plugins)
+    # ========================================================================
+
+    def list_laim_product(
+        self, edition: str, artifact_type: str, platform: str, plugin_name: str = ""
+    ) -> dict[str, Any]:
+        """Lista versiones publicadas de un artefacto laim_product."""
+        from urllib.parse import quote
+        params = (
+            f"?edition={quote(edition)}&artifact_type={quote(artifact_type)}"
+            f"&platform={quote(platform)}"
+        )
+        if plugin_name:
+            params += f"&plugin_name={quote(plugin_name)}"
+        data = self._request("GET", f"/product/list{params}")
+        return dict(data or {})
+
+    def download_laim_product(
+        self,
+        edition: str,
+        artifact_type: str,
+        platform: str,
+        version: str,
+        filename: str,
+        plugin_name: str = "",
+    ) -> bytes:
+        """Descarga un artefacto laim_product desde el broker."""
+        from urllib.parse import quote
+        url = (
+            f"{self._base_url}/product/download"
+            f"?edition={quote(edition)}&artifact_type={quote(artifact_type)}"
+            f"&platform={quote(platform)}&version={quote(version)}"
+            f"&filename={quote(filename)}"
+        )
+        if plugin_name:
+            url += f"&plugin_name={quote(plugin_name)}"
+        headers = self._build_headers()
+        try:
+            response = self._client.get(url, headers=headers, timeout=60.0)
+            response.raise_for_status()
+            return response.content
+        except Exception as exc:
+            raise BrokerBackendCommunicationError(
+                f"Error descargando artefacto laim_product del broker: {exc}"
+            ) from exc
+
+    # ========================================================================
     # JOB TEMPLATES
     # ========================================================================
 
