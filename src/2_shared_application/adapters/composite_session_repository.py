@@ -23,15 +23,22 @@ class CompositeSessionRepository:
     lo escribe backend_core, middleware nunca crea sesiones LAIM. Los fallos
     del secundario (p.ej. credenciales de solo lectura) se registran y se
     ignoran para no romper la validación de sesiones del backoffice.
+
+    `secondary_read_only=True` evita además intentar escribir en el
+    secundario (update_status/update_activity): cuando ya se sabe que las
+    credenciales son de solo lectura, intentarlo solo genera un
+    UPDATE/denied garantizado en cada request autenticada.
     """
 
     def __init__(
         self,
         primary: Any,
         secondary: Any,
+        secondary_read_only: bool = False,
     ) -> None:
         self._primary = primary
         self._secondary = secondary
+        self._secondary_read_only = secondary_read_only
         self._logger = logging.getLogger("CompositeSessionRepository")
 
     def get_by_session_id(self, session_id: str) -> Any | None:
@@ -75,6 +82,8 @@ class CompositeSessionRepository:
     ) -> bool:
         if self._primary.update_status(session_id, status, updated_at):
             return True
+        if self._secondary_read_only:
+            return False
         try:
             return self._secondary.update_status(session_id, status, updated_at)
         except Exception as exc:
@@ -89,6 +98,8 @@ class CompositeSessionRepository:
     def update_activity(self, session_id: str, last_activity: datetime) -> bool:
         if self._primary.update_activity(session_id, last_activity):
             return True
+        if self._secondary_read_only:
+            return False
         try:
             return self._secondary.update_activity(session_id, last_activity)
         except Exception as exc:

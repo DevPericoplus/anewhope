@@ -1268,7 +1268,9 @@ class RouterMiddleware:
                 "respaldo de solo lectura"
             )
             return composite_module.CompositeSessionRepository(
-                primary=primary, secondary=laim_session_repository
+                primary=primary,
+                secondary=laim_session_repository,
+                secondary_read_only=True,
             )
         except Exception as exc:
             self._logger.warning(
