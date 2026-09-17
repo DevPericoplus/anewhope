@@ -5,6 +5,7 @@ from laim_web.static_pages_loader import (
     AUTHENTICATED_PAGE_MENUS,
     STATIC_PAGE_MENUS,
     load_static_page_markdown,
+    split_markdown_h2_sections,
 )
 
 
@@ -46,10 +47,58 @@ def test_load_inicio_markdown() -> None:
     assert "MOM" in content
     assert "Mixture of Models" in content
     assert "Mixture of Experts" in content
+    assert "Los administradores de cada LAIM" in content
+    assert "familias de tiers" in content
+    assert "Warmup predictivo" in content
+    assert "KV-cache" in content
+    assert "Tiers de modelos" in content
+    assert "## El Alma de LAIM" in content
+    assert "Sugerir mejora" in content
+    assert "aprendizaje automático" in content
+    assert "reiniciar" in content
     assert "## Acaricia al jerbo" in content
     assert "doble clic" in content
     assert "logo" in content
     assert "Hasta dónde se puede llegar" in content
+    assert "LAIM, según el caso, el hardware y tu configuración" not in content
+
+
+def test_split_markdown_h2_keeps_subheadings_inside_parent() -> None:
+    """El parser deja ### dentro del cuerpo y no crea secciones extra."""
+    markdown = (
+        "# Título\n\n"
+        "preámbulo\n\n"
+        "## Primera\n\n"
+        "cuerpo uno\n\n"
+        "### Sub\n\n"
+        "detalle\n\n"
+        "## Segunda\n\n"
+        "cuerpo dos\n"
+    )
+    title, preamble, sections = split_markdown_h2_sections(markdown)
+    assert title == "Título"
+    assert "preámbulo" in preamble
+    assert [item["title"] for item in sections] == ["Primera", "Segunda"]
+    assert "### Sub" in sections[0]["body"]
+    assert "cuerpo uno" in sections[0]["body"]
+    assert "## Primera" not in sections[0]["body"]
+
+
+def test_inicio_splits_into_collapsible_h2_sections() -> None:
+    """Inicio se parte en secciones ## usadas por el acordeón."""
+    content = load_static_page_markdown("inicio")
+    title, _preamble, sections = split_markdown_h2_sections(content)
+    titles = [item["title"] for item in sections]
+    assert title == "Bienvenido a LAIM"
+    assert "MOM: Mixture of Models" in titles
+    assert "El Alma de LAIM" in titles
+    assert "Acaricia al jerbo" in titles
+    mom = next(item for item in sections if item["title"].startswith("MOM"))
+    assert "familias de tiers" in mom["body"]
+    assert "## MOM" not in mom["body"]
+    alma = next(item for item in sections if "Alma" in item["title"])
+    assert "Sugerir mejora" in alma["body"]
+    assert "### " in alma["body"]
 
 
 def test_load_presentacion_markdown() -> None:
@@ -69,6 +118,9 @@ def test_load_documentacion_markdown() -> None:
     assert "**`agents`**" in content
     assert "**`webdebug`**" in content
     assert "Mixture of Models" in content
+    assert "los administradores asignan" in content
+    assert "Sugerir" in content
+    assert "alma" in content.lower()
 
 
 def test_load_instaladores_markdown() -> None:

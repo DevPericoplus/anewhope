@@ -4,6 +4,7 @@ import reflex as rx
 
 from laim_web.components.auth_modals import auth_modals
 from laim_web.components.contact_form import contact_form_panel
+from laim_web.components.inicio_accordion import inicio_accordion_panel
 from laim_web.components.markdown_viewer import crt_markdown_viewer
 from laim_web.components.escenarios_panel import escenarios_content_panel
 from laim_web.components.presentation_panel import presentation_content_panel
@@ -251,6 +252,7 @@ def content_static_page() -> rx.Component:
     return rx.vstack(
         rx.match(
             LaimWebState.active_menu,
+            ("inicio", inicio_accordion_panel()),
             ("presentacion", presentation_content_panel()),
             ("escenarios", escenarios_content_panel()),
             crt_markdown_viewer(LaimWebState.static_page_content),

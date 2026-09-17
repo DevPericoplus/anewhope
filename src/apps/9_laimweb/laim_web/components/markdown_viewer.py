@@ -8,7 +8,7 @@ from typing import Any
 
 import reflex as rx
 
-from laim_web.components.crt_theme import COLORS, CONTENT_PADDING
+from laim_web.components.crt_theme import CONTENT_PADDING
 
 _SHARED_CRT_THEME = (
     Path(__file__).resolve().parents[4]
@@ -38,14 +38,22 @@ CRT_MARKDOWN_COMPONENT_MAP: dict[str, Any] = {
 }
 
 
-def crt_markdown_viewer(content: str) -> rx.Component:
-    """Renderiza markdown con la paleta y tipografía CRT de LAIM Web."""
+def crt_markdown_body(content: str) -> rx.Component:
+    """Markdown CRT sin padding exterior (para acordeones y paneles)."""
     return rx.box(
         rx.markdown(
             content,
             component_map=CRT_MARKDOWN_COMPONENT_MAP,
         ),
         class_name="crt-markdown",
+        width="100%",
+    )
+
+
+def crt_markdown_viewer(content: str) -> rx.Component:
+    """Renderiza markdown con la paleta y tipografía CRT de LAIM Web."""
+    return rx.box(
+        crt_markdown_body(content),
         width="100%",
         padding=CONTENT_PADDING,
     )

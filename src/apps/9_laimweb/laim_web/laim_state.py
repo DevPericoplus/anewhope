@@ -64,6 +64,9 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     login_error: str = ""
     active_menu: str = "inicio"
     static_page_content: str = ""
+    inicio_page_title: str = ""
+    inicio_sections: list[dict[str, str]] = []
+    inicio_open_titles: list[str] = []
 
     # Instaladores: modalidad (community_edition/advance) + plataforma elegidas
     installers_edition: str = "community_edition"
@@ -520,12 +523,45 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
             self._token_renewal_running = True
             return LaimWebState.auto_renew_tokens_loop
 
+    def _hydrate_inicio_sections(self) -> None:
+        """Parte Inicio en secciones ## contraídas por defecto."""
+        from laim_web.static_pages_loader import split_markdown_h2_sections
+
+        page_title, _preamble, sections = split_markdown_h2_sections(
+            self.static_page_content
+        )
+        self.inicio_page_title = page_title
+        self.inicio_sections = sections
+        self.inicio_open_titles = []
+
     def _load_static_page(self, menu: str) -> None:
         """Carga markdown de static_pages/ para menús públicos."""
         from laim_web.static_pages_loader import STATIC_PAGE_MENUS, load_static_page_markdown
 
         if menu in STATIC_PAGE_MENUS:
             self.static_page_content = load_static_page_markdown(menu)
+            if menu == "inicio":
+                self._hydrate_inicio_sections()
+
+    @event
+    def toggle_inicio_section(self, title: str) -> None:
+        """Abre o cierra una sección de Inicio."""
+        if title in self.inicio_open_titles:
+            self.inicio_open_titles = [
+                item for item in self.inicio_open_titles if item != title
+            ]
+            return
+        self.inicio_open_titles = [*self.inicio_open_titles, title]
+
+    @event
+    def expand_inicio_sections(self) -> None:
+        """Abre todas las secciones de Inicio."""
+        self.inicio_open_titles = [section["title"] for section in self.inicio_sections]
+
+    @event
+    def collapse_inicio_sections(self) -> None:
+        """Cierra todas las secciones de Inicio."""
+        self.inicio_open_titles = []
 
     @event
     def set_menu(self, item: str) -> None:

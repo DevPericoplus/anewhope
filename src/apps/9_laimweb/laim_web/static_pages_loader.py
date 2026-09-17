@@ -64,6 +64,50 @@ def can_access_admin_config_menu(menu: str, identity_type_id: int) -> bool:
     return identity_type_id in LAIM_ADMIN_IDENTITY_TYPE_IDS
 
 
+def split_markdown_h2_sections(
+    markdown: str,
+) -> tuple[str, str, list[dict[str, str]]]:
+    """Separa el H1, un preámbulo opcional y las secciones ``##``.
+
+    Los ``###`` permanecen dentro del cuerpo de su sección padre.
+    """
+    page_title = ""
+    preamble_lines: list[str] = []
+    sections: list[dict[str, str]] = []
+    current_title: str | None = None
+    current_body: list[str] = []
+
+    def _flush_section() -> None:
+        nonlocal current_title, current_body
+        if current_title is None:
+            return
+        sections.append(
+            {
+                "title": current_title,
+                "body": "\n".join(current_body).strip(),
+            }
+        )
+        current_title = None
+        current_body = []
+
+    for line in markdown.splitlines():
+        if line.startswith("# ") and not line.startswith("## "):
+            if not page_title:
+                page_title = line[2:].strip()
+            continue
+        if line.startswith("## ") and not line.startswith("### "):
+            _flush_section()
+            current_title = line[3:].strip()
+            continue
+        if current_title is None:
+            preamble_lines.append(line)
+            continue
+        current_body.append(line)
+
+    _flush_section()
+    return page_title, "\n".join(preamble_lines).strip(), sections
+
+
 def load_static_page_markdown(menu: str) -> str:
     """Lee el fichero markdown asociado a una opción del menú."""
     filename = MENU_TO_MARKDOWN_FILE.get(menu)

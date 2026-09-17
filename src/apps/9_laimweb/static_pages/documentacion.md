@@ -78,11 +78,16 @@ entiende el idioma, aplica reglas de seguridad, y si hablas del sistema en vivo
 puede proponerte comandos, pedirte permiso y ejecutarlos en **tu** máquina
 (Windows, macOS o Linux). Tú siempre confirmas lo delicado.
 
-Ahí encaja **MOM** (*Mixture of Models*): según la pregunta, el hardware y el
-perfil, LAIM puede **activar el modelo adecuado** —uno ágil, uno más capaz,
-uno de dominio— en lugar de forzar un único cerebro para todo. Es la idea
-hermana de MoE (*Mixture of Experts*), pero a escala de **modelos enteros**.
-Más detalle en **Inicio**.
+Ahí encaja **MOM** (*Mixture of Models*): los administradores asignan un
+modelo local a cada **tier** (rápido, medio, traductor, sonido…) y cada
+fase o agente usa esa casilla. No decide el modelo en caliente: decide
+quien configura LAIM. Es la idea hermana de MoE (*Mixture of Experts*),
+pero a escala de **modelos enteros**, con warmup, paralelismo y KV-cache.
+
+Y encaja el **alma** de LAIM: en el chat y en otras pantallas, **💡 Sugerir
+mejora** traduce tu corrección en conocimiento para la heurística
+(sin chocar ni duplicar lo que ya sabe) y lo comparte con todos los
+usuarios de *esa* instalación. Más detalle de MOM y del alma en **Inicio**.
 
 ---
 
