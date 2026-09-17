@@ -537,7 +537,17 @@ fi
 """,
     "mac_intel": """
 echo "Montando la imagen de disco..."
-mount_point="$(hdiutil attach "$tmp_dir/$LAIM_INSTALL_FILE" -nobrowse -quiet | tail -1 | awk '{print $NF}')"
+# -quiet suprime TODA la salida de hdiutil attach (probado en real: con
+# -quiet no hay nada que parsear, mount_point queda vacío). Sin -quiet,
+# imprime una línea por partición (GPT, EFI, HFS+...) — el punto de montaje
+# no es fiablemente la última línea ni el último campo, así que se busca
+# /Volumes/ en cualquier línea. La tabla queda capturada en la variable
+# (command substitution), nunca llega a la terminal del usuario.
+mount_point="$(hdiutil attach "$tmp_dir/$LAIM_INSTALL_FILE" -nobrowse | grep -o '/Volumes/.*' | head -1)"
+if [ -z "$mount_point" ]; then
+  echo "No se pudo montar la imagen .dmg." >&2
+  exit 1
+fi
 app_path="$(find "$mount_point" -maxdepth 1 -name '*.app' | head -1)"
 if [ -z "$app_path" ]; then
   echo "No se encontró la aplicación dentro de la imagen .dmg." >&2
