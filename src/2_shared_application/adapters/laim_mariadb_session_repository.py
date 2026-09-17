@@ -221,10 +221,13 @@ def create_laim_session_engine(
     """Crea engine SQLAlchemy para laim_core_db."""
     admin_dsn = str(settings.get("admin_dsn") or "").strip()
     writer_dsn = str(settings.get("writer_dsn") or "").strip()
+    reader_dsn = str(settings.get("reader_dsn") or "").strip()
     if role == "admin" and admin_dsn:
         return create_engine(admin_dsn, pool_pre_ping=True)
     if role == "writer" and writer_dsn:
         return create_engine(writer_dsn, pool_pre_ping=True)
+    if role == "reader" and reader_dsn:
+        return create_engine(reader_dsn, pool_pre_ping=True)
 
     host = settings.get("host", "localhost")
     port = settings.get("port", 3306)
@@ -232,6 +235,11 @@ def create_laim_session_engine(
     if role == "admin":
         user_raw = settings.get("admin_user") or settings.get("writer_user", "")
         password_raw = settings.get("admin_password") or settings.get(
+            "writer_password", ""
+        )
+    elif role == "reader":
+        user_raw = settings.get("reader_user") or settings.get("writer_user", "")
+        password_raw = settings.get("reader_password") or settings.get(
             "writer_password", ""
         )
     else:

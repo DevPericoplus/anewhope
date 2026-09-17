@@ -535,6 +535,16 @@ class RouterMiddleware:
         sessions_file_path = self._get_sessions_file_path()
         self._session_repository = JsonSessionRepository(sessions_file_path)
 
+        # 2b. Las sesiones LAIM (login vía backend_core) viven en
+        # laim_core_db.laim_sessions (MariaDB), no en sessions.json. Se añade
+        # como respaldo de solo lectura para que _validate_tokens encuentre
+        # también esas sesiones. Si no hay LAIM_READER_DSN o la conexión
+        # falla, se degrada a solo JSON (comportamiento previo) sin romper
+        # el arranque del servicio.
+        self._session_repository = self._wrap_with_laim_session_repository(
+            self._session_repository
+        )
+
         # 3. Configurar SessionService (orquestador)
         self._session_service = SessionService(
             jwt_service=self._jwt_service,
@@ -1206,6 +1216,67 @@ class RouterMiddleware:
                 root_path / "src/2_shared_application/moks/sessions.json",
             )
         )
+
+    def _load_protected_laim_mariadb_settings(self) -> dict[str, str]:
+        """Carga la configuración LAIM (laim_core_db) desde protected_values.py."""
+
+        env_settings = _load_env_settings_module("middleware_env_settings")
+        return {
+            "reader_dsn": env_settings.get_protected_value("laim_reader_dsn", ""),
+        }
+
+    def _wrap_with_laim_session_repository(self, primary: Any) -> Any:
+        """Envuelve `primary` con un CompositeSessionRepository que también
+        consulta laim_core_db.laim_sessions (MariaDB), donde viven las
+        sesiones creadas por backend_core al hacer laim_login.
+
+        Se degrada silenciosamente a `primary` (comportamiento previo) si
+        faltan credenciales, dependencias o la conexión falla — nunca debe
+        impedir que middleware arranque.
+        """
+
+        reader_dsn = os.environ.get("LAIM_READER_DSN", "").strip()
+        if not reader_dsn:
+            reader_dsn = str(
+                self._load_protected_laim_mariadb_settings().get("reader_dsn", "")
+            ).strip()
+        if not reader_dsn:
+            self._logger.info(
+                "LAIM_READER_DSN no configurado: sesiones LAIM se validarán "
+                "solo con el store JSON local (pueden fallar como "
+                "SessionNotFoundError si el login fue vía backend_core)."
+            )
+            return primary
+
+        try:
+            laim_repo_module = _load_ddd_module(
+                "ddd_laim_mariadb_session_repository",
+                "src/2_shared_application/adapters/laim_mariadb_session_repository.py",
+            )
+            composite_module = _load_ddd_module(
+                "ddd_composite_session_repository",
+                "src/2_shared_application/adapters/composite_session_repository.py",
+            )
+            engine = laim_repo_module.create_laim_session_engine(
+                {"reader_dsn": reader_dsn}, role="reader"
+            )
+            laim_session_repository = laim_repo_module.LaimMariaDbSessionRepository(
+                engine
+            )
+            self._logger.info(
+                "[DDD] Repositorio de sesiones LAIM (MariaDB) inicializado como "
+                "respaldo de solo lectura"
+            )
+            return composite_module.CompositeSessionRepository(
+                primary=primary, secondary=laim_session_repository
+            )
+        except Exception as exc:
+            self._logger.warning(
+                "No se pudo inicializar el repositorio de sesiones LAIM "
+                "(MariaDB), se usará solo el store JSON local: %s",
+                exc,
+            )
+            return primary
 
     def _load_sessions_data(self, data_path: Path) -> dict[str, Any]:
         """Carga la estructura de sesiones y logs."""
