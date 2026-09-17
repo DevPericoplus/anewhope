@@ -506,6 +506,25 @@ def get_session_context(
         ) from exc
 
 
+def get_optional_session_context(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    access_token: Annotated[str | None, Header(alias="Authorization")] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> SessionContext | None:
+    """Como get_session_context, pero devuelve None en vez de 401 si no hay
+    sesión válida, para rutas cuya autenticación es solo condicional (p.ej.
+    laim_product: community_edition es pública — sin ella un script
+    `curl | bash` copiado a una terminal sin navegador no podría descargar
+    nada —, advance sigue requiriendo sesión)."""
+
+    if access_token is None:
+        return None
+    try:
+        return router.validate_session(_extract_bearer_token(access_token), session_token or "")
+    except (TokenExpiredError, TokenValidationError):
+        return None
+
+
 async def get_http_client() -> AsyncIterator[httpx.AsyncClient]:
     """Provee un cliente HTTP asíncrono."""
 
@@ -4398,10 +4417,22 @@ def get_pending_training_versions_endpoint(
 # ============================================================================
 # LAIM PRODUCT - Instaladores/parches de laim y sus plugins
 #
-# A diferencia de /models/*, no requiere identity_type_id de admin: cualquier
-# usuario con sesión válida puede ver y descargar (community_edition es
-# gratuita; advance todavía no ofrece descarga real, ver laimweb § Instaladores).
+# A diferencia de /models/*, no requiere identity_type_id de admin. Desde que
+# existe el script de instalación (`curl -fsSL <url> | bash`, ejecutado desde
+# una terminal sin sesión de navegador ni cabeceras Authorization/
+# X-Session-Token), community_edition es pública sin excepción — es la
+# edición gratuita, sin registro, por diseño (ver laim/README.md § Product
+# Editions). advance sigue exigiendo sesión válida; hoy no es alcanzable de
+# todas formas desde la UI (modal "En construcción").
 # ============================================================================
+
+
+def _require_session_for_advance(edition: str, session: SessionContext | None) -> None:
+    if edition != "community_edition" and session is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sesión requerida para esta edición",
+        )
 
 
 @app.get("/laim/product/list", tags=["laim_product"])
@@ -4410,10 +4441,11 @@ def list_laim_product_endpoint(
     artifact_type: str,
     platform: str,
     plugin_name: str = "",
-    session: SessionContext = Depends(get_session_context),
+    session: SessionContext | None = Depends(get_optional_session_context),
     router: RouterMiddleware = Depends(get_router_middleware),
 ) -> dict[str, Any]:
     """Lista versiones publicadas de un artefacto laim_product."""
+    _require_session_for_advance(edition, session)
     try:
         return router.list_laim_product(session, edition, artifact_type, platform, plugin_name)
     except BusinessRuleError as exc:
@@ -4428,10 +4460,11 @@ def download_laim_product_endpoint(
     version: str,
     filename: str,
     plugin_name: str = "",
-    session: SessionContext = Depends(get_session_context),
+    session: SessionContext | None = Depends(get_optional_session_context),
     router: RouterMiddleware = Depends(get_router_middleware),
 ):
     """Descarga un artefacto laim_product ya publicado."""
+    _require_session_for_advance(edition, session)
     try:
         content = router.download_laim_product(
             session, edition, artifact_type, platform, version, filename, plugin_name
@@ -4443,6 +4476,40 @@ def download_laim_product_endpoint(
         )
     except BusinessRuleError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.get("/laim/product/install-script", tags=["laim_product"])
+def install_script_laim_product_endpoint(
+    edition: str,
+    platform: str,
+    router: RouterMiddleware = Depends(get_router_middleware),
+):
+    """Genera el script `curl -fsSL <url> | bash` para instalar laim.
+
+    Pública (sin sesión) por diseño — ver la nota de arriba. Solo
+    community_edition y las plataformas con script real (mac/linux; Windows
+    solo ofrece el binario, ver installers_script_command en laimweb).
+    Responde 404 sin cuerpo si no hay ninguna versión publicada, para que
+    `curl -f` no descargue ni ejecute nada (comportamiento ya documentado al
+    usuario en la propia página).
+    """
+    if edition != "community_edition":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El script de instalación solo existe para community_edition",
+        )
+    if platform not in ("mac_intel", "mac_silicon", "linux_deb", "linux_rpm"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Plataforma sin script de instalación (solo mac/linux)",
+        )
+    try:
+        script = router.build_laim_install_script(edition, platform)
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    if script is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No hay versión publicada")
+    return Response(content=script, media_type="text/x-shellscript")
 
 
 # ============================================================================

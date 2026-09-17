@@ -82,6 +82,18 @@ def get_laim_product_list(
     )
 
 
+def _get_laim_product_public_base_url() -> str:
+    """URL pública para enlaces que el propio navegador (o una terminal del
+    usuario, para el script de instalación) debe poder alcanzar — nunca el
+    hostname interno de docker-compose. Mismo criterio que
+    get_laim_site_asset_url: prioriza laimweb_api_url (HTTPS público) sobre
+    el middleware_base_url interno."""
+    public_base = _env_settings.get_env_value("laimweb_api_url", "").strip().rstrip("/")
+    if public_base.startswith("https://") or public_base.startswith("http://"):
+        return public_base
+    return _get_middleware_base_url()
+
+
 def get_laim_product_download_url(
     edition: str,
     artifact_type: str,
@@ -95,7 +107,7 @@ def get_laim_product_download_url(
     La descarga real (bytes) la sirve el propio endpoint del middleware —
     esta función solo construye la URL, coherente con get_laim_site_asset_url.
     """
-    base_url = _get_middleware_base_url()
+    base_url = _get_laim_product_public_base_url()
     params = (
         f"edition={edition}&artifact_type={artifact_type}&platform={platform}"
         f"&version={version}&filename={filename}"
@@ -106,16 +118,10 @@ def get_laim_product_download_url(
 
 
 def get_laim_product_script_url(edition: str, platform: str) -> str:
-    """URL del script de instalación (`curl -fsSL <url> | bash`) para mac/linux.
-
-    NOTA: /laim/product/install-script todavía no existe en el backend
-    (fmanagement/backend_core/broker/middleware) — pendiente de diseñar cómo
-    laim_maintenance genera/actualiza estos scripts (ver
-    laim_maintenance/README.md § Fase 2 e Instaladores). Esta función ya usa
-    la convención de URL correcta para cuando exista, coherente con
-    get_laim_product_download_url.
-    """
-    base_url = _get_middleware_base_url()
+    """URL del script de instalación (`curl -fsSL <url> | bash`), servida
+    públicamente (sin sesión) por /laim/product/install-script para
+    community_edition en mac/linux — ver esa ruta en apife.py."""
+    base_url = _get_laim_product_public_base_url()
     return f"{base_url}/laim/product/install-script?edition={edition}&platform={platform}"
 
 

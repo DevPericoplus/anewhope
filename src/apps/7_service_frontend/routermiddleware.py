@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import secrets
+import shlex
 import uuid
 import sys
 import time
@@ -498,6 +499,75 @@ def _load_common_security_module(module_path: Path) -> Any:
     sys.modules["common_security"] = module
     spec.loader.exec_module(module)
     return module
+
+
+_LAIM_INSTALL_SCRIPT_HEADER = """#!/usr/bin/env bash
+set -euo pipefail
+
+LAIM_INSTALL_URL={url}
+LAIM_INSTALL_FILE={filename}
+
+tmp_dir="$(mktemp -d)"
+trap 'rm -rf "$tmp_dir"' EXIT
+
+echo "Descargando $LAIM_INSTALL_FILE..."
+curl -fsSL "$LAIM_INSTALL_URL" -o "$tmp_dir/$LAIM_INSTALL_FILE"
+"""
+
+_LAIM_INSTALL_SCRIPT_BODY_BY_PLATFORM: dict[str, str] = {
+    "linux_deb": """
+if ! command -v apt-get >/dev/null 2>&1; then
+  echo "Este instalador requiere un sistema basado en Debian/Ubuntu (apt)." >&2
+  exit 1
+fi
+echo "Instalando con dpkg..."
+sudo dpkg -i "$tmp_dir/$LAIM_INSTALL_FILE" || sudo apt-get install -f -y
+""",
+    "linux_rpm": """
+if command -v dnf >/dev/null 2>&1; then
+  echo "Instalando con dnf..."
+  sudo dnf install -y "$tmp_dir/$LAIM_INSTALL_FILE"
+elif command -v rpm >/dev/null 2>&1; then
+  echo "Instalando con rpm..."
+  sudo rpm -i "$tmp_dir/$LAIM_INSTALL_FILE"
+else
+  echo "Este instalador requiere un sistema basado en RHEL/Fedora (dnf o rpm)." >&2
+  exit 1
+fi
+""",
+    "mac_intel": """
+echo "Montando la imagen de disco..."
+mount_point="$(hdiutil attach "$tmp_dir/$LAIM_INSTALL_FILE" -nobrowse -quiet | tail -1 | awk '{print $NF}')"
+app_path="$(find "$mount_point" -maxdepth 1 -name '*.app' | head -1)"
+if [ -z "$app_path" ]; then
+  echo "No se encontró la aplicación dentro de la imagen .dmg." >&2
+  hdiutil detach "$mount_point" -quiet
+  exit 1
+fi
+echo "Copiando a /Applications..."
+cp -R "$app_path" /Applications/
+hdiutil detach "$mount_point" -quiet
+""",
+}
+_LAIM_INSTALL_SCRIPT_BODY_BY_PLATFORM["mac_silicon"] = _LAIM_INSTALL_SCRIPT_BODY_BY_PLATFORM["mac_intel"]
+
+_LAIM_INSTALL_SCRIPT_FOOTER = """
+echo "laim instalado correctamente."
+"""
+
+
+def _laim_install_script_body(platform: str, download_url: str, filename: str) -> str:
+    """Arma el script de instalación completo para una plataforma soportada.
+
+    platform ya viene validado por el caller (apife.py) contra el mismo
+    conjunto que laimweb ofrece en pantalla: mac_intel, mac_silicon,
+    linux_deb, linux_rpm.
+    """
+    header = _LAIM_INSTALL_SCRIPT_HEADER.format(
+        url=shlex.quote(download_url), filename=shlex.quote(filename)
+    )
+    body = _LAIM_INSTALL_SCRIPT_BODY_BY_PLATFORM[platform]
+    return header + body + _LAIM_INSTALL_SCRIPT_FOOTER
 
 
 class RouterMiddleware:
@@ -5532,7 +5602,7 @@ class RouterMiddleware:
 
     def list_laim_product(
         self,
-        session: SessionContext,
+        session: SessionContext | None,
         edition: str,
         artifact_type: str,
         platform: str,
@@ -5540,14 +5610,18 @@ class RouterMiddleware:
     ) -> dict[str, Any]:
         """Lista versiones publicadas de un artefacto laim_product via broker → backend core.
 
-        Requiere sesión autenticada (botón "Instaladores" solo visible tras login),
-        aunque community_edition en sí sea de descarga gratuita.
+        community_edition es pública (session=None es válido — p.ej. el
+        script de instalación resolviendo la última versión desde una
+        terminal sin login); advance requiere sesión (ver
+        _require_session_for_advance en apife.py, que ya rechazó el caso
+        contrario antes de llegar aquí).
         """
-        self._configure_broker_security(session)
+        if session is not None:
+            self._configure_broker_security(session)
 
         self._logger.info(
             "[middleware] Listando laim_product edition=%s artifact_type=%s platform=%s user=%s",
-            edition, artifact_type, platform, session.user_id,
+            edition, artifact_type, platform, session.user_id if session else "anonymous",
         )
 
         try:
@@ -5559,7 +5633,7 @@ class RouterMiddleware:
 
     def download_laim_product(
         self,
-        session: SessionContext,
+        session: SessionContext | None,
         edition: str,
         artifact_type: str,
         platform: str,
@@ -5567,12 +5641,16 @@ class RouterMiddleware:
         filename: str,
         plugin_name: str = "",
     ) -> bytes:
-        """Descarga un artefacto laim_product via broker → backend core."""
-        self._configure_broker_security(session)
+        """Descarga un artefacto laim_product via broker → backend core.
+
+        community_edition es pública (session=None); ver list_laim_product.
+        """
+        if session is not None:
+            self._configure_broker_security(session)
 
         self._logger.info(
             "[middleware] Descargando laim_product edition=%s platform=%s version=%s file=%s user=%s",
-            edition, platform, version, filename, session.user_id,
+            edition, platform, version, filename, session.user_id if session else "anonymous",
         )
 
         try:
@@ -5583,6 +5661,43 @@ class RouterMiddleware:
             raise BusinessRuleError(
                 f"Error descargando laim_product: {exc}"
             ) from exc
+
+    def build_laim_install_script(self, edition: str, platform: str) -> str | None:
+        """Genera el script `curl -fsSL <url> | bash` de instalación de laim.
+
+        Resuelve la última versión publicada (público, sin sesión — ver
+        list_laim_product) y arma un script de shell que descarga el
+        artefacto vía /laim/product/download (también público para
+        community_edition) y lo instala con el gestor de paquetes nativo
+        de cada plataforma. None si no hay ninguna versión publicada
+        todavía (el caller responde 404 y `curl -f` no ejecuta nada).
+        """
+        listing = self.list_laim_product(None, edition, "installer", platform)
+        latest = listing.get("latest")
+        if not latest:
+            return None
+        version, _, filename = str(latest).partition("/")
+        if not version or not filename:
+            return None
+
+        download_url = self._laim_product_public_base_url() + (
+            f"/laim/product/download?edition={edition}&artifact_type=installer"
+            f"&platform={platform}&version={version}&filename={filename}"
+        )
+        return _laim_install_script_body(platform, download_url, filename)
+
+    def _laim_product_public_base_url(self) -> str:
+        """URL pública del propio middleware, tal y como la alcanzaría un
+        `curl` ejecutado en la máquina de un usuario — nunca el hostname
+        interno de docker-compose (p.ej. service_frontend:8007), que no
+        resuelve fuera de la red del entorno."""
+        env_settings = _load_env_settings_module("middleware_env_settings")
+        public_base = env_settings.get_env_value("laimweb_api_url", "").strip().rstrip("/")
+        if public_base.startswith("https://") or public_base.startswith("http://"):
+            return public_base
+        return env_settings.get_env_value(
+            "middleware_base_url", "http://localhost:8007"
+        ).strip().rstrip("/")
 
     def request_model_download_otp(
         self,
