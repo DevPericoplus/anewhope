@@ -920,14 +920,19 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         )
 
     @rx.var
-    def installers_install_command(self) -> str:
-        """Comando alternativo a la descarga directa, mostrado como
-        "Install command:" con botón "Copiar" (linux/mac; Windows solo ofrece
-        el binario)."""
-        url = self.installers_download_url
-        if not url or self.installers_platform == "windows":
+    def installers_script_command(self) -> str:
+        """Instalación por script (curl | bash) — alternativa a la descarga
+        directa, solo para mac/linux (Windows no tiene un equivalente de
+        shell). El script en sí (`/laim/product/install-script`) está
+        pendiente de implementar en el backend — ver
+        laim_maintenance/README.md § Fase 2; esta URL ya sigue la
+        convención correcta para cuando exista."""
+        if self.installers_platform not in ("mac_intel", "mac_silicon", "linux_deb", "linux_rpm"):
             return ""
-        return f"curl -sL '{url}' -o laim_installer && chmod +x laim_installer && ./laim_installer"
+        from laim_web.adapters.laim_api_client import get_laim_product_script_url
+
+        url = get_laim_product_script_url(self.installers_edition, self.installers_platform)
+        return f"curl -fsSL {url} | bash"
 
     def _load_permissions_after_login(
         self, identity_type_id: int, access_token: str, session_token: str

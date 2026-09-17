@@ -105,6 +105,20 @@ def get_laim_product_download_url(
     return f"{base_url}/laim/product/download?{params}"
 
 
+def get_laim_product_script_url(edition: str, platform: str) -> str:
+    """URL del script de instalación (`curl -fsSL <url> | bash`) para mac/linux.
+
+    NOTA: /laim/product/install-script todavía no existe en el backend
+    (fmanagement/backend_core/broker/middleware) — pendiente de diseñar cómo
+    laim_maintenance genera/actualiza estos scripts (ver
+    laim_maintenance/README.md § Fase 2 e Instaladores). Esta función ya usa
+    la convención de URL correcta para cuando exista, coherente con
+    get_laim_product_download_url.
+    """
+    base_url = _get_middleware_base_url()
+    return f"{base_url}/laim/product/install-script?edition={edition}&platform={platform}"
+
+
 def _request_middleware(
     method: str,
     endpoint: str,

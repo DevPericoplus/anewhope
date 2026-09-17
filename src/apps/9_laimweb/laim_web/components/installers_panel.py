@@ -36,6 +36,107 @@ def _platform_button(platform: str, label: str) -> rx.Component:
     )
 
 
+# (es, en) — laimweb no tiene todavía un selector de idioma, así que el
+# patrón ya establecido (ver advance_construction_modal) es mostrar ambos
+# idiomas apilados en vez de uno solo.
+_FLAG_BREAKDOWN: tuple[tuple[str, str], ...] = (
+    (
+        "-f (fail silently): Si el servidor da un error (como un 404), curl no "
+        "descargará nada ni mostrará el código de error HTML en la terminal.",
+        "-f (fail silently): If the server returns an error (like a 404), curl "
+        "won't download anything or print the HTML error code to the terminal.",
+    ),
+    (
+        "-s (silent): Oculta la barra de progreso y los mensajes de error "
+        "habituales de curl.",
+        "-s (silent): Hides the progress bar and curl's usual error messages.",
+    ),
+    (
+        "-S (show error): Si se usa junto con -s, hace que curl sí muestre un "
+        "mensaje de error si la descarga falla por completo (por ejemplo, si "
+        "no hay internet).",
+        "-S (show error): Combined with -s, makes curl still show an error "
+        "message if the download fails completely (e.g. no internet connection).",
+    ),
+    (
+        "-L (location): Si la URL original tiene una redirección (HTTP a "
+        "HTTPS, por ejemplo), curl la seguirá automáticamente hasta llegar al "
+        "archivo final.",
+        "-L (location): If the original URL has a redirect (e.g. HTTP to "
+        "HTTPS), curl will automatically follow it until it reaches the final "
+        "file.",
+    ),
+    (
+        "| bash: El símbolo de tubería (|) redirige la salida del comando (el "
+        "contenido del script) directamente al intérprete de bash para que lo "
+        "ejecute en memoria sin guardarlo en el disco duro.",
+        "| bash: The pipe symbol (|) redirects the command's output (the "
+        "script's content) directly into the bash interpreter, so it runs in "
+        "memory without being saved to disk.",
+    ),
+)
+
+
+def _flag_breakdown() -> rx.Component:
+    return rx.vstack(
+        rx.text(
+            "💡 Desglose de las opciones (flags) utilizadas / Breakdown of the flags used:",
+            class_name="crt-muted",
+            font_size="0.8em",
+            font_weight="bold",
+        ),
+        *[
+            rx.vstack(
+                rx.text(es, class_name="crt-muted", font_size="0.78em"),
+                rx.text(en, class_name="crt-muted", font_size="0.78em", font_style="italic"),
+                spacing="0",
+                width="100%",
+                align_items="stretch",
+            )
+            for es, en in _FLAG_BREAKDOWN
+        ],
+        spacing="2",
+        width="100%",
+        align_items="stretch",
+        margin_top="0.5em",
+    )
+
+
+def _script_install_section() -> rx.Component:
+    """Instalación por script (curl | bash), solo mac/linux — ver
+    LaimWebState.installers_script_command. El script en sí todavía no existe
+    en el backend (ver la nota en laim_api_client.get_laim_product_script_url);
+    esta sección ya queda lista en la página para cuando lo haga."""
+    return rx.cond(
+        LaimWebState.installers_script_command != "",
+        rx.vstack(
+            rx.text(
+                "Comando de instalación (copiar y pegar en una terminal) / "
+                "Install command (copy and paste into a terminal):",
+                class_name="crt-muted",
+                font_size="0.85em",
+            ),
+            rx.hstack(
+                rx.code(LaimWebState.installers_script_command, class_name="crt-code"),
+                rx.button(
+                    "Copiar / Copy",
+                    on_click=rx.set_clipboard(LaimWebState.installers_script_command),
+                    class_name="crt-btn crt-btn-inline",
+                ),
+                spacing="2",
+                align_items="center",
+                flex_wrap="wrap",
+            ),
+            _flag_breakdown(),
+            spacing="1",
+            width="100%",
+            align_items="stretch",
+            margin_top="0.75em",
+        ),
+        rx.fragment(),
+    )
+
+
 def _download_result() -> rx.Component:
     return rx.cond(
         LaimWebState.installers_loading,
@@ -47,31 +148,11 @@ def _download_result() -> rx.Component:
                 LaimWebState.installers_download_url != "",
                 rx.vstack(
                     rx.link(
-                        rx.button("Descargar", class_name="crt-btn"),
+                        rx.button("Descargar / Download", class_name="crt-btn"),
                         href=LaimWebState.installers_download_url,
                         is_external=True,
                     ),
-                    rx.cond(
-                        LaimWebState.installers_install_command != "",
-                        rx.vstack(
-                            rx.text("Install command:", class_name="crt-muted", font_size="0.85em"),
-                            rx.hstack(
-                                rx.code(LaimWebState.installers_install_command, class_name="crt-code"),
-                                rx.button(
-                                    "Copiar",
-                                    on_click=rx.set_clipboard(LaimWebState.installers_install_command),
-                                    class_name="crt-btn crt-btn-inline",
-                                ),
-                                spacing="2",
-                                align_items="center",
-                                flex_wrap="wrap",
-                            ),
-                            spacing="1",
-                            width="100%",
-                            align_items="stretch",
-                        ),
-                        rx.fragment(),
-                    ),
+                    _script_install_section(),
                     spacing="2",
                     width="100%",
                     align_items="stretch",
