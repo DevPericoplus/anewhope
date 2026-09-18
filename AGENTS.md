@@ -11153,11 +11153,23 @@ HTTPS). anewhope necesita la misma clave del lado servidor para firmar y
 verificar las respuestas de `/check_last_version` y de descarga de
 parches.
 
-**Pendiente de decidir dónde vive esa clave en anewhope** — candidato
-natural: `protected_values.py` por entorno, mismo patrón ya establecido
-para `jwt_access_secret_key`. Nunca hardcodeada en un `.j2` de ansible
-(mismo hallazgo de "Credential Leakage" ya documentado en
-`anh_ansible_environments/AGENTS.md` para `jwt_access_secret_key`).
+**Decidido: persistencia en base de datos, no en `protected_values.py`.**
+A diferencia de `jwt_access_secret_key` (un único valor estático por
+entorno), `GlobalInstallationKeys` rota en cada versión mayor de laim
+(0.x→1.0) y anewhope necesita poder validar con **varias claves vigentes
+a la vez** durante la transición — un valor estático en fichero no encaja
+bien con eso; una tabla en MariaDB sí (una fila por versión mayor, con su
+propia vigencia). Nueva tabla, p.ej. `laim_exchange_keys`: versión mayor,
+valor de la clave, vigente desde/hasta. El valor se guarda **cifrado en
+reposo** (mismo patrón que `ProxyConfig.PasswordCipher` en laim —
+`laim_dat.go` — cifrado con una clave maestra del servidor, nunca en
+texto plano en la tabla ni en ningún `.j2` de ansible — mismo hallazgo de
+"Credential Leakage" ya documentado en `anh_ansible_environments/AGENTS.md`
+para `jwt_access_secret_key`). El valor real de la clave actual de laim
+**no se documenta en ningún fichero versionado** — se aplica directamente
+a la base de datos cuando se implemente, igual que ya se hizo con
+`jwt_access_secret_key` en su momento (extra-var temporal, nunca impreso
+en terminal ni comiteado).
 
 `GlobalInstallationKeys` en laim rota en cada versión mayor (0.x→1.0) —
 anewhope necesita poder validar con más de un valor vigente
@@ -11239,8 +11251,9 @@ dejar espacio explícito para:
 - [ ] ¿`artifact_type=patch` y `plugin_name` ya sirven tal cual en toda la
       cadena, o hace falta ampliar algún hop? (probablemente ya existe —
       verificar antes de construir).
-- [ ] ¿Dónde vive la clave HMAC equivalente a `KeyExchageLaimApp` del lado
-      servidor — `protected_values.py` por entorno?
+- [ ] Crear tabla `laim_exchange_keys` (MariaDB, valor cifrado en reposo) y
+      migrar a ella el valor actual de `KeyExchageLaimApp` — nunca en un
+      fichero versionado.
 - [ ] Migrar `ProductLicense` de mock JSON a persistencia real antes de
       añadir campos de vigencia.
 - [ ] Nueva tabla de auditoría en MariaDB — no reutilizar el patrón JSON de
