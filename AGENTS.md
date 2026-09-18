@@ -11275,8 +11275,18 @@ dejar espacio explícito para:
       registro, rechazo de serial duplicado, `is_advance_active()` dentro/
       fuera de vigencia, `active_plugin_names()` filtrando un plugin
       vencido. Migraciones sin aplicar a silicon todavía.
-- [ ] Nueva tabla de auditoría en MariaDB — no reutilizar el patrón JSON de
-      `_append_auth_log()`.
+- [x] Tabla de auditoría en MariaDB — migración
+      `024_laim_product_audit_log.sql` + `ProductAuditLogRepository`
+      (`2_shared_application/adapters/product_audit_log.py`, mismo patrón
+      que `ProductLicenseRepository`). `record()` es lo que el futuro
+      endpoint de instalación/actualización debe llamar — no existe
+      todavía ningún llamador real, igual que con `laim_exchange_keys`.
+      Incluye `list_for_serial()` (seguimiento por instalación, tal y como
+      pidió el usuario) y `counts_by_edition_result()` como primer bloque
+      de agregación para el cuadro de mando futuro, sin diseñar ese
+      dashboard todavía. Probado con SQLite en memoria: registro
+      éxito/fallo, validación cruzada `target_type`↔`plugin_name`,
+      historial por serial, agregación. Migración sin aplicar a silicon.
 - [ ] Caché de laimweb en disco con verificación SHA-256 — nueva, no
       ampliar `ForumImageCache`.
 
