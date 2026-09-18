@@ -4466,13 +4466,16 @@ def download_laim_product_endpoint(
     """Descarga un artefacto laim_product ya publicado."""
     _require_session_for_advance(edition, session)
     try:
-        content = router.download_laim_product(
+        content, sha256 = router.download_laim_product(
             session, edition, artifact_type, platform, version, filename, plugin_name
         )
+        headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+        if sha256:
+            headers["X-Content-SHA256"] = sha256
         return Response(
             content=content,
             media_type="application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers=headers,
         )
     except BusinessRuleError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc

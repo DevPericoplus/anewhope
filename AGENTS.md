@@ -11287,11 +11287,10 @@ dejar espacio explícito para:
       dashboard todavía. Probado con SQLite en memoria: registro
       éxito/fallo, validación cruzada `target_type`↔`plugin_name`,
       historial por serial, agregación. Migración sin aplicar a silicon.
-- [~] Base de verificación construida y probada; la caché en disco de
-      laimweb en sí queda como diseño, sin implementar. Migración
-      `025_laim_product_file_checksums.sql` (una fila por ruta relativa
-      dentro de `LAIM_PRODUCT_STORAGE`, SHA-256 + tamaño) +
-      `ProductFileChecksumRepository`
+- [x] Caché en disco de laimweb construida, con verificación de
+      integridad end-to-end. Migración `025_laim_product_file_checksums.sql`
+      (una fila por ruta relativa dentro de `LAIM_PRODUCT_STORAGE`, SHA-256
+      + tamaño) + `ProductFileChecksumRepository`
       (`2_shared_application/adapters/product_file_checksum.py`):
       `ensure_checksum()` para que backend_core calcule y persista el
       checksum de referencia la primera vez que sirve cada fichero (no
@@ -11305,14 +11304,38 @@ dejar espacio explícito para:
       manipulada (simulando un binario malicioso inyectado) rechazada,
       ausencia de referencia rechazada.
 
-      Lo que falta y no se ha construido hoy: la caché en disco de laimweb
-      en sí (dónde guarda localmente los ficheros, cuándo decide que su
-      copia está obsoleta y toca refrescar desde el backend, cómo se
-      engancha al flujo actual de `/laim/product/download`) — tocar eso
-      con seguridad requiere más contexto del código real de servido de
-      laimweb del que se ha explorado en esta pasada; no se ha querido
-      construir a ciegas. `ForumImageCache` sigue siendo el precedente de
-      forma (LRU en memoria, sin disco, sin checksum) a superar, no a
-      ampliar. Migración sin aplicar a silicon.
+      Cadena `X-Content-SHA256` propagada de extremo a extremo:
+      `apicore.py` (backend_core, calcula/persiste vía `ensure_checksum`) →
+      `interfacetocore.py` → `routerbroker.py` → `apibe.py` (broker) →
+      `broker_backend_client.py` → `routermiddleware.py` → `apife.py`
+      (middleware) — cada `download_laim_product` cambia de `bytes` a
+      `tuple[bytes, str | None]`.
+
+      Caché propiamente dicha: `laim_web/product_cache.py` (nuevo) —
+      `ProductFileCache.get_or_fetch()`, misma estructura de ruta que
+      `apicore.py` (`relative_artifact_path`), escritura atómica
+      (`.tmp` + `replace`), verifica contra `ProductFileChecksumRepository`
+      antes de servir una copia existente (fail-closed: sin conexión a
+      `laim_core_db` se trata siempre como MISS, nunca se sirve sin poder
+      verificar), y rechaza+borra un fichero recién descargado si su hash
+      no coincide con el `X-Content-SHA256` recibido (corrupción de
+      transporte). Probado con 7 casos reales: MISS+escritura en frío, HIT
+      sin re-fetch, fichero manipulado en disco detectado y re-descargado,
+      sin repositorio de checksums disponible (siempre MISS), corrupción
+      de transporte detectada y rechazada sin dejar fichero corrupto.
+
+      Servido vía nueva ruta laimweb `/api/product-cache/download`
+      (`laim_web.py`, mismo patrón `app._api.routes.append(Route(...))`
+      que `_forum_image_proxy`) — sustituye a `ForumImageCache` como
+      precedente de forma (ahora con disco + checksum, no solo LRU en
+      memoria). El navegador ya no pide el fichero directo a middleware
+      (`get_laim_product_download_url`); pide a laimweb, que resuelve
+      caché-o-fetch internamente contra middleware
+      (`fetch_laim_product_binary` en `laim_api_client.py`, hostname
+      interno `service_frontend:8007`). `LAIM_READER_DSN` (credenciales
+      `laim_reader`, solo lectura) añadida al contenedor de laimweb en
+      `anh_ansible_environments` — degrada a `None`/siempre-MISS si no
+      está configurada o la conexión falla, nunca bloquea el arranque de
+      laimweb. Las 4 migraciones (022-025) aplicadas a silicon.
 
 

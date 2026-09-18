@@ -5650,10 +5650,12 @@ class RouterMiddleware:
         version: str,
         filename: str,
         plugin_name: str = "",
-    ) -> bytes:
+    ) -> tuple[bytes, str | None]:
         """Descarga un artefacto laim_product via broker → backend core.
 
         community_edition es pública (session=None); ver list_laim_product.
+        Devuelve (contenido, sha256) — sha256 puede ser None (best-effort,
+        ver apicore.py § LAIM PRODUCT).
         """
         if session is not None:
             self._configure_broker_security(session)

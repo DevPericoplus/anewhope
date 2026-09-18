@@ -102,10 +102,11 @@ def get_laim_product_download_url(
     filename: str,
     plugin_name: str = "",
 ) -> str:
-    """URL de descarga de un artefacto laim_product a través del middleware.
-
-    La descarga real (bytes) la sirve el propio endpoint del middleware —
-    esta función solo construye la URL, coherente con get_laim_site_asset_url.
+    """URL de descarga de un artefacto laim_product — sirve desde la caché
+    en disco de la propia laimweb (`/api/product-cache/download`,
+    laim_web.py), no directo a middleware. Ver anewhope/AGENTS.md § 37.3:
+    laimweb cachea y verifica por checksum antes de servir; el navegador ya
+    no salta laimweb como hacía antes de esa sección.
     """
     base_url = _get_laim_product_public_base_url()
     params = (
@@ -114,7 +115,47 @@ def get_laim_product_download_url(
     )
     if plugin_name:
         params += f"&plugin_name={plugin_name}"
-    return f"{base_url}/laim/product/download?{params}"
+    return f"{base_url}/api/product-cache/download?{params}"
+
+
+class ProductFetchError(Exception):
+    """Error al pedir un artefacto laim_product binario a middleware."""
+
+
+def fetch_laim_product_binary(
+    edition: str,
+    artifact_type: str,
+    platform: str,
+    version: str,
+    filename: str,
+    plugin_name: str = "",
+) -> tuple[bytes, str | None]:
+    """Pide un artefacto laim_product a middleware server-a-servidor (no
+    para el navegador — usado por la caché en disco de laimweb,
+    product_cache.py, cuando no tiene una copia cacheada válida). Hostname
+    interno de docker-compose correcto aquí: es laimweb quien habla con
+    middleware, no el navegador quien necesita alcanzarlo directamente.
+
+    Devuelve (contenido, sha256) — sha256 viene del header X-Content-SHA256
+    de middleware si estaba presente (ver apicore.py § LAIM PRODUCT).
+    """
+    base_url = _get_middleware_base_url()
+    params = (
+        f"edition={edition}&artifact_type={artifact_type}&platform={platform}"
+        f"&version={version}&filename={filename}"
+    )
+    if plugin_name:
+        params += f"&plugin_name={plugin_name}"
+    url = f"{base_url}/laim/product/download?{params}"
+    try:
+        with httpx.Client(timeout=60.0) as client:
+            response = client.get(url, headers={"X-Client-App": "laimweb"})
+            response.raise_for_status()
+            return response.content, response.headers.get("X-Content-SHA256")
+    except httpx.HTTPStatusError as exc:
+        raise ProductFetchError(f"HTTP {exc.response.status_code}: {exc.response.text}") from exc
+    except httpx.HTTPError as exc:
+        raise ProductFetchError(str(exc)) from exc
 
 
 def get_laim_product_script_url(edition: str, platform: str) -> str:

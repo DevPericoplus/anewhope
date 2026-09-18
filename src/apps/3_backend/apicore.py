@@ -4520,6 +4520,31 @@ _LAIM_PRODUCT_ARTIFACT_TYPES = {"installer", "patch"}
 _LAIM_PRODUCT_PLATFORMS = {"windows", "linux_deb", "linux_rpm", "mac_intel", "mac_silicon"}
 _LAIM_PRODUCT_SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9_.-]+$")
 
+_checksum_module_path = _REPO_ROOT / "src/2_shared_application/adapters/product_file_checksum.py"
+_product_file_checksum = _load_backend_module("product_file_checksum_core", _checksum_module_path)
+
+_storage_adapter_path = _REPO_ROOT / "src/apps/3_backend/4_infrastructure/persistence/storage_adapter.py"
+_storage_adapter_for_checksum = _load_backend_module("storage_adapter_for_checksum", _storage_adapter_path)
+
+_session_repo_path = _REPO_ROOT / "src/2_shared_application/adapters/laim_mariadb_session_repository.py"
+_laim_session_repo_for_checksum = _load_backend_module("laim_mariadb_session_repository_for_checksum", _session_repo_path)
+
+_checksum_repo: Any = None
+
+
+def _get_checksum_repo() -> Any:
+    """Repositorio de checksums, construido una sola vez (engine reutilizado
+    entre requests) — ver anewhope/AGENTS.md § 37.3. Si laim_core_db no está
+    disponible, degrada a None: la descarga sigue funcionando sin checksum,
+    laimweb simplemente no podrá verificar su caché para ese fichero (falla
+    cerrado del lado laimweb, no aquí)."""
+    global _checksum_repo
+    if _checksum_repo is None:
+        settings = _storage_adapter_for_checksum.load_laim_mariadb_settings()
+        engine = _laim_session_repo_for_checksum.create_laim_session_engine(settings)
+        _checksum_repo = _product_file_checksum.ProductFileChecksumRepository(engine)
+    return _checksum_repo
+
 
 def _laim_product_storage_base() -> Path:
     base = os.environ.get("LAIM_PRODUCT_STORAGE", "").strip()
@@ -4618,7 +4643,27 @@ def download_laim_product(
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail="Artefacto no encontrado")
 
-    return FileResponse(path=str(file_path), filename=filename, media_type="application/octet-stream")
+    # X-Content-SHA256: checksum de referencia (calculado y persistido la
+    # primera vez que se sirve este fichero, reutilizado después) — para que
+    # laimweb pueda verificar su copia cacheada sin tener que golpear
+    # laim_core_db por su cuenta. Ver anewhope/AGENTS.md § 37.3. Best-effort:
+    # si laim_core_db no está disponible, la descarga sigue sirviendo el
+    # fichero (que ya viene del storage de confianza del backend) sin ese
+    # header — laimweb trata su ausencia como "no puedo verificar, no
+    # confíes en la copia cacheada", nunca como luz verde implícita.
+    headers: dict[str, str] = {}
+    try:
+        relative_path = str(file_path.relative_to(_laim_product_storage_base()))
+        checksum = _get_checksum_repo().ensure_checksum(relative_path, file_path)
+        headers["X-Content-SHA256"] = checksum.sha256
+    except Exception as exc:  # noqa: BLE001 - best-effort, nunca bloquea la descarga real
+        logging.getLogger(__name__).warning(
+            "No se pudo calcular/persistir el checksum de %s: %s", file_path, exc
+        )
+
+    return FileResponse(
+        path=str(file_path), filename=filename, media_type="application/octet-stream", headers=headers
+    )
 
 
 # ========================================================================

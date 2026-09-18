@@ -1437,8 +1437,15 @@ class CoreBackendClient:
         version: str,
         filename: str,
         plugin_name: str = "",
-    ) -> bytes:
-        """Descarga un artefacto laim_product desde backend core."""
+    ) -> tuple[bytes, str | None]:
+        """Descarga un artefacto laim_product desde backend core.
+
+        Devuelve (contenido, sha256) — sha256 es el valor del header
+        X-Content-SHA256 de backend_core si venía presente, None si no
+        (best-effort, ver apicore.py § LAIM PRODUCT). Propagado hasta
+        laimweb para que pueda verificar su caché sin volver a golpear
+        laim_core_db — ver anewhope/AGENTS.md § 37.3.
+        """
         from urllib.parse import quote
         url = (
             f"{self._base_url}/product/download"
@@ -1452,7 +1459,7 @@ class CoreBackendClient:
         try:
             response = self._client.get(url, headers=headers, timeout=60.0)
             response.raise_for_status()
-            return response.content
+            return response.content, response.headers.get("X-Content-SHA256")
         except Exception as exc:
             raise CoreBackendCommunicationError(
                 f"Error descargando artefacto laim_product del backend core: {exc}"

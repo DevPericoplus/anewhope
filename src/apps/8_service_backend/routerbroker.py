@@ -2219,8 +2219,8 @@ class BrokerBackendRouter:
         version: str,
         filename: str,
         plugin_name: str = "",
-    ) -> bytes:
-        """Descarga un artefacto laim_product."""
+    ) -> tuple[bytes, str | None]:
+        """Descarga un artefacto laim_product. Devuelve (contenido, sha256)."""
         self._logger.info(
             "[%s] Descargando laim_product edition=%s artifact_type=%s platform=%s version=%s file=%s",
             self._client_app, edition, artifact_type, platform, version, filename,

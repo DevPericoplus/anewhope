@@ -4569,11 +4569,14 @@ def download_laim_product_endpoint(
     Flujo: Middleware → Broker → Backend Core → Filesystem
     """
     try:
-        content = router.download_laim_product(edition, artifact_type, platform, version, filename, plugin_name)
+        content, sha256 = router.download_laim_product(edition, artifact_type, platform, version, filename, plugin_name)
+        headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+        if sha256:
+            headers["X-Content-SHA256"] = sha256
         return Response(
             content=content,
             media_type="application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers=headers,
         )
     except BrokerBusinessError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
