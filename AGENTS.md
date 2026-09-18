@@ -11116,4 +11116,136 @@ Checklist al añadir un servicio o variable:
 Documentación de usuario: `README.md` sección «Entorno silicon (estándar Docker/compose)».
 Plan operativo: `anh_ansible_environments/readme_silicon_deploy.md`.
 
+## 37. Actualizaciones y distribución de producto LAIM (`laim update`) — diseño pendiente
+
+**Estado: diseñado en conversación con el usuario, nada implementado.**
+Contraparte del lado cliente: ver `../laim/AGENTS.md` § "Sistema de
+actualización de LAIM (`laim update`)" — panel de Configuración, flujo de
+tres modales, reinicio automatizado, campos nuevos en `identity.dat`. Esta
+sección cubre exclusivamente lo que corresponde construir en anewhope.
+
+### 37.1. `/check_last_version`
+
+Nuevo endpoint, expuesto vía nginx con el mismo patrón que
+`/laim/product/` (location block dedicado, proxy a `service_frontend:8007`
+— ver la sección de laim_product ya construida esta sesión). Público para
+`community_edition` (sin sesión, mismo criterio ya aplicado a
+`/laim/product/list`/`download`), sesión requerida para `advance`. Cadena
+obligatoria: laimweb → middleware → broker → backend_core → fmanagement.
+
+Debe cubrir producto core y plugins, en ambas modalidades. El parámetro
+`plugin_name` y el valor `artifact_type=patch` **ya existen de punta a
+punta** en toda la cadena (`fmanagement/product.go`, `apicore.go`,
+`routerbroker.py`, `routermiddleware.py`, `apife.py` — construidos al
+implementar `/laim/product/list`/`/laim/product/download`) — verificar que
+sirven tal cual antes de construir nada nuevo. Lo más probable es que solo
+falte el propio endpoint de comparación de versión, no la infraestructura
+de distribución del fichero.
+
+### 37.2. Firma de autenticidad (no cifrado)
+
+El lado laim usa `KeyExchageLaimApp` (`laim/internal/utils/version.go:46-48`)
+como clave HMAC, no como clave de cifrado simétrico — viaja embebida en
+cada binario distribuido y por tanto no puede considerarse secreta frente
+a un atacante con acceso al binario; su valor real es autenticar el origen
+("esto viene de verdad de laim.app"), no ocultar el contenido (ya lo hace
+HTTPS). anewhope necesita la misma clave del lado servidor para firmar y
+verificar las respuestas de `/check_last_version` y de descarga de
+parches.
+
+**Pendiente de decidir dónde vive esa clave en anewhope** — candidato
+natural: `protected_values.py` por entorno, mismo patrón ya establecido
+para `jwt_access_secret_key`. Nunca hardcodeada en un `.j2` de ansible
+(mismo hallazgo de "Credential Leakage" ya documentado en
+`anh_ansible_environments/AGENTS.md` para `jwt_access_secret_key`).
+
+`GlobalInstallationKeys` en laim rota en cada versión mayor (0.x→1.0) —
+anewhope necesita poder validar con más de un valor vigente
+simultáneamente durante la transición, mientras instalaciones de la
+versión mayor anterior siguen firmando con la clave vieja.
+
+### 37.3. Caché de ficheros en laimweb + integridad
+
+Los ficheros de producto/parches/plugins viven en el storage del backend
+(mismo `LAIM_PRODUCT_STORAGE` que ya usa fmanagement). laimweb mantiene una
+réplica cacheada **en disco** — precedente de forma existente pero
+insuficiente: `ForumImageCache` (`laim_web/forum_image_cache.py`), LRU en
+memoria, sin persistencia en disco, sin checksum.
+
+Checksum: **SHA-256, no MD5** — convención ya establecida en este código
+(`laim_forum_image_storage.py`, campo `checksum_sha256`) y, a diferencia de
+MD5, sigue siendo apropiado para detectar manipulación deliberada, no solo
+corrupción accidental. Se calcula y persiste en base de datos en el
+momento en que el fichero se publica en el storage del backend (cuando
+`laim_maintenance` publica un artefacto vía fmanagement) — no en el
+momento de cachear en el frontend, que es precisamente el paso que no hay
+que dar por confiable sin verificar.
+
+Verificación: antes de servir una copia cacheada, laimweb compara su hash
+contra el valor persistido para ese fichero. Si no coincide, la copia
+cacheada se bloquea (nunca se sirve) y se sustituye por una copia fresca
+leída directamente del backend, fuente de verdad. `laim_maintenance` solo
+escribe en el storage del backend — nunca toca la caché del frontend
+directamente; laimweb decide cuándo refrescarla.
+
+### 37.4. Auditoría de operaciones (instalación/actualización)
+
+El menú "Auditoría" de laimweb (`static_pages/config_auditoria.md`) es hoy
+solo texto de documentación — no hay tabla real detrás. El patrón más
+cercano que existe, `_append_auth_log()` en `routermiddleware.py:1457`,
+escribe a un fichero JSON — válido para lo que audita hoy, pero no
+consultable para el cuadro de mando estadístico que se pide a futuro.
+
+Nueva tabla en MariaDB (no el patrón JSON), registrando por cada operación
+de instalación/actualización de producto o plugin, en ambas modalidades:
+identificador de usuario/serial, tipo de operación, edición, versión
+origen→destino, plataforma, resultado, timestamp. Diseñar pensando en
+agregación (conteos por versión/edición/resultado a lo largo del tiempo),
+no solo en el registro individual — es la base del cuadro de mando futuro,
+todavía sin diseñar.
+
+### 37.5. `ProductLicense` — vigencia y modelo SaaS futuro
+
+`product_license.py` (`1_shared_domain/entities`) gana `fecha_inicio`/
+`fecha_fin` de vigencia, y una estructura de derechos por-plugin
+independiente de la vigencia del producto core — un usuario puede tener el
+core Advance vigente y solo un subconjunto de sus plugins Advance
+vigentes, con fechas propias. El código ya comentaba explícitamente que la
+persistencia real es "a future step this module shouldn't guess at" —
+sigue siendo cierto: el mock JSON actual (`moks/product_licenses.json`) no
+es la base sobre la que construir esto, hace falta persistencia real
+(MariaDB) antes de añadir estos campos.
+
+**laimweb es la fuente de verdad de la vigencia** — la comprobación de si
+un usuario tiene derecho a Advance (o a un plugin Advance concreto) ocurre
+siempre server-side, en cada `/check_last_version` y cada descarga. Los
+campos equivalentes persistidos en `identity.dat` del lado laim son solo
+para UX local — nunca el punto de aplicación real.
+
+No se diseña el sistema de pagos todavía, pero el modelo de datos debe
+dejar espacio explícito para:
+
+- Renovación selectiva por-plugin (el usuario elige qué renovar, no
+  todo-o-nada).
+- Reactivación de un plugin no renovado a mitad de un periodo ya vigente
+  para otros elementos, con cálculo de coste proporcional al tiempo
+  restante.
+- Tras `fecha_fin` sin renovación de un elemento concreto, ese elemento
+  deja de estar disponible — el resto de la instalación (u otros plugins
+  con vigencia propia) no se ve afectado.
+
+### 37.6. Checklist antes de implementar
+
+- [ ] ¿`artifact_type=patch` y `plugin_name` ya sirven tal cual en toda la
+      cadena, o hace falta ampliar algún hop? (probablemente ya existe —
+      verificar antes de construir).
+- [ ] ¿Dónde vive la clave HMAC equivalente a `KeyExchageLaimApp` del lado
+      servidor — `protected_values.py` por entorno?
+- [ ] Migrar `ProductLicense` de mock JSON a persistencia real antes de
+      añadir campos de vigencia.
+- [ ] Nueva tabla de auditoría en MariaDB — no reutilizar el patrón JSON de
+      `_append_auth_log()`.
+- [ ] Caché de laimweb en disco con verificación SHA-256 — nueva, no
+      ampliar `ForumImageCache`.
+
 
