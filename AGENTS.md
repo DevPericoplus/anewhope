@@ -11264,8 +11264,17 @@ dejar espacio explícito para:
       no resuelto con un cifrado inventado sobre la marcha. Migración
       todavía no aplicada a silicon — pendiente de confirmación antes de
       tocar la base de datos real.
-- [ ] Migrar `ProductLicense` de mock JSON a persistencia real antes de
-      añadir campos de vigencia.
+- [x] `ProductLicense` migrado a persistencia real — migración
+      `023_laim_product_licenses.sql` (+ `laim_product_license_plugins`
+      para vigencia por-plugin independiente del core, el caso descrito
+      por el usuario: core advance vigente con solo un subconjunto de sus
+      plugins también vigentes). `ProductLicenseRepository`
+      (`product_license.py`) reescrito con SQLAlchemy, mismo patrón que
+      `LaimMariaDbSessionRepository`. Cero llamadores existían — nada que
+      romper. Probado (SQLite en memoria, no MariaDB real todavía):
+      registro, rechazo de serial duplicado, `is_advance_active()` dentro/
+      fuera de vigencia, `active_plugin_names()` filtrando un plugin
+      vencido. Migraciones sin aplicar a silicon todavía.
 - [ ] Nueva tabla de auditoría en MariaDB — no reutilizar el patrón JSON de
       `_append_auth_log()`.
 - [ ] Caché de laimweb en disco con verificación SHA-256 — nueva, no
