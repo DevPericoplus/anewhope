@@ -11287,7 +11287,32 @@ dejar espacio explícito para:
       dashboard todavía. Probado con SQLite en memoria: registro
       éxito/fallo, validación cruzada `target_type`↔`plugin_name`,
       historial por serial, agregación. Migración sin aplicar a silicon.
-- [ ] Caché de laimweb en disco con verificación SHA-256 — nueva, no
-      ampliar `ForumImageCache`.
+- [~] Base de verificación construida y probada; la caché en disco de
+      laimweb en sí queda como diseño, sin implementar. Migración
+      `025_laim_product_file_checksums.sql` (una fila por ruta relativa
+      dentro de `LAIM_PRODUCT_STORAGE`, SHA-256 + tamaño) +
+      `ProductFileChecksumRepository`
+      (`2_shared_application/adapters/product_file_checksum.py`):
+      `ensure_checksum()` para que backend_core calcule y persista el
+      checksum de referencia la primera vez que sirve cada fichero (no
+      hace falta tocar fmanagement ni el pipeline de publicación de
+      `laim_maintenance` para esto — backend_core ya monta el storage
+      directamente); `verify_file()` para que laimweb compare su copia
+      cacheada contra esa referencia — **fail-closed**: sin checksum de
+      referencia registrado, nunca se da por buena una copia, nunca "True"
+      por omisión. Probado con ficheros reales en disco: cálculo,
+      reutilización en llamadas siguientes, copia legítima aceptada, copia
+      manipulada (simulando un binario malicioso inyectado) rechazada,
+      ausencia de referencia rechazada.
+
+      Lo que falta y no se ha construido hoy: la caché en disco de laimweb
+      en sí (dónde guarda localmente los ficheros, cuándo decide que su
+      copia está obsoleta y toca refrescar desde el backend, cómo se
+      engancha al flujo actual de `/laim/product/download`) — tocar eso
+      con seguridad requiere más contexto del código real de servido de
+      laimweb del que se ha explorado en esta pasada; no se ha querido
+      construir a ciegas. `ForumImageCache` sigue siendo el precedente de
+      forma (LRU en memoria, sin disco, sin checksum) a superar, no a
+      ampliar. Migración sin aplicar a silicon.
 
 
