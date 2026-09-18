@@ -11512,7 +11512,7 @@ LAIM Web (`www.laim.app`) es el **portal de descarga y orientación** para usuar
 
 **Autenticación:** Registro público con hCaptcha (site key en `env.yaml`, secret en `protected_values.py`). Tras el login, la vista inicial es **Instaladores**.
 
-**Contenido editable:** Ficheros markdown en `src/apps/9_laimweb/static_pages/`. Acciones de botones definidas en `laim_web/components/page_actions.py` (descargas reales se habilitarán en iteraciones posteriores).
+**Contenido editable:** Ficheros markdown en `src/apps/9_laimweb/static_pages/`. Acciones de botones definidas en `laim_web/components/page_actions.py`. La sección **Instaladores** ya ofrece descargas reales — ver § 18.7.
 
 **Flujo de datos:** LAIM Web → Middleware (8007) → Broker (8008) → Backend Core (8003) → `laim_core_db`. Header `X-Client-App: laimweb`.
 
@@ -11543,7 +11543,81 @@ LAIM Web (Enviar)
 **Servicio:** `src/apps/3_backend/laim_contact_service.py`  
 **Repositorio:** `src/2_shared_application/adapters/laim_contact_repository.py`
 
-### 18.7. Roadmap
+### 18.7. Distribución de producto LAIM (instaladores, parches y plugins)
+
+`laim_maintenance` (repo hermano, `~/develop/laim_maintenance`) construye y
+publica los instaladores, parches y plugins del cliente **LAIM Core**, en dos
+modalidades — `community_edition` (gratuita, activa) y `advance` (de pago;
+distribución ya soportada, pero el cobro/licenciamiento todavía **no está
+implementado**, ver más abajo) — directamente en el storage que gestiona
+`fmanagement`. anewhope no construye ni firma esos artefactos: solo los sirve.
+
+**Cadena de descarga** (mismo patrón que el resto de LAIM Web):
+
+```
+Navegador / curl -fsSL .../install-script | bash
+  → laimweb (8010)  /api/product-cache/download   ← caché local con checksum
+      → Middleware (8007)  /laim/product/download  (público, sin sesión, solo CE)
+          → Broker (8008)
+              → Backend Core (8003)  → calcula/persiste SHA-256 la primera vez
+                  → fmanagement (1666)  /product/download  (fuente de verdad)
+```
+
+`nginx` expone `/laim/product/` públicamente (sin sesión) en
+`anh_ansible_environments` — necesario tanto para el navegador como para el
+script de instalación por terminal (`curl | bash` / `irm ... | iex`, que no
+tiene sesión de portal alguna). Solo `community_edition` es descargable sin
+autenticación; `advance` queda tras el modal "En construcción" hasta que
+exista el modelo de licencia de pago.
+
+**Caché de laimweb con verificación de integridad** — laimweb ya no reenvía
+cada petición directa al middleware: mantiene una réplica **en disco**
+(`laim_web/product_cache.py`, volumen `product_cache/` del contenedor) y
+antes de servir una copia cacheada comprueba su SHA-256 contra el valor de
+referencia calculado por backend_core la primera vez que sirvió ese fichero
+(tabla `laim_product_file_checksums`, `ProductFileChecksumRepository`).
+**Fail-closed**: sin checksum de referencia o sin poder conectar con
+`laim_core_db`, nunca se da una copia cacheada por buena — se vuelve a pedir
+al backend. Un fichero manipulado en el disco de laimweb se detecta,
+descarta y sustituye automáticamente por una copia fresca y verificada.
+
+**Licencias de producto** — `laim_product_licenses` (+
+`laim_product_license_plugins` para vigencia por-plugin independiente del
+core) sustituye al antiguo mock JSON; `ProductLicenseRepository`
+(`is_advance_active()`, `active_plugin_names()`) es la fuente de verdad
+**server-side** de si un serial tiene derecho a `advance` o a un plugin
+concreto — la copia que en el futuro se guarde en `identity.dat` del lado
+`laim` es solo para mostrar en la UI local, nunca el punto real de
+aplicación. El sistema de pagos/renovación de `advance` está diseñado
+(vigencia por fechas, renovación selectiva por-plugin) pero **no
+implementado** — ver `AGENTS.md` § 37.5.
+
+**Auditoría** — `laim_product_audit_log` +
+`ProductAuditLogRepository.record()` quedan listos para registrar cada
+instalación/actualización (éxito/fallo, edición, versión origen→destino,
+plataforma) de cara al futuro cuadro de mando, pero **todavía no tienen
+ningún llamador real** — el flujo de instalación/actualización que los
+invocaría (`laim update`) está diseñado, no implementado.
+
+**Clave de intercambio con LAIM Core** — `laim_exchange_keys` persiste (en
+`laim_core_db`, no en un fichero de configuración) la clave de autenticidad
+que LAIM Core ya trae embebida (`KeyExchageLaimApp`,
+`internal/utils/version.go`) para comunicarse con `www.laim.app` — pensada
+para HMAC de autenticidad, no cifrado real (la clave viaja embebida en cada
+binario distribuido, así que no puede tratarse como secreta frente a un
+atacante decidido). Soporta varias claves vigentes a la vez
+(`valid_from`/`valid_until`) para rotarla sin romper versiones ya
+instaladas. Ni el nombre de variable ni su valor se documentan fuera de
+`version.go`/la propia tabla.
+
+**Estado:** distribución y descarga de `community_edition` con caché e
+integridad verificada — **implementado, desplegado y probado en silicon**.
+`laim update` (auto-actualización, tanto de LAIM Core como de plugins, en
+ambas ediciones) y el licenciamiento de pago de `advance` están diseñados en
+detalle pero **no implementados** — ver `AGENTS.md` § 37 (`anewhope`) y la
+sección "Sistema de actualización de LAIM" en `../laim/AGENTS.md`.
+
+### 18.8. Roadmap
 
 - [ ] Gestión completa del ciclo de vida de modelos
 - [ ] Panel de monitoreo de modelos en producción
@@ -11555,7 +11629,11 @@ LAIM Web (Enviar)
 - [x] Certificado SSL Let's Encrypt con renovación automática
 - [x] Configuración Nginx como reverse proxy para LAIM Web
 - [x] Menú autenticado (instaladores, manuales, modelos, skills, soporte, FAQ)
-- [ ] Descargas reales de instaladores y modelos desde el portal
+- [x] Descargas reales de instaladores LAIM Core (`community_edition`), con
+      caché en disco e integridad SHA-256 verificada — § 18.7
+- [ ] Descargas reales de modelos (base/especializados/personalizados) desde el portal
+- [ ] `laim update`: auto-actualización de LAIM Core y plugins (diseño en `AGENTS.md` § 37)
+- [ ] Licenciamiento de pago y activación de la edición `advance`
 
 ---
 
