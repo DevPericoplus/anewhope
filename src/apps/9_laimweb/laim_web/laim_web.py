@@ -141,6 +141,8 @@ def _get_product_checksum_repo():
             "product_file_checksum_laimweb", _checksum_mod_path
         )
         _checksum_mod = importlib.util.module_from_spec(_checksum_spec)
+        import sys as _sys
+        _sys.modules["product_file_checksum_laimweb"] = _checksum_mod
         _checksum_spec.loader.exec_module(_checksum_mod)
 
         _session_repo_mod_path = (
@@ -151,6 +153,7 @@ def _get_product_checksum_repo():
             "laim_mariadb_session_repository_laimweb", _session_repo_mod_path
         )
         _session_repo_mod = importlib.util.module_from_spec(_session_repo_spec)
+        _sys.modules["laim_mariadb_session_repository_laimweb"] = _session_repo_mod
         _session_repo_spec.loader.exec_module(_session_repo_mod)
 
         engine = _session_repo_mod.create_laim_session_engine(
