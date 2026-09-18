@@ -11338,4 +11338,34 @@ dejar espacio explícito para:
       está configurada o la conexión falla, nunca bloquea el arranque de
       laimweb. Las 4 migraciones (022-025) aplicadas a silicon.
 
+      **Validado end-to-end en silicon real** (no solo con SQLite local):
+      backend_core + broker + service_frontend + laimweb desplegados
+      (`anh_ansible_environments`, `-e deploy_service=<servicio>` uno a
+      uno, `--check --diff` antes de aplicar en cada caso), volumen
+      `product_cache/` + `LAIM_READER_DSN` confirmados dentro del
+      contenedor `laimweb` (`docker inspect`/`docker exec env`). Peticiones
+      reales vía `https://laim.anewhope.silicon.loc/api/product-cache/
+      download` (nginx, no saltándose el proxy): MISS en frío escribe en
+      disco y persiste el checksum de referencia en `laim_product_file_
+      checksums`; segunda petición da HIT verificado sin volver a pedir
+      nada a middleware (confirmado por log, sin nueva línea `httpx` de
+      salida); fichero cacheado manipulado a mano en disco → tratado como
+      MISS, redescargado y restaurado a su contenido original.
+
+      **Bug real encontrado y corregido durante esta validación:**
+      `_get_product_checksum_repo()` en `laim_web.py` cargaba
+      `product_file_checksum.py` (dataclass `slots=True`) con
+      `importlib.util.module_from_spec()` + `exec_module()` sin registrar
+      el módulo en `sys.modules` antes de ejecutarlo — mismo fallo ya
+      corregido en `apicore.py` esta sesión (`_load_backend_module`), no
+      replicado aquí a tiempo. Efecto en producción: el repositorio de
+      checksums fallaba en silencio (`'NoneType' object has no attribute
+      '__dict__'`) y la caché degradaba a siempre-MISS — seguro (nunca
+      servía una copia sin verificar) pero sin poder verificar nunca.
+      Corregido registrando `sys.modules[...]` antes de `exec_module()`
+      para ambos módulos cargados dinámicamente; redesplegado y
+      reverificado (HIT real tras el fix). Lección: todo loader dinámico
+      de un módulo con dataclasses `slots=True` en este código necesita
+      este registro — no solo el de `apicore.py`.
+
 
