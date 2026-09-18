@@ -11248,12 +11248,22 @@ dejar espacio explícito para:
 
 ### 37.6. Checklist antes de implementar
 
-- [ ] ¿`artifact_type=patch` y `plugin_name` ya sirven tal cual en toda la
-      cadena, o hace falta ampliar algún hop? (probablemente ya existe —
-      verificar antes de construir).
-- [ ] Crear tabla `laim_exchange_keys` (MariaDB, valor cifrado en reposo) y
-      migrar a ella el valor actual de `KeyExchageLaimApp` — nunca en un
-      fichero versionado.
+- [x] ¿`artifact_type=patch` y `plugin_name` ya sirven tal cual en toda la
+      cadena? **Sí, verificado con peticiones reales contra silicon**
+      (`GET /laim/product/list?...artifact_type=patch...` y
+      `...&plugin_name=...`, ambas `200 OK`) — no hace falta ampliar ningún
+      hop, la cadena ya soportaba esto desde que se construyó
+      `/laim/product/list`/`download`.
+- [x] Migración `022_laim_exchange_keys.sql` escrita
+      (`infrastructure/database/migrations/`) — una fila por versión mayor
+      de laim, `valid_from`/`valid_until` para soportar varias claves
+      vigentes durante una transición de versión mayor. **Pendiente**:
+      cómo se cifra `key_value_cipher` en reposo — anewhope no tiene hoy un
+      equivalente a `LoadMasterKey()` (laim_dat.go) para cifrado
+      reversible; documentado como TODO explícito en la propia migración,
+      no resuelto con un cifrado inventado sobre la marcha. Migración
+      todavía no aplicada a silicon — pendiente de confirmación antes de
+      tocar la base de datos real.
 - [ ] Migrar `ProductLicense` de mock JSON a persistencia real antes de
       añadir campos de vigencia.
 - [ ] Nueva tabla de auditoría en MariaDB — no reutilizar el patrón JSON de
