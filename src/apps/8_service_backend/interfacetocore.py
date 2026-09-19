@@ -1429,6 +1429,21 @@ class CoreBackendClient:
         data = self._request("GET", f"/product/list{params}")
         return dict(data or {})
 
+    def check_last_version(
+        self, edition: str, platform: str, current_version: str, plugin_name: str = ""
+    ) -> dict[str, Any]:
+        """Compara current_version contra el último parche publicado — ver
+        apicore.py::check_last_version y AGENTS.md § 37.1/37.2."""
+        from urllib.parse import quote
+        params = (
+            f"?edition={quote(edition)}&platform={quote(platform)}"
+            f"&current_version={quote(current_version)}"
+        )
+        if plugin_name:
+            params += f"&plugin_name={quote(plugin_name)}"
+        data = self._request("GET", f"/check_last_version{params}")
+        return dict(data or {})
+
     def download_laim_product(
         self,
         edition: str,

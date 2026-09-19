@@ -4452,6 +4452,25 @@ def list_laim_product_endpoint(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
+@app.get("/laim/check_last_version", tags=["laim_product"])
+def check_last_version_endpoint(
+    edition: str,
+    platform: str,
+    current_version: str,
+    plugin_name: str = "",
+    session: SessionContext | None = Depends(get_optional_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+) -> dict[str, Any]:
+    """Compara current_version contra el último parche publicado — llamado
+    por un `laim` ya instalado (community_edition: sin sesión, igual que el
+    resto de /laim/product/*), ver AGENTS.md § 37.1/37.2."""
+    _require_session_for_advance(edition, session)
+    try:
+        return router.check_last_version(session, edition, platform, current_version, plugin_name)
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
 @app.get("/laim/product/download", tags=["laim_product"])
 def download_laim_product_endpoint(
     edition: str,

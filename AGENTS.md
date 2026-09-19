@@ -11126,21 +11126,29 @@ sección cubre exclusivamente lo que corresponde construir en anewhope.
 
 ### 37.1. `/check_last_version`
 
-Nuevo endpoint, expuesto vía nginx con el mismo patrón que
-`/laim/product/` (location block dedicado, proxy a `service_frontend:8007`
-— ver la sección de laim_product ya construida esta sesión). Público para
-`community_edition` (sin sesión, mismo criterio ya aplicado a
-`/laim/product/list`/`download`), sesión requerida para `advance`. Cadena
-obligatoria: laimweb → middleware → broker → backend_core → fmanagement.
+**[x] Implementado**: `GET /laim/check_last_version` (nginx location
+dedicado en `frontend.conf.j2`, mismo patrón que `/laim/product/`) →
+`apife.py` → `routermiddleware.py` → `broker_backend_client.py` (middleware)
+→ `apibe.py` → `routerbroker.py` (broker) → `interfacetocore.py` →
+`apicore.py::check_last_version` (backend_core) — mismo relé 1:1 que
+`/laim/product/list`/`download`, sin tocar `fmanagement` (backend_core ya
+lee el storage compartido directamente, ver § 37.3).
 
-Debe cubrir producto core y plugins, en ambas modalidades. El parámetro
-`plugin_name` y el valor `artifact_type=patch` **ya existen de punta a
-punta** en toda la cadena (`fmanagement/product.go`, `apicore.go`,
-`routerbroker.py`, `routermiddleware.py`, `apife.py` — construidos al
-implementar `/laim/product/list`/`/laim/product/download`) — verificar que
-sirven tal cual antes de construir nada nuevo. Lo más probable es que solo
-falte el propio endpoint de comparación de versión, no la infraestructura
-de distribución del fichero.
+`artifact_type` es siempre `"patch"` — el flujo de actualización descarga
+parches (ya soportados de punta a punta), nunca el instalador completo.
+Resuelve la última versión leyendo el símlink `latest` (mismo mecanismo
+que `/product/list`) y compara con `current_version` que envía el cliente
+con un comparador semver mínimo escrito a mano (`_version_is_newer` en
+apicore.py — sin añadir `packaging` como dependencia solo para esto).
+`plugin_name` reutiliza el parámetro ya existente en toda la cadena.
+Público para `community_edition` (sin sesión, mismo criterio que
+`/laim/product/list`); `advance` sigue exigiendo sesión vía
+`_require_session_for_advance`, ya existente.
+
+Probado (SQLite en memoria + script ad-hoc, mismo patrón no comiteado que
+el resto de adapters de esta sección): comparador semver (igual, mayor,
+menor, distinto número de segmentos) y `LaimExchangeKeyRepository` (clave
+vigente, clave caducada, sin clave para ese major_version).
 
 ### 37.2. Firma de autenticidad (no cifrado)
 
@@ -11153,28 +11161,19 @@ HTTPS). anewhope necesita la misma clave del lado servidor para firmar y
 verificar las respuestas de `/check_last_version` y de descarga de
 parches.
 
-**Decidido: persistencia en base de datos, no en `protected_values.py`.**
-A diferencia de `jwt_access_secret_key` (un único valor estático por
-entorno), `GlobalInstallationKeys` rota en cada versión mayor de laim
-(0.x→1.0) y anewhope necesita poder validar con **varias claves vigentes
-a la vez** durante la transición — un valor estático en fichero no encaja
-bien con eso; una tabla en MariaDB sí (una fila por versión mayor, con su
-propia vigencia). Nueva tabla, p.ej. `laim_exchange_keys`: versión mayor,
-valor de la clave, vigente desde/hasta. El valor se guarda **cifrado en
-reposo** (mismo patrón que `ProxyConfig.PasswordCipher` en laim —
-`laim_dat.go` — cifrado con una clave maestra del servidor, nunca en
-texto plano en la tabla ni en ningún `.j2` de ansible — mismo hallazgo de
-"Credential Leakage" ya documentado en `anh_ansible_environments/AGENTS.md`
-para `jwt_access_secret_key`). El valor real de la clave actual de laim
-**no se documenta en ningún fichero versionado** — se aplica directamente
-a la base de datos cuando se implemente, igual que ya se hizo con
-`jwt_access_secret_key` en su momento (extra-var temporal, nunca impreso
-en terminal ni comiteado).
-
-`GlobalInstallationKeys` en laim rota en cada versión mayor (0.x→1.0) —
-anewhope necesita poder validar con más de un valor vigente
-simultáneamente durante la transición, mientras instalaciones de la
-versión mayor anterior siguen firmando con la clave vieja.
+**[x] Implementado** (persistencia): `LaimExchangeKeyRepository`
+(`src/2_shared_application/adapters/laim_exchange_key.py`) —
+`get_current_key(major_version)` resuelve la fila vigente más reciente
+(`valid_from <= NOW()`, `valid_until` NULL o futuro), soportando varias
+claves vigentes a la vez durante una rotación de versión mayor. Cifrado en
+reposo de `key_value_cipher`: **sigue pendiente de diseño**, tal y como ya
+documentaba la propia migración 022 — el valor se guarda en claro,
+protegido solo por permisos de BD, estado interino ya aceptado, no una
+mejora de esta pasada. El valor real de la clave actual de laim **no se
+documenta en ningún fichero versionado** — se aplica directamente a la
+base de datos con un `INSERT` manual (nunca una migración con el valor en
+claro comiteada a git), extra-var/fichero temporal nunca impreso en
+terminal, mismo patrón ya usado con `jwt_access_secret_key`.
 
 ### 37.3. Caché de ficheros en laimweb + integridad
 

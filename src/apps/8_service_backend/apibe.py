@@ -4552,6 +4552,29 @@ def list_laim_product_endpoint(
 
 
 @app.get(
+    "/check_last_version",
+    tags=["laim_product"],
+)
+def check_last_version_endpoint(
+    edition: str,
+    platform: str,
+    current_version: str,
+    plugin_name: str = "",
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Compara current_version contra el último parche publicado.
+
+    Flujo: Middleware → Broker → Backend Core → Filesystem
+    """
+    try:
+        return router.check_last_version(edition, platform, current_version, plugin_name)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get(
     "/product/download",
     tags=["laim_product"],
 )

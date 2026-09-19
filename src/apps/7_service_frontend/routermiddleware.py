@@ -5641,6 +5641,35 @@ class RouterMiddleware:
                 f"No se pudo listar laim_product: {exc}"
             ) from exc
 
+    def check_last_version(
+        self,
+        session: SessionContext | None,
+        edition: str,
+        platform: str,
+        current_version: str,
+        plugin_name: str = "",
+    ) -> dict[str, Any]:
+        """Compara current_version contra el último parche publicado.
+
+        Pública para community_edition (session=None — un `laim` instalado
+        que comprueba actualizaciones no tiene sesión de portal); ver
+        list_laim_product.
+        """
+        if session is not None:
+            self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] check_last_version edition=%s platform=%s current_version=%s user=%s",
+            edition, platform, current_version, session.user_id if session else "anonymous",
+        )
+
+        try:
+            return self._broker_client.check_last_version(edition, platform, current_version, plugin_name)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo comprobar la última versión: {exc}"
+            ) from exc
+
     def download_laim_product(
         self,
         session: SessionContext | None,

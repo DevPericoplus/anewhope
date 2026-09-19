@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import logging
 import os
 import re
@@ -4529,7 +4532,22 @@ _storage_adapter_for_checksum = _load_backend_module("storage_adapter_for_checks
 _session_repo_path = _REPO_ROOT / "src/2_shared_application/adapters/laim_mariadb_session_repository.py"
 _laim_session_repo_for_checksum = _load_backend_module("laim_mariadb_session_repository_for_checksum", _session_repo_path)
 
+_exchange_key_module_path = _REPO_ROOT / "src/2_shared_application/adapters/laim_exchange_key.py"
+_laim_exchange_key = _load_backend_module("laim_exchange_key_core", _exchange_key_module_path)
+
 _checksum_repo: Any = None
+_exchange_key_repo: Any = None
+
+
+def _get_exchange_key_repo() -> Any:
+    """Repositorio de laim_exchange_keys, construido una sola vez — ver
+    anewhope/AGENTS.md § 37.2."""
+    global _exchange_key_repo
+    if _exchange_key_repo is None:
+        settings = _storage_adapter_for_checksum.load_laim_mariadb_settings()
+        engine = _laim_session_repo_for_checksum.create_laim_session_engine(settings)
+        _exchange_key_repo = _laim_exchange_key.LaimExchangeKeyRepository(engine)
+    return _exchange_key_repo
 
 
 def _get_checksum_repo() -> Any:
@@ -4664,6 +4682,101 @@ def download_laim_product(
     return FileResponse(
         path=str(file_path), filename=filename, media_type="application/octet-stream", headers=headers
     )
+
+
+def _parse_semver(v: str) -> tuple[int, ...]:
+    """Comparador mínimo para "X.Y.Z" (formato real de laim.Version) — no se
+    añade una dependencia como `packaging` solo para esto. Segmentos no
+    numéricos cuentan como 0, para tolerar formatos parciales sin lanzar."""
+    parts = []
+    for seg in v.strip().split("."):
+        try:
+            parts.append(int(seg))
+        except ValueError:
+            parts.append(0)
+    return tuple(parts)
+
+
+def _version_is_newer(candidate: str, current: str) -> bool:
+    a, b = _parse_semver(candidate), _parse_semver(current)
+    length = max(len(a), len(b))
+    a += (0,) * (length - len(a))
+    b += (0,) * (length - len(b))
+    return a > b
+
+
+@app.get("/check_last_version", tags=["laim_product"])
+def check_last_version(
+    edition: str,
+    platform: str,
+    current_version: str,
+    plugin_name: str = "",
+):
+    """Compara current_version contra la última versión de parche publicada
+    (símlink `latest` bajo .../patches/<platform>) y, si hay uno disponible,
+    firma la respuesta con HMAC-SHA256 usando la clave de
+    laim_exchange_keys vigente para el major_version del cliente. Ver
+    AGENTS.md § 37.1/37.2. artifact_type es siempre "patch" aquí — el flujo
+    de actualización descarga parches, nunca el instalador completo."""
+    if not _LAIM_PRODUCT_SAFE_SEGMENT.match(current_version):
+        raise HTTPException(status_code=400, detail="current_version inválida")
+
+    leaf_dir = _laim_product_leaf_dir(edition, "patch", platform, plugin_name)
+    latest_target: str | None = None
+    if leaf_dir.is_dir():
+        latest_link = leaf_dir / "latest"
+        if latest_link.is_symlink():
+            try:
+                latest_target = os.readlink(latest_link)
+            except OSError:
+                latest_target = None
+
+    if not latest_target or "/" not in latest_target:
+        return {"has_update": False, "latest_version": None, "artifact_type": "patch", "filename": None}
+
+    latest_version, filename = latest_target.split("/", 1)
+    has_update = _version_is_newer(latest_version, current_version)
+
+    response: dict[str, Any] = {
+        "has_update": has_update,
+        "latest_version": latest_version,
+        "artifact_type": "patch",
+        "filename": filename if has_update else None,
+    }
+    if not has_update:
+        return response
+
+    download_url = (
+        f"/laim/product/download?edition={edition}&artifact_type=patch"
+        f"&platform={platform}&version={latest_version}&filename={filename}"
+    )
+    if plugin_name:
+        download_url += f"&plugin_name={plugin_name}"
+    response["download_url"] = download_url
+    response["signed_payload"] = None
+    response["signature"] = None
+    response["key_id"] = None
+
+    major_version = current_version.split(".", 1)[0]
+    key = _get_exchange_key_repo().get_current_key(major_version)
+    if key is None:
+        logging.getLogger(__name__).warning(
+            "check_last_version: sin clave de intercambio vigente para major_version=%s", major_version
+        )
+        return response
+
+    signed_payload = "|".join([edition, platform, "patch", latest_version, filename])
+    try:
+        padded = key.key_value + "=" * (-len(key.key_value) % 4)
+        key_bytes = base64.urlsafe_b64decode(padded)
+    except Exception:  # noqa: BLE001 - clave mal formada, no debe tumbar el endpoint
+        logging.getLogger(__name__).error("check_last_version: clave de intercambio con formato inválido")
+        return response
+
+    response["signed_payload"] = signed_payload
+    response["signature"] = hmac.new(key_bytes, signed_payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    response["key_id"] = key.key_id
+    return response
 
 
 # ========================================================================

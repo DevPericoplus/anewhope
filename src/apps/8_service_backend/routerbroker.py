@@ -2211,6 +2211,21 @@ class BrokerBackendRouter:
                 f"Error listando laim_product: {str(exc)}"
             ) from exc
 
+    def check_last_version(
+        self, edition: str, platform: str, current_version: str, plugin_name: str = ""
+    ) -> dict[str, Any]:
+        """Compara current_version contra el último parche publicado."""
+        self._logger.info(
+            "[%s] check_last_version edition=%s platform=%s current_version=%s plugin=%s",
+            self._client_app, edition, platform, current_version, plugin_name,
+        )
+        try:
+            return self._core_client.check_last_version(edition, platform, current_version, plugin_name)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error comprobando última versión: {str(exc)}"
+            ) from exc
+
     def download_laim_product(
         self,
         edition: str,
