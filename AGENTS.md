@@ -11030,6 +11030,34 @@ ansible-playbook -i env/silicon/host trainer.yml -e deploy_env=silicon --tags na
 Reglas gemelas en `anh_ansible_environments/AGENTS.md`. Playbooks cargan
 `../anewhope/versions.yml`. Mapa de hosts: `env/silicon/hosts_map.yml`.
 
+#### Registro Docker propio (`sonartype_artifact_manager`) — diseño, pendiente de implementar
+
+**Estado: diseño cerrado (2026-09-19), cero código escrito.** Hoy las
+imágenes Docker de `anewhope` se construyen directamente en cada host
+destino (`build: context: ...` en los `docker-compose.yml.j2` de
+`frontend`/`backend`/`trainer`) — no existe ningún registro Docker
+propio, solo imágenes de terceros vienen de Docker Hub. Iniciativa nueva
+(`anh_ansible/AGENTS.md`, `anh_ansible_environments/AGENTS.md`): un
+Nexus Repository Manager OSS dockerizado en `util01` de cada entorno,
+con **un repositorio Docker hosted por grupo real de servidor**
+(`frontend`/`backend`/`trainer` — los tres nombres de esta sección, no
+"backend_ia"), como paso previo para poder ejecutar despliegues
+**localmente desde `util01`** en vez de desde una máquina de desarrollo.
+Es infraestructura aditiva: no cambia todavía el mecanismo de
+`versions.yml`/`changed_docker_services.py` descrito en §36.2, solo
+añade dónde pueden vivir las imágenes ya construidas. Fase 1: solo
+`silicon`, validado con un despliegue real end-to-end; `dev`/`pre` solo
+reciben configuración preparada (orden de migración futura: `dev` antes
+que `pre`, igual que el roadmap de §36.7/36.10).
+
+**Gap real y distinto, encontrado durante la investigación de esta
+iniciativa (no confundir con lo anterior)**: `fmanagement`'s
+`POST /product/upload` (instaladores/parches/plugins de LAIM) ya existe
+del lado servidor, pero `laim_maintenance` no tiene ningún llamador —
+ver `laim_maintenance/AGENTS.md` § "Despliegue local vía util01" y
+`laim_maintenance/README.md` § "Fase 2". Es una tarea independiente, sin
+relación con el registro Docker de esta sección.
+
 ### 36.7. Roadmap de alineación (OBLIGATORIO)
 
 silicon es el **estándar compose** para todos los entornos **excepto pro**.
