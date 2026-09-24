@@ -10054,47 +10054,48 @@ all_versions = get_all_versions()
 
 **Recomendación:** Crear script de sincronización automática.
 
-### 31.9. Reglas para Agentes AI
+### 31.9. Reglas para Agentes AI (OBLIGATORIO — actualizado 2026-09-24, mismo criterio que laim)
 
-Cuando un agente AI (como Claude) hace cambios al código:
+**Cambio de criterio respecto a la versión anterior de esta sección**:
+antes se pedía NO tocar `versions.yml` en un fix y esperar a que el
+usuario decidiera. Eso queda derogado — a partir de ahora el agente
+**incrementa la versión del componente afectado sin esperar a que se
+lo pidan**, igual que hace el proyecto hermano `laim`
+(`internal/utils/version.go` + su AGENTS.md § "Gestión de versiones").
+La automatización YA existe (`scripts/bump_service_version.py`), solo
+faltaba la obligación de usarla.
 
-1. **Después de implementar un fix:**
-   - NO actualizar versions.yml
-   - Usuario decidirá cuándo incrementar versión
+1. **Al terminar cualquier cambio funcional** (fix, feature o breaking
+   change) que toque una app o una capa compartida
+   (`src/1_shared_domain/`, `src/2_shared_application/`):
+   ```bash
+   python scripts/bump_service_version.py --from-git --level fix|minor|major
+   ```
+   Detecta automáticamente qué servicio(s) tocó el diff (vía
+   `infrastructure/docker/service_manifest.yml`) e incrementa
+   exactamente esa(s) `version_*` — nada más. Si el detector por rutas
+   no es suficiente (p. ej. un cambio conceptual sin tocar código de
+   ese servicio todavía), nombrar el/los servicio(s) explícitamente:
+   `python scripts/bump_service_version.py frontend backoffice --level fix`.
+   El nivel (`fix`/`minor`/`major`) sigue el criterio de 31.4.
 
-2. **Después de implementar nueva funcionalidad:**
-   - Sugerir al usuario incrementar subversion
-   - Proponer mensaje de commit
-   - Recordar crear TAG
+2. **Nunca tocar `version_global`** en un cambio parcial — esa
+   constante es manual, solo en un release explícito (ver § 31.12).
 
-3. **Después de cambio major:**
-   - Alertar sobre breaking change
-   - Sugerir incrementar version major
-   - Proponer release notes
+3. **Actualizar `CHANGELOG.md`** en la misma interacción, sin esperar
+   a que el usuario lo pida — añadir o ampliar la sección
+   `## [Sin liberar]` (crearla al principio del fichero si no existe
+   todavía) en la subsección que corresponda (`Añadido`/`Cambiado`/
+   `Corregido`/`Eliminado`/`Seguridad`, formato Keep a Changelog),
+   citando qué `version_*` subió y a qué valor:
+   ```
+   - **Descargas de modelos con OTP** — autenticación SMS vía Infobip
+     para descargar modelos desde el frontend. `version_frontend →
+     0.8.0`.
+   ```
 
-4. **Al documentar cambios:**
-   - Incluir en commit message qué versión se recomienda
-   - Listar cambios para release notes
-
-**Ejemplo de respuesta del agente:**
-```
-✅ Cambios completados: Sistema de descargas de modelos con OTP
-
-📋 Recomendación de versión:
-- Tipo: Subversion (minor) - nueva funcionalidad
-- Cambio sugerido: frontend 0.7.1 → 0.8.0
-
-📝 Mensaje de commit sugerido:
-feat(frontend): add model downloads with OTP authentication
-
-Implementa sistema completo de descargas de modelos:
-- Autenticación con OTP vía SMS
-- Integración con fmanagement
-- UI en página Descargas con modal OTP
-
-🏷️ TAG sugerido:
-git tag -a v0.8.0-frontend -m "Release frontend 0.8.0 - Model Downloads"
-```
+4. **TAG en Git**: sigue siendo opcional/manual (ver 31.5/31.6) — no
+   es parte de lo que el agente automatiza.
 
 ### 31.10. Troubleshooting
 
@@ -10137,6 +10138,60 @@ versions_file = project_root / "versions.yml"
 - **versions.yml:** Archivo de versiones en raíz del proyecto
 - **src/2_shared_application/utils/version_reader.py:** Módulo de lectura
 - **Conventional Commits:** https://www.conventionalcommits.org/
+
+### 31.12. Versión Global y `releases.yml` (nuevo 2026-09-24)
+
+Además de las versiones por componente (§ 31.1-31.11), existe una
+**versión global de producto**, `version_global` en `versions.yml`
+— análoga a `const Version` en `laim/internal/utils/version.go`, con
+la misma regla: **solo se cambia manualmente en un release explícito
+del producto completo, nunca en un cambio parcial de un solo
+componente** (esos siguen su propio ciclo independiente, § 31.9).
+
+`get_version("global")` (mismo `version_reader.py` de § 31.7, sin
+cambios — la función ya es genérica sobre cualquier `version_*`)
+devuelve `version_global` igual que devuelve la de cualquier app.
+
+**Diferencia clave con `laim`**: en `laim`, la versión global no se
+deriva ni se relaciona con las de cada feature — son contadores
+independientes. En anewhope necesitamos además saber, dada una versión
+global ya liberada, **qué versión exacta tenía cada componente en ese
+momento** — para que `laim_maintenance` pueda comparar un entorno
+desplegado contra un objetivo de versión global concreto, no solo
+contra "lo último publicado". Para eso existe `releases.yml`.
+
+**`releases.yml`** (raíz del proyecto, fichero separado de
+`versions.yml` a propósito — `versions.yml` lo consume Ansible
+directamente vía `vars_files` con claves planas, anidar aquí el
+historial lo rompería): lista de releases globales, cada una con la
+foto congelada de todas las `version_*` en el momento del release:
+
+```yaml
+releases:
+  - version: "1.0.0"
+    date: "2026-09-24"
+    components:
+      version_frontend: "0.8.5"
+      version_backend_core: "0.8.8"
+      # ... resto de version_* de versions.yml en ese momento
+```
+
+**Liberar una versión global** (solo cuando el usuario lo pide
+explícitamente, nunca de forma automática como los bumps por
+componente de § 31.9):
+```bash
+python scripts/release_global_version.py --level fix|minor|major
+```
+Hace tres cosas en orden: (1) incrementa `version_global` en
+`versions.yml`; (2) añade una entrada nueva a `releases.yml` con la
+foto exacta de todas las `version_*` de ese momento; (3) en
+`CHANGELOG.md`, renombra `## [Sin liberar]` a `## [X.Y.Z] - fecha` e
+inserta un `[Sin liberar]` vacío encima para el siguiente ciclo.
+
+`laim_maintenance` lee `releases.yml` para saber, dada una versión
+global, qué versión de cada componente le corresponde, y así comparar
+un entorno frente a ese objetivo — no solo frente al último publicado
+en Nexus.
 
 ---
 
