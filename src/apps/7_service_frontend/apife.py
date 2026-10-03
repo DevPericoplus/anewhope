@@ -4500,6 +4500,30 @@ def download_laim_product_endpoint(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
+@app.get("/laim/product/notes/download", tags=["laim_product"])
+def download_laim_product_notes_endpoint(
+    edition: str,
+    version: str,
+    session: SessionContext | None = Depends(get_optional_session_context),
+    router: RouterMiddleware = Depends(get_router_middleware),
+):
+    """Descarga las "Notas del parche" ya publicadas — llamado por laimweb
+    cuando necesita refrescar su caché (ver product_cache.py)."""
+    _require_session_for_advance(edition, session)
+    try:
+        content, sha256 = router.download_laim_product_notes(session, edition, version)
+        headers = {"Content-Disposition": f'attachment; filename="{version}.md"'}
+        if sha256:
+            headers["X-Content-SHA256"] = sha256
+        return Response(
+            content=content,
+            media_type="text/markdown; charset=utf-8",
+            headers=headers,
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
 @app.get("/laim/product/install-script", tags=["laim_product"])
 def install_script_laim_product_endpoint(
     edition: str,

@@ -4607,6 +4607,35 @@ def download_laim_product_endpoint(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.get(
+    "/product/notes/download",
+    tags=["laim_product"],
+)
+def download_laim_product_notes_endpoint(
+    edition: str,
+    version: str,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+):
+    """Descarga las "Notas del parche" ya publicadas.
+
+    Flujo: Middleware → Broker → Backend Core → Filesystem
+    """
+    try:
+        content, sha256 = router.download_laim_product_notes(edition, version)
+        headers = {"Content-Disposition": f'attachment; filename="{version}.md"'}
+        if sha256:
+            headers["X-Content-SHA256"] = sha256
+        return Response(
+            content=content,
+            media_type="text/markdown; charset=utf-8",
+            headers=headers,
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 # ============================================================================
 # JOB TEMPLATES - Plantillas de jobs
 # ============================================================================

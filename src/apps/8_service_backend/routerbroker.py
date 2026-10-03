@@ -2249,6 +2249,19 @@ class BrokerBackendRouter:
                 f"Error descargando laim_product: {str(exc)}"
             ) from exc
 
+    def download_laim_product_notes(self, edition: str, version: str) -> tuple[bytes, str | None]:
+        """Descarga las "Notas del parche". Devuelve (contenido, sha256)."""
+        self._logger.info(
+            "[%s] Descargando notas de parche edition=%s version=%s",
+            self._client_app, edition, version,
+        )
+        try:
+            return self._core_client.download_laim_product_notes(edition, version)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error descargando notas de parche: {str(exc)}"
+            ) from exc
+
     # === JOB TEMPLATES ===
 
     def get_job_template_catalogs(self) -> dict[str, Any]:

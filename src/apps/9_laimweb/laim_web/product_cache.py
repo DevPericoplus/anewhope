@@ -68,6 +68,15 @@ def relative_artifact_path(
     return "/".join(parts)
 
 
+def relative_notes_path(edition: str, version: str) -> str:
+    """Misma convención que backend_core (apicore.py
+    _laim_product_notes_leaf_dir / fmanagement/product_notes.go
+    productNotesLeafDir) — para que el relative_path calzado aquí coincida
+    exactamente con el que backend_core usó al persistir el checksum de
+    referencia."""
+    return f"{edition}/patches/notes/{version}.md"
+
+
 class ProductFileCache:
     """cache_dir: raíz de la caché en disco (un volumen persistente del
     contenedor de laimweb). checksum_repo: opcional — si no hay conexión a
@@ -110,6 +119,38 @@ class ProductFileCache:
                 # El propio backend nos dio un sha256 y no coincide con lo que
                 # acabamos de escribir en disco — corrupción de transporte.
                 # No servir esto nunca.
+                cached_path.unlink(missing_ok=True)
+                raise ProductCacheError(
+                    f"Integridad fallida tras la descarga de {rel_path}: "
+                    f"esperado {artifact.sha256}, obtenido {actual}"
+                )
+        return cached_path
+
+    def get_or_fetch_notes(
+        self,
+        edition: str,
+        version: str,
+        fetch_fn: Callable[[], FetchedArtifact],
+    ) -> Path:
+        """Equivalente a get_or_fetch, para "Notas del parche" — sin
+        dimensión de plataforma/tipo de artefacto/plugin."""
+        rel_path = relative_notes_path(edition, version)
+        cached_path = self._cache_dir / rel_path
+
+        if cached_path.is_file() and self._verify(rel_path, cached_path):
+            logger.info("product_cache HIT (notes) %s", rel_path)
+            return cached_path
+
+        logger.info("product_cache MISS (notes) %s — pidiendo a middleware", rel_path)
+        artifact = fetch_fn()
+        cached_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = cached_path.with_suffix(cached_path.suffix + ".tmp")
+        tmp_path.write_bytes(artifact.content)
+        tmp_path.replace(cached_path)  # escritura atómica — nunca una copia a medio escribir
+
+        if artifact.sha256:
+            actual = _sha256_of(cached_path)
+            if actual != artifact.sha256:
                 cached_path.unlink(missing_ok=True)
                 raise ProductCacheError(
                     f"Integridad fallida tras la descarga de {rel_path}: "

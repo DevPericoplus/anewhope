@@ -4684,6 +4684,58 @@ def download_laim_product(
     )
 
 
+def _laim_product_notes_leaf_dir(edition: str) -> Path:
+    """basePath/edition/patches/notes — sin dimensión de plataforma/tipo de
+    artefacto/plugin, igual que fmanagement/product_notes.go:productNotesLeafDir."""
+    if edition not in _LAIM_PRODUCT_EDITIONS:
+        raise HTTPException(status_code=400, detail=f"Edición inválida: {edition!r}")
+
+    base = _laim_product_storage_base()
+    edition_root = (base / edition).resolve()
+    leaf_dir = (edition_root / "patches" / "notes").resolve()
+
+    if leaf_dir != edition_root and edition_root not in leaf_dir.parents:
+        raise HTTPException(status_code=403, detail="Path security validation failed")
+    return leaf_dir
+
+
+@app.get("/product/notes/download", tags=["laim_product"])
+def download_laim_product_notes(edition: str, version: str):
+    """Descarga las "Notas del parche" (changelog extraído, ver
+    patches.ExtractChangelogSection en laim_maintenance) ya publicadas.
+
+    Flujo: Middleware → Broker → Backend Core → Filesystem compartido con
+    fmanagement (mismo volumen que download_laim_product, ver AGENTS.md
+    § "Página Parches y Notas del parche").
+    """
+    if not _LAIM_PRODUCT_SAFE_SEGMENT.match(version):
+        raise HTTPException(status_code=400, detail="version inválida")
+
+    leaf_dir = _laim_product_notes_leaf_dir(edition)
+    file_path = (leaf_dir / f"{version}.md").resolve()
+    if file_path.parent != leaf_dir:
+        raise HTTPException(status_code=403, detail="Path security validation failed")
+
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Notas de parche no encontradas")
+
+    headers: dict[str, str] = {}
+    try:
+        relative_path = str(file_path.relative_to(_laim_product_storage_base()))
+        checksum = _get_checksum_repo().ensure_checksum(relative_path, file_path)
+        headers["X-Content-SHA256"] = checksum.sha256
+    except Exception as exc:  # noqa: BLE001 - best-effort, nunca bloquea la descarga real
+        logging.getLogger(__name__).warning(
+            "No se pudo calcular/persistir el checksum de %s: %s", file_path, exc
+        )
+
+    from fastapi.responses import Response
+
+    return Response(
+        content=file_path.read_bytes(), media_type="text/markdown; charset=utf-8", headers=headers
+    )
+
+
 def _parse_semver(v: str) -> tuple[int, ...]:
     """Comparador mínimo para "X.Y.Z" (formato real de laim.Version) — no se
     añade una dependencia como `packaging` solo para esto. Segmentos no

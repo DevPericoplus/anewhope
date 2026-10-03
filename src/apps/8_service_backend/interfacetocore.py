@@ -1480,6 +1480,26 @@ class CoreBackendClient:
                 f"Error descargando artefacto laim_product del backend core: {exc}"
             ) from exc
 
+    def download_laim_product_notes(self, edition: str, version: str) -> tuple[bytes, str | None]:
+        """Descarga las "Notas del parche" desde backend core — igual que
+        download_laim_product pero sin dimensión de plataforma/tipo de
+        artefacto/plugin. Devuelve (contenido, sha256), ver apicore.py ::
+        download_laim_product_notes."""
+        from urllib.parse import quote
+        url = (
+            f"{self._base_url}/product/notes/download"
+            f"?edition={quote(edition)}&version={quote(version)}"
+        )
+        headers: dict[str, str] = {"X-Client-App": self._client_app}
+        try:
+            response = self._client.get(url, headers=headers, timeout=60.0)
+            response.raise_for_status()
+            return response.content, response.headers.get("X-Content-SHA256")
+        except Exception as exc:
+            raise CoreBackendCommunicationError(
+                f"Error descargando notas de parche del backend core: {exc}"
+            ) from exc
+
     # === JOB TEMPLATES ===
 
     def get_job_template_catalogs(self) -> dict[str, Any]:

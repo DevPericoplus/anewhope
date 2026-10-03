@@ -5703,6 +5703,33 @@ class RouterMiddleware:
                 f"Error descargando laim_product: {exc}"
             ) from exc
 
+    def download_laim_product_notes(
+        self,
+        session: SessionContext | None,
+        edition: str,
+        version: str,
+    ) -> tuple[bytes, str | None]:
+        """Descarga las "Notas del parche" via broker → backend core.
+
+        community_edition es pública (session=None); ver list_laim_product.
+        Devuelve (contenido, sha256) — sha256 puede ser None (best-effort,
+        ver apicore.py § LAIM PRODUCT).
+        """
+        if session is not None:
+            self._configure_broker_security(session)
+
+        self._logger.info(
+            "[middleware] Descargando notas de parche edition=%s version=%s user=%s",
+            edition, version, session.user_id if session else "anonymous",
+        )
+
+        try:
+            return self._broker_client.download_laim_product_notes(edition, version)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"Error descargando notas de parche: {exc}"
+            ) from exc
+
     def build_laim_install_script(self, edition: str, platform: str) -> str | None:
         """Genera el script `curl -fsSL <url> | bash` de instalación de laim.
 

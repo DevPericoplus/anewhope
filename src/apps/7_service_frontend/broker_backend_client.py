@@ -1663,6 +1663,26 @@ class BrokerBackendClient:
                 f"Error descargando artefacto laim_product del broker: {exc}"
             ) from exc
 
+    def download_laim_product_notes(self, edition: str, version: str) -> tuple[bytes, str | None]:
+        """Descarga las "Notas del parche" desde el broker.
+
+        Devuelve (contenido, sha256) — ver interfacetocore.py:download_laim_product_notes.
+        """
+        from urllib.parse import quote
+        url = (
+            f"{self._base_url}/product/notes/download"
+            f"?edition={quote(edition)}&version={quote(version)}"
+        )
+        headers = self._build_headers()
+        try:
+            response = self._client.get(url, headers=headers, timeout=60.0)
+            response.raise_for_status()
+            return response.content, response.headers.get("X-Content-SHA256")
+        except Exception as exc:
+            raise BrokerBackendCommunicationError(
+                f"Error descargando notas de parche del broker: {exc}"
+            ) from exc
+
     # ========================================================================
     # JOB TEMPLATES
     # ========================================================================

@@ -76,6 +76,18 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     installers_loading: bool = False
     show_advance_construction_modal: bool = False
 
+    # Parches: misma edition/platform elegidas arriba — ver select_installers_platform
+    patches_latest: str = ""  # "<version>/<filename>" tal y como lo devuelve el backend
+    patches_error: str = ""
+
+    # "Notas del parche" — modal con el changelog extraído (ver
+    # patches.ExtractChangelogSection en laim_maintenance), cacheado y
+    # verificado por checksum en laimweb antes de mostrarse.
+    show_patch_notes_modal: bool = False
+    patch_notes_content: str = ""
+    patch_notes_error: str = ""
+    patch_notes_loading: bool = False
+
     # Guía gráfica de escenarios (página pública)
     escenario_id: str = "share_multi"
     escenario_step: int = 0
@@ -912,6 +924,8 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         self.installers_platform = ""
         self.installers_latest = ""
         self.installers_error = ""
+        self.patches_latest = ""
+        self.patches_error = ""
 
     @event
     def close_advance_construction_modal(self) -> None:
@@ -919,12 +933,15 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
 
     @rx.event(background=True)
     async def select_installers_platform(self, platform: str) -> None:
-        """Consulta la última versión publicada para edition/platform elegidos."""
+        """Consulta la última versión publicada (instalador y parche) para
+        edition/platform elegidos."""
         async with self:
             self.installers_platform = platform
             self.installers_loading = True
             self.installers_error = ""
             self.installers_latest = ""
+            self.patches_latest = ""
+            self.patches_error = ""
             edition = self.installers_edition
             access_token = self.access_token
             session_token = self.session_token
@@ -932,6 +949,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         from laim_web.adapters.laim_api_client import get_laim_product_list
 
         data = get_laim_product_list(edition, "installer", platform, access_token, session_token)
+        patch_data = get_laim_product_list(edition, "patch", platform, access_token, session_token)
         async with self:
             if data.get("success") is False:
                 self.installers_error = data.get("error") or "Error obteniendo versiones disponibles."
@@ -940,6 +958,15 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
                 if not latest:
                     self.installers_error = "Todavía no hay ninguna versión publicada para esta plataforma."
                 self.installers_latest = latest
+
+            if patch_data.get("success") is False:
+                self.patches_error = patch_data.get("error") or "Error obteniendo parches disponibles."
+            else:
+                patch_latest = patch_data.get("latest") or ""
+                if not patch_latest:
+                    self.patches_error = "Todavía no hay ningún parche publicado para esta plataforma."
+                self.patches_latest = patch_latest
+
             self.installers_loading = False
 
     @rx.var
@@ -969,6 +996,68 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
 
         url = get_laim_product_script_url(self.installers_edition, self.installers_platform)
         return f"curl -fsSL {url} | bash"
+
+    @rx.var
+    def patches_version(self) -> str:
+        version, _, _ = self.patches_latest.partition("/")
+        return version
+
+    @rx.var
+    def patches_download_url(self) -> str:
+        if not self.patches_latest or not self.installers_platform:
+            return ""
+        version, _, filename = self.patches_latest.partition("/")
+        if not filename:
+            return ""
+        from laim_web.adapters.laim_api_client import get_laim_product_download_url
+
+        return get_laim_product_download_url(
+            self.installers_edition, "patch", self.installers_platform, version, filename
+        )
+
+    @event
+    def open_patch_notes_modal(self) -> None:
+        self.show_patch_notes_modal = True
+        return LaimWebState.load_patch_notes
+
+    @event
+    def close_patch_notes_modal(self) -> None:
+        self.show_patch_notes_modal = False
+
+    @event
+    def set_patch_notes_modal_open(self, is_open: bool) -> None:
+        self.show_patch_notes_modal = is_open
+
+    @rx.event(background=True)
+    async def load_patch_notes(self) -> None:
+        """Pide las "Notas del parche" a la caché de laimweb (cache-first,
+        checksum verificado, re-fetch a middleware si no hay copia válida —
+        ver product_cache_singleton.get_patch_notes_text)."""
+        async with self:
+            version = self.patches_version
+            edition = self.installers_edition
+            self.patch_notes_loading = True
+            self.patch_notes_error = ""
+            self.patch_notes_content = ""
+
+        if not version:
+            async with self:
+                self.patch_notes_error = "No hay ningún parche disponible para esta plataforma."
+                self.patch_notes_loading = False
+            return
+
+        from laim_web.product_cache_singleton import get_patch_notes_text
+
+        try:
+            content = get_patch_notes_text(edition, version)
+            async with self:
+                self.patch_notes_content = content
+        except Exception as exc:  # noqa: BLE001 - mostrado al usuario, nunca rompe la UI
+            async with self:
+                self.patch_notes_error = f"No se pudieron obtener las notas del parche: {exc}"
+        finally:
+            async with self:
+                self.patch_notes_loading = False
 
     def _load_permissions_after_login(
         self, identity_type_id: int, access_token: str, session_token: str

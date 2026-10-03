@@ -118,6 +118,14 @@ def get_laim_product_download_url(
     return f"{base_url}/api/product-cache/download?{params}"
 
 
+def get_laim_product_notes_download_url(edition: str, version: str) -> str:
+    """URL de descarga de las "Notas del parche" — misma filosofía que
+    get_laim_product_download_url: sirve desde la caché en disco de laimweb
+    (`/api/product-cache/notes/download`), nunca directo a middleware."""
+    base_url = _get_laim_product_public_base_url()
+    return f"{base_url}/api/product-cache/notes/download?edition={edition}&version={version}"
+
+
 class ProductFetchError(Exception):
     """Error al pedir un artefacto laim_product binario a middleware."""
 
@@ -147,6 +155,23 @@ def fetch_laim_product_binary(
     if plugin_name:
         params += f"&plugin_name={plugin_name}"
     url = f"{base_url}/laim/product/download?{params}"
+    try:
+        with httpx.Client(timeout=60.0) as client:
+            response = client.get(url, headers={"X-Client-App": "laimweb"})
+            response.raise_for_status()
+            return response.content, response.headers.get("X-Content-SHA256")
+    except httpx.HTTPStatusError as exc:
+        raise ProductFetchError(f"HTTP {exc.response.status_code}: {exc.response.text}") from exc
+    except httpx.HTTPError as exc:
+        raise ProductFetchError(str(exc)) from exc
+
+
+def fetch_laim_product_notes(edition: str, version: str) -> tuple[bytes, str | None]:
+    """Pide las "Notas del parche" a middleware server-a-servidor — usado
+    por la caché en disco de laimweb (product_cache.py) cuando no tiene una
+    copia cacheada válida. Devuelve (contenido, sha256)."""
+    base_url = _get_middleware_base_url()
+    url = f"{base_url}/laim/product/notes/download?edition={edition}&version={version}"
     try:
         with httpx.Client(timeout=60.0) as client:
             response = client.get(url, headers={"X-Client-App": "laimweb"})
