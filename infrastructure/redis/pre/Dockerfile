@@ -17,6 +17,17 @@ RUN mkdir -p /var/lib/redis /var/log/redis && \
     chown -R redis:redis /var/lib/redis /var/log/redis && \
     chmod 750 /var/lib/redis /var/log/redis
 
+# Quitar los módulos que la imagen oficial trae bundled (RediSearch,
+# RedisBloom, vectorset) — docker-entrypoint.sh los autocarga con
+# --loadmodule por cada .so que encuentra en este directorio, sin que nada
+# en redis.conf lo pida. No los usamos (Redis aquí es solo sesión/caché,
+# nunca búsqueda ni bloom filters), y en x86_64 real (AWS, no la VM UTM
+# arm64 de silicon/dev) RediSearch crashea al cargar: "Redis 8.4.0 crashed
+# by signal: 11" dentro de getRedisConfigValue/SearchDisk_IsEnabled,
+# reproducible al 100% en cada arranque. Encontrado 2026-09-21 al migrar
+# pre — primera vez que esta imagen corre en x86_64 real.
+RUN rm -rf /usr/local/lib/redis/modules/*
+
 # Copiar configuración personalizada
 COPY redis.conf /usr/local/etc/redis/redis.conf
 
