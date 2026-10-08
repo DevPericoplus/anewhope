@@ -1795,6 +1795,26 @@ class BrokerBackendClient:
             or {}
         )
 
+    def laim_support_request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Proxy del canal interno de soporte hacia el broker."""
+        normalized = path if path.startswith("/") else f"/{path}"
+        return dict(
+            self._request(
+                method,
+                normalized,
+                payload=payload,
+                extra_headers=extra_headers,
+                timeout=30.0,
+            )
+            or {}
+        )
+
     def laim_forum_request(
         self,
         method: str,

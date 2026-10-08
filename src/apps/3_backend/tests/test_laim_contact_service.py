@@ -100,3 +100,52 @@ def test_create_contact_message_with_png_screenshot() -> None:
     assert result["id_estado"] == 1
     assert result["image_id"] == 3
     assert repository.create_message_with_image.call_args.kwargs["id_estado"] == 1
+
+
+def test_list_support_messages_rejects_unknown_estado() -> None:
+    module = _load_contact_service()
+    service = module.LaimContactService(repository=MagicMock())
+
+    result = service.list_support_messages(estado_clave="inventado")
+
+    assert result["success"] is False
+    assert result["items"] == []
+
+
+def test_list_support_messages_delegates_to_repository() -> None:
+    module = _load_contact_service()
+    repository = MagicMock()
+    repository.list_messages.return_value = [{"id": 1, "estado_clave": "abierto"}]
+    service = module.LaimContactService(repository=repository)
+
+    result = service.list_support_messages(estado_clave="abierto", query="ana")
+
+    assert result["success"] is True
+    assert result["items"][0]["id"] == 1
+    repository.list_messages.assert_called_once()
+    assert repository.list_messages.call_args.kwargs["estado_clave"] == "abierto"
+    assert repository.list_messages.call_args.kwargs["query"] == "ana"
+
+
+def test_update_support_estado_maps_clave_and_rejects_unknown() -> None:
+    module = _load_contact_service()
+    repository = MagicMock()
+    repository.update_estado.return_value = {"id": 4, "id_estado": 5, "estado_clave": "descartado"}
+    service = module.LaimContactService(repository=repository)
+
+    ok = service.update_support_estado(4, "descartado", actor="laim_maintenance")
+    assert ok["success"] is True
+    assert repository.update_estado.call_args.kwargs["id_estado"] == 5
+
+    bad = service.update_support_estado(4, "no-existe")
+    assert bad["success"] is False
+
+
+def test_get_support_message_not_found() -> None:
+    module = _load_contact_service()
+    repository = MagicMock()
+    repository.get_with_image.return_value = None
+    service = module.LaimContactService(repository=repository)
+
+    result = service.get_support_message(99)
+    assert result["success"] is False

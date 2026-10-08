@@ -1200,3 +1200,52 @@ def laim_submit_contact_message(
         session_token=session_token,
         timeout=90.0,
     )
+
+
+def laim_support_forward(
+    method: str,
+    endpoint: str,
+    authorization: str,
+    payload: dict[str, Any] | None = None,
+    timeout: float = 30.0,
+) -> dict[str, Any]:
+    """Reenvía una operación de soporte al middleware conservando la marca interna.
+
+    No usa X-Client-App=laimweb: el core exige caller=laim_maintenance.
+    """
+    base_url = _get_middleware_base_url()
+    url = f"{base_url}{endpoint}"
+    headers: dict[str, str] = {
+        "Content-Type": "application/json",
+        "X-Client-App": "laim_maintenance",
+        "X-Laim-Caller": "laim_maintenance",
+        "Authorization": authorization,
+    }
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            response = client.request(
+                method=method,
+                url=url,
+                json=payload,
+                headers=headers,
+            )
+            response.raise_for_status()
+            data = response.json()
+            if isinstance(data, dict):
+                return data
+            return {"success": False, "error": "respuesta no JSON"}
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text
+        try:
+            body = exc.response.json()
+            if isinstance(body, dict):
+                detail = body.get("detail", body.get("error", detail))
+        except ValueError:
+            pass
+        return {
+            "success": False,
+            "error": str(detail),
+            "http_status": exc.response.status_code,
+        }
+    except httpx.RequestError as exc:
+        return {"success": False, "error": f"Error de conexión: {exc}"}

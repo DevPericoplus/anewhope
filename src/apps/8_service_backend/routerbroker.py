@@ -2382,6 +2382,23 @@ class BrokerBackendRouter:
                 f"Error registrando mensaje de contacto LAIM: {exc}"
             ) from exc
 
+    def laim_support_request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Proxy del canal interno de soporte hacia Backend Core."""
+        try:
+            return self._core_client.laim_support_request(
+                method, path, payload=payload, extra_headers=extra_headers
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error en canal de soporte LAIM: {exc}"
+            ) from exc
+
     def laim_forum_request(
         self,
         method: str,

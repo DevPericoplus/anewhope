@@ -52,6 +52,7 @@ LaimContactMessageCreateDto = _dtos.LaimContactMessageCreateDto
 LaimContactRepository = _repo_mod.LaimContactRepository
 LaimContactImageRecord = _repo_mod.LaimContactImageRecord
 ESTADO_CASO_ABIERTO_ID = _repo_mod.ESTADO_CASO_ABIERTO_ID
+ESTADO_CLAVE_TO_ID = _repo_mod.ESTADO_CLAVE_TO_ID
 create_laim_session_engine = _session_repo_mod.create_laim_session_engine
 load_laim_mariadb_settings = _storage.load_laim_mariadb_settings
 
@@ -207,3 +208,63 @@ class LaimContactService:
             ),
             None,
         )
+
+    def list_support_messages(
+        self,
+        estado_clave: str | None = None,
+        query: str | None = None,
+        usage_mode: str | None = None,
+        has_image: bool | None = None,
+        has_user: bool | None = None,
+        cursor_created_at: str | None = None,
+        cursor_id: int | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Lista casos para el canal interno de soporte (sin BLOB)."""
+        if estado_clave and estado_clave not in ESTADO_CLAVE_TO_ID:
+            return {"success": False, "error": "Estado no válido.", "items": []}
+        items = self._repository.list_messages(
+            estado_clave=estado_clave,
+            query=query,
+            usage_mode=usage_mode,
+            has_image=has_image,
+            has_user=has_user,
+            cursor_created_at=cursor_created_at,
+            cursor_id=cursor_id,
+            limit=limit,
+        )
+        return {"success": True, "items": items}
+
+    def get_support_message(self, message_id: int) -> dict[str, Any]:
+        """Detalle de un caso, con captura, auditoría, respuestas y keywords."""
+        detail = self._repository.get_with_image(message_id)
+        if detail is None:
+            return {"success": False, "error": "Caso no encontrado."}
+        detail["audit"] = self._repository.list_audit(message_id)
+        detail["replies"] = self._repository.list_replies(message_id)
+        detail["keywords"] = self._repository.list_keywords(message_id)
+        return {"success": True, "item": detail}
+
+    def update_support_estado(
+        self, message_id: int, estado_clave: str, actor: str = "laim_maintenance"
+    ) -> dict[str, Any]:
+        """Cambia el estado de un caso desde el canal interno."""
+        id_estado = ESTADO_CLAVE_TO_ID.get((estado_clave or "").strip().lower())
+        if id_estado is None:
+            return {"success": False, "error": "Estado no válido."}
+        updated = self._repository.update_estado(
+            message_id, id_estado=id_estado, actor=actor
+        )
+        if updated is None:
+            return {"success": False, "error": "Caso no encontrado."}
+        return {"success": True, "item": updated}
+
+    def replace_support_keywords(
+        self, message_id: int, keywords: list[str], fuente: str = "ia"
+    ) -> dict[str, Any]:
+        """Persiste keywords clasificadas para un caso."""
+        existing = self._repository.get_message_by_id(message_id)
+        if existing is None:
+            return {"success": False, "error": "Caso no encontrado."}
+        self._repository.replace_keywords(message_id, keywords, fuente=fuente)
+        return {"success": True, "keywords": self._repository.list_keywords(message_id)}

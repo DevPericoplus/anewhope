@@ -28,3 +28,33 @@ class LaimContactRepository(Protocol):
     def get_message_by_id(self, message_id: int) -> dict[str, Any] | None:
         """Obtiene un caso por número (id)."""
         ...
+
+    def list_messages(
+        self,
+        estado_clave: str | None = None,
+        query: str | None = None,
+        usage_mode: str | None = None,
+        has_image: bool | None = None,
+        has_user: bool | None = None,
+        cursor_created_at: str | None = None,
+        cursor_id: int | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Lista casos sin BLOB de captura, con paginación por cursor."""
+        ...
+
+    def get_with_image(self, message_id: int) -> dict[str, Any] | None:
+        """Detalle de un caso incluyendo la captura si existe."""
+        ...
+
+    def update_estado(
+        self, message_id: int, id_estado: int, actor: str
+    ) -> dict[str, Any] | None:
+        """Cambia el estado y registra auditoría. None si el caso no existe."""
+        ...
+
+    def replace_keywords(
+        self, message_id: int, keywords: list[str], fuente: str = "ia"
+    ) -> None:
+        """Sustituye las etiquetas IA/manual de un caso."""
+        ...

@@ -11532,14 +11532,19 @@ LAIM Web (Enviar)
 
 | Tabla | Rol |
 |-------|-----|
-| `estados_casos_contacto` | Catálogo: **1 Abierto**, 2 Gestionando, 3 Escalado, 4 Resuelto |
+| `estados_casos_contacto` | Catálogo: **1 Abierto**, 2 Gestionando, 3 Escalado, 4 Resuelto, **5 Descartado** |
 | `casos_contacto` | Caso; el `id` AUTO_INCREMENT es el **número de caso** |
 | `casos_contacto_imagenes` | Captura opcional (PNG/JPG/WEBP/GIF, máx. 5 MB) |
+| `casos_contacto_respuestas` / `_etiquetas` / `_auditoria` | Respuestas/borradores, keywords y crónica de estados (esquema listo; el correo SMTP y la KB real aún no se envían) |
 
 **Alta:** siempre `id_estado = 1` (Abierto). El portal muestra «Caso nº N registrado».
-**Pendiente:** servicio de correo y visor/gestión de estados.
+El visor/gestión de estados vive en `laim_maintenance` (página Soporte):
+canal interno SSH → laimweb:8010 `/api/support/*` (JWT `support_ops` +
+cifrado AES-256-GCM), nunca una ruta pública `/laim/support`.
+**Pendiente:** servicio de correo SMTP y knowledge base real.
 
-**Migración:** `infrastructure/database/migrations/021_casos_contacto.sql`  
+**Migración:** `infrastructure/database/migrations/021_casos_contacto.sql`
+y `026_casos_contacto_soporte.sql`  
 **Servicio:** `src/apps/3_backend/laim_contact_service.py`  
 **Repositorio:** `src/2_shared_application/adapters/laim_contact_repository.py`
 

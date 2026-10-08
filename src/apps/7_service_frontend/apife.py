@@ -257,6 +257,16 @@ class LaimContactMessageRequest(BaseModel):
     screenshot: LaimContactScreenshotRequest | None = None
 
 
+class LaimSupportEstadoRequest(BaseModel):
+    estado_clave: str = Field(..., min_length=1, max_length=50)
+    actor: str = Field(default="laim_maintenance", max_length=128)
+
+
+class LaimSupportKeywordsRequest(BaseModel):
+    keywords: list[str] = Field(default_factory=list)
+    fuente: str = Field(default="ia", max_length=16)
+
+
 class OrganizationCheckRequest(BaseModel):
     """Payload para validar existencia de organización."""
 
@@ -5428,6 +5438,140 @@ async def laim_create_contact_message_endpoint(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
+
+
+def _support_query_path(
+    base: str,
+    estado_clave: str | None = None,
+    query: str | None = None,
+    usage_mode: str | None = None,
+    has_image: bool | None = None,
+    has_user: bool | None = None,
+    cursor_created_at: str | None = None,
+    cursor_id: int | None = None,
+    limit: int | None = None,
+) -> str:
+    params = []
+    for key, value in {
+        "estado_clave": estado_clave,
+        "query": query,
+        "usage_mode": usage_mode,
+        "has_image": has_image,
+        "has_user": has_user,
+        "cursor_created_at": cursor_created_at,
+        "cursor_id": cursor_id,
+        "limit": limit,
+    }.items():
+        if value is not None:
+            params.append(f"{key}={value}")
+    if not params:
+        return base
+    return f"{base}?{'&'.join(params)}"
+
+
+@app.get("/laim/support/messages")
+async def laim_support_list_messages(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    caller: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+    estado_clave: str | None = None,
+    query: str | None = None,
+    usage_mode: str | None = None,
+    has_image: bool | None = None,
+    has_user: bool | None = None,
+    cursor_created_at: str | None = None,
+    cursor_id: int | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Lista casos de soporte para laim_maintenance."""
+    try:
+        return router.laim_support_request(
+            "GET",
+            _support_query_path(
+                "/laim/support/messages",
+                estado_clave,
+                query,
+                usage_mode,
+                has_image,
+                has_user,
+                cursor_created_at,
+                cursor_id,
+                limit,
+            ),
+            authorization=authorization or "",
+            caller=caller or "",
+            client_app=client_app or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.get("/laim/support/messages/{message_id}")
+async def laim_support_get_message(
+    message_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    caller: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> dict[str, Any]:
+    """Detalle de un caso de soporte."""
+    try:
+        return router.laim_support_request(
+            "GET",
+            f"/laim/support/messages/{message_id}",
+            authorization=authorization or "",
+            caller=caller or "",
+            client_app=client_app or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.patch("/laim/support/messages/{message_id}")
+async def laim_support_update_estado(
+    message_id: int,
+    payload: LaimSupportEstadoRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    caller: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> dict[str, Any]:
+    """Cambia el estado de un caso de soporte."""
+    try:
+        return router.laim_support_request(
+            "PATCH",
+            f"/laim/support/messages/{message_id}",
+            payload=payload.model_dump(),
+            authorization=authorization or "",
+            caller=caller or "",
+            client_app=client_app or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.put("/laim/support/messages/{message_id}/keywords")
+async def laim_support_replace_keywords(
+    message_id: int,
+    payload: LaimSupportKeywordsRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    caller: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> dict[str, Any]:
+    """Sustituye keywords de un caso de soporte."""
+    try:
+        return router.laim_support_request(
+            "PUT",
+            f"/laim/support/messages/{message_id}/keywords",
+            payload=payload.model_dump(),
+            authorization=authorization or "",
+            caller=caller or "",
+            client_app=client_app or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
 # ============================================================================

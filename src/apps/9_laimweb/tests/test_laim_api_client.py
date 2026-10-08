@@ -187,3 +187,29 @@ def test_set_reg_hcaptcha_token_requires_token_when_configured() -> None:
 
     assert event_spec is None
     assert "anti-bot" in state.error_message.lower()
+
+
+def test_laim_support_forward_keeps_maintenance_caller() -> None:
+    from laim_web.adapters import laim_api_client
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status.return_value = None
+    mock_response.json.return_value = {"success": True, "items": []}
+
+    with patch.object(laim_api_client.httpx, "Client") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client.__enter__.return_value = mock_client
+        mock_client.request.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        result = laim_api_client.laim_support_forward(
+            "GET",
+            "/laim/support/messages?estado_clave=abierto",
+            authorization="Bearer token",
+        )
+
+    assert result["success"] is True
+    headers = mock_client.request.call_args.kwargs["headers"]
+    assert headers["X-Client-App"] == "laim_maintenance"
+    assert headers["X-Laim-Caller"] == "laim_maintenance"
+    assert headers["Authorization"] == "Bearer token"

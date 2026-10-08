@@ -4803,6 +4803,12 @@ def _laim_forward_headers(request: Request) -> dict[str, str]:
     user_agent = request.headers.get("User-Agent", "")
     if user_agent:
         headers["User-Agent"] = user_agent
+    caller = request.headers.get("X-Laim-Caller", "")
+    if caller:
+        headers["X-Laim-Caller"] = caller
+    client_app = request.headers.get("X-Client-App", "")
+    if client_app:
+        headers["X-Client-App"] = client_app
     return headers
 
 
@@ -4916,6 +4922,125 @@ def laim_create_contact_message(
         return result
     except BrokerBusinessError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+class LaimSupportEstadoRequest(BaseModel):
+    estado_clave: str = Field(..., min_length=1, max_length=50)
+    actor: str = Field(default="laim_maintenance", max_length=128)
+
+
+class LaimSupportKeywordsRequest(BaseModel):
+    keywords: list[str] = Field(default_factory=list)
+    fuente: str = Field(default="ia", max_length=16)
+
+
+def _support_context(router: BrokerBackendRouter, authorization: str | None, session_token: str | None) -> None:
+    router.set_security_context(authorization=authorization, session_token=session_token)
+
+
+@app.get("/laim/support/messages", tags=["laim-support"])
+def laim_support_list_messages(
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+    estado_clave: str | None = None,
+    query: str | None = None,
+    usage_mode: str | None = None,
+    has_image: bool | None = None,
+    has_user: bool | None = None,
+    cursor_created_at: str | None = None,
+    cursor_id: int | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Lista casos de soporte via Backend Core."""
+    _support_context(router, authorization, session_token)
+    params = []
+    for key, value in {
+        "estado_clave": estado_clave,
+        "query": query,
+        "usage_mode": usage_mode,
+        "has_image": has_image,
+        "has_user": has_user,
+        "cursor_created_at": cursor_created_at,
+        "cursor_id": cursor_id,
+        "limit": limit,
+    }.items():
+        if value is not None:
+            params.append(f"{key}={value}")
+    path = "/laim/support/messages"
+    if params:
+        path = f"{path}?{'&'.join(params)}"
+    try:
+        return router.laim_support_request(
+            "GET", path, extra_headers=_laim_forward_headers(request)
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/laim/support/messages/{message_id}", tags=["laim-support"])
+def laim_support_get_message(
+    message_id: int,
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Detalle de un caso de soporte via Backend Core."""
+    _support_context(router, authorization, session_token)
+    try:
+        return router.laim_support_request(
+            "GET",
+            f"/laim/support/messages/{message_id}",
+            extra_headers=_laim_forward_headers(request),
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.patch("/laim/support/messages/{message_id}", tags=["laim-support"])
+def laim_support_update_estado(
+    message_id: int,
+    payload: LaimSupportEstadoRequest,
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Cambia el estado de un caso via Backend Core."""
+    _support_context(router, authorization, session_token)
+    try:
+        return router.laim_support_request(
+            "PATCH",
+            f"/laim/support/messages/{message_id}",
+            payload=payload.model_dump(),
+            extra_headers=_laim_forward_headers(request),
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.put("/laim/support/messages/{message_id}/keywords", tags=["laim-support"])
+def laim_support_replace_keywords(
+    message_id: int,
+    payload: LaimSupportKeywordsRequest,
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Sustituye keywords de un caso via Backend Core."""
+    _support_context(router, authorization, session_token)
+    try:
+        return router.laim_support_request(
+            "PUT",
+            f"/laim/support/messages/{message_id}/keywords",
+            payload=payload.model_dump(),
+            extra_headers=_laim_forward_headers(request),
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 # ============================================================================

@@ -31,6 +31,7 @@ ALLOWED_CLIENT_APPS = frozenset(
         "middleware",
         "broker",
         "trainer",
+        "laim_maintenance",
         "unknown",
     }
 )

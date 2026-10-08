@@ -24,6 +24,12 @@ from laim_web.pages.forum_profile import forum_profile_page
 from laim_web.pages.index import index_page
 from laim_web.pages.my_forum_posts import my_forum_posts_page
 from laim_web.pages.my_forum_threads import my_forum_threads_page
+from laim_web.support_gateway import (
+    support_get_message,
+    support_list_messages,
+    support_replace_keywords,
+    support_update_estado,
+)
 
 _activity_logger_path = (
     Path(__file__).resolve().parents[3]
@@ -169,6 +175,12 @@ async def _product_cache_download_notes(request: Request) -> Response:
 
 app._api.routes.append(Route("/api/product-cache/download", _product_cache_download))
 app._api.routes.append(Route("/api/product-cache/notes/download", _product_cache_download_notes))
+app._api.routes.append(Route("/api/support/messages", support_list_messages, methods=["GET"]))
+app._api.routes.append(Route("/api/support/messages/{message_id:int}", support_get_message, methods=["GET"]))
+app._api.routes.append(Route("/api/support/messages/{message_id:int}", support_update_estado, methods=["PATCH"]))
+app._api.routes.append(
+    Route("/api/support/messages/{message_id:int}/keywords", support_replace_keywords, methods=["PUT"])
+)
 
 app.add_page(
     index_page,

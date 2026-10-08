@@ -171,6 +171,7 @@ def test_client_app_allowlist(hardening) -> None:
     """X-Client-App se restringe al inventario conocido (API9)."""
     assert hardening.is_allowed_client_app("frontend") is True
     assert hardening.is_allowed_client_app("laimweb") is True
+    assert hardening.is_allowed_client_app("laim_maintenance") is True
     assert hardening.is_allowed_client_app("not-a-portal") is False
     assert hardening.is_allowed_client_app("") is False
 

@@ -6111,6 +6111,34 @@ class RouterMiddleware:
                 f"No se pudo registrar el mensaje de contacto: {exc}"
             ) from exc
 
+    def laim_support_request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        authorization: str = "",
+        caller: str = "",
+        client_app: str = "",
+    ) -> dict[str, Any]:
+        """Proxy del canal interno de soporte via broker → backend core."""
+        extra_headers: dict[str, str] = {}
+        if caller:
+            extra_headers["X-Laim-Caller"] = caller
+        if client_app:
+            extra_headers["X-Client-App"] = client_app
+        self._broker_client.set_security_context(
+            authorization=authorization or None,
+            session_token=None,
+        )
+        if client_app:
+            self._broker_client.set_client_app(client_app)
+        try:
+            return self._broker_client.laim_support_request(
+                method, path, payload=payload, extra_headers=extra_headers or None
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(f"No se pudo completar la operación de soporte: {exc}") from exc
+
     def laim_forum_request(
         self,
         method: str,

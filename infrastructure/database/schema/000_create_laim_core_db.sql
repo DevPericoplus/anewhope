@@ -402,7 +402,8 @@ VALUES
   (1, 'abierto', 'Abierto', 'Caso recibido, pendiente de atención', 1, 1),
   (2, 'gestionando', 'Gestionando', 'Caso en trámite por el equipo', 2, 1),
   (3, 'escalado', 'Escalado', 'Caso elevado a un nivel superior', 3, 1),
-  (4, 'resuelto', 'Resuelto', 'Caso cerrado con respuesta o solución', 4, 1)
+  (4, 'resuelto', 'Resuelto', 'Caso cerrado con respuesta o solución', 4, 1),
+  (5, 'descartado', 'Descartado', 'Caso informativo que no precisa respuesta', 5, 1)
 ON DUPLICATE KEY UPDATE
   `clave` = VALUES(`clave`),
   `nombre` = VALUES(`nombre`);

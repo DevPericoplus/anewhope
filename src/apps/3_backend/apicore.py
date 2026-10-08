@@ -559,6 +559,17 @@ try:
 except Exception as e:
     logger.warning(f"⚠️ No se pudo registrar router LAIM contact: {e}")
 
+# Router interno de soporte LAIM (solo laim_maintenance)
+try:
+    _laim_support_router_path = Path(__file__).resolve().parent / "router_laim_support.py"
+    _laim_support_module = _load_backend_module(
+        "router_laim_support", _laim_support_router_path
+    )
+    app.include_router(_laim_support_module.router)
+    logger.info("✅ Router de soporte LAIM registrado")
+except Exception as e:
+    logger.warning(f"⚠️ No se pudo registrar router LAIM support: {e}")
+
 # Router de foro LAIM
 try:
     _laim_forum_router_path = Path(__file__).resolve().parent / "router_laim_forum.py"
