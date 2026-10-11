@@ -11,6 +11,20 @@ from laim_web.components.inicio_accordion import inicio_accordion_sections
 from laim_web.laim_state import LaimWebState
 
 
+def _neural_boot_dots() -> rx.Component:
+    """Tres puntos CRT de laim, visibles hasta que la escena 3D pinta."""
+    return rx.el.span(
+        rx.el.span(class_name="notif-typing-dot"),
+        rx.el.span(class_name="notif-typing-dot notif-typing-dot-2"),
+        rx.el.span(class_name="notif-typing-dot notif-typing-dot-3"),
+        class_name="crt-busy-dots crt-neural-boot",
+        custom_attrs={
+            "aria-label": "Cargando animación",
+            "aria-live": "polite",
+        },
+    )
+
+
 def inicio_home_panel() -> rx.Component:
     """Página Bienvenido a LAIM: red 3D por defecto, acordeón en clásico."""
     return rx.vstack(
@@ -20,6 +34,11 @@ def inicio_home_panel() -> rx.Component:
                 size="7",
                 color=COLORS["title"],
                 class_name="crt-title",
+            ),
+            rx.cond(
+                LaimWebState.inicio_view == "graphic",
+                _neural_boot_dots(),
+                rx.fragment(),
             ),
             rx.spacer(),
             rx.cond(
@@ -46,7 +65,11 @@ def inicio_home_panel() -> rx.Component:
             bento_grid(),
         ),
         inicio_section_modal(),
-        rx.script(src="/crt/bento_neural.js?v=3d2"),
+        rx.script(
+            "if(window.LAIMBentoNeural&&window.LAIMBentoNeural.restart){"
+            "window.LAIMBentoNeural.restart();}"
+        ),
+        rx.script(src="/crt/bento_neural.js?v=3d3"),
         spacing="4",
         width="100%",
         align_items="stretch",

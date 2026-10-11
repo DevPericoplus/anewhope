@@ -8,7 +8,9 @@ en detalle interno.
 
 Si buscas el porqué del proyecto, empieza por **Inicio** y **Presentación**.
 Si quieres instalar o descargar, ve a **Servicios**.
-Si ya tienes cuenta, los **Manuales** del área privada te llevan paso a paso.
+Los textos largos —instalación, chat, red, avisos legales— viven en el
+cliente: **`laim web` → Ayuda**. Tras iniciar sesión aquí, **Manuales**
+apunta al mismo material de uso diario.
 
 > No hace falta memorizar nada. Léelo como un mapa: primero el paisaje, después las calles.
 
@@ -40,6 +42,8 @@ En un equipo nuevo el camino habitual es este:
 3. Entra con **`laim login`**. Así la sesión queda cifrada y las acciones
    se asocian a tu usuario.
 4. Prueba **`laim chat`** para conversar, o **`laim web`** si prefieres el navegador local.
+5. En la web local, abre **Ayuda**: ahí están los manuales de *tu* versión
+   (español o inglés) y las herramientas Editor y Temas.
 
 El binario se llama **`laim`** en macOS y Linux, y **`laim.exe`** en Microsoft Windows.
 La ayuda canónica, siempre al día en tu instalación, es:
@@ -126,6 +130,8 @@ Cuando lanzas `laim web`:
 - El navegador abre **`http://localhost:4321`**.
 - La API local escucha en **`127.0.0.1:4320`** (solo en tu máquina, no en la red).
 - Si este equipo es Share, la puerta hacia otros nodos es **`4322`**.
+- **Ayuda** (en el menú del cliente) abre los documentos y herramientas
+  de las secciones siguientes.
 
 Verás un panel de **comandos** y un área de **terminal**: misma semántica que la CLI,
 con la estética CRT. Además tienes chat, inferencia directa, equipos remotos,
@@ -135,23 +141,99 @@ informes y configuración —según tu rol.
 |----------|------|
 | Scripts y automatización | CLI |
 | Trabajar con ratón y visores | `laim web` |
+| Leer los manuales de *tu* instalación | `laim web` → **Ayuda** |
 | Descargar, leer esto o abrir un ticket | este portal |
+
+---
+
+## En la Ayuda del cliente
+
+La página **Ayuda** del cliente lista ocho entradas. Las seis primeras son
+documentos (el texto completo de *tu* versión, en el idioma de la interfaz).
+**Editor** y **Temas** son herramientas, no ficheros. Aquí va solo un
+resumen para que sepas cuál abrir.
+
+---
+
+## Manual de administrador
+
+Instalación, usuarios, tiers de modelos, agentes, Share/Connect, equipos
+remotos, Headscale, cifrado, auditorías y mantenimiento. Es el libro de
+quien prepara el equipo: el primer arranque, cómo dar de alta personas y
+cómo dejar la instalación lista para el resto.
+
+---
+
+## Manual de usuario
+
+Chat, inferencia directa, voz, sesiones SSH, notificaciones, editor,
+privacidad y preguntas frecuentes. Empieza aquí si ya tienes LAIM
+instalado y quieres usarlo día a día, sin tocar la configuración de
+administrador.
+
+---
+
+## Red mesh WireGuard (Headscale)
+
+Cómo LAIM monta una malla privada (Headscale + cliente Tailscale) para
+que el chat, `laim remote` y las sugerencias lleguen a equipos de otras
+redes sin abrir puertos a Internet. Linux o macOS pueden ser el
+coordinador; Windows entra como nodo, no como servidor Headscale.
+
+---
+
+## Recomendaciones
+
+Guía de uso responsable y avisos legales: el aprendizaje queda en *esa*
+instalación, qué límites hay, qué usos de alto riesgo están fuera y qué
+aceptas al usar LAIM. Léela antes de poner el cliente en un entorno de
+producción o compartido.
+
+---
+
+## Ventana de contexto
+
+Cómo LAIM recorta y resume el historial que ve el modelo (`num_ctx`,
+compresión «Chat Context Summarized») y qué VRAM pide cada tamaño de
+ventana. Ábrelo si el chat «olvida» el principio de la conversación o
+el equipo se queda sin memoria al subir el contexto.
+
+---
+
+## Windows remoto (OpenSSH)
+
+Activar el Servidor OpenSSH en Windows 10/11 o Server para que otro
+LAIM se conecte con `laim remote`, sin WSL. En el propio Windows, Ayuda
+lleva el botón que lo habilita con UAC y registra el equipo.
+
+---
+
+## Editor
+
+Editor Markdown con acciones de IA (mejorar, reescribir, continuar,
+resumir, traducir) y un chat que usa el documento como contexto. Las
+notas se guardan cifradas por usuario. No es un manual: se abre desde
+Ayuda → Editor.
+
+---
+
+## Temas
+
+Elige el aspecto de la interfaz local (CRT, suave, relieve, metal…).
+Cambia el look, no el comportamiento ni los datos. Se abre desde
+Ayuda → Temas; puedes volver al predeterminado cuando quieras.
 
 ---
 
 ## Dónde seguir leyendo
 
-Tras iniciar sesión en el portal o en el cliente:
+Los textos completos viven en el cliente: **`laim web` → Ayuda**.
+Tras iniciar sesión en este portal, **Manuales** apunta al mismo
+material de uso diario.
 
-- **Manuales** — instalación, uso diario, voz, SSH, privacidad y preguntas frecuentes.
-- **Manual de administrador** — usuarios, red, firewall, Share y endurecimiento.
-- **`laim help`** — la lista oficial de comandos de *tu* versión instalada.
-
-Enlaces que suelen hacer falta:
-
+- **`laim help`** — la lista oficial de comandos de *tu* versión.
 - [Ollama](https://ollama.com/) — motor de modelos locales
 - [getmylllm.com](https://www.getmylllm.com/) — modelos a medida y el ciclo de entrenamiento
-- [Reflex](https://reflex.dev/docs/) — base técnica de la web local del cliente
 
 Si un comando no aparece en tu `laim help`, tu instalación es más antigua o más
 nueva que esta página: **confía en la ayuda del binario**. Esta documentación

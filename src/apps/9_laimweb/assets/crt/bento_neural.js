@@ -1,8 +1,8 @@
 (function () {
-  if (window.__LAIM_BENTO_NEURAL__) {
+  if (window.LAIMBentoNeural && window.LAIMBentoNeural.restart) {
+    window.LAIMBentoNeural.restart();
     return;
   }
-  window.__LAIM_BENTO_NEURAL__ = true;
 
   var HOLD_MS = 4000;
   var APPROACH_MS = 3200;
@@ -25,6 +25,10 @@
   var raf = 0;
   var lastTs = 0;
   var ready = false;
+  var boundWorld = null;
+  var boundCanvas = null;
+  var resizeObs = null;
+  var watching = false;
 
   function prefersReduced() {
     return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -36,6 +40,49 @@
 
   function canvasEl() {
     return document.getElementById("crt-neural-canvas");
+  }
+
+  function homeEl() {
+    return document.querySelector(".crt-inicio-home");
+  }
+
+  function sceneHasSize(size) {
+    return !!(size && size.w > 48 && size.h > 48);
+  }
+
+  function markSceneReady(on) {
+    var home = homeEl();
+    var world = worldEl();
+    if (home) {
+      home.classList.toggle("is-neural-ready", on);
+    }
+    if (world) {
+      world.classList.toggle("is-ready", on);
+    }
+  }
+
+  function bindResize() {
+    var canvas = canvasEl();
+    if (!canvas || canvas === boundCanvas) {
+      return;
+    }
+    boundCanvas = canvas;
+    if (resizeObs) {
+      resizeObs.disconnect();
+      resizeObs = null;
+    }
+    if (!window.ResizeObserver) {
+      return;
+    }
+    resizeObs = new ResizeObserver(function () {
+      if (ready) {
+        var size = draw(currentCam());
+        if (sceneHasSize(size)) {
+          markSceneReady(true);
+        }
+      }
+    });
+    resizeObs.observe(canvas);
   }
 
   function isPaused() {
@@ -335,7 +382,7 @@
   function draw(cam) {
     var canvas = canvasEl();
     if (!canvas) {
-      return;
+      return null;
     }
     var size = resizeCanvas(canvas);
     var ctx = canvas.getContext("2d");
@@ -432,6 +479,7 @@
         }
       }
     });
+    return size;
   }
 
   function advancePhase(now) {
@@ -460,26 +508,52 @@
     }
   }
 
+  function sceneStale() {
+    var world = worldEl();
+    if (!world || world !== boundWorld) {
+      return true;
+    }
+    if (titled.some(function (node) { return !node.el || !node.el.isConnected; })) {
+      return true;
+    }
+    return titleTiles().some(function (el) { return !el.isConnected; });
+  }
+
+  function restart() {
+    ready = false;
+    boundWorld = null;
+    lastTs = 0;
+    markSceneReady(false);
+    if (!raf) {
+      raf = requestAnimationFrame(tick);
+    }
+  }
+
   function tick(now) {
     raf = requestAnimationFrame(tick);
-    if (ready && titleTiles().some(function (el) { return !el.isConnected; })) {
-      ready = false;
+    if (ready && sceneStale()) {
+      restart();
     }
     if (!ready && !boot()) {
       return;
     }
+    bindResize();
     var dt = lastTs ? Math.min(0.05, (now - lastTs) / 1000) : 0.016;
     lastTs = now;
     bindHover();
+    var size;
     if (prefersReduced()) {
       yaw = 0.7;
       phase = "orbit";
-      draw(orbitCam());
+      size = draw(orbitCam());
       titled.forEach(function (node) {
         if (node.el) {
           node.el.style.opacity = "1";
         }
       });
+      if (sceneHasSize(size)) {
+        markSceneReady(true);
+      }
       return;
     }
     if (!isPaused() && !(hoverHold && phase === "hold")) {
@@ -500,9 +574,9 @@
     } else if (!isPaused()) {
       setLit(phase === "orbit" ? -1 : focus);
     }
-    draw(currentCam());
-    if (worldEl()) {
-      worldEl().classList.add("is-ready");
+    size = draw(currentCam());
+    if (sceneHasSize(size)) {
+      markSceneReady(true);
     }
   }
 
@@ -514,10 +588,12 @@
       return false;
     }
     ready = true;
+    boundWorld = worldEl();
     focus = 0;
     phase = "orbit";
     phaseStart = performance.now();
     setLit(-1);
+    bindResize();
     return true;
   }
 
@@ -525,6 +601,10 @@
     if (!raf) {
       raf = requestAnimationFrame(tick);
     }
+    if (watching) {
+      return;
+    }
+    watching = true;
     var root = document.querySelector(".crt-shell") || document.body;
     var obs = new MutationObserver(function () {
       if (worldEl() && canvasEl() && titleTiles().length && !ready) {
@@ -534,10 +614,15 @@
     obs.observe(root, { childList: true, subtree: true });
     window.addEventListener("resize", function () {
       if (ready) {
-        draw(currentCam());
+        var size = draw(currentCam());
+        if (sceneHasSize(size)) {
+          markSceneReady(true);
+        }
       }
     });
   }
+
+  window.LAIMBentoNeural = { restart: restart };
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", watch);

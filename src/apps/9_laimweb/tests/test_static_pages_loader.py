@@ -121,6 +121,17 @@ def test_load_documentacion_markdown() -> None:
     assert "los administradores asignan" in content
     assert "Sugerir" in content
     assert "alma" in content.lower()
+    assert "Reflex" not in content
+    assert "reflex.dev" not in content
+    assert "## En la Ayuda del cliente" in content
+    assert "## Manual de administrador" in content
+    assert "## Manual de usuario" in content
+    assert "## Red mesh WireGuard (Headscale)" in content
+    assert "## Recomendaciones" in content
+    assert "## Ventana de contexto" in content
+    assert "## Windows remoto (OpenSSH)" in content
+    assert "## Editor" in content
+    assert "## Temas" in content
 
 
 def test_load_instaladores_markdown() -> None:

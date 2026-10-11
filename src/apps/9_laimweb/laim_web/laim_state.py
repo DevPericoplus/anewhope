@@ -280,6 +280,9 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     contact_success_message: str = ""
     contact_case_number: int = 0
     contact_submitting: bool = False
+    contact_screenshot_preview_url: str = ""
+    contact_screenshot_name: str = ""
+    contact_preview_open: bool = False
     _pending_contact_screenshot: dict[str, str] | None = None
 
     _token_renewal_running: bool = False
@@ -730,10 +733,13 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         """Pre-rellena el formulario de contacto al abrir la página."""
         if self.is_logged_in and self.user_email.strip() and not self.contact_reply_email.strip():
             self.contact_reply_email = self.user_email.strip()
+        if self.is_logged_in and self.user_name.strip() and not self.contact_affected_user.strip():
+            self.contact_affected_user = self.user_name.strip()
         self.contact_form_error = ""
         self.contact_form_success = False
         self.contact_success_message = ""
         self.contact_case_number = 0
+        self.contact_preview_open = False
 
     @event
     def set_contact_usage_mode(self, value: str) -> None:
@@ -750,6 +756,74 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     @event
     def set_contact_reply_email(self, value: str) -> None:
         self.contact_reply_email = value
+
+    _CONTACT_PREVIEW_SCRIPT = """
+(() => {
+  const input = document.getElementById('laim_contact_screenshot');
+  if (!input || !input.files || input.files.length === 0) {
+    return { data_url: '', file_name: '', mime_type: '' };
+  }
+  const file = input.files[0];
+  const mime = (file.type || '').toLowerCase();
+  const name = file.name || '';
+  const ok = mime === 'image/jpeg' || mime === 'image/jpg' || mime === 'image/png'
+    || /\\.(jpe?g|png)$/i.test(name);
+  if (!ok) {
+    return { data_url: '', file_name: '', mime_type: '', error: 'Solo PNG o JPG.' };
+  }
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve({
+        data_url: typeof reader.result === 'string' ? reader.result : '',
+        file_name: name,
+        mime_type: mime || (name.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg'),
+      });
+    };
+    reader.onerror = () => resolve({ data_url: '', file_name: '', mime_type: '' });
+    reader.readAsDataURL(file);
+  });
+})()
+"""
+
+    @event
+    def contact_read_screenshot_preview(self, _value: str = "") -> EventHandlerReturn:
+        """Lee la captura elegida y alimenta el visor JPG/PNG."""
+        return rx.call_script(
+            self._CONTACT_PREVIEW_SCRIPT,
+            callback=LaimWebState.contact_set_screenshot_preview,
+        )
+
+    @event
+    def contact_set_screenshot_preview(self, payload: dict[str, object] | None) -> None:
+        """Guarda la data URL del visor o lo vacía si no hay imagen válida."""
+        if not isinstance(payload, dict):
+            self.contact_screenshot_preview_url = ""
+            self.contact_screenshot_name = ""
+            self.contact_preview_open = False
+            return
+        error = str(payload.get("error") or "").strip()
+        data_url = str(payload.get("data_url") or "").strip()
+        if error:
+            self.contact_form_error = error
+        if not data_url.startswith("data:image/"):
+            self.contact_screenshot_preview_url = ""
+            self.contact_screenshot_name = ""
+            self.contact_preview_open = False
+            return
+        self.contact_screenshot_preview_url = data_url
+        self.contact_screenshot_name = str(payload.get("file_name") or "").strip()
+        if self.contact_form_error == "Solo PNG o JPG.":
+            self.contact_form_error = ""
+
+    @event
+    def contact_open_preview(self) -> None:
+        if self.contact_screenshot_preview_url:
+            self.contact_preview_open = True
+
+    @event
+    def contact_close_preview(self) -> None:
+        self.contact_preview_open = False
 
     def _validate_contact_form(self) -> str:
         """Valida campos del formulario de contacto."""
@@ -887,8 +961,13 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
                     if numero_caso > 0
                     else "Mensaje enviado correctamente. Le responderemos a la dirección indicada."
                 )
-                self.contact_affected_user = ""
+                self.contact_affected_user = (
+                    self.user_name.strip() if self.is_logged_in else ""
+                )
                 self.contact_message_body = ""
+                self.contact_screenshot_preview_url = ""
+                self.contact_screenshot_name = ""
+                self.contact_preview_open = False
                 if not self.is_logged_in:
                     self.contact_reply_email = ""
                 return
