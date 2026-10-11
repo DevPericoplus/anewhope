@@ -67,6 +67,12 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     inicio_page_title: str = ""
     inicio_sections: list[dict[str, str]] = []
     inicio_open_titles: list[str] = []
+    inicio_view: str = "graphic"
+    inicio_modal_open: bool = False
+    inicio_modal_title: str = ""
+    inicio_modal_body: str = ""
+    inicio_modal_glyph: str = ""
+    inicio_modal_ctas: list[dict[str, str]] = []
 
     # Instaladores: modalidad (community_edition/advance) + plataforma elegidas
     installers_edition: str = "community_edition"
@@ -545,6 +551,52 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         self.inicio_page_title = page_title
         self.inicio_sections = sections
         self.inicio_open_titles = []
+
+    @rx.var
+    def inicio_bento_tiles(self) -> list[dict[str, str]]:
+        """Secciones de Inicio con span, glifo y clase Bento."""
+        from laim_web.components.bento.catalog import decorate_sections
+
+        return decorate_sections(self.inicio_sections)
+
+    @rx.var
+    def inicio_grid_paused(self) -> str:
+        """Pausa el pulso neuronal mientras el modal está abierto."""
+        return "true" if self.inicio_modal_open else "false"
+
+    @event
+    def set_inicio_view(self, view: str) -> None:
+        """Cambia gráfico/clásico solo durante la sesión."""
+        if view not in {"graphic", "classic"}:
+            return
+        self.inicio_view = view
+        if view == "classic":
+            self.inicio_modal_open = False
+
+    @event
+    def open_inicio_section_modal(self, title: str) -> None:
+        """Abre el markdown de una sección en overlay."""
+        from laim_web.components.bento.catalog import glyph_for, modal_cta_items
+
+        for section in self.inicio_sections:
+            if section.get("title") == title:
+                self.inicio_modal_title = title
+                self.inicio_modal_body = section.get("body", "")
+                self.inicio_modal_glyph = glyph_for(title)
+                self.inicio_modal_ctas = modal_cta_items(self.inicio_modal_body)
+                self.inicio_modal_open = True
+                return
+
+    @event
+    def close_inicio_section_modal(self) -> None:
+        """Cierra el modal y reanuda el pulso neuronal."""
+        self.inicio_modal_open = False
+
+    @event
+    def inicio_modal_go_menu(self, item: str) -> None:
+        """Desde el modal, salta a otra página del portal."""
+        self.inicio_modal_open = False
+        self.set_menu(item)
 
     def _load_static_page(self, menu: str) -> None:
         """Carga markdown de static_pages/ para menús públicos."""

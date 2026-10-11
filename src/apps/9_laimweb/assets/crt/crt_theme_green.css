@@ -34,4 +34,8 @@ body.crt-theme-green {
   --crt-scanline: rgba(0, 0, 0, 0.07);
   --crt-presentacion-inset: rgba(0, 255, 0, 0.06);
   --crt-presentacion-outer: rgba(0, 180, 0, 0.12);
+  --crt-bento-gap: 0.85rem;
+  --crt-extrude-hero: 22px;
+  --crt-extrude-mid: 12px;
+  --crt-extrude-min: 6px;
 }

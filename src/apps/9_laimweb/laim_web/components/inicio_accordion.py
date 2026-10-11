@@ -54,15 +54,9 @@ def _inicio_section_item(section: dict) -> rx.Component:
     )
 
 
-def inicio_accordion_panel() -> rx.Component:
-    """Página Bienvenido a LAIM con secciones desplegables."""
+def inicio_accordion_sections() -> rx.Component:
+    """Secciones contraíbles — sin H1 (lo pone inicio_home_panel)."""
     return rx.vstack(
-        rx.heading(
-            LaimWebState.inicio_page_title,
-            size="7",
-            color=COLORS["title"],
-            class_name="crt-title",
-        ),
         rx.text(HINT_INICIO_ACCORDION, class_name="crt-muted"),
         rx.hstack(
             rx.button(
@@ -82,6 +76,22 @@ def inicio_accordion_panel() -> rx.Component:
             width="100%",
         ),
         rx.foreach(LaimWebState.inicio_sections, _inicio_section_item),
+        spacing="3",
+        width="100%",
+        align_items="stretch",
+    )
+
+
+def inicio_accordion_panel() -> rx.Component:
+    """Página Bienvenido a LAIM con secciones desplegables (modo clásico)."""
+    return rx.vstack(
+        rx.heading(
+            LaimWebState.inicio_page_title,
+            size="7",
+            color=COLORS["title"],
+            class_name="crt-title",
+        ),
+        inicio_accordion_sections(),
         spacing="3",
         width="100%",
         align_items="stretch",
