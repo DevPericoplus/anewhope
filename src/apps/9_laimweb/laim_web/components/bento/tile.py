@@ -18,6 +18,7 @@ def bento_tile(section: dict) -> rx.Component:
         custom_attrs={
             "data-bento-glyph": section["glyph"],
             "data-bento-title": section["title"],
+            "data-title-index": section["title_index"],
             "data-span": section["span"],
             "data-pause": section["pause_ms"],
         },

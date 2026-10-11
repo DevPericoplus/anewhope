@@ -112,9 +112,10 @@ def decorate_sections(sections: list[dict[str, str]]) -> list[dict[str, str]]:
                 "span": meta["span"],
                 "area": area,
                 "short": short,
+                "title_index": str(len(tiles)),
                 "pause_ms": meta["pause_ms"],
                 "tile_class": (
-                    f"crt-bento-tile crt-bento-area-{area} "
+                    f"crt-bento-tile crt-neural-result crt-bento-area-{area} "
                     f"crt-bento-span-{meta['span']}"
                 ),
             }

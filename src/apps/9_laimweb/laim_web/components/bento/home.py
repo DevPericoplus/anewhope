@@ -12,7 +12,7 @@ from laim_web.laim_state import LaimWebState
 
 
 def inicio_home_panel() -> rx.Component:
-    """Página Bienvenido a LAIM: gráfico por defecto, acordeón en clásico."""
+    """Página Bienvenido a LAIM: red 3D por defecto, acordeón en clásico."""
     return rx.vstack(
         rx.hstack(
             rx.heading(
@@ -46,7 +46,7 @@ def inicio_home_panel() -> rx.Component:
             bento_grid(),
         ),
         inicio_section_modal(),
-        rx.script(src="/crt/bento_neural.js"),
+        rx.script(src="/crt/bento_neural.js?v=3d1"),
         spacing="4",
         width="100%",
         align_items="stretch",

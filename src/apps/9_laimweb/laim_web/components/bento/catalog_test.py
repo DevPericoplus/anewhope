@@ -35,6 +35,8 @@ class BentoCatalogTests(unittest.TestCase):
         self.assertEqual(tiles[0]["body"], "cuerpo alma")
         self.assertEqual(tiles[0]["glyph"], "soul")
         self.assertIn("crt-bento-area-alma", tiles[0]["tile_class"])
+        self.assertEqual(tiles[0]["title_index"], "0")
+        self.assertIn("crt-neural-result", tiles[0]["tile_class"])
         self.assertIn("<svg", tiles[0]["glyph_html"])
         self.assertIn("#glyph-soul", tiles[0]["glyph_href"])
         self.assertEqual(tiles[1]["glyph"], "core")

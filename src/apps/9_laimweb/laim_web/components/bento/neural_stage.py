@@ -1,4 +1,4 @@
-"""Hero 2×2: escenario neuronal. El JS dibuja nodos, aristas y pulso."""
+"""Lienzo 3D de la red: el canvas dibuja aristas, pulsos y neuronas anónimas."""
 
 from __future__ import annotations
 
@@ -6,14 +6,9 @@ import reflex as rx
 
 
 def neural_stage() -> rx.Component:
-    """Lienzo CRT del núcleo — los 9 glifos viven aquí como nodos."""
-    return rx.box(
-        rx.el.svg(
-            id="crt-neural-svg",
-            class_name="crt-neural-svg",
-            custom_attrs={"aria-hidden": "true"},
-        ),
-        rx.el.span("NÚCLEO", class_name="crt-bento-stage-label"),
-        class_name="crt-bento-tile crt-bento-tile--hero crt-bento-stage",
-        id="crt-neural-stage",
+    """Fondo CRT de la única escena — los 9 títulos se superponen encima."""
+    return rx.el.canvas(
+        id="crt-neural-canvas",
+        class_name="crt-neural-canvas",
+        custom_attrs={"aria-hidden": "true"},
     )
