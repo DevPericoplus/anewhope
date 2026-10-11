@@ -1,5 +1,5 @@
 /* CRT base */
-@import url("https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inconsolata:wght@400..700&display=swap");
 
 html,
 body,
@@ -1427,7 +1427,7 @@ body,
 .crt-neural-world {
   position: relative;
   width: 100%;
-  height: min(72vh, 42rem);
+  height: min(76vh, 46rem);
   min-height: 22rem;
   overflow: hidden;
   border: 1px solid var(--crt-border);
@@ -1455,7 +1455,7 @@ body,
   align-items: center;
   justify-content: flex-start;
   gap: 0.35rem;
-  width: 7.4rem;
+  width: 10.4rem;
   min-height: 0;
   padding: 0.2rem 0.15rem 0.15rem;
   margin: 0;
@@ -1489,20 +1489,20 @@ body,
 
 .crt-bento-tile.crt-bento-lit .crt-bento-glyph,
 .crt-bento-tile.crt-neural-near .crt-bento-glyph {
-  width: 2.8rem;
-  height: 2.8rem;
-  filter: drop-shadow(0 0 8px var(--crt-accent));
+  width: 4.1rem;
+  height: 4.1rem;
+  filter: drop-shadow(0 0 7px var(--crt-accent));
 }
 
 .crt-bento-label {
-  font-size: 0.68rem;
+  font-size: 0.7rem;
+  font-weight: 400;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--crt-title);
   text-align: center;
-  line-height: 1.2;
+  line-height: 1.25;
   opacity: 0.45;
-  text-shadow: 0 0 8px var(--crt-panel-bg-solid);
 }
 
 .crt-bento-tile.crt-bento-lit .crt-bento-label,
@@ -1510,8 +1510,7 @@ body,
 .crt-bento-tile:hover .crt-bento-label,
 .crt-bento-tile:focus-visible .crt-bento-label {
   opacity: 1;
-  font-size: 0.92rem;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
 }
 
 .crt-bento-modal-panel {
@@ -1535,12 +1534,12 @@ body,
 @media (max-width: 860px) {
   .crt-bento-grid,
   .crt-neural-world {
-    height: min(68vh, 34rem);
+    height: min(70vh, 36rem);
     min-height: 20rem;
   }
 
   .crt-bento-tile {
-    width: 6.2rem;
+    width: 8rem;
   }
 
   .crt-bento-glyph {

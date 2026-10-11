@@ -4,9 +4,9 @@
   }
   window.__LAIM_BENTO_NEURAL__ = true;
 
-  var HOLD_MS = 3000;
-  var APPROACH_MS = 1200;
-  var RETREAT_MS = 1000;
+  var HOLD_MS = 4000;
+  var APPROACH_MS = 3200;
+  var RETREAT_MS = 2200;
   var ORBIT_MS = 1800;
   var PULSE_COUNT = 5;
 
@@ -150,8 +150,52 @@
     };
   }
 
-  function ease(t) {
-    return t * t * (3 - 2 * t);
+  // Acelera al salir, cruza a la velocidad actual y aterriza más lento.
+  function easeApproach(t) {
+    if (t <= 0) {
+      return 0;
+    }
+    if (t >= 1) {
+      return 1;
+    }
+    var accelEnd = 0.2;
+    var cruiseEnd = 0.52;
+    var accelDist = 0.14;
+    var cruiseDist = 0.46;
+    if (t < accelEnd) {
+      var u = t / accelEnd;
+      return accelDist * u * u;
+    }
+    if (t < cruiseEnd) {
+      return accelDist + cruiseDist * ((t - accelEnd) / (cruiseEnd - accelEnd));
+    }
+    var u = (t - cruiseEnd) / (1 - cruiseEnd);
+    return accelDist + cruiseDist + (1 - accelDist - cruiseDist) * (1 - Math.pow(1 - u, 3));
+  }
+
+  function easeRetreat(t) {
+    if (t <= 0) {
+      return 0;
+    }
+    if (t >= 1) {
+      return 1;
+    }
+    var u = t * t;
+    return u * (2 - t);
+  }
+
+  function focusAmount() {
+    var now = performance.now();
+    if (phase === "hold") {
+      return 1;
+    }
+    if (phase === "approach") {
+      return easeApproach(Math.min(1, (now - phaseStart) / APPROACH_MS));
+    }
+    if (phase === "retreat") {
+      return 1 - easeRetreat(Math.min(1, (now - phaseStart) / RETREAT_MS));
+    }
+    return 0;
   }
 
   function lerp(a, b, t) {
@@ -172,10 +216,10 @@
   function cameraForFocus(idx) {
     var node = titled[idx] || titled[0];
     return {
-      yaw: Math.atan2(node.x, node.z + 0.12),
-      pitch: 0.12 + node.y * 0.08,
-      dist: 1.72,
-      look: { x: node.x * 0.55, y: node.y * 0.7, z: node.z * 0.4 }
+      yaw: Math.atan2(node.x, node.z + 0.08),
+      pitch: 0.08 + node.y * 0.05,
+      dist: 0.86,
+      look: { x: node.x * 0.9, y: node.y * 0.92, z: node.z * 0.7 }
     };
   }
 
@@ -210,13 +254,13 @@
       return orbit;
     }
     if (phase === "approach") {
-      u = ease(Math.min(1, (now - phaseStart) / APPROACH_MS));
+      u = easeApproach(Math.min(1, (now - phaseStart) / APPROACH_MS));
       return mixCam(orbit, close, u);
     }
     if (phase === "hold") {
       return close;
     }
-    u = ease(Math.min(1, (now - phaseStart) / RETREAT_MS));
+    u = easeRetreat(Math.min(1, (now - phaseStart) / RETREAT_MS));
     return mixCam(close, orbit, u);
   }
 
@@ -365,16 +409,28 @@
       if (!node.el) {
         return;
       }
-      var near = i === focus && (phase === "hold" || phase === "approach");
-      var scale = Math.max(0.55, Math.min(1.35, 48 / p.z));
-      if (near) {
-        scale = Math.max(scale, 1.15);
-      }
+      var amount = i === focus ? focusAmount() : 0;
+      var near = amount > 0.12;
+      var scale = Math.max(0.52, Math.min(1.18, 46 / p.z)) + amount * 1.22;
       node.el.style.left = (p.x / size.dpr) + "px";
       node.el.style.top = (p.y / size.dpr) + "px";
       node.el.style.transform = "translate(-50%, -50%) scale(" + scale + ")";
       node.el.style.zIndex = String(Math.round(4000 - p.z * 40));
-      node.el.style.opacity = near ? "1" : String(Math.max(0.42, Math.min(0.85, 2.2 / p.z)));
+      node.el.style.opacity = near ? "1" : String(Math.max(0.4, Math.min(0.82, 2.15 / p.z)));
+      node.el.style.setProperty("--crt-focus", amount.toFixed(3));
+      var label = node.el.querySelector(".crt-bento-label");
+      if (label) {
+        label.style.fontSize = (0.74 + amount * 0.7) + "rem";
+        label.style.fontWeight = String(400 + Math.round(amount * 300));
+        label.style.letterSpacing = (0.08 - amount * 0.03).toFixed(3) + "em";
+        if (amount > 0.18) {
+          label.style.textShadow =
+            "0 1px 2px rgba(0,0,0," + (0.2 + amount * 0.22).toFixed(2) + "), " +
+            "0 2px 8px rgba(0,0,0," + (0.12 + amount * 0.18).toFixed(2) + ")";
+        } else {
+          label.style.textShadow = "";
+        }
+      }
     });
   }
 
