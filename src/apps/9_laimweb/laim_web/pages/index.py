@@ -9,10 +9,17 @@ from laim_web.components.markdown_viewer import crt_markdown_viewer
 from laim_web.components.escenarios_panel import escenarios_content_panel
 from laim_web.components.presentation_panel import presentation_content_panel
 from laim_web.components.page_actions import page_action_panel
+from laim_web.components.base_models_modal import (
+    base_models_catalog_modal,
+    compare_requirements_modal,
+    recommended_model_modal,
+)
 from laim_web.components.installers_panel import advance_construction_modal, installers_panel
 from laim_web.components.laim_logo import laim_logo_sidebar
 from laim_web.components.portal_shell import forum_nav_section, sidebar_config_menu
+from laim_web.help_manuals import HELP_MANUALS
 from laim_web.laim_state import LaimWebState
+from laim_web.static_pages_loader import load_static_page_markdown
 
 from laim_web.components.crt_theme import (
     COLORS,
@@ -42,11 +49,14 @@ MENU_LABELS: dict[str, str] = {
     "modelos_base": "Modelos base",
     "modelos_especializados": "Modelos especializados",
     "modelos_personalizados": "Modelos personalizados",
-    "skills": "Skills",
+    "agents": "Agentes",
     "complementos": "Complementos",
     "soporte": "Soporte",
     "faq": "FAQ",
 }
+
+# Catálogo del portal aún no disponible (chip crt-badge-wip).
+WIP_PAGE_MENUS = frozenset({"modelos_especializados", "modelos_personalizados"})
 
 LOGGED_IN_MENU_ITEMS = [
     "escenarios",
@@ -55,7 +65,7 @@ LOGGED_IN_MENU_ITEMS = [
     "modelos_base",
     "modelos_especializados",
     "modelos_personalizados",
-    "skills",
+    "agents",
     "complementos",
     "soporte",
     "faq",
@@ -177,21 +187,33 @@ def _menu_label(item: str) -> str:
 
 def _sidebar_menu_item(item: str) -> rx.Component:
     """Entrada del menú lateral con etiqueta en español."""
-    return rx.box(
+    label = rx.hstack(
         rx.text(_menu_label(item), font_size="0.9em"),
+        (
+            rx.el.span("In progress", class_name="crt-badge-wip")
+            if item in WIP_PAGE_MENUS
+            else rx.fragment()
+        ),
+        spacing="2",
+        align_items="center",
+        flex_wrap="wrap",
+        width="100%",
+    )
+    return rx.box(
+        label,
         on_click=lambda: LaimWebState.set_menu(item),
         background=rx.cond(
-            LaimWebState.active_menu == item,
+            LaimWebState.sidebar_active_menu == item,
             "rgba(0, 180, 0, 0.3)",
             "transparent",
         ),
         border_left=rx.cond(
-            LaimWebState.active_menu == item,
+            LaimWebState.sidebar_active_menu == item,
             f"3px solid {COLORS['accent']}",
             "3px solid transparent",
         ),
         color=rx.cond(
-            LaimWebState.active_menu == item,
+            LaimWebState.sidebar_active_menu == item,
             COLORS["title"],
             COLORS["text"],
         ),
@@ -255,6 +277,10 @@ def content_static_page() -> rx.Component:
             ("inicio", inicio_home_panel()),
             ("presentacion", presentation_content_panel()),
             ("escenarios", escenarios_content_panel()),
+            *(
+                (item.menu, crt_markdown_viewer(load_static_page_markdown(item.menu)))
+                for item in HELP_MANUALS
+            ),
             crt_markdown_viewer(LaimWebState.static_page_content),
         ),
         rx.cond(
@@ -264,12 +290,17 @@ def content_static_page() -> rx.Component:
         ),
         rx.match(
             LaimWebState.active_menu,
+            ("servicios", page_action_panel("servicios")),
             ("instaladores", installers_panel()),
             ("manuales", page_action_panel("manuales")),
+            *(
+                (item.menu, page_action_panel(item.menu))
+                for item in HELP_MANUALS
+            ),
             ("modelos_base", page_action_panel("modelos_base")),
             ("modelos_especializados", page_action_panel("modelos_especializados")),
             ("modelos_personalizados", page_action_panel("modelos_personalizados")),
-            ("skills", page_action_panel("skills")),
+            ("agents", page_action_panel("agents")),
             ("complementos", page_action_panel("complementos")),
             ("soporte", page_action_panel("soporte")),
             ("faq", page_action_panel("faq")),
@@ -344,6 +375,9 @@ def index_page() -> rx.Component:
         ),
         auth_modals(),
         advance_construction_modal(),
+        base_models_catalog_modal(),
+        recommended_model_modal(),
+        compare_requirements_modal(),
         class_name="crt-shell crt-theme-green",
         width="100%",
     )

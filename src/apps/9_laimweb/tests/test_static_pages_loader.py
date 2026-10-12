@@ -1,11 +1,25 @@
 """Tests del cargador de páginas estáticas markdown."""
 
+from pathlib import Path
+
+from laim_web.help_manuals import HELP_MANUALS, HELP_MANUAL_PAGE_MENUS
 from laim_web.static_pages_loader import (
     ADMIN_CONFIG_PAGE_MENUS,
     AUTHENTICATED_PAGE_MENUS,
     STATIC_PAGE_MENUS,
     load_static_page_markdown,
     split_markdown_h2_sections,
+)
+
+_LAIM_SPANISH = (
+    Path(__file__).resolve().parents[5]
+    / "laim"
+    / "internal"
+    / "manuals"
+    / "spanish"
+)
+_HEADSCALE_ASSETS = (
+    Path(__file__).resolve().parents[1] / "assets" / "images" / "headscale"
 )
 
 
@@ -29,7 +43,7 @@ def test_authenticated_menus_have_markdown_files() -> None:
         "modelos_base",
         "modelos_especializados",
         "modelos_personalizados",
-        "skills",
+        "agents",
         "complementos",
         "soporte",
         "faq",
@@ -135,9 +149,16 @@ def test_load_documentacion_markdown() -> None:
 
 
 def test_load_instaladores_markdown() -> None:
-    """Carga el contenido de instaladores.md."""
+    """Instaladores describe paquetes reales y la guía de init/colas."""
     content = load_static_page_markdown("instaladores")
     assert "Instaladores LAIM" in content
+    assert ".dmg" in content
+    assert ".pkg" not in content
+    assert "laim init" in content
+    assert "Gestor de colas" in content
+    assert "Ollama" in content
+    assert "Todavía no hay ningún parche" not in content
+    assert "Paquete .pkg" not in content
 
 
 def test_static_page_menus_includes_admin_config() -> None:
@@ -150,7 +171,114 @@ def test_markdown_component_map_uses_codeblock_not_pre() -> None:
     from laim_web.components.markdown_viewer import CRT_MARKDOWN_COMPONENT_MAP
 
     assert "codeblock" in CRT_MARKDOWN_COMPONENT_MAP
+    assert "code" in CRT_MARKDOWN_COMPONENT_MAP
     assert "pre" not in CRT_MARKDOWN_COMPONENT_MAP
     assert "table" in CRT_MARKDOWN_COMPONENT_MAP
     assert "li" in CRT_MARKDOWN_COMPONENT_MAP
+
+
+def test_load_servicios_markdown() -> None:
+    """Servicios describe el portal real y no el área pública obvia."""
+    content = load_static_page_markdown("servicios")
+    assert "# Servicios" in content
+    assert "### Instaladores" in content
+    assert "### Manuales" in content
+    assert "Manual de administrador" in content
+    assert "### Modelos de IA local" in content
+    assert "### Agentes" in content
+    assert "Local System" in content
+    assert "LAIM cloud genérica" in content
+    assert "`In progress`" in content
+    assert "### Foro" in content
+    assert "Qué encontrará en el área pública" not in content
+    assert "### Skills" not in content
+    assert "### Agents" not in content
+
+
+def test_load_agents_markdown() -> None:
+    """Agentes sustituye a Skills: ecosistema, skills, tools y flujos."""
+    content = load_static_page_markdown("agents")
+    assert content.startswith("# Agentes")
+    assert not content.startswith("# Agents")
+    assert not content.startswith("# Skills")
+    assert "Local System" in content
+    assert "Heuristic" in content
+    assert "laim agents" in content
+    assert "## Skills" in content
+    assert "## Tools" in content
+    assert "Agent Box" in content
+    assert "pipeline" in content.lower()
+    assert "ecosistema" in content.lower()
+
+
+def test_load_manuales_index_lists_ayuda_catalog() -> None:
+    """El índice de Manuales lista los 6 documentos de Ayuda y abre réplicas."""
+    content = load_static_page_markdown("manuales")
+    assert "# Manuales" in content
+    assert "Bienvenido a la Ayuda de LAIM" in content
+    assert "Manual de administrador" in content
+    assert "Manual de usuario" in content
+    assert "Red mesh WireGuard (Headscale)" in content
+    assert "Recomendaciones" in content
+    assert "Ventana de contexto" in content
+    assert "Windows remoto (OpenSSH)" in content
+    assert "El texto completo vive" not in content
+    assert "no en este portal" not in content
+
+
+def test_help_manuals_are_hidden_authenticated_pages() -> None:
+    """Las réplicas no van al menú lateral; sí al catálogo de páginas."""
+    assert HELP_MANUAL_PAGE_MENUS.isdisjoint(AUTHENTICATED_PAGE_MENUS)
+    assert HELP_MANUAL_PAGE_MENUS.issubset(STATIC_PAGE_MENUS)
+    assert {item.laim_id for item in HELP_MANUALS} == {
+        "admin",
+        "user",
+        "headscale",
+        "recommendations",
+        "context_window",
+        "windows_remote",
+    }
+
+
+def test_help_manual_replicas_match_laim_spanish() -> None:
+    """Cada réplica es el markdown español canónico de laim."""
+    for item in HELP_MANUALS:
+        replica = load_static_page_markdown(item.menu)
+        assert replica.startswith("#")
+        assert len(replica) > 1000
+        source = _LAIM_SPANISH / f"{item.laim_id}_manual.md"
+        if source.is_file():
+            assert replica == source.read_text(encoding="utf-8")
+
+
+def test_headscale_manual_figures_are_in_assets() -> None:
+    """Las 8 figuras CRT del manual de malla se sirven en /images/headscale/."""
+    content = load_static_page_markdown("manual_headscale")
+    assert "/images/headscale/fig01-hub-spoke.svg" in content
+    for name in (
+        "fig01-hub-spoke.svg",
+        "fig02a-hairpin.svg",
+        "fig02b-multihub.svg",
+        "fig03-mesh.svg",
+        "fig04-coordination.svg",
+        "fig05-identity.svg",
+        "fig06-nat-stun.svg",
+        "fig07-derp.svg",
+        "fig08-acl-nodes.svg",
+    ):
+        assert (_HEADSCALE_ASSETS / name).is_file()
+
+
+def test_inline_code_maps_in_progress_to_badge() -> None:
+    """El chip `In progress` del catálogo no se renderiza como código."""
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "laim_web"
+        / "components"
+        / "markdown_viewer.py"
+    ).read_text(encoding="utf-8")
+    assert 'if label.strip() == "In progress"' in source
+    assert 'class_name="crt-badge-wip"' in source
 

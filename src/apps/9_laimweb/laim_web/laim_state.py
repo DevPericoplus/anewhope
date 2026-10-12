@@ -81,18 +81,9 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     installers_error: str = ""
     installers_loading: bool = False
     show_advance_construction_modal: bool = False
-
-    # Parches: misma edition/platform elegidas arriba — ver select_installers_platform
-    patches_latest: str = ""  # "<version>/<filename>" tal y como lo devuelve el backend
-    patches_error: str = ""
-
-    # "Notas del parche" — modal con el changelog extraído (ver
-    # patches.ExtractChangelogSection en laim_maintenance), cacheado y
-    # verificado por checksum en laimweb antes de mostrarse.
-    show_patch_notes_modal: bool = False
-    patch_notes_content: str = ""
-    patch_notes_error: str = ""
-    patch_notes_loading: bool = False
+    base_models_catalog_open: bool = False
+    recommended_model_open: bool = False
+    compare_requirements_open: bool = False
 
     # Guía gráfica de escenarios (página pública)
     escenario_id: str = "share_multi"
@@ -714,6 +705,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
 
     def _sync_menu_for_session(self) -> None:
         """Alinea menú y contenido con el estado de sesión actual."""
+        from laim_web.help_manuals import HELP_MANUAL_PAGE_MENUS
         from laim_web.static_pages_loader import (
             AUTHENTICATED_PAGE_MENUS,
             PUBLIC_MENU_FILES,
@@ -727,7 +719,10 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
                     self.active_menu, self.identity_type_id
                 ):
                     self.active_menu = "instaladores"
-            elif self.active_menu not in AUTHENTICATED_PAGE_MENUS:
+            elif (
+                self.active_menu not in AUTHENTICATED_PAGE_MENUS
+                and self.active_menu not in HELP_MANUAL_PAGE_MENUS
+            ):
                 if self.active_menu not in PUBLIC_MENU_FILES:
                     self.active_menu = "instaladores"
         elif self.active_menu not in PUBLIC_MENU_FILES:
@@ -802,8 +797,13 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
 
     def _load_static_page(self, menu: str) -> None:
         """Carga markdown de static_pages/ para menús públicos."""
+        from laim_web.help_manuals import HELP_MANUAL_PAGE_MENUS
         from laim_web.static_pages_loader import STATIC_PAGE_MENUS, load_static_page_markdown
 
+        if menu in HELP_MANUAL_PAGE_MENUS:
+            # El visor lee el fichero al montar; no meter 300 KB en Redis.
+            self.static_page_content = ""
+            return
         if menu in STATIC_PAGE_MENUS:
             self.static_page_content = load_static_page_markdown(menu)
             if menu == "inicio":
@@ -828,6 +828,15 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     def collapse_inicio_sections(self) -> None:
         """Cierra todas las secciones de Inicio."""
         self.inicio_open_titles = []
+
+    @rx.var
+    def sidebar_active_menu(self) -> str:
+        """Los documentos de Ayuda resaltan la entrada Manuales del menú."""
+        from laim_web.help_manuals import is_help_manual_menu
+
+        if is_help_manual_menu(self.active_menu):
+            return "manuales"
+        return self.active_menu
 
     @event
     def set_menu(self, item: str) -> None:
@@ -1178,15 +1187,34 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     @event
     def handle_page_action(self, action_key: str) -> EventHandlerReturn:
         """Ejecuta acciones de botones bajo el contenido markdown."""
+        if action_key == "go_installers":
+            if self.is_logged_in:
+                self.active_menu = "instaladores"
+                self._load_static_page("instaladores")
+                return None
+            self.login_modal_open = True
+            return None
+
+        from laim_web.help_manuals import BACK_TO_MANUALES_ACTION, menu_for_action
+
+        if action_key == BACK_TO_MANUALES_ACTION:
+            self.active_menu = "manuales"
+            self._load_static_page("manuales")
+            return None
+
+        help_menu = menu_for_action(action_key)
+        if help_menu is not None:
+            self.active_menu = help_menu
+            self._load_static_page(help_menu)
+            return None
+
         navigate_to_menu = {
             "faq_to_support": "soporte",
             "faq_privacy": "faq",
             "faq_security": "manuales",
             "support_ticket": "soporte",
-            "manual_quickstart": "manuales",
+            "go_documentacion": "documentacion",
             "manual_user": "manuales",
-            "manual_security": "manuales",
-            "manual_cli": "manuales",
             "custom_howto": "modelos_personalizados",
         }
         if action_key in navigate_to_menu:
@@ -1195,30 +1223,28 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
             self._load_static_page(target)
             return None
 
+        if action_key == "catalog_base_models":
+            self.base_models_catalog_open = True
+            return None
+
+        if action_key == "recommended_model":
+            self.recommended_model_open = True
+            return None
+
+        if action_key == "compare_requirements":
+            self.compare_requirements_open = True
+            return None
+
         pending_messages = {
             "view_requirements": (
                 "Consulte Manuales → Configuración segura para requisitos detallados."
             ),
-            "catalog_base_models": (
-                "El catálogo de modelos base estará disponible desde el cliente LAIM."
-            ),
-            "recommended_model": (
-                "Use el asistente del cliente LAIM para recomendar un modelo base."
-            ),
-            "compare_requirements": (
-                "La comparativa de requisitos se publicará junto al catálogo de modelos."
-            ),
             "catalog_specialized": (
                 "Los modelos especializados se listarán aquí cuando estén asignados a su cuenta."
             ),
-            "skills_library": (
-                "La biblioteca de skills se integrará con las próximas versiones del cliente."
-            ),
-            "skills_sample": (
-                "El skill de ejemplo se instalará desde el cliente LAIM."
-            ),
-            "skills_create": (
-                "La creación de skills personalizados estará documentada en Manuales."
+            "agents_catalog": (
+                "En el cliente: Config › Agentes o el comando laim agents. "
+                "Skills y tools se asignan ahí; usted confirma lo delicado."
             ),
             "addons_catalog": (
                 "El catálogo de complementos se ampliará en próximas versiones."
@@ -1254,24 +1280,35 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         self.installers_platform = ""
         self.installers_latest = ""
         self.installers_error = ""
-        self.patches_latest = ""
-        self.patches_error = ""
 
     @event
     def close_advance_construction_modal(self) -> None:
         self.show_advance_construction_modal = False
 
+    @event
+    def close_base_models_catalog(self) -> None:
+        """Cierra el modal de referencia blue/green."""
+        self.base_models_catalog_open = False
+
+    @event
+    def close_recommended_model(self) -> None:
+        """Cierra la mini-guía de recomendación por hardware."""
+        self.recommended_model_open = False
+
+    @event
+    def close_compare_requirements(self) -> None:
+        """Cierra la comparativa monopuesto / Share."""
+        self.compare_requirements_open = False
+
     @rx.event(background=True)
     async def select_installers_platform(self, platform: str) -> None:
-        """Consulta la última versión publicada (instalador y parche) para
-        edition/platform elegidos."""
+        """Consulta el último instalador publicado para edition/platform.
+        Los parches no se listan aquí: los detecta el cliente LAIM."""
         async with self:
             self.installers_platform = platform
             self.installers_loading = True
             self.installers_error = ""
             self.installers_latest = ""
-            self.patches_latest = ""
-            self.patches_error = ""
             edition = self.installers_edition
             access_token = self.access_token
             session_token = self.session_token
@@ -1279,7 +1316,6 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         from laim_web.adapters.laim_api_client import get_laim_product_list
 
         data = get_laim_product_list(edition, "installer", platform, access_token, session_token)
-        patch_data = get_laim_product_list(edition, "patch", platform, access_token, session_token)
         async with self:
             if data.get("success") is False:
                 self.installers_error = data.get("error") or "Error obteniendo versiones disponibles."
@@ -1288,14 +1324,6 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
                 if not latest:
                     self.installers_error = "Todavía no hay ninguna versión publicada para esta plataforma."
                 self.installers_latest = latest
-
-            if patch_data.get("success") is False:
-                self.patches_error = patch_data.get("error") or "Error obteniendo parches disponibles."
-            else:
-                patch_latest = patch_data.get("latest") or ""
-                if not patch_latest:
-                    self.patches_error = "Todavía no hay ningún parche publicado para esta plataforma."
-                self.patches_latest = patch_latest
 
             self.installers_loading = False
 
@@ -1313,81 +1341,30 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         )
 
     @rx.var
-    def installers_script_command(self) -> str:
-        """Instalación por script (curl | bash) — alternativa a la descarga
-        directa, solo para mac/linux (Windows no tiene un equivalente de
-        shell). El script en sí (`/laim/product/install-script`) está
-        pendiente de implementar en el backend — ver
-        laim_maintenance/README.md § Fase 2; esta URL ya sigue la
-        convención correcta para cuando exista."""
-        if self.installers_platform not in ("mac_intel", "mac_silicon", "linux_deb", "linux_rpm"):
-            return ""
-        from laim_web.adapters.laim_api_client import get_laim_product_script_url
-
-        url = get_laim_product_script_url(self.installers_edition, self.installers_platform)
-        return f"curl -fsSL {url} | bash"
-
-    @rx.var
-    def patches_version(self) -> str:
-        version, _, _ = self.patches_latest.partition("/")
+    def installers_version(self) -> str:
+        version, _, _ = self.installers_latest.partition("/")
         return version
 
     @rx.var
-    def patches_download_url(self) -> str:
-        if not self.patches_latest or not self.installers_platform:
-            return ""
-        version, _, filename = self.patches_latest.partition("/")
-        if not filename:
-            return ""
-        from laim_web.adapters.laim_api_client import get_laim_product_download_url
+    def installers_filename(self) -> str:
+        _, _, filename = self.installers_latest.partition("/")
+        return filename
 
-        return get_laim_product_download_url(
-            self.installers_edition, "patch", self.installers_platform, version, filename
-        )
+    @rx.var
+    def installers_script_command(self) -> str:
+        """Comando de terminal: curl|bash (mac/linux) o curl.exe -o (Windows)."""
+        if self.installers_platform in ("mac_intel", "mac_silicon", "linux_deb", "linux_rpm"):
+            from laim_web.adapters.laim_api_client import get_laim_product_script_url
 
-    @event
-    def open_patch_notes_modal(self) -> None:
-        self.show_patch_notes_modal = True
-        return LaimWebState.load_patch_notes
-
-    @event
-    def close_patch_notes_modal(self) -> None:
-        self.show_patch_notes_modal = False
-
-    @event
-    def set_patch_notes_modal_open(self, is_open: bool) -> None:
-        self.show_patch_notes_modal = is_open
-
-    @rx.event(background=True)
-    async def load_patch_notes(self) -> None:
-        """Pide las "Notas del parche" a la caché de laimweb (cache-first,
-        checksum verificado, re-fetch a middleware si no hay copia válida —
-        ver product_cache_singleton.get_patch_notes_text)."""
-        async with self:
-            version = self.patches_version
-            edition = self.installers_edition
-            self.patch_notes_loading = True
-            self.patch_notes_error = ""
-            self.patch_notes_content = ""
-
-        if not version:
-            async with self:
-                self.patch_notes_error = "No hay ningún parche disponible para esta plataforma."
-                self.patch_notes_loading = False
-            return
-
-        from laim_web.product_cache_singleton import get_patch_notes_text
-
-        try:
-            content = get_patch_notes_text(edition, version)
-            async with self:
-                self.patch_notes_content = content
-        except Exception as exc:  # noqa: BLE001 - mostrado al usuario, nunca rompe la UI
-            async with self:
-                self.patch_notes_error = f"No se pudieron obtener las notas del parche: {exc}"
-        finally:
-            async with self:
-                self.patch_notes_loading = False
+            url = get_laim_product_script_url(self.installers_edition, self.installers_platform)
+            return f"curl -fsSL {url} | bash"
+        if self.installers_platform == "windows":
+            url = self.installers_download_url
+            filename = self.installers_filename
+            if not url or not filename:
+                return ""
+            return f'curl.exe -fsSL "{url}" -o "{filename}"'
+        return ""
 
     def _load_permissions_after_login(
         self, identity_type_id: int, access_token: str, session_token: str

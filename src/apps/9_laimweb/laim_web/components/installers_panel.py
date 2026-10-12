@@ -1,6 +1,8 @@
 """Panel interactivo de la sección "Instaladores": elegir modalidad
 (community_edition/advance) y plataforma, y descargar el artefacto real
 publicado por laim_maintenance a través de laim_product.
+
+Esta página no lista parches: las actualizaciones las detecta el cliente.
 """
 
 from __future__ import annotations
@@ -8,7 +10,6 @@ from __future__ import annotations
 import reflex as rx
 
 from laim_web.laim_state import LaimWebState
-from laim_web.components.markdown_viewer import crt_markdown_body
 
 _PLATFORM_LABELS: tuple[tuple[str, str], ...] = (
     ("windows", "Windows (.exe)"),
@@ -103,11 +104,19 @@ def _flag_breakdown() -> rx.Component:
     )
 
 
+def _windows_cli_note() -> rx.Component:
+    return rx.text(
+        "En Windows este comando guarda el instalador .exe en la carpeta actual. "
+        "Después ábralo con doble clic. Este portal no sirve un install.ps1 público: "
+        "la descarga es el propio paquete.",
+        class_name="crt-muted",
+        font_size="0.8em",
+        margin_top="0.5em",
+    )
+
+
 def _script_install_section() -> rx.Component:
-    """Instalación por script (curl | bash), solo mac/linux — ver
-    LaimWebState.installers_script_command. El script en sí todavía no existe
-    en el backend (ver la nota en laim_api_client.get_laim_product_script_url);
-    esta sección ya queda lista en la página para cuando lo haga."""
+    """Comando de terminal: curl|bash en mac/linux, curl.exe -o en Windows."""
     return rx.cond(
         LaimWebState.installers_script_command != "",
         rx.vstack(
@@ -128,7 +137,11 @@ def _script_install_section() -> rx.Component:
                 align_items="center",
                 flex_wrap="wrap",
             ),
-            _flag_breakdown(),
+            rx.cond(
+                LaimWebState.installers_platform == "windows",
+                _windows_cli_note(),
+                _flag_breakdown(),
+            ),
             spacing="1",
             width="100%",
             align_items="stretch",
@@ -148,8 +161,20 @@ def _download_result() -> rx.Component:
             rx.cond(
                 LaimWebState.installers_download_url != "",
                 rx.vstack(
+                    rx.text(
+                        "Versión ",
+                        LaimWebState.installers_version,
+                        " — ",
+                        LaimWebState.installers_filename,
+                        class_name="crt-muted",
+                        font_size="0.9em",
+                    ),
                     rx.link(
-                        rx.button("Descargar / Download", class_name="crt-btn"),
+                        rx.button(
+                            "Descargar ",
+                            LaimWebState.installers_filename,
+                            class_name="crt-btn",
+                        ),
                         href=LaimWebState.installers_download_url,
                         is_external=True,
                     ),
@@ -161,62 +186,6 @@ def _download_result() -> rx.Component:
                 rx.fragment(),
             ),
         ),
-    )
-
-
-def _patches_result() -> rx.Component:
-    return rx.cond(
-        LaimWebState.installers_loading,
-        rx.fragment(),
-        rx.cond(
-            LaimWebState.patches_error != "",
-            rx.text(LaimWebState.patches_error, class_name="crt-error"),
-            rx.cond(
-                LaimWebState.patches_download_url != "",
-                rx.hstack(
-                    rx.link(
-                        rx.button("Descargar parche / Download patch", class_name="crt-btn"),
-                        href=LaimWebState.patches_download_url,
-                        is_external=True,
-                    ),
-                    rx.button(
-                        "📝 Notas del parche",
-                        on_click=LaimWebState.open_patch_notes_modal,
-                        class_name="crt-btn",
-                    ),
-                    spacing="2",
-                    wrap="wrap",
-                ),
-                rx.fragment(),
-            ),
-        ),
-    )
-
-
-def patch_notes_modal() -> rx.Component:
-    """Modal con el changelog del parche vigente — cacheado y verificado
-    por checksum en laimweb antes de mostrarse (ver product_cache.py)."""
-    return rx.dialog.root(
-        rx.dialog.content(
-            rx.dialog.title("Notas del parche / Patch notes"),
-            rx.cond(
-                LaimWebState.patch_notes_loading,
-                rx.text("Cargando…", class_name="crt-muted"),
-                rx.cond(
-                    LaimWebState.patch_notes_error != "",
-                    rx.text(LaimWebState.patch_notes_error, class_name="crt-error"),
-                    crt_markdown_body(LaimWebState.patch_notes_content),
-                ),
-            ),
-            rx.dialog.close(
-                rx.button("Cerrar / Close", on_click=LaimWebState.close_patch_notes_modal, margin_top="1em"),
-            ),
-            max_width="640px",
-            max_height="80vh",
-            overflow_y="auto",
-        ),
-        open=LaimWebState.show_patch_notes_modal,
-        on_open_change=LaimWebState.set_patch_notes_modal_open,
     )
 
 
@@ -244,18 +213,12 @@ def installers_panel() -> rx.Component:
                     rx.box(_download_result(), margin_top="0.75em"),
                     rx.fragment(),
                 ),
-                rx.cond(
-                    LaimWebState.installers_platform != "",
-                    rx.box(_patches_result(), margin_top="0.75em"),
-                    rx.fragment(),
-                ),
                 spacing="2",
                 width="100%",
                 align_items="stretch",
             ),
             rx.fragment(),
         ),
-        patch_notes_modal(),
         spacing="2",
         width="100%",
         align_items="stretch",

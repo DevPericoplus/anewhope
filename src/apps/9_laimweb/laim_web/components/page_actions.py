@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import reflex as rx
 
+from laim_web.help_manuals import BACK_TO_MANUALES_ACTION, HELP_MANUALS
 from laim_web.laim_state import LaimWebState
 
 GETMYLLM_URL = "https://www.getmylllm.com/"
@@ -24,11 +25,11 @@ PAGE_ACTIONS: dict[str, tuple[PageAction, ...]] = {
     # "instaladores" ya no usa este panel genérico — ver installers_panel()
     # en components/installers_panel.py (selector de edición/plataforma +
     # descarga real vía laim_product).
-    "manuales": (
-        PageAction("Guía de instalación rápida", "manual_quickstart"),
-        PageAction("Manual de usuario", "manual_user"),
-        PageAction("Configuración segura", "manual_security"),
-        PageAction("Uso en línea de comandos (CLI)", "manual_cli"),
+    "servicios": (
+        PageAction("Ir a Instaladores", "go_installers"),
+    ),
+    "manuales": tuple(
+        PageAction(item.button_label, item.action_key) for item in HELP_MANUALS
     ),
     "modelos_base": (
         PageAction("Ver catálogo de modelos base", "catalog_base_models"),
@@ -45,10 +46,10 @@ PAGE_ACTIONS: dict[str, tuple[PageAction, ...]] = {
         PageAction("Abrir portal de proyectos mylllm", "myllm_projects", GETMYLLM_URL),
         PageAction("Contactar con un especialista", "contact_specialist", GETMYLLM_URL),
     ),
-    "skills": (
-        PageAction("Biblioteca de skills", "skills_library"),
-        PageAction("Instalar skill de ejemplo", "skills_sample"),
-        PageAction("Crear skill propio", "skills_create"),
+    "agents": (
+        PageAction("Catálogo en el cliente", "agents_catalog"),
+        PageAction("Manual de administrador", "open_manual_admin"),
+        PageAction("Abrir Manuales", "manual_user"),
     ),
     "complementos": (
         PageAction("Ver complementos disponibles", "addons_catalog"),
@@ -66,6 +67,11 @@ PAGE_ACTIONS: dict[str, tuple[PageAction, ...]] = {
         PageAction("Ir a Soporte", "faq_to_support"),
     ),
 }
+
+for _manual in HELP_MANUALS:
+    PAGE_ACTIONS[_manual.menu] = (
+        PageAction("← Volver a Manuales", BACK_TO_MANUALES_ACTION),
+    )
 
 
 def _action_button(action: PageAction) -> rx.Component:
@@ -89,9 +95,10 @@ def page_action_panel(menu_key: str) -> rx.Component:
     if not actions:
         return rx.fragment()
 
+    heading = "Abrir un manual" if menu_key == "manuales" else "Acciones disponibles"
     return rx.vstack(
         rx.text(
-            "Acciones disponibles",
+            heading,
             class_name="crt-title",
             font_size="1em",
             margin_top="0.5em",

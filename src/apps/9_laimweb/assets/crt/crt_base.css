@@ -221,6 +221,12 @@ body,
   box-sizing: border-box;
 }
 
+.crt-modal-panel--catalog {
+  width: calc(100vw - 2rem);
+  max-width: 44rem;
+  box-sizing: border-box;
+}
+
 .crt-modal-header {
   width: 100%;
   align-items: center;
@@ -1514,6 +1520,23 @@ body,
   color: var(--crt-muted);
   font-size: 0.7em;
   flex: 1;
+}
+
+/* Badge de servicio en curso (páginas markdown del portal). */
+.crt-badge-wip {
+  display: inline-block;
+  font-size: 0.68em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.14em 0.55em;
+  margin-left: 0.45em;
+  vertical-align: middle;
+  border: 1px solid #ffb000;
+  color: #ffd59a;
+  background: rgba(80, 45, 0, 0.45);
+  border-radius: 2px;
+  text-shadow: none;
 }
 
 /* Home Bento CRT + grafo neuronal */

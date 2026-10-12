@@ -21,12 +21,16 @@ def _modal_close_button(on_close) -> rx.Component:
 
 
 def login_modal() -> rx.Component:
-    """Ventana modal de inicio de sesión."""
-    return rx.cond(
-        LaimWebState.login_modal_open,
+    """Ventana modal de inicio de sesión.
+
+    Permanece montada (display) para que un on_change de teclado no
+    desmonte el overlay y un clic residual lo cierre — en silicon el
+    roundtrip Reflex+Redis es más lento y ese cierre fantasma se veía
+    al escribir usuario o contraseña.
+    """
+    return rx.box(
         rx.box(
-            rx.box(
-                rx.vstack(
+            rx.vstack(
                     rx.hstack(
                         rx.text(
                             "LAIM — Inicio de sesión",
@@ -104,21 +108,20 @@ def login_modal() -> rx.Component:
                 class_name="crt-panel crt-modal-panel crt-modal-panel--auth",
                 padding="1.25rem",
                 on_click=rx.stop_propagation,
+                on_mouse_down=rx.stop_propagation,
             ),
             class_name="crt-modal-overlay",
-            on_click=LaimWebState.close_login_modal,
+            on_mouse_down=LaimWebState.close_login_modal,
+            display=rx.cond(LaimWebState.login_modal_open, "flex", "none"),
             z_index="10001",
-        ),
-    )
+        )
 
 
 def register_modal() -> rx.Component:
     """Ventana modal de registro público."""
-    return rx.cond(
-        LaimWebState.register_modal_open,
+    return rx.box(
         rx.box(
-            rx.box(
-                rx.vstack(
+            rx.vstack(
                     rx.hstack(
                         rx.text(
                             "LAIM — Crear cuenta",
@@ -219,21 +222,20 @@ def register_modal() -> rx.Component:
                 class_name="crt-panel crt-modal-panel crt-modal-panel--auth",
                 padding="1.25rem",
                 on_click=rx.stop_propagation,
+                on_mouse_down=rx.stop_propagation,
             ),
             class_name="crt-modal-overlay",
-            on_click=LaimWebState.close_register_modal,
+            on_mouse_down=LaimWebState.close_register_modal,
+            display=rx.cond(LaimWebState.register_modal_open, "flex", "none"),
             z_index="10001",
-        ),
-    )
+        )
 
 
 def forgot_modal() -> rx.Component:
     """Modal de recuperación: solo email."""
-    return rx.cond(
-        LaimWebState.forgot_modal_open,
+    return rx.box(
         rx.box(
-            rx.box(
-                rx.vstack(
+            rx.vstack(
                     rx.hstack(
                         rx.text(
                             "LAIM — Olvidé contraseña",
@@ -291,12 +293,13 @@ def forgot_modal() -> rx.Component:
                 class_name="crt-panel crt-modal-panel crt-modal-panel--auth",
                 padding="1.25rem",
                 on_click=rx.stop_propagation,
+                on_mouse_down=rx.stop_propagation,
             ),
             class_name="crt-modal-overlay",
-            on_click=LaimWebState.close_forgot_modal,
+            on_mouse_down=LaimWebState.close_forgot_modal,
+            display=rx.cond(LaimWebState.forgot_modal_open, "flex", "none"),
             z_index="10001",
-        ),
-    )
+        )
 
 
 def auth_modals() -> rx.Component:

@@ -1,6 +1,12 @@
 # Modelos personalizados
 
+`In progress`
+
+El catálogo de este portal **aún no está disponible**. Estamos trabajando en ello.
+
 ## IA entrenada con su información, bajo su control
+
+La entrega al portal se está cerrando. El ciclo de entrenamiento sigue en [getmylllm.com](https://www.getmylllm.com/).
 
 Los **modelos personalizados** están pensados para uso **interno**: conocimiento confidencial, procedimientos propios, históricos de soporte o documentación que no debe exponerse en servicios públicos.
 

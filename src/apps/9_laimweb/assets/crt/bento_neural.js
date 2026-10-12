@@ -29,6 +29,7 @@
   var boundCanvas = null;
   var resizeObs = null;
   var watching = false;
+  var polling = false;
 
   function prefersReduced() {
     return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -48,6 +49,24 @@
 
   function sceneHasSize(size) {
     return !!(size && size.w > 48 && size.h > 48);
+  }
+
+  function elementHasSize(el) {
+    if (!el || !el.getBoundingClientRect) {
+      return false;
+    }
+    var rect = el.getBoundingClientRect();
+    return rect.width > 48 && rect.height > 48;
+  }
+
+  function scenePrepared() {
+    return !!(worldEl() && canvasEl() && titleTiles().length &&
+      (elementHasSize(worldEl()) || elementHasSize(canvasEl())));
+  }
+
+  function homeShowsSpinner() {
+    var home = homeEl();
+    return !!(home && !home.classList.contains("is-neural-ready"));
   }
 
   function markSceneReady(on) {
@@ -369,6 +388,15 @@
 
   function resizeCanvas(canvas) {
     var rect = canvas.getBoundingClientRect();
+    if (rect.width < 48 || rect.height < 48) {
+      var world = worldEl();
+      if (world) {
+        var worldRect = world.getBoundingClientRect();
+        if (worldRect.width > 48 && worldRect.height > 48) {
+          rect = worldRect;
+        }
+      }
+    }
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
     var w = Math.max(1, Math.floor(rect.width * dpr));
     var h = Math.max(1, Math.floor(rect.height * dpr));
@@ -519,20 +547,78 @@
     return titleTiles().some(function (el) { return !el.isConnected; });
   }
 
-  function restart() {
-    ready = false;
-    boundWorld = null;
-    lastTs = 0;
-    markSceneReady(false);
+  function revealIfPrepared() {
+    if (!scenePrepared()) {
+      return false;
+    }
+    if (!ready || sceneStale()) {
+      ready = false;
+      boundWorld = null;
+      boundCanvas = null;
+      if (!boot()) {
+        return false;
+      }
+    }
+    var size = draw(currentCam());
+    if (sceneHasSize(size) || scenePrepared()) {
+      markSceneReady(true);
+      return true;
+    }
+    return false;
+  }
+
+  function pollUntilShown() {
     if (!raf) {
       raf = requestAnimationFrame(tick);
     }
+    if (polling) {
+      return;
+    }
+    polling = true;
+    function step() {
+      if (revealIfPrepared()) {
+        polling = false;
+        return;
+      }
+      if (homeEl()) {
+        requestAnimationFrame(step);
+        return;
+      }
+      polling = false;
+    }
+    requestAnimationFrame(step);
+  }
+
+  function restart() {
+    lastTs = 0;
+    if (ready && !sceneStale() && scenePrepared()) {
+      markSceneReady(true);
+      if (!raf) {
+        raf = requestAnimationFrame(tick);
+      }
+      return;
+    }
+    ready = false;
+    boundWorld = null;
+    boundCanvas = null;
+    markSceneReady(false);
+    pollUntilShown();
   }
 
   function tick(now) {
     raf = requestAnimationFrame(tick);
     if (ready && sceneStale()) {
-      restart();
+      ready = false;
+      boundWorld = null;
+      boundCanvas = null;
+      markSceneReady(false);
+    }
+    if (homeShowsSpinner() || !ready) {
+      if (revealIfPrepared()) {
+        // La escena ya pinta: el spinner debe desaparecer en este frame.
+      } else if (!ready) {
+        return;
+      }
     }
     if (!ready && !boot()) {
       return;
@@ -551,7 +637,7 @@
           node.el.style.opacity = "1";
         }
       });
-      if (sceneHasSize(size)) {
+      if (sceneHasSize(size) || scenePrepared()) {
         markSceneReady(true);
       }
       return;
@@ -575,7 +661,7 @@
       setLit(phase === "orbit" ? -1 : focus);
     }
     size = draw(currentCam());
-    if (sceneHasSize(size)) {
+    if (sceneHasSize(size) || scenePrepared()) {
       markSceneReady(true);
     }
   }
@@ -607,19 +693,15 @@
     watching = true;
     var root = document.querySelector(".crt-shell") || document.body;
     var obs = new MutationObserver(function () {
-      if (worldEl() && canvasEl() && titleTiles().length && !ready) {
-        boot();
+      if (homeShowsSpinner()) {
+        pollUntilShown();
       }
     });
     obs.observe(root, { childList: true, subtree: true });
     window.addEventListener("resize", function () {
-      if (ready) {
-        var size = draw(currentCam());
-        if (sceneHasSize(size)) {
-          markSceneReady(true);
-        }
-      }
+      revealIfPrepared();
     });
+    pollUntilShown();
   }
 
   window.LAIMBentoNeural = { restart: restart };

@@ -227,9 +227,9 @@ Ayuda → Temas; puedes volver al predeterminado cuando quieras.
 
 ## Dónde seguir leyendo
 
-Los textos completos viven en el cliente: **`laim web` → Ayuda**.
-Tras iniciar sesión en este portal, **Manuales** apunta al mismo
-material de uso diario.
+Los textos completos en español están en **Manuales** (tras iniciar
+sesión): la misma réplica que abre **`laim web` → Ayuda**. Editor y
+Temas siguen siendo herramientas del cliente, no documentos.
 
 - **`laim help`** — la lista oficial de comandos de *tu* versión.
 - [Ollama](https://ollama.com/) — motor de modelos locales

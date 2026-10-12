@@ -12,6 +12,8 @@ from laim_web.components.bento.catalog import (
     modal_cta_keys,
 )
 from laim_web.components.bento.glyphs import GLYPH_PATHS, glyph_ids, glyph_svg_markup
+from pathlib import Path
+
 from laim_web.static_pages_loader import load_static_page_markdown, split_markdown_h2_sections
 
 
@@ -57,6 +59,20 @@ class BentoCatalogTests(unittest.TestCase):
             self.assertIn('fill="none"', blob)
         self.assertEqual(glyph_for("MOM: Mixture of Models"), "mesh")
         self.assertEqual(set(GLYPH_PATHS), set(glyph_ids()))
+
+    def test_neural_script_polls_until_scene_is_ready(self) -> None:
+        """El spinner no se queda eterno: el JS vigila hasta que la escena pinta."""
+        here = Path(__file__).resolve().parent
+        script = (here.parents[2] / "assets" / "crt" / "bento_neural.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("function scenePrepared()", script)
+        self.assertIn("function pollUntilShown()", script)
+        self.assertIn("function revealIfPrepared()", script)
+        self.assertIn("homeShowsSpinner()", script)
+        home = (here / "home.py").read_text(encoding="utf-8")
+        self.assertIn("bento_neural.js?v=3d5", home)
+        self.assertNotIn("LAIMBentoNeural.restart()", home)
 
 
 if __name__ == "__main__":

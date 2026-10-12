@@ -180,6 +180,12 @@ body::after {
   box-sizing: border-box;
 }
 
+.crt-modal-panel--catalog {
+  width: calc(100vw - 2rem);
+  max-width: 44rem;
+  box-sizing: border-box;
+}
+
 .crt-modal-header {
   width: 100%;
   align-items: center;

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from laim_web.help_manuals import HELP_MANUAL_MENU_FILES
+
 STATIC_PAGES_DIR = Path(__file__).resolve().parent.parent / "static_pages"
 
 PUBLIC_MENU_FILES: dict[str, str] = {
@@ -21,7 +23,7 @@ AUTHENTICATED_MENU_FILES: dict[str, str] = {
     "modelos_base": "modelos_base.md",
     "modelos_especializados": "modelos_especializados.md",
     "modelos_personalizados": "modelos_personalizados.md",
-    "skills": "skills.md",
+    "agents": "agents.md",
     "complementos": "complementos.md",
     "soporte": "soporte.md",
     "faq": "faq.md",
@@ -42,6 +44,7 @@ MENU_TO_MARKDOWN_FILE: dict[str, str] = {
     **PUBLIC_MENU_FILES,
     **AUTHENTICATED_MENU_FILES,
     **ADMIN_CONFIG_MENU_FILES,
+    **HELP_MANUAL_MENU_FILES,
 }
 
 STATIC_PAGE_MENUS = frozenset(MENU_TO_MARKDOWN_FILE.keys())

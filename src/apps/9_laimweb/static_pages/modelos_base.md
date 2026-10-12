@@ -1,8 +1,14 @@
 # Modelos base
 
+`In progress`
+
 ## Modelos adaptados a su hardware local
 
-Los **modelos base** son el punto de partida recomendado: están optimizados para distintos perfiles de equipo, desde configuraciones modestas hasta estaciones de trabajo avanzadas.
+El catálogo **asignable desde este portal** se está cerrando. Ollama y Share/Connect ya funcionan en el cliente (`laim catalog`, `laim localmodels`, Config › Modelos IA).
+
+Los **modelos base** son el punto de partida: un slot por **tier** (Traductor, Rápido, Medio…) y dos familias (**blue** / **green**) para cambiar de juego de modelos sin tocar cada casilla.
+
+**Ver catálogo de modelos base** abre la referencia con la que se ha ejercitado LAIM en el equipo de desarrollo: la misma tabla `tier | blue | green`. Son modelos **probados**, no una talla única. En su instalación pruebe otras versiones o tamaños de esas familias según CPU, GPU y memoria.
 
 ### ¿Para qué sirven?
 
@@ -20,6 +26,8 @@ Los **modelos base** son el punto de partida recomendado: están optimizados par
 
 ### Cómo elegir
 
-Utilice la acción **Modelo recomendado para mi equipo** para orientarse según memoria, CPU/GPU y sistema operativo. Si tiene dudas, la sección **FAQ** responde las preguntas más frecuentes sobre compatibilidad.
+**Modelo recomendado para mi equipo** abre una mini-guía: cómo leer cores y memoria de la GPU (`laim info`), cuándo subir la concurrencia, cómo la memoria recorta el tamaño (tabla 6–128 GB) y qué hace el warmup. Luego confirme el modelo con Asesor, Capacidades, `laim eval` y Comparar.
 
-> Los modelos base se descargan e instalan desde el cliente LAIM una vez configurado el acceso a este portal.
+**Comparativa de requisitos** enfrenta monopuesto dedicado y Share + Connect (cores y memoria mínima), avisa de la holgura extra con Headscale / `laim remote`, y recuerda colas, horarios valle y ajustes internos (KV-cache, `num_ctx`, warmup). Si tiene dudas, **FAQ**.
+
+> Los modelos se descargan e instalan desde el cliente LAIM (`laim catalog` o Config › Modelos IA).

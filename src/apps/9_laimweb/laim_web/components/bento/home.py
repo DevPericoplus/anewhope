@@ -65,11 +65,7 @@ def inicio_home_panel() -> rx.Component:
             bento_grid(),
         ),
         inicio_section_modal(),
-        rx.script(
-            "if(window.LAIMBentoNeural&&window.LAIMBentoNeural.restart){"
-            "window.LAIMBentoNeural.restart();}"
-        ),
-        rx.script(src="/crt/bento_neural.js?v=3d3"),
+        rx.script(src="/crt/bento_neural.js?v=3d5"),
         spacing="4",
         width="100%",
         align_items="stretch",

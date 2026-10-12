@@ -1,22 +1,18 @@
 # Manuales
 
-## Documentación clara para empezar con tranquilidad
+## Bienvenido a la Ayuda de LAIM
 
-Aquí encontrará guías pensadas para usuarios finales: lenguaje directo, pasos ordenados y recomendaciones de **seguridad** desde el primer día.
+Los mismos seis documentos que abre **`laim web` → Ayuda** en el cliente, en español. Pulse un botón al pie para leer el texto completo aquí, sin instalar nada.
 
-### Guías principales
+Editor y Temas son herramientas de esa página del cliente, no manuales. El botón «Activar automáticamente usando LAIM» del manual de Windows solo existe en el Windows que debe recibir las conexiones.
 
-- **Instalación rápida** — Primer arranque en Windows, macOS o Linux
-- **Manual de usuario** — Navegación por la aplicación, modos CLI y web
-- **Configuración segura** — Buenas prácticas de red, credenciales y almacenamiento local
-- **Referencia CLI** — Comandos frecuentes para administración y automatización
+| Manual | En Ayuda |
+|--------|----------|
+| 📖 Manual de administrador | Instalación, usuarios, modelos, Share/Connect, backups y seguridad |
+| 📗 Manual de usuario | Chat, inferencia directa, sesiones y rendimiento |
+| 🔒 Red mesh WireGuard (Headscale) | Red mesh WireGuard, registro remoto, NAT traversal |
+| 📋 Recomendaciones | Directrices de uso, aviso legal, responsabilidades y asunción de riesgos |
+| 💾 Ventana de contexto | Límites de contexto, caché KV y compresión automática del historial |
+| 🖥️ Windows remoto (OpenSSH) | Instalar OpenSSH Server y registrar el equipo en laim remote |
 
-### Modalidades de uso
-
-LAIM admite ejecución desde **línea de comandos** y desde una **interfaz web local** ampliada. Puede elegir la modalidad que mejor se adapte a su flujo de trabajo sin renunciar al control sobre sus recursos.
-
-### Soporte a su ritmo
-
-Si prefiere acompañamiento, el equipo de **Soporte** puede orientarle en la instalación o en la migración desde otras herramientas. No está solo en el proceso.
-
-> Los manuales se actualizan con cada versión estable del cliente LAIM publicada en este portal.
+> Si un comando no aparece en `laim help`, confíe en la ayuda del binario.

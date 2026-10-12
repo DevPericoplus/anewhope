@@ -1,108 +1,125 @@
 # Servicios
 
-## Su portal para operar inteligencia artificial local con confianza
+## El portal de LAIM: instalar, actualizar y acompañar el cliente
 
-**LAIM** (*Local Artificial Intelligence Management*) le acompaña para descargar, configurar y utilizar la aplicación cliente en su propio equipo. Desde [www.laim.app](https://www.laim.app) centralizamos todo lo necesario — instaladores, documentación, modelos, extensiones y soporte — con un enfoque claro: **usted controla dónde se procesan sus datos**.
+**LAIM** (*Local Artificial Intelligence Management*) es el cliente que instala en **su equipo**. Este portal reúne lo que hace falta alrededor de ese cliente: instaladores, la misma documentación que verá en **Ayuda**, el foro de la comunidad y el canal de soporte.
 
-Tras crear una cuenta e iniciar sesión, accede a un área privada organizada en servicios concretos. A continuación encontrará el catálogo completo.
+Los datos del día a día se procesan **en su máquina** (o en un Share de su red). Aquí no corre la inferencia: aquí se descarga, se lee y se pide ayuda.
 
 ---
 
 ### Instaladores
 
-Descarga del cliente LAIM para **Windows**, **macOS** y **Linux** (paquetes `.deb` y `.rpm`), con todo lo necesario para el primer arranque: comprobación de requisitos, modos **CLI** y **web** local, y enlaces a la documentación integrada.
+Cliente **community_edition** para **Windows**, **macOS** (Apple Silicon e Intel) y **Linux** (`.deb` / `.rpm`). El paquete lleva el binario, los `.dat` comunes de producto y los plugins Basic. Tras instalar: `laim init`, `laim login` y `laim web` (interfaz local en `http://localhost:4321`) o `laim chat` en terminal.
 
-> Ideal como primer paso tras registrarse.
+Las actualizaciones posteriores las detecta el propio cliente (`laim update`), no esta página.
+
+Pulse **Ir a Instaladores** al pie de esta página para abrir las descargas. Si no hay sesión, se abre el inicio de sesión.
 
 ---
 
 ### Manuales
 
-Guías pensadas para usuarios finales: instalación rápida, manual de usuario, **configuración segura** y referencia de línea de comandos. Lenguaje directo y pasos ordenados para que pueda avanzar con tranquilidad.
+Los mismos documentos que el cliente abre en **`laim web` → Ayuda**. Tras iniciar sesión, **Manuales** los muestra completos. Editor y Temas son herramientas de esa página, no manuales.
+
+| Manual | En Ayuda |
+|--------|----------|
+| Manual de administrador | Instalación, usuarios, tiers, Share/Connect, agentes, seguridad |
+| Manual de usuario | Chat, voz, SSH, notificaciones y uso diario |
+| Red mesh WireGuard (Headscale) | Malla privada entre equipos sin abrir puertos a Internet |
+| Recomendaciones | Uso responsable y avisos legales |
+| Ventana de contexto | `num_ctx`, resumen del historial y VRAM |
+| Windows remoto (OpenSSH) | Activar SSH en Windows para `laim remote` |
 
 ---
 
 ### Modelos de IA local
 
-| Tipo | Para qué sirve |
-|------|----------------|
-| **Modelos base** | Punto de partida adaptado a su hardware; inferencia local con baja latencia y enfoque en privacidad |
-| **Modelos especializados** | Conocimiento enriquecido para dominios concretos (normativa, procesos, documentación sectorial) |
-| **Modelos personalizados** | Entrenados con información privada de su organización, para uso interno bajo su control |
+`In progress`
 
-Los modelos base y especializados asignados a su cuenta se descargan e instalan desde el cliente LAIM. Para **proyectos a medida** con datos propios, pipelines de entrenamiento y acompañamiento experto, nuestro ecosistema en **[getmylllm.com](https://www.getmylllm.com/)** le guía en propuesta, preparación, entrenamiento y entrega.
+El cliente ya habla con **Ollama** en local y con un **Share** de su red (Connect). El catálogo de modelos base / especializados / a medida **desde este portal** se está cerrando: en breve podrá asignar y descargar modelos a su cuenta; hoy esa parte se configura en el propio cliente (`laim catalog`, `laim localmodels`, Config › Modelos IA).
+
+| Tipo | Estado |
+|------|--------|
+| **Ollama en su equipo** | Disponible en el cliente |
+| **Share / Connect** (IA de otro LAIM de su red) | Disponible en el cliente |
+| **Catálogo del portal** (base, especializado, a medida) | `In progress` |
+
+Los proyectos de entrenamiento a medida siguen en **[getmylllm.com](https://www.getmylllm.com/)**.
 
 ---
 
-### Skills
+### Agentes
 
-Extensiones modulares que amplían las capacidades del cliente: conectores, plantillas de tareas, flujos repetitivos e integraciones con herramientas que ya utiliza. Incluye skills oficiales LAIM y opciones personalizadas para su organización.
+LAIM no es un chat suelto: un **ecosistema agéntico** (Config › Agentes, comando `laim agents`) reparte el trabajo entre agentes, **skills** y **tools**, y los encadena en flujos o pipelines. Usted confirma lo delicado. Skills es un apartado de Agentes, no un escaparate aparte.
+
+| Agente | Qué hace |
+|--------|----------|
+| **Local System** | Comandos reales en *este* equipo (con su consentimiento) |
+| **Remote System** | Lo mismo en equipos de su red por SSH / `laim remote` |
+| **Heuristic** | Elige el comando nativo de su SO; no inventa uno |
+| **Pi** | Localiza el caso heurístico y se lo entrega a Local/Remote System |
+| **Suggestions** | Tras cada respuesta, propone el siguiente paso (concepto, código, ejemplo) |
+| **Presenter** | Deja la salida legible: tablas, unidades, párrafos |
+| **Developer** | Spec → plan → sandbox TDD para scripts y pequeñas apps |
+| **Sniffer** | Inspección de red (sin MITM) |
+| **Calibrate** | Firma vocal del micrófono antes de dictar |
+| **Secure** | Vigilancia OWASP del propio cliente |
+
+El administrador activa, limita (Agent Box, HITL) y personaliza para que LAIM encaje en la forma de trabajar de cada equipo. El detalle vive en el **Manual de administrador** y en la página **Agentes** de este portal (tras iniciar sesión).
 
 ---
 
 ### Complementos
 
-Integraciones y utilidades adicionales: almacenamiento local, observabilidad, adaptadores y enlaces con flujos existentes. Las conexiones externas son siempre **opcionales y configurables**; LAIM prioriza el modo local.
+Plugins del cliente (tier Basic en community_edition) y utilidades opcionales: almacenamiento, observabilidad, adaptadores. Nada de eso es obligatorio para conversar en local.
+
+---
+
+### Foro
+
+El **Foro LAIM** (menú de la izquierda cuando hay sesión) es el canal de la comunidad: hilos, respuestas y perfil. Distinto de **Soporte**, que es el ticket 1:1 con el equipo.
 
 ---
 
 ### Soporte y FAQ
 
-- **Soporte** — Tickets, email y consulta del estado de servicios del portal
-- **FAQ** — Privacidad, modalidades de uso, diferencias entre tipos de modelo y buenas prácticas de seguridad
-
-Preferimos acompañarle con claridad antes que dejarle con un error críptico.
+- **Soporte** — Formulario de Contacto y seguimiento de su caso
+- **FAQ** — Privacidad, modos de uso y buenas prácticas
 
 ---
 
-## Modalidades de uso del cliente
+## Cómo se usa el cliente
 
 | Modalidad | Descripción |
 |-----------|-------------|
-| **CLI** | Ejecución desde línea de comandos; ideal para automatización y administración |
-| **Web local** | Interfaz ampliada en su equipo para tareas cotidianas sin renunciar al control local |
+| **CLI** | `laim chat`, `laim remote`, `laim config`… Automatización y administración |
+| **Web local** | `laim web` — pantallas CRT en su equipo, mismo núcleo que la CLI |
+
+**Windows**, **macOS** y **Linux** (`.deb` / `.rpm`). El instalador no pide privilegios de administrador en la modalidad script.
 
 ---
 
-## Plataformas soportadas
+## Formas de usar la IA
 
-- **Linux** — Distribuciones basadas en Red Hat (`.rpm`) y Debian/Ubuntu (`.deb`)
-- **macOS** — Equipos Apple de escritorio y portátiles
-- **Windows** — Versiones con PowerShell; compatible con WSL para tareas avanzadas
-
----
-
-## Formas de usar la IA con LAIM
-
-### Uso seguro (recomendado)
+### En su perímetro (recomendado)
 
 | Opción | Descripción |
 |--------|-------------|
-| **IA local con hardware adecuado** | Máximo rendimiento en su propia estación o servidor |
-| **IA local con cliente ligero** | Equipos modestos conectados a nodos LAIM en su red |
-| **LAIM cloud genérica** | Acceso a modelos extendidos en nuestra nube, cuando su política lo permita |
+| **IA local** | Ollama (u otro motor local) en su estación o servidor |
+| **Cliente ligero + Share** | Este equipo pregunta; la inferencia corre en otro LAIM de su red |
+| **LAIM cloud genérica** | Modelos extendidos en nuestra nube, solo si su política lo permite. Aún no está abierto. `In progress` |
 
-### Integraciones opcionales con terceros
+### Integraciones opcionales
 
-Puede configurar, según sus necesidades y suscripción, modelos de **Google (Gemini)**, **Mistral** o **Kimi**. Estas opciones requieren configuración explícita y, en algunos casos, contratos con proveedores externos.
-
----
-
-## Qué encontrará en el área pública (sin sesión)
-
-| Sección | Contenido |
-|---------|-----------|
-| **Inicio** | Presentación de LAIM y sus capacidades |
-| **Servicios** | Este catálogo |
-| **Documentación** | Recursos técnicos y referencias del ecosistema |
-| **Contacto** | Canales de consulta y datos útiles para incidencias |
+Google (Gemini), Mistral o Kimi se configuran **en el cliente**, de forma explícita, cuando existan contrato y claves. No se activan solas desde este portal.
 
 ---
 
-## Nuestro compromiso
+## Compromiso
 
-- **Privacidad** — En modo local estándar, sus datos pueden permanecer en su infraestructura
-- **Seguridad** — Autenticación protegida, descargas desde canales verificados y buenas prácticas documentadas
-- **Proyección** — Una herramienta pensada para crecer con usted: desde un primer modelo base hasta proyectos avanzados con mylllm
+- **Privacidad** — En modo local, el trabajo permanece en su infraestructura
+- **Seguridad** — Sesión cifrada, descargas firmadas cuando el trámite de firma esté listo, y las prácticas del manual
+- **Actualización** — El cliente (`laim update`) lleva a la última versión desde cualquier instalación anterior
 
-> ¿Listo para empezar? Cree una cuenta, descargue el instalador en **Instaladores** y consulte **Manuales** para la configuración inicial. Para profundizar en aspectos técnicos, visite **Documentación**.
+> Empiece por **Instaladores**. Los textos largos están en **Manuales** (sesión) y en **Ayuda** del cliente.

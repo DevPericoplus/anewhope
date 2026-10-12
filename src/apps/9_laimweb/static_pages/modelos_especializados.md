@@ -1,6 +1,12 @@
 # Modelos especializados
 
+`In progress`
+
+El catálogo de este portal **aún no está disponible**. Estamos trabajando en ello.
+
 ## Conocimiento enriquecido para dominios concretos
+
+La asignación y descarga **desde este portal** se está cerrando. Los proyectos a medida siguen en [getmylllm.com](https://www.getmylllm.com/).
 
 Los **modelos especializados** incorporan información sectorial o funcional: documentación técnica, normativas, procesos internos o dominios de negocio. Son ideales cuando necesita respuestas más precisas que un modelo genérico.
 

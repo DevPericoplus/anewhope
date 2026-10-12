@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 400" role="img" aria-labelledby="t">
+  <title id="t">NAT traversal</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#081408"/>
+      <stop offset="100%" stop-color="#030803"/>
+    </linearGradient>
+    <filter id="g"><feGaussianBlur stdDeviation="1.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 1.5 L10 5 L0 8.5 z" fill="#4cff4c"/>
+    </marker>
+    <marker id="arrO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 1.5 L10 5 L0 8.5 z" fill="#ff9a3c"/>
+    </marker>
+    <marker id="arrB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 1.5 L10 5 L0 8.5 z" fill="#5ec8ff"/>
+    </marker>
+  </defs>
+  <rect width="840" height="400" rx="14" fill="url(#bg)" stroke="#1f6a1f" stroke-width="2"/>
+  <text x="20" y="28" fill="#7dff9a" font-family="ui-monospace, Menlo, monospace" font-size="13" font-weight="700">Fig. 6  ·  Both peers behind NAT — STUN / ICE, no open ports</text>
+
+  <g>
+    <rect x="40" y="70" width="280" height="250" rx="12" fill="#0a180a" stroke="#3a8a3a" stroke-width="1.6" stroke-dasharray="6 4"/>
+    <text x="180.0" y="88" text-anchor="middle" fill="#8fd48f" font-family="ui-monospace, Menlo, monospace" font-size="11">NAT / firewall A</text>
+  </g>
+  <g>
+    <rect x="520" y="70" width="280" height="250" rx="12" fill="#0a180a" stroke="#3a8a3a" stroke-width="1.6" stroke-dasharray="6 4"/>
+    <text x="660.0" y="88" text-anchor="middle" fill="#8fd48f" font-family="ui-monospace, Menlo, monospace" font-size="11">NAT / firewall B</text>
+  </g>
+  <g transform="translate(180,200)" filter="url(#g)">
+    <rect x="-32" y="-22" width="64" height="40" rx="5" fill="#0b220b" stroke="#4cff4c" stroke-width="1.8"/>
+    <rect x="-24" y="-14" width="48" height="24" rx="2" fill="#123012"/>
+    <rect x="-18" y="20" width="36" height="5" rx="1.5" fill="#2a5c2a"/>
+    <text x="0" y="42" text-anchor="middle" fill="#b8ffb8" font-family="ui-monospace, Menlo, monospace" font-size="11">Node A</text>
+    <text x="0" y="56" text-anchor="middle" fill="#6aaa6a" font-family="ui-monospace, Menlo, monospace" font-size="10">private IP</text>
+  </g>
+  <g transform="translate(660,200)" filter="url(#g)">
+    <rect x="-32" y="-22" width="64" height="40" rx="5" fill="#0b220b" stroke="#4cff4c" stroke-width="1.8"/>
+    <rect x="-24" y="-14" width="48" height="24" rx="2" fill="#123012"/>
+    <rect x="-18" y="20" width="36" height="5" rx="1.5" fill="#2a5c2a"/>
+    <text x="0" y="42" text-anchor="middle" fill="#b8ffb8" font-family="ui-monospace, Menlo, monospace" font-size="11">Node B</text>
+    <text x="0" y="56" text-anchor="middle" fill="#6aaa6a" font-family="ui-monospace, Menlo, monospace" font-size="10">private IP</text>
+  </g><line x1="212" y1="200" x2="628" y2="200" stroke="#ffd24a" stroke-width="2.4" stroke-dasharray="8 5"/><text x="420" y="188" text-anchor="middle" fill="#ffd24a" font-family="ui-monospace, Menlo, monospace" font-size="12">STUN / ICE</text><text x="420" y="360" text-anchor="middle" fill="#8fd48f" font-family="ui-monospace, Menlo, monospace" font-size="11">No uPnP · no inbound hole · UDP hole-punching</text></svg>

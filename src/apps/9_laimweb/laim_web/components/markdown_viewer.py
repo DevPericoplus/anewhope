@@ -25,8 +25,20 @@ _spec.loader.exec_module(_shared_theme)
 
 _BASE_MARKDOWN_MAP: dict[str, Any] = _shared_theme.get_markdown_component_map("green")
 
+def _inline_code(text: str = "", **props: Any) -> rx.Component:
+    """El chip `In progress` del catálogo de Servicios no es código."""
+    label = text if isinstance(text, str) else str(text)
+    if label.strip() == "In progress":
+        return rx.el.span("In progress", class_name="crt-badge-wip")
+    factory = _BASE_MARKDOWN_MAP.get("code")
+    if callable(factory):
+        return factory(text, **props)
+    return rx.code(text, **props)
+
+
 CRT_MARKDOWN_COMPONENT_MAP: dict[str, Any] = {
     **_BASE_MARKDOWN_MAP,
+    "code": _inline_code,
     "codeblock": lambda text, **props: rx.code_block(
         text,
         theme=rx.code_block.themes.a11y_dark,
