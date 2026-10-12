@@ -4773,6 +4773,21 @@ class LaimRegisterRequest(BaseModel):
     hcaptcha_token: str = ""
 
 
+class LaimPasswordResetRequest(BaseModel):
+    """Solicitud de recuperación LAIM."""
+
+    email: str = Field(..., min_length=5)
+    public_origin: str = ""
+
+
+class LaimPasswordResetConfirm(BaseModel):
+    """Confirmación de recuperación LAIM."""
+
+    token: str = Field(..., min_length=8)
+    password: str = Field(..., min_length=8)
+    password_confirm: str = Field(..., min_length=8)
+
+
 class LaimContactScreenshotRequest(BaseModel):
     """Captura adjunta en base64."""
 
@@ -4889,6 +4904,48 @@ def laim_status(
         return router.laim_status()
     except BrokerBusinessError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/laim/password-reset/request", tags=["laim-auth"])
+def laim_password_reset_request(
+    request: Request,
+    payload: LaimPasswordResetRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Solicita token de recuperación LAIM."""
+    try:
+        return router.laim_password_reset_request(
+            payload.model_dump(), _laim_forward_headers(request)
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/laim/password-reset/status", tags=["laim-auth"])
+def laim_password_reset_status(
+    token: str,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Consulta validez del token de recuperación."""
+    try:
+        return router.laim_password_reset_status(token)
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/laim/password-reset/confirm", tags=["laim-auth"])
+def laim_password_reset_confirm(
+    request: Request,
+    payload: LaimPasswordResetConfirm,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, Any]:
+    """Confirma el cambio de contraseña LAIM."""
+    try:
+        return router.laim_password_reset_confirm(
+            payload.model_dump(), _laim_forward_headers(request)
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 # ============================================================================

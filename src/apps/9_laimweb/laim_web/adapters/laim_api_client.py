@@ -1092,6 +1092,51 @@ def laim_register(
     return _request_middleware("POST", "/laim/register", payload=payload)
 
 
+def laim_mail_send(to: str, subject: str, body: str) -> dict[str, Any]:
+    """Envía correo Workspace vía Mail Gateway del middleware."""
+    return _request_middleware(
+        "POST",
+        "/laim/mail/send",
+        payload={"to": to, "subject": subject, "body": body},
+    )
+
+
+def laim_password_reset_request(email: str, public_origin: str = "") -> dict[str, Any]:
+    """Solicita el token de recuperación. El visitante no ve found/token."""
+    return _request_middleware(
+        "POST",
+        "/laim/password-reset/request",
+        payload={"email": email, "public_origin": public_origin},
+    )
+
+
+def laim_password_reset_status(token: str) -> dict[str, Any]:
+    """Consulta si el token sigue vivo (15 min, no usado)."""
+    from urllib.parse import quote
+
+    return _request_middleware(
+        "GET",
+        f"/laim/password-reset/status?token={quote(token, safe='')}",
+    )
+
+
+def laim_password_reset_confirm(
+    token: str,
+    password: str,
+    password_confirm: str,
+) -> dict[str, Any]:
+    """Confirma el cambio de contraseña (Fernet en core)."""
+    return _request_middleware(
+        "POST",
+        "/laim/password-reset/confirm",
+        payload={
+            "token": token,
+            "password": password,
+            "password_confirm": password_confirm,
+        },
+    )
+
+
 def laim_logout(access_token: str, session_token: str) -> dict[str, Any]:
     """Cierra sesión LAIM."""
     return _request_middleware(

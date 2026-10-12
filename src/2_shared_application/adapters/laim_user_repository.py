@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import secrets
@@ -27,6 +28,25 @@ class LaimUserRecord:
     user_otp: str
     active: bool
     blocked: bool
+
+
+@dataclass(frozen=True)
+class LaimResetTokenRecord:
+    """Token de recuperación (solo hash, nunca el secreto)."""
+
+    id: int
+    user_id: int
+    token_hash: str
+    expires_at: datetime
+    used_at: datetime | None
+
+
+RESET_TOKEN_TTL = timedelta(minutes=15)
+
+
+def hash_reset_token(raw_token: str) -> str:
+    """SHA-256 hex del secreto opaco (64 caracteres)."""
+    return hashlib.sha256(raw_token.encode("ascii")).hexdigest()
 
 
 class LaimUserRepository:
@@ -255,6 +275,110 @@ class LaimUserRepository:
                     "user_agent": user_agent or None,
                     "details": json.dumps(details or {}, ensure_ascii=False),
                 },
+            )
+
+    def update_user_password(self, user_id: int, encrypted_password: str) -> None:
+        """Actualiza la contraseña Fernet del usuario."""
+        with self._engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    UPDATE laim_users
+                    SET user_password = :user_password
+                    WHERE user_id = :user_id
+                    """
+                ),
+                {"user_password": encrypted_password, "user_id": user_id},
+            )
+
+    def create_password_reset_token(
+        self,
+        user_id: int,
+        token_hash: str,
+        request_ip: str = "",
+        expires_at: datetime | None = None,
+    ) -> int:
+        """Guarda el hash SHA-256 de un token de recuperación (15 min)."""
+        expires = expires_at or (datetime.now(timezone.utc) + RESET_TOKEN_TTL)
+        if expires.tzinfo is not None:
+            expires = expires.replace(tzinfo=None)
+        with self._engine.begin() as conn:
+            result = conn.execute(
+                text(
+                    """
+                    INSERT INTO laim_password_reset_tokens (
+                        user_id, token_hash, expires_at, request_ip
+                    ) VALUES (
+                        :user_id, :token_hash, :expires_at, :request_ip
+                    )
+                    """
+                ),
+                {
+                    "user_id": user_id,
+                    "token_hash": token_hash,
+                    "expires_at": expires,
+                    "request_ip": request_ip or None,
+                },
+            )
+            return int(result.lastrowid)
+
+    def get_reset_token_by_hash(self, token_hash: str) -> LaimResetTokenRecord | None:
+        """Obtiene un token de recuperación por hash."""
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT id, user_id, token_hash, expires_at, used_at
+                    FROM laim_password_reset_tokens
+                    WHERE token_hash = :token_hash
+                    LIMIT 1
+                    """
+                ),
+                {"token_hash": token_hash},
+            ).mappings().fetchone()
+        if row is None:
+            return None
+        expires_at = row["expires_at"]
+        used_at = row["used_at"]
+        if isinstance(expires_at, str):
+            expires_at = datetime.fromisoformat(expires_at)
+        if isinstance(used_at, str):
+            used_at = datetime.fromisoformat(used_at)
+        return LaimResetTokenRecord(
+            id=int(row["id"]),
+            user_id=int(row["user_id"]),
+            token_hash=str(row["token_hash"]),
+            expires_at=expires_at,
+            used_at=used_at,
+        )
+
+    def mark_reset_token_used(self, token_id: int) -> None:
+        """Marca el token como usado (el enlace deja de servir)."""
+        with self._engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    UPDATE laim_password_reset_tokens
+                    SET used_at = CURRENT_TIMESTAMP
+                    WHERE id = :token_id
+                    """
+                ),
+                {"token_id": token_id},
+            )
+
+    def invalidate_pending_reset_tokens(self, user_id: int) -> None:
+        """Invalida tokens pendientes del mismo usuario."""
+        with self._engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    UPDATE laim_password_reset_tokens
+                    SET used_at = CURRENT_TIMESTAMP
+                    WHERE user_id = :user_id
+                      AND used_at IS NULL
+                    """
+                ),
+                {"user_id": user_id},
             )
 
     def get_low_level_permissions(self, identity_type_id: int) -> dict[str, bool]:

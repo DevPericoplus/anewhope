@@ -12,4 +12,19 @@ if [ ! -d "$ROOT_DIR/src/apps/7_service_frontend" ]; then
 fi
 export PYTHONPATH="$ROOT_DIR"
 cd "$ROOT_DIR"
+
+# Mail Gateway: vault → .env (base64) → ficheros 0600 dentro del contenedor.
+MAIL_CREDS_FILE="${LAIM_MAIL_CREDENTIALS_FILE:-/run/mail-gateway/credentials.json}"
+MAIL_TOKEN_FILE="${LAIM_MAIL_TOKEN_FILE:-/run/mail-gateway/token.json}"
+MAIL_DIR="$(dirname "$MAIL_CREDS_FILE")"
+mkdir -p "$MAIL_DIR"
+if [ -n "${LAIM_MAIL_GATEWAY_CREDENTIALS_B64:-}" ]; then
+  printf '%s' "$LAIM_MAIL_GATEWAY_CREDENTIALS_B64" | base64 -d > "$MAIL_CREDS_FILE"
+  chmod 600 "$MAIL_CREDS_FILE"
+fi
+if [ -n "${LAIM_MAIL_GATEWAY_TOKEN_B64:-}" ]; then
+  printf '%s' "$LAIM_MAIL_GATEWAY_TOKEN_B64" | base64 -d > "$MAIL_TOKEN_FILE"
+  chmod 600 "$MAIL_TOKEN_FILE"
+fi
+
 python -m src.apps.7_service_frontend.main

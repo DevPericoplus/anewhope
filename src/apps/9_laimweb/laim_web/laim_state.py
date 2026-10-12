@@ -270,6 +270,19 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     reg_mobile: str = ""
     reg_hcaptcha_token: str = ""
 
+    # Recuperación de contraseña
+    forgot_modal_open: bool = False
+    forgot_email: str = ""
+    forgot_message: str = ""
+    forgot_submitting: bool = False
+    forgot_public_origin: str = ""
+    reset_page_status: str = "loading"
+    reset_token: str = ""
+    reset_password: str = ""
+    reset_password_confirm: str = ""
+    reset_error: str = ""
+    reset_submitting: bool = False
+
     # Formulario de contacto
     contact_usage_mode: str = "local"
     contact_affected_user: str = ""
@@ -504,6 +517,192 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         self.register_modal_open = False
         self.login_modal_open = True
         self.error_message = ""
+
+    @event
+    def open_forgot_modal(self) -> None:
+        """Abre el modal de recuperación."""
+        self.forgot_modal_open = True
+        self.login_modal_open = False
+        self.register_modal_open = False
+        self.error_message = ""
+        self.forgot_message = ""
+
+    @event
+    def close_forgot_modal(self) -> None:
+        """Cierra el modal de recuperación."""
+        self.forgot_modal_open = False
+        self.error_message = ""
+        self.forgot_submitting = False
+
+    @event
+    def switch_to_forgot_modal(self) -> None:
+        """Cierra login y abre recuperación."""
+        self.login_modal_open = False
+        self.register_modal_open = False
+        self.forgot_modal_open = True
+        self.error_message = ""
+        self.forgot_message = ""
+
+    @event
+    def set_forgot_email(self, value: str) -> None:
+        self.forgot_email = value
+
+    @event
+    def handle_forgot_password(self) -> EventHandlerReturn:
+        """Lee el origen público y envía la solicitud."""
+        if not self.forgot_email.strip() or "@" not in self.forgot_email:
+            self.error_message = "El email es obligatorio."
+            return None
+        self.error_message = ""
+        return rx.call_script(
+            "window.location.origin",
+            callback=LaimWebState.forgot_with_origin,
+        )
+
+    @event
+    def forgot_with_origin(self, origin: str | None) -> EventHandlerReturn:
+        """Continúa el envío con la URL absoluta del entorno."""
+        self.forgot_public_origin = (origin or "").strip().rstrip("/")
+        return LaimWebState.complete_forgot_background
+
+    def apply_forgot_prepare_and_send(
+        self,
+        prepare: dict[str, Any],
+        public_origin: str,
+        *,
+        send_mail,
+        build_email,
+        build_url,
+    ) -> None:
+        """Anti-enumeración: mensaje genérico; el correo solo si hay token."""
+        from laim_web.password_reset_mail import RESET_ACCEPTED_MSG
+
+        self.forgot_message = RESET_ACCEPTED_MSG
+        self.error_message = ""
+        if not prepare.get("found") or not prepare.get("token"):
+            return
+        reset_url = build_url(public_origin, str(prepare["token"]))
+        subject, body = build_email(str(prepare.get("user_name") or ""), reset_url)
+        try:
+            send_mail(self.forgot_email.strip(), subject, body)
+        except Exception:
+            return
+
+    @rx.event(background=True)
+    async def complete_forgot_background(self) -> None:
+        """Solicita token y, si existe usuario, envía el correo Workspace."""
+        from laim_web.adapters.laim_api_client import (
+            laim_mail_send,
+            laim_password_reset_request,
+        )
+        from laim_web.password_reset_mail import (
+            RESET_ACCEPTED_MSG,
+            build_reset_email,
+            build_reset_url,
+        )
+
+        async with self:
+            email = self.forgot_email.strip()
+            origin = self.forgot_public_origin
+            self.forgot_submitting = True
+            self.error_message = ""
+            self.forgot_message = ""
+
+        try:
+            prepare = laim_password_reset_request(email, origin)
+        except Exception:
+            prepare = {"accepted": True, "found": False}
+
+        async with self:
+            self.forgot_email = email
+            self.apply_forgot_prepare_and_send(
+                prepare,
+                origin,
+                send_mail=laim_mail_send,
+                build_email=build_reset_email,
+                build_url=build_reset_url,
+            )
+            if not self.forgot_message:
+                self.forgot_message = RESET_ACCEPTED_MSG
+            self.forgot_submitting = False
+
+    @event
+    def set_reset_password(self, value: str) -> None:
+        self.reset_password = value
+
+    @event
+    def set_reset_password_confirm(self, value: str) -> None:
+        self.reset_password_confirm = value
+
+    def apply_reset_status(self, token: str, status: dict[str, Any]) -> None:
+        """Página muerta si falta, caducó o ya se usó el token."""
+        self.reset_token = (token or "").strip()
+        self.reset_password = ""
+        self.reset_password_confirm = ""
+        self.reset_error = ""
+        if self.reset_token and status.get("valid"):
+            self.reset_page_status = "form"
+            return
+        self.reset_page_status = "dead"
+
+    @event
+    def load_password_reset_page(self) -> None:
+        """GET del token: formulario o página muerta (410 semántico)."""
+        from laim_web.adapters.laim_api_client import laim_password_reset_status
+
+        token = ""
+        try:
+            token = str(self.router.page.params.get("token") or "").strip()
+        except Exception:
+            token = ""
+        if not token:
+            self.apply_reset_status("", {"valid": False, "reason": "missing"})
+            return
+        self.apply_reset_status(token, laim_password_reset_status(token))
+
+    @event
+    def handle_reset_confirm(self) -> EventHandlerReturn:
+        """Valida las dos claves y actualiza."""
+        if not self.reset_password or self.reset_password != self.reset_password_confirm:
+            self.reset_error = "Las contraseñas no coinciden."
+            return None
+        if len(self.reset_password) < 8:
+            self.reset_error = "La contraseña debe tener al menos 8 caracteres."
+            return None
+        self.reset_error = ""
+        return LaimWebState.complete_reset_confirm_background
+
+    @rx.event(background=True)
+    async def complete_reset_confirm_background(self) -> None:
+        """Confirma en core y deja el token inválido."""
+        from laim_web.adapters.laim_api_client import laim_password_reset_confirm
+        from laim_web.password_reset_mail import RESET_DEAD_MSG
+
+        async with self:
+            token = self.reset_token
+            password = self.reset_password
+            confirm = self.reset_password_confirm
+            self.reset_submitting = True
+            self.reset_error = ""
+
+        try:
+            result = laim_password_reset_confirm(token, password, confirm)
+        except Exception as exc:
+            result = {"success": False, "error": str(exc)}
+
+        async with self:
+            if result.get("success"):
+                self.reset_page_status = "done"
+                self.reset_error = ""
+                self.reset_password = ""
+                self.reset_password_confirm = ""
+            else:
+                detail = str(result.get("error") or RESET_DEAD_MSG)
+                if "caduc" in detail.lower() or "válido" in detail.lower():
+                    self.reset_page_status = "dead"
+                else:
+                    self.reset_error = detail
+            self.reset_submitting = False
 
     @event
     def set_login_username(self, value: str) -> None:

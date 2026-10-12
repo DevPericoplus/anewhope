@@ -88,6 +88,11 @@ def login_modal() -> rx.Component:
                             on_click=LaimWebState.switch_to_register_modal,
                             class_name="crt-btn crt-btn-link",
                         ),
+                        rx.button(
+                            "Olvidé contraseña",
+                            on_click=LaimWebState.switch_to_forgot_modal,
+                            class_name="crt-btn crt-btn-link",
+                        ),
                         spacing="2",
                         align_items="center",
                         width="100%",
@@ -222,9 +227,82 @@ def register_modal() -> rx.Component:
     )
 
 
+def forgot_modal() -> rx.Component:
+    """Modal de recuperación: solo email."""
+    return rx.cond(
+        LaimWebState.forgot_modal_open,
+        rx.box(
+            rx.box(
+                rx.vstack(
+                    rx.hstack(
+                        rx.text(
+                            "LAIM — Olvidé contraseña",
+                            class_name="crt-title",
+                            margin_bottom="0",
+                        ),
+                        rx.spacer(),
+                        _modal_close_button(LaimWebState.close_forgot_modal),
+                        width="100%",
+                        align_items="center",
+                        class_name="crt-modal-header",
+                    ),
+                    rx.text(
+                        "Indica el correo de tu cuenta. Si está registrado, "
+                        "recibirás instrucciones.",
+                        class_name="crt-muted",
+                    ),
+                    rx.input(
+                        placeholder="Email",
+                        value=LaimWebState.forgot_email,
+                        on_change=LaimWebState.set_forgot_email,
+                        class_name="crt-input",
+                        width="100%",
+                    ),
+                    rx.cond(
+                        LaimWebState.forgot_message != "",
+                        rx.text(
+                            LaimWebState.forgot_message,
+                            class_name="crt-success",
+                            font_size=FONT_SIZE_SMALL,
+                        ),
+                    ),
+                    rx.cond(
+                        LaimWebState.error_message != "",
+                        rx.text(
+                            LaimWebState.error_message,
+                            class_name="crt-error",
+                            font_size=FONT_SIZE_SMALL,
+                        ),
+                    ),
+                    rx.button(
+                        rx.cond(
+                            LaimWebState.forgot_submitting,
+                            "Enviando…",
+                            "Enviar",
+                        ),
+                        on_click=LaimWebState.handle_forgot_password,
+                        class_name="crt-btn",
+                        width="100%",
+                        disabled=LaimWebState.forgot_submitting,
+                    ),
+                    spacing="3",
+                    width="100%",
+                ),
+                class_name="crt-panel crt-modal-panel crt-modal-panel--auth",
+                padding="1.25rem",
+                on_click=rx.stop_propagation,
+            ),
+            class_name="crt-modal-overlay",
+            on_click=LaimWebState.close_forgot_modal,
+            z_index="10001",
+        ),
+    )
+
+
 def auth_modals() -> rx.Component:
     """Contenedor de modales de autenticación."""
     return rx.fragment(
         login_modal(),
         register_modal(),
+        forgot_modal(),
     )

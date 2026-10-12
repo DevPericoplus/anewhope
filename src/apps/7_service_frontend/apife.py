@@ -239,6 +239,29 @@ class LaimRegisterRequest(BaseModel):
     hcaptcha_token: str = ""
 
 
+class LaimMailSendRequest(BaseModel):
+    """Envío Mail Gateway. From fijo soporte@laim.app."""
+
+    to: str = Field(..., min_length=5)
+    subject: str = Field(..., min_length=1)
+    body: str = Field(..., min_length=1)
+
+
+class LaimPasswordResetRequest(BaseModel):
+    """Solicitud de recuperación LAIM."""
+
+    email: str = Field(..., min_length=5)
+    public_origin: str = ""
+
+
+class LaimPasswordResetConfirm(BaseModel):
+    """Confirmación de recuperación LAIM."""
+
+    token: str = Field(..., min_length=8)
+    password: str = Field(..., min_length=8)
+    password_confirm: str = Field(..., min_length=8)
+
+
 class LaimContactScreenshotRequest(BaseModel):
     """Captura adjunta en base64."""
 
@@ -5325,6 +5348,91 @@ async def laim_register_endpoint(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=result.get("error", "Error en registro"),
+            )
+        return result
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/laim/mail/send")
+async def laim_mail_send_endpoint(
+    request: LaimMailSendRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+) -> dict[str, Any]:
+    """Envía correo Workspace desde el Router (sin nginx público)."""
+    try:
+        return router.laim_mail_send(
+            to=request.to,
+            subject=request.subject,
+            body=request.body,
+        )
+    except BusinessRuleError as exc:
+        detail = str(exc)
+        status_code = (
+            status.HTTP_503_SERVICE_UNAVAILABLE
+            if "no listo" in detail.lower()
+            else status.HTTP_502_BAD_GATEWAY
+        )
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+
+
+@app.post("/laim/password-reset/request")
+async def laim_password_reset_request_endpoint(
+    request: LaimPasswordResetRequest,
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+) -> dict[str, Any]:
+    """Solicita token de recuperación. Siempre accepted hacia laimweb."""
+    ip_address, user_agent = _get_request_metadata(http_request)
+    try:
+        return router.laim_password_reset_request(
+            request.model_dump(),
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/laim/password-reset/status")
+async def laim_password_reset_status_endpoint(
+    token: str,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+) -> dict[str, Any]:
+    """Validez del token de recuperación."""
+    try:
+        return router.laim_password_reset_status(token)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.post("/laim/password-reset/confirm")
+async def laim_password_reset_confirm_endpoint(
+    request: LaimPasswordResetConfirm,
+    http_request: Request,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+) -> dict[str, Any]:
+    """Confirma el cambio de contraseña (Fernet + auditoría)."""
+    ip_address, user_agent = _get_request_metadata(http_request)
+    try:
+        result = router.laim_password_reset_confirm(
+            request.model_dump(),
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("error", "Error al actualizar la contraseña"),
             )
         return result
     except BusinessRuleError as exc:

@@ -55,6 +55,21 @@ class LaimRegisterRequest(BaseModel):
     hcaptcha_token: str = ""
 
 
+class LaimPasswordResetRequest(BaseModel):
+    """Solicitud de recuperación (anti-enumeración en laimweb)."""
+
+    email: str = Field(..., min_length=5)
+    public_origin: str = ""
+
+
+class LaimPasswordResetConfirm(BaseModel):
+    """Confirmación con las dos contraseñas (mismas reglas que el alta)."""
+
+    token: str = Field(..., min_length=8)
+    password: str = Field(..., min_length=8)
+    password_confirm: str = Field(..., min_length=8)
+
+
 def _request_metadata(request: Request) -> tuple[str, str]:
     """Extrae IP y user-agent."""
     forwarded = request.headers.get("X-Forwarded-For", "")
@@ -156,3 +171,44 @@ def laim_status() -> dict[str, Any]:
     """Estado del subsistema LAIM."""
     service = get_laim_auth_service()
     return service.get_status()
+
+
+@router.post("/password-reset/request")
+def laim_password_reset_request(
+    request: Request, payload: LaimPasswordResetRequest
+) -> dict[str, Any]:
+    """Emite token raw una vez si el email existe. Siempre accepted."""
+    ip_address, _user_agent = _request_metadata(request)
+    service = get_laim_auth_service()
+    return service.request_password_reset(
+        user_email=payload.email,
+        ip_address=ip_address,
+    )
+
+
+@router.get("/password-reset/status")
+def laim_password_reset_status(token: str) -> dict[str, Any]:
+    """Valida hash + TTL + used_at."""
+    service = get_laim_auth_service()
+    return service.password_reset_status(token)
+
+
+@router.post("/password-reset/confirm")
+def laim_password_reset_confirm(
+    request: Request, payload: LaimPasswordResetConfirm
+) -> dict[str, Any]:
+    """Actualiza Fernet y audita password_change sin guardar la clave."""
+    ip_address, _user_agent = _request_metadata(request)
+    service = get_laim_auth_service()
+    result = service.confirm_password_reset(
+        raw_token=payload.token,
+        password=payload.password,
+        password_confirm=payload.password_confirm,
+        ip_address=ip_address,
+    )
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.get("error", "Error al actualizar la contraseña"),
+        )
+    return result

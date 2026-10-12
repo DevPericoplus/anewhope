@@ -1591,6 +1591,50 @@ class CoreBackendClient:
         """Estado del subsistema LAIM."""
         return dict(self._request("GET", "/laim/status") or {})
 
+    def laim_password_reset_request(
+        self,
+        payload: dict[str, Any],
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Solicita token de recuperación en Backend Core."""
+        return dict(
+            self._request(
+                "POST",
+                "/laim/password-reset/request",
+                payload=payload,
+                extra_headers=extra_headers,
+            )
+            or {}
+        )
+
+    def laim_password_reset_status(self, token: str) -> dict[str, Any]:
+        """Consulta validez del token de recuperación."""
+        from urllib.parse import quote
+
+        return dict(
+            self._request(
+                "GET",
+                f"/laim/password-reset/status?token={quote(token, safe='')}",
+            )
+            or {}
+        )
+
+    def laim_password_reset_confirm(
+        self,
+        payload: dict[str, Any],
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Confirma el cambio de contraseña en Backend Core."""
+        return dict(
+            self._request(
+                "POST",
+                "/laim/password-reset/confirm",
+                payload=payload,
+                extra_headers=extra_headers,
+            )
+            or {}
+        )
+
     def laim_create_contact_message(
         self,
         payload: dict[str, Any],

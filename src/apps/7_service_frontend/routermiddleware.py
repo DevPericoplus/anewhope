@@ -6083,6 +6083,81 @@ class RouterMiddleware:
         except BrokerBackendCommunicationError as exc:
             raise BusinessRuleError(f"No se pudo consultar estado LAIM: {exc}") from exc
 
+    def laim_mail_send(
+        self,
+        to: str,
+        subject: str,
+        body: str,
+    ) -> dict[str, Any]:
+        """Envía correo desde soporte@laim.app por Gmail API (sin broker)."""
+        shared = Path(__file__).resolve().parents[3] / "src/2_shared_application"
+        if str(shared) not in sys.path:
+            sys.path.insert(0, str(shared))
+        from mail_gateway import (  # noqa: WPS433 — paquete 2_ no importable
+            MailGatewayError,
+            MailGatewayNotReady,
+            send_support_mail,
+        )
+
+        try:
+            result = send_support_mail(to=to, subject=subject, body=body)
+        except MailGatewayNotReady as exc:
+            raise BusinessRuleError(f"Mail Gateway no listo: {exc}") from exc
+        except MailGatewayError as exc:
+            raise BusinessRuleError(f"No se pudo enviar el correo: {exc}") from exc
+        return {"success": True, "id": result.id}
+
+    def laim_password_reset_request(
+        self,
+        payload: dict[str, Any],
+        ip_address: str = "",
+        user_agent: str = "",
+    ) -> dict[str, Any]:
+        """Solicita token de recuperación via broker → core."""
+        extra_headers: dict[str, str] = {}
+        if ip_address:
+            extra_headers["X-Forwarded-For"] = ip_address
+        if user_agent:
+            extra_headers["User-Agent"] = user_agent
+        try:
+            return self._broker_client.laim_password_reset_request(
+                payload, extra_headers=extra_headers
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo solicitar la recuperación: {exc}"
+            ) from exc
+
+    def laim_password_reset_status(self, token: str) -> dict[str, Any]:
+        """Consulta validez del token de recuperación."""
+        try:
+            return self._broker_client.laim_password_reset_status(token)
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo consultar el enlace de recuperación: {exc}"
+            ) from exc
+
+    def laim_password_reset_confirm(
+        self,
+        payload: dict[str, Any],
+        ip_address: str = "",
+        user_agent: str = "",
+    ) -> dict[str, Any]:
+        """Confirma el cambio de contraseña via broker → core."""
+        extra_headers: dict[str, str] = {}
+        if ip_address:
+            extra_headers["X-Forwarded-For"] = ip_address
+        if user_agent:
+            extra_headers["User-Agent"] = user_agent
+        try:
+            return self._broker_client.laim_password_reset_confirm(
+                payload, extra_headers=extra_headers
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo actualizar la contraseña: {exc}"
+            ) from exc
+
     def laim_create_contact_message(
         self,
         payload: dict[str, Any],

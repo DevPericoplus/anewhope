@@ -2366,6 +2366,45 @@ class BrokerBackendRouter:
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(f"Error consultando estado LAIM: {exc}") from exc
 
+    def laim_password_reset_request(
+        self,
+        payload: dict[str, Any],
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Solicita token de recuperación via Backend Core."""
+        try:
+            return self._core_client.laim_password_reset_request(
+                payload, extra_headers=extra_headers
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error solicitando recuperación LAIM: {exc}"
+            ) from exc
+
+    def laim_password_reset_status(self, token: str) -> dict[str, Any]:
+        """Consulta validez del token de recuperación."""
+        try:
+            return self._core_client.laim_password_reset_status(token)
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error consultando token de recuperación LAIM: {exc}"
+            ) from exc
+
+    def laim_password_reset_confirm(
+        self,
+        payload: dict[str, Any],
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Confirma el cambio de contraseña via Backend Core."""
+        try:
+            return self._core_client.laim_password_reset_confirm(
+                payload, extra_headers=extra_headers
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error confirmando recuperación LAIM: {exc}"
+            ) from exc
+
     def laim_create_contact_message(
         self,
         payload: dict[str, Any],

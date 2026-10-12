@@ -22,6 +22,7 @@ from laim_web.pages.forum_admin import forum_admin_page
 from laim_web.pages.forum_moderation import forum_moderation_page
 from laim_web.pages.forum_profile import forum_profile_page
 from laim_web.pages.index import index_page
+from laim_web.pages.password_reset import password_reset_page
 from laim_web.pages.my_forum_posts import my_forum_posts_page
 from laim_web.pages.my_forum_threads import my_forum_threads_page
 from laim_web.support_gateway import (
@@ -187,6 +188,13 @@ app.add_page(
     route="/",
     title="LAIM — Local AI Management",
     on_load=LaimWebState.on_page_load,
+)
+
+app.add_page(
+    password_reset_page,
+    route="/r/[token]",
+    title="LAIM — Contraseña",
+    on_load=LaimWebState.load_password_reset_page,
 )
 
 app.add_page(

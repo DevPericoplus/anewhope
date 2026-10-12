@@ -136,12 +136,6 @@ def auth_cta_panel() -> rx.Component:
     return rx.vstack(
         laim_logo_sidebar(),
         rx.text("Acceso al portal", class_name="crt-title", font_size="1em"),
-        rx.text(
-            "Inicie sesión o cree una cuenta para acceder al panel de gestión de IA local.",
-            class_name="crt-muted",
-            font_size=FONT_SIZE_SMALL,
-            line_height="1.45",
-        ),
         rx.button(
             "Iniciar sesión",
             on_click=LaimWebState.open_login_modal,
@@ -151,6 +145,12 @@ def auth_cta_panel() -> rx.Component:
         rx.button(
             "Crear cuenta",
             on_click=LaimWebState.open_register_modal,
+            class_name="crt-btn",
+            width="100%",
+        ),
+        rx.button(
+            "Olvidé contraseña",
+            on_click=LaimWebState.open_forgot_modal,
             class_name="crt-btn",
             width="100%",
         ),

@@ -8,6 +8,7 @@ import os
 import secrets
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -69,10 +70,15 @@ _laim_crypto_mod = _load_module(
 LaimMariaDbSessionRepository = _laim_session_repo_mod.LaimMariaDbSessionRepository
 create_laim_session_engine = _laim_session_repo_mod.create_laim_session_engine
 LaimUserRepository = _laim_user_repo_mod.LaimUserRepository
+hash_reset_token = _laim_user_repo_mod.hash_reset_token
 decrypt_password = _laim_crypto_mod.decrypt_password
 encrypt_password = _laim_crypto_mod.encrypt_password
 
 MSG_INVALID_CREDENTIALS = "Usuario o credenciales inválidas"
+MSG_RESET_MISMATCH = "Las contraseñas no coinciden"
+MSG_RESET_TOO_SHORT = "La contraseña debe tener al menos 8 caracteres"
+MSG_RESET_INVALID = "El enlace no es válido o ha caducado"
+MSG_RESET_CHANGED = "La contraseña ha sido cambiada"
 
 
 class LaimAuthError(Exception):
@@ -123,8 +129,13 @@ class LaimAuthService:
     DEFAULT_IDENTITY_TYPE_ID = 4
     MAX_FAILED_ATTEMPTS = 3
 
-    def __init__(self) -> None:
+    def __init__(self, user_repo: Any | None = None) -> None:
         self._logger = logging.getLogger("LaimAuthService")
+        if user_repo is not None:
+            self._user_repo = user_repo
+            self._session_repo = None
+            self._session_service = None
+            return
         settings = load_laim_mariadb_settings()
         engine = create_laim_session_engine(settings)
         self._user_repo = LaimUserRepository(engine)
@@ -364,6 +375,79 @@ class LaimAuthService:
             "organization_configured": org_id is not None,
             "organization_id": org_id,
         }
+
+    def request_password_reset(
+        self,
+        user_email: str,
+        ip_address: str = "",
+    ) -> dict[str, Any]:
+        """Busca usuario activo y, si existe, emite un token raw una sola vez."""
+        user = self._user_repo.get_user_by_email(user_email.strip())
+        if user is None or not user.active or user.blocked:
+            return {"accepted": True, "found": False}
+        raw_token = secrets.token_urlsafe(32)
+        token_hash = hash_reset_token(raw_token)
+        self._user_repo.invalidate_pending_reset_tokens(user.user_id)
+        self._user_repo.create_password_reset_token(
+            user_id=user.user_id,
+            token_hash=token_hash,
+            request_ip=ip_address,
+        )
+        return {
+            "accepted": True,
+            "found": True,
+            "user_name": user.user_name,
+            "token": raw_token,
+        }
+
+    def password_reset_status(self, raw_token: str) -> dict[str, Any]:
+        """Valida hash + TTL + no usado. Nunca devuelve el secreto."""
+        token_hash = hash_reset_token((raw_token or "").strip())
+        record = self._user_repo.get_reset_token_by_hash(token_hash)
+        if record is None:
+            return {"valid": False, "reason": "missing"}
+        if record.used_at is not None:
+            return {"valid": False, "reason": "used"}
+        expires = record.expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if expires <= datetime.now(timezone.utc):
+            return {"valid": False, "reason": "expired"}
+        return {"valid": True}
+
+    def confirm_password_reset(
+        self,
+        raw_token: str,
+        password: str,
+        password_confirm: str,
+        ip_address: str = "",
+    ) -> dict[str, Any]:
+        """Cambia la contraseña con Fernet y audita password_change sin clave."""
+        if password != password_confirm:
+            return {"success": False, "error": MSG_RESET_MISMATCH}
+        if len(password) < 8:
+            return {"success": False, "error": MSG_RESET_TOO_SHORT}
+        status = self.password_reset_status(raw_token)
+        if not status.get("valid"):
+            return {"success": False, "error": MSG_RESET_INVALID}
+        token_hash = hash_reset_token(raw_token.strip())
+        record = self._user_repo.get_reset_token_by_hash(token_hash)
+        if record is None:
+            return {"success": False, "error": MSG_RESET_INVALID}
+        encrypted_password = encrypt_password(password)
+        self._user_repo.update_user_password(record.user_id, encrypted_password)
+        self._user_repo.mark_reset_token_used(record.id)
+        self._user_repo.invalidate_pending_reset_tokens(record.user_id)
+        user = self._user_repo.get_user_by_id(record.user_id)
+        user_name = user.user_name if user is not None else ""
+        self._user_repo.append_auth_log(
+            user_name=user_name,
+            event="password_change",
+            status="success",
+            ip_address=ip_address,
+            details={"action": "password_reset", "user_id": record.user_id},
+        )
+        return {"success": True, "message": MSG_RESET_CHANGED}
 
     def _log_failure(
         self,

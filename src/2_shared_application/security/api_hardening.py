@@ -43,6 +43,8 @@ AUTH_PATH_PREFIXES = (
     "/laim/refresh",
     "/register",
     "/laim/register",
+    "/laim/mail",
+    "/laim/password-reset",
 )
 
 EXEMPT_PATHS = frozenset(

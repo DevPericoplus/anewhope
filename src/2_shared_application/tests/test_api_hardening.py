@@ -114,6 +114,8 @@ def test_auth_paths_use_stricter_bucket(hardening) -> None:
     assert settings.is_auth_path("/login") is True
     assert settings.is_auth_path("/login/request-otp") is True
     assert settings.is_auth_path("/laim/login") is True
+    assert settings.is_auth_path("/laim/mail/send") is True
+    assert settings.is_auth_path("/laim/password-reset/request") is True
     assert settings.is_auth_path("/users") is False
     assert settings.limit_for("/login") < settings.limit_for("/users")
 
