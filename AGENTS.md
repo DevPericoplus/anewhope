@@ -245,6 +245,8 @@ Tabla de implementaciones de referencia tras las correcciones SonarLint reciente
 
 **Flujo LAIM (portal 8009):** servicios en `src/apps/3_backend/laim_*_service.py`, estado Reflex en `src/apps/9_laimweb/laim_web/laim_state.py`, cliente en `src/apps/9_laimweb/laim_web/adapters/laim_api_client.py`.
 
+**Mail Gateway y recuperación de contraseña:** el envío sale del Router del middleware (`routermiddleware.laim_mail_send` → Gmail API `users/me/messages/send`, From `soporte@laim.app`). No es un microservicio nuevo y **no** abre MariaDB. Los secretos viven en vault Ansible (`laim_mail_gateway_credentials` / `laim_mail_gateway_token` en `env/{silicon,dev,pre}/frontend.yml`); el entrypoint escribe `/run/mail-gateway/{credentials,token}.json` 0600. Mismo buzón y token en silicon/dev/pre. Endpoints internos `POST /laim/mail/send` y `/laim/password-reset/*` (Docker `service_frontend:8007`, `X-Client-App: laimweb`); **nunca** añadir `location /laim/mail` ni `/laim/password-reset` al nginx público. La BD (token SHA-256 15 min, Fernet, `laim_auth_logs.event=password_change` sin clave) solo en core, por la cadena broker. Laimweb arma la plantilla y la página pública `/r/{token}`.
+
 #### Checklist rápido antes de commit (calidad SonarLint)
 
 - [ ] ¿Hay literales repetidos 3+ veces? → constante de módulo
