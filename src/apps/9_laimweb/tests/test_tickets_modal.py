@@ -42,6 +42,29 @@ def test_notification_modal_does_not_ack_on_poll() -> None:
     ).read_text(encoding="utf-8")
 
 
+def test_opening_ticket_confirms_user_saw_the_aviso() -> None:
+    state = (laimweb_root / "laim_web" / "laim_state.py").read_text(encoding="utf-8")
+    detail = state.split("async def open_ticket_detail", 1)[1].split(
+        "async def submit_ticket_reply", 1
+    )[0]
+    assert "ticket_notif_open = False" in detail
+    poll = state.split("async def poll_ticket_notifications", 1)[1].split(
+        "async def ack_ticket_notification", 1
+    )[0]
+    assert "laim_ack_ticket_notification" not in poll
+    service = (
+        Path(__file__).resolve().parents[2]
+        / "3_backend"
+        / "laim_tickets_service.py"
+    ).read_text(encoding="utf-8")
+    getter = service.split("def get_my_ticket", 1)[1].split("def reply_as_user", 1)[0]
+    assert "_ack_user_ticket_notifications" in getter
+    helper = service.split("def _ack_user_ticket_notifications", 1)[1].split(
+        "def _load_detail", 1
+    )[0]
+    assert "ack_ticket_notifications" in helper
+
+
 def test_ticket_thread_shows_public_support_name() -> None:
     modal = (laimweb_root / "laim_web" / "components" / "tickets_modal.py").read_text(
         encoding="utf-8"

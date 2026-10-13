@@ -115,12 +115,13 @@ class LaimTicketsService:
         return {"success": True, "items": [self._public_ticket(item) for item in items]}
 
     def get_my_ticket(self, ticket_id: int, user_id: int) -> dict[str, Any]:
-        """Detalle si el ticket pertenece al usuario."""
+        """Detalle si el ticket pertenece al usuario. Abrirlo confirma el aviso."""
         detail = self._load_detail(ticket_id)
         if detail is None:
             return {"success": False, "error": "Ticket no encontrado."}
         if int(detail["ticket"]["user_id"]) != int(user_id):
             return {"success": False, "error": "Ticket no encontrado."}
+        self._ack_user_ticket_notifications(int(ticket_id), int(user_id))
         return {"success": True, **detail}
 
     def reply_as_user(self, ticket_id: int, user_id: int, user_name: str, body: str) -> dict[str, Any]:
@@ -242,7 +243,7 @@ class LaimTicketsService:
         return {"success": True, "items": [self._public_notification(item) for item in items]}
 
     def ack_my_notification(self, notif_id: int, user_id: int) -> dict[str, Any]:
-        """Ack explícito; no se llama desde el poll."""
+        """Ack explícito de una fila; acusa también las hermanas del mismo ticket."""
         if user_id <= 0 or notif_id <= 0:
             return {"success": False, "error": "Notificación no encontrada."}
         if not self._repository.ack_notification(
@@ -250,6 +251,15 @@ class LaimTicketsService:
         ):
             return {"success": False, "error": "Notificación no encontrada."}
         return {"success": True}
+
+    def _ack_user_ticket_notifications(self, ticket_id: int, user_id: int) -> None:
+        """El usuario ya abrió el ticket: no repetir avisos hasta un cambio nuevo."""
+        try:
+            self._repository.ack_ticket_notifications(
+                ticket_id, destinatario="usuario", user_id=user_id
+            )
+        except Exception as exc:
+            _logger.warning("No se pudieron acusar avisos del ticket %s: %s", ticket_id, exc)
 
     def list_operator_notifications(self) -> dict[str, Any]:
         """Pendientes de operador (altas y respuestas de usuario)."""

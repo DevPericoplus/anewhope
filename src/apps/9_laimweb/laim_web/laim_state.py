@@ -1329,6 +1329,9 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
             self.ticket_detail_edition = str(ticket.get("edition") or "community_edition")
             self.ticket_detail_readonly = bool(ticket.get("readonly"))
             self.ticket_reply_body = ""
+            if self.ticket_notif_ticket_id == int(ticket.get("id") or 0):
+                self.ticket_notif_open = False
+                self.ticket_notif_id = 0
             messages = []
             for raw in result.get("messages") or []:
                 messages.append(

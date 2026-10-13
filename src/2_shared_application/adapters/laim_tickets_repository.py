@@ -383,13 +383,23 @@ class LaimTicketsRepository:
             rows = conn.execute(text(sql), params).mappings().fetchall()
         return [dict(row) for row in rows]
 
+    def ack_ticket_notifications(
+        self,
+        ticket_id: int,
+        destinatario: str,
+        user_id: int | None = None,
+    ) -> int:
+        """Marca leídos todos los avisos pendientes de ese ticket."""
+        with self._engine.begin() as conn:
+            return self._ack_ticket_rows(conn, ticket_id, destinatario, user_id)
+
     def ack_notification(
         self,
         notif_id: int,
         destinatario: str,
         user_id: int | None = None,
     ) -> bool:
-        """Marca leída solo si pertenece al destinatario (y user_id si usuario)."""
+        """Al acusar una fila, acusa todas las pendientes de ese ticket."""
         clauses = ["id = :id", "destinatario = :destinatario", "leida = 0"]
         params: dict[str, Any] = {
             "id": int(notif_id),
@@ -399,17 +409,49 @@ class LaimTicketsRepository:
             clauses.append("user_id = :user_id")
             params["user_id"] = int(user_id or 0)
         with self._engine.begin() as conn:
-            result = conn.execute(
+            row = conn.execute(
                 text(
                     f"""
-                    UPDATE {NOTIF_TABLE}
-                    SET leida = 1
+                    SELECT ticket_id
+                    FROM {NOTIF_TABLE}
                     WHERE {' AND '.join(clauses)}
                     """
                 ),
                 params,
+            ).mappings().fetchone()
+            if row is None:
+                return False
+            self._ack_ticket_rows(
+                conn, int(row["ticket_id"]), destinatario, user_id
             )
-        return int(getattr(result, "rowcount", 0) or 0) > 0
+        return True
+
+    def _ack_ticket_rows(
+        self,
+        conn: Any,
+        ticket_id: int,
+        destinatario: str,
+        user_id: int | None,
+    ) -> int:
+        clauses = ["ticket_id = :ticket_id", "destinatario = :destinatario", "leida = 0"]
+        params: dict[str, Any] = {
+            "ticket_id": int(ticket_id),
+            "destinatario": destinatario,
+        }
+        if destinatario == "usuario":
+            clauses.append("user_id = :user_id")
+            params["user_id"] = int(user_id or 0)
+        result = conn.execute(
+            text(
+                f"""
+                UPDATE {NOTIF_TABLE}
+                SET leida = 1
+                WHERE {' AND '.join(clauses)}
+                """
+            ),
+            params,
+        )
+        return int(getattr(result, "rowcount", 0) or 0)
 
     def _apply_estado(self, conn: Any, ticket_id: int, from_id: int, to_id: int) -> None:
         closed_at_sql = "NULL"

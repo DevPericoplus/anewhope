@@ -144,18 +144,39 @@ def test_list_pending_filters_unread_by_destinatario() -> None:
     assert params["user_id"] == 9
 
 
-def test_ack_notification_marks_own_row() -> None:
+def test_ack_ticket_notifications_marks_all_unread_for_ticket() -> None:
     module = _load()
     engine = MagicMock()
     conn = MagicMock()
     engine.begin.return_value.__enter__.return_value = conn
     result = MagicMock()
-    result.rowcount = 1
+    result.rowcount = 2
     conn.execute.return_value = result
     repo = module.LaimTicketsRepository(engine)
-    assert repo.ack_notification(21, destinatario="usuario", user_id=9) is True
+    assert repo.ack_ticket_notifications(4, destinatario="usuario", user_id=9) == 2
     sql = str(conn.execute.call_args.args[0])
     params = conn.execute.call_args.args[1]
     assert "leida = 1" in sql
-    assert params["id"] == 21
+    assert params["ticket_id"] == 4
     assert params["user_id"] == 9
+    assert "id" not in params
+
+
+def test_ack_notification_marks_all_unread_of_same_ticket() -> None:
+    module = _load()
+    engine = MagicMock()
+    conn = MagicMock()
+    engine.begin.return_value.__enter__.return_value = conn
+    lookup = MagicMock()
+    lookup.mappings.return_value.fetchone.return_value = {"ticket_id": 4}
+    update = MagicMock()
+    update.rowcount = 2
+    conn.execute.side_effect = [lookup, update]
+    repo = module.LaimTicketsRepository(engine)
+    assert repo.ack_notification(21, destinatario="usuario", user_id=9) is True
+    update_sql = str(conn.execute.call_args_list[1].args[0])
+    update_params = conn.execute.call_args_list[1].args[1]
+    assert "leida = 1" in update_sql
+    assert update_params["ticket_id"] == 4
+    assert update_params["user_id"] == 9
+    assert "id" not in update_params

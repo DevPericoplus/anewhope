@@ -200,7 +200,7 @@ def ticket_status_modal() -> rx.Component:
 
 
 def ticket_notification_modal() -> rx.Component:
-    """Aviso persistido: el operador pide atención. El poll no acusa."""
+    """Aviso persistido: el operador pide atención. Abrir el ticket confirma."""
     return rx.box(
         rx.box(
             rx.vstack(

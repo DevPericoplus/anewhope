@@ -106,6 +106,27 @@ def test_get_my_ticket_hides_others() -> None:
     result = service.get_my_ticket(4, user_id=9)
     assert result["success"] is False
     assert "no encontrado" in result["error"].lower()
+    repository.ack_ticket_notifications.assert_not_called()
+
+
+def test_get_my_ticket_acks_all_pending_for_that_ticket() -> None:
+    module = _load_service()
+    repository = MagicMock()
+    repository.get_ticket.return_value = {
+        "id": 4,
+        "user_id": 9,
+        "estado_clave": "esperando_usuario",
+        "estado_nombre": "Esperando usuario",
+    }
+    repository.list_messages.return_value = []
+    repository.list_events.return_value = []
+    repository.ack_ticket_notifications.return_value = 2
+    service = module.LaimTicketsService(repository=repository)
+    result = service.get_my_ticket(4, user_id=9)
+    assert result["success"] is True
+    repository.ack_ticket_notifications.assert_called_once_with(
+        4, destinatario="usuario", user_id=9
+    )
 
 
 def test_user_reply_on_waiting_moves_state() -> None:
