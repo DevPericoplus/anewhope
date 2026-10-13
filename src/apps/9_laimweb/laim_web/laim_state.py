@@ -18,6 +18,16 @@ from laim_web.shared_state import LaimSharedSessionState
 
 EventHandlerReturn = Any
 
+PUBLIC_TICKET_OPERATOR = "Soporte LAIM"
+
+
+def public_ticket_actor(name: str) -> str:
+    """Nombre visible del hilo. laim_maintenance no sale al usuario."""
+    raw = str(name or "").strip()
+    if raw.lower() == "laim_maintenance":
+        return PUBLIC_TICKET_OPERATOR
+    return raw
+
 RESET_LAIM_HCAPTCHA_SCRIPT = (
     "if (typeof window.resetLaimHcaptcha === 'function') { window.resetLaimHcaptcha(); }"
 )
@@ -1323,7 +1333,9 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
             for raw in result.get("messages") or []:
                 messages.append(
                     {
-                        "actor_name": str(raw.get("actor_name") or raw.get("autor") or ""),
+                        "actor_name": public_ticket_actor(
+                            str(raw.get("actor_name") or raw.get("autor") or "")
+                        ),
                         "created_at": str(raw.get("created_at") or ""),
                         "cuerpo": str(raw.get("cuerpo") or ""),
                     }

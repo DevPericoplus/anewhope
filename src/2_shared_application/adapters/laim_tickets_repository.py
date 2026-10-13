@@ -287,7 +287,7 @@ class LaimTicketsRepository:
                     "tipo": event_tipo,
                     "estado_desde": from_id,
                     "estado_hasta": to_id,
-                    "actor": (actor or "laim_maintenance")[:128],
+                    "actor": (actor or "Soporte LAIM")[:128],
                 },
             )
             return self._fetch_ticket(conn, ticket_id)

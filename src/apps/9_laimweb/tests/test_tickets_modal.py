@@ -42,6 +42,16 @@ def test_notification_modal_does_not_ack_on_poll() -> None:
     ).read_text(encoding="utf-8")
 
 
+def test_ticket_thread_shows_public_support_name() -> None:
+    modal = (laimweb_root / "laim_web" / "components" / "tickets_modal.py").read_text(
+        encoding="utf-8"
+    )
+    state = (laimweb_root / "laim_web" / "laim_state.py").read_text(encoding="utf-8")
+    assert "public_ticket_actor" in modal or "Soporte LAIM" in state
+    assert "public_ticket_actor" in state
+    assert 'PUBLIC_TICKET_OPERATOR = "Soporte LAIM"' in state
+
+
 def test_user_notification_routes_registered_before_id() -> None:
     router = (
         Path(__file__).resolve().parents[2]

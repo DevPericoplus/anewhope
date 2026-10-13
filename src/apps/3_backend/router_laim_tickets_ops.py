@@ -47,13 +47,13 @@ def get_laim_tickets_service() -> LaimTicketsService:
 
 class TicketEstadoRequest(BaseModel):
     estado_clave: str = Field(..., min_length=1, max_length=50)
-    actor: str = Field(default="laim_maintenance", max_length=128)
+    actor: str = Field(default="Soporte LAIM", max_length=128)
     reabrir: bool = False
 
 
 class TicketReplyRequest(BaseModel):
     body: str = Field(..., min_length=1, max_length=10000)
-    actor: str = Field(default="laim_maintenance", max_length=128)
+    actor: str = Field(default="Soporte LAIM", max_length=128)
 
 
 def _guard(authorization: str | None, caller_header: str | None, client_app: str | None) -> None:

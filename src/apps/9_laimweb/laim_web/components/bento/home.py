@@ -10,6 +10,31 @@ from laim_web.components.crt_theme import COLORS, CONTENT_PADDING
 from laim_web.components.inicio_accordion import inicio_accordion_sections
 from laim_web.laim_state import LaimWebState
 
+NEURAL_SCRIPT_SRC = "/crt/bento_neural.js?v=3d6"
+
+NEURAL_READY_WATCH_SCRIPT = """
+(function () {
+  var n = 0;
+  var id = setInterval(function () {
+    var home = document.querySelector('.crt-inicio-home');
+    if (home && home.classList.contains('is-neural-ready')) {
+      clearInterval(id);
+      return;
+    }
+    if (window.LAIMBentoNeural && typeof window.LAIMBentoNeural.ensure === 'function') {
+      window.LAIMBentoNeural.ensure();
+    } else if (!document.querySelector('script[src*="bento_neural.js"]')) {
+      var s = document.createElement('script');
+      s.src = '/crt/bento_neural.js?v=3d6';
+      document.body.appendChild(s);
+    }
+    if (++n > 150) {
+      clearInterval(id);
+    }
+  }, 400);
+})();
+"""
+
 
 def _neural_boot_dots() -> rx.Component:
     """Tres puntos CRT de laim, visibles hasta que la escena 3D pinta."""
@@ -65,7 +90,8 @@ def inicio_home_panel() -> rx.Component:
             bento_grid(),
         ),
         inicio_section_modal(),
-        rx.script(src="/crt/bento_neural.js?v=3d5"),
+        rx.script(src=NEURAL_SCRIPT_SRC),
+        rx.script(NEURAL_READY_WATCH_SCRIPT),
         spacing="4",
         width="100%",
         align_items="stretch",

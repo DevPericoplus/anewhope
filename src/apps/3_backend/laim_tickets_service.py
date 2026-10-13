@@ -48,6 +48,20 @@ LaimTicketsRepository = _repo_mod.LaimTicketsRepository
 TicketStateError = _states.TicketStateError
 DEFAULT_EDITION = _states.DEFAULT_EDITION
 create_laim_session_engine = _session_repo_mod.create_laim_session_engine
+
+PUBLIC_OPERATOR_ACTOR = "Soporte LAIM"
+
+
+def public_actor_name(name: Any, autor: str = "") -> str:
+    """Nombre visible del hilo. laim_maintenance es solo el caller JWT."""
+    raw = str(name or "").strip()
+    if raw.lower() == "laim_maintenance":
+        return PUBLIC_OPERATOR_ACTOR
+    if autor == "operador" and raw == "":
+        return PUBLIC_OPERATOR_ACTOR
+    return raw
+
+
 load_laim_mariadb_settings = _storage.load_laim_mariadb_settings
 
 
@@ -170,7 +184,7 @@ class LaimTicketsService:
         updated = self._repository.add_message_and_maybe_state(
             ticket_id,
             autor="operador",
-            actor_name=actor or "laim_maintenance",
+            actor_name=public_actor_name(actor, "operador"),
             cuerpo=body.strip(),
             new_estado_clave=changed,
             event_tipo="replied",
@@ -191,7 +205,7 @@ class LaimTicketsService:
         except TicketStateError as exc:
             return {"success": False, "error": str(exc)}
         updated = self._repository.change_estado(
-            ticket_id, target, actor or "laim_maintenance", "status_changed"
+            ticket_id, target, public_actor_name(actor, "operador"), "status_changed"
         )
         if updated is None:
             return {"success": False, "error": "Ticket no encontrado."}
@@ -210,7 +224,7 @@ class LaimTicketsService:
         except TicketStateError as exc:
             return {"success": False, "error": str(exc)}
         updated = self._repository.change_estado(
-            ticket_id, target, actor or "laim_maintenance", "reopened"
+            ticket_id, target, public_actor_name(actor, "operador"), "reopened"
         )
         if updated is None:
             return {"success": False, "error": "Ticket no encontrado."}
@@ -269,7 +283,9 @@ class LaimTicketsService:
             return None
         return {
             "ticket": self._public_ticket(ticket),
-            "messages": self._repository.list_messages(ticket_id),
+            "messages": [
+                self._public_message(item) for item in self._repository.list_messages(ticket_id)
+            ],
             "events": [self._public_event(item) for item in self._repository.list_events(ticket_id)],
         }
 
@@ -294,6 +310,13 @@ class LaimTicketsService:
         }
 
     @staticmethod
+    def _public_message(item: dict[str, Any]) -> dict[str, Any]:
+        """Hilo visible: el caller interno no sale como autor."""
+        out = dict(item)
+        out["actor_name"] = public_actor_name(item.get("actor_name"), str(item.get("autor") or ""))
+        return out
+
+    @staticmethod
     def _public_event(item: dict[str, Any]) -> dict[str, Any]:
         """Eventos públicos con clave, no el id MariaDB (rompe el hop Go)."""
         desde = item.get("estado_desde_clave") or _states.ESTADO_ID_TO_CLAVE.get(
@@ -307,7 +330,7 @@ class LaimTicketsService:
             "tipo": item.get("tipo"),
             "estado_desde": desde or "",
             "estado_hasta": hasta or "",
-            "actor": item.get("actor"),
+            "actor": public_actor_name(item.get("actor"), "operador"),
             "created_at": str(item.get("created_at") or ""),
         }
 

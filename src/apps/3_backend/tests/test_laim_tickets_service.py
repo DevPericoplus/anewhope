@@ -369,6 +369,43 @@ def test_ack_my_notification_rejects_foreign() -> None:
     assert result["success"] is False
 
 
+def test_public_actor_hides_internal_operator_name() -> None:
+    module = _load_service()
+    assert module.PUBLIC_OPERATOR_ACTOR == "Soporte LAIM"
+    assert module.public_actor_name("laim_maintenance", "operador") == "Soporte LAIM"
+    assert module.public_actor_name("", "operador") == "Soporte LAIM"
+    assert module.public_actor_name("laimone", "usuario") == "laimone"
+
+
+def test_operator_reply_persists_public_support_name() -> None:
+    module = _load_service()
+    repository = MagicMock()
+    repository.get_ticket.return_value = {
+        "id": 4,
+        "user_id": 9,
+        "estado_clave": "abierto",
+        "estado_nombre": "Abierto",
+    }
+    repository.add_message_and_maybe_state.return_value = {"id": 4, "user_id": 9}
+    repository.list_messages.return_value = [
+        {
+            "autor": "operador",
+            "actor_name": "laim_maintenance",
+            "cuerpo": "Revisamos el caso.",
+            "created_at": "2026-10-13",
+        }
+    ]
+    repository.list_events.return_value = [
+        {"id": 1, "tipo": "replied", "estado_desde": 1, "estado_hasta": 2, "actor": "laim_maintenance"}
+    ]
+    service = module.LaimTicketsService(repository=repository)
+    result = service.reply_as_operator(4, "laim_maintenance", "Revisamos el caso.")
+    assert result["success"] is True
+    assert repository.add_message_and_maybe_state.call_args.kwargs["actor_name"] == "Soporte LAIM"
+    assert result["messages"][0]["actor_name"] == "Soporte LAIM"
+    assert result["events"][0]["actor"] == "Soporte LAIM"
+
+
 def test_list_and_ack_operator_notifications() -> None:
     module = _load_service()
     repository = MagicMock()

@@ -60,7 +60,7 @@
   }
 
   function scenePrepared() {
-    return !!(worldEl() && canvasEl() && titleTiles().length &&
+    return !!(worldEl() && canvasEl() &&
       (elementHasSize(worldEl()) || elementHasSize(canvasEl())));
   }
 
@@ -143,9 +143,6 @@
     edges = [];
     titled = [];
     var tiles = titleTiles();
-    if (!tiles.length) {
-      return false;
-    }
     var left = layerColumn(6, -1.35, 2.15, 0.55, 1);
     var hidden = layerColumn(7, -0.4, 2.35, 0.7, 4);
     var mid = layerColumn(5, 0.45, 2.05, 0.5, 8);
@@ -281,6 +278,9 @@
 
   function cameraForFocus(idx) {
     var node = titled[idx] || titled[0];
+    if (!node) {
+      return orbitCam();
+    }
     return {
       yaw: Math.atan2(node.x, node.z + 0.08),
       pitch: 0.08 + node.y * 0.05,
@@ -511,6 +511,10 @@
   }
 
   function advancePhase(now) {
+    if (!titled.length) {
+      phase = "orbit";
+      return;
+    }
     if (phase === "orbit" && now - phaseStart >= ORBIT_MS) {
       phase = "approach";
       phaseStart = now;
@@ -539,6 +543,9 @@
   function sceneStale() {
     var world = worldEl();
     if (!world || world !== boundWorld) {
+      return true;
+    }
+    if (titled.length !== titleTiles().length) {
       return true;
     }
     if (titled.some(function (node) { return !node.el || !node.el.isConnected; })) {
@@ -580,7 +587,7 @@
         polling = false;
         return;
       }
-      if (homeEl()) {
+      if (homeShowsSpinner() || worldEl()) {
         requestAnimationFrame(step);
         return;
       }
@@ -602,6 +609,17 @@
     boundWorld = null;
     boundCanvas = null;
     markSceneReady(false);
+    pollUntilShown();
+  }
+
+  function ensure() {
+    if (ready && !sceneStale() && scenePrepared()) {
+      markSceneReady(true);
+      if (!raf) {
+        raf = requestAnimationFrame(tick);
+      }
+      return;
+    }
     pollUntilShown();
   }
 
@@ -667,7 +685,7 @@
   }
 
   function boot() {
-    if (!worldEl() || !canvasEl() || !titleTiles().length) {
+    if (!worldEl() || !canvasEl()) {
       return false;
     }
     if (!buildNetwork()) {
@@ -688,12 +706,13 @@
       raf = requestAnimationFrame(tick);
     }
     if (watching) {
+      pollUntilShown();
       return;
     }
     watching = true;
-    var root = document.querySelector(".crt-shell") || document.body;
+    var root = document.documentElement;
     var obs = new MutationObserver(function () {
-      if (homeShowsSpinner()) {
+      if (homeShowsSpinner() || (worldEl() && !document.querySelector(".crt-inicio-home.is-neural-ready"))) {
         pollUntilShown();
       }
     });
@@ -701,10 +720,20 @@
     window.addEventListener("resize", function () {
       revealIfPrepared();
     });
+    window.addEventListener("visibilitychange", function () {
+      if (!document.hidden) {
+        pollUntilShown();
+      }
+    });
+    setInterval(function () {
+      if (homeShowsSpinner() || (worldEl() && !document.querySelector(".crt-inicio-home.is-neural-ready"))) {
+        pollUntilShown();
+      }
+    }, 400);
     pollUntilShown();
   }
 
-  window.LAIMBentoNeural = { restart: restart };
+  window.LAIMBentoNeural = { restart: restart, ensure: ensure };
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", watch);
