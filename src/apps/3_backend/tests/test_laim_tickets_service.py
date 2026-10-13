@@ -67,6 +67,35 @@ def test_create_ticket_forces_community_edition() -> None:
     assert repository.create_ticket.call_args.kwargs["edition"] == "community_edition"
 
 
+def test_ticket_detail_events_use_state_claves() -> None:
+    module = _load_service()
+    repository = MagicMock()
+    repository.get_ticket.return_value = {
+        "id": 1,
+        "user_id": 9,
+        "user_name": "laimone",
+        "user_email": "one@laim.app",
+        "estado_clave": "abierto",
+        "estado_nombre": "Abierto",
+        "edition": "community_edition",
+        "subject": "primer ticket",
+        "body": "hola",
+        "opened_at": "2026-10-13",
+        "updated_at": "2026-10-13",
+    }
+    repository.list_messages.return_value = []
+    repository.list_events.return_value = [
+        {"id": 1, "tipo": "created", "estado_desde": None, "estado_hasta": 1, "actor": "laimone", "created_at": "2026-10-13"}
+    ]
+    service = module.LaimTicketsService(repository=repository)
+    result = service.get_ticket(1)
+    assert result["success"] is True
+    event = result["events"][0]
+    assert event["estado_hasta"] == "abierto"
+    assert event["estado_desde"] == ""
+    assert event["estado_hasta"] != 1
+
+
 def test_get_my_ticket_hides_others() -> None:
     module = _load_service()
     repository = MagicMock()
@@ -116,7 +145,7 @@ def test_user_reply_rejected_when_closed() -> None:
     repository.add_message_and_maybe_state.assert_not_called()
 
 
-def test_operator_cannot_skip_to_waiting_from_open() -> None:
+def test_operator_can_wait_from_open_and_notifies_user() -> None:
     module = _load_service()
     repository = MagicMock()
     repository.get_ticket.return_value = {
@@ -125,10 +154,20 @@ def test_operator_cannot_skip_to_waiting_from_open() -> None:
         "estado_clave": "abierto",
         "estado_nombre": "Abierto",
     }
+    repository.change_estado.return_value = {
+        "id": 4,
+        "user_id": 9,
+        "estado_clave": "esperando_usuario",
+    }
+    repository.list_messages.return_value = []
+    repository.list_events.return_value = []
     service = module.LaimTicketsService(repository=repository)
     result = service.change_status(4, "esperando_usuario", "op")
-    assert result["success"] is False
-    repository.change_estado.assert_not_called()
+    assert result["success"] is True
+    assert repository.change_estado.call_args.args[1] == "esperando_usuario"
+    kwargs = repository.add_notification.call_args.kwargs
+    assert kwargs["destinatario"] == "usuario"
+    assert kwargs["tipo"] == "ticket_status"
 
 
 def test_reopen_only_closed() -> None:
@@ -219,6 +258,24 @@ def test_operator_reply_notifies_user() -> None:
     assert kwargs["destinatario"] == "usuario"
     assert kwargs["user_id"] == 9
     assert kwargs["tipo"] == "ticket_replied"
+
+
+def test_close_does_not_notify_user() -> None:
+    module = _load_service()
+    repository = MagicMock()
+    repository.get_ticket.return_value = {
+        "id": 4,
+        "user_id": 9,
+        "estado_clave": "en_curso",
+        "estado_nombre": "En curso",
+    }
+    repository.change_estado.return_value = {"id": 4, "user_id": 9, "estado_clave": "cerrado"}
+    repository.list_messages.return_value = []
+    repository.list_events.return_value = []
+    service = module.LaimTicketsService(repository=repository)
+    result = service.change_status(4, "cerrado", "op")
+    assert result["success"] is True
+    repository.add_notification.assert_not_called()
 
 
 def test_change_status_notifies_user() -> None:

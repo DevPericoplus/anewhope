@@ -200,21 +200,25 @@ def ticket_status_modal() -> rx.Component:
 
 
 def ticket_notification_modal() -> rx.Component:
-    """Aviso persistido: el ticket #id se ha actualizado. El poll no acusa."""
+    """Aviso persistido: el operador pide atención. El poll no acusa."""
     return rx.box(
         rx.box(
             rx.vstack(
-                rx.text("Ticket actualizado", class_name="crt-title"),
+                rx.text("Soporte", class_name="crt-title"),
                 rx.text(
-                    "El ticket #",
-                    LaimWebState.ticket_notif_ticket_id,
-                    " se ha actualizado.",
+                    "Un ticket de soporte requiere su atención.",
                     class_name="crt-text",
                 ),
-                rx.text(LaimWebState.ticket_notif_subject, class_name="crt-muted"),
+                rx.text(
+                    "#",
+                    LaimWebState.ticket_notif_ticket_id,
+                    " · ",
+                    LaimWebState.ticket_notif_subject,
+                    class_name="crt-muted",
+                ),
                 rx.hstack(
                     rx.button(
-                        "Ver ticket",
+                        "Ir a soporte",
                         on_click=LaimWebState.ack_ticket_notification(True),
                         class_name="crt-btn",
                     ),

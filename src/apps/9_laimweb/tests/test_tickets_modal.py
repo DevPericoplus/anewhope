@@ -33,7 +33,8 @@ def test_notification_modal_does_not_ack_on_poll() -> None:
         encoding="utf-8"
     )
     state = (laimweb_root / "laim_web" / "laim_state.py").read_text(encoding="utf-8")
-    assert "El ticket #" in modal
+    assert "Un ticket de soporte requiere su atención." in modal
+    assert "Ir a soporte" in modal
     assert "poll_ticket_notifications" in state
     assert "No hace ack" in state or "no hace ack" in state.lower()
     assert "ticket_notification_modal()" in (

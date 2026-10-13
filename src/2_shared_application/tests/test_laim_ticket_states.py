@@ -64,13 +64,12 @@ def test_operator_reply_opens_new_ticket() -> None:
 def test_operator_allowed_transitions() -> None:
     m = _load_states()
     assert m.apply_operator_transition("abierto", "en_curso") == "en_curso"
+    assert m.apply_operator_transition("abierto", "esperando_usuario") == "esperando_usuario"
     assert m.apply_operator_transition("abierto", "cerrado") == "cerrado"
     assert m.apply_operator_transition("en_curso", "esperando_usuario") == "esperando_usuario"
     assert m.apply_operator_transition("en_curso", "cerrado") == "cerrado"
     assert m.apply_operator_transition("esperando_usuario", "en_curso") == "en_curso"
     assert m.apply_operator_transition("esperando_usuario", "cerrado") == "cerrado"
-    with pytest.raises(m.TicketStateError):
-        m.apply_operator_transition("abierto", "esperando_usuario")
     with pytest.raises(m.TicketStateError):
         m.apply_operator_transition("cerrado", "en_curso")
 

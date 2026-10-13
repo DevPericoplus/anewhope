@@ -1397,6 +1397,8 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
             )
         if open_ticket and ticket_id > 0:
             async with self:
+                self.active_menu = "soporte"
+                self._load_static_page("soporte")
                 self.ticket_status_open = True
             yield LaimWebState.open_ticket_detail(ticket_id)
 

@@ -195,7 +195,8 @@ class LaimTicketsService:
         )
         if updated is None:
             return {"success": False, "error": "Ticket no encontrado."}
-        self._notify(updated, destinatario="usuario", tipo="ticket_status")
+        if target != _states.ESTADO_CERRADO:
+            self._notify(updated, destinatario="usuario", tipo="ticket_status")
         detail = self._load_detail(ticket_id)
         return {"success": True, **(detail or {})}
 
@@ -269,7 +270,7 @@ class LaimTicketsService:
         return {
             "ticket": self._public_ticket(ticket),
             "messages": self._repository.list_messages(ticket_id),
-            "events": self._repository.list_events(ticket_id),
+            "events": [self._public_event(item) for item in self._repository.list_events(ticket_id)],
         }
 
     @staticmethod
@@ -290,6 +291,24 @@ class LaimTicketsService:
             "closed_at": str(ticket.get("closed_at") or "") if ticket.get("closed_at") else "",
             "updated_at": str(ticket.get("updated_at") or ""),
             "readonly": estado == _states.ESTADO_CERRADO,
+        }
+
+    @staticmethod
+    def _public_event(item: dict[str, Any]) -> dict[str, Any]:
+        """Eventos públicos con clave, no el id MariaDB (rompe el hop Go)."""
+        desde = item.get("estado_desde_clave") or _states.ESTADO_ID_TO_CLAVE.get(
+            int(item["estado_desde"]) if item.get("estado_desde") else -1
+        )
+        hasta = item.get("estado_hasta_clave") or _states.ESTADO_ID_TO_CLAVE.get(
+            int(item["estado_hasta"]) if item.get("estado_hasta") else -1
+        )
+        return {
+            "id": item.get("id"),
+            "tipo": item.get("tipo"),
+            "estado_desde": desde or "",
+            "estado_hasta": hasta or "",
+            "actor": item.get("actor"),
+            "created_at": str(item.get("created_at") or ""),
         }
 
     @staticmethod
