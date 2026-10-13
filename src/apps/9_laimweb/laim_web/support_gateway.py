@@ -120,3 +120,45 @@ async def support_replace_keywords(request: Request) -> Response:
     return await _handle_support(
         request, f"/laim/support/messages/{message_id}/keywords"
     )
+
+
+async def support_tickets_dashboard(request: Request) -> Response:
+    return await _handle_support(request, "/laim/support/tickets/dashboard")
+
+
+async def support_list_tickets(request: Request) -> Response:
+    params = {}
+    for key in ("estado_clave", "query", "limit"):
+        value = request.query_params.get(key)
+        if value is not None:
+            params[key] = value
+    path = "/laim/support/tickets"
+    if params:
+        path = f"{path}?{urlencode(params)}"
+    return await _handle_support(request, path)
+
+
+async def support_ticket_notifications(request: Request) -> Response:
+    return await _handle_support(request, "/laim/support/tickets/notifications")
+
+
+async def support_ack_ticket_notification(request: Request) -> Response:
+    notif_id = request.path_params.get("notif_id")
+    return await _handle_support(
+        request, f"/laim/support/tickets/notifications/{notif_id}/ack"
+    )
+
+
+async def support_get_ticket(request: Request) -> Response:
+    ticket_id = request.path_params.get("ticket_id")
+    return await _handle_support(request, f"/laim/support/tickets/{ticket_id}")
+
+
+async def support_reply_ticket(request: Request) -> Response:
+    ticket_id = request.path_params.get("ticket_id")
+    return await _handle_support(request, f"/laim/support/tickets/{ticket_id}/messages")
+
+
+async def support_patch_ticket(request: Request) -> Response:
+    ticket_id = request.path_params.get("ticket_id")
+    return await _handle_support(request, f"/laim/support/tickets/{ticket_id}")

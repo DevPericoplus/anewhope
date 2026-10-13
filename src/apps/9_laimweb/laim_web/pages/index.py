@@ -14,6 +14,11 @@ from laim_web.components.base_models_modal import (
     compare_requirements_modal,
     recommended_model_modal,
 )
+from laim_web.components.tickets_modal import (
+    ticket_create_modal,
+    ticket_notification_modal,
+    ticket_status_modal,
+)
 from laim_web.components.installers_panel import advance_construction_modal, installers_panel
 from laim_web.components.laim_logo import laim_logo_sidebar
 from laim_web.components.portal_shell import forum_nav_section, sidebar_config_menu
@@ -378,6 +383,9 @@ def index_page() -> rx.Component:
         base_models_catalog_modal(),
         recommended_model_modal(),
         compare_requirements_modal(),
+        ticket_create_modal(),
+        ticket_status_modal(),
+        ticket_notification_modal(),
         class_name="crt-shell crt-theme-green",
         width="100%",
     )

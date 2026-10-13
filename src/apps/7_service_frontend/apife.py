@@ -289,6 +289,23 @@ class LaimSupportKeywordsRequest(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     fuente: str = Field(default="ia", max_length=16)
 
+class LaimTicketCreateRequest(BaseModel):
+    subject: str = Field(..., min_length=5, max_length=200)
+    body: str = Field(..., min_length=10, max_length=10000)
+
+
+class LaimTicketReplyRequest(BaseModel):
+    body: str = Field(..., min_length=1, max_length=10000)
+    actor: str = Field(default="laim_maintenance", max_length=128)
+
+
+class LaimTicketEstadoRequest(BaseModel):
+    estado_clave: str = Field(default="", max_length=50)
+    actor: str = Field(default="laim_maintenance", max_length=128)
+    reabrir: bool = False
+
+
+
 
 class OrganizationCheckRequest(BaseModel):
     """Payload para validar existencia de organización."""
@@ -5673,6 +5690,287 @@ async def laim_support_replace_keywords(
         return router.laim_support_request(
             "PUT",
             f"/laim/support/messages/{message_id}/keywords",
+            payload=payload.model_dump(),
+            authorization=authorization or "",
+            caller=caller or "",
+            client_app=client_app or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+
+@app.post("/laim/tickets")
+async def laim_create_ticket(
+    payload: LaimTicketCreateRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Crea un ticket de soporte (usuario autenticado)."""
+    try:
+        result = router.laim_tickets_request(
+            "POST",
+            "/laim/tickets",
+            payload=payload.model_dump(),
+            authorization=authorization or "",
+            session_token=session_token or "",
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.get("error"))
+        return result
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.get("/laim/tickets")
+async def laim_list_my_tickets(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Lista los tickets del usuario autenticado."""
+    try:
+        return router.laim_tickets_request(
+            "GET",
+            "/laim/tickets",
+            authorization=authorization or "",
+            session_token=session_token or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.get("/laim/tickets/notifications/pending")
+async def laim_ticket_notifications_pending(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Pendientes del usuario. El poll no hace ack."""
+    try:
+        return router.laim_tickets_request(
+            "GET",
+            "/laim/tickets/notifications/pending",
+            authorization=authorization or "",
+            session_token=session_token or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.post("/laim/tickets/notifications/{notif_id}/ack")
+async def laim_ticket_notification_ack(
+    notif_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    try:
+        result = router.laim_tickets_request(
+            "POST",
+            f"/laim/tickets/notifications/{notif_id}/ack",
+            authorization=authorization or "",
+            session_token=session_token or "",
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.get("error"))
+        return result
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.get("/laim/tickets/{ticket_id}")
+async def laim_get_my_ticket(
+    ticket_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Detalle de un ticket del usuario."""
+    try:
+        result = router.laim_tickets_request(
+            "GET",
+            f"/laim/tickets/{ticket_id}",
+            authorization=authorization or "",
+            session_token=session_token or "",
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.get("error"))
+        return result
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.post("/laim/tickets/{ticket_id}/messages")
+async def laim_reply_my_ticket(
+    ticket_id: int,
+    payload: LaimTicketReplyRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Respuesta del usuario en su ticket."""
+    try:
+        result = router.laim_tickets_request(
+            "POST",
+            f"/laim/tickets/{ticket_id}/messages",
+            payload={"body": payload.body},
+            authorization=authorization or "",
+            session_token=session_token or "",
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.get("error"))
+        return result
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.get("/laim/support/tickets/dashboard")
+async def laim_support_tickets_dashboard(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    caller: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> dict[str, Any]:
+    try:
+        return router.laim_support_request(
+            "GET",
+            "/laim/support/tickets/dashboard",
+            authorization=authorization or "",
+            caller=caller or "",
+            client_app=client_app or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.get("/laim/support/tickets")
+async def laim_support_list_tickets(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    caller: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+    estado_clave: str | None = None,
+    query: str | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    path = "/laim/support/tickets"
+    params = []
+    if estado_clave:
+        params.append(f"estado_clave={estado_clave}")
+    if query:
+        params.append(f"query={query}")
+    if limit:
+        params.append(f"limit={limit}")
+    if params:
+        path = f"{path}?{'&'.join(params)}"
+    try:
+        return router.laim_support_request(
+            "GET",
+            path,
+            authorization=authorization or "",
+            caller=caller or "",
+            client_app=client_app or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.get("/laim/support/tickets/notifications")
+async def laim_support_ticket_notifications(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    caller: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> dict[str, Any]:
+    try:
+        return router.laim_support_request(
+            "GET",
+            "/laim/support/tickets/notifications",
+            authorization=authorization or "",
+            caller=caller or "",
+            client_app=client_app or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.post("/laim/support/tickets/notifications/{notif_id}/ack")
+async def laim_support_ticket_notification_ack(
+    notif_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    caller: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> dict[str, Any]:
+    try:
+        return router.laim_support_request(
+            "POST",
+            f"/laim/support/tickets/notifications/{notif_id}/ack",
+            authorization=authorization or "",
+            caller=caller or "",
+            client_app=client_app or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.get("/laim/support/tickets/{ticket_id}")
+async def laim_support_get_ticket(
+    ticket_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    caller: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> dict[str, Any]:
+    try:
+        return router.laim_support_request(
+            "GET",
+            f"/laim/support/tickets/{ticket_id}",
+            authorization=authorization or "",
+            caller=caller or "",
+            client_app=client_app or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.post("/laim/support/tickets/{ticket_id}/messages")
+async def laim_support_reply_ticket(
+    ticket_id: int,
+    payload: LaimTicketReplyRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    caller: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> dict[str, Any]:
+    try:
+        return router.laim_support_request(
+            "POST",
+            f"/laim/support/tickets/{ticket_id}/messages",
+            payload=payload.model_dump(),
+            authorization=authorization or "",
+            caller=caller or "",
+            client_app=client_app or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.patch("/laim/support/tickets/{ticket_id}")
+async def laim_support_patch_ticket(
+    ticket_id: int,
+    payload: LaimTicketEstadoRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    caller: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> dict[str, Any]:
+    try:
+        return router.laim_support_request(
+            "PATCH",
+            f"/laim/support/tickets/{ticket_id}",
             payload=payload.model_dump(),
             authorization=authorization or "",
             caller=caller or "",

@@ -4991,6 +4991,22 @@ class LaimSupportKeywordsRequest(BaseModel):
     fuente: str = Field(default="ia", max_length=16)
 
 
+class LaimTicketCreateRequest(BaseModel):
+    subject: str = Field(..., min_length=5, max_length=200)
+    body: str = Field(..., min_length=10, max_length=10000)
+
+
+class LaimTicketReplyRequest(BaseModel):
+    body: str = Field(..., min_length=1, max_length=10000)
+    actor: str = Field(default="laim_maintenance", max_length=128)
+
+
+class LaimTicketEstadoRequest(BaseModel):
+    estado_clave: str = Field(default="", max_length=50)
+    actor: str = Field(default="laim_maintenance", max_length=128)
+    reabrir: bool = False
+
+
 def _support_context(router: BrokerBackendRouter, authorization: str | None, session_token: str | None) -> None:
     router.set_security_context(authorization=authorization, session_token=session_token)
 
@@ -5093,6 +5109,260 @@ def laim_support_replace_keywords(
         return router.laim_support_request(
             "PUT",
             f"/laim/support/messages/{message_id}/keywords",
+            payload=payload.model_dump(),
+            extra_headers=_laim_forward_headers(request),
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+
+@app.post("/laim/tickets", tags=["laim-tickets"])
+def laim_create_ticket(
+    request: Request,
+    payload: LaimTicketCreateRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    router.set_security_context(authorization=authorization, session_token=session_token)
+    try:
+        result = router.laim_tickets_request(
+            "POST", "/laim/tickets", payload=payload.model_dump(), extra_headers=_laim_forward_headers(request)
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error"))
+        return result
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/laim/tickets", tags=["laim-tickets"])
+def laim_list_my_tickets(
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    router.set_security_context(authorization=authorization, session_token=session_token)
+    try:
+        return router.laim_tickets_request("GET", "/laim/tickets", extra_headers=_laim_forward_headers(request))
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/laim/tickets/notifications/pending", tags=["laim-tickets"])
+def laim_ticket_notifications_pending(
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    router.set_security_context(authorization=authorization, session_token=session_token)
+    try:
+        return router.laim_tickets_request(
+            "GET", "/laim/tickets/notifications/pending", extra_headers=_laim_forward_headers(request)
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/laim/tickets/notifications/{notif_id}/ack", tags=["laim-tickets"])
+def laim_ticket_notification_ack(
+    notif_id: int,
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    router.set_security_context(authorization=authorization, session_token=session_token)
+    try:
+        result = router.laim_tickets_request(
+            "POST",
+            f"/laim/tickets/notifications/{notif_id}/ack",
+            extra_headers=_laim_forward_headers(request),
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=404, detail=result.get("error"))
+        return result
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/laim/tickets/{ticket_id}", tags=["laim-tickets"])
+def laim_get_my_ticket(
+    ticket_id: int,
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    router.set_security_context(authorization=authorization, session_token=session_token)
+    try:
+        result = router.laim_tickets_request(
+            "GET", f"/laim/tickets/{ticket_id}", extra_headers=_laim_forward_headers(request)
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=404, detail=result.get("error"))
+        return result
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/laim/tickets/{ticket_id}/messages", tags=["laim-tickets"])
+def laim_reply_my_ticket(
+    ticket_id: int,
+    request: Request,
+    payload: LaimTicketReplyRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    router.set_security_context(authorization=authorization, session_token=session_token)
+    try:
+        result = router.laim_tickets_request(
+            "POST",
+            f"/laim/tickets/{ticket_id}/messages",
+            payload={"body": payload.body},
+            extra_headers=_laim_forward_headers(request),
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error"))
+        return result
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/laim/support/tickets/dashboard", tags=["laim-support-tickets"])
+def laim_support_tickets_dashboard(
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    _support_context(router, authorization, session_token)
+    try:
+        return router.laim_support_request(
+            "GET", "/laim/support/tickets/dashboard", extra_headers=_laim_forward_headers(request)
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/laim/support/tickets", tags=["laim-support-tickets"])
+def laim_support_list_tickets(
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+    estado_clave: str | None = None,
+    query: str | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    _support_context(router, authorization, session_token)
+    path = "/laim/support/tickets"
+    params = []
+    if estado_clave:
+        params.append(f"estado_clave={estado_clave}")
+    if query:
+        params.append(f"query={query}")
+    if limit:
+        params.append(f"limit={limit}")
+    if params:
+        path = f"{path}?{'&'.join(params)}"
+    try:
+        return router.laim_support_request("GET", path, extra_headers=_laim_forward_headers(request))
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/laim/support/tickets/notifications", tags=["laim-support-tickets"])
+def laim_support_ticket_notifications(
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    _support_context(router, authorization, session_token)
+    try:
+        return router.laim_support_request(
+            "GET", "/laim/support/tickets/notifications", extra_headers=_laim_forward_headers(request)
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/laim/support/tickets/notifications/{notif_id}/ack", tags=["laim-support-tickets"])
+def laim_support_ticket_notification_ack(
+    notif_id: int,
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    _support_context(router, authorization, session_token)
+    try:
+        return router.laim_support_request(
+            "POST",
+            f"/laim/support/tickets/notifications/{notif_id}/ack",
+            extra_headers=_laim_forward_headers(request),
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/laim/support/tickets/{ticket_id}", tags=["laim-support-tickets"])
+def laim_support_get_ticket(
+    ticket_id: int,
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    _support_context(router, authorization, session_token)
+    try:
+        return router.laim_support_request(
+            "GET", f"/laim/support/tickets/{ticket_id}", extra_headers=_laim_forward_headers(request)
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/laim/support/tickets/{ticket_id}/messages", tags=["laim-support-tickets"])
+def laim_support_reply_ticket(
+    ticket_id: int,
+    request: Request,
+    payload: LaimTicketReplyRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    _support_context(router, authorization, session_token)
+    try:
+        return router.laim_support_request(
+            "POST",
+            f"/laim/support/tickets/{ticket_id}/messages",
+            payload=payload.model_dump(),
+            extra_headers=_laim_forward_headers(request),
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.patch("/laim/support/tickets/{ticket_id}", tags=["laim-support-tickets"])
+def laim_support_patch_ticket(
+    ticket_id: int,
+    request: Request,
+    payload: LaimTicketEstadoRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    _support_context(router, authorization, session_token)
+    try:
+        return router.laim_support_request(
+            "PATCH",
+            f"/laim/support/tickets/{ticket_id}",
             payload=payload.model_dump(),
             extra_headers=_laim_forward_headers(request),
         )

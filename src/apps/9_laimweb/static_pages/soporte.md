@@ -10,7 +10,7 @@ Si tiene dudas sobre instalación, modelos, skills o configuración segura, pued
 |-------|-----------------|
 | **Ticket de soporte** | Incidencias técnicas, errores de instalación o acceso |
 | **Email** | Consultas generales y solicitudes de información |
-| **Estado de servicios** | Comprobar disponibilidad del portal y descargas |
+| **Estado de tickets** | Ver y responder los tickets que ha abierto |
 
 ### Qué incluir en su solicitud
 

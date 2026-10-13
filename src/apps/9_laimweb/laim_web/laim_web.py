@@ -27,8 +27,15 @@ from laim_web.pages.my_forum_posts import my_forum_posts_page
 from laim_web.pages.my_forum_threads import my_forum_threads_page
 from laim_web.support_gateway import (
     support_get_message,
+    support_get_ticket,
     support_list_messages,
+    support_ack_ticket_notification,
+    support_list_tickets,
+    support_patch_ticket,
+    support_ticket_notifications,
     support_replace_keywords,
+    support_reply_ticket,
+    support_tickets_dashboard,
     support_update_estado,
 )
 
@@ -182,6 +189,13 @@ app._api.routes.append(Route("/api/support/messages/{message_id:int}", support_u
 app._api.routes.append(
     Route("/api/support/messages/{message_id:int}/keywords", support_replace_keywords, methods=["PUT"])
 )
+app._api.routes.append(Route("/api/support/tickets/dashboard", support_tickets_dashboard, methods=["GET"]))
+app._api.routes.append(Route("/api/support/tickets/notifications", support_ticket_notifications, methods=["GET"]))
+app._api.routes.append(Route("/api/support/tickets/notifications/{notif_id:int}/ack", support_ack_ticket_notification, methods=["POST"]))
+app._api.routes.append(Route("/api/support/tickets", support_list_tickets, methods=["GET"]))
+app._api.routes.append(Route("/api/support/tickets/{ticket_id:int}", support_get_ticket, methods=["GET"]))
+app._api.routes.append(Route("/api/support/tickets/{ticket_id:int}/messages", support_reply_ticket, methods=["POST"]))
+app._api.routes.append(Route("/api/support/tickets/{ticket_id:int}", support_patch_ticket, methods=["PATCH"]))
 
 app.add_page(
     index_page,

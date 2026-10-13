@@ -570,6 +570,28 @@ try:
 except Exception as e:
     logger.warning(f"⚠️ No se pudo registrar router LAIM support: {e}")
 
+# Router de tickets de usuario LAIM
+try:
+    _laim_tickets_router_path = Path(__file__).resolve().parent / "router_laim_tickets.py"
+    _laim_tickets_module = _load_backend_module(
+        "router_laim_tickets", _laim_tickets_router_path
+    )
+    app.include_router(_laim_tickets_module.router)
+    logger.info("✅ Router de tickets LAIM registrado")
+except Exception as e:
+    logger.warning(f"⚠️ No se pudo registrar router LAIM tickets: {e}")
+
+# Router interno de tickets (laim_maintenance)
+try:
+    _laim_tickets_ops_path = Path(__file__).resolve().parent / "router_laim_tickets_ops.py"
+    _laim_tickets_ops_module = _load_backend_module(
+        "router_laim_tickets_ops", _laim_tickets_ops_path
+    )
+    app.include_router(_laim_tickets_ops_module.router)
+    logger.info("✅ Router de tickets ops LAIM registrado")
+except Exception as e:
+    logger.warning(f"⚠️ No se pudo registrar router LAIM tickets ops: {e}")
+
 # Router de foro LAIM
 try:
     _laim_forum_router_path = Path(__file__).resolve().parent / "router_laim_forum.py"

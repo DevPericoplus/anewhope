@@ -6214,6 +6214,28 @@ class RouterMiddleware:
         except BrokerBackendCommunicationError as exc:
             raise BusinessRuleError(f"No se pudo completar la operación de soporte: {exc}") from exc
 
+    def laim_tickets_request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        authorization: str = "",
+        session_token: str = "",
+    ) -> dict[str, Any]:
+        """Proxy de tickets de usuario via broker → backend core."""
+        self._broker_client.set_security_context(
+            authorization=authorization or None,
+            session_token=session_token or None,
+        )
+        try:
+            return self._broker_client.laim_tickets_request(
+                method, path, payload=payload
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo completar la operación de tickets: {exc}"
+            ) from exc
+
     def laim_forum_request(
         self,
         method: str,

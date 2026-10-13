@@ -85,6 +85,30 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     recommended_model_open: bool = False
     compare_requirements_open: bool = False
 
+    # Tickets de soporte (usuario autenticado)
+    ticket_create_open: bool = False
+    ticket_status_open: bool = False
+    ticket_subject: str = ""
+    ticket_body: str = ""
+    ticket_form_error: str = ""
+    ticket_form_success: str = ""
+    ticket_submitting: bool = False
+    ticket_items: list[dict[str, str | int | bool]] = []
+    ticket_list_error: str = ""
+    ticket_detail_id: int = 0
+    ticket_detail_subject: str = ""
+    ticket_detail_estado: str = ""
+    ticket_detail_edition: str = ""
+    ticket_detail_readonly: bool = False
+    ticket_messages: list[dict[str, str]] = []
+    ticket_reply_body: str = ""
+    ticket_replying: bool = False
+    ticket_notif_open: bool = False
+    ticket_notif_id: int = 0
+    ticket_notif_ticket_id: int = 0
+    ticket_notif_subject: str = ""
+    ticket_notif_tipo: str = ""
+
     # Guía gráfica de escenarios (página pública)
     escenario_id: str = "share_multi"
     escenario_step: int = 0
@@ -1184,9 +1208,210 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
                 "error", "No se pudo enviar el mensaje. Inténtelo más tarde."
             )
 
+
+    @rx.var
+    def ticket_edition_label(self) -> str:
+        """Edición mostrada en el alta (snapshot community_edition en v1)."""
+        return "community edition"
+
+    @event
+    def set_ticket_subject(self, value: str) -> None:
+        self.ticket_subject = value
+
+    @event
+    def set_ticket_body(self, value: str) -> None:
+        self.ticket_body = value
+
+    @event
+    def set_ticket_reply_body(self, value: str) -> None:
+        self.ticket_reply_body = value
+
+    @event
+    def close_ticket_create(self) -> None:
+        self.ticket_create_open = False
+
+    @event
+    def close_ticket_status(self) -> None:
+        self.ticket_status_open = False
+
+    @event
+    def open_ticket_create(self) -> None:
+        self.ticket_create_open = True
+        self.ticket_form_error = ""
+        self.ticket_form_success = ""
+        self.ticket_subject = ""
+        self.ticket_body = ""
+
+    @rx.event(background=True)
+    async def open_ticket_status(self) -> None:
+        from laim_web.adapters.laim_api_client import laim_list_my_tickets
+
+        async with self:
+            self.ticket_status_open = True
+            self.ticket_list_error = ""
+            self.ticket_detail_id = 0
+            access_token = self.access_token
+            session_token = self.session_token
+        result = laim_list_my_tickets(access_token=access_token, session_token=session_token)
+        async with self:
+            if not result.get("success"):
+                self.ticket_list_error = result.get("error", "No se pudieron cargar los tickets.")
+                self.ticket_items = []
+                return
+            items = []
+            for raw in result.get("items") or []:
+                items.append(
+                    {
+                        "id": int(raw.get("id") or 0),
+                        "subject": str(raw.get("subject") or ""),
+                        "estado_nombre": str(raw.get("estado_nombre") or raw.get("estado_clave") or ""),
+                        "opened_at": str(raw.get("opened_at") or ""),
+                    }
+                )
+            self.ticket_items = items
+
+    @rx.event(background=True)
+    async def submit_ticket(self) -> None:
+        from laim_web.adapters.laim_api_client import laim_create_ticket
+
+        async with self:
+            subject = self.ticket_subject.strip()
+            body = self.ticket_body.strip()
+            if len(subject) < 5 or len(body) < 10:
+                self.ticket_form_error = "Escriba un asunto (5+) y una descripción (10+)."
+                return
+            self.ticket_submitting = True
+            self.ticket_form_error = ""
+            access_token = self.access_token
+            session_token = self.session_token
+        result = laim_create_ticket(
+            {"subject": subject, "body": body},
+            access_token=access_token,
+            session_token=session_token,
+        )
+        async with self:
+            self.ticket_submitting = False
+            if result.get("success"):
+                ticket = result.get("ticket") or {}
+                numero = int(ticket.get("id") or 0)
+                self.ticket_form_success = f"Ticket #{numero} creado." if numero else "Ticket creado."
+                self.ticket_subject = ""
+                self.ticket_body = ""
+                return
+            self.ticket_form_error = result.get("error", "No se pudo crear el ticket.")
+
+    @rx.event(background=True)
+    async def open_ticket_detail(self, ticket_id: int) -> None:
+        from laim_web.adapters.laim_api_client import laim_get_my_ticket
+
+        async with self:
+            access_token = self.access_token
+            session_token = self.session_token
+        result = laim_get_my_ticket(int(ticket_id), access_token=access_token, session_token=session_token)
+        async with self:
+            if not result.get("success"):
+                self.ticket_list_error = result.get("error", "No se pudo abrir el ticket.")
+                return
+            ticket = result.get("ticket") or {}
+            self.ticket_detail_id = int(ticket.get("id") or 0)
+            self.ticket_detail_subject = str(ticket.get("subject") or "")
+            self.ticket_detail_estado = str(ticket.get("estado_nombre") or ticket.get("estado_clave") or "")
+            self.ticket_detail_edition = str(ticket.get("edition") or "community_edition")
+            self.ticket_detail_readonly = bool(ticket.get("readonly"))
+            self.ticket_reply_body = ""
+            messages = []
+            for raw in result.get("messages") or []:
+                messages.append(
+                    {
+                        "actor_name": str(raw.get("actor_name") or raw.get("autor") or ""),
+                        "created_at": str(raw.get("created_at") or ""),
+                        "cuerpo": str(raw.get("cuerpo") or ""),
+                    }
+                )
+            self.ticket_messages = messages
+
+    @rx.event(background=True)
+    async def submit_ticket_reply(self) -> None:
+        from laim_web.adapters.laim_api_client import laim_reply_my_ticket
+
+        async with self:
+            ticket_id = self.ticket_detail_id
+            body = self.ticket_reply_body.strip()
+            if ticket_id <= 0 or not body:
+                return
+            self.ticket_replying = True
+            access_token = self.access_token
+            session_token = self.session_token
+        result = laim_reply_my_ticket(
+            ticket_id, body, access_token=access_token, session_token=session_token
+        )
+        async with self:
+            self.ticket_replying = False
+            if not result.get("success"):
+                self.ticket_list_error = result.get("error", "No se pudo responder.")
+                return
+            self.ticket_reply_body = ""
+        yield LaimWebState.open_ticket_detail(ticket_id)
+
+    @rx.event(background=True)
+    async def poll_ticket_notifications(self) -> None:
+        """Carga pendientes. No hace ack: el poll no marca leída."""
+        from laim_web.adapters.laim_api_client import laim_ticket_notifications_pending
+
+        async with self:
+            if not self.is_logged_in or self.ticket_notif_open:
+                return
+            access_token = self.access_token
+            session_token = self.session_token
+        result = laim_ticket_notifications_pending(
+            access_token=access_token, session_token=session_token
+        )
+        async with self:
+            if not result.get("success"):
+                return
+            items = result.get("items") or []
+            if not items:
+                return
+            first = items[0]
+            self.ticket_notif_id = int(first.get("id") or 0)
+            self.ticket_notif_ticket_id = int(first.get("ticket_id") or 0)
+            self.ticket_notif_subject = str(first.get("subject") or "")
+            self.ticket_notif_tipo = str(first.get("tipo") or "")
+            self.ticket_notif_open = True
+
+    @rx.event(background=True)
+    async def ack_ticket_notification(self, open_ticket: bool = False) -> None:
+        """Ack explícito al cerrar o al abrir el ticket avisado."""
+        from laim_web.adapters.laim_api_client import laim_ack_ticket_notification
+
+        async with self:
+            notif_id = self.ticket_notif_id
+            ticket_id = self.ticket_notif_ticket_id
+            access_token = self.access_token
+            session_token = self.session_token
+            self.ticket_notif_open = False
+            self.ticket_notif_id = 0
+        if notif_id > 0:
+            laim_ack_ticket_notification(
+                notif_id, access_token=access_token, session_token=session_token
+            )
+        if open_ticket and ticket_id > 0:
+            async with self:
+                self.ticket_status_open = True
+            yield LaimWebState.open_ticket_detail(ticket_id)
+
+
     @event
     def handle_page_action(self, action_key: str) -> EventHandlerReturn:
         """Ejecuta acciones de botones bajo el contenido markdown."""
+        if action_key == "support_ticket":
+            return LaimWebState.open_ticket_create
+        if action_key == "support_status":
+            return LaimWebState.open_ticket_status
+        if action_key == "support_email":
+            self.active_menu = "contacto"
+            self._load_static_page("contacto")
+            return None
         if action_key == "go_installers":
             if self.is_logged_in:
                 self.active_menu = "instaladores"
@@ -1212,7 +1437,6 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
             "faq_to_support": "soporte",
             "faq_privacy": "faq",
             "faq_security": "manuales",
-            "support_ticket": "soporte",
             "go_documentacion": "documentacion",
             "manual_user": "manuales",
             "custom_howto": "modelos_personalizados",
@@ -1254,9 +1478,6 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
             ),
             "addons_changelog": (
                 "Las notas de versión se publicarán en esta misma sección."
-            ),
-            "support_status": (
-                "Todos los servicios del portal están operativos en condiciones normales."
             ),
         }
         message = pending_messages.get(
@@ -1569,11 +1790,15 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         from laim_web.adapters.laim_api_client import laim_forum_get_poll_interval_seconds
 
         while True:
+            should_poll_tickets = False
             async with self:
                 if not self._run_token_renewal_iteration():
                     break
                 if getattr(self, "forum_poll_enabled", False):
                     self.forum_poll_tick()
+                should_poll_tickets = bool(self.is_logged_in)
+            if should_poll_tickets:
+                yield LaimWebState.poll_ticket_notifications()
 
             if getattr(self, "forum_poll_enabled", False):
                 await asyncio.sleep(laim_forum_get_poll_interval_seconds())

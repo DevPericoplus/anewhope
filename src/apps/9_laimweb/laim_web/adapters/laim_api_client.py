@@ -1294,3 +1294,85 @@ def laim_support_forward(
         }
     except httpx.RequestError as exc:
         return {"success": False, "error": f"Error de conexión: {exc}"}
+
+
+def laim_create_ticket(
+    payload: dict[str, Any],
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Crea un ticket de soporte del usuario autenticado."""
+    return _request_middleware(
+        "POST",
+        "/laim/tickets",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_list_my_tickets(access_token: str = "", session_token: str = "") -> dict[str, Any]:
+    """Lista los tickets del usuario autenticado."""
+    return _request_middleware(
+        "GET",
+        "/laim/tickets",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_get_my_ticket(
+    ticket_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Detalle + hilo de un ticket propio."""
+    return _request_middleware(
+        "GET",
+        f"/laim/tickets/{ticket_id}",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_ticket_notifications_pending(
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Pendientes del usuario. El poll no hace ack."""
+    return _request_middleware(
+        "GET",
+        "/laim/tickets/notifications/pending",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_ack_ticket_notification(
+    notif_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Ack explícito de un aviso de ticket."""
+    return _request_middleware(
+        "POST",
+        f"/laim/tickets/notifications/{int(notif_id)}/ack",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_reply_my_ticket(
+    ticket_id: int,
+    body: str,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Respuesta del usuario en su ticket."""
+    return _request_middleware(
+        "POST",
+        f"/laim/tickets/{ticket_id}/messages",
+        payload={"body": body},
+        access_token=access_token,
+        session_token=session_token,
+    )
