@@ -115,6 +115,39 @@ def test_inicio_splits_into_collapsible_h2_sections() -> None:
     assert "### " in alma["body"]
 
 
+def test_load_faq_covers_cli_commands_with_examples() -> None:
+    """FAQ explica la CLI de LAIM con ejemplos, no solo el mapa de Documentación."""
+    content = load_static_page_markdown("faq")
+    title, _preamble, sections = split_markdown_h2_sections(content)
+    assert title == "Preguntas frecuentes (FAQ)"
+    titles = [item["title"] for item in sections]
+    assert "Respuestas rápidas con transparencia" in titles
+    assert "Cómo usar la CLI" in titles
+    cli = next(item for item in sections if item["title"] == "Cómo usar la CLI")
+    assert "laim help" in cli["body"]
+    assert "laim.exe help" in cli["body"]
+    assert "laim login" in cli["body"]
+    assert "laim chat" in cli["body"]
+    assert "llama3.2:1b" in cli["body"]
+    assert "laim web" in cli["body"]
+    assert "laim webdebug" in cli["body"]
+    assert "laim init" in cli["body"]
+    assert "laim config" in cli["body"]
+    assert "laim localmodels" in cli["body"]
+    assert "laim catalog" in cli["body"]
+    assert "laim eval" in cli["body"]
+    assert "laim compare" in cli["body"]
+    assert "laim connect" in cli["body"]
+    assert "laim share" in cli["body"]
+    assert "laim agents" in cli["body"]
+    assert "laim update check" in cli["body"]
+    assert "laim audit" in cli["body"]
+    assert "laim notifications" in cli["body"]
+    assert "laim monitor" in cli["body"]
+    assert "```" in cli["body"]
+    assert "administrador" in cli["body"].lower()
+
+
 def test_load_presentacion_markdown() -> None:
     """Carga el contenido de presentacion.md."""
     content = load_static_page_markdown("presentacion")
