@@ -186,6 +186,19 @@ body::after {
   box-sizing: border-box;
 }
 
+.crt-modal-panel--contact {
+  width: calc(100vw - 2rem);
+  max-width: 52rem;
+  box-sizing: border-box;
+}
+
+.crt-contact-open-wrap {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+  margin-top: 1em;
+}
+
 .crt-modal-header {
   width: 100%;
   align-items: center;

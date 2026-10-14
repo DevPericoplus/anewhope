@@ -24,8 +24,25 @@ def test_contact_form_uses_content_widths_and_preview() -> None:
     assert "image/png,image/jpeg,image/jpg" in source
 
 
+def test_contact_form_opens_from_contactar_button() -> None:
+    source = (laimweb_root / "laim_web" / "components" / "contact_form.py").read_text(
+        encoding="utf-8"
+    )
+    assert '"Contactar"' in source
+    assert "open_contact_modal" in source
+    assert "close_contact_modal" in source
+    assert "crt-modal-overlay" in source
+    assert "contact_modal_open" in source
+    assert "Formulario de contacto" in source
+    page = (laimweb_root / "laim_web" / "pages" / "index.py").read_text(encoding="utf-8")
+    assert "contact_form_panel()" in page
+
+
 def test_prepare_contact_form_fills_logged_user() -> None:
     source = (laimweb_root / "laim_web" / "laim_state.py").read_text(encoding="utf-8")
     assert "self.contact_affected_user = self.user_name.strip()" in source
     assert "contact_screenshot_preview_url" in source
     assert "Solo PNG o JPG" in source
+    assert "contact_modal_open" in source
+    assert "def open_contact_modal" in source
+    assert "def close_contact_modal" in source

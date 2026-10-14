@@ -324,6 +324,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     contact_screenshot_preview_url: str = ""
     contact_screenshot_name: str = ""
     contact_preview_open: bool = False
+    contact_modal_open: bool = False
     _pending_contact_screenshot: dict[str, str] | None = None
 
     _token_renewal_running: bool = False
@@ -908,6 +909,9 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         self._record_auditoria_seccion(item)
         if item == "contacto":
             self._prepare_contact_form()
+        else:
+            self.contact_modal_open = False
+            self.contact_preview_open = False
         if item == "escenarios":
             self.escenario_playing = False
 
@@ -1067,6 +1071,18 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         self.contact_form_success = False
         self.contact_success_message = ""
         self.contact_case_number = 0
+        self.contact_preview_open = False
+
+    @event
+    def open_contact_modal(self) -> None:
+        """Abre el modal de contacto con el formulario pre-rellenado."""
+        self._prepare_contact_form()
+        self.contact_modal_open = True
+
+    @event
+    def close_contact_modal(self) -> None:
+        """Cierra el modal de contacto y el visor de captura."""
+        self.contact_modal_open = False
         self.contact_preview_open = False
 
     @event

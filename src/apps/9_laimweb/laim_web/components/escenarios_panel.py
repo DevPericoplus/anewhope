@@ -69,7 +69,7 @@ ESCENARIO_TRAFFIC_JS = """
 
     if (pkt.label) {
       var badge = document.createElementNS(SVG_NS, "text");
-      badge.setAttribute("font-size", "3.1");
+      badge.setAttribute("font-size", "3.5");
       badge.setAttribute("fill", color);
       badge.setAttribute("text-anchor", "middle");
       badge.setAttribute("dominant-baseline", "middle");

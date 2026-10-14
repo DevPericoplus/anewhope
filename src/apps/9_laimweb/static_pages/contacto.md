@@ -20,6 +20,8 @@ Incluye siempre:
 
 ### Formulario de contacto interno
 
+Pulse **Contactar** para abrir el formulario.
+
 ---
 
 > Utiliza el formulario para poder enviar comodamente cualquier consulta,sugerencia o mejora, vuestra colaboracion siempre aporta informacion valiosa para evolucionar. Tenemos claro que estamos `Agradecidos por el feedbak`.No olvides incluir tu e-mail para poder obtener respuesta.

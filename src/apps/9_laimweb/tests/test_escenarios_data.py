@@ -116,6 +116,22 @@ def test_infer_packet_dir_and_curve() -> None:
     assert path.endswith("50,22")
 
 
+def test_escenarios_page_uses_slightly_larger_type() -> None:
+    """La página Escenarios aplica un zoom tipográfico suave para leer mejor."""
+    css = (
+        Path(__file__).resolve().parents[1] / "assets" / "crt" / "crt_base.css"
+    ).read_text(encoding="utf-8")
+    assert ".crt-escenarios {" in css
+    block = css.split(".crt-escenarios {", 1)[1].split("}", 1)[0]
+    assert "font-size: 1.14em" in block
+    assert ".crt-escenarios .crt-muted" in css
+    assert "font-size: 0.96em" in css.split(".crt-escenarios .crt-muted", 1)[1].split("}", 1)[0]
+    panel = (
+        Path(__file__).resolve().parents[1] / "laim_web" / "components" / "escenarios_panel.py"
+    ).read_text(encoding="utf-8")
+    assert 'class_name="crt-escenarios crt-readable-zone"' in panel
+
+
 def test_escenarios_panel_avoids_dynamic_class_name_from_foreach() -> None:
     """Reflex no acepta class_name desde un item de foreach (causa 502)."""
     source = Path(__file__).resolve().parents[1] / "laim_web" / "components" / "escenarios_panel.py"
