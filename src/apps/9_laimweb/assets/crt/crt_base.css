@@ -1261,8 +1261,22 @@ body,
 
 .esc-selector {
   flex: 0 0 auto;
-  max-height: 36em;
+  /* em crece con el zoom y no recorta; el tope es el viewport
+     para que el sexto caso siga alcanzable con barra. */
+  max-height: min(36em, calc(100dvh - 11rem));
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 0.35em;
+}
+
+.esc-selector::-webkit-scrollbar {
+  width: 8px;
+}
+
+.esc-selector::-webkit-scrollbar-thumb {
+  background: var(--crt-border);
+  border-radius: 4px;
 }
 
 .esc-card {

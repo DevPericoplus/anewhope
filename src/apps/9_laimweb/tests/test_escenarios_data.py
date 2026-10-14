@@ -235,6 +235,9 @@ def test_caption_has_larger_type_and_fade() -> None:
     assert "@keyframes esc-caption-breathe" in css
     assert "filter: blur" in css.split("@keyframes esc-caption-breathe", 1)[1]
     assert ".esc-caption-live" in css
+    selector = css.split(".esc-selector {", 1)[1].split("}", 1)[0]
+    assert "overflow-y: auto" in selector
+    assert "100dvh" in selector or "100vh" in selector
     panel = (
         Path(__file__).resolve().parents[1] / "laim_web" / "components" / "escenarios_panel.py"
     ).read_text(encoding="utf-8")
