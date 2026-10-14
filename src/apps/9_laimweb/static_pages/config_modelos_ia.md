@@ -11,4 +11,6 @@ Configuración de modelos **Ollama** disponibles para el ecosistema LAIM: modelo
 - Límites de contexto (`num_ctx`) y temperatura por defecto
 - Política de descarga y actualización de modelos
 
-> Los administradores podrán alinear esta configuración con la del cliente LAIM local (`laim.dat` → `model_tiers`).
+> **Esta página es solo documental.** Hoy se opera en el cliente
+> (`laim config` → Modelos IA) y, a nivel de organización, en
+> laim_maintenance. El panel del portal llegará con el backoffice.

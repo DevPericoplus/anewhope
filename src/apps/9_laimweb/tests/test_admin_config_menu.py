@@ -13,6 +13,7 @@ def test_admin_config_menus_defined() -> None:
     """Existen páginas de configuración con markdown."""
     expected = {
         "config_general",
+        "config_foro",
         "config_usuarios",
         "config_modelos_ia",
         "config_fases_tiers",
@@ -25,6 +26,16 @@ def test_admin_config_menus_defined() -> None:
     for menu in expected:
         content = load_static_page_markdown(menu)
         assert content.startswith("#")
+        assert "solo documental" in content.lower() or "solo documenta" in content.lower()
+        assert "laim_maintenance" in content
+
+
+def test_named_config_pages_keep_public_titles() -> None:
+    """Los títulos que ve el administrador coinciden con el menú."""
+    assert load_static_page_markdown("config_foro").startswith("# Foro LAIM")
+    assert load_static_page_markdown("config_usuarios").startswith("# Gestión de usuarios")
+    assert load_static_page_markdown("config_share").startswith("# LAIM Share / Connect")
+    assert load_static_page_markdown("config_auditoria").startswith("# Auditoría y logs")
 
 
 def test_is_admin_config_menu() -> None:

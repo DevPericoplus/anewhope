@@ -73,6 +73,9 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     error_message: str = ""
     login_error: str = ""
     active_menu: str = "inicio"
+    sidebar_menu_open: bool = False
+    sidebar_forum_open: bool = False
+    _auditoria_heartbeat_running: bool = False
     static_page_content: str = ""
     inicio_page_title: str = ""
     inicio_sections: list[dict[str, str]] = []
@@ -768,9 +771,20 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     def on_page_load(self) -> EventHandlerReturn:
         """Carga inicial de la página."""
         self._sync_menu_for_session()
+        events: list[Any] = []
+        if self.is_logged_in:
+            self._record_auditoria_seccion(self.active_menu)
         if self.is_logged_in and self.session_token and not self._token_renewal_running:
             self._token_renewal_running = True
-            return LaimWebState.auto_renew_tokens_loop
+            events.append(LaimWebState.auto_renew_tokens_loop)
+        if self.is_logged_in and not self._auditoria_heartbeat_running:
+            self._auditoria_heartbeat_running = True
+            events.append(LaimWebState.auditoria_heartbeat_loop)
+        if not events:
+            return None
+        if len(events) == 1:
+            return events[0]
+        return events
 
     def _hydrate_inicio_sections(self) -> None:
         """Parte Inicio en secciones ## contraídas por defecto."""
@@ -873,6 +887,16 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         return self.active_menu
 
     @event
+    def toggle_sidebar_menu(self) -> None:
+        """Expande o contrae el bloque Menú del sidebar."""
+        self.sidebar_menu_open = not self.sidebar_menu_open
+
+    @event
+    def toggle_sidebar_forum(self) -> None:
+        """Expande o contrae el bloque Foro del sidebar."""
+        self.sidebar_forum_open = not self.sidebar_forum_open
+
+    @event
     def set_menu(self, item: str) -> None:
         from laim_web.static_pages_loader import can_access_admin_config_menu
 
@@ -881,10 +905,72 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
 
         self.active_menu = item
         self._load_static_page(item)
+        self._record_auditoria_seccion(item)
         if item == "contacto":
             self._prepare_contact_form()
         if item == "escenarios":
             self.escenario_playing = False
+
+    def _auditoria_seccion_name(self, item: str) -> str:
+        from laim_web.dynamic_import import load_module_from_path
+        from pathlib import Path
+
+        domain = load_module_from_path(
+            Path(__file__).resolve().parents[3]
+            / "2_shared_application"
+            / "domain"
+            / "laim_auditoria.py",
+            "laim_auditoria_domain_web",
+        )
+        return domain.seccion_from_menu(item)
+
+    def _record_auditoria_seccion(self, item: str) -> None:
+        if not self.is_logged_in or not self.access_token or not self.session_token:
+            return
+        try:
+            from laim_web.adapters.laim_api_client import laim_auditoria_seccion
+
+            laim_auditoria_seccion(
+                self._auditoria_seccion_name(item),
+                self.access_token,
+                self.session_token,
+            )
+        except Exception:
+            pass
+
+    @event
+    def auditoria_heartbeat_tick(self) -> EventHandlerReturn:
+        if not self.is_logged_in:
+            return None
+        return rx.call_script(
+            "document.visibilityState || 'visible'",
+            callback=LaimWebState.auditoria_heartbeat_visible,
+        )
+
+    @event
+    def auditoria_heartbeat_visible(self, state: str) -> None:
+        if str(state) != "visible" or not self.is_logged_in:
+            return
+        try:
+            from laim_web.adapters.laim_api_client import laim_auditoria_heartbeat
+
+            laim_auditoria_heartbeat(
+                self.access_token,
+                self.session_token,
+                self._auditoria_seccion_name(self.active_menu),
+            )
+        except Exception:
+            pass
+
+    @rx.event(background=True)
+    async def auditoria_heartbeat_loop(self) -> EventHandlerReturn:
+        while True:
+            await asyncio.sleep(30)
+            async with self:
+                if not self.is_logged_in:
+                    self._auditoria_heartbeat_running = False
+                    return
+            yield LaimWebState.auditoria_heartbeat_tick
 
     def _escenario_clamp_step(self) -> None:
         """Mantiene el índice de fase dentro del escenario activo."""
@@ -1604,6 +1690,48 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
             return f'curl.exe -fsSL "{url}" -o "{filename}"'
         return ""
 
+    @event
+    def copy_installers_script(self) -> EventHandlerReturn:
+        """Copia el comando y registra el uso (sesión opcional)."""
+        command = self.installers_script_command
+        if not command:
+            return None
+        try:
+            from laim_web.adapters.laim_api_client import laim_auditoria_instalador
+
+            laim_auditoria_instalador(
+                "copia_script",
+                self.installers_edition,
+                self.installers_platform,
+                version=self.installers_version,
+                filename=self.installers_filename,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+        except Exception:
+            pass
+        return rx.set_clipboard(command)
+
+    @event
+    def record_installers_download(self) -> None:
+        """Clic en Descargar del navegador."""
+        if not self.installers_platform:
+            return
+        try:
+            from laim_web.adapters.laim_api_client import laim_auditoria_instalador
+
+            laim_auditoria_instalador(
+                "descarga",
+                self.installers_edition,
+                self.installers_platform,
+                version=self.installers_version,
+                filename=self.installers_filename,
+                access_token=self.access_token,
+                session_token=self.session_token,
+            )
+        except Exception:
+            pass
+
     def _load_permissions_after_login(
         self, identity_type_id: int, access_token: str, session_token: str
     ) -> dict[str, Any]:
@@ -1673,7 +1801,12 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
 
         if self._apply_laim_login_success(result):
             self.loading = False
-            return LaimWebState.auto_renew_tokens_loop
+            events: list[Any] = [LaimWebState.auto_renew_tokens_loop]
+            self._record_auditoria_seccion(self.active_menu)
+            if not self._auditoria_heartbeat_running:
+                self._auditoria_heartbeat_running = True
+                events.append(LaimWebState.auditoria_heartbeat_loop)
+            return events
 
         self.loading = False
 
@@ -1686,6 +1819,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         session_token = self.session_token
 
         self._token_renewal_running = False
+        self._auditoria_heartbeat_running = False
 
         if access_token and session_token:
             laim_logout(access_token, session_token)

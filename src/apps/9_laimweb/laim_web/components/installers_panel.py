@@ -130,7 +130,7 @@ def _script_install_section() -> rx.Component:
                 rx.code(LaimWebState.installers_script_command, class_name="crt-code"),
                 rx.button(
                     "Copiar / Copy",
-                    on_click=rx.set_clipboard(LaimWebState.installers_script_command),
+                    on_click=LaimWebState.copy_installers_script,
                     class_name="crt-btn crt-btn-inline",
                 ),
                 spacing="2",
@@ -174,6 +174,7 @@ def _download_result() -> rx.Component:
                             "Descargar ",
                             LaimWebState.installers_filename,
                             class_name="crt-btn",
+                            on_click=LaimWebState.record_installers_download,
                         ),
                         href=LaimWebState.installers_download_url,
                         is_external=True,

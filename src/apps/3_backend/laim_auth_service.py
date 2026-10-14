@@ -129,8 +129,9 @@ class LaimAuthService:
     DEFAULT_IDENTITY_TYPE_ID = 4
     MAX_FAILED_ATTEMPTS = 3
 
-    def __init__(self, user_repo: Any | None = None) -> None:
+    def __init__(self, user_repo: Any | None = None, auditoria: Any | None = None) -> None:
         self._logger = logging.getLogger("LaimAuthService")
+        self._auditoria = auditoria
         if user_repo is not None:
             self._user_repo = user_repo
             self._session_repo = None
@@ -144,6 +145,8 @@ class LaimAuthService:
             jwt_service=self._build_jwt_service(),
             session_repository=self._session_repo,
         )
+        if self._auditoria is None:
+            self._auditoria = self._build_auditoria(engine)
 
     def _build_jwt_service(self) -> JwtService:
         """Construye JwtService con secretos dedicados LAIM."""
@@ -225,6 +228,9 @@ class LaimAuthService:
                     user_agent=user_agent,
                     details={"reason": "TOO_MANY_ATTEMPTS"},
                 )
+                self._record_auditoria_usuario(
+                    "bloqueo", user_name=user_name, user_id=user.user_id
+                )
             return LaimTokenResponse(success=False, error=MSG_INVALID_CREDENTIALS)
 
         try:
@@ -249,6 +255,12 @@ class LaimAuthService:
             ip_address=ip_address,
             session_id=response.session.session_id,
             user_agent=user_agent,
+        )
+        self._record_auditoria_usuario(
+            "login",
+            user_name=user.user_name,
+            user_id=user.user_id,
+            session_id=response.session.session_id,
         )
         self._logger.info(
             "[laimweb] Login exitoso user_id=%s org_id=%s",
@@ -301,6 +313,17 @@ class LaimAuthService:
             self._session_service.invalidate_session(
                 payload.session_id, reason="logout"
             )
+            self._record_auditoria_usuario(
+                "logout",
+                user_name=str(getattr(payload, "user_name", "") or ""),
+                user_id=int(getattr(payload, "user_id", 0) or 0) or None,
+                session_id=payload.session_id,
+            )
+            if self._auditoria is not None:
+                try:
+                    self._auditoria.safe_close_session(payload.session_id)
+                except Exception as audit_exc:
+                    self._logger.warning("auditoría logout visita: %s", audit_exc)
             return {"success": True}
         except Exception as exc:
             self._logger.warning("Logout LAIM fallido: %s", exc)
@@ -360,6 +383,7 @@ class LaimAuthService:
             user_agent=user_agent,
             details={"action": "register", "user_id": user_id},
         )
+        self._record_auditoria_usuario("alta", user_name=user_name, user_id=user_id)
         return {
             "success": True,
             "user_id": user_id,
@@ -466,6 +490,7 @@ class LaimAuthService:
             user_agent=user_agent,
             details={"error_code": error_code, "detail": detail},
         )
+        self._record_auditoria_usuario("login_fallido", user_name=user_name)
 
     def _split_full_name(self, full_name: str) -> tuple[str | None, str | None]:
         """Divide nombre completo en nombre y apellidos."""
@@ -475,6 +500,53 @@ class LaimAuthService:
         if len(parts) == 1:
             return parts[0], None
         return parts[0], " ".join(parts[1:])
+
+    def _build_auditoria(self, engine: Any) -> Any | None:
+        try:
+            path = Path(__file__).resolve().parent / "laim_auditoria_service.py"
+            spec = importlib.util.spec_from_file_location("laim_auditoria_service_auth", path)
+            if spec is None or spec.loader is None:
+                return None
+            module = importlib.util.module_from_spec(spec)
+            sys.modules["laim_auditoria_service_auth"] = module
+            spec.loader.exec_module(module)
+            repo_path = (
+                Path(__file__).resolve().parents[2]
+                / "2_shared_application"
+                / "adapters"
+                / "laim_auditoria_repository.py"
+            )
+            repo_spec = importlib.util.spec_from_file_location(
+                "laim_auditoria_repository_auth", repo_path
+            )
+            repo_mod = importlib.util.module_from_spec(repo_spec)
+            sys.modules["laim_auditoria_repository_auth"] = repo_mod
+            repo_spec.loader.exec_module(repo_mod)
+            return module.LaimAuditoriaService(
+                repository=repo_mod.LaimAuditoriaRepository(engine)
+            )
+        except Exception as exc:
+            self._logger.warning("auditoría de portal no disponible: %s", exc)
+            return None
+
+    def _record_auditoria_usuario(
+        self,
+        accion: str,
+        user_name: str,
+        user_id: int | None = None,
+        session_id: str | None = None,
+    ) -> None:
+        if self._auditoria is None:
+            return
+        try:
+            self._auditoria.safe_record_usuario(
+                accion=accion,
+                user_name=user_name,
+                user_id=user_id,
+                session_id=session_id,
+            )
+        except Exception as exc:
+            self._logger.warning("auditoría usuario no persistida: %s", exc)
 
     def _verify_hcaptcha(self, token: str, remote_ip: str) -> bool:
         """Valida token Cap CAPTCHA contra el servidor self-hosted.
@@ -540,6 +612,7 @@ class LaimAuthService:
                 "user_id": context.user_id,
                 "user_name": user.user_name if user else "",
                 "organization_id": context.organization_id,
+                "session_id": getattr(context, "session_id", "") or "",
             }
         except Exception as exc:
             self._logger.debug("Sesión LAIM opcional no válida en contacto: %s", exc)

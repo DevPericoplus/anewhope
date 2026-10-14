@@ -1670,6 +1670,16 @@ class CoreBackendClient:
             or {}
         )
 
+    def laim_auditoria_request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Proxy de auditoría del portal hacia Backend Core."""
+        return self.laim_support_request(method, path, payload=payload, extra_headers=extra_headers)
+
     def laim_tickets_request(
         self,
         method: str,

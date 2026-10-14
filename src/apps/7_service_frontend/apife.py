@@ -4529,8 +4529,11 @@ def download_laim_product_endpoint(
     version: str,
     filename: str,
     plugin_name: str = "",
+    source: str = "",
     session: SessionContext | None = Depends(get_optional_session_context),
     router: RouterMiddleware = Depends(get_router_middleware),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
 ):
     """Descarga un artefacto laim_product ya publicado."""
     _require_session_for_advance(edition, session)
@@ -4538,6 +4541,18 @@ def download_laim_product_endpoint(
         content, sha256 = router.download_laim_product(
             session, edition, artifact_type, platform, version, filename, plugin_name
         )
+        if source == "install-script":
+            router.record_laim_auditoria_instalador(
+                {
+                    "accion": "descarga",
+                    "edition": edition,
+                    "platform": platform,
+                    "version": version,
+                    "filename": filename,
+                },
+                authorization=authorization or "",
+                session_token=session_token or "",
+            )
         headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
         if sha256:
             headers["X-Content-SHA256"] = sha256
@@ -4605,6 +4620,13 @@ def install_script_laim_product_endpoint(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     if script is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No hay versión publicada")
+    router.record_laim_auditoria_instalador(
+        {
+            "accion": "script_http",
+            "edition": edition,
+            "platform": platform,
+        }
+    )
     return Response(content=script, media_type="text/x-shellscript")
 
 
@@ -5822,6 +5844,63 @@ async def laim_reply_my_ticket(
         if not result.get("success"):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.get("error"))
         return result
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.post("/laim/auditoria/heartbeat")
+async def laim_auditoria_heartbeat(
+    payload: dict[str, Any],
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    try:
+        return router.laim_auditoria_request(
+            "POST",
+            "/laim/auditoria/heartbeat",
+            payload=payload,
+            authorization=authorization or "",
+            session_token=session_token or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.post("/laim/auditoria/seccion")
+async def laim_auditoria_seccion(
+    payload: dict[str, Any],
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    try:
+        return router.laim_auditoria_request(
+            "POST",
+            "/laim/auditoria/seccion",
+            payload=payload,
+            authorization=authorization or "",
+            session_token=session_token or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.post("/laim/auditoria/instaladores")
+async def laim_auditoria_instaladores(
+    payload: dict[str, Any],
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    try:
+        return router.laim_auditoria_request(
+            "POST",
+            "/laim/auditoria/instaladores",
+            payload=payload,
+            authorization=authorization or "",
+            session_token=session_token or "",
+        )
     except BusinessRuleError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 

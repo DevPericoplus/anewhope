@@ -12,4 +12,5 @@ Define qué modelo (tier) se utiliza en cada fase del flujo conversacional y de 
 | Análisis medio | Medium | Razonamiento intermedio |
 | Tareas complejas | Slow | Documentos largos, RAG profundo |
 
-> Corresponde al mapa `phase_model_tiers` del cliente. La edición desde el portal permitirá despliegues homogéneos en equipos de la organización.
+> **Esta página es solo documental.** El mapa se edita en el cliente
+> (`laim config`) o en laim_maintenance. No hay editor aquí.

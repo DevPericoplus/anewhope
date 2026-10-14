@@ -230,24 +230,42 @@ def _sidebar_menu_item(item: str) -> rx.Component:
 
 
 def sidebar_menu() -> rx.Component:
-    """Menú de navegación lateral."""
+    """Menú de navegación lateral (contraído por defecto)."""
     return rx.vstack(
-        rx.text("Menú", class_name="crt-title", font_size="1em", margin_top="0.5em"),
+        rx.hstack(
+            rx.text("Menú", class_name="crt-title", font_size="1em"),
+            rx.spacer(),
+            rx.text(
+                rx.cond(LaimWebState.sidebar_menu_open, "▾", "▸"),
+                class_name="crt-muted",
+                font_size="0.9em",
+            ),
+            width="100%",
+            align_items="center",
+            cursor="pointer",
+            padding_y="0.25em",
+            margin_top="0.5em",
+            on_click=LaimWebState.toggle_sidebar_menu,
+        ),
         rx.cond(
-            LaimWebState.is_logged_in,
-            rx.vstack(
-                *[_sidebar_menu_item(item) for item in LOGGED_IN_MENU_ITEMS],
-                spacing="1",
-                width="100%",
-            ),
-            rx.vstack(
-                rx.foreach(
-                    MENU_ITEMS_LOGGED_OUT,
-                    lambda item: _sidebar_menu_item(item),
+            LaimWebState.sidebar_menu_open,
+            rx.cond(
+                LaimWebState.is_logged_in,
+                rx.vstack(
+                    *[_sidebar_menu_item(item) for item in LOGGED_IN_MENU_ITEMS],
+                    spacing="1",
+                    width="100%",
                 ),
-                spacing="1",
-                width="100%",
+                rx.vstack(
+                    rx.foreach(
+                        MENU_ITEMS_LOGGED_OUT,
+                        lambda item: _sidebar_menu_item(item),
+                    ),
+                    spacing="1",
+                    width="100%",
+                ),
             ),
+            rx.fragment(),
         ),
         spacing="1",
         width="100%",

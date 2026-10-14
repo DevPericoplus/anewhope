@@ -5233,6 +5233,66 @@ def laim_reply_my_ticket(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@app.post("/laim/auditoria/heartbeat", tags=["laim-auditoria"])
+def laim_auditoria_heartbeat(
+    request: Request,
+    payload: dict[str, Any],
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    router.set_security_context(authorization=authorization, session_token=session_token)
+    try:
+        return router.laim_auditoria_request(
+            "POST",
+            "/laim/auditoria/heartbeat",
+            payload=payload,
+            extra_headers=_laim_forward_headers(request),
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/laim/auditoria/seccion", tags=["laim-auditoria"])
+def laim_auditoria_seccion(
+    request: Request,
+    payload: dict[str, Any],
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    router.set_security_context(authorization=authorization, session_token=session_token)
+    try:
+        return router.laim_auditoria_request(
+            "POST",
+            "/laim/auditoria/seccion",
+            payload=payload,
+            extra_headers=_laim_forward_headers(request),
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/laim/auditoria/instaladores", tags=["laim-auditoria"])
+def laim_auditoria_instaladores(
+    request: Request,
+    payload: dict[str, Any],
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    router.set_security_context(authorization=authorization, session_token=session_token)
+    try:
+        return router.laim_auditoria_request(
+            "POST",
+            "/laim/auditoria/instaladores",
+            payload=payload,
+            extra_headers=_laim_forward_headers(request),
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @app.get("/laim/support/tickets/dashboard", tags=["laim-support-tickets"])
 def laim_support_tickets_dashboard(
     request: Request,

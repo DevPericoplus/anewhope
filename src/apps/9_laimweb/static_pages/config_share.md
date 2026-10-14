@@ -1,19 +1,44 @@
 # LAIM Share / Connect
 
-## Nodos maestro y cliente
+## Guía documental (no es un panel de gestión)
 
-Configuración de topologías **Share** (maestro) y **Connect** (cliente esclavo) para compartir inferencia y recursos entre equipos.
+Esta página **solo documenta** las topologías Share y Connect. No se
+arranca el listener ni se guardan credenciales desde el portal. Eso se
+hace en el **cliente** (`laim share` / `laim connect`) y, a nivel de
+organización, **temporalmente en laim_maintenance**. El backoffice de
+laimweb llegará más adelante.
 
 ### Share (maestro)
 
-- Estado del listener `share_api` (puerto por defecto `4322`)
-- Credenciales de conexión para clientes Connect
-- Política de acceso a modelos remotos
+Un equipo **ofrece** inferencia a otros de la red.
+
+- Listener `share_api` (puerto por defecto **4322**)
+- Credenciales que entregan los clientes Connect
+- Qué modelos remotos se publican
+
+```bash
+laim share
+```
 
 ### Connect (cliente)
 
-- URL del nodo maestro
-- Prueba de conectividad y latencia
-- Modo chat remoto sin Ollama local
+Un equipo **usa** la IA de un Share. Las acciones sobre el sistema vivo
+siguen ejecutándose donde usted está sentado; lo que viaja es la
+inferencia, cifrada.
 
-> Solo administradores pueden modificar estos parámetros, igual que en CLI (`laim share` / `laim connect`).
+- URL del nodo maestro
+- Prueba de conectividad
+- Chat remoto sin Ollama local
+
+```bash
+laim connect
+```
+
+### Ejemplo de lectura
+
+En el Mac que tiene GPU: `laim share`. En el portátil de la sala:
+`laim connect` y elige ese maestro. El portal no sustituye esos dos
+comandos.
+
+> **Esta página es solo documental.** No hay botones de arranque ni
+> formularios de credenciales en laimweb.

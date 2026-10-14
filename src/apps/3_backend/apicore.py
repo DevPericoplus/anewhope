@@ -603,6 +603,17 @@ try:
 except Exception as e:
     logger.warning(f"⚠️ No se pudo registrar router LAIM forum: {e}")
 
+# Router de auditoría del portal LAIM
+try:
+    _laim_auditoria_router_path = Path(__file__).resolve().parent / "router_laim_auditoria.py"
+    _laim_auditoria_module = _load_backend_module(
+        "router_laim_auditoria", _laim_auditoria_router_path
+    )
+    app.include_router(_laim_auditoria_module.router)
+    logger.info("✅ Router de auditoría LAIM registrado")
+except Exception as e:
+    logger.warning(f"⚠️ No se pudo registrar router LAIM auditoria: {e}")
+
 # Router de assets públicos del sitio LAIM
 try:
     _laim_site_router_path = Path(__file__).resolve().parent / "router_laim_site.py"

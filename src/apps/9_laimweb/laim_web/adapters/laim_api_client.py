@@ -1296,6 +1296,64 @@ def laim_support_forward(
         return {"success": False, "error": f"Error de conexión: {exc}"}
 
 
+def laim_auditoria_heartbeat(
+    access_token: str,
+    session_token: str,
+    seccion: str | None = None,
+) -> dict[str, Any]:
+    """Pulso de visita autenticada."""
+    payload: dict[str, Any] = {}
+    if seccion:
+        payload["seccion"] = seccion
+    return _request_middleware(
+        "POST",
+        "/laim/auditoria/heartbeat",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_auditoria_seccion(
+    seccion: str,
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Cierra el tramo anterior y abre uno nuevo."""
+    return _request_middleware(
+        "POST",
+        "/laim/auditoria/seccion",
+        payload={"seccion": seccion},
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_auditoria_instalador(
+    accion: str,
+    edition: str,
+    platform: str,
+    version: str = "",
+    filename: str = "",
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Copia de script o descarga. Sesión opcional (anónimo sin user_id)."""
+    return _request_middleware(
+        "POST",
+        "/laim/auditoria/instaladores",
+        payload={
+            "accion": accion,
+            "edition": edition,
+            "platform": platform,
+            "version": version,
+            "filename": filename,
+        },
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
 def laim_create_ticket(
     payload: dict[str, Any],
     access_token: str = "",

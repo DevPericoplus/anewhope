@@ -1,10 +1,20 @@
 # Gestión de usuarios
 
-## Cuentas del portal LAIM
+## Guía documental (no es un panel de gestión)
 
-Administración de usuarios registrados en **laim_core_db**: altas, bajas lógicas, roles y restablecimiento de acceso.
+Esta página **solo documenta** las cuentas del portal. No se dan de alta,
+baja ni se cambian roles desde aquí. Esas operaciones viven
+**temporalmente en laim_maintenance**. Más adelante se montarán en el
+servicio **backoffice**. En cada instalación local, el equivalente sigue
+siendo `laim config` (usuarios de `laim.dat`), que es **otro** censo: el
+del cliente, no el de `laim_core_db`.
 
-### Operaciones previstas
+### Cuentas del portal
+
+Los usuarios registrados en **laim_core_db**: altas, bajas lógicas, roles
+y restablecimiento de acceso.
+
+### Operaciones previstas (en el backoffice, no aquí)
 
 - Listar usuarios activos e inactivos de la organización
 - Asignar rol (Lector, Editor, Administrador, etc.)
@@ -20,4 +30,8 @@ Administración de usuarios registrados en **laim_core_db**: altas, bajas lógic
 | **Editor** | Uso avanzado de modelos y complementos |
 | **Lector** | Acceso estándar tras el registro público |
 
-> Equivalente al asistente `laim config` del cliente de escritorio, orientado al portal web.
+Solo SuperAdmin y Administrador de organización ven el menú
+**Configuración**. Un lector o editor no debe ver estas páginas.
+
+> **Esta página es solo documental.** Use laim_maintenance para operar;
+> el backoffice de laimweb llegará después.

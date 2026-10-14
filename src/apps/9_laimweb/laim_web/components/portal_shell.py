@@ -25,19 +25,15 @@ ADMIN_CONFIG_MENU_ITEMS = list(ADMIN_CONFIG_MENU_FILES.keys())
 
 ADMIN_CONFIG_MENU_LABELS: dict[str, str] = {
     "config_general": "General",
-    "config_usuarios": "Usuarios",
+    "config_foro": "Foro LAIM",
+    "config_usuarios": "Gestión de usuarios",
     "config_modelos_ia": "Modelos IA",
     "config_fases_tiers": "Fases y tiers",
-    "config_sesiones": "Sesiones",
-    "config_share": "Share / Connect",
+    "config_sesiones": "Gestión de sesiones",
+    "config_share": "LAIM Share / Connect",
     "config_agentes": "Agentes",
-    "config_auditoria": "Auditoría",
+    "config_auditoria": "Auditoría y logs",
 }
-
-ADMIN_CONFIG_ROUTE_LINKS: tuple[tuple[str, str], ...] = (
-    ("/config-foro", "Config. foro"),
-    ("/foro-moderacion", "Moderación"),
-)
 
 
 def logo() -> rx.Component:
@@ -124,17 +120,6 @@ def _forum_nav_link(href: str, label: str) -> rx.Component:
     )
 
 
-def _config_route_link(href: str, label: str) -> rx.Component:
-    """Enlace del menú Configuración hacia rutas dedicadas (foro admin)."""
-    return rx.link(
-        rx.text(label, font_size="0.9em", color=COLORS["text"]),
-        href=href,
-        width="100%",
-        padding="0.55em 0.75em",
-        _hover={"background": "rgba(0, 80, 0, 0.35)", "text_decoration": "none"},
-    )
-
-
 def _sidebar_config_menu_item(item: str) -> rx.Component:
     """Entrada del submenú Configuración (páginas estáticas admin)."""
     label = ADMIN_CONFIG_MENU_LABELS.get(item, item.replace("_", " ").title())
@@ -164,41 +149,62 @@ def _sidebar_config_menu_item(item: str) -> rx.Component:
 
 
 def sidebar_config_menu() -> rx.Component:
-    """Menú Configuración del portal (solo administradores)."""
+    """Menú Configuración: solo administradores; páginas documentales."""
     return rx.cond(
-        LaimWebState.is_logged_in & LaimWebState.is_laim_admin,
-        rx.vstack(
-            rx.divider(color=COLORS["border"], margin_y="0.75em"),
-            rx.text(
-                "Configuración",
-                class_name="crt-title",
-                font_size="1em",
-                margin_top="0.25em",
-            ),
+        LaimWebState.is_logged_in,
+        rx.cond(
+            LaimWebState.is_laim_admin,
             rx.vstack(
-                *[_sidebar_config_menu_item(item) for item in ADMIN_CONFIG_MENU_ITEMS],
-                *[
-                    _config_route_link(href, label)
-                    for href, label in ADMIN_CONFIG_ROUTE_LINKS
-                ],
+                rx.divider(color=COLORS["border"], margin_y="0.75em"),
+                rx.text(
+                    "Configuración",
+                    class_name="crt-title",
+                    font_size="1em",
+                    margin_top="0.25em",
+                ),
+                rx.vstack(
+                    *[_sidebar_config_menu_item(item) for item in ADMIN_CONFIG_MENU_ITEMS],
+                    spacing="1",
+                    width="100%",
+                ),
                 spacing="1",
                 width="100%",
             ),
-            spacing="1",
-            width="100%",
+            rx.fragment(),
         ),
         rx.fragment(),
     )
 
 
 def forum_nav_section() -> rx.Component:
-    """Sección de navegación del foro (solo autenticados)."""
+    """Sección Foro (solo autenticados; contraída por defecto)."""
     return rx.cond(
         LaimWebState.is_logged_in,
         rx.vstack(
             rx.divider(color=COLORS["border"], margin_y="0.5em"),
-            rx.text("Foro", class_name="crt-title", font_size="1em"),
-            *[_forum_nav_link(href, label) for href, label in FORUM_NAV],
+            rx.hstack(
+                rx.text("Foro", class_name="crt-title", font_size="1em"),
+                rx.spacer(),
+                rx.text(
+                    rx.cond(LaimWebState.sidebar_forum_open, "▾", "▸"),
+                    class_name="crt-muted",
+                    font_size="0.9em",
+                ),
+                width="100%",
+                align_items="center",
+                cursor="pointer",
+                padding_y="0.25em",
+                on_click=LaimWebState.toggle_sidebar_forum,
+            ),
+            rx.cond(
+                LaimWebState.sidebar_forum_open,
+                rx.vstack(
+                    *[_forum_nav_link(href, label) for href, label in FORUM_NAV],
+                    spacing="1",
+                    width="100%",
+                ),
+                rx.fragment(),
+            ),
             spacing="1",
             width="100%",
         ),

@@ -95,7 +95,9 @@ class LaimForumService:
         self,
         repository: LaimForumRepository | None = None,
         image_storage: LaimForumImageStorage | None = None,
+        auditoria: Any | None = None,
     ) -> None:
+        engine = None
         if repository is None:
             settings = load_laim_mariadb_settings()
             engine = create_laim_session_engine(settings)
@@ -104,6 +106,58 @@ class LaimForumService:
         self._image_storage = image_storage or LaimForumImageStorage()
         self._image_storage.ensure_base_directory()
         self._auth_service: Any | None = None
+        self._auditoria = auditoria
+        if self._auditoria is None and engine is not None:
+            self._auditoria = self._build_auditoria(engine)
+
+    def _build_auditoria(self, engine: Any) -> Any | None:
+        try:
+            path = Path(__file__).resolve().parent / "laim_auditoria_service.py"
+            spec = importlib.util.spec_from_file_location("laim_auditoria_service_forum", path)
+            if spec is None or spec.loader is None:
+                return None
+            module = importlib.util.module_from_spec(spec)
+            sys.modules["laim_auditoria_service_forum"] = module
+            spec.loader.exec_module(module)
+            repo_path = (
+                Path(__file__).resolve().parents[2]
+                / "2_shared_application"
+                / "adapters"
+                / "laim_auditoria_repository.py"
+            )
+            repo_spec = importlib.util.spec_from_file_location(
+                "laim_auditoria_repository_forum", repo_path
+            )
+            repo_mod = importlib.util.module_from_spec(repo_spec)
+            sys.modules["laim_auditoria_repository_forum"] = repo_mod
+            repo_spec.loader.exec_module(repo_mod)
+            return module.LaimAuditoriaService(
+                repository=repo_mod.LaimAuditoriaRepository(engine)
+            )
+        except Exception as exc:
+            _logger.warning("auditoría de portal no disponible: %s", exc)
+            return None
+
+    def _record_auditoria_foro(
+        self,
+        accion: str,
+        user_id: int,
+        thread_id: int,
+        post_id: int | None = None,
+        subcategory_id: str = "",
+    ) -> None:
+        if self._auditoria is None:
+            return
+        try:
+            self._auditoria.safe_record_foro(
+                accion=accion,
+                user_id=user_id,
+                thread_id=thread_id,
+                post_id=post_id,
+                subcategory_id=subcategory_id,
+            )
+        except Exception as exc:
+            _logger.warning("auditoría foro no persistida: %s", exc)
 
     def _get_auth_service(self) -> Any:
         """Carga perezosa del servicio de auth LAIM."""
@@ -740,6 +794,12 @@ class LaimForumService:
             cuerpo_md=dto.cuerpo_md.strip(),
             image_ids=dto.image_ids,
         )
+        self._record_auditoria_foro(
+            "crear_hilo",
+            user_id=session["user_id"],
+            thread_id=thread_id,
+            subcategory_id=dto.subcategory_id,
+        )
         return {"success": True, "thread_id": thread_id}
 
     def update_thread(
@@ -916,6 +976,13 @@ class LaimForumService:
                     post_id=post_id,
                 )
 
+        self._record_auditoria_foro(
+            "crear_respuesta",
+            user_id=session["user_id"],
+            thread_id=thread_id,
+            post_id=post_id,
+            subcategory_id=subcategory_id,
+        )
         return {"success": True, "post_id": post_id}
 
     def update_post(

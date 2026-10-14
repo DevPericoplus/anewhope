@@ -11,4 +11,6 @@ Configuración de agentes que pueden ejecutar acciones locales (comandos, flujos
 - Integración con fases del chat y registro en `activity.log`
 - Límites de seguridad por rol de usuario
 
-> Los agentes requieren sesión autenticada; la administración centralizada desde el portal facilita despliegues corporativos.
+> **Esta página es solo documental.** Catálogo y políticas se gestionan
+> en el cliente (`laim agents` / `laim config`) y, a nivel de
+> organización, en laim_maintenance hasta el backoffice.

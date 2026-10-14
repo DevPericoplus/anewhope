@@ -29,6 +29,16 @@ _ALOHE_AVATARS = load_module_from_path(
 # Reflex 0.8+ solo registra @event en métodos del State, no en mixins.
 FORUM_EVENT_HANDLER_NAMES: list[str] = []
 
+
+def first_visible_forum_thread_id(threads: list[dict[str, Any]]) -> int:
+    """Id del primer hilo de la lista (el que se «clica» por defecto)."""
+    if not threads:
+        return 0
+    try:
+        return int(threads[0].get("id") or 0)
+    except (TypeError, ValueError):
+        return 0
+
 # Previews del catálogo: assets estáticos empaquetados con laimweb.
 # El image_id sigue viniendo del backend para guardar la selección del usuario.
 _CATALOG_AVATAR_STATIC_URLS: dict[str, str] = _ALOHE_AVATARS.build_static_url_map()
@@ -552,11 +562,14 @@ class LaimForumMixin(rx.State, mixin=True):
             return rx.redirect("/")
         self.forum_error = ""
         self.forum_poll_enabled = True
+        self.forum_active_thread_id = 0
         self.forum_load_catalog()
         self._forum_sync_my_avatar_preview()
         self.forum_poll_notifications()
-        if self.forum_active_thread_id > 0:
-            self.forum_open_thread(self.forum_active_thread_id)
+        if self.is_logged_in:
+            recorder = getattr(self, "_record_auditoria_seccion", None)
+            if callable(recorder):
+                recorder("foro")
         from laim_web.laim_state import LaimWebState
 
         if self.is_logged_in and self.session_token and not self._token_renewal_running:
@@ -802,6 +815,7 @@ class LaimForumMixin(rx.State, mixin=True):
                     self.forum_selected_subcategory_id = str(
                         self.forum_subcategories[0].get("id", "")
                     )
+                if self.forum_selected_subcategory_id:
                     self.forum_load_threads()
 
         self.forum_loading = False
@@ -871,8 +885,11 @@ class LaimForumMixin(rx.State, mixin=True):
             self._forum_apply_subcategory(subcategory_id)
             return
 
-    def forum_load_threads(self) -> None:
-        """Carga hilos de la subcategoría activa."""
+    def forum_load_threads(self, open_first: bool = True) -> None:
+        """Carga hilos de la subcategoría activa.
+
+        Si no hay hilo abierto, abre el primero (mismo efecto que pulsarlo).
+        """
         from laim_web.adapters.laim_api_client import laim_forum_list_threads
 
         if not self.forum_selected_subcategory_id:
@@ -892,8 +909,16 @@ class LaimForumMixin(rx.State, mixin=True):
                 row.setdefault("actualizado", row.get("updated_at", row.get("creado", "")))
                 normalized.append(row)
             self.forum_threads = normalized
+            if open_first and self.forum_active_thread_id <= 0:
+                self._forum_open_first_visible_thread()
         else:
             self._forum_set_error(result.get("error", "Error al cargar hilos"))
+
+    def _forum_open_first_visible_thread(self) -> None:
+        """Simula el clic en la primera fila de la lista."""
+        thread_id = first_visible_forum_thread_id(self.forum_threads)
+        if thread_id > 0:
+            self.forum_open_thread(thread_id)
 
     @forum_event
     def forum_open_thread(self, thread_id: int) -> None:
@@ -1058,7 +1083,7 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_new_prefix_id = ""
         self.forum_new_thread_image_ids = []
         self.forum_error = ""
-        self.forum_load_threads()
+        self.forum_load_threads(open_first=False)
         if thread_id > 0:
             self.forum_open_thread(thread_id)
         return None

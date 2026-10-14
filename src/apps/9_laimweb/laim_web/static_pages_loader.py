@@ -31,6 +31,7 @@ AUTHENTICATED_MENU_FILES: dict[str, str] = {
 
 ADMIN_CONFIG_MENU_FILES: dict[str, str] = {
     "config_general": "config_general.md",
+    "config_foro": "config_foro.md",
     "config_usuarios": "config_usuarios.md",
     "config_modelos_ia": "config_modelos_ia.md",
     "config_fases_tiers": "config_fases_tiers.md",

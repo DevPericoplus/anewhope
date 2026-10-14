@@ -17,4 +17,5 @@ Visualización y revocación de sesiones JWT almacenadas en **laim_core_db** (`l
 - Auditar accesos concurrentes (CLI + web)
 - Limpiar sesiones expiradas
 
-> Alineado con **Gestión de sesiones** en `laim config` del cliente de escritorio.
+> **Esta página es solo documental.** Cerrar sesiones remotas o limpiar
+> caducadas se hará en laim_maintenance / backoffice, no en esta página.
