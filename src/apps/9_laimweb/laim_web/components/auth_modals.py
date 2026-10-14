@@ -182,7 +182,11 @@ def register_modal() -> rx.Component:
                         class_name="crt-input",
                         width="100%",
                     ),
-                    hcaptcha_widget(),
+                    rx.cond(
+                        LaimWebState.register_modal_open,
+                        hcaptcha_widget(),
+                        rx.box(width="100%", min_height="78px"),
+                    ),
                     rx.input(
                         id="laim-hcaptcha-token-input",
                         value=LaimWebState.reg_hcaptcha_token,

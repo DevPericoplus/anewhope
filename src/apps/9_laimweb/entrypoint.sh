@@ -32,11 +32,13 @@ fi
 cd "$APP_DIR"
 
 # laimweb regenera .web/vite.config.js al arrancar (reflex run), perdiendo el
-# patch del build. Un vigilante en segundo plano reaplica allowedHosts en
-# bucle; Vite observa vite.config.js y recarga en caliente.
+# patch del build. Un vigilante en segundo plano reaplica allowedHosts y
+# Permissions-Policy (Chrome LNA) en bucle; Vite observa vite.config.js
+# y recarga en caliente.
 (
     while true; do
-        if [ -f "$APP_DIR/.web/vite.config.js" ] && ! grep -q allowedHosts "$APP_DIR/.web/vite.config.js"; then
+        cfg="$APP_DIR/.web/vite.config.js"
+        if [ -f "$cfg" ] && { ! grep -q allowedHosts "$cfg" || ! grep -q Permissions-Policy "$cfg"; }; then
             python "$APP_DIR/patch_vite_config.py" 2>/dev/null || true
         fi
         sleep 5

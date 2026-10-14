@@ -71,6 +71,38 @@ def test_logged_in_menu_uses_agents_not_skills() -> None:
     assert '"agents",' in source
 
 
+def test_register_modal_does_not_load_cap_until_open() -> None:
+    """Cap no se monta en cada visita: Chrome pediría acceso a apps locales."""
+    source = (
+        laimweb_root / "laim_web" / "components" / "auth_modals.py"
+    ).read_text(encoding="utf-8")
+    register = source.split("def register_modal", 1)[1].split("def forgot_modal", 1)[0]
+    assert "hcaptcha_widget()" in register
+    assert "register_modal_open" in register
+    assert register.find("register_modal_open") < register.find("hcaptcha_widget()")
+    assert "cdn.jsdelivr.net/npm/cap-widget" not in register
+    widget = (
+        laimweb_root / "laim_web" / "components" / "hcaptcha.py"
+    ).read_text(encoding="utf-8")
+    assert "cdn.jsdelivr.net/npm/cap-widget" in widget
+
+
+def test_vite_and_nginx_deny_local_network_access() -> None:
+    """Chrome no debe preguntar por LAN/loopback en laimweb público."""
+    patch = (laimweb_root / "patch_vite_config.py").read_text(encoding="utf-8")
+    assert "Permissions-Policy" in patch
+    assert "loopback-network=()" in patch
+    assert "local-network-access=()" in patch
+    entry = (laimweb_root / "entrypoint.sh").read_text(encoding="utf-8")
+    assert "Permissions-Policy" in entry
+    anh = Path(__file__).resolve().parents[4].parent / "anh_ansible_environments"
+    conf = anh / "templates" / "docker-compose" / "frontend" / "frontend.conf.j2"
+    if conf.is_file():
+        text = conf.read_text(encoding="utf-8")
+        assert text.count("local-network-access=()") >= 2
+        assert "loopback-network=()" in text
+
+
 def test_login_modal_stays_mounted_while_typing() -> None:
     """El overlay de login no se desmonta en cada tecla (cierre fantasma en silicon)."""
     source = (

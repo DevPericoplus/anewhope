@@ -41,6 +41,10 @@ def is_hcaptcha_configured() -> bool:
 def hcaptcha_widget() -> rx.Component:
     """Renderiza el widget Cap o aviso si no está configurado.
 
+    Solo montar este componente con el modal de registro abierto: el
+    script de Cap en cada visita dispara el permiso de Chrome
+    «acceder a apps y servicios de este dispositivo» (LNA/loopback).
+
     Mantiene el nombre ``hcaptcha_widget`` por compatibilidad
     con la referencia existente en ``auth_modals.py``.
     """

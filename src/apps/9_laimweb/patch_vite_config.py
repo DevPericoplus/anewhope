@@ -48,61 +48,67 @@ def get_public_domain() -> str:
         return "laim.app"
 
 
+# Chrome 141+: sin esto, un script (Cap/WebRTC) dispara
+# «acceder a apps y servicios de este dispositivo» en www.laim.app.
+_LNA_POLICY = (
+    "local-network=(), loopback-network=(), local-network-access=()"
+)
+_LNA_HEADER_LINE = (
+    f'    headers: {{ "Permissions-Policy": "{_LNA_POLICY}" }},'
+)
+
+
+def _ensure_allowed_hosts(content: str) -> str:
+    """Añade allowedHosts si Reflex acaba de regenerar vite.config.js."""
+    if "allowedHosts" in content:
+        return content
+    public_domain = get_public_domain()
+    allowed_hosts = [public_domain, f".{public_domain}", "localhost"]
+    allowed_hosts_str = ", ".join([f"'{host}'" for host in allowed_hosts])
+    print(f"[INFO] Configurando allowedHosts con: {allowed_hosts_str}")
+    pattern = r"(server:\s*\{[^}]*?port:\s*process\.env\.PORT,)"
+    replacement = rf"""\1
+    allowedHosts: [{allowed_hosts_str}],"""
+    new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
+    if new_content == content:
+        pattern_alt = r"(server:\s*\{[^}]*?hmr:\s*true,)"
+        replacement_alt = rf"""\1
+    allowedHosts: [{allowed_hosts_str}],"""
+        new_content = re.sub(pattern_alt, replacement_alt, content, flags=re.DOTALL)
+    return new_content
+
+
+def _ensure_lna_header(content: str) -> str:
+    """Niega LAN/loopback en el HTML que sirve Vite (sin prompt de Chrome)."""
+    if "Permissions-Policy" in content:
+        return content
+    needle = "port: process.env.PORT,"
+    if needle not in content:
+        return content
+    return content.replace(needle, needle + "\n" + _LNA_HEADER_LINE, 1)
+
+
 def patch_vite_config():
-    """
-    Parcha el archivo vite.config.js para añadir los hosts permitidos.
-    """
+    """Parcha vite.config.js: hosts permitidos y Permissions-Policy LNA."""
     vite_config_path = Path(__file__).parent / ".web" / "vite.config.js"
-    
+
     if not vite_config_path.exists():
         print(f"[INFO] vite.config.js no encontrado en {vite_config_path}")
         print("[INFO] Ejecuta 'reflex init' primero para generar la configuración.")
         return False
-    
-    # Leer el contenido actual
+
     content = vite_config_path.read_text()
-    
-    # Verificar si ya tiene allowedHosts configurado
-    if "allowedHosts" in content:
-        print("[INFO] allowedHosts ya está configurado en vite.config.js")
-        return True
-
-    # Obtener el dominio público del entorno activo
-    public_domain = get_public_domain()
-
-    # Construir lista de hosts permitidos
-    # Incluimos: el dominio público, subdominio wildcard (.dominio), y localhost
-    allowed_hosts = [public_domain, f".{public_domain}", "localhost"]
-    allowed_hosts_str = ", ".join([f"'{host}'" for host in allowed_hosts])
-
-    print(f"[INFO] Configurando allowedHosts con: {allowed_hosts_str}")
-
-    # Patrón para encontrar la sección server: { ... }
-    # Buscamos "server: {" seguido de contenido hasta encontrar "port:"
-    pattern = r'(server:\s*\{[^}]*?port:\s*process\.env\.PORT,)'
-
-    # Reemplazo: añadimos allowedHosts después de port
-    replacement = rf'''\1
-    allowedHosts: [{allowed_hosts_str}],'''
-
-    new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
+    new_content = _ensure_lna_header(_ensure_allowed_hosts(content))
 
     if new_content == content:
-        # Intento alternativo: buscar solo "hmr: true," dentro de server
-        pattern_alt = r'(server:\s*\{[^}]*?hmr:\s*true,)'
-        replacement_alt = rf'''\1
-    allowedHosts: [{allowed_hosts_str}],'''
-        new_content = re.sub(pattern_alt, replacement_alt, content, flags=re.DOTALL)
-    
-    if new_content == content:
+        if "allowedHosts" in content and "Permissions-Policy" in content:
+            print("[INFO] vite.config.js ya tiene allowedHosts y Permissions-Policy")
+            return True
         print("[WARN] No se pudo encontrar el patrón para parchar. Revisión manual necesaria.")
-        print("[INFO] Añade manualmente a la sección 'server' en vite.config.js:")
-        print(f"       allowedHosts: [{allowed_hosts_str}],")
         return False
-    
-    # Escribir el contenido modificado
+
     vite_config_path.write_text(new_content)
-    print("[OK] vite.config.js parcheado exitosamente con allowedHosts")
+    print("[OK] vite.config.js parcheado (allowedHosts / Permissions-Policy)")
     return True
 
 
