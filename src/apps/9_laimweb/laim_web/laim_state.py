@@ -224,7 +224,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         """JSON de paquetes para el motor SVG (mismo patrón que el Network Monitor)."""
         import json
 
-        from laim_web.escenarios_data import build_escenario_view
+        from laim_web.escenarios_data import build_escenario_view, caption_step_seconds
 
         view = build_escenario_view(self.escenario_id, self.escenario_step)
         return json.dumps(
@@ -233,10 +233,29 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
                     f"{view['id']}:{self.escenario_step}:{self.escenario_play_generation}:"
                     f"{view['packet_edge']}:{view['packet_label']}"
                 ),
+                "step_s": round(caption_step_seconds(str(view["caption"])), 2),
                 "packets": view["traffic"],
             },
             separators=(",", ":"),
         )
+
+    @rx.var
+    def escenario_caption_dur(self) -> str:
+        """Duración CSS del fundido del pie de fase."""
+        from laim_web.escenarios_data import build_escenario_view, caption_step_seconds
+
+        caption = str(build_escenario_view(self.escenario_id, self.escenario_step)["caption"])
+        return f"{caption_step_seconds(caption):.2f}s"
+
+    @rx.var
+    def escenario_caption_live(self) -> bool:
+        """True mientras la reproducción automática está activa."""
+        return bool(self.escenario_playing)
+
+    @rx.var
+    def escenario_caption_tick(self) -> bool:
+        """Alterna la clase CSS para reiniciar el fundido en cada fase."""
+        return ((self.escenario_step + self.escenario_play_generation) % 2) == 0
 
     @rx.var
     def escenario_show_queue(self) -> bool:
@@ -987,12 +1006,11 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
             self.escenario_step = last_index
 
     @event
-    def escenario_select(self, escenario_id: str) -> None:
-        """Cambia de escenario y vuelve a la primera fase."""
-        self.escenario_playing = False
-        self.escenario_play_generation += 1
+    def escenario_select(self, escenario_id: str) -> EventHandlerReturn:
+        """Elegir un caso reproduce el flujo entero y se detiene en la fase 1."""
         self.escenario_id = escenario_id
         self.escenario_step = 0
+        return self._start_escenario_playback()
 
     @event
     def escenario_pause(self) -> None:
@@ -1030,25 +1048,39 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
 
     @event
     def escenario_play(self) -> EventHandlerReturn:
-        """Inicia la reproducción automática de fases."""
+        """Continúa desde la siguiente fase y recorre el ciclo hasta la fase 1."""
         from laim_web.escenarios_data import escenario_step_count
 
         last_index = escenario_step_count(self.escenario_id) - 1
-        if self.escenario_step >= last_index:
+        if last_index <= 0:
+            return self._start_escenario_playback()
+        if self.escenario_step == 0:
+            self.escenario_step = 1
+        elif self.escenario_step >= last_index:
             self.escenario_step = 0
         return self._start_escenario_playback()
 
     @rx.event(background=True)
     async def escenario_play_loop(self) -> None:
-        """Avanza fases del escenario hasta el final o hasta pausar."""
-        from laim_web.escenarios_data import ESCENARIO_STEP_SECONDS, escenario_step_count
+        """Avanza fases con tiempo de lectura; al terminar vuelve a la fase 1."""
+        from laim_web.escenarios_data import (
+            build_escenario_view,
+            caption_step_seconds,
+            escenario_step_count,
+        )
 
         async with self:
             generation = self.escenario_play_generation
             escenario_id = self.escenario_id
 
         while True:
-            await asyncio.sleep(ESCENARIO_STEP_SECONDS)
+            async with self:
+                caption = str(
+                    build_escenario_view(self.escenario_id, self.escenario_step)["caption"]
+                )
+                delay = caption_step_seconds(caption)
+            await asyncio.sleep(delay)
+            stop = False
             async with self:
                 if not self.escenario_playing or self.escenario_play_generation != generation:
                     return
@@ -1056,10 +1088,14 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
                     return
                 last_index = escenario_step_count(self.escenario_id) - 1
                 if self.escenario_step >= last_index:
+                    self.escenario_step = 0
                     self.escenario_playing = False
-                    return
-                self.escenario_step += 1
+                    stop = True
+                else:
+                    self.escenario_step += 1
             yield
+            if stop:
+                return
 
     def _prepare_contact_form(self) -> None:
         """Pre-rellena el formulario de contacto al abrir la página."""

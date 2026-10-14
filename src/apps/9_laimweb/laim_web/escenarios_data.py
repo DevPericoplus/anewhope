@@ -6,7 +6,11 @@ from typing import Any
 
 ESCENARIO_DEFAULT_ID = "share_multi"
 ESCENARIO_STEP_SECONDS = 2.8
-PACKET_REV_LABELS = frozenset({"TOKENS"})
+ESCENARIO_FADE_IN_S = 0.55
+ESCENARIO_FADE_OUT_S = 0.70
+ESCENARIO_READ_MIN_S = 2.6
+ESCENARIO_CHARS_PER_SEC = 13.0
+PACKET_REV_LABELS = frozenset({"TOKENS", "OUT", "REPLY", "TABLE"})
 
 GPU_IDLE = "idle"
 GPU_INFER = "infer"
@@ -451,7 +455,98 @@ _SCENARIOS: list[dict[str, Any]] = [
             },
         ],
     },
+    {
+        "id": "hitl_remote",
+        "number": 6,
+        "title": "Chat que opera el servidor",
+        "summary": "Pregunta en lenguaje natural: LAIM propone el comando, usted confirma (HITL) y se ejecuta en el host real.",
+        "command": "laim   ·   laim remote   ·   HITL",
+        "nodes": [
+            {"id": "op", "label": "Chat LAIM", "role": "connect", "left": "16%", "top": "52%", "gpu": False},
+            {"id": "laim", "label": "Heurística + agentes", "role": "mesh", "left": "46%", "top": "28%", "gpu": False},
+            {"id": "hitl", "label": "Confirmación HITL", "role": "bastion", "left": "46%", "top": "76%", "gpu": False},
+            {"id": "host", "label": "Servidor producción", "role": "host", "left": "84%", "top": "50%", "gpu": False},
+        ],
+        "edges": [
+            {"id": "op-laim", "x1": 16, "y1": 52, "x2": 46, "y2": 28, "kind": "ai", "mx": 31, "my": 40},
+            {"id": "laim-hitl", "x1": 46, "y1": 28, "x2": 46, "y2": 76, "kind": "wan", "mx": 46, "my": 52},
+            {"id": "laim-host", "x1": 46, "y1": 28, "x2": 84, "y2": 50, "kind": "ssh", "mx": 65, "my": 39},
+            {"id": "hitl-host", "x1": 46, "y1": 76, "x2": 84, "y2": 50, "kind": "ssh", "mx": 65, "my": 63},
+        ],
+        "steps": [
+            {
+                "caption": "Chat en reposo. El servidor no se toca hasta que usted lo autorice.",
+                "gpu": GPU_IDLE,
+                "active_edges": [],
+                "lit_nodes": ["op", "laim"],
+                "packet_edge": "",
+                "packet_label": "",
+            },
+            {
+                "caption": "El operador pregunta: «¿cuánta RAM libre hay en producción?»",
+                "gpu": GPU_IDLE,
+                "active_edges": ["op-laim"],
+                "lit_nodes": ["op", "laim"],
+                "packet_edge": "op-laim",
+                "packet_label": "ASK",
+            },
+            {
+                "caption": "LAIM abre Remote al servidor: el contexto es real, no inventado.",
+                "gpu": GPU_IDLE,
+                "active_edges": ["laim-host"],
+                "lit_nodes": ["laim", "host"],
+                "packet_edge": "laim-host",
+                "packet_label": "SSH",
+            },
+            {
+                "caption": "La heurística propone un comando grounded: `free -h`. No alucina cifras.",
+                "gpu": GPU_INFER,
+                "active_edges": ["op-laim"],
+                "lit_nodes": ["op", "laim"],
+                "packet_edge": "op-laim",
+                "packet_label": "PLAN",
+            },
+            {
+                "caption": "HITL: «¿Ejecutar `free -h` en producción?» Nada corre sin su sí.",
+                "gpu": GPU_IDLE,
+                "active_edges": ["laim-hitl"],
+                "lit_nodes": ["laim", "hitl"],
+                "packet_edge": "laim-hitl",
+                "packet_label": "HITL",
+            },
+            {
+                "caption": "Usted confirma. El comando corre en el host por la sesión Remote.",
+                "gpu": GPU_IDLE,
+                "active_edges": ["laim-hitl", "hitl-host", "laim-host"],
+                "lit_nodes": ["laim", "hitl", "host"],
+                "packet_edge": "hitl-host",
+                "packet_label": "CMD",
+            },
+            {
+                "caption": "Vuelve la tabla real. LAIM la explica en el chat, anclada a esos bytes.",
+                "gpu": GPU_INFER,
+                "active_edges": ["laim-host", "op-laim"],
+                "lit_nodes": ["op", "laim", "host"],
+                "packet_edge": "laim-host",
+                "packet_label": "OUT",
+            },
+        ],
+    },
 ]
+
+
+def caption_step_seconds(caption: str) -> float:
+    """Tiempo de una fase: fundido de entrada, lectura y fundido de salida."""
+    text = str(caption or "")
+    read = max(ESCENARIO_READ_MIN_S, len(text) / ESCENARIO_CHARS_PER_SEC)
+    return ESCENARIO_FADE_IN_S + read + ESCENARIO_FADE_OUT_S
+
+
+def caption_packet_seconds(caption: str, *, primary: bool) -> float:
+    """El paquete termina dentro de la ventana nítida, antes del fundido de salida."""
+    usable = caption_step_seconds(caption) - ESCENARIO_FADE_OUT_S - 0.15
+    base = max(2.4, usable * 0.82)
+    return base if primary else max(2.15, base * 0.88)
 
 
 def list_escenario_ids() -> list[str]:
@@ -501,7 +596,7 @@ def wire_curve_d(x1: float, y1: float, x2: float, y2: float) -> str:
 
 
 def infer_packet_dir(label: str) -> str:
-    """TOKENS vuelve al cliente; el resto viaja hacia el destino del cable."""
+    """TOKENS/OUT/REPLY/TABLE vuelven al origen; el resto viaja al destino."""
     return "rev" if label in PACKET_REV_LABELS else "fwd"
 
 

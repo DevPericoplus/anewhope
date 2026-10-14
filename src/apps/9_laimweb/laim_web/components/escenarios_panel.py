@@ -46,7 +46,11 @@ ESCENARIO_TRAFFIC_JS = """
     var reverse = !!pkt.reverse;
     var keyPoints = reverse ? "1;0" : "0;1";
     var color = colorFor(pkt.kind || "ai", reverse);
-    var dur = pkt.primary ? 2.45 : 2.15;
+    var stepS = Number((svg && svg.__escStepS) || 0);
+    var usable = stepS > 0 ? Math.max(2.4, stepS - 0.85) : 0;
+    var dur = pkt.primary
+      ? (usable > 0 ? usable * 0.82 : 2.45)
+      : (usable > 0 ? Math.max(2.15, usable * 0.72) : 2.15);
     var g = document.createElementNS(SVG_NS, "g");
     g.setAttribute("class", "traffic-packet");
     if (!pkt.primary) g.setAttribute("opacity", "0.7");
@@ -89,6 +93,7 @@ ESCENARIO_TRAFFIC_JS = """
   function play(cfg) {
     var svg = document.querySelector(".esc-stage svg.esc-wires");
     if (!svg || !cfg) return;
+    svg.__escStepS = Number(cfg.step_s || 0);
     svg.querySelectorAll("g.traffic-packet").forEach(function (node) { node.remove(); });
     (cfg.packets || []).forEach(function (pkt, idx) {
       animateOne(svg, pkt, idx * 0.28);
@@ -236,6 +241,24 @@ def _wires_for_scenario() -> rx.Component:
                 _wire("hs-ts", 50, 48, 82, 82, "mesh"),
             ),
         ),
+        (
+            "perimetro",
+            _svg_wires(
+                _wire("wan-bas", 12, 50, 42, 50, "wan"),
+                _wire("bas-share", 42, 50, 80, 24, "ai"),
+                _wire("bas-files", 42, 50, 82, 52, "ssh"),
+                _wire("bas-pc", 42, 50, 80, 80, "ssh"),
+            ),
+        ),
+        (
+            "hitl_remote",
+            _svg_wires(
+                _wire("op-laim", 16, 52, 46, 28, "ai"),
+                _wire("laim-hitl", 46, 28, 46, 76, "wan"),
+                _wire("laim-host", 46, 28, 84, 50, "ssh"),
+                _wire("hitl-host", 46, 76, 84, 50, "ssh"),
+            ),
+        ),
         _svg_wires(
             _wire("wan-bas", 12, 50, 42, 50, "wan"),
             _wire("bas-share", 42, 50, 80, 24, "ai"),
@@ -286,6 +309,25 @@ def _nodes_for_scenario() -> rx.Component:
                 _plain_node("n2", "Nodo remoto 2", "remote", "82%", "18%"),
                 _plain_node("n3", "Nodo remoto 3", "remote", "18%", "82%"),
                 _plain_node("ts", "Cliente Tailscale", "connect", "82%", "82%"),
+            ),
+        ),
+        (
+            "perimetro",
+            rx.fragment(
+                _plain_node("wan", "Equipo en Internet", "connect", "12%", "50%"),
+                _plain_node("bastion", "LAIM bastión", "bastion", "42%", "50%"),
+                _gpu_node("share", "Share interno", "share", "80%", "24%"),
+                _plain_node("files", "Servidor ficheros", "host", "82%", "52%"),
+                _plain_node("pc", "PC interno", "host", "80%", "80%"),
+            ),
+        ),
+        (
+            "hitl_remote",
+            rx.fragment(
+                _plain_node("op", "Chat LAIM", "connect", "16%", "52%"),
+                _plain_node("laim", "Heurística + agentes", "mesh", "46%", "28%"),
+                _plain_node("hitl", "Confirmación HITL", "bastion", "46%", "76%"),
+                _plain_node("host", "Servidor producción", "host", "84%", "50%"),
             ),
         ),
         rx.fragment(
@@ -415,6 +457,7 @@ def _legend() -> rx.Component:
         rx.box(rx.text("SHARE"), class_name="esc-legend-swatch esc-role-share"),
         rx.box(rx.text("CONNECT"), class_name="esc-legend-swatch esc-role-connect"),
         rx.box(rx.text("REMOTE / HOST"), class_name="esc-legend-swatch esc-role-host"),
+        rx.box(rx.text("HITL"), class_name="esc-legend-swatch esc-role-bastion"),
         rx.box(rx.text("GPU idle"), class_name="esc-legend-swatch esc-gpu-idle"),
         rx.box(rx.text("GPU infer"), class_name="esc-legend-swatch esc-gpu-infer"),
         rx.box(rx.text("GPU cola"), class_name="esc-legend-swatch esc-gpu-queue"),
@@ -440,9 +483,10 @@ def escenarios_content_panel() -> rx.Component:
             ),
             rx.text(
                 "Guía gráfica de cómo se combinan Share, Connect, Remote y malla. "
-                "Reproducir recorre el flujo; Reiniciar vuelve a la fase 1 y lo "
-                "repite. En los casos con Share se ve el gestor de colas GPU "
-                "(queue_submit, claim, slots Ollama, P2/P3). No arranca solo.",
+                "Elegir un caso reproduce el flujo completo y se detiene en la "
+                "primera fase. Reproducir continúa desde la siguiente. En los "
+                "casos con Share se ve el gestor de colas GPU (queue_submit, "
+                "claim, slots Ollama, P2/P3).",
                 class_name="crt-muted esc-intro",
             ),
             rx.hstack(
@@ -463,7 +507,22 @@ def escenarios_content_panel() -> rx.Component:
                     ),
                     rx.text(LaimWebState.escenario_summary, class_name="crt-muted"),
                     _stage(),
-                    rx.text(LaimWebState.escenario_caption, class_name="esc-caption"),
+                    rx.text(
+                        LaimWebState.escenario_caption,
+                        class_name=rx.cond(
+                            LaimWebState.escenario_caption_live,
+                            rx.cond(
+                                LaimWebState.escenario_caption_tick,
+                                "esc-caption esc-caption-live esc-cap-a",
+                                "esc-caption esc-caption-live esc-cap-b",
+                            ),
+                            "esc-caption",
+                        ),
+                        style={
+                            "--esc-cap-dur": LaimWebState.escenario_caption_dur,
+                            "animationDuration": LaimWebState.escenario_caption_dur,
+                        },
+                    ),
                     _queue_panel(),
                     rx.text(LaimWebState.escenario_command, class_name="esc-command"),
                     _controls(),

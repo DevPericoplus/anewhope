@@ -1261,6 +1261,8 @@ body,
 
 .esc-selector {
   flex: 0 0 auto;
+  max-height: 36em;
+  overflow-y: auto;
 }
 
 .esc-card {
@@ -1438,6 +1440,32 @@ body,
   color: var(--crt-text);
   line-height: 1.5;
   min-height: 2.6em;
+  font-size: 1.17em;
+  opacity: 1;
+  filter: blur(0);
+}
+
+.esc-caption-live {
+  animation: esc-caption-breathe var(--esc-cap-dur, 5.2s) ease-in-out both;
+}
+
+@keyframes esc-caption-breathe {
+  0% {
+    opacity: 0.16;
+    filter: blur(5px);
+  }
+  11% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  82% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0.14;
+    filter: blur(5px);
+  }
 }
 
 .esc-command {
