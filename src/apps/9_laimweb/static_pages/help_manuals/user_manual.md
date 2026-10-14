@@ -17,6 +17,7 @@
    - [5.4 Entrada por voz en el chat](#54-entrada-por-voz-en-el-chat-)
    - [5.5 Informe de la sesion de chat](#55-informe-de-la-sesion-de-chat-)
    - [5.6 Complementos F8 (Codigo y Ejemplo)](#56-complementos-f8-codigo-y-ejemplo)
+   - [5.7 Herramientas de LAIM](#57-herramientas-de-laim)
 6. [Chat con equipos remotos](#6-chat-con-equipos-remotos)
 7. [Inferencia directa](#7-inferencia-directa)
    - [7.1 Adjunto de fichero](#71-adjunto-de-fichero-)
@@ -187,6 +188,31 @@ Cuando preguntas por el estado de **este** equipo (disco, RAM, etc.), LAIM prese
 
 Algunas operaciones (como eliminar archivos o detener servicios) se marcan como **de riesgo** y requieren una confirmacion adicional. Tu respuesta queda registrada en el log de actividad por motivos de auditoria.
 
+Si respondes **no**, LAIM no ejecuta nada y te lo dice tal cual: «No se ha ejecutado nada: denegaste la ejecucion de los comandos», con la lista de lo que proponia. Nunca lo presenta como un fallo ni describe una salida que no existe.
+
+LAIM no propone comandos que no puede ejecutar tal cual: con un hueco sin rellenar (`<PID>`), con un valor de ejemplo (`/path/to/…`), interactivos (editores como `vi`) o programas que tu sistema no tiene.
+
+### Peticiones de cambio en el chat
+
+Si pides un **cambio** en el equipo del chat («Vacia la cache DNS», «Baja la prioridad del proceso con mas CPU», «Instala htop»):
+
+- Si LAIM tiene comandos verificados completos para tu sistema, usa esos (no los escribe el modelo) y te pide permiso **para cada uno**. Si el cambio necesita un dato del equipo (por ejemplo, el proceso con mas CPU), primero hace esa lectura, con tu permiso, y te dice que proceso es y su PID antes de preguntarte por el cambio.
+- Si no los tiene, el modelo propone los comandos y tambien te pide permiso para cada cambio. Si al final no propone ningun cambio, LAIM te lo dice («LAIM no tiene un procedimiento verificado para este cambio…») y, debajo, lo que haya leido. Una lectura (`df`, `ps`, `cat /etc/hosts`…) nunca se presenta como si fuera la respuesta al cambio.
+- Si deniegas el permiso, no se ejecuta nada y te lo dice tal cual. Si se hicieron lecturas, aparecen debajo, pero LAIM nunca da por hecho un cambio que no se ejecuto.
+- Todo esto vale igual si el **equipo destino** del chat es otro equipo: los comandos se ejecutan en el por SSH, con los mismos permisos uno a uno.
+
+### Actualizaciones del sistema
+
+Si pides instalar actualizaciones, LAIM no instala todo de golpe: primero lee la lista pendiente (con tu permiso) y te la muestra con lo que requiere reinicio y lo que es una **actualizacion mayor** (por ejemplo, pasar a una nueva version de macOS). Despues te ofrece opciones y tu eliges:
+
+- **Opcion A:** solo las que no requieren reinicio.
+- **Opcion B:** todas salvo la actualizacion mayor, sin reiniciar; LAIM te dice cuales necesitan reinicio para terminar.
+- **Opcion C:** la actualizacion mayor, solo si la pides expresamente («actualiza a macOS 27»).
+
+En Linux no se sabe antes de instalar que necesitara reinicio: LAIM instala las actualizaciones y despues consulta `needrestart` (o `/var/run/reboot-required`, `dnf needs-restarting`) para decirte si hace falta reiniciar. En Windows hace falta el modulo PSWindowsUpdate; sin el, LAIM te lo dice y no instala nada.
+
+**LAIM nunca reinicia el equipo:** si hace falta, te lo dice y reinicias tu cuando te venga bien.
+
 ### Historial de sesiones
 
 En el panel lateral del Chat veras tus conversaciones organizadas por fecha. Haz clic en cualquiera para **retomar desde donde la dejaste**. El historial se guarda cifrado en tu equipo.
@@ -278,6 +304,17 @@ Tras una respuesta, el chat puede ofrecer **F8** (complementos):
 | **Ejemplo** | Explica la inferencia con una analogia cotidiana (objetivo, analogia, pasos, tabla). No escribe informes en `reports/` desde el chat; el panel Tecnico Example si puede, si el admin lo pide. |
 
 **Ejemplo.** Preguntas «cuanta RAM hay en este equipo» y obtienes una tabla. Pulsas **Ejemplo**: LAIM compara la RAM con «cajones de un armario» y mapea cada cifra. Pulsas **Codigo**: te ofrece `free -h` o `Get-CimInstance Win32_OperatingSystem` segun el SO, y pide confirmacion antes de ejecutarlo.
+
+### 5.7 Herramientas de LAIM
+
+LAIM tiene sus propias herramientas pequeñas — por ejemplo `dirsize`, que mide cuánto ocupa una carpeta y cuántos ficheros contiene. Las crea un administrador y las aprueba antes de que nadie pueda usarlas; hasta entonces nunca se ejecutan.
+
+- **¿Qué herramientas hay?** Pregunta *«¿qué herramientas tiene LAIM?»* (o *"what LAIM tools are available?"*). Ves las herramientas aprobadas que puedes usar.
+- **¿Qué hace una herramienta?** Pregunta *«¿qué es <herramienta>?»*, por ejemplo *«¿qué es dirsize?»*, *«¿para qué sirve dirsize?»* o *«¿cómo se usa dirsize?»*. LAIM responde con la descripción aprobada de la herramienta: qué mide, preguntas de ejemplo, los datos que necesita, la orden que ejecuta, si solo lee y su estado en los equipos que puedes usar. Si nombras una herramienta que no existe, LAIM te lo dice; nunca se inventa una.
+- **Usar una herramienta.** Haz tu pregunta con el equipo seleccionado, p. ej. *«¿Cuánto ocupa la carpeta /var/log y cuántos ficheros tiene?»*. Si una herramienta aprobada la responde, LAIM pide el consentimiento de solo lectura de siempre, con una línea como `laim-tool dirsize --json --path /var/log @mi-servidor`. Si la herramienta aún no está en ese equipo, LAIM pregunta antes si la despliega. Si falta un dato (por ejemplo, qué carpeta), LAIM te lo pide; si lo dejas vacío, no se ejecuta nada y LAIM responde de la forma habitual.
+- **La respuesta** muestra las cifras y termina con una línea **Method:** que nombra la orden exacta que se ejecutó (p. ej. `` **Method:** ran `laim-tool dirsize --json --path /var/log` … ``), para que siempre sepas de dónde salen los datos. Si la herramienta no se pudo usar, LAIM dice por qué y nunca responde a otra pregunta.
+
+**Ejemplo.** Con el equipo remoto *mi-servidor* seleccionado preguntas «¿cuánto ocupa /var/log y cuántos ficheros tiene?». LAIM pide una vez permiso para ejecutar `laim-tool dirsize --json --path /var/log @mi-servidor`, respondes *s* y obtienes «Carpeta `/var/log`: Tamaño 4.9 GB, Ficheros 226» seguido de la línea Method.
 
 ---
 
@@ -556,6 +593,8 @@ Durante una sesion SSH remota desde la web, puedes solicitar analisis inteligent
 2. LAIM analiza el contenido visible de la consola y actua como un **ingeniero de sistemas experto**: interpreta la salida de comandos, detecta errores, propone pasos siguientes o explica configuraciones del sistema.
 3. El asistente conoce el sistema operativo del equipo remoto y adapta sus sugerencias a la plataforma (Ubuntu, CentOS, Debian, etc.).
 4. Si la IA necesita ejecutar comandos adicionales para obtener mas informacion, te lo comunicara y pedira tu confirmacion antes de proceder.
+   - Si le pides un **cambio** (vaciar la cache DNS, renombrar el equipo, cambiar los DNS…), LAIM propone los comandos verificados de su catalogo para ese sistema, sin ejecutarlos; si no tiene un procedimiento verificado, te lo dice («LAIM no tiene un procedimiento verificado para este cambio en Linux») en lugar de improvisar comandos. Si leyo algo del equipo, lo muestra despues de ese aviso, nunca como si fuera la respuesta al cambio.
+   - Para **subir o bajar la prioridad** de un proceso, LAIM usa la direccion que pides (bajar: `renice -n 10` / `BelowNormal`; subir: `sudo renice -n -5` / `AboveNormal`) sobre un PID real: el que indiques o, si pides «el proceso con mas CPU», el que LAIM lee antes en el equipo (sin contar sus propios procesos de consulta). Te dice que proceso es antes de proponer el cambio.
 5. Las respuestas se formatean con **titulos de seccion** claros y espaciado legible (listas numeradas, epigrafes) para facilitar la lectura en el panel CRT.
 
 El historial de sugerencias de esa sesion SSH tambien esta sujeto a la **compresion de contexto** si crece demasiado (mismo mecanismo que chat y Direct).
@@ -839,7 +878,7 @@ Si el administrador ha configurado **Headscale + subnet routing**, puedes usar L
    ```
 4. Configura LAIM Connect apuntando a la IP LAN del servidor (te la dara el admin):
    ```bash
-   ./bin/mac/laim config   # Menu > Share/Connect > Configurar Connect
+   laim config   # Menu > Share/Connect > Configurar Connect
    # Host: 192.168.1.50  Puerto: 4322
    # Usuario y contrasena: los que te facilite el admin
    ```
@@ -849,8 +888,8 @@ Si el administrador ha configurado **Headscale + subnet routing**, puedes usar L
 1. Abre la aplicacion Tailscale (icono en la barra de herramientas) y asegurate de que esta conectado.
 2. Abre LAIM normalmente:
    ```bash
-   ./bin/mac/laim connect   # conecta al servidor Share
-   ./bin/mac/laim chat      # usa la IA
+   laim connect   # conecta al servidor Share
+   laim chat      # usa la IA
    ```
    O abre la UI web en `http://localhost:4321`.
 3. Si la conexion falla, comprueba que Tailscale esta activo con `tailscale status`.

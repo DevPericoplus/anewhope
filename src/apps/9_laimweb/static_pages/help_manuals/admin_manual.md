@@ -69,15 +69,16 @@
 
 ### 1.2 Inicializacion del workspace
 
+Tras instalar LAIM con el instalador, el binario queda en el PATH. En la consola basta el nombre del comando (`laim` o, en Windows, `laim.exe`). LAIM recuerda la ruta de datos de esta instalacion.
+
+Si compilas desde el repositorio de desarrollo, usa `./bin/<plataforma>/laim` (por ejemplo `./bin/silicon/laim`).
+
 ```bash
 # Windows
-.\bin\windows\laim.exe init
+laim.exe init
 
-# macOS
-./bin/mac/laim init
-
-# Linux
-./bin/linux/laim init
+# macOS / Linux
+laim init
 ```
 
 `laim init` realiza las siguientes acciones:
@@ -94,7 +95,7 @@
 
 > **Nunca** copies `laim.dat` ni `soulmachine.dat` entre equipos. Cada instalacion tiene su propia clave maestra y su propio inventario de hardware.
 
-**Ejemplo.** En un Mac Apple Silicon: `bash scripts/compile_core.sh` → `./bin/silicon/laim init`. Respondes `s` a Ollama si ya tienes modelos, `n` al firewall si lo configuraras despues en Internal › Local. El usuario `localadmin` existe; cambias la contrasena en `laim config`.
+**Ejemplo (desarrollo).** En un Mac Apple Silicon, compilando el repo: `bash scripts/compile_core.sh` → `./bin/silicon/laim init`. Respondes `s` a Ollama si ya tienes modelos, `n` al firewall si lo configuraras despues en Internal › Local. El usuario `localadmin` existe; cambias la contrasena en `laim config`.
 
 ### 1.3 Crear el primer administrador
 
@@ -103,9 +104,8 @@ Tras `init`, ejecuta `laim config` para crear el primer usuario admin. Si no hay
 ### 1.4 Arrancar la interfaz web
 
 ```bash
-.\bin\windows\laim.exe web   # Windows
-./bin/mac/laim web            # macOS
-./bin/linux/laim web          # Linux
+laim.exe web   # Windows
+laim web       # macOS / Linux
 ```
 
 Abre **http://localhost:4321** en el navegador.
@@ -1677,6 +1677,15 @@ Eso **anade** la linea; no borre otras claves ya presentes en `authorized_keys`.
 
 Comprobacion: `ssh-keygen -lf` sobre el `.pub` y sobre `authorized_keys` deben mostrar la **misma huella SHA256** para esa clave.
 
+### 9.1.2 Credenciales guardadas: el administrador las introduce una sola vez (0.58.30)
+
+- El administrador registra la contraseña SSH o la clave privada de un equipo **una sola vez** (**config → 8 → 1** o Config > Equipos en la web). Se guardan cifradas (AES-256-GCM con la clave maestra de la instalación en `laim.dat`).
+- Todos los usuarios de LAIM con acceso a ese equipo (9.4) se conectan con ellas de forma transparente — terminal, chat, Suggestions y despliegue de herramientas. Los usuarios nunca necesitan conocerlas.
+- Si cambian en el equipo, el administrador las actualiza una vez y el cambio vale para todos.
+- LAIM nunca pide a un usuario las credenciales de un equipo. El terminal web solo las pide a un **administrador**, y solo cuando el equipo rechazó de verdad la contraseña guardada (se llegó a probar un método) o el equipo no tiene ninguna guardada; un usuario no administrador ve "SSH rechazó las credenciales guardadas de este equipo. Solo un administrador puede actualizarlas (Config > Equipos)".
+- Si LAIM no puede cargar las credenciales guardadas (fallo al descifrar), muestra: **"LAIM no pudo cargar las credenciales guardadas de este equipo; un administrador debe revisarlas"** y registra `credential_load_failed computer=… kind=password|rsa_key` en `console.log` (nunca el secreto). Revise el equipo en Config > Equipos e introduzca de nuevo la credencial.
+- `attempted methods [none]` significa que el equipo no aceptó **ninguno** de los métodos que LAIM ofreció — no se llegó a probar ninguna credencial, así que no es una contraseña incorrecta y no se pide a nadie. `console.log` muestra `auth_no_method_accepted computer=… offered=password,keyboard-interactive` (o `publickey`): revise los métodos que permite el `sshd` del equipo (`PasswordAuthentication`, `PubkeyAuthentication`, bloques `Match`) o guarde la credencial correspondiente.
+
 ### 9.2 Resolucion de host SSH
 
 LAIM resuelve el host del equipo en este orden de prioridad:
@@ -2075,6 +2084,8 @@ Referencias de modelado: [OWASP LLM Top 10](https://genai.owasp.org/llm-top-10/)
 | `DES-GTFO-PRIVESC` | design | both | Abuso SUID / LOL / `docker --privileged` (GTFOBins; **no** `sudo` plano) |
 
 **Excepcion:** elevacion con `sudo` (Linux/macOS) o UAC/`runas` (Windows) **no** se rechaza aqui; queda a criterio del usuario en F6 (RISKY + consentimiento).
+
+**Comandos que LAIM nunca ejecuta o que siempre preguntan (F6, 0.58.32):** un comando con un hueco sin rellenar (`<PID>`, `<interfaz>`) o con un valor de documentación (`YourProcessName`, `/path/to/…`, `example.com`) y los programas interactivos (editores, `htop`, `top` sin modo batch) se rechazan (FORBIDDEN): no hay nada que consentir, LAIM primero averigua el valor real. Cambiar la prioridad, la clase de E/S o la afinidad de procesos (`renice`, `ionice -c`, `chrt`, `taskset -p` con valor, `.PriorityClass =`, `wmic … setpriority`) pide siempre consentimiento (RISKY, CMD-RSK-025). Desde 0.58.33 tambien liberar espacio borrando datos (`apt-get clean`, `journalctl --vacuum-*`, `docker … prune`, `Clear-RecycleBin`, `truncate -s`…) y crear swap (`fallocate`, `mkswap`) piden consentimiento (RISKY, CMD-RSK-026). Desde 0.58.35 **LAIM nunca reinicia el equipo**: CMD-FBD-010 (FORBIDDEN) cubre tambien `softwareupdate -R/--restart` y `Install-WindowsUpdate … -AutoReboot/-ForceReboot`, ademas de `shutdown`, `reboot`, `systemctl reboot` y `Restart-Computer`. Las actualizaciones se instalan sin reiniciar y LAIM avisa cuando hace falta un reinicio (`Action: restart`, `RebootRequired`, `needrestart -b`).
 
 **Donde configurarlo (web):**
 
@@ -3461,7 +3472,7 @@ El **Mac** esta en una red publica (sin acceso directo a `192.168.1.x`). Con Hea
 
 ```bash
 # En tibet.house.loc
-./bin/linux/laim web   # arranca la UI de administracion
+laim web   # arranca la UI de administracion
 # Navega a: Config > Acceso remoto > WireGuard mesh (Headscale)
 # → Estado del servidor > Configurar con:
 #     Server URL: https://mi-dominio-publico.com:8080
@@ -3472,7 +3483,7 @@ El **Mac** esta en una red publica (sin acceso directo a `192.168.1.x`). Con Hea
 
 Alternativamente desde CLI:
 ```bash
-./bin/linux/laim config   # menu > Acceso remoto > Headscale
+laim config   # menu > Acceso remoto > Headscale
 ```
 
 ### Paso 2 — Registrar el servidor Linux en la malla como nodo subnet router
@@ -3522,14 +3533,14 @@ Desde la UI de LAIM (en el servidor Linux):
 
 ```bash
 # En el MacBook
-./bin/mac/laim config  # menu > Share/Connect > Configurar Connect
+laim config  # menu > Share/Connect > Configurar Connect
 # Introduce:
 #   Host del master Share: 192.168.1.50  (IP LAN del Linux)
 #   Puerto:                4322
 #   Usuario:               <usuario_laim>
 #   Contrasena:            <contrasena_laim>
-./bin/mac/laim connect  # arranca el cliente
-./bin/mac/laim chat     # usa la IA del servidor Share
+laim connect  # arranca el cliente
+laim chat     # usa la IA del servidor Share
 ```
 
 O desde la UI web del Mac: **Config > Share/Connect > Connect**.
@@ -3819,11 +3830,10 @@ El **Monitor de sistema** es una utilidad de consola interactiva que proporciona
 
 ```bash
 # Windows
-.\bin\windows\laim.exe monitor
+laim.exe monitor
 
 # macOS / Linux
-./bin/mac/laim monitor
-./bin/linux/laim monitor
+laim monitor
 ```
 
 ### Interfaz TUI — descripción de secciones
@@ -4319,9 +4329,8 @@ Si los archivos del sandbox se danan o eliminan:
 
 ```bash
 # Basta con re-ejecutar init — EnsureSandbox() es idempotente
-.\bin\windows\laim.exe init   # Windows
-./bin/linux/laim init          # Linux
-./bin/mac/laim init            # macOS
+laim.exe init   # Windows
+laim init       # macOS / Linux
 ```
 
 #### Ver logs de ejecucion
@@ -4501,7 +4510,7 @@ Al detectarse, el chat short-circuit ejecuta **spec/plan** (sin codigo). BUILD/V
 
 ### 23.9 Apps generadas y AppAssist
 
-> **Estado actual (gobierno):** las herramientas solo se crean desde Developer, solo se ejecutan cuando un admin las aprueba y se despliegan en `/tmp/.laim/<slug>_v<versión>_<sha256[:8]>` (Windows: `%USERPROFILE%\.laim\tools\<slug>\<versión>_<sha256[:8]>\<slug>.exe`, §23bis.10). Donde esta subsección difiera (crear apps desde el chat, `/tmp/.laim/<slug>_vN`, ejecutar sin aprobación), prevalece el [§23bis](#23bis-agente-developer-y-aprobación-de-desarrollos).
+> **Estado actual (gobierno):** las herramientas solo se crean desde Developer, solo se ejecutan cuando un admin las aprueba y se despliegan en `/tmp/.laim/<slug>_v<versión>_<sha256[:8]>` (Windows: `%USERPROFILE%\.laim\tools\<slug>\<versión>_<sha256[:8]>\<slug>.exe`, §23bis.10). Donde esta subsección difiera (crear apps desde el chat, `/tmp/.laim/<slug>_vN`, ejecutar sin aprobación), prevalece el [§23bis](#23bis-agente-developer-y-aprobación-de-desarrollos). Desde LAIM 0.58.31 el chat ejecuta las herramientas aprobadas por la ruta rápida de herramientas (§23bis.11), no por AppAssist (solo con `LAIM_LEGACY_APPASSIST=1`).
 
 Las apps helper en Go (p. ej. `dirsize`) se compilan a `LAIMConfigDir()/<goos>/<goarch>/<slug>`, se registran en `laim.dat` (`GeneratedApps`) y DevOps las despliega por SSH a `/tmp/.laim/<slug>_vN`.
 
@@ -4680,7 +4689,7 @@ Tras el HITL de ejecucion, AppAssist lanza en el remoto:
 /tmp/.laim/dirsize_vN /var/log
 ```
 
-El stdout JSON se formatea con `FormatDirsizeAssistSummary` + `PresentResults` (escalas humanas) y se devuelve como **resultado del turno de chat** (sin pasar por el camino largo F5/F6 si AppAssist completo el pipeline). Ejemplo de salida visible:
+El stdout JSON lo formatea el presentador genérico `PresentToolResult` (§23bis.11; `FormatDirsizeAssistSummary` es ahora un envoltorio obsoleto sobre él) + `PresentResults` (escalas humanas) y se devuelve como **resultado del turno de chat** (sin pasar por el camino largo F5/F6 si AppAssist completo el pipeline). Ejemplo de salida visible:
 
 ```text
 Carpeta `/var/log`:
@@ -4850,11 +4859,11 @@ Una herramienta que no está `present` muestra `host status: needs deploy (<esta
 
 **Depuración (admin):** `GET /api/v1/tools/catalog?computer_id=<computer_id>&q=<pregunta>` (401 para quien no es admin). `computer_id` vacío o `localhost` = el propio equipo LAIM; un equipo desconocido → 404. Opcionales: `as_user=<usuario>` (evalúa acceso y rol como ese usuario) y `min_score=<n>`. La respuesta trae `target` (`computer_id`, `host`, `segment`, `arch`, `local`, `arch_assumed`), `query`, `user`, `role`, `min_score`, `tools` (`slug`, `app_id`, `version`, `purpose`, `side_effect`, `platform`, `approved_sha256`, `deploy_status`, `deploy_version`, `remote_path`, `last_verified_at`, `score`, `heuristic_bonus`, `line`), `excluded` (`app_id`, `slug`, `version`, `code`, `reason`), `prompt` y `prompt_bytes`.
 
-**Próximamente:** el catálogo ya se construye y se expone, y el ejecutor (23bis.8) ya funciona para el chat (AppAssist) y DevOps; el catálogo todavía no se inyecta en los prompts del planificador del chat. Los siguientes pasos son su uso por el planificador, una vía rápida determinista con su presentador y el uso desde Connect y Suggestions.
+**Próximamente:** el catálogo ya se construye y se expone, y el ejecutor (23bis.8) ya funciona para la ruta rápida de herramientas del chat con su presentador determinista (23bis.11) y DevOps; el catálogo todavía no se inyecta en los prompts del planificador del chat. Los siguientes pasos son su uso por el planificador y el uso desde Connect y Suggestions.
 
 ### 23bis.8 Ejecutar una herramienta (ejecutor)
 
-Toda ejecución de una herramienta aprobada que tiene manifest pasa por un único ejecutor: hoy el chat (AppAssist) y DevOps `action: "run"`; más adelante el planificador del chat, Suggestions y Connect. En cada llamada hace, en este orden:
+Toda ejecución de una herramienta aprobada que tiene manifest pasa por un único ejecutor: hoy la ruta rápida de herramientas del chat (23bis.11) y DevOps `action: "run"`; más adelante el planificador del chat, Suggestions y Connect. En cada llamada hace, en este orden:
 
 | Paso | Qué ocurre |
 |------|------------|
@@ -4910,8 +4919,8 @@ Windows: $p='<ruta>'; $h=(Get-FileHash -Algorithm SHA256 -LiteralPath $p …).Ha
 | Leer el perfil | `$env:USERPROFILE` |
 | Arquitectura / sha256 | `$env:PROCESSOR_ARCHITECTURE`; `Get-FileHash -Algorithm SHA256 -LiteralPath …` |
 | Crear la carpeta | `New-Item -ItemType Directory -Force -Path '<…\<versión>_<sha8>>'` |
-| Transferir | receptor SCP `scp -t "C:/Users/…/<slug>.exe"` (sin PowerShell); respaldo: escrituras por bloques con `-EncodedCommand` — ver *Copia del binario a Windows* más abajo |
-| Instalar | `Move-Item` a `<slug>.exe` cuando el nombre subido es otro |
+| Transferir | receptor SCP `scp -t "C:/Users/…/<slug>.exe.<rand8>.part"` (sin PowerShell), después modo líneas y después escrituras por bloques con `-EncodedCommand` — ver *Copia del binario a Windows* y *Copia robusta y observable* más abajo |
+| Instalar | ninguno desde 0.58.29: la finalización de la copia comprueba tamaño + sha256 y sustituye `<slug>.exe` en una sola llamada |
 | Verificar + ejecutar | 23bis.8 (las rutas con espacios o comillas van entre comillas simples de PowerShell) |
 | Retirar | `Remove-Item -LiteralPath … -Force`, solo después de comprobar en el propio equipo que el fichero está bajo el `%USERPROFILE%\.laim\tools` vigente (si no, `OUTSIDE` y no se borra nada); después, la carpeta de la versión si queda vacía |
 
@@ -4926,6 +4935,16 @@ Windows: $p='<ruta>'; $h=(Get-FileHash -Algorithm SHA256 -LiteralPath $p …).Ha
 **Qué ve el usuario si se agota el tiempo.** El despliegue falla con `deploy_failed` y un motivo que empieza por `transfer_timeout`; no se registra nada en el equipo. El turno del chat termina con el respaldo honesto de abajo — los comandos nativos de solo lectura si el manifest los declara, si no `No se pudo usar la herramienta LAIM <slug> v<N> en <host>: no se pudo desplegar: la copia del binario al equipo superó su tiempo límite y se canceló (…).` — nunca se queda colgado ni responde otra pregunta. Volver a preguntar reintenta el despliegue.
 
 El plugin sentfiletoremote (transferencia de ficheros desde la web, dentro del proceso y como binario propio) usa el mismo mecanismo para Windows y los mismos límites; su transferencia a Linux/macOS (`cat > '<fichero>'`) no cambia.
+
+**Copia robusta y observable (LAIM 0.58.29).** En POWERPC (0.58.28) el receptor scp se abandonaba sin decir por qué, el respaldo por bloques tardó 6,5 minutos (≈165 arranques de PowerShell) y su último paso falló sobre `dirsize_windows@v1.exe` con un error `#< CLIXML` ilegible: ese fichero seguía abierto por el `powershell.exe` del intento colgado de 0.58.27. Desde 0.58.29:
+
+- **Orden: receptor scp → modo líneas → por bloques.** (1) El receptor SCP de arriba. (2) **Modo líneas:** UN solo `powershell -NoProfile -NonInteractive -EncodedCommand <arranque>`; el arranque escribe `LAIM_READY`, lee de su entrada estándar líneas de texto en base64 (`[Console]::In.ReadLine()`, 3.072 bytes por línea), las añade a su propio fichero temporal, confirma el avance (`LAIM_ACK <bytes>` cada 16 líneas) y se detiene en la línea final explícita `LAIM_END <tamaño> <sha256>` — nunca espera al final de la entrada (el cuelgue de 0.58.27). Sin `LAIM_READY` en 15 s, o sin `LAIM_ACK` durante 15 s → (3) los procesos por bloques de 0.58.28. El modo líneas es el camino rápido cuando falta scp (un proceso en lugar de uno por trozo) y lo acotan el mismo plazo y el mismo vigilante.
+- **Nombres temporales únicos y finalización atómica.** Cada modo escribe `<final>.<rand8>.part` (8 hexadecimales aleatorios por intento; los trozos gzip, `<final>.<rand8>.gz.part`) en la carpeta de la versión — nunca el nombre subido (`<slug>_windows@v<N>.exe`) ni el nombre final. Una orden de finalización comprueba el tamaño y el sha256 del temporal contra el binario local (`LAIM_BAD` → se descarta, `sha_mismatch`) y después sustituye `<slug>.exe` en una sola llamada (`[System.IO.File]::Replace`, o `[System.IO.File]::Move` si no había copia); ya no hay paso de instalación aparte. Si otro proceso tiene abierto `<slug>.exe`, el despliegue falla con `dest_locked` nombrando el fichero (`no se pudo desplegar: el fichero de destino está en uso en el equipo (otro proceso lo tiene abierto)`); no se escribe ni un byte en él. La sonda de sha256 tras la copia sigue siendo obligatoria antes de registrar la copia como `present`.
+- **Restos.** Antes de cada copia LAIM limpia solo la carpeta de la versión `<tool_root>\<slug>\<versión>_<sha8>` (comprobada en LAIM y otra vez en el equipo contra el `%USERPROFILE%\.laim\tools` vigente, como al retirar; nada recursivo, nada fuera): ficheros `*.part` de más de 15 minutos y nombres subidos antiguos `<slug>_*.exe`; nunca `<slug>.exe`. Un resto que no se puede borrar porque un proceso lo tiene abierto se registra como `leftover_locked <nombre>` y se ignora — la copia sigue con su propio nombre temporal único.
+- **Limpieza de procesos remotos colgados.** Cada orden codificada de un modo empieza con la línea de comentario `# laim-xfer <16 hexadecimales aleatorios>`; el base64 que codifica esa línea se ve en la línea de órdenes del `powershell.exe` interior y del envoltorio exterior `powershell.exe -c "…"` que añade OpenSSH cuando su DefaultShell es PowerShell (scp: la ruta temporal). Cuando un modo agota su tiempo (o se abandona el modo líneas), LAIM cierra la sesión y ejecuta una orden acotada (10 s) que detiene solo procesos `powershell.exe` / `scp.exe` cuya línea de órdenes contiene una de las marcas de esta transferencia (nunca a sí misma ni a su padre; marcas de menos de 32 caracteres se ignoran) y borra los ficheros temporales exactos de esta transferencia. Nunca detiene ningún otro proceso.
+- **Log y mensajes.** El log de consola (`remote_deploy`) muestra `scp_sink ok bytes=<n> after=<t>` o `scp_sink_failed reason=<handshake timeout|error ack '<texto>'|exit <n>|not found|eof> stderr="<primer texto de error>"`, `line_mode start lines=<n>`, `line_mode ok` / `line_mode_failed reason=…`, `chunked start chunks=<n> chunk_bytes=<n> gzip=<bool>`, `chunked ok chunks=<n> … after=<t>`, `remote_cleanup markers=<n> temps=<n> stopped=<n>`, `leftover_removed` / `leftover_locked`, y `transfer_done … mechanism=<scp_sink|line|chunked>` (o `transfer_failed` / `transfer_timeout` / `dest_locked … | <motivo>`). PowerShell escribe los errores en un stderr redirigido como CLIXML (`#< CLIXML <Objs …><S S="Error">…_x000D__x000A_</S>`); LAIM lo decodifica a texto plano (solo las líneas de error, sin las de posición `At line:` / `+ …`), con el código de salida, en el log y en el mensaje honesto al usuario (recortado a una línea).
+
+**Resolución de problemas.** Si una versión anterior de LAIM se quedó colgada durante una copia (0.58.27), puede seguir ejecutándose en el equipo un `powershell.exe` que tiene abierto un fichero de la carpeta de la versión (Administrador de tareas → Detalles, o `Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Select ProcessId,CreationDate,CommandLine`). LAIM 0.58.29 ya no necesita ese fichero: usa nombres temporales únicos, registra `leftover_locked` y sigue, y detiene sus propios procesos marcados cuando una transferencia agota el tiempo. Los procesos de LAIM 0.58.27/0.58.28 no llevan marca y LAIM nunca los detiene: termínalos a mano (o reinicia el equipo) si quieres que el fichero desaparezca.
 
 **Registros heredados.** Un despliegue de Windows registrado en `/tmp/.laim/…` (antes de LAIM 0.58.27) es `stale`: nunca se sondea ni se ejecuta, la siguiente ejecución pide redesplegar en `%USERPROFILE%\.laim\tools` y el registro antiguo se cierra como `undeployed` sin ninguna orden en el equipo (`last_verify_error` lo explica).
 
@@ -4949,6 +4968,45 @@ El propio `{"error": …}` de la herramienta (p. ej. la carpeta no existe) y un 
 Validación (severidad `error`): una entrada por segmento (`fallback_segment_invalid`, `fallback_segment_duplicate`); de 1 a 3 comandos de 400 caracteres como máximo (`fallback_commands_count`, `fallback_command_invalid`); `{param}` debe ser una palabra entera y un param declarado y no `sensitive` (`fallback_unknown_param`, `fallback_sensitive_param`); sin rutas literales (`fallback_literal_value`) ni metacaracteres de shell salvo la tubería — sin comillas, `;`, `&`, `>`, `<`, `$`, comillas invertidas, paréntesis ni llaves (`fallback_shell_metachar`); cada comando debe pasar el clasificador de solo lectura de su segmento (`fallback_not_read_only`); solo herramientas `read_only` (`fallback_requires_read_only`).
 
 **Recompilar + volver a aprobar.** `fallback` forma parte del manifest, así que cambia el sha256 canónico del manifest. Una herramienta aprobada antes de LAIM 0.58.27 (p. ej. `dirsize` v1) no tiene `fallback`: hasta que se recompile desde Developer y se apruebe la versión nueva (23bis.9), sus fallos terminan solo con el mensaje honesto. La ubicación de Windows y las órdenes codificadas no necesitan recompilar: se aplican a todo despliegue hecho por LAIM 0.58.27 o posterior.
+
+### 23bis.11 Ruta rápida de herramientas en el chat, presentador y «LAIM explica sus herramientas»
+
+Desde LAIM 0.58.31 el chat ya no usa AppAssist: una herramienta aprobada se ejecuta por la **ruta rápida de herramientas**, su respuesta la construye un **presentador genérico** a partir del manifest, lleva la **línea Method** de LAIM y el comando ejecutado como cualquier turno medido, y LAIM sabe **explicar sus propias herramientas**.
+
+**Ruta rápida de herramientas.** Se comprueba en cada turno de chat antes de los orquestadores y de la ruta rápida heurística (turnos de Connect / Share: no en v1):
+
+1. **Equipo.** Se usa el *Equipo destino* del chat tal cual: desaparece la pregunta «El chat apunta a X. ¿Usar ese equipo para AppAssist? (s/n)». Con *Localhost* (sin equipo remoto) la herramienta se ejecuta en el equipo LAIM. LAIM solo pregunta si hay ambigüedad: la pregunta nombra otro equipo distinto del destino del chat («La pregunta menciona X y el chat apunta a Y. ¿Ejecutar en X?»), o nombra uno sin que el chat tenga destino remoto («¿La consulta se refiere al equipo X?»).
+2. **Selección.** El catálogo por equipo de 23bis.7 de ese equipo, ordenado para la pregunta. Su primera herramienta solo se usa si es `read_only` **y** el `heuristic_cases` de su manifest contiene el caso heurístico de la pregunta —`dirsize` declara `generated_app_assist`: tamaño y número de ficheros de una carpeta nombrada con una palabra («carpeta», «folder») o por su ruta (`/var/log`, `C:\Windows\Logs`)— o si la pregunta la nombra por su slug con una relevancia de al menos 20. Las herramientas `writes` / `exec` nunca entran en esta ruta.
+3. **Argumentos solo de la pregunta** (`extract` del manifest: `path` → la primera ruta absoluta, `int` / `pid` → el primer número, `host` → el primer nombre de equipo). Un valor obligatorio que falte se pregunta una vez como su slot (`LAIM necesita un dato real para ejecutar <slug> … ¿Valor de <ruta>?`); una respuesta vacía no ejecuta nada y el turno sigue por el camino normal.
+4. **Ejecución.** El ejecutor de 23bis.8: la pregunta de despliegue si el equipo no tiene la copia aprobada verificada y después la pregunta de consentimiento de solo lectura con la línea `laim-tool <slug> <args> @<equipo>`. Las reglas del autorun de Suggestions no cambian.
+5. **Respuesta.** Determinista: sin modelos de F2–F7 ni traducción por modelo (`DeterministicCaseID` = `tool:<slug>`); F8 como siempre. Una llamada que no da medida termina con la respuesta honesta de 23bis.10.
+
+**Presentador genérico (`PresentToolResult`).** Se construye solo con el `output` del manifest: los campos declarados no primarios encabezan la respuesta (``Carpeta `C:\Windows\Logs`:``), los `primary` son líneas `- Etiqueta: valor` y `list_field` es una tabla con `list_columns`. Etiquetas `label_es` / `label_en` (español por defecto, inglés si el turno es en inglés). Tipos: `bytes` → tamaño legible y MB exactos (`98.0 MB (98.00 MB)`), `int` (con `unit`), `duration_ms` (`2 min 5 s`), `timestamp` (RFC 3339 → `2026-10-13 08:00:00 UTC`), `bool` (sí / no). Un campo `sensitive` sale siempre como `********`. JSON no válido, un campo de error relleno o una salida truncada **no** dan respuesta determinista (mensaje honesto en su lugar); nunca se responde con la salida cruda. Sustituye al formateador exclusivo de dirsize `FormatDirsizeAssistSummary` (queda como envoltorio obsoleto con las mismas cifras).
+
+```text
+Carpeta `C:\Windows\Logs`:
+- Tamaño: 98.0 MB (98.00 MB)
+- Ficheros: 379
+
+**Method:** ran `laim-tool dirsize --json --path 'C:\Windows\Logs'` (heuristic case `tool:dirsize`). LAIM tool `dirsize` v1 (sha256 d7f3bb6c) on POWERPC.
+```
+
+**Línea Method y comandos ejecutados.** Una ejecución de herramienta se informa como cualquier ejecución heurística: la línea Method estándar de LAIM (`` **Method:** ran `<comando>` (heuristic case `tool:<slug>`). ``, en inglés como todas las líneas Method) seguida de la procedencia (herramienta, versión aprobada, prefijo del sha256, equipo). La salida de comandos del turno —SSE `command_output` y `done.command_output`— es `$ laim-tool <slug> <args>` más el JSON enmascarado, y la web la muestra como bloque de comando. Una llamada que no se ejecutó nunca lleva línea Method; tras una llamada fallida, la línea Method solo lista los comandos nativos del respaldo que sí se ejecutaron.
+
+**Nota de medición para University.** University lee la línea Method (`ExtractLaimExecutedCommands`) y las líneas `$ ` de la salida de comandos, así que una ejecución de herramienta cuenta como ejecución medida de `laim-tool <slug> …`. `laim-tool` no es un programa del equipo: University no debe volver a ejecutarlo como sonda por SSH; comprueba la medida con comandos nativos de solo lectura (pkg33i).
+
+**LAIM explica sus herramientas (`laim_tool_info`).** «¿qué es dirsize?», «¿para qué sirve dirsize?», «¿cómo se usa dirsize?», «what is dirsize», «explain dirsize», «¿qué herramientas tiene LAIM?», «what LAIM tools are available?». La respuesta es determinista y sale del manifest **aprobado**: qué es (`purpose_es` / `purpose`), para qué sirve (los intents como preguntas de ejemplo, `heuristic_cases`), cómo se usa (parámetros con tipo, obligatorio y slot; una pregunta de ejemplo; la orden que ejecuta LAIM, p. ej. `laim-tool dirsize --json --path <ruta>`), la clase de efecto y el consentimiento que pide, las plataformas, su estado en cada equipo al que el usuario tiene acceso (y en el equipo LAIM), la versión aprobada, el autor, quién la aprobó y cuándo. Termina con `**Método:** catálogo de herramientas LAIM (manifest aprobado).` (en inglés: `**Method:** LAIM tool catalog (approved manifest).`): sin comando, no se ejecutó nada. Una pregunta sobre una herramienta nunca la ejecuta.
+
+| Quién | Ve |
+|-------|----|
+| Usuario | Herramientas aprobadas, no efímeras y `read_only`; los equipos a los que tiene acceso |
+| Admin | Además las herramientas `writes` / `exec`, borradores, propuestas, rechazadas y retiradas, marcadas como tales (estado y versión pendiente) |
+
+Las herramientas efímeras (de test) nunca se muestran. Un nombre desconocido recibe «No hay ninguna herramienta LAIM llamada X» solo si la pregunta nombra explícitamente una herramienta LAIM («¿qué es la herramienta LAIM X?»); un «¿qué es X?» sin más cuya X no es una herramienta visible para el usuario —o «¿qué es el uso de disco?»— sigue por el camino normal.
+
+**`manifest_check.catalog_eligible`.** Se recalcula al aprobar (para entonces todas las plataformas declaradas están compiladas) y en cada lectura: una herramienta aprobada y apta ya no muestra `catalog_eligible: false` en `GET /api/v1/apps`.
+
+**Opción de compatibilidad.** `LAIM_LEGACY_APPASSIST=1` en el entorno de LAIM recupera el bloque AppAssist (sin línea Method); por defecto se usa la ruta rápida de herramientas. AppAssist tampoco pregunta ya «El chat apunta a X…».
 
 ---
 
