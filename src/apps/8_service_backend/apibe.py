@@ -5430,6 +5430,85 @@ def laim_support_patch_ticket(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@app.get("/laim/support/users", tags=["laim-support-users"])
+def laim_support_list_users(
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+    query: str | None = None,
+) -> dict[str, Any]:
+    _support_context(router, authorization, session_token)
+    path = "/laim/support/users"
+    if query:
+        path = f"{path}?query={query}"
+    try:
+        return router.laim_support_request("GET", path, extra_headers=_laim_forward_headers(request))
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/laim/support/users/{user_id}", tags=["laim-support-users"])
+def laim_support_get_user(
+    user_id: int,
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    _support_context(router, authorization, session_token)
+    try:
+        return router.laim_support_request(
+            "GET",
+            f"/laim/support/users/{user_id}",
+            extra_headers=_laim_forward_headers(request),
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.patch("/laim/support/users/{user_id}", tags=["laim-support-users"])
+def laim_support_patch_user(
+    user_id: int,
+    request: Request,
+    payload: dict[str, Any],
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    _support_context(router, authorization, session_token)
+    try:
+        return router.laim_support_request(
+            "PATCH",
+            f"/laim/support/users/{user_id}",
+            payload=payload,
+            extra_headers=_laim_forward_headers(request),
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/laim/support/users/{user_id}/password", tags=["laim-support-users"])
+def laim_support_user_password(
+    user_id: int,
+    request: Request,
+    payload: dict[str, Any],
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    _support_context(router, authorization, session_token)
+    try:
+        return router.laim_support_request(
+            "POST",
+            f"/laim/support/users/{user_id}/password",
+            payload=payload,
+            extra_headers=_laim_forward_headers(request),
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 # ============================================================================
 # LAIM FORUM (proxy transparente hacia Backend Core)
 # ============================================================================

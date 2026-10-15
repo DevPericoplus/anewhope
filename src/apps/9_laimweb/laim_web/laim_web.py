@@ -28,15 +28,19 @@ from laim_web.pages.my_forum_threads import my_forum_threads_page
 from laim_web.support_gateway import (
     support_get_message,
     support_get_ticket,
+    support_get_user,
     support_list_messages,
+    support_list_users,
     support_ack_ticket_notification,
     support_list_tickets,
     support_patch_ticket,
+    support_patch_user,
     support_ticket_notifications,
     support_replace_keywords,
     support_reply_ticket,
     support_tickets_dashboard,
     support_update_estado,
+    support_user_password,
 )
 
 _activity_logger_path = (
@@ -196,6 +200,10 @@ app._api.routes.append(Route("/api/support/tickets", support_list_tickets, metho
 app._api.routes.append(Route("/api/support/tickets/{ticket_id:int}", support_get_ticket, methods=["GET"]))
 app._api.routes.append(Route("/api/support/tickets/{ticket_id:int}/messages", support_reply_ticket, methods=["POST"]))
 app._api.routes.append(Route("/api/support/tickets/{ticket_id:int}", support_patch_ticket, methods=["PATCH"]))
+app._api.routes.append(Route("/api/support/users", support_list_users, methods=["GET"]))
+app._api.routes.append(Route("/api/support/users/{user_id:int}", support_get_user, methods=["GET"]))
+app._api.routes.append(Route("/api/support/users/{user_id:int}", support_patch_user, methods=["PATCH"]))
+app._api.routes.append(Route("/api/support/users/{user_id:int}/password", support_user_password, methods=["POST"]))
 
 app.add_page(
     index_page,

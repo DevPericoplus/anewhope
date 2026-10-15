@@ -6059,6 +6059,93 @@ async def laim_support_patch_ticket(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
+@app.get("/laim/support/users")
+async def laim_support_list_users(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    caller: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+    query: str | None = None,
+) -> dict[str, Any]:
+    path = "/laim/support/users"
+    if query:
+        path = f"{path}?query={query}"
+    try:
+        return router.laim_support_request(
+            "GET",
+            path,
+            authorization=authorization or "",
+            caller=caller or "",
+            client_app=client_app or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.get("/laim/support/users/{user_id}")
+async def laim_support_get_user(
+    user_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    caller: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> dict[str, Any]:
+    try:
+        return router.laim_support_request(
+            "GET",
+            f"/laim/support/users/{user_id}",
+            authorization=authorization or "",
+            caller=caller or "",
+            client_app=client_app or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.patch("/laim/support/users/{user_id}")
+async def laim_support_patch_user(
+    user_id: int,
+    payload: dict[str, Any],
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    caller: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> dict[str, Any]:
+    try:
+        return router.laim_support_request(
+            "PATCH",
+            f"/laim/support/users/{user_id}",
+            payload=payload,
+            authorization=authorization or "",
+            caller=caller or "",
+            client_app=client_app or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.post("/laim/support/users/{user_id}/password")
+async def laim_support_user_password(
+    user_id: int,
+    payload: dict[str, Any],
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    caller: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> dict[str, Any]:
+    try:
+        return router.laim_support_request(
+            "POST",
+            f"/laim/support/users/{user_id}/password",
+            payload=payload,
+            authorization=authorization or "",
+            caller=caller or "",
+            client_app=client_app or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
 # ============================================================================
 # LAIM FORUM (proxy transparente hacia Backend Core)
 # ============================================================================

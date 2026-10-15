@@ -162,3 +162,29 @@ async def support_reply_ticket(request: Request) -> Response:
 async def support_patch_ticket(request: Request) -> Response:
     ticket_id = request.path_params.get("ticket_id")
     return await _handle_support(request, f"/laim/support/tickets/{ticket_id}")
+
+
+async def support_list_users(request: Request) -> Response:
+    params = {}
+    query = request.query_params.get("query")
+    if query is not None:
+        params["query"] = query
+    path = "/laim/support/users"
+    if params:
+        path = f"{path}?{urlencode(params)}"
+    return await _handle_support(request, path)
+
+
+async def support_get_user(request: Request) -> Response:
+    user_id = request.path_params.get("user_id")
+    return await _handle_support(request, f"/laim/support/users/{user_id}")
+
+
+async def support_patch_user(request: Request) -> Response:
+    user_id = request.path_params.get("user_id")
+    return await _handle_support(request, f"/laim/support/users/{user_id}")
+
+
+async def support_user_password(request: Request) -> Response:
+    user_id = request.path_params.get("user_id")
+    return await _handle_support(request, f"/laim/support/users/{user_id}/password")

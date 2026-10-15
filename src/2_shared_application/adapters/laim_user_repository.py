@@ -277,6 +277,145 @@ class LaimUserRepository:
                 },
             )
 
+    def list_portal_users(self, query: str = "") -> list[dict[str, Any]]:
+        """Listado operador: id, nombre, email, móvil. Sin contraseña."""
+        needle = (query or "").strip()
+        like = f"%{needle.lower()}%"
+        sql = """
+            SELECT u.user_id, u.user_name, u.user_email, u.user_mobile,
+                   c.first_name, c.sur_name
+            FROM laim_users u
+            LEFT JOIN laim_user_contact_info c ON c.user_id = u.user_id
+        """
+        params: dict[str, Any] = {}
+        if needle:
+            sql += """
+            WHERE LOWER(u.user_name) LIKE :like
+               OR LOWER(u.user_email) LIKE :like
+            """
+            params["like"] = like
+        sql += " ORDER BY u.user_id ASC"
+        with self._engine.connect() as conn:
+            rows = conn.execute(text(sql), params).mappings().fetchall()
+        return [self._row_to_portal_account(dict(row)) for row in rows]
+
+    def get_portal_account(self, user_id: int) -> dict[str, Any] | None:
+        """Detalle operador (campos del alta, sin contraseña)."""
+        if user_id <= 0:
+            return None
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT u.user_id, u.user_name, u.user_email, u.user_mobile,
+                           c.first_name, c.sur_name
+                    FROM laim_users u
+                    LEFT JOIN laim_user_contact_info c ON c.user_id = u.user_id
+                    WHERE u.user_id = :user_id
+                    LIMIT 1
+                    """
+                ),
+                {"user_id": user_id},
+            ).mappings().fetchone()
+        if row is None:
+            return None
+        return self._row_to_portal_account(dict(row))
+
+    def username_taken_by_other(self, user_name: str, user_id: int) -> bool:
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT user_id FROM laim_users
+                    WHERE user_name = :user_name AND user_id <> :user_id
+                    LIMIT 1
+                    """
+                ),
+                {"user_name": user_name.strip(), "user_id": user_id},
+            ).mappings().fetchone()
+        return row is not None
+
+    def email_taken_by_other(self, user_email: str, user_id: int) -> bool:
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT user_id FROM laim_users
+                    WHERE LOWER(user_email) = LOWER(:user_email)
+                      AND user_id <> :user_id
+                    LIMIT 1
+                    """
+                ),
+                {"user_email": user_email.strip(), "user_id": user_id},
+            ).mappings().fetchone()
+        return row is not None
+
+    def update_portal_profile(
+        self,
+        user_id: int,
+        user_name: str,
+        user_email: str,
+        user_mobile: str | None,
+        first_name: str | None,
+        sur_name: str | None,
+    ) -> None:
+        with self._engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    UPDATE laim_users
+                    SET user_name = :user_name,
+                        user_email = :user_email,
+                        user_mobile = :user_mobile
+                    WHERE user_id = :user_id
+                    """
+                ),
+                {
+                    "user_id": user_id,
+                    "user_name": user_name.strip(),
+                    "user_email": user_email.strip().lower(),
+                    "user_mobile": (user_mobile or "").strip() or None,
+                },
+            )
+            existing = conn.execute(
+                text("SELECT user_id FROM laim_user_contact_info WHERE user_id = :user_id"),
+                {"user_id": user_id},
+            ).mappings().fetchone()
+            if existing is None:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO laim_user_contact_info (user_id, first_name, sur_name)
+                        VALUES (:user_id, :first_name, :sur_name)
+                        """
+                    ),
+                    {"user_id": user_id, "first_name": first_name, "sur_name": sur_name},
+                )
+            else:
+                conn.execute(
+                    text(
+                        """
+                        UPDATE laim_user_contact_info
+                        SET first_name = :first_name, sur_name = :sur_name
+                        WHERE user_id = :user_id
+                        """
+                    ),
+                    {"user_id": user_id, "first_name": first_name, "sur_name": sur_name},
+                )
+
+    @staticmethod
+    def _row_to_portal_account(row: dict[str, Any]) -> dict[str, Any]:
+        first = str(row.get("first_name") or "").strip()
+        sur = str(row.get("sur_name") or "").strip()
+        full_name = " ".join(part for part in (first, sur) if part)
+        return {
+            "user_id": int(row["user_id"]),
+            "user_name": str(row["user_name"]),
+            "user_email": str(row["user_email"]),
+            "user_mobile": str(row.get("user_mobile") or ""),
+            "full_name": full_name,
+        }
+
     def update_user_password(self, user_id: int, encrypted_password: str) -> None:
         """Actualiza la contraseña Fernet del usuario."""
         with self._engine.begin() as conn:
