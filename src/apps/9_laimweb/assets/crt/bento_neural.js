@@ -35,16 +35,39 @@
     return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   }
 
+  function homeEl() {
+    var homes = document.querySelectorAll(".crt-inicio-home");
+    var i;
+    var el;
+    var rect;
+    for (i = 0; i < homes.length; i++) {
+      el = homes[i];
+      if (!el.isConnected) {
+        continue;
+      }
+      rect = el.getBoundingClientRect();
+      if (rect.width > 48 && rect.height > 48) {
+        return el;
+      }
+    }
+    for (i = 0; i < homes.length; i++) {
+      if (homes[i].isConnected) {
+        return homes[i];
+      }
+    }
+    return null;
+  }
+
   function worldEl() {
-    return document.querySelector(".crt-neural-world");
+    var home = homeEl();
+    var world = home ? home.querySelector(".crt-neural-world") : null;
+    return world && world.isConnected ? world : null;
   }
 
   function canvasEl() {
-    return document.getElementById("crt-neural-canvas");
-  }
-
-  function homeEl() {
-    return document.querySelector(".crt-inicio-home");
+    var home = homeEl();
+    var canvas = home ? home.querySelector(".crt-neural-canvas") : null;
+    return canvas && canvas.isConnected ? canvas : null;
   }
 
   function sceneHasSize(size) {
@@ -66,12 +89,16 @@
 
   function homeShowsSpinner() {
     var home = homeEl();
-    return !!(home && !home.classList.contains("is-neural-ready"));
+    if (!home || home.classList.contains("is-neural-ready")) {
+      return false;
+    }
+    return !!(home.querySelector(".crt-neural-boot") || home.querySelector(".crt-neural-world"));
   }
 
   function markSceneReady(on) {
     var home = homeEl();
     var world = worldEl();
+    document.documentElement.classList.toggle("laim-neural-ready", on);
     if (home) {
       home.classList.toggle("is-neural-ready", on);
     }
@@ -130,8 +157,9 @@
   }
 
   function titleTiles() {
+    var root = worldEl() || homeEl() || document;
     return Array.prototype.slice.call(
-      document.querySelectorAll(".crt-bento-tile[data-bento-glyph]")
+      root.querySelectorAll(".crt-bento-tile[data-bento-glyph]")
     ).sort(function (a, b) {
       return (parseInt(a.getAttribute("data-title-index"), 10) || 0) -
         (parseInt(b.getAttribute("data-title-index"), 10) || 0);
@@ -545,6 +573,12 @@
     if (!world || world !== boundWorld) {
       return true;
     }
+    if (boundWorld && !boundWorld.isConnected) {
+      return true;
+    }
+    if (boundCanvas && !boundCanvas.isConnected) {
+      return true;
+    }
     if (titled.length !== titleTiles().length) {
       return true;
     }
@@ -613,14 +647,14 @@
   }
 
   function ensure() {
-    if (ready && !sceneStale() && scenePrepared()) {
-      markSceneReady(true);
-      if (!raf) {
-        raf = requestAnimationFrame(tick);
-      }
+    if (homeShowsSpinner() || sceneStale() || !ready || !scenePrepared()) {
+      pollUntilShown();
       return;
     }
-    pollUntilShown();
+    markSceneReady(true);
+    if (!raf) {
+      raf = requestAnimationFrame(tick);
+    }
   }
 
   function tick(now) {
@@ -716,7 +750,12 @@
         pollUntilShown();
       }
     });
-    obs.observe(root, { childList: true, subtree: true });
+    obs.observe(root, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class"]
+    });
     window.addEventListener("resize", function () {
       revealIfPrepared();
     });

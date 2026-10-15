@@ -38,6 +38,28 @@ def test_contact_form_opens_from_contactar_button() -> None:
     assert "contact_form_panel()" in page
 
 
+def test_contactar_button_matches_submit_prominence() -> None:
+    """Contactar en la página usa el mismo recuadro centrado que Enviar mensaje."""
+    source = (laimweb_root / "laim_web" / "components" / "contact_form.py").read_text(
+        encoding="utf-8"
+    )
+    assert "crt-contact-open-wrap" in source
+    assert "crt-contact-open" in source
+    css = (laimweb_root / "assets" / "crt" / "crt_base.css").read_text(encoding="utf-8")
+    open_wrap = css.split(".crt-contact-open-wrap {", 1)[1].split("}", 1)[0]
+    assert "justify-content: center" in open_wrap
+    assert "flex-start" not in open_wrap
+    open_btn = css.split(".crt-contact-open-wrap .crt-contact-open {", 1)[1].split("}", 1)[0]
+    submit_btn = css.split(".crt-contact-submit-wrap .crt-contact-submit {", 1)[1].split(
+        "}", 1
+    )[0]
+    assert "0 0 0 10px" in open_btn
+    assert "0 0 0 11px" in open_btn
+    assert "min-width: 12.5rem" in open_btn
+    assert "0 0 0 10px" in submit_btn
+    assert "0 0 0 11px" in submit_btn
+
+
 def test_prepare_contact_form_fills_logged_user() -> None:
     source = (laimweb_root / "laim_web" / "laim_state.py").read_text(encoding="utf-8")
     assert "self.contact_affected_user = self.user_name.strip()" in source

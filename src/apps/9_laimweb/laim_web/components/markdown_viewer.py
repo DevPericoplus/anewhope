@@ -39,6 +39,7 @@ def _inline_code(text: str = "", **props: Any) -> rx.Component:
 CRT_MARKDOWN_COMPONENT_MAP: dict[str, Any] = {
     **_BASE_MARKDOWN_MAP,
     "code": _inline_code,
+    "hr": lambda *_a, **_k: rx.el.hr(class_name="crt-md-section-rule"),
     "codeblock": lambda text, **props: rx.code_block(
         text,
         theme=rx.code_block.themes.a11y_dark,

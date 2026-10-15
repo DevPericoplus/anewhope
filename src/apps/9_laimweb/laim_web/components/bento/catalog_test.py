@@ -71,7 +71,7 @@ class BentoCatalogTests(unittest.TestCase):
         self.assertIn("function revealIfPrepared()", script)
         self.assertIn("homeShowsSpinner()", script)
         home = (here / "home.py").read_text(encoding="utf-8")
-        self.assertIn("bento_neural.js?v=3d5", home)
+        self.assertIn("bento_neural.js?v=3d7", home)
         self.assertNotIn("LAIMBentoNeural.restart()", home)
 
 

@@ -275,9 +275,17 @@ body,
 
 .crt-contact-open-wrap {
   display: flex;
-  justify-content: flex-start;
+  justify-content: center;
   width: 100%;
   margin-top: 1em;
+  padding: 1.35rem 1.5rem 0.6rem;
+}
+
+.crt-contact-open-wrap .crt-contact-open {
+  width: auto;
+  min-width: 12.5rem;
+  padding: 0.7rem 1.8rem;
+  box-shadow: 0 0 0 10px var(--crt-panel-bg-solid), 0 0 0 11px var(--crt-border);
 }
 
 .crt-modal-header {
@@ -819,6 +827,23 @@ body,
 .crt-markdown i {
   color: var(--crt-text);
   font-style: italic;
+}
+
+.crt-markdown hr,
+.crt-markdown .crt-md-section-rule,
+.crt-markdown .rt-Separator {
+  display: block;
+  width: 100%;
+  height: 0;
+  border: none;
+  border-top: 1px solid var(--crt-border);
+  margin: 1.35em 0 0;
+  padding: 0 0 1.35em;
+  background: none;
+}
+
+.crt-markdown :is(hr, .crt-md-section-rule, .rt-Separator) + :is(h1, h2, h3, h4, .rt-Heading) {
+  margin-top: 0;
 }
 
 /* Foro LAIM — layout tipo Radikal (selectores arriba, hilos protagonistas) */
@@ -1645,7 +1670,8 @@ body,
   margin-left: 0.15rem;
 }
 
-.crt-inicio-home.is-neural-ready .crt-neural-boot {
+.crt-inicio-home.is-neural-ready .crt-neural-boot,
+html.laim-neural-ready .crt-neural-boot {
   visibility: hidden;
 }
 
@@ -1712,7 +1738,8 @@ body,
   visibility: hidden;
 }
 
-.crt-neural-world.is-ready .crt-bento-tile {
+.crt-neural-world.is-ready .crt-bento-tile,
+html.laim-neural-ready .crt-bento-tile {
   visibility: visible;
 }
 

@@ -10,29 +10,30 @@ from laim_web.components.crt_theme import COLORS, CONTENT_PADDING
 from laim_web.components.inicio_accordion import inicio_accordion_sections
 from laim_web.laim_state import LaimWebState
 
-NEURAL_SCRIPT_SRC = "/crt/bento_neural.js?v=3d6"
+NEURAL_SCRIPT_SRC = "/crt/bento_neural.js?v=3d7"
 
-NEURAL_READY_WATCH_SCRIPT = """
-(function () {
-  var n = 0;
-  var id = setInterval(function () {
-    var home = document.querySelector('.crt-inicio-home');
-    if (home && home.classList.contains('is-neural-ready')) {
-      clearInterval(id);
-      return;
-    }
-    if (window.LAIMBentoNeural && typeof window.LAIMBentoNeural.ensure === 'function') {
+NEURAL_READY_WATCH_SCRIPT = f"""
+(function () {{
+  if (window.__LAIMNeuralWatch) {{
+    if (window.LAIMBentoNeural && typeof window.LAIMBentoNeural.ensure === 'function') {{
       window.LAIMBentoNeural.ensure();
-    } else if (!document.querySelector('script[src*="bento_neural.js"]')) {
+    }}
+    return;
+  }}
+  window.__LAIMNeuralWatch = setInterval(function () {{
+    var home = document.querySelector('.crt-inicio-home');
+    if (!home || home.classList.contains('is-neural-ready')) {{
+      return;
+    }}
+    if (window.LAIMBentoNeural && typeof window.LAIMBentoNeural.ensure === 'function') {{
+      window.LAIMBentoNeural.ensure();
+    }} else if (!document.querySelector('script[src*="bento_neural.js"]')) {{
       var s = document.createElement('script');
-      s.src = '/crt/bento_neural.js?v=3d6';
+      s.src = '{NEURAL_SCRIPT_SRC}';
       document.body.appendChild(s);
-    }
-    if (++n > 150) {
-      clearInterval(id);
-    }
-  }, 400);
-})();
+    }}
+  }}, 400);
+}})();
 """
 
 
