@@ -27,6 +27,9 @@ COPY src/apps/9_laimweb/entrypoint.sh /app/entrypoint.sh
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r /app/requirements.txt
 
+# Invalida COPY cuando Push_Artifacts pasa el SHA de util01 (un pin
+# nuevo no puede reutilizar las capas de un tag anterior).
+ARG ANEWHOPE_BUILD_SHA=unknown
 COPY . /app
 
 # Pre-generar el frontend Reflex (.web) y parchear Vite (allowedHosts) en build.

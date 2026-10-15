@@ -22,6 +22,7 @@ COPY src/apps/8_service_backend/entrypoint.sh /app/entrypoint.sh
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r /app/requirements.txt
 
+ARG ANEWHOPE_BUILD_SHA=unknown
 COPY . /app
 
 # SEGURIDAD: En producción, eliminar archivos JSON de moks

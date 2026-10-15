@@ -24,6 +24,7 @@ COPY src/apps/9_laimweb/laim_forum_daemon/entrypoint.sh /app/entrypoint.sh
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r /app/requirements.txt
 
+ARG ANEWHOPE_BUILD_SHA=unknown
 COPY . /app
 
 RUN if [ "$ENVIRONMENT" = "pro" ]; then \

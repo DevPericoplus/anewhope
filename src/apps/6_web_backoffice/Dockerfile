@@ -24,6 +24,7 @@ COPY src/apps/6_web_backoffice/entrypoint.sh /app/entrypoint.sh
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r /app/requirements.txt
 
+ARG ANEWHOPE_BUILD_SHA=unknown
 COPY . /app
 
 # Pre-generar el frontend Reflex (.web) y parchear Vite (allowedHosts) en build.
