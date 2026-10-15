@@ -5,8 +5,6 @@ from pathlib import Path
 from laim_web.escenarios_data import (
     ESCENARIO_CHARS_PER_SEC,
     ESCENARIO_DEFAULT_ID,
-    ESCENARIO_FADE_IN_S,
-    ESCENARIO_FADE_OUT_S,
     ESCENARIO_READ_MIN_S,
     build_escenario_view,
     caption_packet_seconds,
@@ -213,47 +211,40 @@ def test_hitl_remote_tells_grounded_confirm_execute() -> None:
 
 
 def test_caption_step_seconds_scales_with_length() -> None:
-    """Cada fase dura lo de leer el texto más el fundido suave."""
+    """Cada fase dura lo de leer el texto, sin fundido."""
     short = caption_step_seconds("ok")
     long = caption_step_seconds("x" * 140)
-    fades = ESCENARIO_FADE_IN_S + ESCENARIO_FADE_OUT_S
-    assert abs(short - (fades + ESCENARIO_READ_MIN_S)) < 1e-9
+    assert abs(short - ESCENARIO_READ_MIN_S) < 1e-9
     assert long > short
-    assert abs(long - (fades + (140 / ESCENARIO_CHARS_PER_SEC))) < 1e-9
-    assert abs(caption_step_seconds("") - (fades + ESCENARIO_READ_MIN_S)) < 1e-9
-    assert fades / long < 0.22
+    assert abs(long - (140 / ESCENARIO_CHARS_PER_SEC)) < 1e-9
+    assert abs(caption_step_seconds("") - ESCENARIO_READ_MIN_S) < 1e-9
     packet = caption_packet_seconds("x" * 140, primary=True)
     assert 2.4 <= packet < long
     assert caption_packet_seconds("x" * 140, primary=False) < packet
 
 
-def test_caption_has_larger_type_and_fade() -> None:
-    """El pie es nítido; el fundido es solo opacidad, nunca blur."""
+def test_caption_has_larger_type_and_no_blur() -> None:
+    """El pie es nítido: sin blur, sin animación de opacidad."""
     css = (
         Path(__file__).resolve().parents[1] / "assets" / "crt" / "crt_base.css"
     ).read_text(encoding="utf-8")
     caption = css.split(".esc-caption {", 1)[1].split("}", 1)[0]
     assert "font-size: 1.17em" in caption
+    assert "filter: none" in caption
+    assert "blur" not in caption
     assert "@keyframes esc-caption-breathe" not in css
-    assert "@keyframes esc-caption-in" in css
-    assert "@keyframes esc-caption-out" in css
-    live = css.split(".esc-caption-live {", 1)[1].split("}", 1)[0]
-    assert "esc-caption-in" in live
-    assert "esc-caption-out" in live
-    assert "ease-in-out" not in live
-    inn = css.split("@keyframes esc-caption-in", 1)[1].split("@keyframes", 1)[0]
-    out = css.split("@keyframes esc-caption-out", 1)[1]
-    assert "blur" not in inn and "blur" not in out
+    assert "@keyframes esc-caption-in" not in css
+    assert "@keyframes esc-caption-out" not in css
+    assert ".esc-caption-live" not in css
     selector = css.split(".esc-selector {", 1)[1].split("}", 1)[0]
     assert "overflow-y: auto" in selector
     assert "100dvh" in selector or "100vh" in selector
     panel = (
         Path(__file__).resolve().parents[1] / "laim_web" / "components" / "escenarios_panel.py"
     ).read_text(encoding="utf-8")
-    assert "esc-caption-live" in panel
-    assert "escenario_caption_dur" in panel
+    assert "esc-caption-live" not in panel
     assert "animationDuration" not in panel
-    assert "--esc-fade-in" in panel
+    assert "--esc-fade-in" not in panel
     assert "hitl_remote" in panel
     assert "step_s" in panel or "cfg.step_s" in panel
 

@@ -5,8 +5,6 @@ from __future__ import annotations
 import reflex as rx
 
 from laim_web.escenarios_data import (
-    ESCENARIO_FADE_IN_S,
-    ESCENARIO_FADE_OUT_S,
     wire_curve_d,
 )
 from laim_web.laim_state import LaimWebState
@@ -513,20 +511,7 @@ def escenarios_content_panel() -> rx.Component:
                     _stage(),
                     rx.text(
                         LaimWebState.escenario_caption,
-                        class_name=rx.cond(
-                            LaimWebState.escenario_caption_live,
-                            rx.cond(
-                                LaimWebState.escenario_caption_tick,
-                                "esc-caption esc-caption-live esc-cap-a",
-                                "esc-caption esc-caption-live esc-cap-b",
-                            ),
-                            "esc-caption",
-                        ),
-                        style={
-                            "--esc-cap-dur": LaimWebState.escenario_caption_dur,
-                            "--esc-fade-in": f"{ESCENARIO_FADE_IN_S}s",
-                            "--esc-fade-out": f"{ESCENARIO_FADE_OUT_S}s",
-                        },
+                        class_name="esc-caption",
                     ),
                     _queue_panel(),
                     rx.text(LaimWebState.escenario_command, class_name="esc-command"),

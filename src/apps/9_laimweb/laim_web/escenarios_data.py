@@ -6,8 +6,6 @@ from typing import Any
 
 ESCENARIO_DEFAULT_ID = "share_multi"
 ESCENARIO_STEP_SECONDS = 2.8
-ESCENARIO_FADE_IN_S = 0.80
-ESCENARIO_FADE_OUT_S = 0.95
 ESCENARIO_READ_MIN_S = 5.0
 ESCENARIO_CHARS_PER_SEC = 8.0
 PACKET_REV_LABELS = frozenset({"TOKENS", "OUT", "REPLY", "TABLE"})
@@ -536,15 +534,14 @@ _SCENARIOS: list[dict[str, Any]] = [
 
 
 def caption_step_seconds(caption: str) -> float:
-    """Tiempo de una fase: fundido de entrada, lectura y fundido de salida."""
+    """Tiempo de una fase: solo lectura, sin fundido."""
     text = str(caption or "")
-    read = max(ESCENARIO_READ_MIN_S, len(text) / ESCENARIO_CHARS_PER_SEC)
-    return ESCENARIO_FADE_IN_S + read + ESCENARIO_FADE_OUT_S
+    return max(ESCENARIO_READ_MIN_S, len(text) / ESCENARIO_CHARS_PER_SEC)
 
 
 def caption_packet_seconds(caption: str, *, primary: bool) -> float:
-    """El paquete termina dentro de la ventana nítida, antes del fundido de salida."""
-    usable = caption_step_seconds(caption) - ESCENARIO_FADE_OUT_S - 0.15
+    """El paquete recorre el cable mientras el pie sigue a la vista."""
+    usable = caption_step_seconds(caption) - 0.15
     base = max(2.4, usable * 0.82)
     return base if primary else max(2.15, base * 0.88)
 

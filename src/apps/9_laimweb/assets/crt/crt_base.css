@@ -1457,44 +1457,8 @@ body,
   font-size: 1.17em;
   opacity: 1;
   filter: none;
-}
-
-/* Sin blur: el filtro dejaba el texto ilegible (WebKit no suelta
-   blur(0)). Solo opacidad, nítido todo el tramo de lectura. */
-.esc-caption-live {
-  --esc-fade-in: 0.8s;
-  --esc-fade-out: 0.95s;
-  animation-name: esc-caption-in, esc-caption-out;
-  animation-duration: var(--esc-fade-in), var(--esc-fade-out);
-  animation-timing-function: ease-out, ease-in;
-  animation-fill-mode: forwards, forwards;
-  animation-delay: 0s, calc(var(--esc-cap-dur, 6.75s) - var(--esc-fade-out));
-}
-
-@keyframes esc-caption-in {
-  from {
-    opacity: 0.35;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes esc-caption-out {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0.35;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .esc-caption-live {
-    animation: none;
-    filter: none;
-    opacity: 1;
-  }
+  -webkit-filter: none;
+  animation: none;
 }
 
 .esc-command {
