@@ -1459,8 +1459,8 @@ body,
   filter: none;
 }
 
-/* Dos animaciones, no un "breathe": el ease-in-out + blur(5px) en 0%/100%
-   dejaba el texto ilegible casi todo el slice (WebKit no suelta blur(0)). */
+/* Sin blur: el filtro dejaba el texto ilegible (WebKit no suelta
+   blur(0)). Solo opacidad, nítido todo el tramo de lectura. */
 .esc-caption-live {
   --esc-fade-in: 0.8s;
   --esc-fade-out: 0.95s;
@@ -1473,23 +1473,19 @@ body,
 
 @keyframes esc-caption-in {
   from {
-    opacity: 0.28;
-    filter: blur(2.2px);
+    opacity: 0.35;
   }
   to {
     opacity: 1;
-    filter: none;
   }
 }
 
 @keyframes esc-caption-out {
   from {
     opacity: 1;
-    filter: none;
   }
   to {
-    opacity: 0.28;
-    filter: blur(2.2px);
+    opacity: 0.35;
   }
 }
 

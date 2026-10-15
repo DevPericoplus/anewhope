@@ -228,7 +228,7 @@ def test_caption_step_seconds_scales_with_length() -> None:
 
 
 def test_caption_has_larger_type_and_fade() -> None:
-    """El pie es nítido al leer; blur solo al entrar y salir de la fase."""
+    """El pie es nítido; el fundido es solo opacidad, nunca blur."""
     css = (
         Path(__file__).resolve().parents[1] / "assets" / "crt" / "crt_base.css"
     ).read_text(encoding="utf-8")
@@ -243,8 +243,7 @@ def test_caption_has_larger_type_and_fade() -> None:
     assert "ease-in-out" not in live
     inn = css.split("@keyframes esc-caption-in", 1)[1].split("@keyframes", 1)[0]
     out = css.split("@keyframes esc-caption-out", 1)[1]
-    assert "blur" in inn and "blur" in out
-    assert "filter: none" in inn and "filter: none" in out
+    assert "blur" not in inn and "blur" not in out
     selector = css.split(".esc-selector {", 1)[1].split("}", 1)[0]
     assert "overflow-y: auto" in selector
     assert "100dvh" in selector or "100vh" in selector
