@@ -118,6 +118,26 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     ticket_replying: bool = False
     ticket_notif_open: bool = False
     ticket_notif_id: int = 0
+
+    # Registro de instalaciones LAIM
+    install_items: list[dict[str, str]] = []
+    install_list_error: str = ""
+    install_form_open: bool = False
+    install_editing: bool = False
+    install_edit_id: str = ""
+    install_serial: str = ""
+    install_serial_valid: bool = False
+    install_serial_error: str = ""
+    install_hostname: str = ""
+    install_display_name: str = ""
+    install_os: str = "mac"
+    install_edition: str = "community_edition"
+    install_notif_open: bool = False
+    install_notif_id: int = 0
+    install_notif_label: str = ""
+    install_form_error: str = ""
+    install_form_success: str = ""
+    install_saving: bool = False
     ticket_notif_ticket_id: int = 0
     ticket_notif_subject: str = ""
     ticket_notif_tipo: str = ""
@@ -917,7 +937,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         self.sidebar_forum_open = not self.sidebar_forum_open
 
     @event
-    def set_menu(self, item: str) -> None:
+    def set_menu(self, item: str) -> EventHandlerReturn:
         from laim_web.static_pages_loader import can_access_admin_config_menu
 
         if not can_access_admin_config_menu(item, self.identity_type_id):
@@ -933,6 +953,8 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
             self.contact_preview_open = False
         if item == "escenarios":
             self.escenario_playing = False
+        if item == "registro":
+            return LaimWebState.load_installations
 
     def _auditoria_seccion_name(self, item: str) -> str:
         from laim_web.dynamic_import import load_module_from_path
@@ -1555,6 +1577,54 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
                 self.ticket_status_open = True
             yield LaimWebState.open_ticket_detail(ticket_id)
 
+    @rx.event(background=True)
+    async def poll_install_notifications(self) -> None:
+        """Carga propuestas pendientes. El poll no hace ack."""
+        from laim_web.adapters.laim_api_client import laim_install_notifications_pending
+
+        async with self:
+            if not self.is_logged_in or self.install_notif_open:
+                return
+            access_token = self.access_token
+            session_token = self.session_token
+        result = laim_install_notifications_pending(
+            access_token=access_token, session_token=session_token
+        )
+        async with self:
+            if not result.get("success"):
+                return
+            items = result.get("items") or []
+            if not items:
+                return
+            first = items[0]
+            alias = str(first.get("display_name") or "").strip()
+            host = str(first.get("hostname") or "")
+            self.install_notif_id = int(first.get("id") or 0)
+            self.install_notif_label = alias or host
+            self.install_notif_open = True
+
+    @rx.event(background=True)
+    async def ack_install_notification(self, open_registro: bool = False) -> None:
+        """Ack explícito al cerrar o al ir a Registro."""
+        from laim_web.adapters.laim_api_client import laim_ack_install_notification
+
+        async with self:
+            notif_id = self.install_notif_id
+            access_token = self.access_token
+            session_token = self.session_token
+            self.install_notif_open = False
+            self.install_notif_id = 0
+            self.install_notif_label = ""
+        if notif_id > 0:
+            laim_ack_install_notification(
+                notif_id, access_token=access_token, session_token=session_token
+            )
+        if open_registro:
+            async with self:
+                self.active_menu = "registro"
+                self._load_static_page("registro")
+            yield LaimWebState.load_installations
+
 
     @event
     def handle_page_action(self, action_key: str) -> EventHandlerReturn:
@@ -2002,11 +2072,200 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
                 should_poll_tickets = bool(self.is_logged_in)
             if should_poll_tickets:
                 yield LaimWebState.poll_ticket_notifications()
+                yield LaimWebState.poll_install_notifications()
 
             if getattr(self, "forum_poll_enabled", False):
                 await asyncio.sleep(laim_forum_get_poll_interval_seconds())
             else:
                 await asyncio.sleep(120)
+
+
+    def _mask_serial(self, serial: str) -> str:
+        parts = [p for p in str(serial or "").split("-") if p]
+        if len(parts) < 2:
+            return "••••"
+        hidden = [parts[0]] + ["••••"] * (len(parts) - 2) + [parts[-1]]
+        return "-".join(hidden)
+
+    def _public_install_row(self, row: dict[str, Any]) -> dict[str, str]:
+        serial = str(row.get("serial_number") or "")
+        return {
+            "installation_id": str(row.get("installation_id") or ""),
+            "serial_number": serial,
+            "serial_masked": self._mask_serial(serial),
+            "hostname": str(row.get("hostname") or ""),
+            "display_name": str(row.get("display_name") or ""),
+            "operating_system": str(row.get("operating_system") or ""),
+            "edition": str(row.get("edition") or "community_edition"),
+            "origin": str(row.get("origin") or ""),
+            "status": str(row.get("status") or ""),
+            "proposed_at": str(row.get("proposed_at") or ""),
+            "registered_at": str(row.get("registered_at") or ""),
+        }
+
+    def set_install_serial(self, value: str) -> None:
+        self.install_serial = value
+        self.install_serial_valid = False
+        self.install_serial_error = ""
+
+    def set_install_hostname(self, value: str) -> None:
+        self.install_hostname = value
+
+    def set_install_display_name(self, value: str) -> None:
+        self.install_display_name = value
+
+    def set_install_os(self, value: str) -> None:
+        self.install_os = value
+
+    def set_install_edition(self, value: str) -> None:
+        self.install_edition = value
+
+    def open_manual_register(self) -> None:
+        self.install_form_open = True
+        self.install_editing = False
+        self.install_edit_id = ""
+        self.install_serial = ""
+        self.install_serial_valid = False
+        self.install_serial_error = ""
+        self.install_hostname = ""
+        self.install_display_name = ""
+        self.install_os = "mac"
+        self.install_edition = "community_edition"
+        self.install_form_error = ""
+        self.install_form_success = ""
+
+    def close_install_form(self) -> None:
+        self.install_form_open = False
+        self.install_editing = False
+        self.install_edit_id = ""
+        self.install_form_error = ""
+        self.install_form_success = ""
+
+    def open_installation(self, installation_id: str) -> None:
+        iid = str(installation_id)
+        row = next((r for r in self.install_items if r.get("installation_id") == iid), None)
+        if row is None:
+            return
+        self.install_form_open = True
+        self.install_editing = True
+        self.install_edit_id = iid
+        self.install_serial = row.get("serial_number") or ""
+        self.install_serial_valid = True
+        self.install_serial_error = ""
+        self.install_hostname = row.get("hostname") or ""
+        self.install_display_name = row.get("display_name") or ""
+        self.install_os = row.get("operating_system") or "mac"
+        self.install_edition = "community_edition"
+        self.install_form_error = ""
+        self.install_form_success = ""
+
+    @event
+    def load_installations(self) -> None:
+        from laim_web.adapters.laim_api_client import laim_list_installations
+
+        result = laim_list_installations(self.access_token, self.session_token)
+        if not result.get("success"):
+            self.install_list_error = str(result.get("error") or "No se pudieron cargar las instalaciones")
+            self.install_items = []
+            return
+        self.install_list_error = ""
+        self.install_items = [self._public_install_row(r) for r in result.get("items") or []]
+        blob = str(self.install_items)
+        if "master_key" in blob:
+            self.install_items = []
+            self.install_list_error = "Respuesta inválida"
+
+    @event
+    def verify_install_serial(self) -> None:
+        from laim_web.adapters.laim_api_client import laim_verify_serial
+
+        serial = (self.install_serial or "").strip()
+        if self.install_editing:
+            return
+        if not serial:
+            self.install_serial_valid = False
+            self.install_serial_error = ""
+            return
+        result = laim_verify_serial(serial, self.access_token, self.session_token)
+        if result.get("valid"):
+            self.install_serial_valid = True
+            self.install_serial_error = ""
+            return
+        self.install_serial_valid = False
+        self.install_serial_error = str(
+            result.get("error") or "El número de serie no es válido"
+        )
+
+    @event
+    def save_installation(self) -> None:
+        from laim_web.adapters.laim_api_client import (
+            laim_register_installation,
+            laim_update_installation,
+        )
+
+        self.install_saving = True
+        self.install_form_error = ""
+        self.install_form_success = ""
+        try:
+            if self.install_editing:
+                result = laim_update_installation(
+                    int(self.install_edit_id),
+                    {
+                        "operating_system": self.install_os,
+                        "edition": "community_edition",
+                        "display_name": self.install_display_name.strip(),
+                    },
+                    self.access_token,
+                    self.session_token,
+                )
+            else:
+                if not self.install_serial_valid:
+                    self.install_form_error = "Valide el número de serie antes de guardar"
+                    return
+                result = laim_register_installation(
+                    {
+                        "serial_number": self.install_serial.strip(),
+                        "hostname": self.install_hostname.strip(),
+                        "operating_system": self.install_os,
+                        "edition": "community_edition",
+                        "display_name": self.install_display_name.strip(),
+                    },
+                    self.access_token,
+                    self.session_token,
+                )
+            if not result.get("success"):
+                self.install_form_error = str(result.get("error") or "No se pudo guardar")
+                return
+            self.install_form_success = "Instalación guardada"
+            self.load_installations()
+            if not self.install_editing:
+                self.install_form_open = False
+        finally:
+            self.install_saving = False
+
+    @event
+    def recognize_installation(self, installation_id: str) -> None:
+        from laim_web.adapters.laim_api_client import laim_recognize_installation
+
+        result = laim_recognize_installation(
+            int(installation_id), self.access_token, self.session_token
+        )
+        if not result.get("success"):
+            self.install_list_error = str(result.get("error") or "No se pudo reconocer")
+            return
+        self.load_installations()
+
+    @event
+    def reject_installation(self, installation_id: str) -> None:
+        from laim_web.adapters.laim_api_client import laim_reject_installation
+
+        result = laim_reject_installation(
+            int(installation_id), self.access_token, self.session_token
+        )
+        if not result.get("success"):
+            self.install_list_error = str(result.get("error") or "No se pudo rechazar")
+            return
+        self.load_installations()
 
 
 def _register_laim_forum_event_handlers() -> None:

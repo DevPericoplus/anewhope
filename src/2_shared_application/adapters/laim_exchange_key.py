@@ -35,11 +35,13 @@ class LaimExchangeKeyRepository:
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
 
-    def get_current_key(self, major_version: str) -> Optional[ExchangeKey]:
+    def get_current_key(self, major_version: str, key_kind: str = "exchange") -> Optional[ExchangeKey]:
         """La clave vigente más reciente para major_version (valid_from <=
         NOW() y valid_until NULL o en el futuro) — soporta varias claves
         vigentes a la vez durante una rotación de versión mayor, ver
-        AGENTS.md § 37.2. None si no hay ninguna vigente todavía."""
+        AGENTS.md § 37.2. None si no hay ninguna vigente todavía.
+        key_kind: exchange = KeyExchageLaimApp; serial_signing = KeySerialSigning.
+        """
         with self._engine.connect() as conn:
             row = conn.execute(
                 text(
@@ -47,13 +49,39 @@ class LaimExchangeKeyRepository:
                     SELECT key_id, major_version, key_value_cipher
                     FROM laim_exchange_keys
                     WHERE major_version = :mv
+                      AND key_kind = :kind
                       AND valid_from <= CURRENT_TIMESTAMP
                       AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)
                     ORDER BY valid_from DESC
                     LIMIT 1
                     """
                 ),
-                {"mv": major_version},
+                {"mv": major_version, "kind": key_kind},
+            ).mappings().fetchone()
+        if row is None:
+            return None
+        return ExchangeKey(
+            key_id=int(row["key_id"]),
+            major_version=str(row["major_version"]),
+            key_value=str(row["key_value_cipher"]),
+        )
+
+    def get_serial_signing_key(self) -> Optional[ExchangeKey]:
+        """KeySerialSigning vigente (scheme 2, no rota por major como el HMAC
+        de actualización). None si el operador aún no la ha insertado."""
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT key_id, major_version, key_value_cipher
+                    FROM laim_exchange_keys
+                    WHERE key_kind = 'serial_signing'
+                      AND valid_from <= CURRENT_TIMESTAMP
+                      AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)
+                    ORDER BY valid_from DESC
+                    LIMIT 1
+                    """
+                ),
             ).mappings().fetchone()
         if row is None:
             return None

@@ -39,6 +39,7 @@ def test_authenticated_menus_have_markdown_files() -> None:
     """Todas las secciones autenticadas tienen contenido markdown."""
     expected = {
         "instaladores",
+        "registro",
         "manuales",
         "modelos_base",
         "modelos_especializados",

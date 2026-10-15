@@ -11332,6 +11332,39 @@ dejar espacio explícito para:
   deja de estar disponible — el resto de la instalación (u otros plugins
   con vigencia propia) no se ve afectado.
 
+### 37.5.1. Registro de instalaciones (`laim_installations`)
+
+Inventario de dispositivos del portal (menú **Registro**, debajo de
+Instaladores). Distinto de `laim_product_licenses`: al confirmar un
+registro se crea la licencia CE FREE (o PENDING si advance). PENDING de
+licencia sigue significando «advance sin pagar», nunca «pendiente de
+Reconocer».
+
+- **Manual (sesión):** `POST /laim/installations/verify` comprueba el
+  HMAC de `laim init` (`VerifySerial` / `KeySerialSigning`) **solo** en
+  backend_core. Guardar persiste hostname/SO/edición + **alias**
+  (`display_name`, mutable). Hostname y serial son inmutables. Varias
+  instalaciones por usuario. La UI solo muestra Community Edition
+  (`ADVANCE_LICENSES_ENABLED = False`); la columna `edition` queda lista
+  para el formulario Advance.
+- **Desde laim (público):** `POST /laim/installations/propose` — nginx
+  `/laim/installations/`. Cuerpo AES-256-GCM HKDF
+  `laim-install-register-aes-v1` (KeyExchageLaimApp) + MAC
+  (KeySerialSigning). Middleware y broker reenvían el sobre opaco.
+  Username+email deben ser la misma fila de `laim_users`. El usuario
+  **Reconoce** o **Rechaza** (DELETE para liberar UNIQUE serial). Una
+  propuesta pendiente dispara aviso (poll sin ack, mismo patrón que
+  tickets).
+- **Intentos fallidos:** 3 por `user_email`; al bloquear, el mensaje
+  recomienda abrir un ticket de soporte.
+- **Métricas:** `laim_installation_metric_events` congela SO/edición al
+  registrar. `GET /laim/support/installations/metrics` (support_ops) las
+  sirve a laim_maintenance **por entorno** (silicon/dev/pre).
+- **Nunca** persistir ni devolver `master_key_cipher`.
+- **Siempre** el salto 7→8→3. Claves en `laim_exchange_keys`
+  (`key_kind=exchange|serial_signing`); el valor no se commitea.
+- Migraciones `030_laim_installations.sql` + `031_laim_installation_metrics.sql`.
+
 ### 37.6. Checklist antes de implementar
 
 - [x] ¿`artifact_type=patch` y `plugin_name` ya sirven tal cual en toda la

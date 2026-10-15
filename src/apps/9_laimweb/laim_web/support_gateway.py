@@ -188,3 +188,11 @@ async def support_patch_user(request: Request) -> Response:
 async def support_user_password(request: Request) -> Response:
     user_id = request.path_params.get("user_id")
     return await _handle_support(request, f"/laim/support/users/{user_id}/password")
+
+
+async def support_installations_metrics(request: Request) -> Response:
+    return await _handle_support(request, "/laim/support/installations/metrics")
+
+
+async def support_list_installations(request: Request) -> Response:
+    return await _handle_support(request, "/laim/support/installations")

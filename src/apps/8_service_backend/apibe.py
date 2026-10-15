@@ -5007,6 +5007,32 @@ class LaimTicketEstadoRequest(BaseModel):
     reabrir: bool = False
 
 
+class LaimInstallSerialRequest(BaseModel):
+    serial_number: str = Field(..., min_length=8, max_length=64)
+
+
+class LaimInstallManualRequest(BaseModel):
+    serial_number: str = Field(..., min_length=8, max_length=64)
+    hostname: str = Field(..., min_length=1, max_length=255)
+    operating_system: str = Field(..., min_length=3, max_length=16)
+    edition: str = Field(default="community_edition", max_length=32)
+    display_name: str = Field(default="", max_length=80)
+
+
+class LaimInstallUpdateRequest(BaseModel):
+    operating_system: str = Field(..., min_length=3, max_length=16)
+    edition: str = Field(default="community_edition", max_length=32)
+    hostname: str | None = None
+    serial_number: str | None = None
+    display_name: str | None = None
+
+
+class LaimInstallProposeEnvelope(BaseModel):
+    v: str
+    iv: str
+    ct: str
+
+
 def _support_context(router: BrokerBackendRouter, authorization: str | None, session_token: str | None) -> None:
     router.set_security_context(authorization=authorization, session_token=session_token)
 
@@ -5229,6 +5255,177 @@ def laim_reply_my_ticket(
         if not result.get("success"):
             raise HTTPException(status_code=400, detail=result.get("error"))
         return result
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+def _laim_installations_proxy(
+    router: BrokerBackendRouter,
+    request: Request,
+    method: str,
+    path: str,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    result = router.laim_installations_request(
+        method, path, payload=payload, extra_headers=_laim_forward_headers(request)
+    )
+    if result.get("success") is False:
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    return result
+
+
+@app.get("/laim/installations", tags=["laim-installations"])
+def laim_list_installations(
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    router.set_security_context(authorization=authorization, session_token=session_token)
+    try:
+        return _laim_installations_proxy(router, request, "GET", "/laim/installations")
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/laim/installations/verify", tags=["laim-installations"])
+def laim_verify_serial(
+    request: Request,
+    payload: LaimInstallSerialRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    router.set_security_context(authorization=authorization, session_token=session_token)
+    try:
+        return _laim_installations_proxy(
+            router, request, "POST", "/laim/installations/verify", payload.model_dump()
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/laim/installations/propose", tags=["laim-installations"])
+def laim_propose_installation(
+    request: Request,
+    payload: LaimInstallProposeEnvelope,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    major_version: str = "2",
+) -> dict[str, Any]:
+    try:
+        return _laim_installations_proxy(
+            router,
+            request,
+            "POST",
+            f"/laim/installations/propose?major_version={major_version}",
+            payload.model_dump(),
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/laim/installations/notifications/pending", tags=["laim-installations"])
+def laim_install_notifications_pending(
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    router.set_security_context(authorization=authorization, session_token=session_token)
+    try:
+        return _laim_installations_proxy(
+            router, request, "GET", "/laim/installations/notifications/pending"
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/laim/installations/notifications/{notif_id}/ack", tags=["laim-installations"])
+def laim_install_notification_ack(
+    notif_id: int,
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    router.set_security_context(authorization=authorization, session_token=session_token)
+    try:
+        return _laim_installations_proxy(
+            router, request, "POST", f"/laim/installations/notifications/{notif_id}/ack"
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/laim/installations", tags=["laim-installations"])
+def laim_register_installation(
+    request: Request,
+    payload: LaimInstallManualRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    router.set_security_context(authorization=authorization, session_token=session_token)
+    try:
+        return _laim_installations_proxy(
+            router, request, "POST", "/laim/installations", payload.model_dump()
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.patch("/laim/installations/{installation_id}", tags=["laim-installations"])
+def laim_update_installation(
+    installation_id: int,
+    request: Request,
+    payload: LaimInstallUpdateRequest,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    router.set_security_context(authorization=authorization, session_token=session_token)
+    try:
+        return _laim_installations_proxy(
+            router,
+            request,
+            "PATCH",
+            f"/laim/installations/{installation_id}",
+            payload.model_dump(),
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/laim/installations/{installation_id}/recognize", tags=["laim-installations"])
+def laim_recognize_installation(
+    installation_id: int,
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    router.set_security_context(authorization=authorization, session_token=session_token)
+    try:
+        return _laim_installations_proxy(
+            router, request, "POST", f"/laim/installations/{installation_id}/recognize"
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/laim/installations/{installation_id}/reject", tags=["laim-installations"])
+def laim_reject_installation(
+    installation_id: int,
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    router.set_security_context(authorization=authorization, session_token=session_token)
+    try:
+        return _laim_installations_proxy(
+            router, request, "POST", f"/laim/installations/{installation_id}/reject"
+        )
     except BrokerBusinessError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -5482,6 +5679,42 @@ def laim_support_patch_user(
             "PATCH",
             f"/laim/support/users/{user_id}",
             payload=payload,
+            extra_headers=_laim_forward_headers(request),
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/laim/support/installations/metrics", tags=["laim-support-installations"])
+def laim_support_installations_metrics(
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    _support_context(router, authorization, session_token)
+    try:
+        return router.laim_support_request(
+            "GET",
+            "/laim/support/installations/metrics",
+            extra_headers=_laim_forward_headers(request),
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/laim/support/installations", tags=["laim-support-installations"])
+def laim_support_list_installations(
+    request: Request,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    _support_context(router, authorization, session_token)
+    try:
+        return router.laim_support_request(
+            "GET",
+            "/laim/support/installations",
             extra_headers=_laim_forward_headers(request),
         )
     except BrokerBusinessError as exc:

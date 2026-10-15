@@ -41,6 +41,8 @@ from laim_web.support_gateway import (
     support_tickets_dashboard,
     support_update_estado,
     support_user_password,
+    support_installations_metrics,
+    support_list_installations,
 )
 
 _activity_logger_path = (
@@ -204,6 +206,8 @@ app._api.routes.append(Route("/api/support/users", support_list_users, methods=[
 app._api.routes.append(Route("/api/support/users/{user_id:int}", support_get_user, methods=["GET"]))
 app._api.routes.append(Route("/api/support/users/{user_id:int}", support_patch_user, methods=["PATCH"]))
 app._api.routes.append(Route("/api/support/users/{user_id:int}/password", support_user_password, methods=["POST"]))
+app._api.routes.append(Route("/api/support/installations/metrics", support_installations_metrics, methods=["GET"]))
+app._api.routes.append(Route("/api/support/installations", support_list_installations, methods=["GET"]))
 
 app.add_page(
     index_page,

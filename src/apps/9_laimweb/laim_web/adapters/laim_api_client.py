@@ -1434,3 +1434,111 @@ def laim_reply_my_ticket(
         access_token=access_token,
         session_token=session_token,
     )
+
+
+def laim_install_notifications_pending(
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Pendientes de reconocer. El poll no hace ack."""
+    return _request_middleware(
+        "GET",
+        "/laim/installations/notifications/pending",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_ack_install_notification(
+    notif_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    return _request_middleware(
+        "POST",
+        f"/laim/installations/notifications/{int(notif_id)}/ack",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_list_installations(access_token: str = "", session_token: str = "") -> dict[str, Any]:
+    """Lista las instalaciones LAIM del usuario."""
+    return _request_middleware(
+        "GET",
+        "/laim/installations",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_verify_serial(
+    serial_number: str,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Comprueba el HMAC del serial en backend_core (nunca en el navegador)."""
+    return _request_middleware(
+        "POST",
+        "/laim/installations/verify",
+        payload={"serial_number": serial_number},
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_register_installation(
+    payload: dict[str, Any],
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Alta manual de una instalación."""
+    return _request_middleware(
+        "POST",
+        "/laim/installations",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_update_installation(
+    installation_id: int,
+    payload: dict[str, Any],
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    """Edita SO/edición. Hostname y serial son inmutables en el core."""
+    return _request_middleware(
+        "PATCH",
+        f"/laim/installations/{int(installation_id)}",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_recognize_installation(
+    installation_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    return _request_middleware(
+        "POST",
+        f"/laim/installations/{int(installation_id)}/recognize",
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_reject_installation(
+    installation_id: int,
+    access_token: str = "",
+    session_token: str = "",
+) -> dict[str, Any]:
+    return _request_middleware(
+        "POST",
+        f"/laim/installations/{int(installation_id)}/reject",
+        access_token=access_token,
+        session_token=session_token,
+    )

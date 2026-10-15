@@ -1690,6 +1690,16 @@ class CoreBackendClient:
         """Proxy de tickets de usuario hacia Backend Core."""
         return self.laim_support_request(method, path, payload=payload, extra_headers=extra_headers)
 
+    def laim_installations_request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Proxy de registro de instalaciones hacia Backend Core."""
+        return self.laim_support_request(method, path, payload=payload, extra_headers=extra_headers)
+
     def laim_forum_request(
         self,
         method: str,

@@ -603,6 +603,26 @@ try:
 except Exception as e:
     logger.warning(f"⚠️ No se pudo registrar router LAIM users ops: {e}")
 
+# Router de registro de instalaciones LAIM
+try:
+    _laim_inst_path = Path(__file__).resolve().parent / "router_laim_installations.py"
+    _laim_inst_module = _load_backend_module("router_laim_installations", _laim_inst_path)
+    app.include_router(_laim_inst_module.router)
+    logger.info("✅ Router de instalaciones LAIM registrado")
+except Exception as e:
+    logger.warning(f"⚠️ No se pudo registrar router LAIM installations: {e}")
+
+# Router interno de métricas de instalaciones (laim_maintenance)
+try:
+    _laim_inst_ops_path = Path(__file__).resolve().parent / "router_laim_installations_ops.py"
+    _laim_inst_ops_module = _load_backend_module(
+        "router_laim_installations_ops", _laim_inst_ops_path
+    )
+    app.include_router(_laim_inst_ops_module.router)
+    logger.info("✅ Router de installations ops LAIM registrado")
+except Exception as e:
+    logger.warning(f"⚠️ No se pudo registrar router LAIM installations ops: {e}")
+
 # Router de foro LAIM
 try:
     _laim_forum_router_path = Path(__file__).resolve().parent / "router_laim_forum.py"

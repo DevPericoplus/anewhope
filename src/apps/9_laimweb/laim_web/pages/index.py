@@ -20,6 +20,7 @@ from laim_web.components.tickets_modal import (
     ticket_status_modal,
 )
 from laim_web.components.installers_panel import advance_construction_modal, installers_panel
+from laim_web.components.registro_panel import install_notification_modal, registro_panel
 from laim_web.components.laim_logo import laim_logo_sidebar
 from laim_web.components.portal_shell import forum_nav_section, sidebar_config_menu
 from laim_web.help_manuals import HELP_MANUALS
@@ -50,6 +51,7 @@ MENU_LABELS: dict[str, str] = {
     "escenarios": "Escenarios",
     "contacto": "Contacto",
     "instaladores": "Instaladores",
+    "registro": "Registro",
     "manuales": "Manuales",
     "modelos_base": "Modelos base",
     "modelos_especializados": "Modelos especializados",
@@ -66,6 +68,7 @@ WIP_PAGE_MENUS = frozenset({"modelos_especializados", "modelos_personalizados"})
 LOGGED_IN_MENU_ITEMS = [
     "escenarios",
     "instaladores",
+    "registro",
     "manuales",
     "modelos_base",
     "modelos_especializados",
@@ -315,6 +318,7 @@ def content_static_page() -> rx.Component:
             LaimWebState.active_menu,
             ("servicios", page_action_panel("servicios")),
             ("instaladores", installers_panel()),
+            ("registro", registro_panel()),
             ("manuales", page_action_panel("manuales")),
             *(
                 (item.menu, page_action_panel(item.menu))
@@ -404,6 +408,7 @@ def index_page() -> rx.Component:
         ticket_create_modal(),
         ticket_status_modal(),
         ticket_notification_modal(),
+        install_notification_modal(),
         class_name="crt-shell crt-theme-green",
         width="100%",
     )

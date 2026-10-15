@@ -305,6 +305,32 @@ class LaimTicketEstadoRequest(BaseModel):
     reabrir: bool = False
 
 
+class LaimInstallSerialRequest(BaseModel):
+    serial_number: str = Field(..., min_length=8, max_length=64)
+
+
+class LaimInstallManualRequest(BaseModel):
+    serial_number: str = Field(..., min_length=8, max_length=64)
+    hostname: str = Field(..., min_length=1, max_length=255)
+    operating_system: str = Field(..., min_length=3, max_length=16)
+    edition: str = Field(default="community_edition", max_length=32)
+    display_name: str = Field(default="", max_length=80)
+
+
+class LaimInstallUpdateRequest(BaseModel):
+    operating_system: str = Field(..., min_length=3, max_length=16)
+    edition: str = Field(default="community_edition", max_length=32)
+    hostname: str | None = None
+    serial_number: str | None = None
+    display_name: str | None = None
+
+
+class LaimInstallProposeEnvelope(BaseModel):
+    v: str
+    iv: str
+    ct: str
+
+
 
 
 class OrganizationCheckRequest(BaseModel):
@@ -5848,6 +5874,197 @@ async def laim_reply_my_ticket(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
+def _laim_installations_proxy(
+    router: RouterMiddleware,
+    method: str,
+    path: str,
+    authorization: str | None,
+    session_token: str | None,
+    payload: dict[str, Any] | None = None,
+    query_string: str = "",
+) -> dict[str, Any]:
+    result = router.laim_installations_request(
+        method,
+        path,
+        payload=payload,
+        query_string=query_string,
+        authorization=authorization or "",
+        session_token=session_token or "",
+    )
+    if result.get("success") is False:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.get("error"))
+    return result
+
+
+@app.get("/laim/installations")
+async def laim_list_installations(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    try:
+        return _laim_installations_proxy(router, "GET", "/laim/installations", authorization, session_token)
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.post("/laim/installations/verify")
+async def laim_verify_serial(
+    payload: LaimInstallSerialRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    try:
+        return _laim_installations_proxy(
+            router,
+            "POST",
+            "/laim/installations/verify",
+            authorization,
+            session_token,
+            payload=payload.model_dump(),
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.post("/laim/installations/propose")
+async def laim_propose_installation(
+    payload: LaimInstallProposeEnvelope,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    major_version: str = "2",
+) -> dict[str, Any]:
+    """Público: el binario laim envía identity.dat (sin master_key) cifrado."""
+    try:
+        return _laim_installations_proxy(
+            router,
+            "POST",
+            "/laim/installations/propose",
+            None,
+            None,
+            payload=payload.model_dump(),
+            query_string=f"major_version={major_version}",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.get("/laim/installations/notifications/pending")
+async def laim_install_notifications_pending(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    try:
+        return _laim_installations_proxy(
+            router,
+            "GET",
+            "/laim/installations/notifications/pending",
+            authorization,
+            session_token,
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.post("/laim/installations/notifications/{notif_id}/ack")
+async def laim_install_notification_ack(
+    notif_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    try:
+        return _laim_installations_proxy(
+            router,
+            "POST",
+            f"/laim/installations/notifications/{notif_id}/ack",
+            authorization,
+            session_token,
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.post("/laim/installations")
+async def laim_register_installation(
+    payload: LaimInstallManualRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    try:
+        return _laim_installations_proxy(
+            router,
+            "POST",
+            "/laim/installations",
+            authorization,
+            session_token,
+            payload=payload.model_dump(),
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.patch("/laim/installations/{installation_id}")
+async def laim_update_installation(
+    installation_id: int,
+    payload: LaimInstallUpdateRequest,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    try:
+        return _laim_installations_proxy(
+            router,
+            "PATCH",
+            f"/laim/installations/{installation_id}",
+            authorization,
+            session_token,
+            payload=payload.model_dump(),
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.post("/laim/installations/{installation_id}/recognize")
+async def laim_recognize_installation(
+    installation_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    try:
+        return _laim_installations_proxy(
+            router,
+            "POST",
+            f"/laim/installations/{installation_id}/recognize",
+            authorization,
+            session_token,
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.post("/laim/installations/{installation_id}/reject")
+async def laim_reject_installation(
+    installation_id: int,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    try:
+        return _laim_installations_proxy(
+            router,
+            "POST",
+            f"/laim/installations/{installation_id}/reject",
+            authorization,
+            session_token,
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
 @app.post("/laim/auditoria/heartbeat")
 async def laim_auditoria_heartbeat(
     payload: dict[str, Any],
@@ -6116,6 +6333,44 @@ async def laim_support_patch_user(
             "PATCH",
             f"/laim/support/users/{user_id}",
             payload=payload,
+            authorization=authorization or "",
+            caller=caller or "",
+            client_app=client_app or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.get("/laim/support/installations/metrics")
+async def laim_support_installations_metrics(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    caller: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> dict[str, Any]:
+    try:
+        return router.laim_support_request(
+            "GET",
+            "/laim/support/installations/metrics",
+            authorization=authorization or "",
+            caller=caller or "",
+            client_app=client_app or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.get("/laim/support/installations")
+async def laim_support_list_installations(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    caller: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> dict[str, Any]:
+    try:
+        return router.laim_support_request(
+            "GET",
+            "/laim/support/installations",
             authorization=authorization or "",
             caller=caller or "",
             client_app=client_app or "",

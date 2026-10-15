@@ -19,6 +19,7 @@ PUBLIC_MENU_FILES: dict[str, str] = {
 
 AUTHENTICATED_MENU_FILES: dict[str, str] = {
     "instaladores": "instaladores.md",
+    "registro": "registro.md",
     "manuales": "manuales.md",
     "modelos_base": "modelos_base.md",
     "modelos_especializados": "modelos_especializados.md",

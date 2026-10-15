@@ -2472,6 +2472,23 @@ class BrokerBackendRouter:
                 f"Error en canal de tickets LAIM: {exc}"
             ) from exc
 
+    def laim_installations_request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Proxy de registro de instalaciones hacia Backend Core."""
+        try:
+            return self._core_client.laim_installations_request(
+                method, path, payload=payload, extra_headers=extra_headers
+            )
+        except CoreBackendCommunicationError as exc:
+            raise BrokerBusinessError(
+                f"Error en canal de instalaciones LAIM: {exc}"
+            ) from exc
+
     def laim_forum_request(
         self,
         method: str,

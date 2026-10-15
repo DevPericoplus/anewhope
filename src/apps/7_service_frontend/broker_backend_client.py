@@ -1883,6 +1883,20 @@ class BrokerBackendClient:
             method, path, payload=payload, extra_headers=extra_headers
         )
 
+    def laim_installations_request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        query_string: str = "",
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Proxy de registro de instalaciones hacia el broker."""
+        suffix = f"?{query_string.lstrip('?')}" if query_string else ""
+        return self.laim_support_request(
+            method, f"{path}{suffix}", payload=payload, extra_headers=extra_headers
+        )
+
     def laim_forum_request(
         self,
         method: str,

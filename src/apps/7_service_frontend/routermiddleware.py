@@ -6277,6 +6277,29 @@ class RouterMiddleware:
                 f"No se pudo completar la operación de tickets: {exc}"
             ) from exc
 
+    def laim_installations_request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        query_string: str = "",
+        authorization: str = "",
+        session_token: str = "",
+    ) -> dict[str, Any]:
+        """Proxy de registro de instalaciones via broker → backend core."""
+        self._broker_client.set_security_context(
+            authorization=authorization or None,
+            session_token=session_token or None,
+        )
+        try:
+            return self._broker_client.laim_installations_request(
+                method, path, payload=payload, query_string=query_string
+            )
+        except BrokerBackendCommunicationError as exc:
+            raise BusinessRuleError(
+                f"No se pudo completar el registro de instalaciones: {exc}"
+            ) from exc
+
     def laim_forum_request(
         self,
         method: str,
