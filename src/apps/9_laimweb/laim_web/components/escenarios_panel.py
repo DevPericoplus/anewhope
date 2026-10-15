@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import reflex as rx
 
-from laim_web.escenarios_data import wire_curve_d
+from laim_web.escenarios_data import (
+    ESCENARIO_FADE_IN_S,
+    ESCENARIO_FADE_OUT_S,
+    wire_curve_d,
+)
 from laim_web.laim_state import LaimWebState
 
 from laim_web.components.crt_theme import COLORS
@@ -520,7 +524,8 @@ def escenarios_content_panel() -> rx.Component:
                         ),
                         style={
                             "--esc-cap-dur": LaimWebState.escenario_caption_dur,
-                            "animationDuration": LaimWebState.escenario_caption_dur,
+                            "--esc-fade-in": f"{ESCENARIO_FADE_IN_S}s",
+                            "--esc-fade-out": f"{ESCENARIO_FADE_OUT_S}s",
                         },
                     ),
                     _queue_panel(),

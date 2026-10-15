@@ -1456,29 +1456,48 @@ body,
   min-height: 2.6em;
   font-size: 1.17em;
   opacity: 1;
-  filter: blur(0);
+  filter: none;
 }
 
+/* Dos animaciones, no un "breathe": el ease-in-out + blur(5px) en 0%/100%
+   dejaba el texto ilegible casi todo el slice (WebKit no suelta blur(0)). */
 .esc-caption-live {
-  animation: esc-caption-breathe var(--esc-cap-dur, 5.2s) ease-in-out both;
+  --esc-fade-in: 0.8s;
+  --esc-fade-out: 0.95s;
+  animation-name: esc-caption-in, esc-caption-out;
+  animation-duration: var(--esc-fade-in), var(--esc-fade-out);
+  animation-timing-function: ease-out, ease-in;
+  animation-fill-mode: forwards, forwards;
+  animation-delay: 0s, calc(var(--esc-cap-dur, 6.75s) - var(--esc-fade-out));
 }
 
-@keyframes esc-caption-breathe {
-  0% {
-    opacity: 0.16;
-    filter: blur(5px);
+@keyframes esc-caption-in {
+  from {
+    opacity: 0.28;
+    filter: blur(2.2px);
   }
-  11% {
+  to {
     opacity: 1;
-    filter: blur(0);
+    filter: none;
   }
-  82% {
+}
+
+@keyframes esc-caption-out {
+  from {
     opacity: 1;
-    filter: blur(0);
+    filter: none;
   }
-  100% {
-    opacity: 0.14;
-    filter: blur(5px);
+  to {
+    opacity: 0.28;
+    filter: blur(2.2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .esc-caption-live {
+    animation: none;
+    filter: none;
+    opacity: 1;
   }
 }
 
