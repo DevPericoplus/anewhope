@@ -79,3 +79,16 @@ def test_verify_and_persist_go_through_middleware_to_core() -> None:
     compose = _BACKEND_COMPOSE.read_text(encoding="utf-8")
     assert "LAIM_SERIAL_SIGNING_KEY={{ laim_serial_signing_key | default('') }}" in env_j2
     assert 'LAIM_SERIAL_SIGNING_KEY: "${LAIM_SERIAL_SIGNING_KEY}"' in compose
+    play = Path(
+        "/Users/perico/develop/anh_ansible_environments/frontend.yml"
+    ).read_text(encoding="utf-8")
+    vhost = play.split("Generar vhost de nginx para docker-compose", 1)[1][:3500]
+    assert "notify: recrear nginx (docker-compose)" in vhost
+    assert "flush_handlers" in vhost
+    assert "State.StartedAt" in vhost
+    assert "nginx-frontend" in vhost
+    for env_name in ("silicon", "dev", "pre"):
+        backend_env = Path(
+            f"/Users/perico/develop/anh_ansible_environments/env/{env_name}/backend.yml"
+        ).read_text(encoding="utf-8")
+        assert "laim_serial_signing_key" in backend_env
