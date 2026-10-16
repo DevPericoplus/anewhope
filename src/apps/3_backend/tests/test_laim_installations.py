@@ -160,6 +160,14 @@ CREATE TABLE laim_installation_metric_events (
     event_type TEXT NOT NULL DEFAULT 'registered',
     occurred_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE laim_exchange_keys (
+    key_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    major_version TEXT NOT NULL,
+    key_kind TEXT NOT NULL DEFAULT 'exchange',
+    key_value_cipher TEXT NOT NULL,
+    valid_from TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    valid_until TEXT
+);
 """
 
 
@@ -236,6 +244,53 @@ def test_resolve_serial_signing_key_prefers_db_then_env_then_product() -> None:
     assert _mod.resolve_serial_signing_key("", "", " product ") == "product"
     assert _mod.resolve_serial_signing_key(None, None, None) is None
     assert _mod.SERIAL_SIGNING_ENV == "LAIM_SERIAL_SIGNING_KEY"
+    assert _mod.resolve_exchange_key(" db-ex ", "prod-ex") == "db-ex"
+    assert _mod.resolve_exchange_key(None, " prod-ex ") == "prod-ex"
+    assert _mod.resolve_exchange_key("", None) is None
+
+
+def test_load_install_register_keys_falls_back_to_product_and_seeds_signing() -> None:
+    """propose no puede exigir fila DB: el verify ya usa constante de producto."""
+    _mod, _svc_obj, _users, serial_mod, _key, engine = _svc()
+    keys_mod = _load("laim_exch_propose", _SHARED / "adapters" / "laim_exchange_key.py")
+    keys = keys_mod.LaimExchangeKeyRepository(engine)
+    assert keys.get_current_key("2", key_kind="exchange") is None
+    assert keys.get_serial_signing_key() is None
+    pair = _mod.load_install_register_keys(
+        keys,
+        "2",
+        env_signing="",
+        product_exchange=serial_mod.product_exchange_key(),
+        product_signing=serial_mod.product_serial_signing_key(),
+    )
+    assert pair is not None
+    exchange, signing = pair
+    assert exchange == serial_mod.product_exchange_key()
+    assert signing == serial_mod.product_serial_signing_key()
+    seeded = keys.get_serial_signing_key()
+    assert seeded is not None
+    assert seeded.key_value == signing
+
+
+def test_load_install_register_keys_prefers_db_over_product() -> None:
+    _mod, _svc_obj, _users, serial_mod, _key, engine = _svc()
+    keys_mod = _load("laim_exch_propose_db", _SHARED / "adapters" / "laim_exchange_key.py")
+    keys = keys_mod.LaimExchangeKeyRepository(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO laim_exchange_keys (major_version, key_kind, key_value_cipher) "
+                "VALUES ('2', 'exchange', 'db-exchange='), ('2', 'serial_signing', 'db-signing=')"
+            )
+        )
+    pair = _mod.load_install_register_keys(
+        keys,
+        "2",
+        env_signing="env-signing=",
+        product_exchange=serial_mod.product_exchange_key(),
+        product_signing=serial_mod.product_serial_signing_key(),
+    )
+    assert pair == ("db-exchange=", "db-signing=")
 
 
 def test_live_verify_does_not_count_as_register_attempt() -> None:

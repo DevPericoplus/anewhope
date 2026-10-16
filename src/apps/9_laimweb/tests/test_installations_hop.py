@@ -30,6 +30,7 @@ def test_hop_exposes_session_and_public_propose_routes() -> None:
     assert "laim_installations_request" in broker
     assert "router_laim_installations" in core
     assert "decrypt_install_payload" in router
+    assert "load_install_register_keys" in router
     assert "el cuerpo debe ir cifrado" in (
         _ROOT.parent / "2_shared_application" / "security" / "laim_install_register.py"
     ).read_text(encoding="utf-8")

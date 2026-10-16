@@ -59,6 +59,47 @@ def resolve_serial_signing_key(
     return None
 
 
+def resolve_exchange_key(db_value: str | None, product_value: str | None) -> str | None:
+    """DB (rotación) → constante de producto (KeyExchageLaimApp)."""
+    for raw in (db_value, product_value):
+        text = (raw or "").strip()
+        if text:
+            return text
+    return None
+
+
+def load_install_register_keys(
+    keys: Any,
+    major_version: str = "2",
+    *,
+    env_signing: str | None = None,
+    product_exchange: str | None = None,
+    product_signing: str | None = None,
+) -> tuple[str, str] | None:
+    """Claves del propose: mismo fallback que verify. Siembra serial_signing."""
+    row_ex = keys.get_current_key(major_version, key_kind="exchange")
+    exchange = resolve_exchange_key(
+        row_ex.key_value if row_ex is not None else None,
+        product_exchange,
+    )
+    row_sg = keys.get_serial_signing_key()
+    signing = resolve_serial_signing_key(
+        row_sg.key_value if row_sg is not None else None,
+        env_signing,
+        product_signing,
+    )
+    if not exchange or not signing:
+        return None
+    if row_sg is None:
+        try:
+            keys.ensure_serial_signing_key(signing, major_version=major_version or "2")
+        except Exception:
+            logging.getLogger("LaimInstallationsService").exception(
+                "no se pudo persistir KeySerialSigning"
+            )
+    return exchange, signing
+
+
 class LaimInstallationsService:
     def __init__(
         self,

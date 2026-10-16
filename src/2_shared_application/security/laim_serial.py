@@ -8,7 +8,8 @@ La clave es `KeySerialSigning` (dirección inversa a `KeyExchageLaimApp`):
 el cliente firma, el servidor verifica. Vive en `laim_exchange_keys`
 (`key_kind=serial_signing`) y, si el deploy aún no ha sembrado la fila,
 `product_serial_signing_key()` (el mismo valor que `laim init` embebe).
-Un Update no rellena SQL; sin este fallback el Registro queda ciego.
+El AES del propose usa `product_exchange_key()` igual, si no hay fila
+`exchange`. Un Update no rellena SQL; sin este fallback el Registro queda ciego.
 """
 
 from __future__ import annotations
@@ -25,6 +26,8 @@ SERIAL_CHECK_BYTES = 4
 # No es un secreto de servidor: viaja en cada binario laim. El test
 # test_product_key_matches_version_go falla si divergen.
 _PRODUCT_SERIAL_SIGNING_KEY = "d8nKoxuTtrbLytUew0zybWAoukxyn7flmgiLjLn5oHQ="
+# KeyExchageLaimApp: AES del propose y HMAC de /check_last_version.
+_PRODUCT_EXCHANGE_KEY = "K8aoQdKlbOzk-Qd82pqqlQGTtfnAa3DLUtbrrHv_cgM="
 
 
 def decode_exchange_key(key: str) -> bytes:
@@ -96,6 +99,7 @@ def verify_serial(serial: str, key_b64: str) -> bool:
 
 
 _KEY_RE = re.compile(r'KeySerialSigning\s*=\s*"([^"]+)"')
+_EXCHANGE_KEY_RE = re.compile(r'KeyExchageLaimApp\s*=\s*"([^"]+)"')
 
 
 def key_serial_signing_from_laim_repo(version_go: str) -> str:
@@ -106,6 +110,19 @@ def key_serial_signing_from_laim_repo(version_go: str) -> str:
     return match.group(1)
 
 
+def key_exchange_from_laim_repo(version_go: str) -> str:
+    """Lee KeyExchageLaimApp real de version.go (tests)."""
+    match = _EXCHANGE_KEY_RE.search(version_go)
+    if not match:
+        raise ValueError("KeyExchageLaimApp no está en version.go")
+    return match.group(1)
+
+
 def product_serial_signing_key() -> str:
     """KeySerialSigning de producto: la que firman los instaladores de laim."""
     return _PRODUCT_SERIAL_SIGNING_KEY
+
+
+def product_exchange_key() -> str:
+    """KeyExchageLaimApp de producto: AES del propose / HMAC de updates."""
+    return _PRODUCT_EXCHANGE_KEY

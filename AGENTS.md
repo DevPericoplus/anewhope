@@ -11366,10 +11366,13 @@ Reconocer».
 - **Nunca** persistir ni devolver `master_key_cipher`.
 - **Siempre** el salto 7→8→3. Claves en `laim_exchange_keys`
   (`key_kind=exchange|serial_signing`). Un Update no inserta SQL: si no
-  hay fila `serial_signing`, backend_core verifica con la constante de
-  producto (la misma `KeySerialSigning` de `laim init`) y la siembra en
-  el primer HMAC. `LAIM_SERIAL_SIGNING_KEY` (vault) sigue siendo
+  hay fila `serial_signing`, backend_core verifica **y descifra el
+  propose** con las constantes de producto (`KeySerialSigning` y
+  `KeyExchageLaimApp` de `laim init`) y siembra `serial_signing` en el
+  primer HMAC o propose. `LAIM_SERIAL_SIGNING_KEY` (vault) sigue siendo
   override de rotación. Nunca un INSERT a mano desde un agente.
+  `load_install_register_keys` es la misma resolución para verify y
+  propose — no exigir las dos filas en DB para aceptar el sobre.
 - Migraciones `030_laim_installations.sql` + `031_laim_installation_metrics.sql`.
 
 ### 37.6. Checklist antes de implementar

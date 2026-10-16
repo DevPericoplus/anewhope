@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -166,12 +167,23 @@ def _propose_encrypted(envelope: dict[str, Any], major_version: str) -> dict[str
     if engine is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Registro no disponible")
     keys = k_mod.LaimExchangeKeyRepository(engine)
-    exchange = keys.get_current_key(major_version, key_kind="exchange")
-    signing = keys.get_serial_signing_key()
-    if exchange is None or signing is None:
+    serial_path = shared / "security" / "laim_serial.py"
+    s_spec = importlib.util.spec_from_file_location("laim_serial_install_router", serial_path)
+    s_mod = importlib.util.module_from_spec(s_spec)
+    sys.modules["laim_serial_install_router"] = s_mod
+    s_spec.loader.exec_module(s_mod)
+    pair = _svc_mod.load_install_register_keys(
+        keys,
+        major_version,
+        env_signing=os.environ.get(_svc_mod.SERIAL_SIGNING_ENV),
+        product_exchange=s_mod.product_exchange_key(),
+        product_signing=s_mod.product_serial_signing_key(),
+    )
+    if pair is None:
         return {"success": False, "error": "Claves de registro no configuradas"}
+    exchange, signing = pair
     try:
-        plain = c_mod.decrypt_install_payload(envelope, exchange.key_value, signing.key_value)
+        plain = c_mod.decrypt_install_payload(envelope, exchange, signing)
     except c_mod.InstallRegisterError as exc:
         return {"success": False, "error": str(exc)}
     result = svc.propose_from_laim(

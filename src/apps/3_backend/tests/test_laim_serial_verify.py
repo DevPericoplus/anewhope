@@ -30,9 +30,13 @@ def _load():
 def test_product_key_matches_version_go() -> None:
     """El fallback de deploy debe ser el KeySerialSigning de laim, no otro."""
     mod = _load()
-    from_repo = mod.key_serial_signing_from_laim_repo(_VERSION_GO.read_text(encoding="utf-8"))
+    src = _VERSION_GO.read_text(encoding="utf-8")
+    from_repo = mod.key_serial_signing_from_laim_repo(src)
     assert mod.product_serial_signing_key() == from_repo
     assert from_repo.endswith("=")
+    exchange = mod.key_exchange_from_laim_repo(src)
+    assert mod.product_exchange_key() == exchange
+    assert exchange.endswith("=")
 
 
 def test_constants_match_serial_go() -> None:
