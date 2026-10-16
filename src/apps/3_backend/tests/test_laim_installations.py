@@ -229,6 +229,53 @@ def test_verify_ok_and_ko_with_real_hmac() -> None:
     assert svc.verify("2-AAAA-AAAA-AAAA-AAAAAAA-AAAAAAA")["error"]
 
 
+def test_resolve_serial_signing_key_prefers_db_then_env() -> None:
+    _mod, *_rest = _svc()
+    assert _mod.resolve_serial_signing_key(" db ", "env") == "db"
+    assert _mod.resolve_serial_signing_key(None, " env-key ") == "env-key"
+    assert _mod.resolve_serial_signing_key("", "") is None
+    assert _mod.resolve_serial_signing_key(None, None) is None
+    assert _mod.SERIAL_SIGNING_ENV == "LAIM_SERIAL_SIGNING_KEY"
+
+
+def test_live_verify_does_not_count_as_register_attempt() -> None:
+    """El blur de laimweb no es un intento de registro: no debe bloquear."""
+    _mod, svc, users, serial_mod, key, _e = _svc()
+    uid = _user(users)
+    bogus = "2-AAAA-AAAA-AAAA-AAAAAAA-AAAAAAA"
+    for _ in range(5):
+        got = svc.verify(bogus, user_id=uid)
+        assert got["valid"] is False
+        assert got.get("blocked") is not True
+        assert "válido" in got["error"]
+    serial = serial_mod.generate_serial(key)
+    saved = svc.register_manual(uid, serial, "silicon.local", "windows")
+    assert saved["success"] is True
+    assert saved["item"]["hostname"] == "silicon.local"
+
+
+def test_missing_signing_key_is_not_invalid_serial_and_does_not_block() -> None:
+    _mod, svc, users, serial_mod, key, _e = _svc()
+    uid = _user(users)
+
+    def missing(_serial: str) -> bool:
+        raise _mod.SigningKeyMissing
+
+    svc._verify = missing
+    serial = serial_mod.generate_serial(key)
+    checked = svc.verify(serial, user_id=uid)
+    assert checked["valid"] is False
+    assert checked["error"] == _mod.MSG_SERIAL_UNAVAILABLE
+    assert "no es válido" not in checked["error"]
+    denied = svc.register_manual(uid, serial, "silicon.local", "windows")
+    assert denied["success"] is False
+    assert denied["error"] == _mod.MSG_SERIAL_UNAVAILABLE
+    assert denied.get("blocked") is not True
+    svc._verify = lambda value: serial_mod.verify_serial(value, key)
+    ok = svc.register_manual(uid, serial, "silicon.local", "windows")
+    assert ok["success"] is True
+
+
 def test_manual_register_persists_identity_fields_not_master_key() -> None:
     _mod, svc, users, serial_mod, key, engine = _svc()
     uid = _user(users)

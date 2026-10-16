@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any, Callable
 
 from sqlalchemy.engine import Engine
 
 MSG_SERIAL_INVALID = "El número de serie no es válido"
+MSG_SERIAL_UNAVAILABLE = (
+    "No se puede validar el número de serie ahora mismo. "
+    "Inténtelo más tarde o abra un ticket de soporte."
+)
 MSG_SERIAL_TAKEN = "Este número de serie ya está registrado"
+SERIAL_SIGNING_ENV = "LAIM_SERIAL_SIGNING_KEY"
 MSG_USER_MISMATCH = "El usuario y el e-mail no corresponden a la misma cuenta"
 MSG_USER_UNKNOWN = "No hay ninguna cuenta de laimweb con ese usuario y e-mail"
 MSG_NOT_FOUND = "Instalación no encontrada"
@@ -34,6 +40,19 @@ class InstallationsError(Exception):
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.message = message
+
+
+class SigningKeyMissing(Exception):
+    """No hay KeySerialSigning en laim_exchange_keys ni en LAIM_SERIAL_SIGNING_KEY."""
+
+
+def resolve_serial_signing_key(db_value: str | None, env_value: str | None) -> str | None:
+    """DB primero (rotación); env de vault si el entorno aún no tiene la fila."""
+    for raw in (db_value, env_value):
+        text = (raw or "").strip()
+        if text:
+            return text
+    return None
 
 
 class LaimInstallationsService:
@@ -102,13 +121,28 @@ class LaimInstallationsService:
 
         def _verify(serial: str) -> bool:
             row = keys.get_serial_signing_key()
-            if row is None:
-                self._logger.error("KeySerialSigning no está en laim_exchange_keys")
-                return False
-            return serial_mod.verify_serial(serial, row.key_value)
+            db_val = row.key_value if row is not None else None
+            key = resolve_serial_signing_key(db_val, os.environ.get(SERIAL_SIGNING_ENV))
+            if not key:
+                self._logger.error(
+                    "KeySerialSigning no está en laim_exchange_keys ni %s",
+                    SERIAL_SIGNING_ENV,
+                )
+                raise SigningKeyMissing
+            return serial_mod.verify_serial(serial, key)
 
         self._verify = _verify
         self._keys = keys
+
+    def _serial_hmac(self, serial: str) -> str | None:
+        """None = HMAC ok. Si falta la clave de firma, no se finge un serial inválido."""
+        try:
+            ok = bool(serial) and self._verify(serial)
+        except SigningKeyMissing:
+            return MSG_SERIAL_UNAVAILABLE
+        if not ok:
+            return MSG_SERIAL_INVALID
+        return None
 
     def verify(self, serial_number: str, user_id: int | None = None) -> dict[str, Any]:
         email = self._email_of(user_id) if user_id else ""
@@ -116,14 +150,10 @@ class LaimInstallationsService:
         if blocked is not None:
             return {"success": True, "valid": False, "error": blocked["error"], "blocked": True}
         serial = (serial_number or "").strip()
-        if not serial or not self._verify(serial):
-            failed = self._fail_attempt(email, MSG_SERIAL_INVALID)
-            return {
-                "success": True,
-                "valid": False,
-                "error": failed["error"],
-                "blocked": bool(failed.get("blocked")),
-            }
+        reason = self._serial_hmac(serial)
+        if reason:
+            # El blur de laimweb no es un intento de registro.
+            return {"success": True, "valid": False, "error": reason}
         return {"success": True, "valid": True}
 
     def list_mine(self, user_id: int) -> dict[str, Any]:
@@ -159,8 +189,11 @@ class LaimInstallationsService:
         host = (hostname or "").strip()
         os_name = (operating_system or "").strip()
         edition = self._public_edition(edition)
-        if not self._verify(serial):
-            return self._fail_attempt(email, MSG_SERIAL_INVALID)
+        hmac_error = self._serial_hmac(serial)
+        if hmac_error == MSG_SERIAL_UNAVAILABLE:
+            return {"success": False, "error": hmac_error}
+        if hmac_error:
+            return self._fail_attempt(email, hmac_error)
         if not host or os_name not in VALID_OS:
             return {"success": False, "error": MSG_HOSTNAME_OS}
         existing = self._installs.get_by_serial(serial)
@@ -211,8 +244,11 @@ class LaimInstallationsService:
         host = (hostname or "").strip()
         os_name = (operating_system or "").strip()
         edition = self._public_edition(edition)
-        if not self._verify(serial):
-            return self._fail_attempt(email, MSG_SERIAL_INVALID)
+        hmac_error = self._serial_hmac(serial)
+        if hmac_error == MSG_SERIAL_UNAVAILABLE:
+            return {"success": False, "error": hmac_error}
+        if hmac_error:
+            return self._fail_attempt(email, hmac_error)
         if not host or os_name not in VALID_OS:
             return {"success": False, "error": MSG_HOSTNAME_OS}
         user = self._match_portal_user(user_name, user_email)

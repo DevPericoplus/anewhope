@@ -11,6 +11,12 @@ _APIBE = Path(__file__).resolve().parents[2] / "8_service_backend" / "apibe.py"
 _NGINX = Path(
     "/Users/perico/develop/anh_ansible_environments/templates/docker-compose/frontend/frontend.conf.j2"
 )
+_BACKEND_ENV = Path(
+    "/Users/perico/develop/anh_ansible_environments/templates/docker-compose/backend/.env.j2"
+)
+_BACKEND_COMPOSE = Path(
+    "/Users/perico/develop/anh_ansible_environments/templates/docker-compose/backend/docker-compose.yml.j2"
+)
 
 
 def test_menu_places_registro_between_instaladores_and_manuales() -> None:
@@ -59,5 +65,11 @@ def test_verify_and_persist_go_through_middleware_to_core() -> None:
     assert "verify_serial" in service
     assert "master_key" in service
     assert "El número de serie no es válido" in service
+    assert "LAIM_SERIAL_SIGNING_KEY" in service
+    assert "No se puede validar el número de serie ahora mismo" in service
     nginx = _NGINX.read_text(encoding="utf-8")
     assert nginx.count("location /laim/installations/") >= 2
+    env_j2 = _BACKEND_ENV.read_text(encoding="utf-8")
+    compose = _BACKEND_COMPOSE.read_text(encoding="utf-8")
+    assert "LAIM_SERIAL_SIGNING_KEY={{ laim_serial_signing_key | default('') }}" in env_j2
+    assert 'LAIM_SERIAL_SIGNING_KEY: "${LAIM_SERIAL_SIGNING_KEY}"' in compose
