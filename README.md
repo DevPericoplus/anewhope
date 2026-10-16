@@ -11497,6 +11497,7 @@ LAIM Web (`www.laim.app`) es el **portal de descarga y orientación** para usuar
 | Sección del menú | Propósito |
 |------------------|-----------|
 | **Instaladores** | Descarga del cliente LAIM para Windows, macOS y Linux (`.deb` / `.rpm`) |
+| **Registro** | Asociar cada instalación de LAIM a la cuenta (manual o propuesta desde LAIM; botón **Instrucciones de Registro**) |
 | **Manuales** | Guías de instalación, uso, seguridad y referencia CLI |
 | **Modelos base** | Catálogo orientativo de modelos adaptados al hardware local |
 | **Modelos especializados** | Modelos enriquecidos por dominio; enlace a proyectos en [getmylllm.com](https://www.getmylllm.com/) |
@@ -11508,13 +11509,35 @@ LAIM Web (`www.laim.app`) es el **portal de descarga y orientación** para usuar
 
 **Área pública (sin sesión):** Inicio, Servicios, Documentación y Contacto (`static_pages/*.md`).
 
-**Área autenticada:** Las nueve secciones anteriores. El contenido se muestra en el **panel derecho** (markdown estilo terminal CRT) con **botones de acción** bajo el texto. Los enlaces a [getmylllm.com](https://www.getmylllm.com/) aparecen en modelos especializados y personalizados para solicitar proyectos a medida.
+**Área autenticada:** Las secciones anteriores (incluido **Registro**). El contenido se muestra en el **panel derecho** (markdown estilo terminal CRT) con **botones de acción** bajo el texto. Los enlaces a [getmylllm.com](https://www.getmylllm.com/) aparecen en modelos especializados y personalizados para solicitar proyectos a medida.
 
 **Autenticación:** Registro público con hCaptcha (site key en `env.yaml`, secret en `protected_values.py`). Tras el login, la vista inicial es **Instaladores**.
 
-**Contenido editable:** Ficheros markdown en `src/apps/9_laimweb/static_pages/`. Acciones de botones definidas en `laim_web/components/page_actions.py`. La sección **Instaladores** ya ofrece descargas reales — ver § 18.7.
+**Contenido editable:** Ficheros markdown en `src/apps/9_laimweb/static_pages/`. Acciones de botones definidas en `laim_web/components/page_actions.py`. La sección **Instaladores** ya ofrece descargas reales — ver § 18.7. La sección **Registro** asocia cada copia de LAIM a la cuenta — ver más abajo.
 
 **Flujo de datos:** LAIM Web → Middleware (8007) → Broker (8008) → Backend Core (8003) → `laim_core_db`. Header `X-Client-App: laimweb`.
+
+#### Registro de instalaciones (página Registro)
+
+Cada copia de LAIM se asocia a la cuenta del portal. El usuario puede registrar varias. El botón **Instrucciones de Registro** abre la guía en una ventana. Hay **dos caminos**; uno por instalación. Cada serial solo se registra una vez. La clave maestra no sale del equipo.
+
+**Registro manual** (desde este portal):
+
+1. Abrir LAIM en el equipo (`laim web` → http://localhost:4321). En la **ventana de login**, debajo del botón de entrar, aparece el número de serie, por ejemplo `2-K3MP-9QRA-LW7N-4BXT-M8HJ12C`.
+2. Pulsar **⎘** (Copiar serial). Queda en el portapapeles; no hace falta transcribirlo.
+3. En [https://www.laim.app](https://www.laim.app), menú **Registro** → **Registro manual**. Pegar el serial (debe salir **✅ Validado**).
+4. Nombre de máquina p. ej. `PORTATIL-CASA`, alias opcional `Portátil de casa`, SO `windows` / `mac` / `linux`. **Guardar**.
+
+**Desde LAIM** (propuesta automática):
+
+1. En LAIM: **Configuración › Internal › Local › Registro en laim.app › Registrar**.
+2. Usuario y e-mail de **esta** cuenta, los mismos del alta. Ejemplo: `ana` / `ana@empresa.com`.
+3. **Enviar propuesta** una sola vez.
+4. En el portal, **Registro**: fila **Pendiente de reconocer** → **✅ Reconocer**.
+
+Un segundo envío del mismo serial dice que ya está registrado: la propuesta ya llegó. **Rechazar** la descarta; se puede volver a registrar.
+
+Markdown de la página: `src/apps/9_laimweb/static_pages/registro.md`. UI: `laim_web/components/registro_panel.py`.
 
 #### Formulario de contacto → casos (`casos_contacto`)
 

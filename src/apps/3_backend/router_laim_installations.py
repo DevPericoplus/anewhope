@@ -150,7 +150,19 @@ def propose_from_laim(
     return _propose_encrypted(payload.model_dump(), major_version)
 
 
-def _propose_encrypted(envelope: dict[str, Any], major_version: str) -> dict[str, Any]:
+@router.post("/ack")
+def ack_from_laim(
+    payload: ProposeEnvelope,
+    request: Request,
+    major_version: str = Query(default="2", max_length=8),
+) -> dict[str, Any]:
+    ip = _client_ip(request)
+    if not _rate_ok(ip, time.time()):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Demasiadas propuestas")
+    return _ack_encrypted(payload.model_dump(), major_version)
+
+
+def _open_install_plain(envelope: dict[str, Any], major_version: str):
     shared = Path(__file__).resolve().parents[2] / "2_shared_application"
     crypto_path = shared / "security" / "laim_install_register.py"
     keys_path = shared / "adapters" / "laim_exchange_key.py"
@@ -180,12 +192,27 @@ def _propose_encrypted(envelope: dict[str, Any], major_version: str) -> dict[str
         product_signing=s_mod.product_serial_signing_key(),
     )
     if pair is None:
-        return {"success": False, "error": "Claves de registro no configuradas"}
+        return None, {"success": False, "error": "Claves de registro no configuradas"}, None
     exchange, signing = pair
     try:
         plain = c_mod.decrypt_install_payload(envelope, exchange, signing)
     except c_mod.InstallRegisterError as exc:
-        return {"success": False, "error": str(exc)}
+        return None, {"success": False, "error": str(exc)}, None
+    return plain, None, svc
+
+
+def _ack_encrypted(envelope: dict[str, Any], major_version: str) -> dict[str, Any]:
+    plain, err, svc = _open_install_plain(envelope, major_version)
+    if err is not None:
+        return err
+    result = svc.ack_from_laim(str(plain.get("serial_number") or ""))
+    return _fail(result)
+
+
+def _propose_encrypted(envelope: dict[str, Any], major_version: str) -> dict[str, Any]:
+    plain, err, svc = _open_install_plain(envelope, major_version)
+    if err is not None:
+        return err
     result = svc.propose_from_laim(
         str(plain.get("user_name") or ""),
         str(plain.get("user_email") or ""),

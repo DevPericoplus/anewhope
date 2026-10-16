@@ -15,12 +15,14 @@ def test_hop_exposes_session_and_public_propose_routes() -> None:
     for src in (apife, apibe):
         assert "/laim/installations/verify" in src
         assert "/laim/installations/propose" in src
+        assert "/laim/installations/ack" in src
         assert "/recognize" in src
         assert "/reject" in src
         assert "/laim/installations/notifications/pending" in src
     assert 'prefix="/laim/installations"' in router
     assert '@router.post("/verify")' in router
     assert '@router.post("/propose")' in router
+    assert '@router.post("/ack")' in router
     pending = router.find('@router.get("/notifications/pending")')
     by_id = router.find("@router.patch(\"/{installation_id}\")")
     assert pending != -1 and by_id != -1 and pending < by_id
@@ -34,3 +36,15 @@ def test_hop_exposes_session_and_public_propose_routes() -> None:
     assert "el cuerpo debe ir cifrado" in (
         _ROOT.parent / "2_shared_application" / "security" / "laim_install_register.py"
     ).read_text(encoding="utf-8")
+
+
+def test_hop_does_not_leak_broker_status_on_business_error() -> None:
+    """Un serial ya registrado es el mensaje de negocio, no 'Error del broker: 400'."""
+    apibe = (_ROOT / "8_service_backend" / "apibe.py").read_text(encoding="utf-8")
+    proxy = apibe.split("def _laim_installations_proxy", 1)[1].split("@app.get", 1)[0]
+    assert "success" in proxy
+    assert "HTTPException" not in proxy
+    assert "return result" in proxy
+    mw = (_ROOT / "7_service_frontend" / "routermiddleware.py").read_text(encoding="utf-8")
+    wrap = mw.split("def laim_installations_request", 1)[1].split("def laim_forum_request", 1)[0]
+    assert "Error del broker backend" not in wrap

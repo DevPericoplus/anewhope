@@ -51,6 +51,30 @@ def test_panel_has_manual_form_validated_serial_and_actions() -> None:
     ).read_text(encoding="utf-8")
 
 
+def test_panel_has_registration_instructions_modal() -> None:
+    panel = (_LAIMWEB / "components" / "registro_panel.py").read_text(encoding="utf-8")
+    state = (_LAIMWEB / "laim_state.py").read_text(encoding="utf-8")
+    index = (_LAIMWEB / "pages" / "index.py").read_text(encoding="utf-8")
+    intro = (_LAIMWEB.parent / "static_pages" / "registro.md").read_text(encoding="utf-8")
+    assert "Instrucciones de Registro" in panel
+    assert "install_instructions_modal" in panel
+    assert "open_install_instructions" in panel
+    assert "close_install_instructions" in panel
+    assert "install_instructions_open" in state
+    assert "def open_install_instructions" in state
+    assert "install_instructions_modal()" in index
+    assert "ventana de login" in panel
+    assert "⎘" in panel
+    assert "2-K3MP-9QRA-LW7N-4BXT-M8HJ12C" in panel
+    assert "PORTATIL-CASA" in panel
+    assert "ana@empresa.com" in panel
+    assert "Enviar propuesta" in panel
+    assert "Internal › Local" in panel
+    assert "Reconocer" in panel
+    assert "ventana de login" in intro
+    assert "Instrucciones de Registro" in intro
+
+
 def test_verify_and_persist_go_through_middleware_to_core() -> None:
     client = (_LAIMWEB / "adapters" / "laim_api_client.py").read_text(encoding="utf-8")
     apife = _APIFE.read_text(encoding="utf-8")

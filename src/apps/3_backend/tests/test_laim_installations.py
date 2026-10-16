@@ -516,3 +516,26 @@ def test_metrics_snapshot_os_at_register_and_monthly_totals() -> None:
     blob = json.dumps(dash)
     assert "master_key" not in blob
     assert "user_password" not in blob
+
+
+def test_ack_from_laim_reports_status() -> None:
+    _mod, svc, users, serial_mod, key, _e = _svc()
+    uid = _user(users)
+    serial = serial_mod.generate_serial(key)
+    unknown = svc.ack_from_laim(serial)
+    assert unknown["success"] is True
+    assert unknown["registered"] is False
+    assert unknown["status"] == "unknown"
+    pending = svc.propose_from_laim("ana", "ana@laim.example", serial, "box", "linux")
+    assert pending["success"] is True
+    mid = svc.ack_from_laim(serial)
+    assert mid["registered"] is False
+    assert mid["status"] == "pending_recognition"
+    iid = pending["item"]["installation_id"]
+    assert svc.recognize(uid, iid)["success"] is True
+    done = svc.ack_from_laim(serial)
+    assert done["registered"] is True
+    assert done["status"] == "registered"
+    blob = str(done)
+    assert "master_key" not in blob
+    assert "user_email" not in blob

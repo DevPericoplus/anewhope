@@ -20,7 +20,7 @@ from laim_web.components.tickets_modal import (
     ticket_status_modal,
 )
 from laim_web.components.installers_panel import advance_construction_modal, installers_panel
-from laim_web.components.registro_panel import install_notification_modal, registro_panel
+from laim_web.components.registro_panel import install_instructions_modal, install_notification_modal, registro_panel
 from laim_web.components.laim_logo import laim_logo_sidebar
 from laim_web.components.portal_shell import forum_nav_section, sidebar_config_menu
 from laim_web.help_manuals import HELP_MANUALS
@@ -409,6 +409,7 @@ def index_page() -> rx.Component:
         ticket_status_modal(),
         ticket_notification_modal(),
         install_notification_modal(),
+        install_instructions_modal(),
         class_name="crt-shell crt-theme-green",
         width="100%",
     )

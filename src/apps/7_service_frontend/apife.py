@@ -5949,6 +5949,27 @@ async def laim_propose_installation(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
+@app.post("/laim/installations/ack")
+async def laim_ack_installation(
+    payload: LaimInstallProposeEnvelope,
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    major_version: str = "2",
+) -> dict[str, Any]:
+    """Público: ACK de si el serial ya está reconocido en el portal."""
+    try:
+        return _laim_installations_proxy(
+            router,
+            "POST",
+            "/laim/installations/ack",
+            None,
+            None,
+            payload=payload.model_dump(),
+            query_string=f"major_version={major_version}",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
 @app.get("/laim/installations/notifications/pending")
 async def laim_install_notifications_pending(
     router: Annotated[RouterMiddleware, Depends(get_router_middleware)],

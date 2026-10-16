@@ -10,7 +10,41 @@ _OS_OPTIONS = ("windows", "mac", "linux")
 # Advance se activa con ADVANCE_LICENSES_ENABLED en el core; el selector
 # extra de licencia (vigencia, plugins) se añadirá aquí cuando exista cobro.
 _ADVANCE_FORM_ENABLED = False
+
 _EDITION_LABEL = "Community Edition"
+
+REGISTER_INSTRUCTIONS_MD = """
+Cada copia de LAIM de su equipo se asocia a **esta cuenta**. Puede registrar varias. Hay dos caminos; elija uno por instalación.
+
+### 1. Registro manual (desde este portal)
+
+Ideal si acaba de instalar LAIM y tiene delante la pantalla de login.
+
+1. Abra LAIM en ese equipo (`laim web` → http://localhost:4321). En la **ventana de login**, debajo del botón de entrar, aparece el número de serie, por ejemplo `2-K3MP-9QRA-LW7N-4BXT-M8HJ12C`.
+2. Pulse el botón **⎘** (Copiar serial). Queda en el portapapeles; no hace falta transcribirlo a mano.
+3. Vuelva aquí y pulse **Registro manual**.
+4. Pegue el serial. Cuando sea auténtico verá **✅ Validado**.
+5. Nombre de máquina: el que muestra el equipo, p. ej. `PORTATIL-CASA`.
+6. Alias (opcional): `Portátil de casa`.
+7. Sistema operativo: `windows`, `mac` o `linux`.
+8. Pulse **Guardar**. La fila queda **Registrada**.
+
+El serial y el nombre de máquina no se pueden cambiar después. El alias sí.
+
+### 2. Desde LAIM (propuesta automática)
+
+Ideal cuando ya ha iniciado sesión en LAIM.
+
+1. En LAIM: **Configuración › Internal › Local › Registro en laim.app › Registrar**.
+2. Escriba el **usuario** y el **e-mail** de **esta** cuenta del portal, los mismos del alta. Ejemplo: usuario `ana`, correo `ana@empresa.com`.
+3. Pulse **Enviar propuesta** **una sola vez**.
+4. Vuelva a esta página (o pulse **Actualizar**). Verá la fila **Pendiente de reconocer**.
+5. Pulse **✅ Reconocer**. Con eso confirma que esa instalación es suya.
+
+Si pulsa Enviar propuesta otra vez con el mismo serial, el portal dirá que ya está registrado: no es un fallo, es que la propuesta ya llegó.
+
+**Rechazar** descarta la propuesta. Después puede volver a registrarla (manual o desde LAIM).
+"""
 
 
 def _status_label(item: dict) -> rx.Component:
@@ -169,6 +203,11 @@ def registro_panel() -> rx.Component:
                 class_name="crt-btn",
             ),
             rx.button(
+                "Instrucciones de Registro",
+                on_click=LaimWebState.open_install_instructions,
+                class_name="crt-btn crt-btn-inline",
+            ),
+            rx.button(
                 "Actualizar",
                 on_click=LaimWebState.load_installations,
                 class_name="crt-btn crt-btn-inline",
@@ -241,3 +280,53 @@ def install_notification_modal() -> rx.Component:
         display=rx.cond(LaimWebState.install_notif_open, "flex", "none"),
         z_index="10003",
     )
+
+def install_instructions_modal() -> rx.Component:
+    """Guía de las dos modalidades de registro (manual y desde LAIM)."""
+    return rx.box(
+        rx.box(
+            rx.vstack(
+                rx.hstack(
+                    rx.text("Instrucciones de Registro", class_name="crt-title", margin_bottom="0"),
+                    rx.spacer(),
+                    rx.button(
+                        "✕",
+                        on_click=LaimWebState.close_install_instructions,
+                        class_name="crt-btn crt-btn-icon crt-modal-close",
+                        aria_label="Cerrar",
+                    ),
+                    width="100%",
+                    align_items="center",
+                    class_name="crt-modal-header",
+                ),
+                rx.box(
+                    rx.markdown(REGISTER_INSTRUCTIONS_MD),
+                    overflow_y="auto",
+                    max_height="70vh",
+                    width="100%",
+                ),
+                rx.hstack(
+                    rx.spacer(),
+                    rx.button(
+                        "Cerrar",
+                        on_click=LaimWebState.close_install_instructions,
+                        class_name="crt-btn",
+                    ),
+                    width="100%",
+                ),
+                spacing="3",
+                width="100%",
+            ),
+            class_name="crt-panel crt-modal-panel",
+            padding="1.25rem",
+            max_width="42rem",
+            width="100%",
+            on_click=rx.stop_propagation,
+            on_mouse_down=rx.stop_propagation,
+        ),
+        class_name="crt-modal-overlay",
+        on_mouse_down=LaimWebState.close_install_instructions,
+        display=rx.cond(LaimWebState.install_instructions_open, "flex", "none"),
+        z_index="10002",
+    )
+

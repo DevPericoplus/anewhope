@@ -138,6 +138,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     install_form_error: str = ""
     install_form_success: str = ""
     install_saving: bool = False
+    install_instructions_open: bool = False
     ticket_notif_ticket_id: int = 0
     ticket_notif_subject: str = ""
     ticket_notif_tipo: str = ""
@@ -2119,6 +2120,13 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
 
     def set_install_edition(self, value: str) -> None:
         self.install_edition = value
+
+
+    def open_install_instructions(self) -> None:
+        self.install_instructions_open = True
+
+    def close_install_instructions(self) -> None:
+        self.install_instructions_open = False
 
     def open_manual_register(self) -> None:
         self.install_form_open = True

@@ -325,6 +325,24 @@ class LaimInstallationsService:
         self._installs.reset_register_attempts(email)
         return {"success": True, "item": row.as_public_dict()}
 
+    def ack_from_laim(self, serial_number: str) -> dict[str, Any]:
+        """ACK público: ¿este serial está reconocido en laimweb? No cuenta como intento."""
+        serial = (serial_number or "").strip()
+        hmac_error = self._serial_hmac(serial)
+        if hmac_error == MSG_SERIAL_UNAVAILABLE:
+            return {"success": False, "error": hmac_error}
+        if hmac_error:
+            return {"success": True, "registered": False, "status": "unknown"}
+        existing = self._installs.get_by_serial(serial)
+        if existing is None:
+            return {"success": True, "registered": False, "status": "unknown"}
+        registered = existing.status == "registered"
+        return {
+            "success": True,
+            "registered": registered,
+            "status": existing.status,
+        }
+
     def recognize(self, user_id: int, installation_id: int) -> dict[str, Any]:
         row = self._owned(user_id, installation_id)
         if row.status != "pending_recognition" or row.origin != "laim":

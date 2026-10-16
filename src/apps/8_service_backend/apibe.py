@@ -5269,8 +5269,9 @@ def _laim_installations_proxy(
     result = router.laim_installations_request(
         method, path, payload=payload, extra_headers=_laim_forward_headers(request)
     )
-    if result.get("success") is False:
-        raise HTTPException(status_code=400, detail=result.get("error"))
+    # success=false es error de negocio (serial tomado, etc.). Un 400 aquí
+    # lo reescribe el middleware como "Error del broker backend: 400 - …"
+    # y acaba en el modal de laim. El borde público (apife) sí convierte a 400.
     return result
 
 
@@ -5318,6 +5319,25 @@ def laim_propose_installation(
             request,
             "POST",
             f"/laim/installations/propose?major_version={major_version}",
+            payload.model_dump(),
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/laim/installations/ack", tags=["laim-installations"])
+def laim_ack_installation(
+    request: Request,
+    payload: LaimInstallProposeEnvelope,
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    major_version: str = "2",
+) -> dict[str, Any]:
+    try:
+        return _laim_installations_proxy(
+            router,
+            request,
+            "POST",
+            f"/laim/installations/ack?major_version={major_version}",
             payload.model_dump(),
         )
     except BrokerBusinessError as exc:
