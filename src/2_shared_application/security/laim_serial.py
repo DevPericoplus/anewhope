@@ -5,8 +5,10 @@ Espejo exacto de `laim/internal/utils/serial.go` (`VerifySerial`,
 base32 sin padding). Cualquier diferencia rechazaría seriales genuinos.
 
 La clave es `KeySerialSigning` (dirección inversa a `KeyExchageLaimApp`):
-el cliente firma, el servidor verifica. Se inyecta; en runtime vive en
-`laim_exchange_keys` con `key_kind=serial_signing`.
+el cliente firma, el servidor verifica. Vive en `laim_exchange_keys`
+(`key_kind=serial_signing`) y, si el deploy aún no ha sembrado la fila,
+`product_serial_signing_key()` (el mismo valor que `laim init` embebe).
+Un Update no rellena SQL; sin este fallback el Registro queda ciego.
 """
 
 from __future__ import annotations
@@ -19,6 +21,10 @@ import re
 SERIAL_SCHEME = "2"
 SERIAL_PAYLOAD_BYTES = 10
 SERIAL_CHECK_BYTES = 4
+# Misma constante que KeySerialSigning en laim/internal/utils/version.go.
+# No es un secreto de servidor: viaja en cada binario laim. El test
+# test_product_key_matches_version_go falla si divergen.
+_PRODUCT_SERIAL_SIGNING_KEY = "d8nKoxuTtrbLytUew0zybWAoukxyn7flmgiLjLn5oHQ="
 
 
 def decode_exchange_key(key: str) -> bytes:
@@ -98,3 +104,8 @@ def key_serial_signing_from_laim_repo(version_go: str) -> str:
     if not match:
         raise ValueError("KeySerialSigning no está en version.go")
     return match.group(1)
+
+
+def product_serial_signing_key() -> str:
+    """KeySerialSigning de producto: la que firman los instaladores de laim."""
+    return _PRODUCT_SERIAL_SIGNING_KEY

@@ -68,7 +68,8 @@ class LaimExchangeKeyRepository:
 
     def get_serial_signing_key(self) -> Optional[ExchangeKey]:
         """KeySerialSigning vigente (scheme 2, no rota por major como el HMAC
-        de actualización). None si el operador aún no la ha insertado."""
+        de actualización). None si aún no hay fila: el servicio la siembra
+        desde el valor de producto en el primer verify."""
         with self._engine.connect() as conn:
             row = conn.execute(
                 text(
@@ -90,3 +91,30 @@ class LaimExchangeKeyRepository:
             major_version=str(row["major_version"]),
             key_value=str(row["key_value_cipher"]),
         )
+
+    def ensure_serial_signing_key(self, key_value: str, major_version: str = "2") -> ExchangeKey:
+        """Idempotente: crea la fila serial_signing si no existe. El deploy
+        no inserta secretos en SQL; backend_core siembra en el primer HMAC."""
+        existing = self.get_serial_signing_key()
+        if existing is not None:
+            return existing
+        value = (key_value or "").strip()
+        if not value:
+            raise ValueError("KeySerialSigning vacío")
+        with self._engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO laim_exchange_keys (major_version, key_kind, key_value_cipher)
+                    SELECT :mv, 'serial_signing', :val
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM laim_exchange_keys WHERE key_kind = 'serial_signing'
+                    )
+                    """
+                ),
+                {"mv": major_version, "val": value},
+            )
+        got = self.get_serial_signing_key()
+        if got is None:
+            raise RuntimeError("KeySerialSigning no quedó persistida")
+        return got

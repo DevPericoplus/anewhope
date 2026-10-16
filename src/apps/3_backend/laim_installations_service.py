@@ -43,12 +43,16 @@ class InstallationsError(Exception):
 
 
 class SigningKeyMissing(Exception):
-    """No hay KeySerialSigning en laim_exchange_keys ni en LAIM_SERIAL_SIGNING_KEY."""
+    """No hay KeySerialSigning en DB, env ni constante de producto."""
 
 
-def resolve_serial_signing_key(db_value: str | None, env_value: str | None) -> str | None:
-    """DB primero (rotación); env de vault si el entorno aún no tiene la fila."""
-    for raw in (db_value, env_value):
+def resolve_serial_signing_key(
+    db_value: str | None,
+    env_value: str | None,
+    product_value: str | None = None,
+) -> str | None:
+    """DB (rotación) → env vault → constante de producto (laim init)."""
+    for raw in (db_value, env_value, product_value):
         text = (raw or "").strip()
         if text:
             return text
@@ -122,13 +126,22 @@ class LaimInstallationsService:
         def _verify(serial: str) -> bool:
             row = keys.get_serial_signing_key()
             db_val = row.key_value if row is not None else None
-            key = resolve_serial_signing_key(db_val, os.environ.get(SERIAL_SIGNING_ENV))
+            key = resolve_serial_signing_key(
+                db_val,
+                os.environ.get(SERIAL_SIGNING_ENV),
+                serial_mod.product_serial_signing_key(),
+            )
             if not key:
                 self._logger.error(
-                    "KeySerialSigning no está en laim_exchange_keys ni %s",
+                    "KeySerialSigning no está en laim_exchange_keys, %s ni producto",
                     SERIAL_SIGNING_ENV,
                 )
                 raise SigningKeyMissing
+            if row is None:
+                try:
+                    keys.ensure_serial_signing_key(key)
+                except Exception:
+                    self._logger.exception("no se pudo persistir KeySerialSigning")
             return serial_mod.verify_serial(serial, key)
 
         self._verify = _verify

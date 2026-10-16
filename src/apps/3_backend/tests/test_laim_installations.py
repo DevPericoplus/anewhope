@@ -229,12 +229,12 @@ def test_verify_ok_and_ko_with_real_hmac() -> None:
     assert svc.verify("2-AAAA-AAAA-AAAA-AAAAAAA-AAAAAAA")["error"]
 
 
-def test_resolve_serial_signing_key_prefers_db_then_env() -> None:
+def test_resolve_serial_signing_key_prefers_db_then_env_then_product() -> None:
     _mod, *_rest = _svc()
-    assert _mod.resolve_serial_signing_key(" db ", "env") == "db"
-    assert _mod.resolve_serial_signing_key(None, " env-key ") == "env-key"
-    assert _mod.resolve_serial_signing_key("", "") is None
-    assert _mod.resolve_serial_signing_key(None, None) is None
+    assert _mod.resolve_serial_signing_key(" db ", "env", "prod") == "db"
+    assert _mod.resolve_serial_signing_key(None, " env-key ", "prod") == "env-key"
+    assert _mod.resolve_serial_signing_key("", "", " product ") == "product"
+    assert _mod.resolve_serial_signing_key(None, None, None) is None
     assert _mod.SERIAL_SIGNING_ENV == "LAIM_SERIAL_SIGNING_KEY"
 
 

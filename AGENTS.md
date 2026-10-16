@@ -11342,9 +11342,12 @@ Reconocer».
 
 - **Manual (sesión):** `POST /laim/installations/verify` comprueba el
   HMAC de `laim init` (`VerifySerial` / `KeySerialSigning`) **solo** en
-  backend_core. Guardar persiste hostname/SO/edición + **alias**
-  (`display_name`, mutable). Hostname y serial son inmutables. Varias
-  instalaciones por usuario. La UI solo muestra Community Edition
+  backend_core. El blur de laimweb **no** cuenta como intento fallido;
+  solo `register_manual` y `propose`. Si falta la clave de firma, el
+  error no es «serial inválido» (`MSG_SERIAL_UNAVAILABLE`). Guardar
+  persiste hostname/SO/edición + **alias** (`display_name`, mutable).
+  Hostname y serial son inmutables. Varias instalaciones por usuario.
+  La UI solo muestra Community Edition
   (`ADVANCE_LICENSES_ENABLED = False`); la columna `edition` queda lista
   para el formulario Advance.
 - **Desde laim (público):** `POST /laim/installations/propose` — nginx
@@ -11362,7 +11365,11 @@ Reconocer».
   sirve a laim_maintenance **por entorno** (silicon/dev/pre).
 - **Nunca** persistir ni devolver `master_key_cipher`.
 - **Siempre** el salto 7→8→3. Claves en `laim_exchange_keys`
-  (`key_kind=exchange|serial_signing`); el valor no se commitea.
+  (`key_kind=exchange|serial_signing`). Un Update no inserta SQL: si no
+  hay fila `serial_signing`, backend_core verifica con la constante de
+  producto (la misma `KeySerialSigning` de `laim init`) y la siembra en
+  el primer HMAC. `LAIM_SERIAL_SIGNING_KEY` (vault) sigue siendo
+  override de rotación. Nunca un INSERT a mano desde un agente.
 - Migraciones `030_laim_installations.sql` + `031_laim_installation_metrics.sql`.
 
 ### 37.6. Checklist antes de implementar

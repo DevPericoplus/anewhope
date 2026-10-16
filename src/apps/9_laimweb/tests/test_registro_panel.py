@@ -66,6 +66,12 @@ def test_verify_and_persist_go_through_middleware_to_core() -> None:
     assert "master_key" in service
     assert "El número de serie no es válido" in service
     assert "LAIM_SERIAL_SIGNING_KEY" in service
+    assert "product_serial_signing_key" in (
+        Path(__file__).resolve().parents[3]
+        / "2_shared_application"
+        / "security"
+        / "laim_serial.py"
+    ).read_text(encoding="utf-8")
     assert "No se puede validar el número de serie ahora mismo" in service
     nginx = _NGINX.read_text(encoding="utf-8")
     assert nginx.count("location /laim/installations/") >= 2
