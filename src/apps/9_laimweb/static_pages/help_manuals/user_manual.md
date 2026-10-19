@@ -126,6 +126,18 @@ Puedes cambiar el idioma de la **interfaz** web entre **ingles** y **espanol** c
 
 El idioma seleccionado se guarda automaticamente en tu perfil de usuario y se restaura en cada inicio de sesion.
 
+### Idioma de la linea de comandos (`laim language`)
+
+La terminal tiene su propio idioma. Lo cambias con:
+
+```bash
+laim language        # muestra el idioma actual (EN o ES)
+laim language ES     # espanol
+laim language EN     # ingles
+```
+
+El valor se guarda en tu perfil y como idioma por defecto del CLI. `laim help` muestra las descripciones en ese idioma. En la pagina **Ayuda** de la web, el recuadro «Referencia de comandos (`laim help`)» sigue las **banderas de la interfaz** (cabecera o login), no las del visor del manual.
+
 ### Idioma de los documentos (Ayuda e Informes)
 
 Al abrir un **manual** (help) o un **informe**, veras banderas flotantes 🇬🇧 / 🇪🇸 en el visor. Sirven para leer el **contenido del documento** en otro idioma (no cambian solo los botones de la app):

@@ -2870,6 +2870,7 @@ Consulta la documentacion completa de la API en:
 laim help           # Ayuda
 laim version        # Version (global + por funcionalidad + plugins)
 laim info           # Hardware y sistema local
+laim language       # Idioma del CLI (EN o ES)
 laim login          # Autenticacion (crea laim.session)
 laim chat           # Chat interactivo (tier mode)
 laim chat <modelo>  # Chat con override de modelo global
