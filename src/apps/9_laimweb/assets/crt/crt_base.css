@@ -273,6 +273,14 @@ body,
   box-sizing: border-box;
 }
 
+.crt-modal-panel .crt-input,
+.crt-modal-panel .crt-input input,
+.crt-modal-panel textarea.crt-input {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 .crt-contact-open-wrap {
   display: flex;
   justify-content: center;

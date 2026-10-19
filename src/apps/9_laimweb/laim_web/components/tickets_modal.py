@@ -16,6 +16,11 @@ def _field(label: str, value) -> rx.Component:
     )
 
 
+def _field_group(*children: rx.Component, extra_class: str = "") -> rx.Component:
+    cls = "crt-contact-field-group" + (f" {extra_class}" if extra_class else "")
+    return rx.el.div(*children, class_name=cls)
+
+
 def ticket_create_modal() -> rx.Component:
     """Alta de ticket con datos de sesión ya rellenos."""
     return rx.box(
@@ -34,48 +39,59 @@ def ticket_create_modal() -> rx.Component:
                     align_items="center",
                     class_name="crt-modal-header",
                 ),
-                _field("Usuario", LaimWebState.user_name),
-                _field("Email", LaimWebState.user_email),
-                _field("Edición", LaimWebState.ticket_edition_label),
-                rx.text("Asunto", class_name="crt-muted"),
-                rx.input(
-                    value=LaimWebState.ticket_subject,
-                    on_change=LaimWebState.set_ticket_subject,
-                    class_name="crt-input",
-                    placeholder="Resuma el problema",
-                ),
-                rx.text("Descripción", class_name="crt-muted"),
-                rx.text_area(
-                    value=LaimWebState.ticket_body,
-                    on_change=LaimWebState.set_ticket_body,
-                    class_name="crt-input crt-contact-description",
-                    placeholder="Cuéntenos qué ocurre y qué ha intentado.",
-                    rows="8",
-                ),
-                rx.cond(
-                    LaimWebState.ticket_form_error != "",
-                    rx.text(LaimWebState.ticket_form_error, class_name="crt-error"),
-                    rx.fragment(),
-                ),
-                rx.cond(
-                    LaimWebState.ticket_form_success != "",
-                    rx.text(LaimWebState.ticket_form_success, class_name="crt-text"),
-                    rx.fragment(),
-                ),
-                rx.hstack(
-                    rx.spacer(),
-                    rx.button(
-                        "Enviar",
-                        on_click=LaimWebState.submit_ticket,
-                        loading=LaimWebState.ticket_submitting,
-                        class_name="crt-btn",
+                rx.vstack(
+                    _field("Usuario", LaimWebState.user_name),
+                    _field("Email", LaimWebState.user_email),
+                    _field("Edición", LaimWebState.ticket_edition_label),
+                    _field_group(
+                        rx.text("Asunto", class_name="crt-muted"),
+                        rx.input(
+                            value=LaimWebState.ticket_subject,
+                            on_change=LaimWebState.set_ticket_subject,
+                            class_name="crt-input crt-contact-user",
+                            placeholder="Resuma el problema",
+                        ),
                     ),
+                    _field_group(
+                        rx.text("Descripción", class_name="crt-muted"),
+                        rx.text_area(
+                            value=LaimWebState.ticket_body,
+                            on_change=LaimWebState.set_ticket_body,
+                            class_name="crt-input crt-textarea crt-contact-description",
+                            placeholder="Cuéntenos qué ocurre y qué ha intentado.",
+                            rows="8",
+                        ),
+                        extra_class="crt-contact-description-group",
+                    ),
+                    rx.cond(
+                        LaimWebState.ticket_form_error != "",
+                        rx.text(LaimWebState.ticket_form_error, class_name="crt-error"),
+                        rx.fragment(),
+                    ),
+                    rx.cond(
+                        LaimWebState.ticket_form_success != "",
+                        rx.text(LaimWebState.ticket_form_success, class_name="crt-text"),
+                        rx.fragment(),
+                    ),
+                    rx.hstack(
+                        rx.spacer(),
+                        rx.button(
+                            "Enviar",
+                            on_click=LaimWebState.submit_ticket,
+                            loading=LaimWebState.ticket_submitting,
+                            class_name="crt-btn",
+                        ),
+                        width="100%",
+                    ),
+                    spacing="3",
                     width="100%",
+                    align_items="stretch",
+                    class_name="crt-contact-form",
                 ),
                 spacing="3",
                 width="100%",
             ),
-            class_name="crt-panel crt-modal-panel",
+            class_name="crt-panel crt-modal-panel crt-modal-panel--contact",
             padding="1.25rem",
             on_click=rx.stop_propagation,
             on_mouse_down=rx.stop_propagation,
@@ -165,7 +181,7 @@ def ticket_status_modal() -> rx.Component:
                                 rx.text_area(
                                     value=LaimWebState.ticket_reply_body,
                                     on_change=LaimWebState.set_ticket_reply_body,
-                                    class_name="crt-input crt-contact-description",
+                                    class_name="crt-input crt-textarea crt-contact-description",
                                     placeholder="Escriba su respuesta",
                                     rows="5",
                                 ),

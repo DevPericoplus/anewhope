@@ -86,6 +86,21 @@ def test_user_notification_routes_registered_before_id() -> None:
     assert pending != -1 and by_id != -1 and pending < by_id
 
 
+def test_ticket_create_form_uses_contact_field_layout() -> None:
+    """Asunto/Descripción no pueden encogerse al placeholder (1.0.9–1.0.35)."""
+    modal = (laimweb_root / "laim_web" / "components" / "tickets_modal.py").read_text(
+        encoding="utf-8"
+    )
+    assert "crt-modal-panel--contact" in modal
+    assert "crt-contact-form" in modal
+    assert "crt-contact-field-group" in modal
+    assert "crt-textarea" in modal
+    assert 'class_name="crt-input crt-textarea crt-contact-description"' in modal
+    css = (laimweb_root / "assets" / "crt" / "crt_base.css").read_text(encoding="utf-8")
+    ticket_inputs = css.split(".crt-modal-panel .crt-input,", 1)[1].split("}", 1)[0]
+    assert "width: 100%" in ticket_inputs
+
+
 def test_operator_notification_routes_registered_before_id() -> None:
     router = (
         Path(__file__).resolve().parents[2]
