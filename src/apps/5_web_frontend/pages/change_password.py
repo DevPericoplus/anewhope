@@ -113,8 +113,8 @@ def _log_security_action(action: str, entity_id: Optional[int], ip: str, user_ag
     except Exception as exc:
         logger.error(f"Error al registrar log en middleware: {exc}", exc_info=True)
 
-# OTP bypass temporal - vaciar set para reactivar OTP para todos
-OTP_EXEMPT_USERS: set[str] = {"brais"}
+# Cuentas de servicio sin teléfono (mismo set que el middleware).
+OTP_EXEMPT_USERS: set[str] = {"brais", "soporte"}
 
 from portal_crt import COLORS, CRT_SHELL_CLASS, SELECT_STYLE
 

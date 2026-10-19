@@ -1638,12 +1638,95 @@ class RouterMiddleware:
             raise BusinessRuleError("No se pudo descifrar la contraseña")
         return decrypted_bytes.decode("utf-8")
 
-    # OTP bypass temporal - vaciar set para reactivar OTP para todos
-    OTP_EXEMPT_USERS: set[str] = {"brais"}
+    # Cuentas de servicio sin teléfono: no se les envía SMS.
+    # `soporte` es el clon de adminone para pruebas automáticas (identity_type_id=1).
+    OTP_EXEMPT_USERS: frozenset[str] = frozenset({"brais", "soporte"})
+    SOPORTE_SERVICE_USERNAME = "soporte"
+    SOPORTE_SERVICE_EMAIL = "soporte@laim.app"
+    SOPORTE_PASSWORD_ENV = "GETMYLLM_SOPORTE_PASSWORD"
 
     def _is_otp_exempt(self, user_name: str) -> bool:
-        """Comprueba si el usuario está exento de OTP."""
-        return user_name in self.OTP_EXEMPT_USERS
+        """Comprueba si el usuario está exento de OTP (sin SMS)."""
+        return str(user_name or "").strip().lower() in self.OTP_EXEMPT_USERS
+
+    def _encrypt_password(self, plain_password: str) -> str:
+        """Cifra una contraseña con la misma clave Fernet que _decrypt_password."""
+        cipher_module = _load_cipher_module(
+            self._get_security_key_path().parent / "custom_cipher_lib.py"
+        )
+        fernet_instance = cipher_module.load_fernet_key_from_file(
+            self._get_security_key_path()
+        )
+        encrypted = cipher_module.encrypt_value(fernet_instance, plain_password)
+        if isinstance(encrypted, bytes):
+            return encrypted.decode("utf-8")
+        return str(encrypted)
+
+    def ensure_soporte_service_account(self) -> bool:
+        """Crea o alinea la cuenta `soporte` como clon de adminone, sin móvil.
+
+        La contraseña sale de GETMYLLM_SOPORTE_PASSWORD (vault/entorno), nunca
+        del código. Devuelve True si acaba de crear la fila.
+        """
+        password = os.environ.get(self.SOPORTE_PASSWORD_ENV, "").strip()
+        users_path = self._get_users_file_path()
+        users = self._load_users(users_path)
+        existing = next(
+            (
+                u
+                for u in users
+                if str(u.user_name).strip().lower() == self.SOPORTE_SERVICE_USERNAME
+            ),
+            None,
+        )
+        admin = next(
+            (u for u in users if str(u.user_name).strip().lower() == "adminone"),
+            None,
+        )
+        encrypted = self._encrypt_password(password) if password else ""
+        if existing is not None:
+            existing.user_email = self.SOPORTE_SERVICE_EMAIL
+            existing.user_mobile = ""
+            existing.identity_type_id = 1
+            existing.active = True
+            existing.blocked = False
+            if encrypted:
+                existing.user_password = encrypted
+            if admin is not None:
+                existing.organization_id = admin.organization_id
+            self._store_users(users_path, users)
+            return False
+        if not encrypted or admin is None:
+            return False
+        next_id = max((u.user_id for u in users), default=0) + 1
+        contact = dict(admin.contact_info or {})
+        contact["first_name"] = "Soporte"
+        contact["sur_name"] = "LAIM"
+        users.append(
+            UserDto(
+                user_id=next_id,
+                organization_id=admin.organization_id,
+                identity_type_id=1,
+                user_name=self.SOPORTE_SERVICE_USERNAME,
+                user_password=encrypted,
+                user_email=self.SOPORTE_SERVICE_EMAIL,
+                user_mobile="",
+                user_otp="",
+                active=True,
+                blocked=False,
+                contact_info=contact,
+                billing_info=dict(admin.billing_info or {}),
+            )
+        )
+        self._store_users(users_path, users)
+        if admin.organization_id > 0:
+            self._create_manage_role_entry(next_id, admin.organization_id, 1)
+        self._logger.info(
+            "Cuenta de servicio soporte creada user_id=%s org_id=%s",
+            next_id,
+            admin.organization_id,
+        )
+        return True
 
     def _rotate_otp(self, user: UserDto) -> str:
         """Genera y actualiza el OTP del usuario."""
@@ -1694,6 +1777,11 @@ class RouterMiddleware:
         user_agent: str = "",
     ) -> dict[str, Any]:
         """Valida credenciales y envía el OTP por SMS."""
+
+        try:
+            self.ensure_soporte_service_account()
+        except Exception as exc:  # noqa: BLE001 — el alta no debe tumbar el login
+            self._logger.warning("ensure_soporte_service_account: %s", exc)
 
         users_path = self._get_users_file_path()
         users = self._load_users(users_path)
@@ -1753,7 +1841,7 @@ class RouterMiddleware:
             raise BusinessRuleError(MSG_INVALID_CREDENTIALS)
 
         # Usuario exento de OTP: devolver sin datos de teléfono/OTP
-        if self._is_otp_exempt(user_name):
+        if self._is_otp_exempt(user_record.user_name):
             self._append_auth_log(
                 sessions_data,
                 user_name=user_name,
@@ -1889,7 +1977,7 @@ class RouterMiddleware:
             self._store_sessions_data(sessions_path, sessions_data)
             raise BusinessRuleError(MSG_INVALID_CREDENTIALS)
 
-        if not self._is_otp_exempt(user_name):
+        if not self._is_otp_exempt(user_record.user_name):
             if not _otp_codes_match(user_record.user_otp, otp):
                 self._append_auth_log(
                     sessions_data,
