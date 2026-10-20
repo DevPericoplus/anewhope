@@ -1,4 +1,4 @@
-# Instala las CA locales de anewhope (dev y silicon) en el almacén de
+﻿# Instala las CA locales de anewhope (dev y silicon) en el almacén de
 # raíz del equipo. Ejecutar como Administrador.
 # No toca claves privadas ni quita una CA al instalar la otra.
 
@@ -16,7 +16,7 @@ function Test-IsAdmin {
 
 if (-not (Test-IsAdmin)) {
     Write-Host "ERROR: ejecuta este script como Administrador." -ForegroundColor Red
-    Write-Host "Clic derecho → Ejecutar con PowerShell como administrador" -ForegroundColor Yellow
+    Write-Host "Clic derecho -> Ejecutar con PowerShell como administrador" -ForegroundColor Yellow
     Read-Host "Enter para salir"
     exit 1
 }
@@ -28,7 +28,7 @@ $certs = @(
 )
 
 Write-Host ""
-Write-Host "Instalador de CA locales — anewhope" -ForegroundColor Cyan
+Write-Host "Instalador de CA locales - anewhope" -ForegroundColor Cyan
 Write-Host ""
 
 foreach ($item in $certs) {
