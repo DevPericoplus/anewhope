@@ -230,6 +230,8 @@ infrastructure/certificates/**/*.pem
 infrastructure/certificates/**/*.key
 infrastructure/certificates/**/*.crt
 infrastructure/certificates/**/*.csr
+# CA públicas de silicon/dev (sin clave privada): para confiar en el navegador.
+!infrastructure/certificates/local-ca/*.crt
 
 # Virtual environments - Official matrix (see AGENTS.md)
 .venv/

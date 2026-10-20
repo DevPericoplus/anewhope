@@ -1,0 +1,76 @@
+Instalar las CA locales de anewhope en Windows
+==============================================
+
+Esto quita el aviso de certificado en el navegador para:
+
+  getmyllm (dev)  https://frontend.house.loc
+  laimweb  (dev)  https://laimweb.house.loc
+
+También cubre silicon (solo si esa máquina llega a 192.168.64.x):
+
+  https://frontend.anewhope.silicon.loc
+  https://laim.anewhope.silicon.loc
+
+NO hay claves privadas. Solo las CA públicas:
+
+  ca-dev.crt       CN = anewhope Local CA (dev)
+  ca-silicon.crt   CN = anewhope Local CA
+
+Copia esta carpeta entera al PC Windows.
+
+
+1) Resolver los nombres (obligatorio en dev)
+
+  Abre el Bloc de notas como Administrador y edita:
+
+    C:\Windows\System32\drivers\etc\hosts
+
+  Añade (si no están):
+
+    192.168.0.241    frontend.house.loc
+    192.168.0.241    laimweb.house.loc
+    192.168.0.241    laim.house.loc
+    192.168.0.241    artifactory.house.loc
+    192.168.0.240    util01.house.loc
+
+  Guarda. En cmd:  ping frontend.house.loc
+
+
+2) Instalar las CA — automático (recomendado)
+
+  Clic derecho en instalar_certificados.ps1
+  → Ejecutar con PowerShell como administrador
+
+  Si Windows bloquea el script:
+
+    Set-ExecutionPolicy -Scope Process Bypass
+    .\instalar_certificados.ps1
+
+
+3) Instalar las CA — a mano
+
+  Por cada fichero .crt (primero ca-dev.crt, luego ca-silicon.crt si lo usas):
+
+  - Doble clic en el .crt → Instalar certificado...
+  - Almacén: Equipo local (hace falta Administrador)
+  - "Colocar todos los certificados en el siguiente almacén"
+  - Examinar → Entidades de certificación raíz de confianza
+  - Finalizar → Sí a la advertencia
+
+  Equivale a:
+
+    certutil -addstore -f Root ca-dev.crt
+    certutil -addstore -f Root ca-silicon.crt
+
+
+4) Cerrar el navegador del todo y volver a abrir
+
+  Chrome / Edge usan el almacén de Windows. Firefox tiene el suyo:
+  Ajustes → Privacidad y seguridad → Certificados → Ver certificados
+  → Autoridades → Importar → ca-dev.crt
+  Marca "Confiar en esta CA para identificar sitios web".
+
+
+No borres la CA de silicon al instalar la de dev: son dos CAs distintas.
+No uses estos ficheros fuera de la red local.
+pre (www.laim.app / www.getmylllm.com) no necesita esto: usa Let's Encrypt.
