@@ -278,12 +278,12 @@ class LaimUserRepository:
             )
 
     def list_portal_users(self, query: str = "") -> list[dict[str, Any]]:
-        """Listado operador: id, nombre, email, móvil. Sin contraseña."""
+        """Listado operador: id, nombre, email, móvil y bloqueo. Sin contraseña."""
         needle = (query or "").strip()
         like = f"%{needle.lower()}%"
         sql = """
             SELECT u.user_id, u.user_name, u.user_email, u.user_mobile,
-                   c.first_name, c.sur_name
+                   u.blocked, c.first_name, c.sur_name
             FROM laim_users u
             LEFT JOIN laim_user_contact_info c ON c.user_id = u.user_id
         """
@@ -308,7 +308,7 @@ class LaimUserRepository:
                 text(
                     """
                     SELECT u.user_id, u.user_name, u.user_email, u.user_mobile,
-                           c.first_name, c.sur_name
+                           u.blocked, c.first_name, c.sur_name
                     FROM laim_users u
                     LEFT JOIN laim_user_contact_info c ON c.user_id = u.user_id
                     WHERE u.user_id = :user_id
@@ -408,12 +408,15 @@ class LaimUserRepository:
         first = str(row.get("first_name") or "").strip()
         sur = str(row.get("sur_name") or "").strip()
         full_name = " ".join(part for part in (first, sur) if part)
+        blocked = bool(row.get("blocked"))
         return {
             "user_id": int(row["user_id"]),
             "user_name": str(row["user_name"]),
             "user_email": str(row["user_email"]),
             "user_mobile": str(row.get("user_mobile") or ""),
             "full_name": full_name,
+            "blocked": blocked,
+            "estado": "bloqueado" if blocked else "activo",
         }
 
     def update_user_password(self, user_id: int, encrypted_password: str) -> None:

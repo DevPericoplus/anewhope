@@ -273,6 +273,12 @@ body,
   box-sizing: border-box;
 }
 
+.crt-modal-panel--thanks {
+  width: calc(100vw - 2rem);
+  max-width: 28rem;
+  box-sizing: border-box;
+}
+
 .crt-modal-panel .crt-input,
 .crt-modal-panel .crt-input input,
 .crt-modal-panel textarea.crt-input {

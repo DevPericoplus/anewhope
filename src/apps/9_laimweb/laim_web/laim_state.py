@@ -365,6 +365,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
     contact_screenshot_name: str = ""
     contact_preview_open: bool = False
     contact_modal_open: bool = False
+    contact_thanks_open: bool = False
     _pending_contact_screenshot: dict[str, str] | None = None
 
     _token_renewal_running: bool = False
@@ -952,6 +953,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         else:
             self.contact_modal_open = False
             self.contact_preview_open = False
+            self.contact_thanks_open = False
         if item == "escenarios":
             self.escenario_playing = False
         if item == "registro":
@@ -1131,11 +1133,13 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         self.contact_success_message = ""
         self.contact_case_number = 0
         self.contact_preview_open = False
+        self.contact_thanks_open = False
 
     @event
     def open_contact_modal(self) -> None:
         """Abre el modal de contacto con el formulario pre-rellenado."""
         self._prepare_contact_form()
+        self.contact_thanks_open = False
         self.contact_modal_open = True
 
     @event
@@ -1143,6 +1147,17 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
         """Cierra el modal de contacto y el visor de captura."""
         self.contact_modal_open = False
         self.contact_preview_open = False
+
+    @event
+    def contact_thanks_back(self) -> None:
+        """Cierra el aviso de envío y deja visible la página de Contacto."""
+        self.contact_thanks_open = False
+        self.contact_modal_open = False
+        self.contact_preview_open = False
+        self.contact_form_success = False
+        self.contact_success_message = ""
+        self.active_menu = "contacto"
+        self._load_static_page("contacto")
 
     @event
     def set_contact_usage_mode(self, value: str) -> None:
@@ -1359,11 +1374,9 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin):
                 numero_caso = int(result.get("numero_caso") or result.get("message_id") or 0)
                 self.contact_form_success = True
                 self.contact_case_number = numero_caso
-                self.contact_success_message = (
-                    f"Caso nº {numero_caso} registrado. Le responderemos a la dirección indicada."
-                    if numero_caso > 0
-                    else "Mensaje enviado correctamente. Le responderemos a la dirección indicada."
-                )
+                self.contact_success_message = ""
+                self.contact_modal_open = False
+                self.contact_thanks_open = True
                 self.contact_affected_user = (
                     self.user_name.strip() if self.is_logged_in else ""
                 )

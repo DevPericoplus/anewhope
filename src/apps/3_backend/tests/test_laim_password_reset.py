@@ -155,6 +155,31 @@ def test_request_unknown_email_does_not_mint_token(service, repo) -> None:
     assert int(total["n"]) == 0
 
 
+def test_request_blocked_user_skips_mail_and_logs(service, repo, crypto) -> None:
+    _svc_mod, auth = service
+    repo_mod, user_repo = repo
+    _create_user(repo_mod, user_repo, crypto)
+    user_repo.set_user_blocked("ana", True)
+    result = auth.request_password_reset("ana@laim.example", ip_address="10.0.0.8")
+    assert result["accepted"] is True
+    assert result["found"] is False
+    assert "token" not in result
+    with user_repo._engine.connect() as conn:
+        tokens = conn.execute(
+            text("SELECT COUNT(*) AS n FROM laim_password_reset_tokens")
+        ).mappings().fetchone()
+        log = conn.execute(
+            text(
+                "SELECT event, status, details FROM laim_auth_logs "
+                "WHERE user_name = 'ana' ORDER BY id DESC LIMIT 1"
+            )
+        ).mappings().fetchone()
+    assert int(tokens["n"]) == 0
+    assert log["event"] == "login_blocked"
+    assert log["status"] == "blocked"
+    assert "password_reset_skipped" in log["details"]
+
+
 def test_request_existing_user_returns_raw_once_and_stores_hash(
     service, repo, crypto
 ) -> None:

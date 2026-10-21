@@ -1046,6 +1046,8 @@ def laim_forum_get_poll_interval_seconds() -> int:
 def _sanitize_login_error(raw: object) -> str:
     """Oculta la cadena técnica broker/backend/core en fallos de login."""
     text = str(raw or "").lower()
+    if "no está habilitado" in text or "no esta habilitado" in text:
+        return "El usuario no está habilitado. Contacta con soporte."
     if "error de conexión" in text or "no se pudo contactar" in text:
         return MSG_AUTH_UNAVAILABLE
     return MSG_INVALID_CREDENTIALS

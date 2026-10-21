@@ -28,3 +28,8 @@ def test_support_users_path_core_to_laimweb() -> None:
     web = (_WEB / "laim_web" / "laim_web.py").read_text(encoding="utf-8")
     assert "location /laim/users" not in web
     assert "/api/support/users/{user_id:int}/password" in web
+    assert "/api/support/users/{user_id:int}/status" in web
+    for path, needle in files.items():
+        if needle != "/laim/support/users":
+            continue
+        assert "/status" in path.read_text(encoding="utf-8"), path.name

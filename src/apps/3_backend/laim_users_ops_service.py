@@ -22,6 +22,8 @@ MSG_RESET_TOO_SHORT = _auth.MSG_RESET_TOO_SHORT
 LaimAuthService = _auth.LaimAuthService  # fallback a laim_core_db en runtime
 
 MSG_PASSWORD_UPDATED = "La contraseña se ha actualizado con éxito"
+MSG_STATUS_BLOCKED = "La cuenta queda bloqueada."
+MSG_STATUS_ACTIVE = "La cuenta queda activa."
 MSG_USER_TAKEN = "El nombre de usuario ya existe"
 MSG_EMAIL_TAKEN = "La dirección de e-mail ya está registrada"
 MSG_NOT_FOUND = "Usuario no encontrado"
@@ -112,10 +114,38 @@ class LaimUsersOpsService:
             return {"success": False, "error": MSG_RESET_TOO_SHORT}
         encrypted = encrypt_password(password)
         self._user_repo.update_user_password(user_id, encrypted)
+        # Un bloqueo por intentos fallidos no se levanta solo: el operador
+        # acaba de fijar la clave y el usuario tiene que poder entrar con ella.
+        self._user_repo.set_user_blocked(current.user_name, blocked=False)
         self._user_repo.append_auth_log(
             user_name=current.user_name,
             event="password_change",
             status="success",
-            details={"action": "operator_password", "user_id": user_id},
+            details={
+                "action": "operator_password",
+                "user_id": user_id,
+                "unblocked": True,
+            },
         )
         return {"success": True, "message": MSG_PASSWORD_UPDATED}
+
+    def set_blocked(self, user_id: int, blocked: bool) -> dict[str, Any]:
+        """Bloquea o desbloquea. El login mira `blocked` antes de la clave."""
+        current = self._user_repo.get_user_by_id(user_id)
+        if current is None:
+            return {"success": False, "error": MSG_NOT_FOUND}
+        self._user_repo.set_user_blocked(current.user_name, blocked=bool(blocked))
+        # login_blocked / success|blocked ya están en el enum de laim_auth_logs.
+        self._user_repo.append_auth_log(
+            user_name=current.user_name,
+            event="login_blocked",
+            status="blocked" if blocked else "success",
+            details={
+                "action": "operator_status",
+                "user_id": user_id,
+                "blocked": bool(blocked),
+            },
+        )
+        item = self._user_repo.get_portal_account(user_id)
+        message = MSG_STATUS_BLOCKED if blocked else MSG_STATUS_ACTIVE
+        return {"success": True, "message": message, "item": item}

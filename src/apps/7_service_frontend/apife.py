@@ -6422,6 +6422,28 @@ async def laim_support_user_password(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
+@app.post("/laim/support/users/{user_id}/status")
+async def laim_support_user_status(
+    user_id: int,
+    payload: dict[str, Any],
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+    authorization: Annotated[str | None, Header()] = None,
+    caller: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> dict[str, Any]:
+    try:
+        return router.laim_support_request(
+            "POST",
+            f"/laim/support/users/{user_id}/status",
+            payload=payload,
+            authorization=authorization or "",
+            caller=caller or "",
+            client_app=client_app or "",
+        )
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
 # ============================================================================
 # LAIM FORUM (proxy transparente hacia Backend Core)
 # ============================================================================

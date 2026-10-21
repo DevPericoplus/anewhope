@@ -407,7 +407,22 @@ class LaimAuthService:
     ) -> dict[str, Any]:
         """Busca usuario activo y, si existe, emite un token raw una sola vez."""
         user = self._user_repo.get_user_by_email(user_email.strip())
-        if user is None or not user.active or user.blocked:
+        if user is None:
+            return {"accepted": True, "found": False}
+        if not user.active or user.blocked:
+            # La respuesta al usuario sigue siendo genérica. El log usa
+            # valores ya declarados en el enum de laim_auth_logs: no hubo
+            # token ni correo.
+            self._user_repo.append_auth_log(
+                user_name=user.user_name,
+                event="login_blocked",
+                status="blocked",
+                ip_address=ip_address,
+                details={
+                    "reason": "password_reset_skipped",
+                    "cause": "blocked" if user.blocked else "inactive",
+                },
+            )
             return {"accepted": True, "found": False}
         raw_token = secrets.token_urlsafe(32)
         token_hash = hash_reset_token(raw_token)

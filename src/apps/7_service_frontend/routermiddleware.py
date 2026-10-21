@@ -181,6 +181,8 @@ def _otp_codes_match(stored: str | int | None, submitted: str | int | None) -> b
 def _laim_login_user_message(detail: str) -> str:
     """Traduce fallos de login LAIM a un mensaje seguro para el usuario."""
     lowered = detail.lower()
+    if "no está habilitado" in lowered or "no esta habilitado" in lowered:
+        return "El usuario no está habilitado. Contacta con soporte."
     if "400" in detail or "credenciales" in lowered:
         return MSG_LAIM_INVALID_CREDENTIALS
     return MSG_LAIM_LOGIN_UNAVAILABLE

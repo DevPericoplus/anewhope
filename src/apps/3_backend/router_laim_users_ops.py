@@ -57,6 +57,10 @@ class UserPasswordRequest(BaseModel):
     password_confirm: str = Field(..., min_length=8)
 
 
+class UserStatusRequest(BaseModel):
+    blocked: bool
+
+
 def _guard(authorization: str | None, caller_header: str | None, client_app: str | None) -> None:
     try:
         require_support_caller(authorization, caller_header, client_app)
@@ -132,5 +136,19 @@ def post_user_password(
     result = get_users_ops_service().update_password(
         user_id, payload.password, payload.password_confirm
     )
+    _fail(result)
+    return result
+
+
+@router.post("/{user_id}/status")
+def post_user_status(
+    user_id: int,
+    payload: UserStatusRequest,
+    authorization: Annotated[str | None, Header()] = None,
+    caller_header: Annotated[str | None, Header(alias="X-Laim-Caller")] = None,
+    client_app: Annotated[str | None, Header(alias="X-Client-App")] = None,
+) -> dict[str, Any]:
+    _guard(authorization, caller_header, client_app)
+    result = get_users_ops_service().set_blocked(user_id, payload.blocked)
     _fail(result)
     return result

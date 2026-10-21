@@ -5762,6 +5762,27 @@ def laim_support_user_password(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@app.post("/laim/support/users/{user_id}/status", tags=["laim-support-users"])
+def laim_support_user_status(
+    user_id: int,
+    request: Request,
+    payload: dict[str, Any],
+    router: BrokerBackendRouter = Depends(get_router_broker),
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    _support_context(router, authorization, session_token)
+    try:
+        return router.laim_support_request(
+            "POST",
+            f"/laim/support/users/{user_id}/status",
+            payload=payload,
+            extra_headers=_laim_forward_headers(request),
+        )
+    except BrokerBusinessError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 # ============================================================================
 # LAIM FORUM (proxy transparente hacia Backend Core)
 # ============================================================================

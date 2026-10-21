@@ -158,6 +158,8 @@ def test_list_orders_by_id_filters_name_or_email_and_omits_password() -> None:
     by_mail = svc.list_users("ana@laim.example")
     assert [r["user_email"] for r in by_mail["items"]] == ["ana@laim.example"]
     assert by_mail["items"][0]["user_mobile"] == "+34600111222"
+    assert by_mail["items"][0]["blocked"] is False
+    assert by_mail["items"][0]["estado"] == "activo"
 
 
 def test_get_detail_matches_alta_fields_without_password() -> None:
@@ -173,6 +175,8 @@ def test_get_detail_matches_alta_fields_without_password() -> None:
     assert item["full_name"] == "Ana Laim"
     assert "user_password" not in item
     assert "password" not in item
+    assert item["blocked"] is False
+    assert item["estado"] == "activo"
 
 
 def test_update_profile_rejects_duplicate_username_and_email() -> None:
@@ -227,3 +231,33 @@ def test_update_password_uses_real_fernet_like_register() -> None:
     assert crypto.decrypt_password(user.user_password) == "NuevaClave9"
     assert "NuevaClave9" not in user.user_password
     assert "user_password" not in json.dumps(ok)
+    repo.set_user_blocked("ana", True)
+    again = svc.update_password(user_id, "NuevaClave9", "NuevaClave9")
+    assert again["success"] is True
+    assert repo.get_user_by_id(user_id).blocked is False
+
+
+def test_set_blocked_toggles_estado_and_audits_without_secrets() -> None:
+    _mod, svc, repo, _crypto = _svc()
+    user_id = _create(repo, _crypto, "ana", "ana@laim.example")
+    blocked = svc.set_blocked(user_id, True)
+    assert blocked["success"] is True
+    assert blocked["item"]["blocked"] is True
+    assert blocked["item"]["estado"] == "bloqueado"
+    assert "user_password" not in json.dumps(blocked)
+    active = svc.set_blocked(user_id, False)
+    assert active["success"] is True
+    assert active["item"]["estado"] == "activo"
+    assert repo.get_user_by_id(user_id).blocked is False
+    missing = svc.set_blocked(999, True)
+    assert missing["success"] is False
+    with repo._engine.connect() as conn:
+        log = conn.execute(
+            text(
+                "SELECT event, status, details FROM laim_auth_logs "
+                "WHERE user_name = 'ana' ORDER BY id DESC LIMIT 1"
+            )
+        ).mappings().fetchone()
+    assert log["event"] == "login_blocked"
+    assert log["status"] == "success"
+    assert "operator_status" in log["details"]

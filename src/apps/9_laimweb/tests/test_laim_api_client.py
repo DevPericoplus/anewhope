@@ -73,6 +73,36 @@ def test_laim_login_hides_broker_chain_on_400() -> None:
     assert "core" not in result["error"].lower()
 
 
+def test_laim_login_keeps_disabled_user_message() -> None:
+    from laim_web.adapters import laim_api_client
+
+    wrapped = (
+        "No se pudo iniciar sesión LAIM: Error del broker backend: 400 - "
+        "El usuario no está habilitado"
+    )
+    mock_response = MagicMock()
+    mock_response.status_code = 400
+    mock_response.text = wrapped
+    mock_response.json.return_value = {"detail": wrapped}
+    mock_response.raise_for_status.side_effect = laim_api_client.httpx.HTTPStatusError(
+        "400",
+        request=MagicMock(),
+        response=mock_response,
+    )
+
+    with patch.object(laim_api_client.httpx, "Client") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client.__enter__.return_value = mock_client
+        mock_client.request.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        result = laim_api_client.laim_login("david", "secret")
+
+    assert result["success"] is False
+    assert result["error"] == "El usuario no está habilitado. Contacta con soporte."
+    assert "broker" not in result["error"].lower()
+
+
 def test_laim_register_sends_hcaptcha_token() -> None:
     from laim_web.adapters import laim_api_client
 

@@ -60,6 +60,35 @@ def test_contactar_button_matches_submit_prominence() -> None:
     assert "0 0 0 11px" in submit_btn
 
 
+def test_contact_success_shows_thanks_modal_then_returns_to_contacto() -> None:
+    """Tras enviar, un aviso con Volver sustituye al formulario vacío."""
+    form = (laimweb_root / "laim_web" / "components" / "contact_form.py").read_text(
+        encoding="utf-8"
+    )
+    state = (laimweb_root / "laim_web" / "laim_state.py").read_text(encoding="utf-8")
+    page = (laimweb_root / "laim_web" / "pages" / "index.py").read_text(encoding="utf-8")
+    assert "CONTACT_THANKS_MESSAGE" in form
+    assert "Agradecemos haber contactado con nosotros" in form
+    assert "trataremos de responder a su mensaje lo antes posible." in form
+    assert '"Volver"' in form
+    assert "contact_thanks_back" in form
+    assert "contact_thanks_open" in form
+    assert "crt-modal-panel--thanks" in form
+    assert "contact_form_success" not in form
+    assert "contact_form_panel()" in page
+    submit = state.split("async def submit_contact_form_background", 1)[1]
+    success = submit.split("if result.get(\"success\"):", 1)[1].split("return", 1)[0]
+    assert "self.contact_thanks_open = True" in success
+    assert "self.contact_modal_open = False" in success
+    back = state.split("def contact_thanks_back", 1)[1].split("def ", 1)[0]
+    assert 'self.active_menu = "contacto"' in back
+    assert 'self._load_static_page("contacto")' in back
+    assert "self.contact_thanks_open = False" in back
+    css = (laimweb_root / "assets" / "crt" / "crt_base.css").read_text(encoding="utf-8")
+    thanks = css.split(".crt-modal-panel--thanks {", 1)[1].split("}", 1)[0]
+    assert "max-width: 28rem" in thanks
+
+
 def test_prepare_contact_form_fills_logged_user() -> None:
     source = (laimweb_root / "laim_web" / "laim_state.py").read_text(encoding="utf-8")
     assert "self.contact_affected_user = self.user_name.strip()" in source

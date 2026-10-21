@@ -15,6 +15,8 @@ USAGE_MODE_OPTIONS = [
     "other",
 ]
 
+CONTACT_THANKS_MESSAGE = "Agradecemos haber contactado con nosotros y trataremos de responder a su mensaje lo antes posible."
+
 
 def _field_group(*children: rx.Component, extra_class: str = "") -> rx.Component:
     cls = "crt-contact-field-group" + (f" {extra_class}" if extra_class else "")
@@ -146,14 +148,6 @@ def _contact_form_fields() -> rx.Component:
                 font_size="0.85em",
             ),
         ),
-        rx.cond(
-            LaimWebState.contact_form_success,
-            rx.text(
-                LaimWebState.contact_success_message,
-                class_name="crt-success",
-                font_size="0.85em",
-            ),
-        ),
         rx.el.div(
             rx.button(
                 rx.cond(
@@ -213,8 +207,45 @@ def _contact_form_modal() -> rx.Component:
     )
 
 
+def _contact_thanks_modal() -> rx.Component:
+    """Aviso breve tras el envío. «Volver» deja la página de Contacto."""
+    return rx.box(
+        rx.box(
+            rx.vstack(
+                rx.text(
+                    CONTACT_THANKS_MESSAGE,
+                    class_name="crt-muted",
+                    font_size="1em",
+                ),
+                rx.el.div(
+                    rx.button(
+                        "Volver",
+                        on_click=LaimWebState.contact_thanks_back,
+                        class_name="crt-btn crt-contact-submit",
+                    ),
+                    class_name="crt-contact-submit-wrap",
+                ),
+                spacing="3",
+                width="100%",
+                align_items="stretch",
+            ),
+            class_name="crt-panel crt-modal-panel crt-modal-panel--thanks",
+            padding="1.25rem",
+            on_click=rx.stop_propagation,
+            on_mouse_down=rx.stop_propagation,
+        ),
+        class_name="crt-modal-overlay",
+        display=rx.cond(LaimWebState.contact_thanks_open, "flex", "none"),
+        z_index="10003",
+    )
+
+
 def contact_form_panel() -> rx.Component:
-    """Botón «Contactar» en la página; el formulario vive en el modal."""
+    """Botón «Contactar» en la página; el formulario vive en el modal.
+
+    La página de Contacto es la misma con sesión y sin ella (menú público
+    y «Contactar por email» desde Soporte).
+    """
     return rx.fragment(
         rx.el.div(
             rx.button(
@@ -225,4 +256,5 @@ def contact_form_panel() -> rx.Component:
             class_name="crt-contact-open-wrap",
         ),
         _contact_form_modal(),
+        _contact_thanks_modal(),
     )
