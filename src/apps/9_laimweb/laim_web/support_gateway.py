@@ -29,6 +29,7 @@ _spec.loader.exec_module(_auth)
 SupportAuthError = _auth.SupportAuthError
 require_support_caller = _auth.require_support_caller
 support_secret = _auth.support_secret
+mint_support_token = _auth.mint_support_token
 encrypt_support_payload = _auth.encrypt_support_payload
 decrypt_support_payload = _auth.decrypt_support_payload
 

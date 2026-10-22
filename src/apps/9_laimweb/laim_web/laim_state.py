@@ -13,6 +13,7 @@ from typing import Any
 import reflex as rx
 from reflex.event import event
 
+from laim_web.laim_config_mixin import LaimConfigMixin
 from laim_web.laim_forum_mixin import LaimForumMixin
 from laim_web.shared_state import LaimSharedSessionState
 
@@ -56,7 +57,7 @@ READ_LAIM_HCAPTCHA_TOKEN_SCRIPT = """
 """
 
 
-class LaimWebState(LaimSharedSessionState, LaimForumMixin):
+class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
     """Estado de LAIM Web con autenticación y UI."""
 
     @rx.var
@@ -2305,3 +2306,21 @@ def _register_laim_forum_event_handlers() -> None:
 
 
 _register_laim_forum_event_handlers()
+
+
+def _register_laim_config_event_handlers() -> None:
+    """Registra los modales de General si Reflex no los enlazó desde el mixin."""
+    from reflex.event import EventHandler
+
+    from laim_web.laim_config_mixin import CONFIG_EVENT_HANDLER_NAMES, LaimConfigMixin
+
+    for name in CONFIG_EVENT_HANDLER_NAMES:
+        if isinstance(getattr(LaimWebState, name, None), EventHandler):
+            continue
+        handler_fn = getattr(LaimConfigMixin, name, None)
+        if handler_fn is None:
+            continue
+        LaimWebState._add_event_handler(name, handler_fn)
+
+
+_register_laim_config_event_handlers()

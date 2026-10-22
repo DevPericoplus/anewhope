@@ -26,6 +26,11 @@ def test_admin_config_menus_defined() -> None:
     for menu in expected:
         content = load_static_page_markdown(menu)
         assert content.startswith("#")
+        if menu == "config_general":
+            assert "Usuarios" in content
+            assert "Registro" in content
+            assert "/laim/support/users" in content
+            continue
         assert "solo documental" in content.lower() or "solo documenta" in content.lower()
         assert "laim_maintenance" in content
 

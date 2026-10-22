@@ -1,16 +1,21 @@
 # Configuración general
 
-## Guía documental (no es un panel de edición)
+## Operación
 
-Esta página **solo documenta** los parámetros globales del portal. No se
-editan desde aquí. El backoffice operativo vive **temporalmente en
-laim_maintenance**; más adelante, en el servicio backoffice.
+Los administradores abren desde aquí **Usuarios** y **Registro**. Cada botón
+abre una ventana modal con las mismas operaciones que laim_maintenance:
+cuentas del portal e inventario de instalaciones de este entorno.
+
+El navegador no llama a `/api/support/*`. laimweb acuña la credencial en el
+servidor y reutiliza `/laim/support/users` y `/laim/support/installations`.
 
 ## Parámetros del portal LAIM
 
-Desde esta sección los **administradores** pueden revisar y ajustar la configuración global del portal web LAIM: identidad visual, enlaces de servicio, políticas de acceso y preferencias de la organización.
+Desde esta sección los **administradores** pueden revisar la configuración
+global del portal: identidad visual, enlaces de servicio y preferencias de
+la organización. Esas fichas siguen siendo de consulta.
 
-### Áreas gestionables
+### Áreas de consulta
 
 | Área | Descripción |
 |------|-------------|
@@ -18,6 +23,3 @@ Desde esta sección los **administradores** pueden revisar y ajustar la configur
 | **Servicios** | URLs de middleware, broker y backend (solo lectura en producción) |
 | **Preferencias** | Idioma, zona horaria y opciones de notificación |
 | **Mantenimiento** | Modo mantenimiento y mensajes informativos para usuarios |
-
-> **Esta página es solo documental.** Las acciones de edición no se
-> implementan en laimweb hasta el backoffice.

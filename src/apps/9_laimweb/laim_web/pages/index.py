@@ -3,6 +3,7 @@
 import reflex as rx
 
 from laim_web.components.auth_modals import auth_modals
+from laim_web.components.config_general_panel import config_general_panel
 from laim_web.components.contact_form import contact_form_panel
 from laim_web.components.bento.home import inicio_home_panel
 from laim_web.components.markdown_viewer import crt_markdown_viewer
@@ -298,6 +299,11 @@ def sidebar() -> rx.Component:
 def content_static_page() -> rx.Component:
     """Contenido cargado desde static_pages/*.md (panel derecho)."""
     return rx.vstack(
+        rx.cond(
+            LaimWebState.active_menu == "config_general",
+            config_general_panel(),
+            rx.fragment(),
+        ),
         rx.match(
             LaimWebState.active_menu,
             ("inicio", inicio_home_panel()),
