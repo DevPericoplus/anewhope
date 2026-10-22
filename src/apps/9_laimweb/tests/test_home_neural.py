@@ -25,7 +25,9 @@ def test_home_polls_neural_scene_while_spinner_is_active() -> None:
     js = (laimweb_root / "assets" / "crt" / "bento_neural.js").read_text(encoding="utf-8")
     assert "NEURAL_READY_WATCH_SCRIPT" in home
     assert "LAIMBentoNeural.ensure" in home
-    assert "bento_neural.js?v=3d7" in home
+    assert "NEURAL_SCRIPT_SRC" in home
+    assets = (laimweb_root / "laim_web" / "visual_assets.py").read_text(encoding="utf-8")
+    assert 'NEURAL_SCRIPT_SRC = "/crt/bento_neural.js?v=4"' in assets
     assert "ensure: ensure" in js
     assert "homeShowsSpinner()" in js
     assert "setInterval" in js

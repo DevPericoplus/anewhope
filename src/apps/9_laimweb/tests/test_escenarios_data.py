@@ -150,7 +150,20 @@ def test_escenarios_panel_avoids_dynamic_class_name_from_foreach() -> None:
     assert "escenario_wire_classes" not in text
     assert "esc-path-" in text
     assert "ESCENARIO_TRAFFIC_JS" in text
-    assert "animateMotion" in text
+    assets = (
+        Path(__file__).resolve().parents[1] / "laim_web" / "visual_assets.py"
+    ).read_text(encoding="utf-8")
+    assert "escenario_traffic.js" in assets
+    assert "ESCENARIO_SCRIPT_SRC" in text
+    js = (
+        Path(__file__).resolve().parents[1] / "assets" / "crt" / "escenario_traffic.js"
+    ).read_text(encoding="utf-8")
+    assert "animateMotion" in js
+    assert "if (!ready) return" in js
+    ready_at = js.index("if (!ready) return")
+    latch_at = js.index("lastGen = gen")
+    assert ready_at < latch_at
+    assert "setInterval(tick, 180)" not in js
     assert "_queue_panel" in text
     state = Path(__file__).resolve().parents[1] / "laim_web" / "laim_state.py"
     state_text = state.read_text(encoding="utf-8")
@@ -246,7 +259,10 @@ def test_caption_has_larger_type_and_no_blur() -> None:
     assert "animationDuration" not in panel
     assert "--esc-fade-in" not in panel
     assert "hitl_remote" in panel
-    assert "step_s" in panel or "cfg.step_s" in panel
+    js = (
+        Path(__file__).resolve().parents[1] / "assets" / "crt" / "escenario_traffic.js"
+    ).read_text(encoding="utf-8")
+    assert "cfg.step_s" in js
 
 
 def test_selecting_a_case_plays_and_homes_on_first_step() -> None:
@@ -256,6 +272,9 @@ def test_selecting_a_case_plays_and_homes_on_first_step() -> None:
     ).read_text(encoding="utf-8")
     select = state.split("def escenario_select", 1)[1].split("def ", 1)[0]
     assert "return self._start_escenario_playback()" in select
+    menu = state.split("def set_menu", 1)[1].split("def ", 1)[0]
+    opened = menu.split('item == "escenarios"', 1)[1].split("if item", 1)[0]
+    assert "return self._start_escenario_playback()" in opened
     play = state.split("def escenario_play(", 1)[1].split("def ", 1)[0]
     assert "self.escenario_step = 1" in play
     loop = state.split("def escenario_play_loop", 1)[1].split("def ", 1)[0]

@@ -9,18 +9,11 @@ from laim_web.components.bento.section_modal import inicio_section_modal
 from laim_web.components.crt_theme import COLORS, CONTENT_PADDING
 from laim_web.components.inicio_accordion import inicio_accordion_sections
 from laim_web.laim_state import LaimWebState
-
-NEURAL_SCRIPT_SRC = "/crt/bento_neural.js?v=3d7"
+from laim_web.visual_assets import NEURAL_SCRIPT_SRC
 
 NEURAL_READY_WATCH_SCRIPT = f"""
 (function () {{
-  if (window.__LAIMNeuralWatch) {{
-    if (window.LAIMBentoNeural && typeof window.LAIMBentoNeural.ensure === 'function') {{
-      window.LAIMBentoNeural.ensure();
-    }}
-    return;
-  }}
-  window.__LAIMNeuralWatch = setInterval(function () {{
+  function poke() {{
     var home = document.querySelector('.crt-inicio-home');
     if (!home || home.classList.contains('is-neural-ready')) {{
       return;
@@ -32,7 +25,13 @@ NEURAL_READY_WATCH_SCRIPT = f"""
       s.src = '{NEURAL_SCRIPT_SRC}';
       document.body.appendChild(s);
     }}
-  }}, 400);
+  }}
+  if (window.__LAIMNeuralWatch) {{
+    poke();
+    return;
+  }}
+  poke();
+  window.__LAIMNeuralWatch = setInterval(poke, 400);
 }})();
 """
 

@@ -10,115 +10,9 @@ from laim_web.escenarios_data import (
 from laim_web.laim_state import LaimWebState
 
 from laim_web.components.crt_theme import COLORS
+from laim_web.visual_assets import ESCENARIO_SCRIPT_SRC
 
-ESCENARIO_TRAFFIC_JS = """
-(function () {
-  if (window.__escTrafficWatch) return;
-  window.__escTrafficWatch = true;
-  var lastGen = "";
-  var SVG_NS = "http://www.w3.org/2000/svg";
-  var XLINK_NS = "http://www.w3.org/1999/xlink";
-
-  function colorFor(kind, reverse) {
-    if (kind === "ai") return reverse ? "#6ee7b7" : "#a78bfa";
-    if (kind === "ssh") return reverse ? "#44ffcc" : "#ffcc44";
-    if (kind === "mesh" || kind === "wan") return reverse ? "#9dff9d" : "#7dffd6";
-    return reverse ? "#44ffcc" : "#ffcc44";
-  }
-
-  function attachMotion(el, pathId, dur, keyPoints, delay) {
-    var am = document.createElementNS(SVG_NS, "animateMotion");
-    am.setAttribute("dur", dur + "s");
-    am.setAttribute("rotate", "auto");
-    am.setAttribute("keyPoints", keyPoints);
-    am.setAttribute("keyTimes", "0;1");
-    am.setAttribute("calcMode", "linear");
-    am.setAttribute("fill", "freeze");
-    am.setAttribute("begin", delay + "s");
-    var mpath = document.createElementNS(SVG_NS, "mpath");
-    mpath.setAttributeNS(XLINK_NS, "href", "#esc-path-" + pathId);
-    mpath.setAttribute("href", "#esc-path-" + pathId);
-    am.appendChild(mpath);
-    el.appendChild(am);
-  }
-
-  function animateOne(svg, pkt, delay) {
-    var pathEl = svg.querySelector("#esc-path-" + pkt.edge);
-    if (!pathEl) return;
-    var reverse = !!pkt.reverse;
-    var keyPoints = reverse ? "1;0" : "0;1";
-    var color = colorFor(pkt.kind || "ai", reverse);
-    var stepS = Number((svg && svg.__escStepS) || 0);
-    var usable = stepS > 0 ? Math.max(2.4, stepS - 0.85) : 0;
-    var dur = pkt.primary
-      ? (usable > 0 ? usable * 0.82 : 2.45)
-      : (usable > 0 ? Math.max(2.15, usable * 0.72) : 2.15);
-    var g = document.createElementNS(SVG_NS, "g");
-    g.setAttribute("class", "traffic-packet");
-    if (!pkt.primary) g.setAttribute("opacity", "0.7");
-
-    var tail = document.createElementNS(SVG_NS, "path");
-    tail.setAttribute("d", pathEl.getAttribute("d") || "");
-    tail.setAttribute("stroke", color);
-    tail.setAttribute("stroke-width", pkt.primary ? "1.15" : "0.85");
-    tail.setAttribute("stroke-dasharray", "3.4 2");
-    tail.setAttribute("fill", "none");
-    tail.setAttribute("opacity", "0.58");
-    tail.setAttribute("class", "esc-traffic-tail");
-    g.appendChild(tail);
-
-    var arrow = document.createElementNS(SVG_NS, "polygon");
-    arrow.setAttribute("points", pkt.primary ? "-2.4,-1.4 2.6,0 -2.4,1.4" : "-1.7,-1 1.9,0 -1.7,1");
-    arrow.setAttribute("fill", color);
-    attachMotion(arrow, pkt.edge, dur, keyPoints, delay);
-    g.appendChild(arrow);
-
-    if (pkt.label) {
-      var badge = document.createElementNS(SVG_NS, "text");
-      badge.setAttribute("font-size", "3.5");
-      badge.setAttribute("fill", color);
-      badge.setAttribute("text-anchor", "middle");
-      badge.setAttribute("dominant-baseline", "middle");
-      badge.setAttribute("dy", "-3.4");
-      badge.setAttribute("font-family", "Inconsolata, ui-monospace, monospace");
-      badge.textContent = pkt.label;
-      attachMotion(badge, pkt.edge, dur, keyPoints, delay);
-      g.appendChild(badge);
-    }
-
-    svg.appendChild(g);
-    setTimeout(function () {
-      if (g.parentNode) g.parentNode.removeChild(g);
-    }, (delay + dur + 0.4) * 1000);
-  }
-
-  function play(cfg) {
-    var svg = document.querySelector(".esc-stage svg.esc-wires");
-    if (!svg || !cfg) return;
-    svg.__escStepS = Number(cfg.step_s || 0);
-    svg.querySelectorAll("g.traffic-packet").forEach(function (node) { node.remove(); });
-    (cfg.packets || []).forEach(function (pkt, idx) {
-      animateOne(svg, pkt, idx * 0.28);
-    });
-  }
-
-  function tick() {
-    var el = document.getElementById("esc-traffic-payload");
-    if (!el) return;
-    var raw = (el.textContent || "").trim();
-    if (!raw) return;
-    try {
-      var cfg = JSON.parse(raw);
-      var gen = String(cfg.gen || "");
-      if (!gen || gen === lastGen) return;
-      lastGen = gen;
-      play(cfg);
-    } catch (err) {}
-  }
-
-  setInterval(tick, 180);
-})();
-"""
+ESCENARIO_TRAFFIC_JS = ESCENARIO_SCRIPT_SRC
 
 
 def _selector_card(card: dict) -> rx.Component:
@@ -352,7 +246,7 @@ def _stage() -> rx.Component:
             id="esc-traffic-payload",
             class_name="esc-traffic-payload",
         ),
-        rx.script(ESCENARIO_TRAFFIC_JS),
+        rx.script(src=ESCENARIO_SCRIPT_SRC),
         class_name="esc-stage",
         width="100%",
     )

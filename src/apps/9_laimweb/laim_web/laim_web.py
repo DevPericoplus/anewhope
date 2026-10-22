@@ -23,6 +23,7 @@ from laim_web.pages.forum_moderation import forum_moderation_page
 from laim_web.pages.forum_profile import forum_profile_page
 from laim_web.pages.index import index_page
 from laim_web.pages.password_reset import password_reset_page
+from laim_web.boot_splash import boot_head_components
 from laim_web.pages.my_forum_posts import my_forum_posts_page
 from laim_web.pages.my_forum_threads import my_forum_threads_page
 from laim_web.support_gateway import (
@@ -98,6 +99,7 @@ app = rx.App(
     theme=rx.theme(
         appearance="dark",
     ),
+    head_components=boot_head_components(),
 )
 
 

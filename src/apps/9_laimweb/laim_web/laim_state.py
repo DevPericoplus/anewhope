@@ -964,7 +964,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
             self.contact_preview_open = False
             self.contact_thanks_open = False
         if item == "escenarios":
-            self.escenario_playing = False
+            return self._start_escenario_playback()
         if item == "registro":
             return LaimWebState.load_installations
 
