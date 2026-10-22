@@ -610,24 +610,35 @@ class LaimForumService:
         return {"success": True, "profile": profile}
 
     # ----------------------------------------------------------- cat?logo lectura
-    def list_categories(self) -> dict[str, Any]:
-        """Lista categor?as activas."""
+    def list_categories(self, include_inactive: bool = False) -> dict[str, Any]:
+        """Lista categorías. El catálogo público omite las inactivas."""
         if not self.is_forum_active():
             return self._forum_disabled_error()
-        return {"success": True, "items": self._repository.list_categories()}
+        return {
+            "success": True,
+            "items": self._repository.list_categories(active_only=not include_inactive),
+        }
 
-    def list_subcategories(self, category_id: str | None = None) -> dict[str, Any]:
-        """Lista subcategor?as."""
+    def list_subcategories(
+        self, category_id: str | None = None, include_inactive: bool = False
+    ) -> dict[str, Any]:
+        """Lista subcategorías. El catálogo público omite las inactivas."""
         if not self.is_forum_active():
             return self._forum_disabled_error()
-        items = self._repository.list_subcategories(category_id=category_id or None)
+        items = self._repository.list_subcategories(
+            category_id=category_id or None,
+            active_only=not include_inactive,
+        )
         return {"success": True, "items": items}
 
-    def list_prefixes(self) -> dict[str, Any]:
-        """Lista prefijos activos."""
+    def list_prefixes(self, include_inactive: bool = False) -> dict[str, Any]:
+        """Lista prefijos. El catálogo público omite los inactivos."""
         if not self.is_forum_active():
             return self._forum_disabled_error()
-        return {"success": True, "items": self._repository.list_prefixes()}
+        return {
+            "success": True,
+            "items": self._repository.list_prefixes(active_only=not include_inactive),
+        }
 
     def list_avatar_catalog(self) -> dict[str, Any]:
         """Cat?logo de avatares."""

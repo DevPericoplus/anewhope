@@ -946,9 +946,17 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
         if not can_access_admin_config_menu(item, self.identity_type_id):
             return
 
+        previous = self.active_menu
         self.active_menu = item
         self._load_static_page(item)
         self._record_auditoria_seccion(item)
+        if previous == "config_foro" and item != "config_foro":
+            self.forum_load_catalog()
+        if item == "config_foro":
+            self.forum_admin_view = "hub"
+            self.forum_service_refresh_health()
+            self.forum_load_admin_panel()
+            self.forum_load_admin_extended()
         if item == "contacto":
             self._prepare_contact_form()
         else:

@@ -5,7 +5,10 @@ from __future__ import annotations
 import reflex as rx
 
 from laim_web.components.crt_theme import COLORS, FONT_SIZE_BODY, FONT_SIZE_SMALL
-from laim_web.components.forum_extended_ui import forum_admin_extended_panel
+from laim_web.components.forum_extended_ui import (
+    forum_admin_extended_panel,
+    forum_stats_dialog,
+)
 from laim_web.components.forum_ui import forum_admin_panel
 from laim_web.laim_state import LaimWebState
 
@@ -109,29 +112,50 @@ def forum_service_hub() -> rx.Component:
 
 
 def forum_general_config_view() -> rx.Component:
-    """Vista de configuración general del servicio."""
+    """Vista de configuración general del servicio. Solo lectura."""
     return rx.vstack(
         rx.heading("Configuración general del foro", size="6", color=COLORS["title"]),
         rx.text(
-            "El foro LAIM se ejecuta como servicio independiente (daemon FastAPI). "
-            "Host, puerto y límites operativos se definen en env.yaml del entorno activo.",
+            "Estos datos salen del servicio que ya está en marcha. "
+            "Desde el portal no se editan.",
             color=COLORS["muted"],
             font_size=FONT_SIZE_SMALL,
         ),
         rx.box(
             rx.text(
-                rx.fragment("Estado: ", LaimWebState.forum_service_detail),
+                rx.fragment("Host API: ", LaimWebState.forum_cfg_host),
                 color=COLORS["text"],
                 font_size=FONT_SIZE_BODY,
             ),
             rx.text(
-                rx.fragment(
-                    "Servicio activo (config): ",
-                    rx.cond(LaimWebState.forum_service_active, "Sí", "No"),
-                ),
+                rx.fragment("Puerto API: ", LaimWebState.forum_cfg_port),
                 color=COLORS["text"],
                 font_size=FONT_SIZE_BODY,
                 margin_top="0.5em",
+            ),
+            rx.text(
+                rx.fragment("Estado: ", LaimWebState.forum_cfg_estado),
+                color=COLORS["text"],
+                font_size=FONT_SIZE_BODY,
+                margin_top="0.5em",
+            ),
+            rx.text(
+                rx.fragment("Poll (segundos): ", LaimWebState.forum_cfg_poll),
+                color=COLORS["text"],
+                font_size=FONT_SIZE_BODY,
+                margin_top="0.5em",
+            ),
+            rx.text(
+                rx.fragment("Strikes URL: ", LaimWebState.forum_cfg_strikes),
+                color=COLORS["text"],
+                font_size=FONT_SIZE_BODY,
+                margin_top="0.5em",
+            ),
+            rx.text(
+                rx.fragment("Detalle: ", LaimWebState.forum_service_detail),
+                color=COLORS["muted"],
+                font_size=FONT_SIZE_SMALL,
+                margin_top="0.75em",
             ),
             padding="1em",
             border=f"1px solid {COLORS['border']}",
@@ -292,4 +316,37 @@ def forum_admin_view_router() -> rx.Component:
                 ),
             ),
         ),
+    )
+
+
+def forum_config_embedded() -> rx.Component:
+    """Cuerpo del backoffice, compartido por /config-foro y Configuración → Foro LAIM."""
+    return rx.vstack(
+        rx.cond(
+            LaimWebState.forum_admin_view != "hub",
+            rx.button(
+                rx.hstack(
+                    rx.icon("arrow-left", size=16),
+                    rx.text("Volver al panel del servicio"),
+                    spacing="2",
+                ),
+                on_click=LaimWebState.forum_admin_go_hub,
+                class_name="crt-btn crt-btn-inline",
+                margin_bottom="0.5em",
+            ),
+            rx.fragment(),
+        ),
+        rx.cond(
+            LaimWebState.forum_admin_message != "",
+            rx.text(
+                LaimWebState.forum_admin_message,
+                color="#9dff9d",
+                margin_bottom="0.5em",
+            ),
+            rx.fragment(),
+        ),
+        forum_admin_view_router(),
+        forum_stats_dialog(),
+        spacing="4",
+        width="100%",
     )

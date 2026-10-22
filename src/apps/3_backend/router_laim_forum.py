@@ -142,33 +142,44 @@ def laim_forum_update_profile(
 
 @router.get("/categories")
 def laim_forum_list_categories(
+    include_inactive: bool = False,
     authorization: Annotated[str | None, Header()] = None,
     session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
 ) -> dict[str, Any]:
-    """Lista categorías."""
+    """Lista categorías. include_inactive es solo para el backoffice."""
     _require_session(authorization, session_token)
-    return _raise_if_failed(get_laim_forum_service().list_categories())
+    return _raise_if_failed(
+        get_laim_forum_service().list_categories(include_inactive=include_inactive)
+    )
 
 
 @router.get("/subcategories")
 def laim_forum_list_subcategories(
     category_id: str | None = None,
+    include_inactive: bool = False,
     authorization: Annotated[str | None, Header()] = None,
     session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
 ) -> dict[str, Any]:
-    """Lista subcategorías."""
+    """Lista subcategorías. include_inactive es solo para el backoffice."""
     _require_session(authorization, session_token)
-    return _raise_if_failed(get_laim_forum_service().list_subcategories(category_id))
+    return _raise_if_failed(
+        get_laim_forum_service().list_subcategories(
+            category_id, include_inactive=include_inactive
+        )
+    )
 
 
 @router.get("/prefixes")
 def laim_forum_list_prefixes(
+    include_inactive: bool = False,
     authorization: Annotated[str | None, Header()] = None,
     session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
 ) -> dict[str, Any]:
-    """Lista prefijos."""
+    """Lista prefijos. include_inactive es solo para el backoffice."""
     _require_session(authorization, session_token)
-    return _raise_if_failed(get_laim_forum_service().list_prefixes())
+    return _raise_if_failed(
+        get_laim_forum_service().list_prefixes(include_inactive=include_inactive)
+    )
 
 
 @router.get("/avatars/catalog")

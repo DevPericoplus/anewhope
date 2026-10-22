@@ -31,6 +31,11 @@ def test_admin_config_menus_defined() -> None:
             assert "Registro" in content
             assert "/laim/support/users" in content
             continue
+        if menu == "config_foro":
+            assert content.startswith("# Foro LAIM")
+            assert "Categorías" in content
+            assert "Prefijos de hilo" in content
+            continue
         assert "solo documental" in content.lower() or "solo documenta" in content.lower()
         assert "laim_maintenance" in content
 

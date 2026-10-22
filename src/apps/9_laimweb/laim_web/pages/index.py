@@ -4,6 +4,7 @@ import reflex as rx
 
 from laim_web.components.auth_modals import auth_modals
 from laim_web.components.config_general_panel import config_general_panel
+from laim_web.components.forum_service_panel import forum_config_embedded
 from laim_web.components.contact_form import contact_form_panel
 from laim_web.components.bento.home import inicio_home_panel
 from laim_web.components.markdown_viewer import crt_markdown_viewer
@@ -304,11 +305,17 @@ def content_static_page() -> rx.Component:
             config_general_panel(),
             rx.fragment(),
         ),
+        rx.cond(
+            LaimWebState.active_menu == "config_foro",
+            forum_config_embedded(),
+            rx.fragment(),
+        ),
         rx.match(
             LaimWebState.active_menu,
             ("inicio", inicio_home_panel()),
             ("presentacion", presentation_content_panel()),
             ("escenarios", escenarios_content_panel()),
+            ("config_foro", rx.fragment()),
             *(
                 (item.menu, crt_markdown_viewer(load_static_page_markdown(item.menu)))
                 for item in HELP_MANUALS

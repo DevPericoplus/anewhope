@@ -996,6 +996,15 @@ def _cat_tree_subcategory_row(child) -> rx.Component:
             rx.context_menu.item(
                 rx.hstack(
                     rx.icon(tag="pencil", size=14),
+                    rx.text("Editar subcategoría"),
+                    spacing="2",
+                    align_items="center",
+                ),
+                on_click=LaimWebState.forum_admin_edit_subcategory(child["id"]),
+            ),
+            rx.context_menu.item(
+                rx.hstack(
+                    rx.icon(tag="pencil", size=14),
                     rx.text("Renombrar"),
                     spacing="2",
                     align_items="center",
@@ -1101,6 +1110,15 @@ def _cat_tree_category_row(node) -> rx.Component:
                     ),
                     on_click=LaimWebState.forum_cat_tree_open_add_sub(node["id"]),
                 ),
+                rx.context_menu.item(
+                    rx.hstack(
+                        rx.icon(tag="pencil", size=14),
+                        rx.text("Editar categoría"),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    on_click=LaimWebState.forum_admin_edit_category(node["id"]),
+                ),
                 rx.context_menu.separator(),
                 rx.context_menu.item(
                     rx.hstack(
@@ -1164,6 +1182,36 @@ def _cat_tree_add_sub_dialog() -> rx.Component:
                     placeholder="Descripción (opcional)",
                     value=LaimWebState.forum_cat_tree_add_sub_desc,
                     on_change=LaimWebState.forum_cat_tree_set_add_sub_desc,
+                    class_name="crt-input",
+                    width="100%",
+                    margin_bottom="0.5em",
+                ),
+                rx.input(
+                    placeholder="Orden",
+                    value=LaimWebState.forum_admin_subcategory_orden,
+                    on_change=LaimWebState.forum_admin_set_subcategory_orden,
+                    class_name="crt-input",
+                    width="100%",
+                    margin_bottom="0.5em",
+                ),
+                rx.checkbox(
+                    "Activa",
+                    checked=LaimWebState.forum_admin_subcategory_activa,
+                    on_change=LaimWebState.forum_admin_set_subcategory_activa,
+                ),
+                rx.input(
+                    placeholder="Duración del ban (segundos)",
+                    value=LaimWebState.forum_admin_subcategory_ban_seconds,
+                    on_change=LaimWebState.forum_admin_set_subcategory_ban_seconds,
+                    class_name="crt-input",
+                    width="100%",
+                    margin_top="0.5em",
+                    margin_bottom="0.5em",
+                ),
+                rx.select(
+                    ["weekly", "daily", "none"],
+                    value=LaimWebState.forum_admin_subcategory_log_rotation,
+                    on_change=LaimWebState.forum_admin_set_subcategory_log_rotation,
                     class_name="crt-input",
                     width="100%",
                     margin_bottom="0.75em",
@@ -1381,6 +1429,67 @@ def _category_tree_panel() -> rx.Component:
     )
 
 
+def _subcategory_editor() -> rx.Component:
+    """Formulario de alta y edición de subcategoría."""
+    return rx.vstack(
+        rx.text("Subcategoría", class_name="crt-title", font_size="1em"),
+        rx.input(
+            placeholder="ID (ej: anuncios)",
+            value=LaimWebState.forum_admin_subcategory_id,
+            on_change=LaimWebState.forum_admin_set_subcategory_id,
+            class_name="crt-input",
+            width="100%",
+        ),
+        rx.input(
+            placeholder="Nombre",
+            value=LaimWebState.forum_admin_subcategory_name,
+            on_change=LaimWebState.forum_admin_set_subcategory_name,
+            class_name="crt-input",
+            width="100%",
+        ),
+        rx.input(
+            placeholder="Descripción",
+            value=LaimWebState.forum_admin_subcategory_desc,
+            on_change=LaimWebState.forum_admin_set_subcategory_desc,
+            class_name="crt-input",
+            width="100%",
+        ),
+        rx.input(
+            placeholder="Orden",
+            value=LaimWebState.forum_admin_subcategory_orden,
+            on_change=LaimWebState.forum_admin_set_subcategory_orden,
+            class_name="crt-input",
+            width="100%",
+        ),
+        rx.checkbox(
+            "Activa",
+            checked=LaimWebState.forum_admin_subcategory_activa,
+            on_change=LaimWebState.forum_admin_set_subcategory_activa,
+        ),
+        rx.input(
+            placeholder="Duración del ban (segundos)",
+            value=LaimWebState.forum_admin_subcategory_ban_seconds,
+            on_change=LaimWebState.forum_admin_set_subcategory_ban_seconds,
+            class_name="crt-input",
+            width="100%",
+        ),
+        rx.select(
+            ["weekly", "daily", "none"],
+            value=LaimWebState.forum_admin_subcategory_log_rotation,
+            on_change=LaimWebState.forum_admin_set_subcategory_log_rotation,
+            class_name="crt-input",
+            width="100%",
+        ),
+        rx.button(
+            "Guardar subcategoría",
+            on_click=LaimWebState.forum_admin_save_subcategory,
+            class_name="crt-btn crt-btn-inline",
+        ),
+        spacing="2",
+        width="100%",
+    )
+
+
 def forum_admin_panel() -> rx.Component:
     """Panel de administración del foro con formulario de categoría y árbol explorador."""
     return rx.vstack(
@@ -1406,32 +1515,52 @@ def forum_admin_panel() -> rx.Component:
         ),
         rx.hstack(
             rx.vstack(
-                rx.text("Nueva categoría", class_name="crt-title", font_size="1em"),
-                rx.input(
-                    placeholder="ID (ej: general)",
-                    value=LaimWebState.forum_admin_category_id,
-                    on_change=LaimWebState.forum_admin_set_category_id,
-                    class_name="crt-input",
-                    width="100%",
-                ),
-                rx.input(
-                    placeholder="Nombre",
-                    value=LaimWebState.forum_admin_category_name,
-                    on_change=LaimWebState.forum_admin_set_category_name,
-                    class_name="crt-input",
-                    width="100%",
-                ),
-                rx.input(
-                    placeholder="Descripción",
-                    value=LaimWebState.forum_admin_category_desc,
-                    on_change=LaimWebState.forum_admin_set_category_desc,
-                    class_name="crt-input",
-                    width="100%",
-                ),
-                rx.button(
-                    "Guardar categoría",
-                    on_click=LaimWebState.forum_admin_save_category,
-                    class_name="crt-btn crt-btn-inline",
+                rx.cond(
+                    LaimWebState.forum_admin_view == "subcategories",
+                    _subcategory_editor(),
+                    rx.vstack(
+                        rx.text("Categoría", class_name="crt-title", font_size="1em"),
+                        rx.input(
+                            placeholder="ID (ej: general)",
+                            value=LaimWebState.forum_admin_category_id,
+                            on_change=LaimWebState.forum_admin_set_category_id,
+                            class_name="crt-input",
+                            width="100%",
+                        ),
+                        rx.input(
+                            placeholder="Nombre",
+                            value=LaimWebState.forum_admin_category_name,
+                            on_change=LaimWebState.forum_admin_set_category_name,
+                            class_name="crt-input",
+                            width="100%",
+                        ),
+                        rx.input(
+                            placeholder="Descripción",
+                            value=LaimWebState.forum_admin_category_desc,
+                            on_change=LaimWebState.forum_admin_set_category_desc,
+                            class_name="crt-input",
+                            width="100%",
+                        ),
+                        rx.input(
+                            placeholder="Orden",
+                            value=LaimWebState.forum_admin_category_orden,
+                            on_change=LaimWebState.forum_admin_set_category_orden,
+                            class_name="crt-input",
+                            width="100%",
+                        ),
+                        rx.checkbox(
+                            "Activa",
+                            checked=LaimWebState.forum_admin_category_activa,
+                            on_change=LaimWebState.forum_admin_set_category_activa,
+                        ),
+                        rx.button(
+                            "Guardar categoría",
+                            on_click=LaimWebState.forum_admin_save_category,
+                            class_name="crt-btn crt-btn-inline",
+                        ),
+                        spacing="2",
+                        width="100%",
+                    ),
                 ),
                 spacing="2",
                 width="280px",

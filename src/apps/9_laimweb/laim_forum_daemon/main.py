@@ -46,6 +46,10 @@ _api_hardening = importlib.util.module_from_spec(_hardening_spec)
 sys.modules["api_hardening_laim_forum"] = _api_hardening
 _hardening_spec.loader.exec_module(_api_hardening)
 
+# La imagen anewhope-laim-forum hace COPY del repo. Este proceso sirve
+# el router horneado en esa imagen, no el contenedor backend_core. Si
+# router_laim_forum.py cambia, el tag version_laim_forum tiene que
+# cambiar: Nexus no reconstruye un tag que ya existe.
 _router_path = ROOT_DIR / "src/apps/3_backend/router_laim_forum.py"
 _router_spec = importlib.util.spec_from_file_location(
     "router_laim_forum_daemon", _router_path
@@ -79,7 +83,11 @@ def create_app() -> FastAPI:
 
     @app.get("/")
     def root() -> dict[str, str]:
-        return {"service": "laim_forum", "status": "ok"}
+        return {
+            "service": "laim_forum",
+            "status": "ok",
+            "router": "router_laim_forum",
+        }
 
     return app
 

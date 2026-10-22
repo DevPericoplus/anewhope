@@ -229,6 +229,35 @@ def test_get_admin_stats_success() -> None:
     repository.get_admin_stats.assert_called_once()
 
 
+def test_admin_lists_can_include_inactive_rows() -> None:
+    """El backoffice pide filas inactivas; el catálogo público sigue en activas."""
+    module = _load_forum_service()
+    repository = MagicMock()
+    repository.list_prefixes.return_value = [{"id": "off", "activo": False}]
+    repository.list_categories.return_value = [{"id": "old", "activa": False}]
+    repository.list_subcategories.return_value = [{"id": "sub", "activa": False}]
+    service = module.LaimForumService(repository=repository, image_storage=MagicMock())
+
+    assert service.list_prefixes()["success"] is True
+    repository.list_prefixes.assert_called_with(active_only=True)
+    assert service.list_prefixes(include_inactive=True)["items"][0]["id"] == "off"
+    repository.list_prefixes.assert_called_with(active_only=False)
+
+    service.list_categories()
+    repository.list_categories.assert_called_with(active_only=True)
+    service.list_categories(include_inactive=True)
+    repository.list_categories.assert_called_with(active_only=False)
+
+    service.list_subcategories("general")
+    repository.list_subcategories.assert_called_with(
+        category_id="general", active_only=True
+    )
+    service.list_subcategories(include_inactive=True)
+    repository.list_subcategories.assert_called_with(
+        category_id=None, active_only=False
+    )
+
+
 def test_forum_persistence_does_not_use_json_files() -> None:
     """El subsistema foro no persiste datos en ficheros JSON."""
     import re

@@ -18,7 +18,7 @@ def test_forum_nav_excludes_admin_routes() -> None:
 
 
 def test_config_menu_is_documentary_and_admin_only() -> None:
-    """El menú Configuración no enlaza paneles funcionales del foro."""
+    """Configuración abre Foro LAIM con set_menu, sin enlazar /config-foro."""
     source = (
         Path(__file__).resolve().parents[1]
         / "laim_web/components/portal_shell.py"

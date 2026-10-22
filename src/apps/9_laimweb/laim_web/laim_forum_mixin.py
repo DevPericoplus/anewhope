@@ -114,9 +114,14 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_admin_category_id: str = ""
     forum_admin_category_name: str = ""
     forum_admin_category_desc: str = ""
+    forum_admin_category_orden: str = "0"
+    forum_admin_category_activa: bool = True
     forum_admin_subcategory_id: str = ""
     forum_admin_subcategory_name: str = ""
     forum_admin_subcategory_desc: str = ""
+    forum_admin_subcategory_orden: str = "0"
+    forum_admin_subcategory_activa: bool = True
+    forum_admin_subcategories: list[dict[str, Any]] = []
     forum_admin_message: str = ""
 
     # Adjuntos pendientes
@@ -149,9 +154,13 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_admin_prefix_id: str = ""
     forum_admin_prefix_text: str = ""
     forum_admin_prefix_color: str = "green"
+    forum_admin_prefix_activo: bool = True
+    forum_admin_prefixes: list[dict[str, Any]] = []
+    forum_admin_word_rule_id: int = 0
     forum_admin_word_palabra: str = ""
     forum_admin_word_accion: str = "Amonestaciones"
     forum_admin_word_mensaje: str = ""
+    forum_admin_word_activo: bool = True
     forum_admin_url_dominio: str = ""
     forum_admin_url_descripcion: str = ""
     forum_admin_mod_user_id: int = 0
@@ -191,6 +200,11 @@ class LaimForumMixin(rx.State, mixin=True):
     # Hub del servicio de foro (admin)
     forum_admin_view: str = "hub"
     forum_service_detail: str = "Comprobando estado del servicio..."
+    forum_cfg_host: str = "127.0.0.1"
+    forum_cfg_port: str = "8766"
+    forum_cfg_poll: str = "30"
+    forum_cfg_strikes: str = "3"
+    forum_cfg_estado: str = ""
     forum_admin_subcategory_ban_seconds: str = "86400"
     forum_admin_subcategory_log_rotation: str = "weekly"
     forum_admin_logs_subcategory_id: str = ""
@@ -611,13 +625,22 @@ class LaimForumMixin(rx.State, mixin=True):
 
     def forum_service_refresh_health(self) -> None:
         """Actualiza badge y detalle del servicio de foro."""
-        from laim_web.adapters.laim_api_client import laim_forum_health
+        from laim_web.adapters.laim_api_client import (
+            laim_forum_health,
+            laim_forum_runtime_snapshot,
+        )
 
+        snapshot = laim_forum_runtime_snapshot()
+        self.forum_cfg_host = snapshot["host"]
+        self.forum_cfg_port = snapshot["port"]
+        self.forum_cfg_poll = snapshot["poll"]
+        self.forum_cfg_strikes = snapshot["strikes"]
         health = laim_forum_health()
         threads = int(health.get("threads", health.get("hilos", 0)) or 0)
         activo = bool(
             health.get("activo", health.get("ok", health.get("success", False)))
         )
+        self.forum_cfg_estado = "operativo" if activo else "detenido"
         self.forum_service_active = activo
         if activo:
             self.forum_service_detail = (
@@ -1283,7 +1306,9 @@ class LaimForumMixin(rx.State, mixin=True):
         )
 
         access, session = self._forum_auth_tokens()
-        cat_result = laim_forum_list_categories(access, session)
+        cat_result = laim_forum_list_categories(
+            access, session, include_inactive=True
+        )
         if cat_result.get("success"):
             self.forum_categories = cat_result.get("items", [])
             if self.forum_categories and not self.forum_selected_category_id:
@@ -1291,9 +1316,18 @@ class LaimForumMixin(rx.State, mixin=True):
                     self.forum_categories[0].get("id", "")
                 )
 
+        all_subs = laim_forum_list_subcategories(
+            access, session, include_inactive=True
+        )
+        if all_subs.get("success"):
+            self.forum_admin_subcategories = all_subs.get("items", [])
+
         if self.forum_selected_category_id:
             sub_result = laim_forum_list_subcategories(
-                access, session, self.forum_selected_category_id
+                access,
+                session,
+                self.forum_selected_category_id,
+                include_inactive=True,
             )
             if sub_result.get("success"):
                 self.forum_subcategories = sub_result.get("items", [])
@@ -1313,6 +1347,14 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_admin_category_desc = value
 
     @forum_event
+    def forum_admin_set_category_orden(self, value: str) -> None:
+        self.forum_admin_category_orden = value
+
+    @forum_event
+    def forum_admin_set_category_activa(self, value: bool) -> None:
+        self.forum_admin_category_activa = bool(value)
+
+    @forum_event
     def forum_admin_set_subcategory_id(self, value: str) -> None:
         self.forum_admin_subcategory_id = value
 
@@ -1323,6 +1365,78 @@ class LaimForumMixin(rx.State, mixin=True):
     @forum_event
     def forum_admin_set_subcategory_desc(self, value: str) -> None:
         self.forum_admin_subcategory_desc = value
+
+    @forum_event
+    def forum_admin_set_subcategory_orden(self, value: str) -> None:
+        self.forum_admin_subcategory_orden = value
+
+    @forum_event
+    def forum_admin_set_subcategory_activa(self, value: bool) -> None:
+        self.forum_admin_subcategory_activa = bool(value)
+
+    def _forum_admin_orden(self, raw: str) -> int:
+        try:
+            return int(str(raw).strip() or "0")
+        except ValueError:
+            return 0
+
+    def _forum_admin_subcategory_payload(
+        self, sub_id: str, categoria_id: str, nombre: str, descripcion: str
+    ) -> dict[str, Any]:
+        try:
+            ban_seconds = max(60, int(self.forum_admin_subcategory_ban_seconds.strip()))
+        except ValueError:
+            ban_seconds = 86400
+        log_rotation = self.forum_admin_subcategory_log_rotation.strip() or "weekly"
+        if log_rotation not in ("weekly", "daily", "none"):
+            log_rotation = "weekly"
+        return {
+            "id": sub_id,
+            "categoria_id": categoria_id,
+            "nombre": nombre,
+            "descripcion": descripcion,
+            "orden": self._forum_admin_orden(self.forum_admin_subcategory_orden),
+            "activa": bool(self.forum_admin_subcategory_activa),
+            "ban_seconds": ban_seconds,
+            "log_rotation": log_rotation,
+        }
+
+    @forum_event
+    def forum_admin_edit_category(self, category_id: str) -> None:
+        """Rellena el formulario con la categoría, activa o no."""
+        self.forum_admin_view = "categories"
+        for cat in self.forum_categories:
+            if str(cat.get("id")) != str(category_id):
+                continue
+            self.forum_admin_category_id = str(cat.get("id") or "")
+            self.forum_admin_category_name = str(cat.get("nombre") or "")
+            self.forum_admin_category_desc = str(cat.get("descripcion") or "")
+            self.forum_admin_category_orden = str(cat.get("orden") or 0)
+            self.forum_admin_category_activa = bool(cat.get("activa", True))
+            return
+
+    @forum_event
+    def forum_admin_edit_subcategory(self, subcategory_id: str) -> None:
+        """Rellena el formulario con la subcategoría, activa o no."""
+        self.forum_admin_view = "subcategories"
+        for sub in self.forum_admin_subcategories:
+            if str(sub.get("id")) != str(subcategory_id):
+                continue
+            self.forum_admin_subcategory_id = str(sub.get("id") or "")
+            self.forum_admin_subcategory_name = str(sub.get("nombre") or "")
+            self.forum_admin_subcategory_desc = str(sub.get("descripcion") or "")
+            self.forum_admin_subcategory_orden = str(sub.get("orden") or 0)
+            self.forum_admin_subcategory_activa = bool(sub.get("activa", True))
+            self.forum_admin_subcategory_ban_seconds = str(
+                sub.get("ban_seconds") or 86400
+            )
+            self.forum_admin_subcategory_log_rotation = str(
+                sub.get("log_rotation") or "weekly"
+            )
+            parent = str(sub.get("categoria_id") or "")
+            if parent:
+                self.forum_selected_category_id = parent
+            return
 
     @forum_event
     def forum_admin_save_category(self) -> None:
@@ -1339,8 +1453,8 @@ class LaimForumMixin(rx.State, mixin=True):
                 "id": self.forum_admin_category_id.strip(),
                 "nombre": self.forum_admin_category_name.strip(),
                 "descripcion": self.forum_admin_category_desc.strip(),
-                "orden": 0,
-                "activa": True,
+                "orden": self._forum_admin_orden(self.forum_admin_category_orden),
+                "activa": bool(self.forum_admin_category_activa),
             },
             access,
             session,
@@ -1364,25 +1478,13 @@ class LaimForumMixin(rx.State, mixin=True):
             return
 
         access, session = self._forum_auth_tokens()
-        try:
-            ban_seconds = max(60, int(self.forum_admin_subcategory_ban_seconds.strip()))
-        except ValueError:
-            ban_seconds = 86400
-        log_rotation = self.forum_admin_subcategory_log_rotation.strip() or "weekly"
-        if log_rotation not in ("weekly", "daily", "none"):
-            log_rotation = "weekly"
-
         result = laim_forum_upsert_subcategory(
-            {
-                "id": self.forum_admin_subcategory_id.strip(),
-                "categoria_id": self.forum_selected_category_id,
-                "nombre": self.forum_admin_subcategory_name.strip(),
-                "descripcion": self.forum_admin_subcategory_desc.strip(),
-                "orden": 0,
-                "activa": True,
-                "ban_seconds": ban_seconds,
-                "log_rotation": log_rotation,
-            },
+            self._forum_admin_subcategory_payload(
+                self.forum_admin_subcategory_id.strip(),
+                self.forum_selected_category_id,
+                self.forum_admin_subcategory_name.strip(),
+                self.forum_admin_subcategory_desc.strip(),
+            ),
             access,
             session,
         )
@@ -1407,7 +1509,9 @@ class LaimForumMixin(rx.State, mixin=True):
             cat_name = str(cat.get("nombre") or cat_id)
             is_expanded = cat_id in self.forum_cat_tree_expanded
 
-            sub_result = laim_forum_list_subcategories(access, session, cat_id)
+            sub_result = laim_forum_list_subcategories(
+                access, session, cat_id, include_inactive=True
+            )
             subs = sub_result.get("items", []) if sub_result.get("success") else []
             total_threads = 0
 
@@ -1456,6 +1560,10 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_cat_tree_add_sub_id = ""
         self.forum_cat_tree_add_sub_name = ""
         self.forum_cat_tree_add_sub_desc = ""
+        self.forum_admin_subcategory_orden = "0"
+        self.forum_admin_subcategory_activa = True
+        self.forum_admin_subcategory_ban_seconds = "86400"
+        self.forum_admin_subcategory_log_rotation = "weekly"
 
     @forum_event
     def forum_cat_tree_close_add_sub(self) -> None:
@@ -1486,16 +1594,12 @@ class LaimForumMixin(rx.State, mixin=True):
 
         access, session = self._forum_auth_tokens()
         result = laim_forum_upsert_subcategory(
-            {
-                "id": sub_id,
-                "categoria_id": self.forum_cat_tree_add_sub_cat_id,
-                "nombre": sub_name,
-                "descripcion": self.forum_cat_tree_add_sub_desc.strip(),
-                "orden": 0,
-                "activa": True,
-                "ban_seconds": 86400,
-                "log_rotation": "weekly",
-            },
+            self._forum_admin_subcategory_payload(
+                sub_id,
+                self.forum_cat_tree_add_sub_cat_id,
+                sub_name,
+                self.forum_cat_tree_add_sub_desc.strip(),
+            ),
             access,
             session,
         )
@@ -2509,6 +2613,7 @@ class LaimForumMixin(rx.State, mixin=True):
             laim_forum_admin_settings,
             laim_forum_admin_word_rules,
             laim_forum_list_avatar_catalog,
+            laim_forum_list_prefixes,
         )
 
         access, session = self._forum_auth_tokens()
@@ -2529,6 +2634,10 @@ class LaimForumMixin(rx.State, mixin=True):
         words = laim_forum_admin_word_rules(access, session)
         if words.get("success"):
             self.forum_word_rules = words.get("items", [])
+
+        prefixes = laim_forum_list_prefixes(access, session, include_inactive=True)
+        if prefixes.get("success"):
+            self.forum_admin_prefixes = prefixes.get("items", [])
 
         urls = laim_forum_admin_allowed_urls(access, session)
         if urls.get("success"):
@@ -2579,7 +2688,7 @@ class LaimForumMixin(rx.State, mixin=True):
                 "id": self.forum_admin_prefix_id.strip(),
                 "texto": self.forum_admin_prefix_text.strip(),
                 "color_scheme": self.forum_admin_prefix_color.strip() or "green",
-                "activo": True,
+                "activo": bool(self.forum_admin_prefix_activo),
             },
             access,
             session,
@@ -2588,31 +2697,105 @@ class LaimForumMixin(rx.State, mixin=True):
             "Prefijo guardado." if result.get("success") else result.get("error", "Error")
         )
         if result.get("success"):
+            self.forum_load_admin_extended()
             self.forum_load_catalog()
 
     @forum_event
+    def forum_admin_set_prefix_activo(self, value: bool) -> None:
+        self.forum_admin_prefix_activo = bool(value)
+
+    @forum_event
+    def forum_admin_edit_prefix(self, prefix_id: str) -> None:
+        """Rellena el formulario con el prefijo, activo o no."""
+        for item in self.forum_admin_prefixes:
+            if str(item.get("id")) != str(prefix_id):
+                continue
+            self.forum_admin_prefix_id = str(item.get("id") or "")
+            self.forum_admin_prefix_text = str(item.get("texto") or "")
+            self.forum_admin_prefix_color = str(item.get("color_scheme") or "green")
+            self.forum_admin_prefix_activo = bool(item.get("activo", True))
+            return
+
+    @forum_event
+    def forum_admin_set_word_activo(self, value: bool) -> None:
+        self.forum_admin_word_activo = bool(value)
+
+    @forum_event
+    def forum_admin_edit_word_rule(self, rule_id: int) -> None:
+        """Rellena el formulario con la regla existente."""
+        for rule in self.forum_word_rules:
+            if int(rule.get("id") or 0) != int(rule_id):
+                continue
+            self.forum_admin_word_rule_id = int(rule_id)
+            self.forum_admin_word_palabra = str(rule.get("palabra") or "")
+            self.forum_admin_word_accion = str(rule.get("accion") or "Amonestaciones")
+            self.forum_admin_word_mensaje = str(rule.get("mensaje") or "")
+            self.forum_admin_word_activo = bool(rule.get("activo", True))
+            return
+
+    @forum_event
+    def forum_admin_toggle_word_rule(self, rule_id: int) -> None:
+        """Activa o desactiva una regla sin borrarla."""
+        from laim_web.adapters.laim_api_client import laim_forum_admin_update_word_rule
+
+        for rule in self.forum_word_rules:
+            if int(rule.get("id") or 0) != int(rule_id):
+                continue
+            access, session = self._forum_auth_tokens()
+            result = laim_forum_admin_update_word_rule(
+                int(rule_id),
+                {
+                    "palabra": str(rule.get("palabra") or ""),
+                    "accion": str(rule.get("accion") or "Amonestaciones"),
+                    "mensaje": str(rule.get("mensaje") or ""),
+                    "activo": not bool(rule.get("activo", True)),
+                },
+                access,
+                session,
+            )
+            self.forum_admin_message = (
+                "Regla actualizada."
+                if result.get("success")
+                else result.get("error", "Error")
+            )
+            if result.get("success"):
+                self.forum_load_admin_extended()
+            return
+
+    @forum_event
     def forum_admin_save_word_rule(self) -> None:
-        """Crea regla de palabra."""
-        from laim_web.adapters.laim_api_client import laim_forum_admin_create_word_rule
+        """Crea o actualiza una regla de palabra."""
+        from laim_web.adapters.laim_api_client import (
+            laim_forum_admin_create_word_rule,
+            laim_forum_admin_update_word_rule,
+        )
 
         if not self.forum_admin_word_palabra.strip():
             self.forum_admin_message = "Indique la palabra."
             return
         access, session = self._forum_auth_tokens()
-        result = laim_forum_admin_create_word_rule(
-            {
-                "palabra": self.forum_admin_word_palabra.strip(),
-                "accion": self.forum_admin_word_accion.strip() or "Amonestaciones",
-                "mensaje": self.forum_admin_word_mensaje.strip(),
-                "activo": True,
-            },
-            access,
-            session,
-        )
+        payload = {
+            "palabra": self.forum_admin_word_palabra.strip(),
+            "accion": self.forum_admin_word_accion.strip() or "Amonestaciones",
+            "mensaje": self.forum_admin_word_mensaje.strip(),
+            "activo": bool(self.forum_admin_word_activo),
+        }
+        if self.forum_admin_word_rule_id > 0:
+            result = laim_forum_admin_update_word_rule(
+                self.forum_admin_word_rule_id, payload, access, session
+            )
+            ok_message = "Regla actualizada."
+        else:
+            result = laim_forum_admin_create_word_rule(payload, access, session)
+            ok_message = "Regla creada."
         self.forum_admin_message = (
-            "Regla creada." if result.get("success") else result.get("error", "Error")
+            ok_message if result.get("success") else result.get("error", "Error")
         )
         if result.get("success"):
+            if self.forum_admin_word_rule_id <= 0:
+                self.forum_admin_word_palabra = ""
+                self.forum_admin_word_mensaje = ""
+                self.forum_admin_word_activo = True
             self.forum_load_admin_extended()
 
     @forum_event

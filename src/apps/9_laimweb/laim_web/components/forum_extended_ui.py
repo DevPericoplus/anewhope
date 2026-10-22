@@ -713,10 +713,36 @@ def forum_admin_extended_panel() -> rx.Component:
                         on_change=LaimWebState.forum_admin_set_prefix_color,
                         class_name="crt-input",
                     ),
+                    rx.checkbox(
+                        "Activo",
+                        checked=LaimWebState.forum_admin_prefix_activo,
+                        on_change=LaimWebState.forum_admin_set_prefix_activo,
+                    ),
                     rx.button(
                         "Guardar prefijo",
                         on_click=LaimWebState.forum_admin_save_prefix,
                         class_name="crt-btn",
+                    ),
+                    rx.foreach(
+                        LaimWebState.forum_admin_prefixes,
+                        lambda item: rx.hstack(
+                            rx.text(
+                                rx.fragment(
+                                    item["texto"],
+                                    " · ",
+                                    rx.cond(item["activo"], "Activo", "Inactivo"),
+                                ),
+                                font_size=FONT_SIZE_BODY,
+                            ),
+                            rx.button(
+                                "Editar",
+                                on_click=LaimWebState.forum_admin_edit_prefix(item["id"]),
+                                class_name="crt-btn crt-btn-inline",
+                            ),
+                            width="100%",
+                            align_items="center",
+                            justify_content="space-between",
+                        ),
                     ),
                     spacing="2",
                     width="100%",
@@ -743,8 +769,17 @@ def forum_admin_extended_panel() -> rx.Component:
                             on_change=LaimWebState.forum_admin_set_word_mensaje,
                             class_name="crt-input",
                         ),
+                        rx.checkbox(
+                            "Activa",
+                            checked=LaimWebState.forum_admin_word_activo,
+                            on_change=LaimWebState.forum_admin_set_word_activo,
+                        ),
                         rx.button(
-                            "Añadir regla",
+                            rx.cond(
+                                LaimWebState.forum_admin_word_rule_id > 0,
+                                "Guardar regla",
+                                "Añadir regla",
+                            ),
                             on_click=LaimWebState.forum_admin_save_word_rule,
                             class_name="crt-btn",
                         ),
@@ -756,6 +791,20 @@ def forum_admin_extended_panel() -> rx.Component:
                                     font_size=FONT_SIZE_BODY,
                                 ),
                                 rx.button(
+                                    "Editar",
+                                    on_click=LaimWebState.forum_admin_edit_word_rule(
+                                        rule["id"]
+                                    ),
+                                    class_name="crt-btn crt-btn-inline",
+                                ),
+                                rx.button(
+                                    rx.cond(rule["activo"], "Desactivar", "Activar"),
+                                    on_click=LaimWebState.forum_admin_toggle_word_rule(
+                                        rule["id"]
+                                    ),
+                                    class_name="crt-btn crt-btn-inline",
+                                ),
+                                rx.button(
                                     "Eliminar",
                                     on_click=LaimWebState.forum_admin_delete_word_rule(
                                         rule["id"]
@@ -763,6 +812,7 @@ def forum_admin_extended_panel() -> rx.Component:
                                     class_name="crt-btn crt-btn-inline",
                                 ),
                                 width="100%",
+                                align_items="center",
                             ),
                         ),
                         spacing="2",

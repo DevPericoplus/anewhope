@@ -334,12 +334,17 @@ def laim_forum_health() -> dict[str, Any]:
 
 
 def laim_forum_list_categories(
-    access_token: str, session_token: str
+    access_token: str,
+    session_token: str,
+    include_inactive: bool = False,
 ) -> dict[str, Any]:
-    """Lista categorías del foro."""
+    """Lista categorías del foro. include_inactive es el listado de administración."""
+    endpoint = "/laim/forum/categories"
+    if include_inactive:
+        endpoint = f"{endpoint}?include_inactive=true"
     return _request_forum(
         "GET",
-        "/laim/forum/categories",
+        endpoint,
         access_token=access_token,
         session_token=session_token,
     )
@@ -349,11 +354,17 @@ def laim_forum_list_subcategories(
     access_token: str,
     session_token: str,
     category_id: str | None = None,
+    include_inactive: bool = False,
 ) -> dict[str, Any]:
     """Lista subcategorías, opcionalmente filtradas por categoría."""
-    endpoint = "/laim/forum/subcategories"
+    params: list[str] = []
     if category_id:
-        endpoint = f"{endpoint}?category_id={category_id}"
+        params.append(f"category_id={category_id}")
+    if include_inactive:
+        params.append("include_inactive=true")
+    endpoint = "/laim/forum/subcategories"
+    if params:
+        endpoint = f"{endpoint}?{'&'.join(params)}"
     return _request_forum(
         "GET",
         endpoint,
@@ -363,12 +374,17 @@ def laim_forum_list_subcategories(
 
 
 def laim_forum_list_prefixes(
-    access_token: str, session_token: str
+    access_token: str,
+    session_token: str,
+    include_inactive: bool = False,
 ) -> dict[str, Any]:
-    """Lista prefijos de hilo."""
+    """Lista prefijos de hilo. include_inactive es el listado de administración."""
+    endpoint = "/laim/forum/prefixes"
+    if include_inactive:
+        endpoint = f"{endpoint}?include_inactive=true"
     return _request_forum(
         "GET",
-        "/laim/forum/prefixes",
+        endpoint,
         access_token=access_token,
         session_token=session_token,
     )
@@ -1032,6 +1048,19 @@ def laim_forum_admin_reload_config(
         access_token=access_token,
         session_token=session_token,
     )
+
+
+def laim_forum_runtime_snapshot() -> dict[str, str]:
+    """Host, puerto, poll y strikes que ya declara el entorno. Solo lectura."""
+    host = str(_env_settings.get_env_value("laim_forum_api_host", "127.0.0.1") or "127.0.0.1")
+    port = str(_env_settings.get_env_value("laim_forum_api_port", "8766") or "8766")
+    strikes = str(_env_settings.get_env_value("laim_forum_max_strikes_url", "3") or "3")
+    return {
+        "host": host,
+        "port": port,
+        "poll": str(laim_forum_get_poll_interval_seconds()),
+        "strikes": strikes,
+    }
 
 
 def laim_forum_get_poll_interval_seconds() -> int:
