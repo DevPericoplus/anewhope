@@ -300,22 +300,29 @@ def sidebar() -> rx.Component:
 def content_static_page() -> rx.Component:
     """Contenido cargado desde static_pages/*.md (panel derecho)."""
     return rx.vstack(
-        rx.cond(
-            LaimWebState.active_menu == "config_general",
-            config_general_panel(),
-            rx.fragment(),
-        ),
-        rx.cond(
-            LaimWebState.active_menu == "config_foro",
-            forum_config_embedded(),
-            rx.fragment(),
-        ),
         rx.match(
             LaimWebState.active_menu,
             ("inicio", inicio_home_panel()),
             ("presentacion", presentation_content_panel()),
             ("escenarios", escenarios_content_panel()),
-            ("config_foro", rx.fragment()),
+            (
+                "config_general",
+                rx.vstack(
+                    crt_markdown_viewer(load_static_page_markdown("config_general")),
+                    config_general_panel(),
+                    spacing="3",
+                    width="100%",
+                    padding=CONTENT_PADDING,
+                ),
+            ),
+            (
+                "config_foro",
+                rx.box(
+                    forum_config_embedded(),
+                    width="100%",
+                    padding=CONTENT_PADDING,
+                ),
+            ),
             *(
                 (item.menu, crt_markdown_viewer(load_static_page_markdown(item.menu)))
                 for item in HELP_MANUALS
@@ -395,16 +402,21 @@ def index_page() -> rx.Component:
                     background=COLORS["panel_bg"],
                     border_right=f"1px solid {COLORS['border']}",
                     height="100%",
+                    min_height="0",
+                    overflow_y="auto",
                 ),
                 rx.box(
                     main_content(),
                     flex="1",
                     min_width="0",
+                    min_height="0",
                     height="100%",
+                    overflow_y="auto",
                 ),
                 width="100%",
                 spacing="0",
                 flex="1",
+                min_height="0",
                 align_items="stretch",
                 overflow="hidden",
             ),

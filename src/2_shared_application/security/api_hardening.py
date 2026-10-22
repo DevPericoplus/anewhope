@@ -365,28 +365,34 @@ class ApiHardeningMiddleware:
 
         if self.settings.rate_limit_enabled and not self.settings.is_exempt(path):
             ip = _client_ip(scope, headers, self.settings.trust_proxy)
-            bucket = "auth" if self.settings.is_auth_path(path) else "api"
-            decision = self.limiter.check(
-                f"{ip}:{bucket}",
-                limit=self.settings.limit_for(path),
-            )
-            if not decision.allowed:
-                logger.warning(
-                    "[API-HARDENING] 429 service=%s ip=%s path=%s",
-                    self.settings.service_name,
-                    ip,
-                    path,
+            # El daemon del foro solo lo llama laimweb, desde la red Docker.
+            # Esa IP es una para todo el portal: la cuota de borde (180/min)
+            # responde 429 y la página lo pinta como «foro no activo».
+            if not (
+                self.settings.service_name == "laim_forum" and _is_private_ip(ip)
+            ):
+                bucket = "auth" if self.settings.is_auth_path(path) else "api"
+                decision = self.limiter.check(
+                    f"{ip}:{bucket}",
+                    limit=self.settings.limit_for(path),
                 )
-                await _send_json(
-                    send,
-                    429,
-                    {"detail": MSG_RATE_LIMITED},
-                    request_id=request_id,
-                    extra_headers=[
-                        (b"retry-after", str(decision.retry_after).encode("ascii")),
-                    ],
-                )
-                return
+                if not decision.allowed:
+                    logger.warning(
+                        "[API-HARDENING] 429 service=%s ip=%s path=%s",
+                        self.settings.service_name,
+                        ip,
+                        path,
+                    )
+                    await _send_json(
+                        send,
+                        429,
+                        {"detail": MSG_RATE_LIMITED},
+                        request_id=request_id,
+                        extra_headers=[
+                            (b"retry-after", str(decision.retry_after).encode("ascii")),
+                        ],
+                    )
+                    return
 
         async def send_with_headers(message: dict[str, Any]) -> None:
             if message["type"] == "http.response.start":

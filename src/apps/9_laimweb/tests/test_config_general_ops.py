@@ -143,7 +143,7 @@ def test_general_ui_reuses_support_paths_and_admin_gate() -> None:
     page = (_LAIMWEB / "laim_web" / "pages" / "index.py").read_text(encoding="utf-8")
     ops = (_LAIMWEB / "laim_web" / "config_ops.py").read_text(encoding="utf-8")
     mixin = (_LAIMWEB / "laim_web" / "laim_config_mixin.py").read_text(encoding="utf-8")
-    assert 'active_menu == "config_general"' in page
+    assert '("config_general"' in page
     assert "config_general_panel()" in page
     assert "Usuarios" in panel and "Registro" in panel
     assert "is_laim_admin" in panel

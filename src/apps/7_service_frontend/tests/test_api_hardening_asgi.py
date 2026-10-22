@@ -123,3 +123,33 @@ def test_unhandled_500_is_sanitized_in_silicon(hardening, monkeypatch) -> None:
     assert response.status_code == 500
     assert "secret" not in response.json()["detail"]
     assert "mysql" not in response.json()["detail"]
+
+
+def test_forum_daemon_does_not_rate_limit_the_portal_ip(hardening) -> None:
+    app = FastAPI()
+
+    @app.get("/laim/forum/health")
+    def health() -> dict[str, bool]:
+        return {"success": True, "activo": True}
+
+    settings = hardening.ApiHardeningSettings(
+        service_name="laim_forum",
+        environment="pre",
+        rate_limit_enabled=True,
+        edge_limit=1,
+        auth_limit=1,
+    )
+    app.add_middleware(
+        hardening.ApiHardeningMiddleware,
+        settings=settings,
+        limiter=hardening.SlidingWindowRateLimiter(limit=1, window_seconds=60.0),
+    )
+    private = TestClient(app, client=("172.18.0.8", 50000))
+    assert private.get("/laim/forum/health").status_code == 200
+    assert private.get("/laim/forum/health").status_code == 200
+
+    public = TestClient(app, client=("8.8.8.8", 50000))
+    assert public.get("/laim/forum/health").status_code == 200
+    blocked = public.get("/laim/forum/health")
+    assert blocked.status_code == 429
+    assert "Demasiadas" in blocked.json()["detail"]

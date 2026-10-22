@@ -56,6 +56,23 @@ def forum_background_event(func):
     return rx.event(background=True)(func)
 
 
+def forum_service_is_active(health: dict) -> bool:
+    """El daemon contestó y el foro está habilitado.
+
+    Un 429 («Demasiadas peticiones») es el proceso vivo, no un foro
+    apagado. Solo una caída de conexión, o activo=false en un health
+    correcto, apaga la página.
+    """
+    if health.get("success") is True and health.get("activo") is False:
+        return False
+    if health.get("activo") is True or health.get("ok") is True or health.get("success") is True:
+        return True
+    error = str(health.get("error", "")).lower()
+    if "conex" in error or "connect" in error or "timed out" in error:
+        return False
+    return bool(error)
+
+
 class LaimForumMixin(rx.State, mixin=True):
     """Variables y handlers del foro (mezclar con LaimWebState).
 
@@ -637,20 +654,21 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_cfg_strikes = snapshot["strikes"]
         health = laim_forum_health()
         threads = int(health.get("threads", health.get("hilos", 0)) or 0)
-        activo = bool(
-            health.get("activo", health.get("ok", health.get("success", False)))
-        )
+        activo = forum_service_is_active(health)
         self.forum_cfg_estado = "operativo" if activo else "detenido"
         self.forum_service_active = activo
-        if activo:
+        if health.get("success") and health.get("activo"):
             self.forum_service_detail = (
                 f"API operativa · {threads} hilo(s) registrados"
             )
-        else:
+        elif not activo:
             detail = str(health.get("error", "")).strip()
             self.forum_service_detail = (
                 detail if detail else "Servicio detenido o no disponible"
             )
+        else:
+            detail = str(health.get("error", "")).strip()
+            self.forum_service_detail = detail or "API operativa"
 
     @forum_event
     def forum_admin_go_hub(self) -> None:
@@ -811,7 +829,7 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_error = ""
 
         health = laim_forum_health()
-        self.forum_service_active = bool(health.get("activo", health.get("success")))
+        self.forum_service_active = forum_service_is_active(health)
 
         access, session = self._forum_auth_tokens()
         cat_result = laim_forum_list_categories(access, session)

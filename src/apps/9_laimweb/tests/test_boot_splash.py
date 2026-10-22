@@ -16,6 +16,8 @@ def test_boot_splash_uses_the_laim_preparing_copy() -> None:
     assert ".crt-shell" in splash
     assert "rx.el.script(BOOT_INLINE)" in splash
     assert "head_components=boot_head_components()" in app
+    assert "flex-direction:column" in splash
+    assert "laim-boot-card" in splash
 
 
 def test_visual_engines_are_preloaded_with_the_document() -> None:

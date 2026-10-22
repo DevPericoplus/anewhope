@@ -57,9 +57,25 @@ def test_hub_keeps_the_twelve_radikal_actions() -> None:
         assert label in HUB
 
 
+def test_rate_limit_does_not_look_like_a_stopped_forum() -> None:
+    from laim_web.laim_forum_mixin import forum_service_is_active
+
+    assert forum_service_is_active(
+        {
+            "success": False,
+            "error": "Demasiadas peticiones. Inténtelo de nuevo más tarde.",
+        }
+    )
+    assert forum_service_is_active({"success": True, "activo": True})
+    assert not forum_service_is_active({"success": True, "activo": False})
+    assert not forum_service_is_active(
+        {"success": False, "error": "Error de conexión: All connection attempts failed"}
+    )
+
+
 def test_config_foro_menu_renders_the_admin_hub() -> None:
-    assert 'active_menu == "config_foro"' in INDEX or '("config_foro"' in INDEX
-    assert "forum_admin_view_router" in INDEX or "forum_config_embedded" in INDEX
+    assert '"config_foro"' in INDEX
+    assert "forum_config_embedded" in INDEX
     assert "forum_config_embedded" in HUB
     assert 'item == "config_foro"' in STATE
 

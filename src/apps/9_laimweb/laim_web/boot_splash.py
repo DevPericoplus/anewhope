@@ -15,13 +15,20 @@ BOOT_INLINE = r"""
 (function () {
   var css = ''
     + 'html,body{background:#031207;}'
-    + '#laim-boot{position:fixed;inset:0;z-index:100000;display:flex;align-items:center;'
-    + 'justify-content:center;background:#031207;color:#b6ffb6;'
-    + 'font:16px/1.5 Inconsolata,ui-monospace,monospace;text-align:center;'
-    + 'transition:opacity .22s ease;}'
-    + '#laim-boot h1{margin:0 0 6px;font-size:1.15rem;font-weight:600;color:#d8ffd8;}'
-    + '#laim-boot p{margin:0;color:#7dcc7d;}'
-    + '.laim-boot-spin{width:28px;height:28px;margin:0 auto 18px;border-radius:50%;'
+    + '#laim-boot{position:fixed!important;inset:0!important;z-index:100000!important;'
+    + 'display:flex!important;flex-direction:column!important;align-items:center!important;'
+    + 'justify-content:center!important;background:#031207!important;margin:0!important;'
+    + 'padding:0!important;text-align:center!important;}'
+    + '#laim-boot .laim-boot-card{display:flex!important;flex-direction:column!important;'
+    + 'align-items:center!important;justify-content:center!important;text-align:center!important;'
+    + 'max-width:28rem;padding:2rem;}'
+    + '#laim-boot h1{display:block!important;position:static!important;width:auto!important;'
+    + 'max-width:24rem!important;margin:0 0 8px!important;font:600 1.15rem/1.4 '
+    + 'Inconsolata,ui-monospace,monospace!important;color:#d8ffd8!important;}'
+    + '#laim-boot p{display:block!important;position:static!important;width:auto!important;'
+    + 'margin:0!important;font:16px/1.5 Inconsolata,ui-monospace,monospace!important;'
+    + 'color:#7dcc7d!important;}'
+    + '.laim-boot-spin{width:28px;height:28px;margin:0 auto 18px!important;border-radius:50%;'
     + 'border:3px solid #14301c;border-top-color:#3dff7a;animation:laim-boot-spin .8s linear infinite;}'
     + '@keyframes laim-boot-spin{to{transform:rotate(360deg);}}';
   var style = document.createElement('style');
@@ -31,9 +38,11 @@ BOOT_INLINE = r"""
   root.id = 'laim-boot';
   root.setAttribute('role', 'status');
   root.setAttribute('aria-live', 'polite');
-  root.innerHTML = '<div class="laim-boot-spin"></div>'
+  root.innerHTML = '<div class="laim-boot-card">'
+    + '<div class="laim-boot-spin"></div>'
     + '<h1>LAIM se está preparando</h1>'
-    + '<p id="laim-boot-msg">Preparando la interfaz…</p>';
+    + '<p id="laim-boot-msg">Preparando la interfaz…</p>'
+    + '</div>';
   document.documentElement.appendChild(root);
   function shellReady() {
     return !!document.querySelector('.crt-shell');

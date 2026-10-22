@@ -78,6 +78,8 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type", "X-Session-Token", "X-Client-App"],
     )
+    # Cuota: la IP privada del portal no comparte el límite de borde.
+    # Si no, un 429 se ve como «el foro no está activo».
     _api_hardening.harden_fastapi_app(app, service_name="laim_forum", environment=api_env)
     app.include_router(_router_module.router)
 
