@@ -33,6 +33,8 @@ def test_sync_menu_for_session_defaults() -> None:
     assert 'self.active_menu = "instaladores"' in source
     assert 'self.active_menu = "inicio"' in source
     assert "self._sync_menu_for_session()" in source
+    assert "def _open_relogin_in_place" in source
+    assert "login_preserve_place" in source
 
 
 def test_user_info_panel_hides_organization() -> None:

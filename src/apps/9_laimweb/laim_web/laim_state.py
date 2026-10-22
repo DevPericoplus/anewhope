@@ -327,6 +327,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
     login_username: str = ""
     login_password: str = ""
     login_modal_open: bool = False
+    login_preserve_place: bool = False
     register_modal_open: bool = False
     register_message: str = ""
 
@@ -1922,14 +1923,21 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
             session_expires_at=int(result.get("session_expires_at", 0)),
             session_id=result.get("session_id", ""),
         )
+        preserve = bool(self.login_preserve_place)
+        self.login_preserve_place = False
         self.login_modal_open = False
         self.register_modal_open = False
         self.register_message = ""
         self.login_password = ""
         self.error_message = ""
         self.login_error = ""
-        self.active_menu = "instaladores"
-        self._load_static_page("instaladores")
+        if not preserve:
+            self.active_menu = "instaladores"
+            self._load_static_page("instaladores")
+        else:
+            self._load_static_page(self.active_menu)
+            if self.active_menu == "config_foro" and self.forum_admin_view != "hub":
+                self.forum_admin_open_view(self.forum_admin_view)
         self._token_renewal_running = True
         return True
 
@@ -1969,6 +1977,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
         if access_token and session_token:
             laim_logout(access_token, session_token)
 
+        self.login_preserve_place = False
         self.clear_session()
         self.is_logged_in = False
         self.active_menu = "inicio"
@@ -1985,11 +1994,13 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
 
     def check_token_expiration(self) -> dict[str, Any]:
         """Evalúa expiración de tokens JWT."""
+        from laim_web.adapters.laim_api_client import RENEWAL_THRESHOLD_SECONDS
+
         now = int(time.time())
         seconds_until_access = self.access_token_expires_at - now
         seconds_until_session = self.session_token_expires_at - now
         session_expired = seconds_until_session <= 0
-        needs_renewal = seconds_until_access < 120
+        needs_renewal = seconds_until_access < RENEWAL_THRESHOLD_SECONDS
         return {
             "needs_renewal": needs_renewal,
             "session_expired": session_expired,
@@ -2012,13 +2023,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
         )
 
         if result.get("error"):
-            self.login_error = result["error"]
-            self.error_message = result["error"]
-            self.clear_session()
-            self.is_logged_in = False
-            self.active_menu = "inicio"
-            self._load_static_page("inicio")
-            self._token_renewal_running = False
+            self._open_relogin_in_place(str(result["error"]))
             return False
 
         if result.get("renewed"):
@@ -2031,19 +2036,25 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
 
         return True
 
-    def _handle_renewal_session_expired(self) -> None:
-        """Limpia la sesión cuando expira durante el loop de renovación."""
-
-        self.login_error = (
-            "Su sesión ha expirado. Por favor, inicie sesión nuevamente."
-        )
+    def _open_relogin_in_place(self, message: str = "") -> None:
+        """Pide de nuevo el login sin sacar al usuario de la página actual."""
+        menu = self.active_menu
+        forum_view = self.forum_admin_view
+        self.login_preserve_place = True
+        self.login_error = message or "Su sesión ha expirado. Inicie sesión para continuar."
         self.error_message = self.login_error
         self.clear_session()
         self.is_logged_in = False
-        self.active_menu = "inicio"
-        self._load_static_page("inicio")
+        self.active_menu = menu
+        self.forum_admin_view = forum_view
         self.login_modal_open = True
         self._token_renewal_running = False
+
+    def _handle_renewal_session_expired(self) -> None:
+        """La sesión JWT terminó: el modal de login queda sobre la página actual."""
+        self._open_relogin_in_place(
+            "Su sesión ha expirado. Inicie sesión para continuar."
+        )
 
     def _run_token_renewal_iteration(self) -> bool:
         """Ejecuta una iteración del loop de renovación.
@@ -2091,7 +2102,10 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
                 if not self._run_token_renewal_iteration():
                     break
                 if getattr(self, "forum_poll_enabled", False):
-                    self.forum_poll_tick()
+                    try:
+                        self.forum_poll_tick()
+                    except Exception:
+                        pass
                 should_poll_tickets = bool(self.is_logged_in)
             if should_poll_tickets:
                 yield LaimWebState.poll_ticket_notifications()
@@ -2100,7 +2114,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
             if getattr(self, "forum_poll_enabled", False):
                 await asyncio.sleep(laim_forum_get_poll_interval_seconds())
             else:
-                await asyncio.sleep(120)
+                await asyncio.sleep(60)
 
 
     def _mask_serial(self, serial: str) -> str:

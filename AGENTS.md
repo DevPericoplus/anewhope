@@ -11288,8 +11288,9 @@ directamente; laimweb decide cuándo refrescarla.
 
 ### 37.4. Auditoría de operaciones (instalación/actualización)
 
-El menú "Auditoría" de laimweb (`static_pages/config_auditoria.md`) es hoy
-solo texto de documentación — no hay tabla real detrás. El patrón más
+La página Configuración → Auditoría y logs se retiró del menú de laimweb
+(2026-10-22): no estaba orientada al portal y no hay tabla real detrás.
+El patrón más
 cercano que existe, `_append_auth_log()` en `routermiddleware.py:1457`,
 escribe a un fichero JSON — válido para lo que audita hoy, pero no
 consultable para el cuadro de mando estadístico que se pide a futuro.

@@ -182,7 +182,11 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_admin_url_descripcion: str = ""
     forum_admin_mod_user_id: int = 0
     forum_admin_mod_user_name: str = ""
+    forum_admin_mod_category_id: str = ""
     forum_admin_mod_subcategory_id: str = ""
+    forum_mod_user_options: list[dict[str, Any]] = []
+    forum_admin_categories: list[dict[str, Any]] = []
+    forum_admin_all_subcategories: list[dict[str, Any]] = []
     forum_admin_avatar_label: str = ""
     forum_admin_avatar_image_id: int = 0
     forum_word_rules: list[dict[str, Any]] = []
@@ -224,8 +228,13 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_cfg_estado: str = ""
     forum_admin_subcategory_ban_seconds: str = "86400"
     forum_admin_subcategory_log_rotation: str = "weekly"
-    forum_admin_logs_subcategory_id: str = ""
-    forum_admin_logs_lines: list[dict[str, Any]] = []
+    forum_log_category: str = "ALL"
+    forum_log_subcategory: str = "ALL"
+    forum_log_from: str = ""
+    forum_log_to: str = ""
+    forum_log_from_open: bool = False
+    forum_log_to_open: bool = False
+    forum_admin_logs_rows: list[dict[str, str]] = []
 
     # Árbol de categorías/subcategorías
     forum_cat_tree_expanded: list[str] = []
@@ -266,6 +275,23 @@ class LaimForumMixin(rx.State, mixin=True):
     def _forum_set_error(self, message: str) -> None:
         """Registra error visible en UI del foro."""
         self.forum_error = message
+
+    def _forum_session_rejected(self, result: dict) -> bool:
+        """Un 401/sesión del foro renueva el access token o abre el login.
+
+        Devuelve True si la respuesta era de sesión: el llamador reintenta
+        si el modal no se abrió, y no pinta el texto del daemon.
+        """
+        if result.get("success"):
+            return False
+        error = str(result.get("error") or "").lower()
+        if not any(token in error for token in ("expirad", "inválida", "invalida", "sesión", "sesion", "sesi")):
+            return False
+        if self.session_token and self.ensure_tokens_valid():
+            return True
+        if not self.login_modal_open:
+            self._open_relogin_in_place()
+        return True
 
     @rx.var
     def forum_has_selection(self) -> bool:
@@ -435,6 +461,93 @@ class LaimForumMixin(rx.State, mixin=True):
     def forum_category_ids(self) -> list[str]:
         """IDs de categorías para selectores del foro."""
         return [str(c.get("id", "")) for c in self.forum_categories if c.get("id")]
+
+    @rx.var
+    def forum_mod_user_labels(self) -> list[str]:
+        """Etiquetas «nombre (id)» para el selector de moderadores."""
+        labels: list[str] = []
+        for item in self.forum_mod_user_options:
+            name = str(item.get("user_name") or "").strip()
+            user_id = int(item.get("user_id") or 0)
+            if user_id <= 0 or not name:
+                continue
+            labels.append(f"{name} ({user_id})")
+        return labels
+
+    @rx.var
+    def forum_mod_user_label(self) -> str:
+        if self.forum_admin_mod_user_id <= 0 or not self.forum_admin_mod_user_name:
+            return ""
+        return f"{self.forum_admin_mod_user_name} ({self.forum_admin_mod_user_id})"
+
+    @rx.var
+    def forum_mod_category_labels(self) -> list[str]:
+        return [
+            str(item.get("nombre") or item.get("id") or "")
+            for item in self.forum_admin_categories
+            if item.get("id")
+        ]
+
+    @rx.var
+    def forum_mod_category_label(self) -> str:
+        for item in self.forum_admin_categories:
+            if str(item.get("id") or "") == self.forum_admin_mod_category_id:
+                return str(item.get("nombre") or item.get("id") or "")
+        return ""
+
+    @rx.var
+    def forum_mod_subcategory_labels(self) -> list[str]:
+        labels: list[str] = []
+        for item in self.forum_admin_all_subcategories:
+            parent = str(item.get("categoria_id", item.get("category_id", "")))
+            if self.forum_admin_mod_category_id and parent != self.forum_admin_mod_category_id:
+                continue
+            name = str(item.get("nombre") or item.get("id") or "")
+            if name:
+                labels.append(name)
+        return labels
+
+    @rx.var
+    def forum_mod_subcategory_label(self) -> str:
+        for item in self.forum_admin_all_subcategories:
+            if str(item.get("id") or "") == self.forum_admin_mod_subcategory_id:
+                return str(item.get("nombre") or item.get("id") or "")
+        return ""
+
+    @rx.var
+    def forum_log_category_labels(self) -> list[str]:
+        labels = ["ALL"]
+        for item in self.forum_admin_categories:
+            name = str(item.get("nombre") or item.get("id") or "")
+            if name and name not in labels:
+                labels.append(name)
+        return labels
+
+    @rx.var
+    def forum_log_subcategory_labels(self) -> list[str]:
+        labels = ["ALL"]
+        category_id = ""
+        if self.forum_log_category != "ALL":
+            for item in self.forum_admin_categories:
+                if str(item.get("nombre") or item.get("id") or "") == self.forum_log_category:
+                    category_id = str(item.get("id") or "")
+                    break
+        for item in self.forum_admin_all_subcategories:
+            parent = str(item.get("categoria_id", item.get("category_id", "")))
+            if category_id and parent != category_id:
+                continue
+            name = str(item.get("nombre") or item.get("id") or "")
+            if name and name not in labels:
+                labels.append(name)
+        return labels
+
+    @rx.var
+    def forum_log_from_label(self) -> str:
+        return self.forum_log_from or "ALL"
+
+    @rx.var
+    def forum_log_to_label(self) -> str:
+        return self.forum_log_to or "ALL"
 
     @rx.var
     def forum_subcategory_ids(self) -> list[str]:
@@ -736,38 +849,207 @@ class LaimForumMixin(rx.State, mixin=True):
                 "error", "No se pudieron cargar baneos activos."
             )
 
-    @forum_event
-    def forum_admin_set_logs_subcategory_id(self, value: str) -> None:
-        self.forum_admin_logs_subcategory_id = value
+    def _forum_catalog_id(self, items: list, label: str, *, parent: str = "") -> str:
+        if label in ("", "ALL"):
+            return ""
+        for item in items:
+            name = str(item.get("nombre") or item.get("id") or "")
+            if name != label:
+                continue
+            if parent:
+                item_parent = str(item.get("categoria_id", item.get("category_id", "")))
+                if item_parent != parent:
+                    continue
+            return str(item.get("id") or "")
+        return ""
 
-    def forum_load_admin_logs(self) -> None:
-        """Carga logs globales de moderación."""
-        from laim_web.adapters.laim_api_client import laim_forum_admin_logs
+    def _forum_moderator_rows(self, items: list) -> list[dict[str, Any]]:
+        subs = {
+            str(item.get("id") or ""): item for item in self.forum_admin_all_subcategories
+        }
+        cats = {
+            str(item.get("id") or ""): str(item.get("nombre") or item.get("id") or "")
+            for item in self.forum_admin_categories
+        }
+        rows: list[dict[str, Any]] = []
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            sub = subs.get(str(item.get("subcategory_id") or ""), {})
+            parent = str(sub.get("categoria_id", sub.get("category_id", "")))
+            rows.append(
+                {
+                    "id": int(item.get("id") or 0),
+                    "user_name": str(item.get("user_name") or ""),
+                    "user_id": str(item.get("user_id") or ""),
+                    "category_name": cats.get(parent, ""),
+                    "subcategory_name": str(sub.get("nombre") or item.get("subcategory_id") or ""),
+                    "subcategory_id": str(item.get("subcategory_id") or ""),
+                }
+            )
+        return rows
+
+    def _forum_load_mod_users(self) -> None:
+        from laim_web.config_ops import support_admin_call, users_list_path, visible_account
+
+        listing = support_admin_call(
+            int(self.identity_type_id or 0),
+            "GET",
+            users_list_path(""),
+        )
+        if not listing.get("success"):
+            self.forum_mod_user_options = []
+            return
+        self.forum_mod_user_options = [
+            {
+                "user_id": int(visible_account(item).get("user_id") or 0),
+                "user_name": str(visible_account(item).get("user_name") or ""),
+            }
+            for item in listing.get("items") or []
+        ]
+
+    @forum_event
+    def forum_admin_pick_mod_user(self, label: str) -> None:
+        name, sep, raw_id = str(label).rpartition(" (")
+        if not sep or not raw_id.endswith(")"):
+            return
+        try:
+            self.forum_admin_mod_user_id = int(raw_id[:-1])
+        except ValueError:
+            self.forum_admin_mod_user_id = 0
+            return
+        self.forum_admin_mod_user_name = name
+        self.forum_admin_message = ""
+
+    @forum_event
+    def forum_admin_pick_mod_category(self, label: str) -> None:
+        self.forum_admin_mod_category_id = self._forum_catalog_id(
+            self.forum_admin_categories, label
+        )
+        self.forum_admin_mod_subcategory_id = ""
+        self.forum_admin_message = ""
+
+    @forum_event
+    def forum_admin_pick_mod_subcategory(self, label: str) -> None:
+        self.forum_admin_mod_subcategory_id = self._forum_catalog_id(
+            self.forum_admin_all_subcategories,
+            label,
+            parent=self.forum_admin_mod_category_id,
+        )
+        self.forum_admin_message = ""
+
+    @forum_event
+    def forum_log_set_category(self, label: str) -> None:
+        self.forum_log_category = label or "ALL"
+        self.forum_log_subcategory = "ALL"
+        self.forum_load_admin_logs()
+
+    @forum_event
+    def forum_log_set_subcategory(self, label: str) -> None:
+        self.forum_log_subcategory = label or "ALL"
+        self.forum_load_admin_logs()
+
+    @forum_event
+    def forum_log_open_from(self) -> None:
+        self.forum_log_from_open = True
+
+    @forum_event
+    def forum_log_open_to(self) -> None:
+        self.forum_log_to_open = True
+
+    @forum_event
+    def forum_log_close_from(self) -> None:
+        self.forum_log_from_open = False
+
+    @forum_event
+    def forum_log_close_to(self) -> None:
+        self.forum_log_to_open = False
+
+    @forum_event
+    def forum_log_apply_from(self, value: str) -> None:
+        self.forum_log_from = (value or "").strip()
+        self.forum_log_from_open = False
+        self.forum_load_admin_logs()
+
+    @forum_event
+    def forum_log_apply_to(self, value: str) -> None:
+        self.forum_log_to = (value or "").strip()
+        self.forum_log_to_open = False
+        self.forum_load_admin_logs()
+
+    def _forum_load_admin_catalog(self) -> None:
+        """Categorías y subcategorías completas para los selectores del backoffice."""
+        from laim_web.adapters.laim_api_client import (
+            laim_forum_list_categories,
+            laim_forum_list_subcategories,
+        )
 
         access, session = self._forum_auth_tokens()
-        sub_id = self.forum_admin_logs_subcategory_id.strip() or None
-        result = laim_forum_admin_logs(
-            access, session, subcategory_id=sub_id, limit=200
+        cats = laim_forum_list_categories(access, session, include_inactive=True)
+        if cats.get("success"):
+            self.forum_admin_categories = cats.get("items") or []
+        subs = laim_forum_list_subcategories(
+            access, session, None, include_inactive=True
         )
+        if subs.get("success"):
+            self.forum_admin_all_subcategories = subs.get("items") or []
+
+    def forum_load_admin_logs(self) -> None:
+        """Carga el log de moderación ya persistido, con los filtros activos."""
+        from laim_web.adapters.laim_api_client import laim_forum_admin_logs
+
+        self._forum_load_admin_catalog()
+        access, session = self._forum_auth_tokens()
+        category_id = self._forum_catalog_id(
+            self.forum_admin_categories, self.forum_log_category
+        )
+        subcategory_id = self._forum_catalog_id(
+            self.forum_admin_all_subcategories,
+            self.forum_log_subcategory,
+            parent=category_id,
+        )
+        result = laim_forum_admin_logs(
+            access,
+            session,
+            category_id=category_id or None,
+            subcategory_id=subcategory_id or None,
+            date_from=self.forum_log_from or None,
+            date_to=self.forum_log_to or None,
+            limit=200,
+        )
+        if self._forum_session_rejected(result) and not self.login_modal_open:
+            access, session = self._forum_auth_tokens()
+            result = laim_forum_admin_logs(
+                access,
+                session,
+                category_id=category_id or None,
+                subcategory_id=subcategory_id or None,
+                date_from=self.forum_log_from or None,
+                date_to=self.forum_log_to or None,
+                limit=200,
+            )
         if not result.get("success"):
-            self.forum_admin_logs_lines = []
-            self.forum_admin_message = result.get("error", "No se pudieron cargar logs.")
+            self.forum_admin_logs_rows = []
+            if not self.login_modal_open:
+                self.forum_admin_message = result.get("error", "No se pudieron cargar logs.")
             return
 
-        lines: list[dict[str, Any]] = []
+        rows: list[dict[str, str]] = []
         for item in result.get("items", []):
             if not isinstance(item, dict):
                 continue
-            created = str(item.get("created_at", ""))[:19]
-            sub = str(item.get("subcategory_id", ""))
-            event = str(item.get("event_type", ""))
-            message = str(item.get("message", ""))
-            lines.append(
+            rows.append(
                 {
-                    "line": f"[{created}] [{sub}] {event}: {message}",
+                    "created_at": str(item.get("created_at") or "")[:19],
+                    "category_name": str(item.get("category_name") or ""),
+                    "subcategory_name": str(item.get("subcategory_name") or item.get("subcategory_id") or ""),
+                    "event_type": str(item.get("event_type") or ""),
+                    "message": str(item.get("message") or ""),
+                    "actor": str(item.get("moderator_user_name") or item.get("user_name") or ""),
                 }
             )
-        self.forum_admin_logs_lines = lines
+        self.forum_admin_logs_rows = rows
+        self.forum_admin_message = ""
 
     @forum_event
     def forum_admin_set_subcategory_ban_seconds(self, value: str) -> None:
@@ -2594,8 +2876,14 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_stats_message = ""
         access, session = self._forum_auth_tokens()
         result = laim_forum_admin_stats(access, session)
+        if self._forum_session_rejected(result) and not self.login_modal_open:
+            access, session = self._forum_auth_tokens()
+            result = laim_forum_admin_stats(access, session)
         self.forum_stats_loading = False
         if not result.get("success"):
+            if self.login_modal_open:
+                self.forum_stats_message = ""
+                return
             self.forum_stats_message = result.get("error", "No se pudieron cargar estadísticas.")
             return
 
@@ -2634,6 +2922,7 @@ class LaimForumMixin(rx.State, mixin=True):
             laim_forum_list_prefixes,
         )
 
+        self._forum_load_admin_catalog()
         access, session = self._forum_auth_tokens()
         settings = laim_forum_admin_settings(access, session)
         if settings.get("success"):
@@ -2661,11 +2950,17 @@ class LaimForumMixin(rx.State, mixin=True):
         if urls.get("success"):
             self.forum_allowed_urls = urls.get("items", [])
 
-        mods = laim_forum_admin_moderators(
-            access, session, self.forum_selected_subcategory_id or None
-        )
+        mods = laim_forum_admin_moderators(access, session, None)
+        if self._forum_session_rejected(mods):
+            if not self.login_modal_open:
+                access, session = self._forum_auth_tokens()
+                mods = laim_forum_admin_moderators(access, session, None)
+            else:
+                mods = {"success": False}
         if mods.get("success"):
-            self.forum_moderators = mods.get("items", [])
+            self.forum_moderators = self._forum_moderator_rows(mods.get("items", []))
+        if self.forum_admin_tab == "moderators":
+            self._forum_load_mod_users()
 
         avatars = laim_forum_list_avatar_catalog(access, session)
         if avatars.get("success"):
@@ -2859,8 +3154,12 @@ class LaimForumMixin(rx.State, mixin=True):
     def forum_admin_assign_moderator(self) -> None:
         from laim_web.adapters.laim_api_client import laim_forum_admin_assign_moderator
 
-        if self.forum_admin_mod_user_id <= 0 or not self.forum_admin_mod_subcategory_id.strip():
-            self.forum_admin_message = "Usuario y subcategoría obligatorios."
+        if (
+            self.forum_admin_mod_user_id <= 0
+            or not self.forum_admin_mod_category_id
+            or not self.forum_admin_mod_subcategory_id.strip()
+        ):
+            self.forum_admin_message = "Seleccione usuario, categoría y subcategoría."
             return
         access, session = self._forum_auth_tokens()
         result = laim_forum_admin_assign_moderator(
@@ -2872,8 +3171,21 @@ class LaimForumMixin(rx.State, mixin=True):
             access,
             session,
         )
+        if self._forum_session_rejected(result) and not self.login_modal_open:
+            access, session = self._forum_auth_tokens()
+            result = laim_forum_admin_assign_moderator(
+                {
+                    "user_id": self.forum_admin_mod_user_id,
+                    "user_name": self.forum_admin_mod_user_name.strip(),
+                    "subcategory_id": self.forum_admin_mod_subcategory_id.strip(),
+                },
+                access,
+                session,
+            )
         self.forum_admin_message = (
-            "Moderador asignado." if result.get("success") else result.get("error", "Error")
+            "" if self.login_modal_open else (
+                "Moderador asignado." if result.get("success") else result.get("error", "Error")
+            )
         )
         if result.get("success"):
             self.forum_load_admin_extended()

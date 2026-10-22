@@ -33,13 +33,6 @@ AUTHENTICATED_MENU_FILES: dict[str, str] = {
 ADMIN_CONFIG_MENU_FILES: dict[str, str] = {
     "config_general": "config_general.md",
     "config_foro": "config_foro.md",
-    "config_usuarios": "config_usuarios.md",
-    "config_modelos_ia": "config_modelos_ia.md",
-    "config_fases_tiers": "config_fases_tiers.md",
-    "config_sesiones": "config_sesiones.md",
-    "config_share": "config_share.md",
-    "config_agentes": "config_agentes.md",
-    "config_auditoria": "config_auditoria.md",
 }
 
 MENU_TO_MARKDOWN_FILE: dict[str, str] = {

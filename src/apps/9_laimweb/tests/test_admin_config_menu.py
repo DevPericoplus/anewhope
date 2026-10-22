@@ -14,43 +14,31 @@ def test_admin_config_menus_defined() -> None:
     expected = {
         "config_general",
         "config_foro",
-        "config_usuarios",
-        "config_modelos_ia",
-        "config_fases_tiers",
-        "config_sesiones",
-        "config_share",
-        "config_agentes",
-        "config_auditoria",
     }
     assert expected == ADMIN_CONFIG_PAGE_MENUS
-    for menu in expected:
-        content = load_static_page_markdown(menu)
-        assert content.startswith("#")
-        if menu == "config_general":
-            assert "Usuarios" in content
-            assert "Registro" in content
-            assert "/laim/support/users" in content
-            continue
-        if menu == "config_foro":
-            assert content.startswith("# Foro LAIM")
-            assert "Categorías" in content
-            assert "Prefijos de hilo" in content
-            continue
-        assert "solo documental" in content.lower() or "solo documenta" in content.lower()
-        assert "laim_maintenance" in content
+    general = load_static_page_markdown("config_general")
+    assert "Usuarios" in general
+    assert "Registro" in general
+    assert "Foro LAIM" in general
+    assert "Visor de logs" in general
+    assert "Asignar moderador" in general
+    foro = load_static_page_markdown("config_foro")
+    assert foro.startswith("# Foro LAIM")
+    assert "Categorías" in foro
+    assert "Prefijos de hilo" in foro
 
 
 def test_named_config_pages_keep_public_titles() -> None:
     """Los títulos que ve el administrador coinciden con el menú."""
     assert load_static_page_markdown("config_foro").startswith("# Foro LAIM")
-    assert load_static_page_markdown("config_usuarios").startswith("# Gestión de usuarios")
-    assert load_static_page_markdown("config_share").startswith("# LAIM Share / Connect")
-    assert load_static_page_markdown("config_auditoria").startswith("# Auditoría y logs")
+    assert load_static_page_markdown("config_usuarios").startswith("# Página no encontrada")
+    assert load_static_page_markdown("config_auditoria").startswith("# Página no encontrada")
 
 
 def test_is_admin_config_menu() -> None:
     """Solo las claves config_* pertenecen a configuración."""
-    assert is_admin_config_menu("config_usuarios") is True
+    assert is_admin_config_menu("config_foro") is True
+    assert is_admin_config_menu("config_usuarios") is False
     assert is_admin_config_menu("instaladores") is False
 
 

@@ -79,7 +79,7 @@ def login_modal() -> rx.Component:
                         ),
                     ),
                     rx.button(
-                        rx.cond(LaimWebState.loading, "Conectando…", "Conectar"),
+                        rx.cond(LaimWebState.loading, "Conectando…", "Iniciar sesión"),
                         on_click=LaimWebState.handle_login,
                         class_name="crt-btn",
                         width="100%",

@@ -26,13 +26,6 @@ ADMIN_CONFIG_MENU_ITEMS = list(ADMIN_CONFIG_MENU_FILES.keys())
 ADMIN_CONFIG_MENU_LABELS: dict[str, str] = {
     "config_general": "General",
     "config_foro": "Foro LAIM",
-    "config_usuarios": "Gestión de usuarios",
-    "config_modelos_ia": "Modelos IA",
-    "config_fases_tiers": "Fases y tiers",
-    "config_sesiones": "Gestión de sesiones",
-    "config_share": "LAIM Share / Connect",
-    "config_agentes": "Agentes",
-    "config_auditoria": "Auditoría y logs",
 }
 
 

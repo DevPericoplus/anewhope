@@ -200,15 +200,15 @@ class LaimForumService:
     ) -> tuple[dict[str, Any] | None, str | None]:
         """Valida sesi?n LAIM obligatoria para operaciones del foro."""
         if not session_token or not authorization or not authorization.startswith("Bearer "):
-            return None, "Sesi?n requerida. Inicie sesi?n para acceder al foro."
+            return None, "Sesión requerida. Inicie sesión para acceder al foro."
         access_token = authorization.removeprefix("Bearer ").strip()
         if not access_token:
-            return None, "Token de acceso no v?lido."
+            return None, "Token de acceso no válido."
 
         auth = self._get_auth_service()
         context = auth.resolve_optional_session_context(access_token, session_token)
         if not context.get("user_id"):
-            return None, "Sesi?n inv?lida o expirada."
+            return None, "Sesión inválida o expirada."
 
         user_id = int(context["user_id"])
         user = auth._user_repo.get_user_by_id(user_id)
@@ -1334,6 +1334,9 @@ class LaimForumService:
         session: dict[str, Any],
         *,
         subcategory_id: str | None = None,
+        category_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
         limit: int = 200,
     ) -> dict[str, Any]:
         """Visor de logs de moderación (admin global)."""
@@ -1343,6 +1346,9 @@ class LaimForumService:
             "success": True,
             "items": self._repository.list_moderation_logs_admin(
                 subcategory_id=subcategory_id,
+                category_id=category_id,
+                date_from=date_from,
+                date_to=date_to,
                 limit=limit,
             ),
         }

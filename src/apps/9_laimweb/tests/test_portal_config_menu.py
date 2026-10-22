@@ -31,9 +31,14 @@ def test_config_menu_is_documentary_and_admin_only() -> None:
     assert "ADMIN_CONFIG_ROUTE_LINKS" not in source
     assert "LaimWebState.is_laim_admin" in menu
     assert '"Foro LAIM"' in source
-    assert '"Gestión de usuarios"' in source
-    assert '"LAIM Share / Connect"' in source
-    assert '"Auditoría y logs"' in source
+    assert '"General"' in source
+    assert '"Gestión de usuarios"' not in source
+    assert '"Modelos IA"' not in source
+    assert '"Fases y tiers"' not in source
+    assert '"Gestión de sesiones"' not in source
+    assert '"LAIM Share / Connect"' not in source
+    assert '"Agentes"' not in source
+    assert '"Auditoría y logs"' not in source
 
 
 def test_main_sidebar_reuses_admin_gated_config_menu() -> None:

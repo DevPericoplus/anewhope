@@ -80,6 +80,7 @@ def create_app() -> FastAPI:
     )
     # Cuota: la IP privada del portal no comparte el límite de borde.
     # Si no, un 429 se ve como «el foro no está activo».
+    # El visor de logs filtra categoría, subcategoría y fechas en este proceso.
     _api_hardening.harden_fastapi_app(app, service_name="laim_forum", environment=api_env)
     app.include_router(_router_module.router)
 

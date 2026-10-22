@@ -21,7 +21,7 @@ import httpx
 
 from laim_web.dynamic_import import load_module_from_path
 
-RENEWAL_THRESHOLD_SECONDS = 120
+RENEWAL_THRESHOLD_SECONDS = 300
 MSG_INVALID_CREDENTIALS = "Credenciales no válidas"
 MSG_AUTH_UNAVAILABLE = "No se pudo conectar con el servicio de autenticación."
 
@@ -1023,15 +1023,26 @@ def laim_forum_admin_logs(
     session_token: str,
     *,
     subcategory_id: str | None = None,
+    category_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     limit: int = 200,
 ) -> dict[str, Any]:
     """Visor global de logs de moderación (admin)."""
-    endpoint = f"/laim/forum/admin/logs?limit={limit}"
-    if subcategory_id:
-        endpoint = f"{endpoint}&subcategory_id={subcategory_id}"
+    from urllib.parse import urlencode
+
+    query: dict[str, str] = {"limit": str(limit)}
+    if category_id and category_id != "ALL":
+        query["category_id"] = category_id
+    if subcategory_id and subcategory_id != "ALL":
+        query["subcategory_id"] = subcategory_id
+    if date_from:
+        query["date_from"] = date_from
+    if date_to:
+        query["date_to"] = date_to
     return _request_forum(
         "GET",
-        endpoint,
+        "/laim/forum/admin/logs?" + urlencode(query),
         access_token=access_token,
         session_token=session_token,
     )

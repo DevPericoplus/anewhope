@@ -228,37 +228,119 @@ def forum_bans_admin_view() -> rx.Component:
     )
 
 
+def _log_date_modal(title: str, opened, value, on_apply, on_close) -> rx.Component:
+    """Calendario nativo dentro de un modal."""
+    return rx.cond(
+        opened,
+        rx.box(
+            rx.vstack(
+                rx.heading(title, size="4", color=COLORS["title"]),
+                rx.input(
+                    type="date",
+                    value=value,
+                    on_change=on_apply,
+                    class_name="crt-input",
+                    width="100%",
+                ),
+                rx.button("Cerrar", on_click=on_close, class_name="crt-btn"),
+                class_name="crt-panel crt-modal-panel",
+                style={"maxWidth": "420px", "width": "92vw", "padding": "1rem"},
+                spacing="3",
+            ),
+            class_name="crt-modal-overlay",
+        ),
+        rx.fragment(),
+    )
+
+
 def forum_logs_admin_view() -> rx.Component:
-    """Visor global de logs de moderación."""
+    """Visor del log de moderación persistido, con filtros ALL por defecto."""
     return rx.vstack(
         rx.heading("Visor de logs", size="6", color=COLORS["title"]),
+        rx.text(
+            "Actividad de moderación guardada en base de datos. ALL no acota ese nivel.",
+            color=COLORS["muted"],
+            font_size=FONT_SIZE_SMALL,
+        ),
         rx.hstack(
-            rx.input(
-                placeholder="Subcategoría (opcional)",
-                value=LaimWebState.forum_admin_logs_subcategory_id,
-                on_change=LaimWebState.forum_admin_set_logs_subcategory_id,
-                class_name="crt-input",
+            rx.vstack(
+                rx.text("Categoría", color=COLORS["title"]),
+                rx.select(
+                    LaimWebState.forum_log_category_labels,
+                    value=LaimWebState.forum_log_category,
+                    on_change=LaimWebState.forum_log_set_category,
+                    width="100%",
+                ),
                 width="100%",
             ),
-            rx.button(
-                "Cargar logs",
-                on_click=LaimWebState.forum_load_admin_logs,
-                class_name="crt-btn crt-btn-inline",
+            rx.vstack(
+                rx.text("Subcategoría", color=COLORS["title"]),
+                rx.select(
+                    LaimWebState.forum_log_subcategory_labels,
+                    value=LaimWebState.forum_log_subcategory,
+                    on_change=LaimWebState.forum_log_set_subcategory,
+                    width="100%",
+                ),
+                width="100%",
             ),
             spacing="3",
             width="100%",
         ),
+        rx.hstack(
+            rx.button(
+                rx.fragment("Desde: ", LaimWebState.forum_log_from_label),
+                on_click=LaimWebState.forum_log_open_from,
+                class_name="crt-btn",
+            ),
+            rx.button(
+                rx.fragment("Hasta: ", LaimWebState.forum_log_to_label),
+                on_click=LaimWebState.forum_log_open_to,
+                class_name="crt-btn",
+            ),
+            spacing="3",
+        ),
+        _log_date_modal(
+            "Desde",
+            LaimWebState.forum_log_from_open,
+            LaimWebState.forum_log_from,
+            LaimWebState.forum_log_apply_from,
+            LaimWebState.forum_log_close_from,
+        ),
+        _log_date_modal(
+            "Hasta",
+            LaimWebState.forum_log_to_open,
+            LaimWebState.forum_log_to,
+            LaimWebState.forum_log_apply_to,
+            LaimWebState.forum_log_close_to,
+        ),
         rx.cond(
-            LaimWebState.forum_admin_logs_lines.length() == 0,
+            LaimWebState.forum_admin_logs_rows.length() == 0,
             rx.text("Sin entradas de log.", color=COLORS["muted"]),
-            rx.foreach(
-                LaimWebState.forum_admin_logs_lines,
-                lambda entry: rx.text(
-                    entry["line"],
-                    color=COLORS["text"],
-                    font_size=FONT_SIZE_SMALL,
-                    font_family="monospace",
+            rx.el.table(
+                rx.el.thead(
+                    rx.el.tr(
+                        rx.el.th("Fecha"),
+                        rx.el.th("Categoría"),
+                        rx.el.th("Subcategoría"),
+                        rx.el.th("Tipo"),
+                        rx.el.th("Quién"),
+                        rx.el.th("Actividad"),
+                    )
                 ),
+                rx.el.tbody(
+                    rx.foreach(
+                        LaimWebState.forum_admin_logs_rows,
+                        lambda entry: rx.el.tr(
+                            rx.el.td(entry["created_at"]),
+                            rx.el.td(entry["category_name"]),
+                            rx.el.td(entry["subcategory_name"]),
+                            rx.el.td(entry["event_type"]),
+                            rx.el.td(entry["actor"]),
+                            rx.el.td(entry["message"]),
+                        ),
+                    )
+                ),
+                width="100%",
             ),
         ),
         spacing="3",

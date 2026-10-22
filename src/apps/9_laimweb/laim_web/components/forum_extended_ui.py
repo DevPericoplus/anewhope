@@ -858,49 +858,64 @@ def forum_admin_extended_panel() -> rx.Component:
                         rx.cond(
                             LaimWebState.forum_admin_tab == "moderators",
                             rx.vstack(
-                                rx.input(
-                                    placeholder="User ID",
-                                    value=LaimWebState.forum_admin_mod_user_id_text,
-                                    on_change=LaimWebState.forum_admin_set_mod_user_id,
-                                    class_name="crt-input",
+                                rx.text("Usuario", color=COLORS["title"]),
+                                rx.select(
+                                    LaimWebState.forum_mod_user_labels,
+                                    value=LaimWebState.forum_mod_user_label,
+                                    on_change=LaimWebState.forum_admin_pick_mod_user,
+                                    placeholder="Seleccione usuario",
+                                    width="100%",
                                 ),
-                                rx.input(
-                                    placeholder="Nombre usuario",
-                                    value=LaimWebState.forum_admin_mod_user_name,
-                                    on_change=LaimWebState.forum_admin_set_mod_user_name,
-                                    class_name="crt-input",
+                                rx.text("Categoría", color=COLORS["title"]),
+                                rx.select(
+                                    LaimWebState.forum_mod_category_labels,
+                                    value=LaimWebState.forum_mod_category_label,
+                                    on_change=LaimWebState.forum_admin_pick_mod_category,
+                                    placeholder="Seleccione categoría",
+                                    width="100%",
                                 ),
-                                rx.input(
-                                    placeholder="Subcategoría ID",
-                                    value=LaimWebState.forum_admin_mod_subcategory_id,
-                                    on_change=LaimWebState.forum_admin_set_mod_subcategory_id,
-                                    class_name="crt-input",
+                                rx.text("Subcategoría", color=COLORS["title"]),
+                                rx.select(
+                                    LaimWebState.forum_mod_subcategory_labels,
+                                    value=LaimWebState.forum_mod_subcategory_label,
+                                    on_change=LaimWebState.forum_admin_pick_mod_subcategory,
+                                    placeholder="Seleccione subcategoría",
+                                    width="100%",
                                 ),
                                 rx.button(
                                     "Asignar moderador",
                                     on_click=LaimWebState.forum_admin_assign_moderator,
                                     class_name="crt-btn",
                                 ),
-                                rx.foreach(
-                                    LaimWebState.forum_moderators,
-                                    lambda mod: rx.hstack(
-                                        rx.text(
-                                            rx.fragment(
-                                                mod["user_name"],
-                                                " @ ",
-                                                mod["subcategory_id"],
-                                            ),
-                                            font_size=FONT_SIZE_BODY,
-                                        ),
-                                        rx.button(
-                                            "Desactivar",
-                                            on_click=LaimWebState.forum_admin_deactivate_moderator(
-                                                mod["id"]
-                                            ),
-                                            class_name="crt-btn crt-btn-inline",
-                                        ),
-                                        width="100%",
+                                rx.el.table(
+                                    rx.el.thead(
+                                        rx.el.tr(
+                                            rx.el.th("Usuario"),
+                                            rx.el.th("Categoría"),
+                                            rx.el.th("Subcategoría"),
+                                            rx.el.th(""),
+                                        )
                                     ),
+                                    rx.el.tbody(
+                                        rx.foreach(
+                                            LaimWebState.forum_moderators,
+                                            lambda mod: rx.el.tr(
+                                                rx.el.td(mod["user_name"]),
+                                                rx.el.td(mod["category_name"]),
+                                                rx.el.td(mod["subcategory_name"]),
+                                                rx.el.td(
+                                                    rx.button(
+                                                        "Desactivar",
+                                                        on_click=LaimWebState.forum_admin_deactivate_moderator(
+                                                            mod["id"]
+                                                        ),
+                                                        class_name="crt-btn crt-btn-inline",
+                                                    )
+                                                ),
+                                            ),
+                                        )
+                                    ),
+                                    width="100%",
                                 ),
                                 spacing="2",
                                 width="100%",

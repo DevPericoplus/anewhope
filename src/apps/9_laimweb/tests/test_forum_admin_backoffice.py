@@ -114,6 +114,50 @@ def test_word_rule_can_be_edited_and_toggled() -> None:
     assert "forum_admin_toggle_word_rule" in EXTENDED
 
 
+def test_moderators_use_selectors_and_an_assignment_table() -> None:
+    assert "forum_mod_user_labels" in EXTENDED
+    assert "forum_mod_category_labels" in EXTENDED
+    assert "forum_mod_subcategory_labels" in EXTENDED
+    assert "forum_admin_pick_mod_user" in MIXIN
+    assert "forum_admin_pick_mod_category" in MIXIN
+    assert "forum_admin_pick_mod_subcategory" in MIXIN
+    assert "Seleccione usuario, categoría y subcategoría." in MIXIN
+    assert "User ID" not in EXTENDED
+    assert "Subcategoría ID" not in EXTENDED
+
+
+def test_log_viewer_filters_all_category_subcategory_and_dates() -> None:
+    assert 'forum_log_category: str = "ALL"' in MIXIN or 'forum_log_category="ALL"' in MIXIN
+    assert "forum_log_category_labels" in HUB
+    assert "forum_log_subcategory_labels" in HUB
+    assert 'type="date"' in HUB
+    assert "forum_admin_logs_rows" in HUB
+    assert "forum_admin_logs_lines" not in HUB
+    assert "Subcategoría (opcional)" not in HUB
+    repo = (
+        Path(__file__).resolve().parents[3]
+        / "2_shared_application"
+        / "adapters"
+        / "laim_forum_repository.py"
+    ).read_text(encoding="utf-8")
+    assert "s.categoria_id = :category_id" in repo
+    assert "DATE_ADD(:date_to, INTERVAL 1 DAY)" in repo
+    assert "c.id = s.categoria_id" in repo
+    assert "c.id = s.category_id" not in repo
+
+
+def test_expired_session_reopens_login_without_leaving_the_page() -> None:
+    assert "def _open_relogin_in_place" in STATE
+    assert "login_preserve_place" in STATE
+    assert "Iniciar sesión" in (
+        APP / "laim_web" / "components" / "auth_modals.py"
+    ).read_text(encoding="utf-8")
+    renewal = STATE[STATE.index("def _handle_renewal_session_expired") :]
+    assert 'self.active_menu = "inicio"' not in renewal.split("def ", 2)[1]
+    assert "RENEWAL_THRESHOLD_SECONDS" in STATE
+    assert "await asyncio.sleep(60)" in STATE
+
+
 def test_general_config_is_read_only_runtime_data() -> None:
     assert "Host API" in HUB
     assert "Puerto API" in HUB

@@ -725,6 +725,9 @@ def laim_forum_admin_list_bans(
 @router.get("/admin/logs")
 def laim_forum_admin_logs(
     subcategory_id: str | None = None,
+    category_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     limit: int = 200,
     authorization: Annotated[str | None, Header()] = None,
     session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
@@ -733,7 +736,12 @@ def laim_forum_admin_logs(
     session = _require_session(authorization, session_token)
     return _raise_if_failed(
         get_laim_forum_service().list_admin_logs(
-            session, subcategory_id=subcategory_id, limit=limit
+            session,
+            subcategory_id=subcategory_id,
+            category_id=category_id,
+            date_from=date_from,
+            date_to=date_to,
+            limit=limit,
         ),
         default_status=status.HTTP_403_FORBIDDEN,
     )

@@ -1488,24 +1488,46 @@ class LaimForumRepository:
         self,
         *,
         subcategory_id: str | None = None,
+        category_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
         limit: int = 200,
     ) -> list[dict[str, Any]]:
-        """Lista logs de moderación para administración."""
+        """Lista logs de moderación para administración.
+
+        Categoría, subcategoría y fechas vacías o ``ALL`` no acotan.
+        ``date_to`` incluye ese día entero.
+        """
         conditions: list[str] = []
         params: dict[str, Any] = {"limit": limit}
-        if subcategory_id:
-            conditions.append("subcategory_id = :subcategory_id")
+        if subcategory_id and subcategory_id != "ALL":
+            conditions.append("l.subcategory_id = :subcategory_id")
             params["subcategory_id"] = subcategory_id
+        if category_id and category_id != "ALL":
+            conditions.append("s.categoria_id = :category_id")
+            params["category_id"] = category_id
+        if date_from:
+            conditions.append("l.created_at >= :date_from")
+            params["date_from"] = date_from
+        if date_to:
+            conditions.append("l.created_at < DATE_ADD(:date_to, INTERVAL 1 DAY)")
+            params["date_to"] = date_to
         clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         with self._engine.connect() as conn:
             rows = conn.execute(
                 text(
                     f"""
-                    SELECT id, subcategory_id, event_type, message, user_id,
-                           moderator_user_id, moderator_user_name, created_at
-                    FROM laim_forum_moderation_logs
+                    SELECT l.id, l.subcategory_id, l.event_type, l.message,
+                           l.user_id, l.user_name, l.moderator_user_id,
+                           l.moderator_user_name, l.created_at,
+                           s.nombre AS subcategory_name,
+                           s.categoria_id AS category_id,
+                           c.nombre AS category_name
+                    FROM laim_forum_moderation_logs l
+                    LEFT JOIN laim_forum_subcategories s ON s.id = l.subcategory_id
+                    LEFT JOIN laim_forum_categories c ON c.id = s.categoria_id
                     {clause}
-                    ORDER BY created_at DESC
+                    ORDER BY l.created_at DESC
                     LIMIT :limit
                     """
                 ),
