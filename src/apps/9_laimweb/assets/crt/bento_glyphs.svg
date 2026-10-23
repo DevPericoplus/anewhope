@@ -7,8 +7,8 @@
     <path d="M7.5 24h5.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
     <path d="M35.3 24h5.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
   </symbol>
-  <symbol id="glyph-shield" viewBox="0 0 48 48">
-    <path d="M24 6.5 L39 13.2 V24.5 C39 33.8 31.6 39.6 24 43.2 C16.4 39.6 9 33.8 9 24.5 V13.2 Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+  <symbol id="glyph-knot" viewBox="0 0 48 48">
+    <path d="M14 30 C14 16 26 12 30 20 C34 28 26 34 20 30 C15 27 18 20 26 18 C34 16 36 26 30 32" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
   </symbol>
   <symbol id="glyph-mesh" viewBox="0 0 48 48">
     <path d="M16 15.5a3.2 3.2 0 1 0 .01 0z" fill="none" stroke="currentColor" stroke-width="1.7"/>
@@ -22,11 +22,11 @@
     <path d="M24 9.5a14.5 14.5 0 1 0 .01 0z" fill="none" stroke="currentColor" stroke-width="1.7"/>
     <path d="M24 24.5a2.4 2.4 0 1 0 .01 0z" fill="none" stroke="currentColor" stroke-width="1.7"/>
   </symbol>
-  <symbol id="glyph-tools" viewBox="0 0 48 48">
-    <path d="M14 34 L26.5 21.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-    <path d="M26.5 21.5 L33 19.2 L35.4 21.6 L33.1 28.2 L20.5 36.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M16.5 15.5 L21 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-    <path d="M31.5 30.5 L36 35" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+  <symbol id="glyph-bars" viewBox="0 0 48 48">
+    <path d="M10 38 H38" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    <path d="M14 38 V28" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    <path d="M24 38 V20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    <path d="M34 38 V11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
   </symbol>
   <symbol id="glyph-hardware" viewBox="0 0 48 48">
     <path d="M9.5 11.5 H38.5 V30.5 H9.5 Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
@@ -39,10 +39,7 @@
     <path d="M28.5 26.5 V18.5" fill="none" stroke="currentColor" stroke-width="1.7"/>
   </symbol>
   <symbol id="glyph-gerbil" viewBox="0 0 48 48">
-    <path d="M17.5 20 Q14 9 20.5 10 Q22.2 14.5 23.5 19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-    <path d="M30.5 20 Q34 9 27.5 10 Q25.8 14.5 24.5 19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-    <path d="M14.5 23 Q24 38 33.5 23 Q35 33 24 35.5 Q13 33 14.5 23" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
-    <path d="M33.2 29 Q40 31 38.5 39" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    <path d="M 4.0 32.3 L 4.7 31.8 L 4.7 31.3 L 6.2 30.6 L 8.1 31.1 L 11.7 29.4 L 17.2 25.6 L 20.5 22.7 L 21.7 18.9 L 25.1 15.5 L 28.0 14.5 L 30.8 14.5 L 33.5 15.3 L 33.9 14.5 L 33.0 13.3 L 32.7 11.7 L 33.7 10.2 L 35.6 10.5 L 36.6 11.2 L 38.0 13.3 L 40.9 14.3 L 44.0 17.9 L 44.0 18.4 L 42.6 19.6 L 40.6 20.0 L 39.0 20.0 L 37.1 22.7 L 36.6 22.2 L 36.1 22.7 L 36.8 23.6 L 38.0 24.1 L 38.3 24.6 L 38.3 25.8 L 37.8 26.3 L 36.8 24.6 L 34.4 24.4 L 33.7 23.9 L 33.2 22.9 L 33.0 23.9 L 33.5 24.6 L 32.3 25.3 L 32.3 23.9 L 31.3 21.7 L 29.4 20.3 L 28.7 20.5 L 29.9 21.2 L 31.1 22.7 L 31.3 25.8 L 30.6 27.2 L 29.6 28.2 L 26.5 29.6 L 25.3 30.8 L 25.1 32.3 L 28.4 36.6 L 31.1 36.8 L 31.8 37.8 L 28.0 37.8 L 27.5 37.3 L 25.3 34.2 L 23.2 31.8 L 23.2 31.1 L 24.8 29.4 L 25.3 28.0 L 24.8 27.2 L 22.7 26.3 L 21.0 24.1 L 15.3 28.2 L 12.1 30.1 L 8.3 31.8 L 7.6 32.7 L 6.6 33.2 L 5.0 33.0 L 4.7 32.5 L 4.0 32.5 Z" fill="currentColor" stroke="none"/>
   </symbol>
   <symbol id="glyph-idea" viewBox="0 0 48 48">
     <path d="M24 7.5 A10.2 10.2 0 0 1 31.8 24.8 C31.8 28.6 29 31 24 31 C19 31 16.2 28.6 16.2 24.8 A10.2 10.2 0 0 1 24 7.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>

@@ -16,7 +16,7 @@ CATALOG: Final[dict[str, dict[str, str]]] = {
         "pause_ms": "2200",
     },
     "¿Qué problema resuelve?": {
-        "glyph": "shield",
+        "glyph": "knot",
         "span": "1x2",
         "area": "problem",
         "short": "Problema",
@@ -37,7 +37,7 @@ CATALOG: Final[dict[str, dict[str, str]]] = {
         "pause_ms": "1600",
     },
     "Qué puedes hacer con LAIM": {
-        "glyph": "tools",
+        "glyph": "bars",
         "span": "1x1",
         "area": "puedes",
         "short": "Puedes",

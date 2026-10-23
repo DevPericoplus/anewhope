@@ -27,7 +27,7 @@ def test_home_polls_neural_scene_while_spinner_is_active() -> None:
     assert "LAIMBentoNeural.ensure" in home
     assert "NEURAL_SCRIPT_SRC" in home
     assets = (laimweb_root / "laim_web" / "visual_assets.py").read_text(encoding="utf-8")
-    assert 'NEURAL_SCRIPT_SRC = "/crt/bento_neural.js?v=4"' in assets
+    assert 'NEURAL_SCRIPT_SRC = "/crt/bento_neural.js?v=5"' in assets
     assert "ensure: ensure" in js
     assert "homeShowsSpinner()" in js
     assert "setInterval" in js
@@ -50,3 +50,14 @@ def test_neural_binds_visible_home_not_stale_canvas_id() -> None:
     assert "attributeFilter" in js
     assert "n > 150" not in home
     assert "__LAIMNeuralWatch" in home
+
+
+def test_neural_rounds_visit_every_item_and_finish_the_approach() -> None:
+    """Cada ronda enseña los nueve ítems. El objetivo no cambia a mitad de camino."""
+    js = (laimweb_root / "assets" / "crt" / "bento_neural.js").read_text(encoding="utf-8")
+    assert "function startRound" in js
+    assert "function takeNext" in js
+    assert "HOLD_MS = 6000" in js
+    assert "dt * 0.22" not in js
+    assert "focus = (focus + 1)" not in js
+    assert "focus = i" not in js

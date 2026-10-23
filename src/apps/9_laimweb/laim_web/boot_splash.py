@@ -79,7 +79,7 @@ BOOT_INLINE = r"""
     if (msg && document.getElementById('laim-boot')) {
       msg.textContent = 'La interfaz está tardando más de lo esperado.';
     }
-  }, 12000);
+  }, 30000);
 })();
 """
 

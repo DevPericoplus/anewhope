@@ -54,9 +54,13 @@ class BentoCatalogTests(unittest.TestCase):
     def test_each_glyph_has_distinct_paths(self) -> None:
         blobs = [glyph_svg_markup(gid) for gid in glyph_ids()]
         self.assertEqual(len(set(blobs)), 9)
-        for blob in blobs:
-            self.assertIn('stroke="currentColor"', blob)
-            self.assertIn('fill="none"', blob)
+        for gid, blob in zip(glyph_ids(), blobs, strict=True):
+            if gid == "gerbil":
+                self.assertIn('fill="currentColor"', blob)
+                self.assertIn('stroke="none"', blob)
+            else:
+                self.assertIn('stroke="currentColor"', blob)
+                self.assertIn('fill="none"', blob)
         self.assertEqual(glyph_for("MOM: Mixture of Models"), "mesh")
         self.assertEqual(set(GLYPH_PATHS), set(glyph_ids()))
 
@@ -71,7 +75,9 @@ class BentoCatalogTests(unittest.TestCase):
         self.assertIn("function revealIfPrepared()", script)
         self.assertIn("homeShowsSpinner()", script)
         home = (here / "home.py").read_text(encoding="utf-8")
-        self.assertIn("bento_neural.js?v=3d7", home)
+        assets = (here.parents[1] / "visual_assets.py").read_text(encoding="utf-8")
+        self.assertIn("NEURAL_SCRIPT_SRC", home)
+        self.assertIn('NEURAL_SCRIPT_SRC = "/crt/bento_neural.js?v=5"', assets)
         self.assertNotIn("LAIMBentoNeural.restart()", home)
 
 

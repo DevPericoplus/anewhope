@@ -4,10 +4,10 @@
     return;
   }
 
-  var HOLD_MS = 4000;
+  var HOLD_MS = 6000;
   var APPROACH_MS = 3200;
   var RETREAT_MS = 2200;
-  var ORBIT_MS = 1800;
+  var ORBIT_MS = 700;
   var PULSE_COUNT = 5;
 
   var nodes = [];
@@ -15,6 +15,8 @@
   var titled = [];
   var pulses = [];
   var focus = 0;
+  var round = [];
+  var castKey = "";
   var phase = "orbit";
   var phaseStart = 0;
   var yaw = 0.55;
@@ -358,6 +360,59 @@
     return mixCam(close, orbit, u);
   }
 
+  // Una ronda baraja todos los ítems y los enseña una vez. La siguiente
+  // ronda vuelve a barajar. El que acaba de estar delante no abre la nueva.
+  function startRound(avoid) {
+    round = [];
+    var i;
+    for (i = 0; i < titled.length; i++) {
+      round.push(i);
+    }
+    for (i = round.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = round[i];
+      round[i] = round[j];
+      round[j] = tmp;
+    }
+    if (avoid >= 0 && round.length > 1 && round[0] === avoid) {
+      round.push(round.shift());
+    }
+  }
+
+  function takeNext(current) {
+    if (!round.length) {
+      startRound(current);
+    }
+    if (round.length > 1 && round[0] === current) {
+      round.push(round.shift());
+    }
+    return round.shift();
+  }
+
+  function alignYawToFocus() {
+    var cam = cameraForFocus(focus);
+    yaw = cam.yaw;
+  }
+
+  function castOf(tiles) {
+    return tiles.map(function (el) {
+      return el.getAttribute("data-bento-glyph") || "";
+    }).join("|");
+  }
+
+  function rebindSameCast() {
+    var tiles = titleTiles();
+    if (!tiles.length || castOf(tiles) !== castKey || titled.length !== tiles.length) {
+      return false;
+    }
+    tiles.forEach(function (el, i) {
+      titled[i].el = el;
+    });
+    boundWorld = worldEl();
+    boundCanvas = canvasEl();
+    return true;
+  }
+
   function setLit(idx) {
     titled.forEach(function (node, i) {
       if (!node.el) {
@@ -396,20 +451,24 @@
       }
       node.el.setAttribute("data-neural-bound", "1");
       node.el.addEventListener("mouseenter", function () {
-        hoverHold = true;
-        focus = i;
-        setLit(i);
+        if (i === focus && (phase === "approach" || phase === "hold")) {
+          hoverHold = true;
+        }
       });
       node.el.addEventListener("focus", function () {
-        hoverHold = true;
-        focus = i;
-        setLit(i);
+        if (i === focus && (phase === "approach" || phase === "hold")) {
+          hoverHold = true;
+        }
       });
       node.el.addEventListener("mouseleave", function () {
-        hoverHold = false;
+        if (i === focus) {
+          hoverHold = false;
+        }
       });
       node.el.addEventListener("blur", function () {
-        hoverHold = false;
+        if (i === focus) {
+          hoverHold = false;
+        }
       });
     });
   }
@@ -561,7 +620,8 @@
       return;
     }
     if (phase === "retreat" && now - phaseStart >= RETREAT_MS) {
-      focus = (focus + 1) % titled.length;
+      focus = takeNext(focus);
+      alignYawToFocus();
       phase = "orbit";
       phaseStart = now;
       setLit(-1);
@@ -660,10 +720,12 @@
   function tick(now) {
     raf = requestAnimationFrame(tick);
     if (ready && sceneStale()) {
-      ready = false;
-      boundWorld = null;
-      boundCanvas = null;
-      markSceneReady(false);
+      if (!rebindSameCast()) {
+        ready = false;
+        boundWorld = null;
+        boundCanvas = null;
+        markSceneReady(false);
+      }
     }
     if (homeShowsSpinner() || !ready) {
       if (revealIfPrepared()) {
@@ -695,8 +757,9 @@
       return;
     }
     if (!isPaused() && !(hoverHold && phase === "hold")) {
-      if (phase === "orbit" || phase === "retreat") {
-        yaw += dt * 0.22;
+      if (phase === "retreat" || phase === "orbit") {
+        var aim = cameraForFocus(focus).yaw;
+        yaw = angLerp(yaw, aim, Math.min(1, dt * 2.4));
       }
       advancePhase(now);
     }
@@ -727,7 +790,10 @@
     }
     ready = true;
     boundWorld = worldEl();
-    focus = 0;
+    castKey = castOf(titleTiles());
+    startRound(-1);
+    focus = takeNext(-1);
+    alignYawToFocus();
     phase = "orbit";
     phaseStart = performance.now();
     setLit(-1);

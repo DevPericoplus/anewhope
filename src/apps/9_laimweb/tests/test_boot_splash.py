@@ -13,6 +13,8 @@ def test_boot_splash_uses_the_laim_preparing_copy() -> None:
     assert "LAIM se está preparando" in splash
     assert "Preparando la interfaz…" in splash
     assert "La interfaz está tardando más de lo esperado." in splash
+    assert "}, 30000);" in splash
+    assert "}, 12000);" not in splash
     assert ".crt-shell" in splash
     assert "rx.el.script(BOOT_INLINE)" in splash
     assert "head_components=boot_head_components()" in app
