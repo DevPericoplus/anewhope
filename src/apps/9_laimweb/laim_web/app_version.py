@@ -1,4 +1,7 @@
-"""Versión del portal LAIM Web leída de versions.yml (clave version_laimweb).
+"""Versión global del producto leída de versions.yml (clave version_global).
+
+Es la versión que se genera y se despliega (Entornos › «Versión global objetivo»
+en laim_maintenance, releases.yml); laimweb y web_frontend muestran la misma.
 
 Se carga con el mismo version_reader compartido que web_frontend y
 web_backoffice, para que la interfaz nunca muestre una versión escrita a mano.
@@ -15,5 +18,5 @@ _version_module = importlib.util.module_from_spec(_version_spec)
 _version_spec.loader.exec_module(_version_module)
 get_version = _version_module.get_version
 
-APP_VERSION = get_version("laimweb")
-APP_VERSION_LABEL = f"LAIM Web v{APP_VERSION}"
+APP_VERSION = get_version("global")
+APP_VERSION_LABEL = f"LAIM v{APP_VERSION}"

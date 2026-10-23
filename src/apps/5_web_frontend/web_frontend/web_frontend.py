@@ -95,8 +95,9 @@ _version_module = importlib.util.module_from_spec(_version_spec)
 _version_spec.loader.exec_module(_version_module)
 get_version = _version_module.get_version
 
-# Obtener versión del frontend
-APP_VERSION = get_version("frontend")
+# Versión global del producto (version_global): la que se genera y se despliega,
+# la misma que muestra laimweb.
+APP_VERSION = get_version("global")
 
 # Logger de actividad del frontend
 activity_log = _activity_module.get_frontend_logger()
