@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import reflex as rx
 
+from laim_web.app_version import APP_VERSION_LABEL
 from laim_web.components.auth_modals import auth_modals
 from laim_web.components.crt_theme import (
     COLORS,
@@ -254,7 +255,7 @@ def portal_sidebar() -> rx.Component:
 def portal_footer() -> rx.Component:
     """Pie del portal."""
     return rx.hstack(
-        rx.text("LAIM v0.1.0", color=COLORS["muted"], font_size=FONT_SIZE_SMALL),
+        rx.text(APP_VERSION_LABEL, color=COLORS["muted"], font_size=FONT_SIZE_SMALL),
         rx.box(flex_grow="1"),
         rx.text(
             "© 2025 LAIM — Local Artificial Intelligence Management",
