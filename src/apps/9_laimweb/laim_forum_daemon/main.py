@@ -202,8 +202,20 @@ def main() -> None:
 
     _attach_file_handler_to_runtime_loggers(logs_dir, level)
 
-    host = str(get_env_value("laim_forum_api_host", "127.0.0.1"))
-    port = int(get_env_value("laim_forum_api_port", "8766"))
+    # env.yaml manda; si el entorno no define la clave, se usa la que exporta
+    # entrypoint.sh en el contenedor (0.0.0.0), no el loopback.
+    host = str(
+        get_env_value(
+            "laim_forum_api_host",
+            os.environ.get("LAIM_FORUM_API_HOST", "127.0.0.1"),
+        )
+    )
+    port = int(
+        get_env_value(
+            "laim_forum_api_port",
+            os.environ.get("LAIM_FORUM_API_PORT", "8766"),
+        )
+    )
     app = create_app()
     _logger.info("API Foro LAIM en http://%s:%s", host, port)
     uvicorn.run(
