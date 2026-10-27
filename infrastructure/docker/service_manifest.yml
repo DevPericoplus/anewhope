@@ -107,6 +107,15 @@ services:
       - src/2_shared_application/
     notes: "En silicon el trainer corre nativo (hybrid); la imagen solo se usa si deploy_mode=docker-compose"
 
+  nginx_monitor:
+    version_key: version_nginx_monitor
+    image: anewhope-nginx-monitor
+    compose: nginx_monitor
+    server: frontend
+    dockerfile: src/apps/10_nginx_monitor/Dockerfile
+    paths:
+      - src/apps/10_nginx_monitor/
+
   fmanagement:
     version_key: version_fmanagement
     image: fmanagement

@@ -18,7 +18,7 @@ LOCK = threading.Lock()
 PROC = os.environ.get("NGINX_MONITOR_PROC", "/proc")
 
 from nginx_monitor.parse import APPS, parse_line, parse_stub
-from nginx_monitor.store import connect, insert_requests, insert_status, purge, stats
+from nginx_monitor.store import connect, insert_requests, insert_status, list_errors, purge, stats
 
 DB = os.environ.get("NGINX_MONITOR_DB", "/data/nginx_monitor/nginx.db")
 LOG = os.environ.get("NGINX_MONITOR_LOG", "/var/log/nginx/monitor.json")
@@ -146,20 +146,33 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/health":
             self._send(200, {"ok": True, "database": "nginx"})
             return
+        query = self.path.split("?", 1)[1] if "?" in self.path else ""
+        app = _app_from_query(query)
+        if path == "/api/v1/errors":
+            if app not in APPS:
+                self._send(400, {"error": "aplicación desconocida"})
+                return
+            with LOCK:
+                payload = {"errors": list_errors(self.conn, app)}
+            self._send(200, payload)
+            return
         if path != "/api/v1/stats":
             self._send(404, {"error": "no encontrado"})
             return
-        query = self.path.split("?", 1)[1] if "?" in self.path else ""
-        app = "laimweb"
-        for part in query.split("&"):
-            if part.startswith("app="):
-                app = part.split("=", 1)[1]
         if app not in APPS:
             self._send(400, {"error": "aplicación desconocida"})
             return
         with LOCK:
             payload = stats(self.conn, app)
         self._send(200, payload)
+
+
+def _app_from_query(query: str) -> str:
+    app = "laimweb"
+    for part in query.split("&"):
+        if part.startswith("app="):
+            app = part.split("=", 1)[1]
+    return app
 
 
 def main() -> None:

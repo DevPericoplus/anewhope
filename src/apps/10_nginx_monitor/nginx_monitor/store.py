@@ -171,6 +171,32 @@ def _p95(values: list[int]) -> int:
     return ordered[idx]
 
 
+ERROR_LIMIT = 100
+
+
+def list_errors(conn: sqlite3.Connection, app: str, limit: int = ERROR_LIMIT) -> list[dict]:
+    """Últimas peticiones 4xx/5xx de una aplicación. La fila es todo
+    lo que se guardó: sin query, sin cookies y sin la IP en claro."""
+    if app not in APPS:
+        raise ValueError(app)
+    if limit < 1:
+        limit = 1
+    if limit > ERROR_LIMIT:
+        limit = ERROR_LIMIT
+    return [
+        dict(row)
+        for row in conn.execute(
+            f"""SELECT id, ts, visitor, method, path, feature, status,
+                       bytes, request_ms, upstream_ms
+                FROM {app}_requests
+                WHERE status >= 400
+                ORDER BY id DESC
+                LIMIT ?""",
+            (limit,),
+        )
+    ]
+
+
 def stats(conn: sqlite3.Connection, app: str) -> dict:
     if app not in APPS:
         raise ValueError(app)
