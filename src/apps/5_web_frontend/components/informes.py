@@ -11,7 +11,12 @@ from adapters.api_client import (
     get_informe_content,
 )
 
-from portal_crt import COLORS, SELECT_STYLE
+from portal_crt import (
+    COLORS,
+    SELECT_STYLE,
+    markdown_table_cell,
+    markdown_table_header_cell,
+)
 
 
 class InformesState(rx.State):
@@ -361,14 +366,14 @@ def markdown_viewer() -> rx.Component:
                 "thead": lambda *children, **props: rx.table.header(*children, **props),
                 "tbody": lambda *children, **props: rx.table.body(*children, **props),
                 "tr": lambda *children, **props: rx.table.row(*children, **props),
-                "th": lambda *children, **props: rx.table.column_header_cell(
+                "th": lambda *children, **props: markdown_table_header_cell(
                     *children,
                     **props,
                     color="#2d3748",
                     font_weight="bold",
                     font_size="1.6em"  # Aumentado de 1.2em a 1.6em
                 ),
-                "td": lambda *children, **props: rx.table.cell(
+                "td": lambda *children, **props: markdown_table_cell(
                     *children,
                     **props,
                     color="#4a5568",

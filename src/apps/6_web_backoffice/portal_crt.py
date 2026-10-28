@@ -35,6 +35,8 @@ MARKDOWN_COMPONENT_MAP: dict[str, Any] = _crt_theme.get_markdown_component_map(
     h3_size="4",
 )
 FONT_FAMILY: str = _crt_theme.FONT_FAMILY
+markdown_table_header_cell = _crt_theme.markdown_table_header_cell
+markdown_table_cell = _crt_theme.markdown_table_cell
 
 crt_cross_portal_button = _crt_components.crt_cross_portal_button
 crt_app_style = _crt_components.crt_app_style

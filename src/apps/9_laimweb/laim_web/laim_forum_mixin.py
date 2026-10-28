@@ -73,6 +73,14 @@ def _with_display_dates(items: Any, *fields: str) -> list[dict[str, Any]]:
 FORUM_INACTIVE_SUFFIX = " (inactiva)"
 
 
+def forum_stats_inactive_note(rows: list[dict[str, Any]]) -> str:
+    """«(N inactivas)» bajo el total de subcategorías; vacío si no hay ninguna."""
+    inactive = sum(1 for row in rows if not row.get("activa", True))
+    if inactive == 0:
+        return ""
+    return "(1 inactiva)" if inactive == 1 else f"({inactive} inactivas)"
+
+
 def forum_stats_subcategory_rows(items: Any) -> list[dict[str, Any]]:
     """Filas de «Actividad por subcategoría» con las inactivas marcadas.
 
@@ -236,6 +244,9 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_stats_message: str = ""
     forum_stats_categorias: int = 0
     forum_stats_subcategorias: int = 0
+    # Subcategorías inactivas (o de categoría inactiva) incluidas en el total:
+    # el selector del foro no las ofrece, así que el total las señala.
+    forum_stats_subcategorias_nota: str = ""
     forum_stats_hilos: int = 0
     forum_stats_respuestas: int = 0
     forum_stats_valoraciones: int = 0
@@ -2946,6 +2957,9 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_stats_adjuntos = int(stats.get("adjuntos", 0) or 0)
         self.forum_stats_subcategory_rows = forum_stats_subcategory_rows(
             stats.get("subcategorias_detalle", [])
+        )
+        self.forum_stats_subcategorias_nota = forum_stats_inactive_note(
+            self.forum_stats_subcategory_rows
         )
         self.forum_stats_top_users = stats.get("top_reputacion", [])
 

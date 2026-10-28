@@ -470,10 +470,15 @@ def forum_moderation_panel() -> rx.Component:
     )
 
 
-def _forum_stats_metric(label: str, value) -> rx.Component:
-    return rx.vstack(
+def _forum_stats_metric(label: str, value, note=None) -> rx.Component:
+    children = [
         rx.text(label, color=COLORS["muted"], font_size=FONT_SIZE_SMALL),
         rx.text(value, color=COLORS["accent"], font_size="1.2em", font_weight="bold"),
+    ]
+    if note is not None:
+        children.append(note)
+    return rx.vstack(
+        *children,
         spacing="1",
         align_items="center",
         min_width="120px",
@@ -497,7 +502,17 @@ def forum_stats_dialog() -> rx.Component:
                                 "Categorías", LaimWebState.forum_stats_categorias
                             ),
                             _forum_stats_metric(
-                                "Subcategorías", LaimWebState.forum_stats_subcategorias
+                                "Subcategorías",
+                                LaimWebState.forum_stats_subcategorias,
+                                # El selector del foro solo ofrece las activas.
+                                rx.cond(
+                                    LaimWebState.forum_stats_subcategorias_nota != "",
+                                    rx.text(
+                                        LaimWebState.forum_stats_subcategorias_nota,
+                                        color=COLORS["muted"],
+                                        font_size=FONT_SIZE_SMALL,
+                                    ),
+                                ),
                             ),
                             _forum_stats_metric("Hilos", LaimWebState.forum_stats_hilos),
                             _forum_stats_metric(

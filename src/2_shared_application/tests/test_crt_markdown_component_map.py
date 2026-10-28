@@ -60,3 +60,12 @@ def test_paragraphs_are_still_crt_text() -> None:
     js = _rendered_tag(_crt_theme.get_markdown_component_map("green"), "p")
     assert 'as:"p"' in js
     assert _crt_theme.GREEN_THEME["muted"] in js
+
+
+@pytest.mark.parametrize("variant", ["green", "amber"])
+@pytest.mark.parametrize("tag", ["th", "td"])
+def test_table_cells_drop_the_is_header_prop(variant: str, tag: str) -> None:
+    """react-markdown 8 pasa isHeader a <th>/<td>; no debe llegar al DOM."""
+    js = _rendered_tag(_crt_theme.get_markdown_component_map(variant), tag)
+    assert "isHeader" in js.split("=>", 1)[0], f"{tag} no saca isHeader de props: {js}"
+    assert "...props" in js

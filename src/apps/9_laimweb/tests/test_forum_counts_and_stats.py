@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from laim_web.laim_forum_mixin import FORUM_INACTIVE_SUFFIX, forum_stats_subcategory_rows
+from laim_web.laim_forum_mixin import (
+    FORUM_INACTIVE_SUFFIX,
+    forum_stats_inactive_note,
+    forum_stats_subcategory_rows,
+)
 
 laimweb_root = Path(__file__).resolve().parents[1]
 
@@ -44,3 +48,17 @@ def test_thread_list_reads_the_reply_count_from_the_api() -> None:
     ).read_text(encoding="utf-8")
     assert ") AS posts_count" in repo
     assert repo.count("{_THREAD_POSTS_COUNT_SQL}") == 2
+
+
+def test_subcategory_total_notes_how_many_are_inactive() -> None:
+    """QA Silicon 28/10: el total decía 10 y el selector solo ofrecía 8."""
+    rows = forum_stats_subcategory_rows(
+        [{"activa": True}, {"activa": False}, {"activa": False}, {}]
+    )
+    assert forum_stats_inactive_note(rows) == "(2 inactivas)"
+    assert forum_stats_inactive_note(rows[:2]) == "(1 inactiva)"
+    assert forum_stats_inactive_note(rows[:1]) == ""
+    ui = (laimweb_root / "laim_web" / "components" / "forum_extended_ui.py").read_text(
+        encoding="utf-8"
+    )
+    assert "LaimWebState.forum_stats_subcategorias_nota" in ui

@@ -25,7 +25,12 @@ _org_helpers_module = importlib.util.module_from_spec(_org_helpers_spec)
 _org_helpers_spec.loader.exec_module(_org_helpers_module)
 load_organizations_for_selector = _org_helpers_module.load_organizations_for_selector
 
-from portal_crt import COLORS, SELECT_STYLE
+from portal_crt import (
+    COLORS,
+    SELECT_STYLE,
+    markdown_table_cell,
+    markdown_table_header_cell,
+)
 
 
 def _load_cambios_adapter():
@@ -510,14 +515,14 @@ def markdown_viewer() -> rx.Component:
                 "thead": lambda *children, **props: rx.table.header(*children, **props),
                 "tbody": lambda *children, **props: rx.table.body(*children, **props),
                 "tr": lambda *children, **props: rx.table.row(*children, **props),
-                "th": lambda *children, **props: rx.table.column_header_cell(
+                "th": lambda *children, **props: markdown_table_header_cell(
                     *children,
                     **props,
                     color="#2d3748",
                     font_weight="bold",
                     font_size="1.6em"  # Aumentado de 1.2em a 1.6em
                 ),
-                "td": lambda *children, **props: rx.table.cell(
+                "td": lambda *children, **props: markdown_table_cell(
                     *children,
                     **props,
                     color="#4a5568",

@@ -5,6 +5,11 @@ from __future__ import annotations
 from typing import Any, Literal
 
 import reflex as rx
+from reflex.components.markdown.markdown import MarkdownComponentMap
+from reflex.components.radix.themes.components.table import (
+    TableCell,
+    TableColumnHeaderCell,
+)
 
 CrtVariant = Literal["green", "amber"]
 
@@ -217,7 +222,7 @@ def get_markdown_component_map(
         "thead": lambda *children, **props: rx.table.header(*children, **props),
         "tbody": lambda *children, **props: rx.table.body(*children, **props),
         "tr": lambda *children, **props: rx.table.row(*children, **props),
-        "th": lambda *children, **props: rx.table.column_header_cell(
+        "th": lambda *children, **props: markdown_table_header_cell(
             *children,
             **props,
             color=colors["title"],
@@ -225,7 +230,7 @@ def get_markdown_component_map(
             font_size="1.05em",
             padding="0.6em",
         ),
-        "td": lambda *children, **props: rx.table.cell(
+        "td": lambda *children, **props: markdown_table_cell(
             *children,
             **props,
             color=colors["muted"],
@@ -233,6 +238,37 @@ def get_markdown_component_map(
             padding="0.55em",
         ),
     }
+
+
+class _MarkdownCellArgs(MarkdownComponentMap):
+    """react-markdown 8 pasa ``isHeader`` a <th>/<td>; se saca de ``props``.
+
+    Reflex reparte ``{...props}`` sobre el componente del mapa. Sin quitarlo,
+    ``isHeader`` llega al DOM y React avisa en consola de «React does not
+    recognize the `isHeader` prop on a DOM element».
+    """
+
+    @classmethod
+    def get_fn_args(cls) -> list[str]:
+        return ["node", "children", "isHeader", "...props"]
+
+
+class _MarkdownTableColumnHeaderCell(TableColumnHeaderCell, _MarkdownCellArgs):
+    """<th> de rx.markdown sin la prop ``isHeader``."""
+
+
+class _MarkdownTableCell(TableCell, _MarkdownCellArgs):
+    """<td> de rx.markdown sin la prop ``isHeader``."""
+
+
+def markdown_table_header_cell(*children: Any, **props: Any) -> rx.Component:
+    """Celda de cabecera para el ``component_map`` de rx.markdown (entrada ``th``)."""
+    return _MarkdownTableColumnHeaderCell.create(*children, **props)
+
+
+def markdown_table_cell(*children: Any, **props: Any) -> rx.Component:
+    """Celda de datos para el ``component_map`` de rx.markdown (entrada ``td``)."""
+    return _MarkdownTableCell.create(*children, **props)
 
 
 def get_active_menu_style(variant: CrtVariant = "green") -> dict[str, str]:
