@@ -556,6 +556,7 @@ def forum_stats_dialog() -> rx.Component:
                                                 row["category_name"],
                                                 " / ",
                                                 row["subcategory_name"],
+                                                row["estado_sufijo"],
                                             ),
                                             font_size=FONT_SIZE_BODY,
                                             width="55%",

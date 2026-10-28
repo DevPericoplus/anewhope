@@ -15,11 +15,11 @@ version_frontend: 0.8.12
 version_backoffice: 0.8.8
 version_middleware: 0.8.13
 version_broker: 0.8.10
-version_backend_core: 0.8.24
+version_backend_core: 0.8.25
 version_backend_ia: 0.8.4
 version_fmanagement: 0.8.1
-version_laimweb: 0.12.50
-version_laim_forum: 0.7.14
+version_laimweb: 0.12.51
+version_laim_forum: 0.7.15
 version_nginx_monitor: 0.1.3
 
 # Infrastructure versions

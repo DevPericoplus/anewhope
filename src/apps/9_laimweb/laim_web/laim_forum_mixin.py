@@ -70,6 +70,29 @@ def _with_display_dates(items: Any, *fields: str) -> list[dict[str, Any]]:
     return rows
 
 
+FORUM_INACTIVE_SUFFIX = " (inactiva)"
+
+
+def forum_stats_subcategory_rows(items: Any) -> list[dict[str, Any]]:
+    """Filas de «Actividad por subcategoría» con las inactivas marcadas.
+
+    Los selectores públicos solo ofrecen categorías y subcategorías activas;
+    las estadísticas de admin cuentan todas, así que las inactivas llevan
+    « (inactiva)» para que no parezcan un desajuste con el selector.
+    Sin el campo «activa» (backend anterior) se tratan como activas.
+    """
+    rows: list[dict[str, Any]] = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        row = dict(item)
+        active = row.get("activa", True) is not False
+        row["activa"] = active
+        row["estado_sufijo"] = "" if active else FORUM_INACTIVE_SUFFIX
+        rows.append(row)
+    return rows
+
+
 def forum_service_is_active(health: dict) -> bool:
     """El daemon contestó y el foro está habilitado.
 
@@ -1242,7 +1265,7 @@ class LaimForumMixin(rx.State, mixin=True):
             normalized: list[dict[str, Any]] = []
             for item in items:
                 row = dict(item)
-                row.setdefault("respuestas_count", row.get("posts_count", 0))
+                row.setdefault("respuestas_count", int(row.get("posts_count") or 0))
                 row.setdefault(
                     "actualizado",
                     format_display_datetime(
@@ -2921,7 +2944,9 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_stats_baneos_activos = int(stats.get("baneos_activos", 0) or 0)
         self.forum_stats_infracciones_hoy = int(stats.get("infracciones_hoy", 0) or 0)
         self.forum_stats_adjuntos = int(stats.get("adjuntos", 0) or 0)
-        self.forum_stats_subcategory_rows = stats.get("subcategorias_detalle", [])
+        self.forum_stats_subcategory_rows = forum_stats_subcategory_rows(
+            stats.get("subcategorias_detalle", [])
+        )
         self.forum_stats_top_users = stats.get("top_reputacion", [])
 
     @forum_event

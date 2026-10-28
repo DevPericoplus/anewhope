@@ -51,6 +51,19 @@ def _image_url(image_id: int) -> str:
     return f"{FORUM_IMAGE_URL_PREFIX}/{image_id}"
 
 
+# Respuestas de un hilo: posts no borrados. El mensaje inicial vive en
+# laim_forum_threads.cuerpo_md, no en laim_forum_posts, así que no cuenta;
+# es el mismo criterio que la columna «respuestas» de get_admin_stats y que
+# lo que lista list_posts_by_thread en la vista del hilo.
+_THREAD_POSTS_COUNT_SQL = """
+                           (
+                               SELECT COUNT(*)
+                               FROM laim_forum_posts p
+                               WHERE p.thread_id = laim_forum_threads.id
+                                 AND p.deleted = 0
+                           ) AS posts_count"""
+
+
 class LaimForumRepository:
     """Persistencia del subsistema foro en laim_core_db."""
 
@@ -732,7 +745,7 @@ class LaimForumRepository:
                 text(
                     f"""
                     SELECT id, subcategory_id, prefix_id, titulo, user_id, user_name,
-                           fijado, cerrado, deleted, created_at, updated_at
+                           fijado, cerrado, deleted, created_at, updated_at,{_THREAD_POSTS_COUNT_SQL}
                     FROM laim_forum_threads
                     WHERE subcategory_id = :subcategory_id {deleted_clause}
                     ORDER BY fijado DESC, updated_at DESC
@@ -746,6 +759,7 @@ class LaimForumRepository:
             item["fijado"] = _bool_value(item.get("fijado"))
             item["cerrado"] = _bool_value(item.get("cerrado"))
             item["deleted"] = _bool_value(item.get("deleted"))
+            item["posts_count"] = int(item.get("posts_count") or 0)
             item["created_at"] = _timestamp_value(item.get("created_at"))
             item["updated_at"] = _timestamp_value(item.get("updated_at"))
             items.append(item)
@@ -761,7 +775,7 @@ class LaimForumRepository:
                 text(
                     f"""
                     SELECT id, subcategory_id, prefix_id, titulo, user_id, user_name,
-                           fijado, cerrado, deleted, created_at, updated_at
+                           fijado, cerrado, deleted, created_at, updated_at,{_THREAD_POSTS_COUNT_SQL}
                     FROM laim_forum_threads
                     WHERE user_id = :user_id {deleted_clause}
                     ORDER BY updated_at DESC
@@ -775,6 +789,7 @@ class LaimForumRepository:
                 "fijado": _bool_value(r.get("fijado")),
                 "cerrado": _bool_value(r.get("cerrado")),
                 "deleted": _bool_value(r.get("deleted")),
+                "posts_count": int(r.get("posts_count") or 0),
                 "created_at": _timestamp_value(r.get("created_at")),
                 "updated_at": _timestamp_value(r.get("updated_at")),
             }
@@ -1825,6 +1840,8 @@ class LaimForumRepository:
                         s.id AS subcategory_id,
                         s.nombre AS subcategory_name,
                         c.nombre AS category_name,
+                        s.activa AS subcategory_activa,
+                        c.activa AS category_activa,
                         (
                             SELECT COUNT(*)
                             FROM laim_forum_threads t
@@ -1887,6 +1904,10 @@ class LaimForumRepository:
                 "subcategory_id": str(row["subcategory_id"]),
                 "subcategory_name": str(row["subcategory_name"]),
                 "category_name": str(row["category_name"]),
+                # Las estadísticas de admin cuentan también lo inactivo (los
+                # selectores públicos lo ocultan); «activa» permite marcarlo.
+                "activa": _bool_value(row["subcategory_activa"])
+                and _bool_value(row["category_activa"]),
                 "hilos": int(row["hilos"] or 0),
                 "respuestas": int(row["respuestas"] or 0),
             }
