@@ -10,6 +10,8 @@ import html
 import math
 from typing import Any
 
+from laim_web.display_format import edition_label, format_display_datetime
+
 HERO_TEAL = "#0f766e"
 HERO_CYAN = "#0e7490"
 HERO_ORANGE = "#ea580c"
@@ -428,9 +430,7 @@ def _present_items(items: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for item in items or []:
         alias = str(item.get("display_name") or "").strip() or str(item.get("hostname") or "")
-        edition = str(item.get("edition") or "")
-        if edition == "community_edition":
-            edition = "Community Edition"
+        edition = edition_label(item.get("edition")) if item.get("edition") else ""
         rows.append(
             {
                 "installation_id": int(item.get("installation_id") or 0),
@@ -442,7 +442,7 @@ def _present_items(items: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
                 "edition": edition,
                 "origin": str(item.get("origin") or ""),
                 "status": str(item.get("status") or ""),
-                "registered_at": str(item.get("registered_at") or ""),
+                "registered_at": format_display_datetime(item.get("registered_at")),
             }
         )
     return rows

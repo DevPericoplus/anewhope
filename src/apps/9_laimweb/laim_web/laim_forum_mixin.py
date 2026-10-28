@@ -9,6 +9,7 @@ from typing import Any
 import reflex as rx
 from reflex.event import event
 
+from laim_web.display_format import format_display_datetime
 from laim_web.dynamic_import import load_module_from_path
 
 EventHandlerReturn = Any
@@ -54,6 +55,19 @@ def forum_background_event(func):
     """Decorador para eventos background del foro (polling)."""
     FORUM_EVENT_HANDLER_NAMES.append(func.__name__)
     return rx.event(background=True)(func)
+
+
+def _with_display_dates(items: Any, *fields: str) -> list[dict[str, Any]]:
+    """Copia filas de la API con sus fechas ya en formato de pantalla."""
+    rows: list[dict[str, Any]] = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        row = dict(item)
+        for field in fields:
+            row[field] = format_display_datetime(row.get(field))
+        rows.append(row)
+    return rows
 
 
 def forum_service_is_active(health: dict) -> bool:
@@ -842,7 +856,7 @@ class LaimForumMixin(rx.State, mixin=True):
         access, session = self._forum_auth_tokens()
         result = laim_forum_admin_list_bans(access, session)
         if result.get("success"):
-            self.forum_mod_bans = result.get("items", [])
+            self.forum_mod_bans = _with_display_dates(result.get("items", []), "expires_at")
         else:
             self.forum_mod_bans = []
             self.forum_admin_message = result.get(
@@ -1040,7 +1054,7 @@ class LaimForumMixin(rx.State, mixin=True):
                 continue
             rows.append(
                 {
-                    "created_at": str(item.get("created_at") or "")[:19],
+                    "created_at": format_display_datetime(item.get("created_at")),
                     "category_name": str(item.get("category_name") or ""),
                     "subcategory_name": str(item.get("subcategory_name") or item.get("subcategory_id") or ""),
                     "event_type": str(item.get("event_type") or ""),
@@ -1229,7 +1243,12 @@ class LaimForumMixin(rx.State, mixin=True):
             for item in items:
                 row = dict(item)
                 row.setdefault("respuestas_count", row.get("posts_count", 0))
-                row.setdefault("actualizado", row.get("updated_at", row.get("creado", "")))
+                row.setdefault(
+                    "actualizado",
+                    format_display_datetime(
+                        row.get("updated_at") or row.get("created_at") or row.get("creado")
+                    ),
+                )
                 normalized.append(row)
             self.forum_threads = normalized
             if open_first and self.forum_active_thread_id <= 0:
@@ -2782,7 +2801,7 @@ class LaimForumMixin(rx.State, mixin=True):
             self.forum_selected_subcategory_id, access, session
         )
         if result.get("success"):
-            self.forum_mod_logs = result.get("items", [])
+            self.forum_mod_logs = _with_display_dates(result.get("items", []), "created_at")
         else:
             self._forum_set_error(result.get("error", "No se pudieron cargar logs."))
 

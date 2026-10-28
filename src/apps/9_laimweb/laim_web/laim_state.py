@@ -13,6 +13,7 @@ from typing import Any
 import reflex as rx
 from reflex.event import event
 
+from laim_web.display_format import DEFAULT_EDITION, edition_label, format_display_datetime
 from laim_web.laim_config_mixin import LaimConfigMixin
 from laim_web.laim_forum_mixin import LaimForumMixin
 from laim_web.shared_state import LaimSharedSessionState
@@ -1405,8 +1406,11 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
 
     @rx.var
     def ticket_edition_label(self) -> str:
-        """Edición mostrada en el alta (snapshot community_edition en v1)."""
-        return "community edition"
+        """Edición mostrada en el alta (snapshot community_edition en v1).
+
+        Misma etiqueta que el detalle del ticket (display_format.edition_label).
+        """
+        return edition_label(DEFAULT_EDITION)
 
     @event
     def set_ticket_subject(self, value: str) -> None:
@@ -1459,7 +1463,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
                         "id": int(raw.get("id") or 0),
                         "subject": str(raw.get("subject") or ""),
                         "estado_nombre": str(raw.get("estado_nombre") or raw.get("estado_clave") or ""),
-                        "opened_at": str(raw.get("opened_at") or ""),
+                        "opened_at": format_display_datetime(raw.get("opened_at")),
                     }
                 )
             self.ticket_items = items
@@ -1510,7 +1514,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
             self.ticket_detail_id = int(ticket.get("id") or 0)
             self.ticket_detail_subject = str(ticket.get("subject") or "")
             self.ticket_detail_estado = str(ticket.get("estado_nombre") or ticket.get("estado_clave") or "")
-            self.ticket_detail_edition = str(ticket.get("edition") or "community_edition")
+            self.ticket_detail_edition = edition_label(ticket.get("edition"))
             self.ticket_detail_readonly = bool(ticket.get("readonly"))
             self.ticket_reply_body = ""
             if self.ticket_notif_ticket_id == int(ticket.get("id") or 0):
@@ -1523,7 +1527,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
                         "actor_name": public_ticket_actor(
                             str(raw.get("actor_name") or raw.get("autor") or "")
                         ),
-                        "created_at": str(raw.get("created_at") or ""),
+                        "created_at": format_display_datetime(raw.get("created_at")),
                         "cuerpo": str(raw.get("cuerpo") or ""),
                     }
                 )
