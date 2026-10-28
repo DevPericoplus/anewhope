@@ -193,12 +193,17 @@ FORUM_READABLE_MARKDOWN_COMPONENT_MAP = {
         style={"textShadow": "none"},
     ),
     "p": lambda text: _readable_paragraph(text),
-    "li": lambda text: rx.text(
-        text,
-        color=READABLE_COLORS["text"],
-        font_size="1.02em",
-        line_height="1.7",
-        style={"textShadow": "none"},
+    # <li> y <blockquote> pueden contener bloques (<p>, <ul>, <pre>): se
+    # pintan como <li>/<div>, nunca como <p> (rx.text), para que el DOM sea
+    # válido y React no avise de «<p> cannot contain a nested …».
+    "li": lambda text: rx.list_item(
+        rx.box(
+            text,
+            color=READABLE_COLORS["text"],
+            font_size="1.02em",
+            line_height="1.7",
+            style={"textShadow": "none"},
+        ),
     ),
     "code": lambda text: rx.code(
         text,
@@ -226,7 +231,7 @@ FORUM_READABLE_MARKDOWN_COMPONENT_MAP = {
         style={"textShadow": "none"},
     ),
     "blockquote": lambda text: rx.box(
-        rx.text(
+        rx.box(
             text,
             color=READABLE_COLORS["muted"],
             font_style="italic",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from laim_web.help_manuals import HELP_MANUAL_MENU_FILES
@@ -120,3 +121,64 @@ def load_static_page_markdown(menu: str) -> str:
         )
 
     return file_path.read_text(encoding="utf-8")
+
+
+# rx.markdown monta rehype-raw: un marcador como «<herramienta>» o «<nombre>»
+# fuera de código se interpreta como etiqueta HTML desconocida y desaparece
+# («¿qué es ?»). Las réplicas de los manuales deben seguir siendo idénticas al
+# markdown de laim, así que el escape se hace al pintar, no en los ficheros.
+_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+_CODE_SPAN_RE = re.compile(r"(`+)(.+?)\1")
+_PLACEHOLDER_RE = re.compile(r"<(/?)([^\W\d][\w-]*)>")
+_HTML_TAGS = frozenset(
+    {
+        "a", "abbr", "b", "blockquote", "br", "code", "dd", "del", "details",
+        "div", "dl", "dt", "em", "figcaption", "figure", "h1", "h2", "h3",
+        "h4", "h5", "h6", "hr", "i", "img", "ins", "kbd", "li", "mark", "ol",
+        "p", "picture", "pre", "s", "samp", "small", "source", "span",
+        "strong", "sub", "summary", "sup", "table", "tbody", "td", "tfoot",
+        "th", "thead", "tr", "u", "ul", "var", "video",
+    }
+)
+
+
+def _escape_placeholders_in_text(text: str) -> str:
+    def _replace(match: re.Match[str]) -> str:
+        if match.group(2).lower() in _HTML_TAGS:
+            return match.group(0)
+        return f"&lt;{match.group(1)}{match.group(2)}&gt;"
+
+    return _PLACEHOLDER_RE.sub(_replace, text)
+
+
+def _escape_placeholders_in_line(line: str) -> str:
+    parts: list[str] = []
+    pos = 0
+    for span in _CODE_SPAN_RE.finditer(line):
+        parts.append(_escape_placeholders_in_text(line[pos : span.start()]))
+        parts.append(span.group(0))
+        pos = span.end()
+    parts.append(_escape_placeholders_in_text(line[pos:]))
+    return "".join(parts)
+
+
+def escape_markdown_placeholders(markdown: str) -> str:
+    """Escapa marcadores ``<palabra>`` fuera de código para que se vean.
+
+    Respeta bloques de código cercados, código en línea y etiquetas HTML
+    reales (``<br>``, ``<details>``…).
+    """
+    lines: list[str] = []
+    in_fence = False
+    for line in markdown.split("\n"):
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            lines.append(line)
+            continue
+        lines.append(line if in_fence else _escape_placeholders_in_line(line))
+    return "\n".join(lines)
+
+
+def load_static_page_for_render(menu: str) -> str:
+    """Markdown de la página listo para rx.markdown (marcadores escapados)."""
+    return escape_markdown_placeholders(load_static_page_markdown(menu))

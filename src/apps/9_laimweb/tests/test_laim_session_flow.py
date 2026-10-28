@@ -133,7 +133,7 @@ def test_help_manuals_open_from_page_actions() -> None:
     assert "HELP_MANUALS" in actions_src
     assert "item.action_key" in actions_src
     assert "BACK_TO_MANUALES_ACTION" in actions_src
-    assert "load_static_page_markdown(item.menu)" in index_src
+    assert "load_static_page_for_render(item.menu)" in index_src
 
 
 def test_installers_page_lists_packages_not_patches() -> None:

@@ -890,14 +890,14 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
     def _load_static_page(self, menu: str) -> None:
         """Carga markdown de static_pages/ para menús públicos."""
         from laim_web.help_manuals import HELP_MANUAL_PAGE_MENUS
-        from laim_web.static_pages_loader import STATIC_PAGE_MENUS, load_static_page_markdown
+        from laim_web.static_pages_loader import STATIC_PAGE_MENUS, load_static_page_for_render
 
         if menu in HELP_MANUAL_PAGE_MENUS:
             # El visor lee el fichero al montar; no meter 300 KB en Redis.
             self.static_page_content = ""
             return
         if menu in STATIC_PAGE_MENUS:
-            self.static_page_content = load_static_page_markdown(menu)
+            self.static_page_content = load_static_page_for_render(menu)
             if menu == "inicio":
                 self._hydrate_inicio_sections()
 

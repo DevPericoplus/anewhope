@@ -168,8 +168,11 @@ def get_markdown_component_map(
             line_height="1.6",
             width="100%",
         ),
+        # <li> y <blockquote> pueden contener bloques (<p>, <ul>, <pre>):
+        # su envoltorio es un <div> (rx.box), nunca un <p> (rx.text), para
+        # que React no avise de «<p> cannot contain a nested <p>/<ul>/<pre>».
         "li": lambda text: rx.list_item(
-            rx.text(
+            rx.box(
                 text,
                 color=colors["muted"],
                 font_size=body_font_size,
@@ -185,7 +188,7 @@ def get_markdown_component_map(
         ),
         "em": lambda text: rx.text(text, color=colors["muted"], font_style="italic", as_="span"),
         "blockquote": lambda text: rx.box(
-            rx.text(text, color=colors["muted"], font_style="italic", line_height="1.6"),
+            rx.box(text, color=colors["muted"], font_style="italic", line_height="1.6"),
             border_left=f"3px solid {colors['border']}",
             padding_left="1em",
             margin_y="1em",

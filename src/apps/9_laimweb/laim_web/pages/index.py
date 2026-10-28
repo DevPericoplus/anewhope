@@ -28,7 +28,7 @@ from laim_web.components.laim_logo import laim_logo_sidebar
 from laim_web.components.portal_shell import forum_nav_section, sidebar_config_menu
 from laim_web.help_manuals import HELP_MANUALS
 from laim_web.laim_state import LaimWebState
-from laim_web.static_pages_loader import load_static_page_markdown
+from laim_web.static_pages_loader import load_static_page_for_render
 
 from laim_web.components.crt_theme import (
     COLORS,
@@ -309,7 +309,7 @@ def content_static_page() -> rx.Component:
             (
                 "config_general",
                 rx.vstack(
-                    crt_markdown_viewer(load_static_page_markdown("config_general")),
+                    crt_markdown_viewer(load_static_page_for_render("config_general")),
                     config_general_panel(),
                     spacing="3",
                     width="100%",
@@ -325,7 +325,7 @@ def content_static_page() -> rx.Component:
                 ),
             ),
             *(
-                (item.menu, crt_markdown_viewer(load_static_page_markdown(item.menu)))
+                (item.menu, crt_markdown_viewer(load_static_page_for_render(item.menu)))
                 for item in HELP_MANUALS
             ),
             crt_markdown_viewer(LaimWebState.static_page_content),
