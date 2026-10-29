@@ -73,6 +73,35 @@ def _with_display_dates(items: Any, *fields: str) -> list[dict[str, Any]]:
 FORUM_INACTIVE_SUFFIX = " (inactiva)"
 
 
+def forum_same_category(parent: str, active: str) -> bool:
+    """True si no hay categoría activa o los dos ids son el mismo.
+
+    MariaDB compara ``categoria_id`` sin distinguir mayúsculas. El
+    selector tiene que hacer lo mismo: la semilla guarda ``general`` y
+    en silicon el id de esa categoría quedó ``General``, así que
+    Presentaciones y Debate salían en las estadísticas y el desplegable
+    las descartaba.
+    """
+    if not active:
+        return True
+    return parent.casefold() == active.casefold()
+
+
+def forum_subcategories_for_category(subcategories: Any, active: str) -> list[dict[str, Any]]:
+    """Subcategorías de la categoría activa, con el mismo criterio que SQL."""
+    matched: list[dict[str, Any]] = []
+    for sub in subcategories or []:
+        if not isinstance(sub, dict):
+            continue
+        sub_id = str(sub.get("id", ""))
+        if not sub_id:
+            continue
+        parent = str(sub.get("categoria_id", sub.get("category_id", "")))
+        if forum_same_category(parent, active):
+            matched.append(sub)
+    return matched
+
+
 def forum_stats_inactive_note(rows: list[dict[str, Any]]) -> str:
     """«(N inactivas)» bajo el total de subcategorías; vacío si no hay ninguna."""
     inactive = sum(1 for row in rows if not row.get("activa", True))
@@ -548,7 +577,9 @@ class LaimForumMixin(rx.State, mixin=True):
         labels: list[str] = []
         for item in self.forum_admin_all_subcategories:
             parent = str(item.get("categoria_id", item.get("category_id", "")))
-            if self.forum_admin_mod_category_id and parent != self.forum_admin_mod_category_id:
+            if self.forum_admin_mod_category_id and not forum_same_category(
+                parent, self.forum_admin_mod_category_id
+            ):
                 continue
             name = str(item.get("nombre") or item.get("id") or "")
             if name:
@@ -582,7 +613,7 @@ class LaimForumMixin(rx.State, mixin=True):
                     break
         for item in self.forum_admin_all_subcategories:
             parent = str(item.get("categoria_id", item.get("category_id", "")))
-            if category_id and parent != category_id:
+            if category_id and not forum_same_category(parent, category_id):
                 continue
             name = str(item.get("nombre") or item.get("id") or "")
             if name and name not in labels:
@@ -600,16 +631,12 @@ class LaimForumMixin(rx.State, mixin=True):
     @rx.var
     def forum_subcategory_ids(self) -> list[str]:
         """IDs de subcategorías visibles para la categoría activa."""
-        active = self.forum_selected_category_id
-        items: list[str] = []
-        for sub in self.forum_subcategories:
-            sub_id = str(sub.get("id", ""))
-            if not sub_id:
-                continue
-            parent = str(sub.get("categoria_id", sub.get("category_id", "")))
-            if not active or parent == active:
-                items.append(sub_id)
-        return items
+        return [
+            str(sub.get("id", ""))
+            for sub in forum_subcategories_for_category(
+                self.forum_subcategories, self.forum_selected_category_id
+            )
+        ]
 
     @rx.var
     def forum_category_select_labels(self) -> list[str]:
@@ -623,16 +650,12 @@ class LaimForumMixin(rx.State, mixin=True):
     @rx.var
     def forum_subcategory_select_labels(self) -> list[str]:
         """Etiquetas legibles para el desplegable de subcategorías."""
-        active = self.forum_selected_category_id
-        labels: list[str] = []
-        for sub in self.forum_subcategories:
-            sub_id = str(sub.get("id", ""))
-            if not sub_id:
-                continue
-            parent = str(sub.get("categoria_id", sub.get("category_id", "")))
-            if not active or parent == active:
-                labels.append(str(sub.get("nombre") or sub_id))
-        return labels
+        return [
+            str(sub.get("nombre") or sub.get("id", ""))
+            for sub in forum_subcategories_for_category(
+                self.forum_subcategories, self.forum_selected_category_id
+            )
+        ]
 
     @rx.var
     def forum_selected_category_label(self) -> str:
@@ -906,7 +929,7 @@ class LaimForumMixin(rx.State, mixin=True):
                 continue
             if parent:
                 item_parent = str(item.get("categoria_id", item.get("category_id", "")))
-                if item_parent != parent:
+                if not forum_same_category(item_parent, parent):
                     continue
             return str(item.get("id") or "")
         return ""
@@ -1251,7 +1274,7 @@ class LaimForumMixin(rx.State, mixin=True):
             parent = str(
                 subcategory.get("categoria_id", subcategory.get("category_id", ""))
             )
-            if active and parent != active:
+            if active and not forum_same_category(parent, active):
                 continue
             self._forum_apply_subcategory(subcategory_id)
             return

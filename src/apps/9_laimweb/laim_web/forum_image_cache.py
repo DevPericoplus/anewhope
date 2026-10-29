@@ -9,11 +9,18 @@ Flujo:
   1. Al abrir un hilo, ``prewarm_images()`` descarga imágenes al caché
      usando los tokens de sesión del usuario (servidor → daemon foro).
   2. El navegador solicita ``/api/forum-img/{id}`` (sin auth).
-  3. El proxy responde desde el caché en memoria.
+  3. El proxy responde desde el caché.
+
+El caché vive en disco, no solo en la memoria del proceso. ``reflex run
+--env prod`` arranca varios workers de Granian y el daemon exige sesión:
+si la precarga cae en un worker y el GET del navegador en otro, la
+memoria de ese otro está vacía y la descarga sin token responde 401.
+En silicon (1.0.47) eso se vio como ``/api/forum-img/{id}`` 404.
 """
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from collections import OrderedDict
@@ -35,6 +42,13 @@ _MAX_CACHED_IMAGES = 200
 _CACHE_TTL_SECONDS = 3600
 
 
+def default_cache_dir() -> Path:
+    """Directorio compartido por todos los workers del mismo contenedor."""
+    return Path(
+        os.environ.get("LAIM_FORUM_IMAGE_CACHE_DIR", "/tmp/laim_forum_image_cache")
+    )
+
+
 class _CachedImage:
     __slots__ = ("content", "mime_type", "fetched_at")
 
@@ -45,42 +59,94 @@ class _CachedImage:
 
 
 class ForumImageCache:
-    """Caché LRU thread-safe para imágenes del foro."""
+    """Caché LRU de imágenes del foro, en memoria y en disco.
 
-    def __init__(self, max_items: int = _MAX_CACHED_IMAGES) -> None:
+    La memoria evita releer el fichero en el mismo worker. El disco es
+    lo que ven los demás workers del mismo contenedor.
+    """
+
+    def __init__(
+        self,
+        max_items: int = _MAX_CACHED_IMAGES,
+        cache_dir: Path | None = None,
+    ) -> None:
         self._max_items = max_items
+        self._dir = cache_dir if cache_dir is not None else default_cache_dir()
         self._cache: OrderedDict[int, _CachedImage] = OrderedDict()
         self._lock = threading.Lock()
+
+    def _paths(self, image_id: int) -> tuple[Path, Path]:
+        base = self._dir / str(int(image_id))
+        return Path(str(base) + ".bin"), Path(str(base) + ".mime")
+
+    def _remember(self, image_id: int, entry: _CachedImage) -> _CachedImage:
+        self._cache[image_id] = entry
+        self._cache.move_to_end(image_id)
+        while len(self._cache) > self._max_items:
+            self._cache.popitem(last=False)
+        return entry
+
+    def _read_disk(self, image_id: int) -> _CachedImage | None:
+        bin_path, mime_path = self._paths(image_id)
+        if not bin_path.is_file() or not mime_path.is_file():
+            return None
+        age = time.time() - bin_path.stat().st_mtime
+        if age > _CACHE_TTL_SECONDS:
+            bin_path.unlink(missing_ok=True)
+            mime_path.unlink(missing_ok=True)
+            return None
+        content = bin_path.read_bytes()
+        if not content:
+            return None
+        mime = mime_path.read_text(encoding="utf-8").strip() or "application/octet-stream"
+        return _CachedImage(content, mime)
+
+    def _write_disk(self, image_id: int, content: bytes, mime_type: str) -> None:
+        self._dir.mkdir(parents=True, exist_ok=True)
+        bin_path, mime_path = self._paths(image_id)
+        tmp_bin = Path(str(bin_path) + ".tmp")
+        tmp_mime = Path(str(mime_path) + ".tmp")
+        tmp_mime.write_text(mime_type, encoding="utf-8")
+        tmp_bin.write_bytes(content)
+        os.replace(tmp_mime, mime_path)
+        os.replace(tmp_bin, bin_path)
+        self._prune_disk()
+
+    def _prune_disk(self) -> None:
+        files = sorted(
+            self._dir.glob("*.bin"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        for stale in files[self._max_items :]:
+            stale.unlink(missing_ok=True)
+            Path(str(stale).removesuffix(".bin") + ".mime").unlink(missing_ok=True)
 
     def get(self, image_id: int) -> _CachedImage | None:
         with self._lock:
             entry = self._cache.get(image_id)
+            if entry is not None:
+                age = time.monotonic() - entry.fetched_at
+                if age > _CACHE_TTL_SECONDS:
+                    self._cache.pop(image_id, None)
+                    entry = None
+                else:
+                    self._cache.move_to_end(image_id)
+                    return entry
+            entry = self._read_disk(image_id)
             if entry is None:
                 return None
-            age = time.monotonic() - entry.fetched_at
-            if age > _CACHE_TTL_SECONDS:
-                self._cache.pop(image_id, None)
-                return None
-            self._cache.move_to_end(image_id)
-            return entry
+            return self._remember(image_id, entry)
 
     def put(self, image_id: int, content: bytes, mime_type: str) -> None:
+        if not content:
+            return
         with self._lock:
-            self._cache[image_id] = _CachedImage(content, mime_type)
-            self._cache.move_to_end(image_id)
-            while len(self._cache) > self._max_items:
-                self._cache.popitem(last=False)
+            self._remember(image_id, _CachedImage(content, mime_type))
+            self._write_disk(image_id, content, mime_type)
 
     def has(self, image_id: int) -> bool:
-        with self._lock:
-            entry = self._cache.get(image_id)
-            if entry is None:
-                return False
-            age = time.monotonic() - entry.fetched_at
-            if age > _CACHE_TTL_SECONDS:
-                self._cache.pop(image_id, None)
-                return False
-            return True
+        return self.get(image_id) is not None
 
 
 _global_cache = ForumImageCache()
