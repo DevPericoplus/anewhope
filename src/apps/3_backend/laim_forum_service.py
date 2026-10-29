@@ -18,7 +18,7 @@ _logger = logging.getLogger("LaimForumService")
 
 
 def _load_module(relative_path: str, module_name: str) -> Any:
-    """Carga m?dulo desde ruta relativa al repo."""
+    """Carga módulo desde ruta relativa al repo."""
     module_path = Path(__file__).resolve().parents[3] / relative_path
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     if spec is None or spec.loader is None:
@@ -87,7 +87,7 @@ LaimForumModeratorAssignDto = _dtos.LaimForumModeratorAssignDto
 
 
 class LaimForumService:
-    """Orquesta l?gica de negocio del foro LAIM."""
+    """Orquesta lógica de negocio del foro LAIM."""
 
     FORUM_ADMIN_IDENTITY_TYPES = frozenset({1, 2})
 
@@ -176,29 +176,29 @@ class LaimForumService:
 
     @staticmethod
     def is_forum_active() -> bool:
-        """Indica si el foro est? habilitado en el entorno."""
+        """Indica si el foro está habilitado en el entorno."""
         raw = str(get_env_value("laim_forum_active", "true")).strip().lower()
         return raw in {"1", "true", "yes", "on"}
 
     @staticmethod
     def max_attachments_per_message() -> int:
-        """M?ximo de adjuntos por mensaje."""
+        """Máximo de adjuntos por mensaje."""
         return int(get_env_value("laim_forum_max_attachments_per_message", "3"))
 
     @staticmethod
     def max_url_strikes() -> int:
-        """Strikes antes de ban autom?tico por URL."""
+        """Strikes antes de ban automático por URL."""
         return int(get_env_value("laim_forum_max_strikes_url", "3"))
 
     def _forum_disabled_error(self) -> dict[str, Any]:
-        return {"success": False, "error": "El foro no est? activo en este entorno."}
+        return {"success": False, "error": "El foro no está activo en este entorno."}
 
     def resolve_required_session(
         self,
         authorization: str | None,
         session_token: str | None,
     ) -> tuple[dict[str, Any] | None, str | None]:
-        """Valida sesi?n LAIM obligatoria para operaciones del foro."""
+        """Valida sesión LAIM obligatoria para operaciones del foro."""
         if not session_token or not authorization or not authorization.startswith("Bearer "):
             return None, "Sesión requerida. Inicie sesión para acceder al foro."
         access_token = authorization.removeprefix("Bearer ").strip()
@@ -229,7 +229,7 @@ class LaimForumService:
     def can_moderate(
         self, user_id: int, identity_type_id: int, subcategory_id: str
     ) -> bool:
-        """Admin global o moderador de la subcategor?a."""
+        """Admin global o moderador de la subcategoría."""
         if self.is_forum_admin(identity_type_id):
             return True
         return self._repository.is_moderator(user_id, subcategory_id)
@@ -465,7 +465,7 @@ class LaimForumService:
             return None
         max_count = self.max_attachments_per_message()
         if len(image_ids) > max_count:
-            return f"M?ximo {max_count} im?genes por mensaje."
+            return f"Máximo {max_count} imágenes por mensaje."
         seen: set[int] = set()
         for image_id in image_ids:
             if image_id in seen:
@@ -475,17 +475,17 @@ class LaimForumService:
             if meta is None:
                 return f"Imagen {image_id} no encontrada."
             if str(meta.get("image_kind")) not in allowed_kinds:
-                return "Tipo de imagen no v?lido para esta operaci?n."
+                return "Tipo de imagen no válido para esta operación."
             uploader = meta.get("uploaded_by_user_id")
             if uploader is not None and int(uploader) != user_id:
                 if not self.is_forum_admin(identity_type_id):
-                    return "No puede usar im?genes subidas por otro usuario."
+                    return "No puede usar imágenes subidas por otro usuario."
         return None
 
     def _check_ban(self, user_id: int, subcategory_id: str) -> str | None:
         """Comprueba baneo activo."""
         if self._repository.is_user_banned(user_id, subcategory_id):
-            return "Est? baneado en esta subcategor?a."
+            return "Está baneado en esta subcategoría."
         return None
 
     # ------------------------------------------------------------------ health
@@ -508,7 +508,7 @@ class LaimForumService:
         stats = self._repository.get_admin_stats()
         return {"success": True, "stats": stats}
 
-    # ------------------------------------------------------------------ im?genes
+    # ------------------------------------------------------------------ imágenes
     def upload_image(
         self,
         payload: dict[str, Any],
@@ -520,12 +520,12 @@ class LaimForumService:
         try:
             dto = LaimForumImageUploadDto.model_validate(payload)
         except Exception as exc:
-            return {"success": False, "error": f"Datos inv?lidos: {exc}"}
+            return {"success": False, "error": f"Datos inválidos: {exc}"}
 
         if dto.image_kind == "avatar_catalog" and not self.is_forum_admin(
             session["identity_type_id"]
         ):
-            return {"success": False, "error": "Sin permisos para cat?logo de avatares."}
+            return {"success": False, "error": "Sin permisos para catálogo de avatares."}
 
         stored, error = self._image_storage.save_image(
             image_kind=dto.image_kind,
@@ -585,7 +585,7 @@ class LaimForumService:
         try:
             dto = LaimForumUserProfileUpdateDto.model_validate(payload)
         except Exception as exc:
-            return {"success": False, "error": f"Datos inv?lidos: {exc}"}
+            return {"success": False, "error": f"Datos inválidos: {exc}"}
 
         if dto.avatar_image_id is not None and dto.avatar_image_id > 0:
             meta = self._repository.get_image_by_id(dto.avatar_image_id)
@@ -593,7 +593,7 @@ class LaimForumService:
                 return {"success": False, "error": "Avatar no encontrado."}
             kind = str(meta.get("image_kind"))
             if kind not in {"avatar_catalog", "avatar_user"}:
-                return {"success": False, "error": "Imagen no v?lida como avatar."}
+                return {"success": False, "error": "Imagen no válida como avatar."}
             if kind == "avatar_user":
                 uploader = meta.get("uploaded_by_user_id")
                 if uploader is not None and int(uploader) != session["user_id"]:
@@ -609,7 +609,7 @@ class LaimForumService:
         )
         return {"success": True, "profile": profile}
 
-    # ----------------------------------------------------------- cat?logo lectura
+    # ----------------------------------------------------------- catálogo lectura
     def list_categories(self, include_inactive: bool = False) -> dict[str, Any]:
         """Lista categorías. El catálogo público omite las inactivas."""
         if not self.is_forum_active():
@@ -641,18 +641,18 @@ class LaimForumService:
         }
 
     def list_avatar_catalog(self) -> dict[str, Any]:
-        """Cat?logo de avatares."""
+        """Catálogo de avatares."""
         if not self.is_forum_active():
             return self._forum_disabled_error()
         return {"success": True, "items": self._repository.list_avatar_catalog()}
 
-    # ----------------------------------------------------------- cat?logo admin
+    # ----------------------------------------------------------- catálogo admin
     def upsert_category(
         self, payload: dict[str, Any], session: dict[str, Any]
     ) -> dict[str, Any]:
-        """Crea o actualiza categor?a (admin)."""
+        """Crea o actualiza categoría (admin)."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         dto = LaimForumCategoryUpsertDto.model_validate(payload)
         self._repository.upsert_category(
             category_id=dto.id,
@@ -664,18 +664,18 @@ class LaimForumService:
         return {"success": True}
 
     def delete_category(self, category_id: str, session: dict[str, Any]) -> dict[str, Any]:
-        """Elimina categor?a (admin)."""
+        """Elimina categoría (admin)."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         deleted = self._repository.delete_category(category_id)
         return {"success": deleted}
 
     def upsert_subcategory(
         self, payload: dict[str, Any], session: dict[str, Any]
     ) -> dict[str, Any]:
-        """Crea o actualiza subcategor?a (admin)."""
+        """Crea o actualiza subcategoría (admin)."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         dto = LaimForumSubcategoryUpsertDto.model_validate(payload)
         self._repository.upsert_subcategory(
             subcategory_id=dto.id,
@@ -692,9 +692,9 @@ class LaimForumService:
     def delete_subcategory(
         self, subcategory_id: str, session: dict[str, Any]
     ) -> dict[str, Any]:
-        """Elimina subcategor?a (admin)."""
+        """Elimina subcategoría (admin)."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         return {"success": self._repository.delete_subcategory(subcategory_id)}
 
     def upsert_prefix(
@@ -702,7 +702,7 @@ class LaimForumService:
     ) -> dict[str, Any]:
         """Crea o actualiza prefijo (admin)."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         dto = LaimForumPrefixUpsertDto.model_validate(payload)
         self._repository.upsert_prefix(
             prefix_id=dto.id,
@@ -715,19 +715,19 @@ class LaimForumService:
     def delete_prefix(self, prefix_id: str, session: dict[str, Any]) -> dict[str, Any]:
         """Elimina prefijo (admin)."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         return {"success": self._repository.delete_prefix(prefix_id)}
 
     def add_avatar_catalog_item(
         self, payload: dict[str, Any], session: dict[str, Any]
     ) -> dict[str, Any]:
-        """A?ade avatar al cat?logo (admin)."""
+        """Añade avatar al catálogo (admin)."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         dto = LaimForumAvatarCatalogCreateDto.model_validate(payload)
         meta = self._repository.get_image_by_id(dto.image_id)
         if meta is None or str(meta.get("image_kind")) != "avatar_catalog":
-            return {"success": False, "error": "Imagen de cat?logo no v?lida."}
+            return {"success": False, "error": "Imagen de catálogo no válida."}
         item_id = self._repository.insert_avatar_catalog_item(
             image_id=dto.image_id,
             label=dto.label,
@@ -738,7 +738,7 @@ class LaimForumService:
 
     # ------------------------------------------------------------------ hilos
     def list_threads(self, subcategory_id: str) -> dict[str, Any]:
-        """Lista hilos de una subcategor?a."""
+        """Lista hilos de una subcategoría."""
         if not self.is_forum_active():
             return self._forum_disabled_error()
         return {
@@ -771,7 +771,7 @@ class LaimForumService:
         try:
             dto = LaimForumThreadCreateDto.model_validate(payload)
         except Exception as exc:
-            return {"success": False, "error": f"Datos inv?lidos: {exc}"}
+            return {"success": False, "error": f"Datos inválidos: {exc}"}
 
         ban_error = self._check_ban(session["user_id"], dto.subcategory_id)
         if ban_error:
@@ -834,7 +834,7 @@ class LaimForumService:
         try:
             dto = LaimForumThreadUpdateDto.model_validate(payload)
         except Exception as exc:
-            return {"success": False, "error": f"Datos inv?lidos: {exc}"}
+            return {"success": False, "error": f"Datos inválidos: {exc}"}
 
         if dto.cuerpo_md is not None:
             content_error = self._validate_user_content(
@@ -933,7 +933,7 @@ class LaimForumService:
         if thread is None:
             return {"success": False, "error": "Hilo no encontrado."}
         if thread.get("cerrado"):
-            return {"success": False, "error": "El hilo est? cerrado."}
+            return {"success": False, "error": "El hilo está cerrado."}
 
         subcategory_id = str(thread["subcategory_id"])
         ban_error = self._check_ban(session["user_id"], subcategory_id)
@@ -943,7 +943,7 @@ class LaimForumService:
         try:
             dto = LaimForumPostCreateDto.model_validate(payload)
         except Exception as exc:
-            return {"success": False, "error": f"Datos inv?lidos: {exc}"}
+            return {"success": False, "error": f"Datos inválidos: {exc}"}
 
         content_error = self._validate_user_content(
             dto.cuerpo_md,
@@ -981,7 +981,7 @@ class LaimForumService:
                     user_id=author_id,
                     tipo="reply",
                     titulo="Nueva respuesta en tu hilo",
-                    mensaje=f"{session['user_name']} respondi? en ?{thread['titulo']}?",
+                    mensaje=f"{session['user_name']} respondió en «{thread['titulo']}»",
                     subcategory_id=subcategory_id,
                     thread_id=thread_id,
                     post_id=post_id,
@@ -1100,7 +1100,7 @@ class LaimForumService:
     def rate_post(
         self, post_id: int, payload: dict[str, Any], session: dict[str, Any]
     ) -> dict[str, Any]:
-        """Valoraci?n 1-5 de una respuesta."""
+        """Valoración 1-5 de una respuesta."""
         if not self.is_forum_active():
             return self._forum_disabled_error()
         post = self._repository.get_post(post_id)
@@ -1135,19 +1135,19 @@ class LaimForumService:
         )
         return {"success": True, "updated": count}
 
-    # ----------------------------------------------------------- admin moderaci?n
+    # ----------------------------------------------------------- admin moderación
     def get_admin_settings(self, session: dict[str, Any]) -> dict[str, Any]:
-        """Configuraci?n de moderaci?n."""
+        """Configuración de moderación."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         return {"success": True, "settings": self._repository.get_settings()}
 
     def update_admin_settings(
         self, payload: dict[str, Any], session: dict[str, Any]
     ) -> dict[str, Any]:
-        """Actualiza configuraci?n de moderaci?n."""
+        """Actualiza configuración de moderación."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         dto = LaimForumSettingsDto.model_validate(payload)
         settings = self._repository.update_settings(
             anunciar_ban_en_log=dto.anunciar_ban_en_log,
@@ -1159,7 +1159,7 @@ class LaimForumService:
     def list_word_rules_admin(self, session: dict[str, Any]) -> dict[str, Any]:
         """Lista reglas de palabras (admin)."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         return {
             "success": True,
             "items": self._repository.list_word_rules(active_only=False),
@@ -1170,7 +1170,7 @@ class LaimForumService:
     ) -> dict[str, Any]:
         """Crea o actualiza regla de palabra."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         dto = LaimForumWordRuleUpsertDto.model_validate(payload)
         new_id = self._repository.upsert_word_rule(
             rule_id=rule_id,
@@ -1184,13 +1184,13 @@ class LaimForumService:
     def delete_word_rule(self, rule_id: int, session: dict[str, Any]) -> dict[str, Any]:
         """Elimina regla de palabra."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         return {"success": self._repository.delete_word_rule(rule_id)}
 
     def list_allowed_urls_admin(self, session: dict[str, Any]) -> dict[str, Any]:
         """Lista dominios permitidos."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         return {
             "success": True,
             "items": self._repository.list_allowed_urls(active_only=False),
@@ -1201,7 +1201,7 @@ class LaimForumService:
     ) -> dict[str, Any]:
         """Crea o actualiza dominio permitido."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         dto = LaimForumAllowedUrlUpsertDto.model_validate(payload)
         new_id = self._repository.upsert_allowed_url(
             url_id=url_id,
@@ -1214,7 +1214,7 @@ class LaimForumService:
     def delete_allowed_url(self, url_id: int, session: dict[str, Any]) -> dict[str, Any]:
         """Elimina dominio permitido."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         return {"success": self._repository.delete_allowed_url(url_id)}
 
     def list_moderators_admin(
@@ -1222,7 +1222,7 @@ class LaimForumService:
     ) -> dict[str, Any]:
         """Lista moderadores."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         return {
             "success": True,
             "items": self._repository.list_moderators(
@@ -1233,9 +1233,9 @@ class LaimForumService:
     def assign_moderator(
         self, payload: dict[str, Any], session: dict[str, Any]
     ) -> dict[str, Any]:
-        """Asigna moderador a subcategor?a."""
+        """Asigna moderador a subcategoría."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         dto = LaimForumModeratorAssignDto.model_validate(payload)
         mod_id = self._repository.assign_moderator(
             user_id=dto.user_id,
@@ -1249,7 +1249,7 @@ class LaimForumService:
     ) -> dict[str, Any]:
         """Desactiva moderador."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         return {"success": self._repository.deactivate_moderator(moderator_id)}
 
     def create_ban(
@@ -1257,7 +1257,7 @@ class LaimForumService:
         payload: dict[str, Any],
         session: dict[str, Any],
     ) -> dict[str, Any]:
-        """Banea usuario en subcategor?a (moderador/admin)."""
+        """Banea usuario en subcategoría (moderador/admin)."""
         subcategory_id = str(payload.get("subcategory_id", "")).strip()
         user_id = int(payload.get("user_id") or 0)
         motivo = str(payload.get("motivo", "")).strip()
@@ -1266,7 +1266,7 @@ class LaimForumService:
         if not self.can_moderate(
             session["user_id"], session["identity_type_id"], subcategory_id
         ):
-            return {"success": False, "error": "Sin permisos de moderaci?n."}
+            return {"success": False, "error": "Sin permisos de moderación."}
 
         expires_raw = payload.get("expires_at")
         expires_at: datetime | None = None
@@ -1274,7 +1274,7 @@ class LaimForumService:
             try:
                 expires_at = datetime.fromisoformat(str(expires_raw))
             except ValueError:
-                return {"success": False, "error": "Fecha de expiraci?n no v?lida."}
+                return {"success": False, "error": "Fecha de expiración no válida."}
 
         ban_id = self._repository.create_ban(
             user_id=user_id,
@@ -1306,18 +1306,18 @@ class LaimForumService:
     def revoke_ban(self, ban_id: int, session: dict[str, Any]) -> dict[str, Any]:
         """Revoca baneo."""
         if not self.is_forum_admin(session["identity_type_id"]):
-            return {"success": False, "error": "Sin permisos de administraci?n."}
+            return {"success": False, "error": "Sin permisos de administración."}
         ok = self._repository.revoke_ban(ban_id, session["user_id"])
         return {"success": ok}
 
     def list_moderation_logs(
         self, subcategory_id: str, session: dict[str, Any]
     ) -> dict[str, Any]:
-        """Logs de moderaci?n de una subcategor?a."""
+        """Logs de moderación de una subcategoría."""
         if not self.can_moderate(
             session["user_id"], session["identity_type_id"], subcategory_id
         ):
-            return {"success": False, "error": "Sin permisos de moderaci?n."}
+            return {"success": False, "error": "Sin permisos de moderación."}
         return {
             "success": True,
             "items": self._repository.list_moderation_logs(subcategory_id),
