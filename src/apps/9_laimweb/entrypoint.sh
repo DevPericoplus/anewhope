@@ -49,4 +49,9 @@ echo "=========================================="
 echo "LAIM Web — backend 8010 / frontend 3110"
 echo "Foro consumido via: ${LAIM_FORUM_API_BASE_URL:-(backend)}"
 echo "=========================================="
-exec reflex run --env dev
+# Producción: --env dev sirve el React de desarrollo y la consola
+# imprime UNSAFE_componentWillMount de una librería de terceros
+# (QA silicon, 2026-10-29). --env prod sirve el build de producción
+# y ese aviso no sale. El rótulo «LAIM vX.Y.Z» sigue saliendo de
+# versions.yml horneado en la imagen.
+exec reflex run --env prod

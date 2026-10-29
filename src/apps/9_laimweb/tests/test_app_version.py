@@ -43,6 +43,12 @@ def test_footers_use_the_version_label() -> None:
         assert "rx.text(APP_VERSION_LABEL" in src, rel
 
 
+def test_entrypoint_runs_reflex_in_production() -> None:
+    src = (APP / "entrypoint.sh").read_text(encoding="utf-8")
+    assert "reflex run --env prod" in src
+    assert "reflex run --env dev" not in src
+
+
 def test_web_frontend_shows_the_global_version() -> None:
     src = (REPO_ROOT / "src/apps/5_web_frontend/web_frontend/web_frontend.py").read_text(encoding="utf-8")
     assert 'APP_VERSION = get_version("global")' in src
