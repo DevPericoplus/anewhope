@@ -49,6 +49,8 @@ config = rx.Config(
     backend_port=8006,
     api_url=env_settings.get_env_value("backoffice_api_url", "http://localhost:8006"),
     backend_host="0.0.0.0",
-    
+    # None deja el badge en True en --env prod (reflex/app.py). Es un
+    # enlace público a reflex.dev; no debe verse en ninguna página.
+    show_built_with_reflex=False,
     disable_plugins=["reflex.plugins.sitemap.SitemapPlugin"],
 )

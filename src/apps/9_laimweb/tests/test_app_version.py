@@ -43,6 +43,18 @@ def test_footers_use_the_version_label() -> None:
         assert "rx.text(APP_VERSION_LABEL" in src, rel
 
 
+def test_portals_hide_the_built_with_reflex_badge() -> None:
+    """Reflex muestra el badge en prod si el flag queda en None."""
+    configs = (
+        APP / "rxconfig.py",
+        REPO_ROOT / "src/apps/5_web_frontend/rxconfig.py",
+        REPO_ROOT / "src/apps/6_web_backoffice/rxconfig.py",
+    )
+    for path in configs:
+        src = path.read_text(encoding="utf-8")
+        assert "show_built_with_reflex=False" in src, path
+
+
 def test_entrypoint_runs_reflex_in_production() -> None:
     src = (APP / "entrypoint.sh").read_text(encoding="utf-8")
     assert "reflex run --env prod" in src

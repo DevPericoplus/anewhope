@@ -10826,6 +10826,16 @@ pip install -r src/apps/9_laimweb/requirements.txt
 
 ## 35. Sistema Visual CRT Retro-Moderno (OBLIGATORIO en portales Reflex)
 
+**Etiqueta «Built with Reflex» (prohibida).** Los tres `rxconfig.py`
+(`5_web_frontend`, `6_web_backoffice`, `9_laimweb`) deben llevar
+`show_built_with_reflex=False`. Si el flag queda en `None`, Reflex lo
+pone a `True` al compilar en producción (`reflex/app.py`) y pinta en
+todas las páginas un enlace flotante a `https://reflex.dev/`. Volvió a
+salir en la 1.0.48 porque laimweb arranca con `reflex run --env prod`.
+No ocultarlo con CSS ni quitarlo solo del HTML estático: el badge lo
+inyecta el compilador. `tests/test_app_version.py` falla si falta el
+flag en cualquiera de los tres.
+
 **DESCRIPCIÓN:** Los tres portales web (`5_web_frontend`, `6_web_backoffice`, `9_laimweb`) comparten
 una gramática visual CRT (scanlines, glow fósforo, Inconsolata, paneles translúcidos) con paletas
 diferenciadas por aplicación.
