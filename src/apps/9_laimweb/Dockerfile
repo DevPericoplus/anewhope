@@ -36,7 +36,12 @@ COPY . /app
 ENV PYTHONPATH=/app
 RUN cd /app/src/apps/9_laimweb \
     && reflex init --name laim_web --loglevel info \
-    && python patch_vite_config.py || true
+    && python patch_vite_config.py || true \
+    && mkdir -p .web/public/crt \
+    && cp -a assets/crt/. .web/public/crt/ \
+    && for name in favicon.ico favicon-32.png apple-touch-icon.png; do \
+         if [ -f "assets/$name" ]; then cp -a "assets/$name" ".web/public/$name"; fi; \
+       done
 
 # SEGURIDAD: En producción, eliminar archivos JSON de moks
 RUN if [ "$ENVIRONMENT" = "pro" ]; then \

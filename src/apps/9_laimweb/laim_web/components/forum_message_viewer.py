@@ -7,6 +7,8 @@ from typing import Any
 
 import reflex as rx
 
+from laim_web.components.crt_theme import markdown_link
+
 # Paleta de lectura cómoda (texto claro sobre panel oscuro neutro)
 READABLE_COLORS = {
     "text": "#f5f5f5",
@@ -222,13 +224,12 @@ FORUM_READABLE_MARKDOWN_COMPONENT_MAP = {
         wrap_long_lines=True,
         **props,
     ),
-    "a": lambda text, **props: rx.link(
+    "a": lambda text, **props: markdown_link(
         text,
-        **props,
         color=READABLE_COLORS["link"],
-        text_decoration="underline",
         _hover={"color": READABLE_COLORS["heading"]},
         style={"textShadow": "none"},
+        **props,
     ),
     "blockquote": lambda text: rx.box(
         rx.box(

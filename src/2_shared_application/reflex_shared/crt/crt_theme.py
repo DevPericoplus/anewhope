@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 import reflex as rx
 from reflex.components.markdown.markdown import MarkdownComponentMap
+from reflex.vars.base import Var
 from reflex.components.radix.themes.components.table import (
     TableCell,
     TableColumnHeaderCell,
@@ -22,7 +23,7 @@ GREEN_THEME: dict[str, str] = {
     "accent": "#7dff7d",
     "accent_strong": "#00b400",
     "btn_text": "#d6ffd6",
-    "muted": "rgba(200, 255, 200, 0.65)",
+    "muted": "rgba(214, 255, 214, 0.92)",
     "panel_bg": "rgba(0, 20, 0, 0.55)",
     "panel_bg_solid": "#061206",
     "border": "rgba(0, 200, 0, 0.35)",
@@ -55,7 +56,7 @@ AMBER_THEME: dict[str, str] = {
     "accent": "#ffc966",
     "accent_strong": "#ff8c00",
     "btn_text": "#ffd59a",
-    "muted": "rgba(255, 220, 180, 0.65)",
+    "muted": "rgba(255, 228, 196, 0.92)",
     "panel_bg": "rgba(40, 18, 0, 0.55)",
     "panel_bg_solid": "#1a0e00",
     "border": "rgba(255, 140, 0, 0.35)",
@@ -95,6 +96,33 @@ FONT_SIZE_BODY = "0.95em"
 FONT_SIZE_SMALL = "0.85em"
 CONTENT_PADDING = "1.5em"
 TEXT_ON_ACCENT = "#000000"
+
+# Se evalúa al pintar cada enlace: http(s) de otro origen abre otra pestaña.
+# Un ancla, una ruta de esta web o el propio origen se quedan en esta.
+_EXTERNAL_HREF_JS = (
+    '((function(h){try{return (h.indexOf("http://")===0||h.indexOf("https://")===0)'
+    '&&new URL(h).origin!==window.location.origin}catch(e){return true}})'
+    '(String((props&&props.href)||"")))'
+)
+
+
+def markdown_link(text: str, **props: Any) -> rx.Component:
+    """Enlace de markdown. El destino externo no sustituye la página actual."""
+    style = {"textUnderlineOffset": "0.18em"}
+    incoming = props.pop("style", None)
+    if isinstance(incoming, dict):
+        style.update(incoming)
+    return rx.link(
+        text,
+        text_decoration="underline",
+        style=style,
+        is_external=Var(_js_expr=_EXTERNAL_HREF_JS, _var_type=bool),
+        rel=Var(
+            _js_expr=f'(isTrue({_EXTERNAL_HREF_JS}) ? "noopener noreferrer" : "")',
+            _var_type=str,
+        ),
+        **props,
+    )
 
 
 def get_crt_colors(variant: CrtVariant = "green") -> dict[str, str]:
@@ -168,7 +196,7 @@ def get_markdown_component_map(
         "h3": lambda text: _heading(text, h3_size, colors["accent"]),
         "p": lambda text: rx.text(
             text,
-            color=colors["muted"],
+            color=colors["text"],
             font_size=body_font_size,
             line_height="1.6",
             width="100%",
@@ -179,7 +207,7 @@ def get_markdown_component_map(
         "li": lambda text: rx.list_item(
             rx.box(
                 text,
-                color=colors["muted"],
+                color=colors["text"],
                 font_size=body_font_size,
                 line_height="1.6",
             ),
@@ -206,10 +234,9 @@ def get_markdown_component_map(
             padding="0.15em 0.35em",
             border_radius="3px",
         ),
-        "a": lambda text, **props: rx.link(
+        "a": lambda text, **props: markdown_link(
             text,
-            color=colors["accent"],
-            text_decoration="underline",
+            color=colors["text"],
             **props,
         ),
         "table": lambda *children, **props: rx.table.root(

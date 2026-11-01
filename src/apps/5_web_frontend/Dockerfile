@@ -33,7 +33,9 @@ COPY . /app
 ENV PYTHONPATH=/app
 RUN cd /app/src/apps/5_web_frontend \
     && reflex init --name web_frontend --loglevel info \
-    && python patch_vite_config.py || true
+    && python patch_vite_config.py || true \
+    && mkdir -p .web/public/crt \
+    && cp -a assets/crt/. .web/public/crt/
 
 # SEGURIDAD: En producción, eliminar archivos JSON de moks
 RUN if [ "$ENVIRONMENT" = "pro" ]; then \

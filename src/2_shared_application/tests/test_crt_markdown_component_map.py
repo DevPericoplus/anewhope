@@ -46,7 +46,7 @@ def test_crt_look_is_kept_on_list_items_and_quotes(variant: str) -> None:
     component_map = _crt_theme.get_markdown_component_map(variant, body_font_size="0.9em")
     li_js = _rendered_tag(component_map, "li")
     assert 'jsx("li"' in li_js
-    assert colors["muted"] in li_js
+    assert colors["text"] in li_js
     assert '"0.9em"' in li_js
     assert '"1.6"' in li_js
     assert '"0.35em"' in li_js
@@ -59,7 +59,16 @@ def test_crt_look_is_kept_on_list_items_and_quotes(variant: str) -> None:
 def test_paragraphs_are_still_crt_text() -> None:
     js = _rendered_tag(_crt_theme.get_markdown_component_map("green"), "p")
     assert 'as:"p"' in js
-    assert _crt_theme.GREEN_THEME["muted"] in js
+    assert _crt_theme.GREEN_THEME["text"] in js
+    assert _crt_theme.GREEN_THEME["muted"] not in js
+
+
+def test_external_markdown_links_open_another_tab() -> None:
+    js = _rendered_tag(_crt_theme.get_markdown_component_map("green"), "a")
+    assert "_blank" in js
+    assert "window.location.origin" in js
+    assert "noopener noreferrer" in js
+    assert _crt_theme.GREEN_THEME["text"] in js
 
 
 @pytest.mark.parametrize("variant", ["green", "amber"])

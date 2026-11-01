@@ -69,7 +69,9 @@ def test_estado_abierto_constant_is_one() -> None:
 def test_estado_descartado_constant_is_five() -> None:
     module = _load_repository_module()
     assert module.ESTADO_CASO_DESCARTADO_ID == 5
+    assert module.ESTADO_CASO_ARCHIVADO_ID == 6
     assert module.ESTADO_CLAVE_TO_ID["descartado"] == 5
+    assert module.ESTADO_CLAVE_TO_ID["archivado"] == 6
     assert module.ESTADO_CLAVE_TO_ID["abierto"] == 1
     assert module.ESTADO_CLAVE_TO_ID["gestionando"] == 2
     assert module.ESTADO_CLAVE_TO_ID["resuelto"] == 4

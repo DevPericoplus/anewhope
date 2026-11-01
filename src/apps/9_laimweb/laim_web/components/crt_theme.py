@@ -23,6 +23,7 @@ FONT_SIZE_TITLE = _module.FONT_SIZE_TITLE
 FONT_SIZE_BODY = _module.FONT_SIZE_BODY
 FONT_SIZE_SMALL = _module.FONT_SIZE_SMALL
 CONTENT_PADDING = _module.CONTENT_PADDING
+markdown_link = _module.markdown_link
 SELECT_STYLE = _module.get_select_style("green")
 FORUM_PROFILE_PANEL_STYLE = _module.get_portal_colors("green")
 FORUM_PROFILE_AVATAR_GRID_STYLE = {

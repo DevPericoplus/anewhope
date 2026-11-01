@@ -53,30 +53,37 @@ def hcaptcha_widget() -> rx.Component:
         return rx.text(
             "Verificación anti-bot no configurada en este entorno.",
             font_size="0.8em",
-            color="rgba(200, 255, 200, 0.55)",
+            color="#e8ffe8",
         )
 
     safe_endpoint = api_endpoint.replace("\\", "\\\\").replace('"', '\\"')
 
+    # cap-widget 0.1.58, servido por la propia página. data-cap-lang fuerza
+    # el castellano aunque el navegador esté en otro idioma.
     cap_html = (
         f'<cap-widget data-cap-api-endpoint="{safe_endpoint}" '
-        f'id="laim-cap-widget"></cap-widget>'
+        f'data-cap-lang="es" id="laim-cap-widget"></cap-widget>'
     )
 
     return rx.fragment(
-        rx.script(
-            src="https://cdn.jsdelivr.net/npm/cap-widget@latest",
-        ),
+        rx.script(src="/crt/cap-widget-0.1.58.js"),
         rx.box(
             rx.html(cap_html),
             id="laim-cap-container",
             width="100%",
             min_height="78px",
         ),
+        rx.el.p(id="laim-cap-status", class_name="crt-cap-status", aria_live="polite"),
         rx.script(
             f"""
             (function() {{
-              var apiEndpoint = "{safe_endpoint}";
+              function capStatus(message, failedLoad) {{
+                var status = document.getElementById("laim-cap-status");
+                if (!status) return;
+                status.textContent = message || "";
+                if (failedLoad) status.setAttribute("data-cap-load", "1");
+                else status.removeAttribute("data-cap-load");
+              }}
 
               if (!window.__LAIM_CAP_BOOTSTRAP__) {{
                 window.__LAIM_CAP_BOOTSTRAP__ = true;
@@ -99,6 +106,7 @@ def hcaptcha_widget() -> rx.Component:
 
                 window.resetLaimHcaptcha = function() {{
                   window.__LAIM_SYNC_CAP_TOKEN__("");
+                  capStatus("");
                   var widget = document.getElementById("laim-cap-widget");
                   if (widget && typeof widget.reset === "function") {{
                     try {{ widget.reset(); }} catch(e) {{}}
@@ -113,16 +121,29 @@ def hcaptcha_widget() -> rx.Component:
                   widget.addEventListener("solve", function(e) {{
                     var token = e.detail && e.detail.token ? e.detail.token : "";
                     window.__LAIM_SYNC_CAP_TOKEN__(token);
+                    capStatus("");
+                  }});
+                  widget.addEventListener("error", function() {{
+                    window.__LAIM_SYNC_CAP_TOKEN__("");
+                    capStatus("La verificación no ha podido completarse. Pulsa otra vez el botón.");
                   }});
                 }};
 
                 window.__LAIM_CAP_POLL__ = window.setInterval(function() {{
                   var widget = document.getElementById("laim-cap-widget");
-                  if (widget) {{
+                  if (widget && window.customElements && customElements.get("cap-widget")) {{
+                    var status = document.getElementById("laim-cap-status");
+                    if (status && status.getAttribute("data-cap-load") === "1") capStatus("");
                     window.renderLaimHcaptchaWidget();
                     window.clearInterval(window.__LAIM_CAP_POLL__);
                   }}
                 }}, 500);
+
+                window.setTimeout(function() {{
+                  if (!window.customElements || !customElements.get("cap-widget")) {{
+                    capStatus("No se ha podido cargar la verificación. Recarga la página e inténtalo de nuevo.", true);
+                  }}
+                }}, 4000);
               }}
 
               window.renderLaimHcaptchaWidget();

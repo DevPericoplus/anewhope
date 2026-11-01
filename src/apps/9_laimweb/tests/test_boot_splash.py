@@ -20,6 +20,20 @@ def test_boot_splash_uses_the_laim_preparing_copy() -> None:
     assert "head_components=boot_head_components()" in app
     assert "flex-direction:column" in splash
     assert "laim-boot-card" in splash
+    assert 'role="progressbar"' in splash
+    assert "laim-boot-fill" in splash
+    assert "setProgress(8)" in splash
+    assert "setProgress(70)" in splash
+    assert "setProgress(100)" in splash
+    assert "prefers-reduced-motion" in splash
+    assert "laim-boot-spin" not in splash
+    assert 'href="/favicon.ico"' in splash
+    assert 'href="/favicon-32.png"' in splash
+    assert 'href="/apple-touch-icon.png"' in splash
+    assets = APP / "assets"
+    assert (assets / "favicon.ico").is_file()
+    assert (assets / "favicon-32.png").is_file()
+    assert (assets / "apple-touch-icon.png").is_file()
 
 
 def test_visual_engines_are_preloaded_with_the_document() -> None:

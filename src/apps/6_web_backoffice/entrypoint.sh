@@ -16,5 +16,10 @@ export PYTHONPATH="$ROOT_DIR"
 APP_DIR="$ROOT_DIR/src/apps/6_web_backoffice"
 cd "$APP_DIR"
 
+mkdir -p "$APP_DIR/.web/public/crt"
+if [ -d "$APP_DIR/assets/crt" ]; then
+    cp -a "$APP_DIR/assets/crt/." "$APP_DIR/.web/public/crt/"
+fi
+
 # El .web ya se genera y parchea (allowedHosts) durante el build (ver Dockerfile).
 exec reflex run --env dev

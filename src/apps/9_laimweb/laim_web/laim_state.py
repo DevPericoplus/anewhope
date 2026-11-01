@@ -500,6 +500,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
             result = {"success": False, "error": f"Error inesperado: {exc}"}
 
         auto_login_started = False
+        reset_captcha = False
         async with self:
             try:
                 if result.get("success"):
@@ -534,12 +535,21 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
                         self.reg_hcaptcha_token = ""
                 else:
                     detail = result.get("error", "Error en registro")
-                    if "HTTP 400" in str(detail):
+                    lowered = str(detail).lower()
+                    if "captcha" in lowered:
+                        detail = (
+                            "No se ha podido comprobar que eres una persona. "
+                            "Pulsa de nuevo la verificación e inténtalo otra vez."
+                        )
+                        reset_captcha = True
+                    elif "HTTP 400" in str(detail):
                         detail = "Datos de registro inválidos o usuario ya existente"
                     self.error_message = str(detail)
             finally:
                 self.loading = False
 
+        if reset_captcha:
+            yield rx.call_script(RESET_LAIM_HCAPTCHA_SCRIPT)
         if auto_login_started:
             yield LaimWebState.auto_renew_tokens_loop
 

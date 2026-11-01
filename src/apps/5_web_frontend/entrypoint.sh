@@ -14,6 +14,11 @@ export PYTHONPATH="$ROOT_DIR"
 APP_DIR="$ROOT_DIR/src/apps/5_web_frontend"
 cd "$APP_DIR"
 
+mkdir -p "$APP_DIR/.web/public/crt"
+if [ -d "$APP_DIR/assets/crt" ]; then
+    cp -a "$APP_DIR/assets/crt/." "$APP_DIR/.web/public/crt/"
+fi
+
 # El .web ya se genera y parchea (allowedHosts) durante el build de la imagen
 # (ver Dockerfile). Aquí solo se arranca Reflex, que reutiliza ese .web.
 exec reflex run --env dev

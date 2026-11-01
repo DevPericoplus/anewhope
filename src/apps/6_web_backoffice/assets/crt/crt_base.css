@@ -619,7 +619,7 @@ body,
 .crt-markdown ol {
   margin: 0.75em 0;
   padding-left: 1.5em;
-  color: rgba(200, 255, 200, 0.85);
+  color: var(--crt-text);
 }
 
 .crt-markdown table,

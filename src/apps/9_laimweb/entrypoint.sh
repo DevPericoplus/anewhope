@@ -31,6 +31,18 @@ fi
 
 cd "$APP_DIR"
 
+# public tiene que llevar el icono y el widget antes de que Reflex arranque.
+# El plan de frontend solo copiaba crt_*.css y esos dos no viajaban.
+mkdir -p "$APP_DIR/.web/public/crt"
+if [ -d "$APP_DIR/assets/crt" ]; then
+    cp -a "$APP_DIR/assets/crt/." "$APP_DIR/.web/public/crt/"
+fi
+for name in favicon.ico favicon-32.png apple-touch-icon.png; do
+    if [ -f "$APP_DIR/assets/$name" ]; then
+        cp -a "$APP_DIR/assets/$name" "$APP_DIR/.web/public/$name"
+    fi
+done
+
 # laimweb regenera .web/vite.config.js al arrancar (reflex run), perdiendo el
 # patch del build. Un vigilante en segundo plano reaplica allowedHosts y
 # Permissions-Policy (Chrome LNA) en bucle; Vite observa vite.config.js

@@ -37,3 +37,11 @@ def test_forum_list_items_are_real_list_items() -> None:
     js = str(_rendered(FORUM_READABLE_MARKDOWN_COMPONENT_MAP)["li"])
     assert 'jsx("li"' in js
     assert "#f5f5f5" in js
+
+
+def test_forum_external_links_open_another_tab() -> None:
+    js = str(_rendered(FORUM_READABLE_MARKDOWN_COMPONENT_MAP)["a"])
+    assert "_blank" in js
+    assert "window.location.origin" in js
+    assert "noopener noreferrer" in js
+    assert "#bae6fd" in js
