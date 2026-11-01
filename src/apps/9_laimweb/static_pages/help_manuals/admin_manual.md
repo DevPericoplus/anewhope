@@ -3679,7 +3679,7 @@ El evento **no** se registra en `activity.log` ni en `audit.dat` para no inundar
 | Escenario | Estado protección | Resultado |
 |-----------|------------------|-----------|
 | Acceso desde `http://localhost:4321` (normal) | Activa | ✅ Permitido |
-| Acceso desde `http://127.0.0.1:4320` (API directa) | Activa | ✅ Permitido |
+| Acceso desde `http://localhost:4320` (API directa) | Activa | ✅ Permitido |
 | Nginx en la misma máquina haciendo proxy a 4320 | Activa | ⛔ Bloqueado (cabecera `X-Forwarded-For`) |
 | Acceso desde otra máquina de la red sin proxy | Activa | ⛔ Bloqueado (RemoteAddr no es loopback) |
 | Nginx en la misma máquina haciendo proxy a 4320 | Desactiva | ⚠️ Permitido (responsabilidad del admin) |
@@ -3932,7 +3932,7 @@ Los endpoints son de solo lectura y requieren sesión web activa:
 
 ```bash
 # Procesos ordenados por CPU, máximo 20, filtrados por "python"
-curl -s "http://127.0.0.1:4320/api/v1/monitor/processes?sort=cpu&max=20&filter=python" \
+curl -s "http://localhost:4320/api/v1/monitor/processes?sort=cpu&max=20&filter=python" \
   -H "X-LAIM-Session-ID: <session_id>" | jq .
 ```
 
@@ -3971,7 +3971,7 @@ El puerto **4320** escucha únicamente en `127.0.0.1` y **no es accesible remota
 
 - `MaxBytesReader` de 4 MB (límite más generoso para payloads de configuración)
 - `AntiProxyMiddleware` — rechaza cabeceras de proxy inverso
-- CORS restringido a `http://127.0.0.1:4321`
+- CORS restringido a la interfaz web, `http://localhost:4321` (también `http://127.0.0.1:4321`)
 
 ---
 
