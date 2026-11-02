@@ -274,3 +274,83 @@ def test_forum_persistence_does_not_use_json_files() -> None:
         assert "json.load" not in source
         assert "json.dump" not in source
         assert json_file_pattern.search(source) is None
+
+
+def _admin_session() -> dict:
+    return {"user_id": 1, "user_name": "admin", "identity_type_id": 1}
+
+
+def test_template_replaces_braces_and_the_old_at_form() -> None:
+    module = _load_forum_service()
+    text = module.render_moderation_template(
+        "Hola {usuario} en {subcategoria} por {motivo}. Aviso @usuario.",
+        usuario="Ana",
+        subcategoria="General",
+        motivo="spam",
+    )
+    assert text == "Hola Ana en General por spam. Aviso Ana."
+    assert "{" not in text
+
+
+def test_new_identifier_rejects_spaces() -> None:
+    module = _load_forum_service()
+    assert module.forum_new_identifier_error("qa_ok-1") == ""
+    assert module.forum_new_identifier_error("qa con espacios") != ""
+
+
+def test_create_category_rejects_an_existing_id() -> None:
+    module = _load_forum_service()
+    repository = MagicMock()
+    repository.category_exists.return_value = True
+    service = module.LaimForumService(repository=repository, image_storage=MagicMock())
+    result = service.upsert_category(
+        {"crear": True, "id": "general", "nombre": "Otra"},
+        _admin_session(),
+    )
+    assert result["success"] is False
+    assert result["status_code"] == 409
+    repository.upsert_category.assert_not_called()
+
+
+def test_create_category_rejects_spaces_before_writing() -> None:
+    module = _load_forum_service()
+    repository = MagicMock()
+    service = module.LaimForumService(repository=repository, image_storage=MagicMock())
+    result = service.upsert_category(
+        {"crear": True, "id": "qa con espacios", "nombre": "Otra"},
+        _admin_session(),
+    )
+    assert result["success"] is False
+    repository.upsert_category.assert_not_called()
+
+
+def test_editing_a_historical_id_with_spaces_still_saves() -> None:
+    module = _load_forum_service()
+    repository = MagicMock()
+    service = module.LaimForumService(repository=repository, image_storage=MagicMock())
+    result = service.upsert_category(
+        {"id": "Modo cli", "nombre": "Modo cli", "orden": 1, "activa": True},
+        _admin_session(),
+    )
+    assert result["success"] is True
+    repository.upsert_category.assert_called_once()
+
+
+def test_ban_template_uses_the_visible_name() -> None:
+    module = _load_forum_service()
+    repository = MagicMock()
+    repository.create_ban.return_value = 7
+    repository.get_settings.return_value = {
+        "anunciar_ban_en_log": True,
+        "plantilla_ban": "Usuario {usuario} en {subcategoria}: {motivo}",
+    }
+    repository.user_display_name.return_value = "Ana"
+    repository.get_subcategory.return_value = {"nombre": "General"}
+    service = module.LaimForumService(repository=repository, image_storage=MagicMock())
+    result = service.create_ban(
+        {"subcategory_id": "general", "user_id": 3, "motivo": "spam"},
+        _admin_session(),
+    )
+    assert result["success"] is True
+    message = repository.insert_moderation_log.call_args.kwargs["message"]
+    assert message == "Usuario Ana en General: spam"

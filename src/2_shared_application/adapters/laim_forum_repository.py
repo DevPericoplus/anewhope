@@ -1418,6 +1418,37 @@ class LaimForumRepository:
             return None
         return {**dict(row), "activa": _bool_value(row["activa"])}
 
+    def category_exists(self, category_id: str) -> bool:
+        """True si ya hay una categoría con ese id."""
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT 1 FROM laim_forum_categories WHERE id = :id LIMIT 1"),
+                {"id": category_id},
+            ).first()
+        return row is not None
+
+    def subcategory_exists(self, subcategory_id: str) -> bool:
+        """True si ya hay una subcategoría con ese id."""
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT 1 FROM laim_forum_subcategories WHERE id = :id LIMIT 1"),
+                {"id": subcategory_id},
+            ).first()
+        return row is not None
+
+    def user_display_name(self, user_id: int) -> str:
+        """Nombre visible de la cuenta. Si no hay fila, el id."""
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT user_name FROM laim_users WHERE user_id = :id LIMIT 1"
+                ),
+                {"id": user_id},
+            ).first()
+        if row is None or not row[0]:
+            return str(user_id)
+        return str(row[0])
+
     def increment_daily_infraction(
         self,
         *,

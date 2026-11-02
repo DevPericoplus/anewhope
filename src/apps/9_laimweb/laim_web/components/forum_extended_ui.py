@@ -682,7 +682,7 @@ def forum_admin_extended_panel() -> rx.Component:
             LaimWebState.forum_admin_tab == "settings",
             rx.vstack(
                 rx.text(
-                    "Cada fila es un ajuste guardado. Modificar cambia el valor y lo guarda. Eliminar lo deja vacío.",
+                    "Cada fila es un ajuste guardado. Modificar cambia el valor y lo guarda. Restablecer vuelve al texto de semilla. Marcadores: {usuario}, {subcategoria}, {motivo}.",
                     color=COLORS["muted"],
                     font_size=FONT_SIZE_SMALL,
                 ),
@@ -712,7 +712,7 @@ def forum_admin_extended_panel() -> rx.Component:
                                         class_name="crt-btn crt-btn-inline",
                                     ),
                                     rx.button(
-                                        "Eliminar",
+                                        "Restablecer",
                                         on_click=LaimWebState.forum_admin_clear_setting("announce"),
                                         class_name="crt-btn crt-btn-inline",
                                     ),
@@ -739,7 +739,7 @@ def forum_admin_extended_panel() -> rx.Component:
                                         class_name="crt-btn crt-btn-inline",
                                     ),
                                     rx.button(
-                                        "Eliminar",
+                                        "Restablecer",
                                         on_click=LaimWebState.forum_admin_clear_setting("ban"),
                                         class_name="crt-btn crt-btn-inline",
                                     ),
@@ -766,7 +766,7 @@ def forum_admin_extended_panel() -> rx.Component:
                                         class_name="crt-btn crt-btn-inline",
                                     ),
                                     rx.button(
-                                        "Eliminar",
+                                        "Restablecer",
                                         on_click=LaimWebState.forum_admin_clear_setting("delete"),
                                         class_name="crt-btn crt-btn-inline",
                                     ),
@@ -793,6 +793,7 @@ def forum_admin_extended_panel() -> rx.Component:
                         placeholder="ID prefijo",
                         value=LaimWebState.forum_admin_prefix_id,
                         on_change=LaimWebState.forum_admin_set_prefix_id,
+                        disabled=LaimWebState.forum_admin_prefix_editing,
                         class_name="crt-input",
                     ),
                     rx.text("Texto que ve el usuario", color=COLORS["title"]),
@@ -803,26 +804,36 @@ def forum_admin_extended_panel() -> rx.Component:
                         class_name="crt-input",
                     ),
                     rx.text("Color del esquema", color=COLORS["title"]),
-                    rx.input(
-                        placeholder="Color (green, blue...)",
+                    rx.select(
+                        ["green", "blue", "red", "amber", "gray", "orange", "purple"],
                         value=LaimWebState.forum_admin_prefix_color,
                         on_change=LaimWebState.forum_admin_set_prefix_color,
-                        class_name="crt-input",
+                        width="100%",
                     ),
                     rx.checkbox(
                         "Activo",
                         checked=LaimWebState.forum_admin_prefix_activo,
                         on_change=LaimWebState.forum_admin_set_prefix_activo,
                     ),
-                    rx.button(
-                        "Guardar prefijo",
-                        on_click=LaimWebState.forum_admin_save_prefix,
-                        class_name="crt-btn",
+                    rx.hstack(
+                        rx.button(
+                            "Guardar prefijo",
+                            on_click=LaimWebState.forum_admin_save_prefix,
+                            class_name="crt-btn",
+                        ),
+                        rx.button(
+                            "Nuevo prefijo",
+                            on_click=LaimWebState.forum_admin_new_prefix,
+                            class_name="crt-btn",
+                        ),
+                        spacing="2",
                     ),
                     rx.el.table(
                         rx.el.thead(
                             rx.el.tr(
+                                rx.el.th("ID"),
                                 rx.el.th("Texto"),
+                                rx.el.th("Color"),
                                 rx.el.th("Estado"),
                                 rx.el.th("Acciones"),
                             )
@@ -831,7 +842,14 @@ def forum_admin_extended_panel() -> rx.Component:
                             rx.foreach(
                                 LaimWebState.forum_admin_prefixes,
                                 lambda item: rx.el.tr(
+                                    rx.el.td(item["id"]),
                                     rx.el.td(item["texto"]),
+                                    rx.el.td(
+                                        rx.badge(
+                                            item["color_scheme"],
+                                            color_scheme=item["color_scheme"],
+                                        )
+                                    ),
                                     rx.el.td(rx.cond(item["activo"], "Activo", "Inactivo")),
                                     rx.el.td(
                                         rx.hstack(
@@ -883,14 +901,26 @@ def forum_admin_extended_panel() -> rx.Component:
                             checked=LaimWebState.forum_admin_word_activo,
                             on_change=LaimWebState.forum_admin_set_word_activo,
                         ),
-                        rx.button(
+                        rx.hstack(
+                            rx.button(
+                                rx.cond(
+                                    LaimWebState.forum_admin_word_rule_id > 0,
+                                    "Guardar regla",
+                                    "Añadir regla",
+                                ),
+                                on_click=LaimWebState.forum_admin_save_word_rule,
+                                class_name="crt-btn",
+                            ),
                             rx.cond(
                                 LaimWebState.forum_admin_word_rule_id > 0,
-                                "Guardar regla",
-                                "Añadir regla",
+                                rx.button(
+                                    "Cancelar",
+                                    on_click=LaimWebState.forum_admin_cancel_word_rule,
+                                    class_name="crt-btn",
+                                ),
+                                rx.fragment(),
                             ),
-                            on_click=LaimWebState.forum_admin_save_word_rule,
-                            class_name="crt-btn",
+                            spacing="2",
                         ),
                         rx.foreach(
                             LaimWebState.forum_word_rules,
@@ -949,10 +979,34 @@ def forum_admin_extended_panel() -> rx.Component:
                                 on_change=LaimWebState.forum_admin_set_url_descripcion,
                                 class_name="crt-input",
                             ),
-                            rx.button(
-                                "Guardar dominio",
-                                on_click=LaimWebState.forum_admin_save_allowed_url,
-                                class_name="crt-btn",
+                            rx.cond(
+                                LaimWebState.forum_admin_url_id > 0,
+                                rx.text(
+                                    rx.fragment(
+                                        "Editando dominio ",
+                                        LaimWebState.forum_admin_url_dominio,
+                                    ),
+                                    color=COLORS["muted"],
+                                    font_size=FONT_SIZE_SMALL,
+                                ),
+                                rx.fragment(),
+                            ),
+                            rx.hstack(
+                                rx.button(
+                                    "Guardar dominio",
+                                    on_click=LaimWebState.forum_admin_save_allowed_url,
+                                    class_name="crt-btn",
+                                ),
+                                rx.cond(
+                                    LaimWebState.forum_admin_url_id > 0,
+                                    rx.button(
+                                        "Cancelar",
+                                        on_click=LaimWebState.forum_admin_cancel_allowed_url,
+                                        class_name="crt-btn",
+                                    ),
+                                    rx.fragment(),
+                                ),
+                                spacing="2",
                             ),
                             rx.el.table(
                                 rx.el.thead(
@@ -973,6 +1027,7 @@ def forum_admin_extended_panel() -> rx.Component:
                                                     rx.button(
                                                         "Modificar",
                                                         on_click=LaimWebState.forum_admin_edit_allowed_url(
+                                                            url["id"],
                                                             url["dominio"],
                                                             url["descripcion"],
                                                         ),
@@ -1034,7 +1089,8 @@ def forum_admin_extended_panel() -> rx.Component:
                                             rx.el.th("Usuario"),
                                             rx.el.th("Categoría"),
                                             rx.el.th("Subcategoría"),
-                                            rx.el.th(""),
+                                            rx.el.th("Estado"),
+                                            rx.el.th("Acciones"),
                                         )
                                     ),
                                     rx.el.tbody(
@@ -1044,13 +1100,26 @@ def forum_admin_extended_panel() -> rx.Component:
                                                 rx.el.td(mod["user_name"]),
                                                 rx.el.td(mod["category_name"]),
                                                 rx.el.td(mod["subcategory_name"]),
+                                                rx.el.td(mod["estado"]),
                                                 rx.el.td(
-                                                    rx.button(
-                                                        "Desactivar",
-                                                        on_click=LaimWebState.forum_admin_deactivate_moderator(
-                                                            mod["id"]
+                                                    rx.cond(
+                                                        mod["activo"],
+                                                        rx.button(
+                                                            "Desactivar",
+                                                            on_click=LaimWebState.forum_admin_deactivate_moderator(
+                                                                mod["id"]
+                                                            ),
+                                                            class_name="crt-btn crt-btn-inline",
                                                         ),
-                                                        class_name="crt-btn crt-btn-inline",
+                                                        rx.button(
+                                                            "Activar",
+                                                            on_click=LaimWebState.forum_admin_reactivate_moderator(
+                                                                mod["user_id"],
+                                                                mod["user_name"],
+                                                                mod["subcategory_id"],
+                                                            ),
+                                                            class_name="crt-btn crt-btn-inline",
+                                                        ),
                                                     )
                                                 ),
                                             ),

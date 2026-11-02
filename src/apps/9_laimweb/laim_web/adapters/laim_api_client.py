@@ -902,6 +902,22 @@ def laim_forum_admin_create_allowed_url(
     )
 
 
+def laim_forum_admin_update_allowed_url(
+    url_id: int,
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Actualiza la fila de un dominio, también si cambia el nombre."""
+    return _request_forum(
+        "PATCH",
+        f"/laim/forum/admin/allowed-urls/{url_id}",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
 def laim_forum_admin_delete_allowed_url(
     url_id: int,
     access_token: str,

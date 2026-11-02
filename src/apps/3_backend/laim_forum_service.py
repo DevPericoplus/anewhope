@@ -9,12 +9,48 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 _logger = logging.getLogger("LaimForumService")
+
+_FORUM_NEW_ID = re.compile(r"^[a-z0-9_-]+$")
+
+
+def forum_new_identifier_error(raw: str) -> str:
+    """Un identificador nuevo solo admite minúsculas, números, _ y -.
+
+    Los que ya existen con espacios (p. ej. «Modo cli») se siguen
+    editando: cambiarlos movería las URLs. La validación es del alta.
+    """
+    text = str(raw or "").strip()
+    if not text:
+        return "El identificador es obligatorio."
+    if _FORUM_NEW_ID.fullmatch(text) is None:
+        return "El identificador solo admite minúsculas, números, _ y -."
+    return ""
+
+
+def render_moderation_template(
+    template: str, *, usuario: str, subcategoria: str, motivo: str
+) -> str:
+    """Sustituye {usuario}/{subcategoria}/{motivo} y la forma @ antigua.
+
+    El nombre es el visible. Un marcador sin dato queda vacío, no entre
+    llaves.
+    """
+    rendered = str(template or "")
+    for key, value in (
+        ("usuario", usuario),
+        ("subcategoria", subcategoria),
+        ("motivo", motivo),
+    ):
+        shown = str(value or "")
+        rendered = rendered.replace("{" + key + "}", shown).replace("@" + key, shown)
+    return rendered
 
 
 def _load_module(relative_path: str, module_name: str) -> Any:
@@ -259,6 +295,47 @@ class LaimForumService:
             moderator_user_id=moderator_user_id,
             moderator_user_name=moderator_user_name,
         )
+
+    def _audit_config(
+        self,
+        session: dict[str, Any],
+        *,
+        event_type: str,
+        message: str,
+        subcategory_id: str | None = None,
+    ) -> None:
+        """Deja el cambio de configuración en el visor de moderación.
+
+        Sin subcategoría el id va vacío. La migración 033 admite ese
+        nulo; si la base todavía exige la clave ajena, el alta no se
+        deshace por no poder escribir el log.
+        """
+        try:
+            self._log_moderation_event(
+                subcategory_id=subcategory_id or "",
+                event_type=event_type,
+                message=message,
+                moderator_user_id=session.get("user_id"),
+                moderator_user_name=str(session.get("user_name") or ""),
+            )
+        except Exception:
+            _logger.exception("no se pudo registrar el cambio de configuración del foro")
+
+    def _reject_create(self, payload: dict[str, Any], *, kind: str, exists) -> dict[str, Any] | None:
+        """Alta: id válido y libre. Editar un id histórico no pasa por aquí."""
+        if not payload.get("crear"):
+            return None
+        raw_id = str(payload.get("id") or "")
+        error = forum_new_identifier_error(raw_id)
+        if error:
+            return {"success": False, "error": error, "status_code": 400}
+        if exists(raw_id.strip()):
+            return {
+                "success": False,
+                "error": f"Ya existe una {kind} con ese ID.",
+                "status_code": 409,
+            }
+        return None
 
     def _apply_automatic_ban(
         self,
@@ -653,6 +730,11 @@ class LaimForumService:
         """Crea o actualiza categoría (admin)."""
         if not self.is_forum_admin(session["identity_type_id"]):
             return {"success": False, "error": "Sin permisos de administración."}
+        rejected = self._reject_create(
+            payload, kind="categoría", exists=self._repository.category_exists
+        )
+        if rejected:
+            return rejected
         dto = LaimForumCategoryUpsertDto.model_validate(payload)
         self._repository.upsert_category(
             category_id=dto.id,
@@ -661,12 +743,22 @@ class LaimForumService:
             orden=dto.orden,
             activa=dto.activa,
         )
+        self._audit_config(
+            session,
+            event_type="config_category",
+            message=f"Categoría «{dto.nombre}» ({dto.id}) guardada.",
+        )
         return {"success": True}
 
     def delete_category(self, category_id: str, session: dict[str, Any]) -> dict[str, Any]:
         """Elimina categoría (admin)."""
         if not self.is_forum_admin(session["identity_type_id"]):
             return {"success": False, "error": "Sin permisos de administración."}
+        self._audit_config(
+            session,
+            event_type="config_category",
+            message=f"Categoría {category_id} eliminada.",
+        )
         deleted = self._repository.delete_category(category_id)
         return {"success": deleted}
 
@@ -676,6 +768,11 @@ class LaimForumService:
         """Crea o actualiza subcategoría (admin)."""
         if not self.is_forum_admin(session["identity_type_id"]):
             return {"success": False, "error": "Sin permisos de administración."}
+        rejected = self._reject_create(
+            payload, kind="subcategoría", exists=self._repository.subcategory_exists
+        )
+        if rejected:
+            return rejected
         dto = LaimForumSubcategoryUpsertDto.model_validate(payload)
         self._repository.upsert_subcategory(
             subcategory_id=dto.id,
@@ -687,6 +784,12 @@ class LaimForumService:
             ban_seconds=dto.ban_seconds,
             log_rotation=dto.log_rotation,
         )
+        self._audit_config(
+            session,
+            event_type="config_subcategory",
+            message=f"Subcategoría «{dto.nombre}» ({dto.id}) guardada.",
+            subcategory_id=dto.id,
+        )
         return {"success": True}
 
     def delete_subcategory(
@@ -695,6 +798,12 @@ class LaimForumService:
         """Elimina subcategoría (admin)."""
         if not self.is_forum_admin(session["identity_type_id"]):
             return {"success": False, "error": "Sin permisos de administración."}
+        self._audit_config(
+            session,
+            event_type="config_subcategory",
+            message=f"Subcategoría {subcategory_id} eliminada.",
+            subcategory_id=subcategory_id,
+        )
         return {"success": self._repository.delete_subcategory(subcategory_id)}
 
     def upsert_prefix(
@@ -710,12 +819,22 @@ class LaimForumService:
             color_scheme=dto.color_scheme,
             activo=dto.activo,
         )
+        self._audit_config(
+            session,
+            event_type="config_prefix",
+            message=f"Prefijo «{dto.texto}» ({dto.id}) guardado.",
+        )
         return {"success": True}
 
     def delete_prefix(self, prefix_id: str, session: dict[str, Any]) -> dict[str, Any]:
         """Elimina prefijo (admin)."""
         if not self.is_forum_admin(session["identity_type_id"]):
             return {"success": False, "error": "Sin permisos de administración."}
+        self._audit_config(
+            session,
+            event_type="config_prefix",
+            message=f"Prefijo {prefix_id} eliminado.",
+        )
         return {"success": self._repository.delete_prefix(prefix_id)}
 
     def add_avatar_catalog_item(
@@ -1062,6 +1181,30 @@ class LaimForumService:
         if not is_owner and not is_mod:
             return {"success": False, "error": "Sin permisos para eliminar la respuesta."}
         ok = self._repository.soft_delete_post(post_id)
+        if ok and is_mod:
+            settings = self._repository.get_settings()
+            template = str(settings.get("plantilla_eliminacion") or "")
+            usuario = str(post.get("user_name") or "").strip()
+            if not usuario:
+                usuario = self._repository.user_display_name(int(post["user_id"]))
+            sub = self._repository.get_subcategory(subcategory_id) or {}
+            message = render_moderation_template(
+                template,
+                usuario=usuario,
+                subcategoria=str(sub.get("nombre") or subcategory_id),
+                motivo="eliminación",
+            ) if template else f"Respuesta {post_id} eliminada"
+            self._log_moderation_event(
+                subcategory_id=subcategory_id,
+                event_type="delete_post",
+                message=message,
+                user_id=int(post["user_id"]),
+                user_name=usuario,
+                moderator_user_id=session["user_id"],
+                moderator_user_name=session["user_name"],
+                post_id=post_id,
+                thread_id=int(post["thread_id"]),
+            )
         return {"success": ok}
 
     def list_my_posts(self, session: dict[str, Any]) -> dict[str, Any]:
@@ -1154,6 +1297,11 @@ class LaimForumService:
             plantilla_ban=dto.plantilla_ban,
             plantilla_eliminacion=dto.plantilla_eliminacion,
         )
+        self._audit_config(
+            session,
+            event_type="config_settings",
+            message="Ajustes de moderación actualizados.",
+        )
         return {"success": True, "settings": settings}
 
     def list_word_rules_admin(self, session: dict[str, Any]) -> dict[str, Any]:
@@ -1179,12 +1327,22 @@ class LaimForumService:
             mensaje=dto.mensaje,
             activo=dto.activo,
         )
+        self._audit_config(
+            session,
+            event_type="config_word_rule",
+            message=f"Regla «{dto.palabra}» guardada.",
+        )
         return {"success": True, "id": new_id}
 
     def delete_word_rule(self, rule_id: int, session: dict[str, Any]) -> dict[str, Any]:
         """Elimina regla de palabra."""
         if not self.is_forum_admin(session["identity_type_id"]):
             return {"success": False, "error": "Sin permisos de administración."}
+        self._audit_config(
+            session,
+            event_type="config_word_rule",
+            message=f"Regla {rule_id} eliminada.",
+        )
         return {"success": self._repository.delete_word_rule(rule_id)}
 
     def list_allowed_urls_admin(self, session: dict[str, Any]) -> dict[str, Any]:
@@ -1209,12 +1367,22 @@ class LaimForumService:
             descripcion=dto.descripcion,
             activo=dto.activo,
         )
+        self._audit_config(
+            session,
+            event_type="config_allowed_url",
+            message=f"Dominio «{dto.dominio.strip().lower()}» guardado.",
+        )
         return {"success": True, "id": new_id}
 
     def delete_allowed_url(self, url_id: int, session: dict[str, Any]) -> dict[str, Any]:
         """Elimina dominio permitido."""
         if not self.is_forum_admin(session["identity_type_id"]):
             return {"success": False, "error": "Sin permisos de administración."}
+        self._audit_config(
+            session,
+            event_type="config_allowed_url",
+            message=f"Dominio {url_id} eliminado.",
+        )
         return {"success": self._repository.delete_allowed_url(url_id)}
 
     def list_moderators_admin(
@@ -1242,6 +1410,12 @@ class LaimForumService:
             user_name=dto.user_name,
             subcategory_id=dto.subcategory_id,
         )
+        self._audit_config(
+            session,
+            event_type="config_moderator",
+            message=f"Moderador {dto.user_name} asignado a {dto.subcategory_id}.",
+            subcategory_id=dto.subcategory_id,
+        )
         return {"success": True, "id": mod_id}
 
     def deactivate_moderator(
@@ -1250,6 +1424,11 @@ class LaimForumService:
         """Desactiva moderador."""
         if not self.is_forum_admin(session["identity_type_id"]):
             return {"success": False, "error": "Sin permisos de administración."}
+        self._audit_config(
+            session,
+            event_type="config_moderator",
+            message=f"Moderador {moderator_id} desactivado.",
+        )
         return {"success": self._repository.deactivate_moderator(moderator_id)}
 
     def create_ban(
@@ -1288,10 +1467,15 @@ class LaimForumService:
         settings = self._repository.get_settings()
         if settings.get("anunciar_ban_en_log"):
             template = str(settings.get("plantilla_ban") or "")
-            message = (
-                template.replace("@usuario", str(user_id))
-                .replace("@subcategoria", subcategory_id)
-                .replace("@motivo", motivo)
+            usuario = str(payload.get("user_name") or "").strip()
+            if not usuario:
+                usuario = self._repository.user_display_name(user_id)
+            sub = self._repository.get_subcategory(subcategory_id) or {}
+            message = render_moderation_template(
+                template,
+                usuario=usuario,
+                subcategoria=str(sub.get("nombre") or subcategory_id),
+                motivo=motivo,
             )
             self._repository.insert_moderation_log(
                 subcategory_id=subcategory_id,

@@ -17,6 +17,17 @@ from laim_web.components.forum_star_rating import forum_thread_star_rating_panel
 from laim_web.laim_state import LaimWebState
 
 
+def _context_menu_surface() -> dict[str, str]:
+    """Fondo opaco. Sin él el menú se dibuja encima del árbol y no se lee."""
+    return {
+        "background_color": "#06140c",
+        "border": "1px solid #1f8a4c",
+        "box_shadow": "0 8px 24px rgba(0, 0, 0, 0.72)",
+        "border_radius": "4px",
+        "padding": "0.25em",
+    }
+
+
 def _panel_title(text: str) -> rx.Component:
     return rx.text(text, class_name="crt-title", font_size="1.1em", margin_bottom="0.5em")
 
@@ -1027,9 +1038,10 @@ def _cat_tree_subcategory_row(child) -> rx.Component:
                 ),
             ),
             style={
-                "backgroundColor": COLORS["panel_bg"],
-                "borderColor": COLORS["border"],
+                "backgroundColor": COLORS["panel_bg_solid"],
+                "border": f"1px solid {COLORS['border']}",
                 "color": COLORS["text"],
+                "boxShadow": "0 8px 24px rgba(0, 0, 0, 0.72)",
             },
         ),
     )
@@ -1142,9 +1154,10 @@ def _cat_tree_category_row(node) -> rx.Component:
                     ),
                 ),
                 style={
-                    "backgroundColor": COLORS["panel_bg"],
-                    "borderColor": COLORS["border"],
+                    "backgroundColor": COLORS["panel_bg_solid"],
+                    "border": f"1px solid {COLORS['border']}",
                     "color": COLORS["text"],
+                    "boxShadow": "0 8px 24px rgba(0, 0, 0, 0.72)",
                 },
             ),
         ),
@@ -1201,7 +1214,9 @@ def _cat_tree_add_sub_dialog() -> rx.Component:
                     margin_bottom="0.5em",
                 ),
                 rx.input(
-                    placeholder="Orden",
+                    placeholder="0",
+                    type="number",
+                    min=0,
                     value=LaimWebState.forum_admin_subcategory_orden,
                     on_change=LaimWebState.forum_admin_set_subcategory_orden,
                     class_name="crt-input",
@@ -1214,7 +1229,9 @@ def _cat_tree_add_sub_dialog() -> rx.Component:
                     on_change=LaimWebState.forum_admin_set_subcategory_activa,
                 ),
                 rx.input(
-                    placeholder="Duración del ban (segundos)",
+                    placeholder="86400",
+                    type="number",
+                    min=60,
                     value=LaimWebState.forum_admin_subcategory_ban_seconds,
                     on_change=LaimWebState.forum_admin_set_subcategory_ban_seconds,
                     class_name="crt-input",
@@ -1456,6 +1473,7 @@ def _subcategory_editor() -> rx.Component:
             placeholder="ID (ej: anuncios)",
             value=LaimWebState.forum_admin_subcategory_id,
             on_change=LaimWebState.forum_admin_set_subcategory_id,
+            disabled=True,
             class_name="crt-input",
             width="100%",
         ),
@@ -1475,7 +1493,9 @@ def _subcategory_editor() -> rx.Component:
         ),
         rx.text("Orden de aparición. 0 aparece el primero.", color=COLORS["muted"], font_size=FONT_SIZE_SMALL),
         rx.input(
-            placeholder="Orden",
+            placeholder="0",
+            type="number",
+            min=0,
             value=LaimWebState.forum_admin_subcategory_orden,
             on_change=LaimWebState.forum_admin_set_subcategory_orden,
             class_name="crt-input",
@@ -1492,7 +1512,9 @@ def _subcategory_editor() -> rx.Component:
             font_size=FONT_SIZE_SMALL,
         ),
         rx.input(
-            placeholder="Duración del ban (segundos)",
+            placeholder="86400",
+            type="number",
+            min=60,
             value=LaimWebState.forum_admin_subcategory_ban_seconds,
             on_change=LaimWebState.forum_admin_set_subcategory_ban_seconds,
             class_name="crt-input",
@@ -1536,6 +1558,7 @@ def _category_modal() -> rx.Component:
                     placeholder="ID (ej: general)",
                     value=LaimWebState.forum_admin_category_id,
                     on_change=LaimWebState.forum_admin_set_category_id,
+                    disabled=~LaimWebState.forum_admin_category_creating,
                     class_name="crt-input",
                     width="100%",
                 ),
@@ -1559,7 +1582,9 @@ def _category_modal() -> rx.Component:
                     font_size=FONT_SIZE_SMALL,
                 ),
                 rx.input(
-                    placeholder="Orden",
+                    placeholder="0",
+                    type="number",
+                    min=0,
                     value=LaimWebState.forum_admin_category_orden,
                     on_change=LaimWebState.forum_admin_set_category_orden,
                     class_name="crt-input",

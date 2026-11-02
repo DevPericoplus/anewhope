@@ -67,13 +67,16 @@ alta dentro de la categoría elegida, con **Crear** y **Cancelar**.
 
 Etiquetas que el usuario puede poner a un hilo. Se rellenan el
 identificador, el texto, el color y si está activo. **Guardar prefijo**
-lo escribe. **Editar** carga uno ya existente, también si está inactivo.
+lo escribe. **Modificar** carga uno ya existente y deja el
+identificador en solo lectura; **Nuevo prefijo** vacía el formulario.
+La tabla muestra el ID, el texto y el color.
 
 ### Moderadores
 
 Tres selectores, en este orden: usuario, categoría y subcategoría.
 **Asignar moderador** añade la fila y refresca la tabla (usuario,
-categoría y subcategoría). **Desactivar** retira esa asignación.
+categoría, subcategoría y estado). **Desactivar** marca la fila
+Inactivo. **Activar** la vuelve a poner.
 
 ### Baneos activos
 
@@ -83,32 +86,40 @@ ese baneo.
 
 ### Permisos moderación
 
-Ajustes del aviso de moderación: la casilla **Anunciar ban en log**,
-la plantilla del ban y la plantilla de eliminación. **Guardar ajustes**
-los escribe.
+Cada ajuste se guarda con **Modificar** en su fila. La casilla es
+**Anunciar ban en el log**. Las plantillas admiten `{usuario}`,
+`{subcategoria}` y `{motivo}`. **Restablecer** devuelve el texto de
+semilla.
 
 ### Reglas automáticas
 
 Una palabra, una acción (**Agradecimientos**, **Amonestaciones**,
 **Sugerencias**, **Ban** o **Kick**), el mensaje que verá el usuario y
 si la regla está activa. **Añadir regla** crea una nueva y **Guardar
-regla** actualiza la que se está editando. En la lista, **Editar**
-rellena el formulario y **Activar** o **Desactivar** cambia su estado.
+regla** actualiza la que se está editando. Al guardar, el formulario
+vuelve a alta. **Cancelar** lo vacía sin guardar. En la lista,
+**Editar** rellena el formulario y **Activar** o **Desactivar** cambia
+su estado.
 
 ### URLs autorizadas
 
-Un dominio y una descripción. **Añadir dominio** lo incorpora a la
-lista. **Eliminar** lo quita.
+Un dominio y una descripción. **Guardar dominio** lo incorpora a la
+lista. **Modificar** carga esa fila: guardar actualiza el mismo
+dominio aunque se le cambie el nombre, y el aviso es **Dominio
+actualizado.** **Cancelar** vuelve al alta. **Eliminar** lo quita.
 
 ### Visor de logs
 
-Muestra la actividad de moderación ya guardada (asignaciones, baneos y
-reglas). Categoría y subcategoría empiezan en **ALL**, que significa
-ese nivel sin acotar, y el resto de valores son las categorías y
-subcategorías que existan en ese momento. **Desde** y **Hasta** abren
-un calendario para el intervalo de días. La tabla muestra fecha,
-categoría, subcategoría, tipo, quién y la actividad. Crear un hilo o
-responder no aparece aquí: eso queda en el propio foro.
+Registra los cambios de configuración del foro (categorías,
+subcategorías, prefijos, reglas, dominios, moderadores y ajustes),
+además de baneos y eliminaciones. Categoría y subcategoría empiezan
+en **ALL**, que significa ese nivel sin acotar, y el resto de valores
+son las categorías y subcategorías que existan en ese momento.
+**Desde** y **Hasta** abren un calendario para el intervalo de días.
+La tabla muestra fecha, categoría, subcategoría, tipo, quién y la
+actividad. Debajo, la actividad de los hilos lista cada hilo y cada
+respuesta con el título. Crear un hilo o responder no entra en el
+log de moderación: eso queda en el propio foro.
 
 ### Estadísticas
 

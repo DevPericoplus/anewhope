@@ -80,7 +80,7 @@ def _raise_if_failed(result: dict[str, Any], *, default_status: int = 400) -> di
     """Convierte respuesta fallida del servicio en HTTPException."""
     if not result.get("success"):
         raise HTTPException(
-            status_code=default_status,
+            status_code=int(result.get("status_code") or default_status),
             detail=result.get("error", "Operación no permitida"),
         )
     return result
@@ -192,6 +192,22 @@ def laim_forum_list_avatar_catalog(
     return _raise_if_failed(get_laim_forum_service().list_avatar_catalog())
 
 
+@router.post("/categories")
+def laim_forum_create_category(
+    payload: dict[str, Any],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Crea categoría. 409 si el ID ya existe. PUT queda para editar."""
+    session = _require_session(authorization, session_token)
+    body = dict(payload)
+    body["crear"] = True
+    return _raise_if_failed(
+        get_laim_forum_service().upsert_category(body, session),
+        default_status=status.HTTP_403_FORBIDDEN,
+    )
+
+
 @router.put("/categories")
 def laim_forum_upsert_category(
     payload: dict[str, Any],
@@ -216,6 +232,22 @@ def laim_forum_delete_category(
     session = _require_session(authorization, session_token)
     return _raise_if_failed(
         get_laim_forum_service().delete_category(category_id, session),
+        default_status=status.HTTP_403_FORBIDDEN,
+    )
+
+
+@router.post("/subcategories")
+def laim_forum_create_subcategory(
+    payload: dict[str, Any],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Crea subcategoría. 409 si el ID ya existe. PUT queda para editar."""
+    session = _require_session(authorization, session_token)
+    body = dict(payload)
+    body["crear"] = True
+    return _raise_if_failed(
+        get_laim_forum_service().upsert_subcategory(body, session),
         default_status=status.HTTP_403_FORBIDDEN,
     )
 
