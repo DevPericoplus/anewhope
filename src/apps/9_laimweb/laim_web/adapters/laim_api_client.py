@@ -1048,6 +1048,36 @@ def laim_forum_admin_logs(
     )
 
 
+def laim_forum_admin_activity(
+    access_token: str,
+    session_token: str,
+    *,
+    subcategory_id: str | None = None,
+    category_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    limit: int = 200,
+) -> dict[str, Any]:
+    """Visor de actividad: usuario y título del hilo."""
+    from urllib.parse import urlencode
+
+    query: dict[str, str] = {"limit": str(limit)}
+    if category_id and category_id != "ALL":
+        query["category_id"] = category_id
+    if subcategory_id and subcategory_id != "ALL":
+        query["subcategory_id"] = subcategory_id
+    if date_from:
+        query["date_from"] = date_from
+    if date_to:
+        query["date_to"] = date_to
+    return _request_forum(
+        "GET",
+        "/laim/forum/admin/activity?" + urlencode(query),
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
 def laim_forum_admin_reload_config(
     access_token: str,
     session_token: str,

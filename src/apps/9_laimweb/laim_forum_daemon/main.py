@@ -48,8 +48,9 @@ _hardening_spec.loader.exec_module(_api_hardening)
 
 # La imagen anewhope-laim-forum hace COPY del repo. Este proceso sirve
 # el router horneado en esa imagen, no el contenedor backend_core. Si
-# router_laim_forum.py cambia, el tag version_laim_forum tiene que
-# cambiar: Nexus no reconstruye un tag que ya existe.
+# router_laim_forum.py cambia (incluido GET /admin/activity), el tag
+# version_laim_forum tiene que cambiar: Nexus no reconstruye un tag
+# que ya existe.
 _router_path = ROOT_DIR / "src/apps/3_backend/router_laim_forum.py"
 _router_spec = importlib.util.spec_from_file_location(
     "router_laim_forum_daemon", _router_path

@@ -158,6 +158,37 @@ def test_expired_session_reopens_login_without_leaving_the_page() -> None:
     assert "await asyncio.sleep(60)" in STATE
 
 
+def test_logs_show_thread_activity_with_the_same_filters() -> None:
+    assert "Actividad de los hilos" in HUB
+    assert "forum_admin_activity_rows" in HUB
+    assert "laim_forum_admin_activity" in MIXIN
+    assert "/laim/forum/admin/activity" in CLIENT
+    repo = (
+        Path(__file__).resolve().parents[3]
+        / "2_shared_application"
+        / "adapters"
+        / "laim_forum_repository.py"
+    ).read_text(encoding="utf-8")
+    assert "def list_activity_admin" in repo
+    assert "'hilo' AS kind" in repo
+
+
+def test_category_tree_is_the_editor() -> None:
+    assert "Nueva categoría" in ADMIN_UI
+    assert "forum_category_modal_open" in ADMIN_UI
+    assert "Actividad por subcategoría" in ADMIN_UI
+    assert "Guardar categoría" in ADMIN_UI
+    assert "Dentro de «" in ADMIN_UI
+
+
+def test_settings_prefixes_and_urls_are_tables_with_actions() -> None:
+    assert "Cada fila es un ajuste guardado" in EXTENDED
+    assert "forum_admin_clear_setting" in EXTENDED
+    assert "forum_admin_delete_prefix" in EXTENDED
+    assert "forum_admin_edit_allowed_url" in EXTENDED
+    assert "Catálogo de avatares" in EXTENDED
+
+
 def test_general_config_is_read_only_runtime_data() -> None:
     assert "Host API" in HUB
     assert "Puerto API" in HUB

@@ -1353,6 +1353,30 @@ class LaimForumService:
             ),
         }
 
+    def list_admin_activity(
+        self,
+        session: dict[str, Any],
+        *,
+        subcategory_id: str | None = None,
+        category_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        limit: int = 200,
+    ) -> dict[str, Any]:
+        """Hilos y respuestas del visor (admin global)."""
+        if not self.is_forum_admin(session["identity_type_id"]):
+            return {"success": False, "error": "Sin permisos de administración."}
+        return {
+            "success": True,
+            "items": self._repository.list_activity_admin(
+                subcategory_id=subcategory_id,
+                category_id=category_id,
+                date_from=date_from,
+                date_to=date_to,
+                limit=limit,
+            ),
+        }
+
     def reload_admin_config(self, session: dict[str, Any]) -> dict[str, Any]:
         """Refresca estado del servicio (equivalente a reload_config en Radikal)."""
         if not self.is_forum_admin(session["identity_type_id"]):

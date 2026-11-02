@@ -253,12 +253,56 @@ def _log_date_modal(title: str, opened, value, on_apply, on_close) -> rx.Compone
     )
 
 
+def _activity_table() -> rx.Component:
+    """Hilos y respuestas: usuario y título, con los mismos filtros."""
+    return rx.vstack(
+        rx.heading("Actividad de los hilos", size="5", color=COLORS["title"]),
+        rx.text(
+            "Usuario y título del hilo. Una respuesta usa el título del hilo al que pertenece.",
+            color=COLORS["muted"],
+            font_size=FONT_SIZE_SMALL,
+        ),
+        rx.cond(
+            LaimWebState.forum_admin_activity_rows.length() == 0,
+            rx.text("Sin hilos ni respuestas en este filtro.", color=COLORS["muted"]),
+            rx.el.table(
+                rx.el.thead(
+                    rx.el.tr(
+                        rx.el.th("Fecha"),
+                        rx.el.th("Categoría"),
+                        rx.el.th("Subcategoría"),
+                        rx.el.th("Tipo"),
+                        rx.el.th("Usuario"),
+                        rx.el.th("Título"),
+                    )
+                ),
+                rx.el.tbody(
+                    rx.foreach(
+                        LaimWebState.forum_admin_activity_rows,
+                        lambda entry: rx.el.tr(
+                            rx.el.td(entry["created_at"]),
+                            rx.el.td(entry["category_name"]),
+                            rx.el.td(entry["subcategory_name"]),
+                            rx.el.td(entry["kind"]),
+                            rx.el.td(entry["user_name"]),
+                            rx.el.td(entry["title"]),
+                        ),
+                    )
+                ),
+                width="100%",
+            ),
+        ),
+        spacing="2",
+        width="100%",
+    )
+
+
 def forum_logs_admin_view() -> rx.Component:
-    """Visor del log de moderación persistido, con filtros ALL por defecto."""
+    """Visor de moderación y de actividad, con los mismos filtros."""
     return rx.vstack(
         rx.heading("Visor de logs", size="6", color=COLORS["title"]),
         rx.text(
-            "Actividad de moderación guardada en base de datos. ALL no acota ese nivel.",
+            "Los filtros de categoría, subcategoría y fechas valen para la moderación y para los hilos. ALL no acota ese nivel.",
             color=COLORS["muted"],
             font_size=FONT_SIZE_SMALL,
         ),
@@ -313,9 +357,11 @@ def forum_logs_admin_view() -> rx.Component:
             LaimWebState.forum_log_apply_to,
             LaimWebState.forum_log_close_to,
         ),
+        _activity_table(),
+        rx.heading("Moderación", size="5", color=COLORS["title"]),
         rx.cond(
             LaimWebState.forum_admin_logs_rows.length() == 0,
-            rx.text("Sin entradas de log.", color=COLORS["muted"]),
+            rx.text("Sin entradas de moderación en este filtro.", color=COLORS["muted"]),
             rx.el.table(
                 rx.el.thead(
                     rx.el.tr(

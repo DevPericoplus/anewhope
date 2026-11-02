@@ -1552,6 +1552,73 @@ class LaimForumRepository:
             {**dict(r), "created_at": _timestamp_value(r.get("created_at"))} for r in rows
         ]
 
+    def list_activity_admin(
+        self,
+        *,
+        subcategory_id: str | None = None,
+        category_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Hilos y respuestas para el visor, con los mismos filtros que el log.
+
+        El título es el del hilo. Una respuesta no tiene título propio.
+        """
+        shared: list[str] = []
+        params: dict[str, Any] = {"limit": limit}
+        if subcategory_id and subcategory_id != "ALL":
+            shared.append("t.subcategory_id = :subcategory_id")
+            params["subcategory_id"] = subcategory_id
+        if category_id and category_id != "ALL":
+            shared.append("s.categoria_id = :category_id")
+            params["category_id"] = category_id
+        thread_where = ["t.deleted = 0", *shared]
+        post_where = ["p.deleted = 0", "t.deleted = 0", *shared]
+        if date_from:
+            thread_where.append("t.created_at >= :date_from")
+            post_where.append("p.created_at >= :date_from")
+            params["date_from"] = date_from
+        if date_to:
+            thread_where.append("t.created_at < DATE_ADD(:date_to, INTERVAL 1 DAY)")
+            post_where.append("p.created_at < DATE_ADD(:date_to, INTERVAL 1 DAY)")
+            params["date_to"] = date_to
+        thread_clause = " AND ".join(thread_where)
+        post_clause = " AND ".join(post_where)
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    f"""
+                    SELECT * FROM (
+                        SELECT t.created_at, t.user_name, t.titulo AS title,
+                               'hilo' AS kind,
+                               s.nombre AS subcategory_name,
+                               c.nombre AS category_name
+                        FROM laim_forum_threads t
+                        INNER JOIN laim_forum_subcategories s ON s.id = t.subcategory_id
+                        INNER JOIN laim_forum_categories c ON c.id = s.categoria_id
+                        WHERE {thread_clause}
+                        UNION ALL
+                        SELECT p.created_at, p.user_name, t.titulo AS title,
+                               'respuesta' AS kind,
+                               s.nombre AS subcategory_name,
+                               c.nombre AS category_name
+                        FROM laim_forum_posts p
+                        INNER JOIN laim_forum_threads t ON t.id = p.thread_id
+                        INNER JOIN laim_forum_subcategories s ON s.id = t.subcategory_id
+                        INNER JOIN laim_forum_categories c ON c.id = s.categoria_id
+                        WHERE {post_clause}
+                    ) activity
+                    ORDER BY created_at DESC
+                    LIMIT :limit
+                    """
+                ),
+                params,
+            ).mappings().all()
+        return [
+            {**dict(r), "created_at": _timestamp_value(r.get("created_at"))} for r in rows
+        ]
+
     # ---------------------------------------------------- notificaciones/ratings
     def create_notification(
         self,

@@ -312,6 +312,7 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_log_from_open: bool = False
     forum_log_to_open: bool = False
     forum_admin_logs_rows: list[dict[str, str]] = []
+    forum_admin_activity_rows: list[dict[str, str]] = []
 
     # Árbol de categorías/subcategorías
     forum_cat_tree_expanded: list[str] = []
@@ -326,6 +327,9 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_cat_tree_delete_is_cat: bool = False
     forum_cat_tree_add_sub_open: bool = False
     forum_cat_tree_add_sub_cat_id: str = ""
+    forum_cat_tree_add_sub_cat_name: str = ""
+    forum_category_modal_open: bool = False
+    forum_subcategory_modal_open: bool = False
     forum_cat_tree_add_sub_id: str = ""
     forum_cat_tree_add_sub_name: str = ""
     forum_cat_tree_add_sub_desc: str = ""
@@ -878,8 +882,11 @@ class LaimForumMixin(rx.State, mixin=True):
         if view in tab_map:
             self.forum_admin_tab = tab_map[view]
             self.forum_load_admin_extended()
-        elif view in ("categories", "subcategories"):
+        elif view == "categories":
             self.forum_load_admin_panel()
+        elif view == "subcategories":
+            self.forum_load_admin_panel()
+            self.forum_load_stats()
         elif view == "bans":
             self.forum_load_admin_bans()
         elif view == "logs":
@@ -1066,8 +1073,11 @@ class LaimForumMixin(rx.State, mixin=True):
             self.forum_admin_all_subcategories = subs.get("items") or []
 
     def forum_load_admin_logs(self) -> None:
-        """Carga el log de moderación ya persistido, con los filtros activos."""
-        from laim_web.adapters.laim_api_client import laim_forum_admin_logs
+        """Carga moderación y actividad de hilos con los mismos filtros."""
+        from laim_web.adapters.laim_api_client import (
+            laim_forum_admin_activity,
+            laim_forum_admin_logs,
+        )
 
         self._forum_load_admin_catalog()
         access, session = self._forum_auth_tokens()
@@ -1101,6 +1111,7 @@ class LaimForumMixin(rx.State, mixin=True):
             )
         if not result.get("success"):
             self.forum_admin_logs_rows = []
+            self.forum_admin_activity_rows = []
             if not self.login_modal_open:
                 self.forum_admin_message = result.get("error", "No se pudieron cargar logs.")
             return
@@ -1120,6 +1131,31 @@ class LaimForumMixin(rx.State, mixin=True):
                 }
             )
         self.forum_admin_logs_rows = rows
+        activity = laim_forum_admin_activity(
+            access,
+            session,
+            category_id=category_id or None,
+            subcategory_id=subcategory_id or None,
+            date_from=self.forum_log_from or None,
+            date_to=self.forum_log_to or None,
+            limit=200,
+        )
+        activity_rows: list[dict[str, str]] = []
+        for item in activity.get("items", []) if activity.get("success") else []:
+            if not isinstance(item, dict):
+                continue
+            kind = str(item.get("kind") or "")
+            activity_rows.append(
+                {
+                    "created_at": format_display_datetime(item.get("created_at")),
+                    "category_name": str(item.get("category_name") or ""),
+                    "subcategory_name": str(item.get("subcategory_name") or ""),
+                    "user_name": str(item.get("user_name") or ""),
+                    "title": str(item.get("title") or ""),
+                    "kind": "Respuesta" if kind == "respuesta" else "Hilo",
+                }
+            )
+        self.forum_admin_activity_rows = activity_rows
         self.forum_admin_message = ""
 
     @forum_event
@@ -1779,8 +1815,9 @@ class LaimForumMixin(rx.State, mixin=True):
 
     @forum_event
     def forum_admin_edit_category(self, category_id: str) -> None:
-        """Rellena el formulario con la categoría, activa o no."""
+        """Rellena el modal con la categoría, activa o no."""
         self.forum_admin_view = "categories"
+        self.forum_category_modal_open = True
         for cat in self.forum_categories:
             if str(cat.get("id")) != str(category_id):
                 continue
@@ -1793,8 +1830,9 @@ class LaimForumMixin(rx.State, mixin=True):
 
     @forum_event
     def forum_admin_edit_subcategory(self, subcategory_id: str) -> None:
-        """Rellena el formulario con la subcategoría, activa o no."""
-        self.forum_admin_view = "subcategories"
+        """Rellena el modal del árbol con la subcategoría, activa o no."""
+        self.forum_admin_view = "categories"
+        self.forum_subcategory_modal_open = True
         for sub in self.forum_admin_subcategories:
             if str(sub.get("id")) != str(subcategory_id):
                 continue
@@ -1837,6 +1875,7 @@ class LaimForumMixin(rx.State, mixin=True):
         )
         if result.get("success"):
             self.forum_admin_message = "Categoría guardada."
+            self.forum_category_modal_open = False
             self.forum_load_admin_panel()
         else:
             self.forum_admin_message = result.get("error", "Error al guardar categoría")
@@ -1866,6 +1905,7 @@ class LaimForumMixin(rx.State, mixin=True):
         )
         if result.get("success"):
             self.forum_admin_message = "Subcategoría guardada."
+            self.forum_subcategory_modal_open = False
             self.forum_load_admin_panel()
             self._forum_rebuild_cat_tree()
         else:
@@ -1933,6 +1973,11 @@ class LaimForumMixin(rx.State, mixin=True):
         """Abre diálogo para crear subcategoría en una categoría."""
         self.forum_cat_tree_add_sub_open = True
         self.forum_cat_tree_add_sub_cat_id = cat_id
+        self.forum_cat_tree_add_sub_cat_name = cat_id
+        for cat in self.forum_categories:
+            if str(cat.get("id")) == str(cat_id):
+                self.forum_cat_tree_add_sub_cat_name = str(cat.get("nombre") or cat_id)
+                break
         self.forum_cat_tree_add_sub_id = ""
         self.forum_cat_tree_add_sub_name = ""
         self.forum_cat_tree_add_sub_desc = ""
@@ -1944,6 +1989,24 @@ class LaimForumMixin(rx.State, mixin=True):
     @forum_event
     def forum_cat_tree_close_add_sub(self) -> None:
         self.forum_cat_tree_add_sub_open = False
+
+    @forum_event
+    def forum_cat_tree_open_add_category(self) -> None:
+        """Abre el modal de una categoría nueva. El árbol es el padre visual."""
+        self.forum_category_modal_open = True
+        self.forum_admin_category_id = ""
+        self.forum_admin_category_name = ""
+        self.forum_admin_category_desc = ""
+        self.forum_admin_category_orden = "0"
+        self.forum_admin_category_activa = True
+
+    @forum_event
+    def forum_cat_tree_close_category_modal(self) -> None:
+        self.forum_category_modal_open = False
+
+    @forum_event
+    def forum_cat_tree_close_subcategory_modal(self) -> None:
+        self.forum_subcategory_modal_open = False
 
     @forum_event
     def forum_cat_tree_set_add_sub_id(self, value: str) -> None:
@@ -3050,6 +3113,35 @@ class LaimForumMixin(rx.State, mixin=True):
             )
 
     @forum_event
+    @forum_event
+    def forum_admin_clear_setting(self, which: str) -> None:
+        """Vacía un ajuste guardado y lo persiste."""
+        if which == "announce":
+            self.forum_admin_settings_announce_ban = False
+        elif which == "ban":
+            self.forum_admin_settings_ban_template = ""
+        elif which == "delete":
+            self.forum_admin_settings_delete_template = ""
+        self.forum_admin_save_settings()
+
+    @forum_event
+    def forum_admin_delete_prefix(self, prefix_id: str) -> None:
+        from laim_web.adapters.laim_api_client import laim_forum_delete_prefix
+
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_delete_prefix(prefix_id, access, session)
+        self.forum_admin_message = (
+            "Prefijo eliminado." if result.get("success") else result.get("error", "Error")
+        )
+        if result.get("success"):
+            self.forum_load_admin_extended()
+
+    @forum_event
+    def forum_admin_edit_allowed_url(self, dominio: str, descripcion: str) -> None:
+        """Carga el dominio en el formulario. Guardar actualiza la misma fila."""
+        self.forum_admin_url_dominio = dominio or ""
+        self.forum_admin_url_descripcion = descripcion or ""
+
     def forum_admin_save_settings(self) -> None:
         """Guarda ajustes de moderación."""
         from laim_web.adapters.laim_api_client import laim_forum_admin_update_settings
