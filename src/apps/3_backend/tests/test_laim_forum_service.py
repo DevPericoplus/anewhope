@@ -334,6 +334,21 @@ def test_editing_a_historical_id_with_spaces_still_saves() -> None:
     )
     assert result["success"] is True
     repository.upsert_category.assert_called_once()
+    repository.insert_moderation_log.assert_called_once()
+    assert repository.insert_moderation_log.call_args.kwargs["subcategory_id"] == ""
+    assert "Modo cli" in repository.insert_moderation_log.call_args.kwargs["message"]
+
+
+def test_config_log_migration_targets_laim_core_db() -> None:
+    """El cliente abre myllm_core_db. Sin USE el ALTER no toca el foro."""
+    root = Path(__file__).resolve().parents[4] / "infrastructure" / "database" / "migrations"
+    for name in (
+        "033_forum_config_moderation_log.sql",
+        "034_forum_moderation_log_on_laim_core_db.sql",
+    ):
+        text = (root / name).read_text(encoding="utf-8")
+        assert "USE `laim_core_db`" in text
+        assert "laim_forum_moderation_logs" in text
 
 
 def test_ban_template_uses_the_visible_name() -> None:
