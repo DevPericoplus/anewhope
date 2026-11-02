@@ -46,6 +46,42 @@ _EMOJI_PATTERN = re.compile(
     "|".join(re.escape(key) for key in sorted(EMOJI_SHORTCUTS, key=len, reverse=True))
 )
 
+# Carátula pública de YouTube (hqdefault existe para cualquier id; maxres no).
+# Como mucho cuatro por mensaje: el resto del texto sigue siendo el enlace.
+_MAX_YOUTUBE_COVERS = 4
+_VIDEO_ID = r"[A-Za-z0-9_-]{11}"
+_YOUTUBE_URL_RE = re.compile(
+    rf"""(?xi)
+    (?P<url>
+      https?://
+      (?:
+        (?:www\.|m\.|music\.)?youtube\.com/
+        (?:
+          watch\?(?:[^&\s<>()\[\]'"]*&)*v=(?P<id_watch>{_VIDEO_ID})(?![A-Za-z0-9_-])
+          | shorts/(?P<id_shorts>{_VIDEO_ID})(?![A-Za-z0-9_-])
+          | embed/(?P<id_embed>{_VIDEO_ID})(?![A-Za-z0-9_-])
+          | live/(?P<id_live>{_VIDEO_ID})(?![A-Za-z0-9_-])
+          | v/(?P<id_v>{_VIDEO_ID})(?![A-Za-z0-9_-])
+        )
+        | youtu\.be/(?P<id_short>{_VIDEO_ID})(?![A-Za-z0-9_-])
+      )
+      [^\s<>()\[\]'".,;!?]*
+    )
+    """
+)
+_YOUTUBE_ID_GROUPS = (
+    "id_watch",
+    "id_shorts",
+    "id_embed",
+    "id_live",
+    "id_v",
+    "id_short",
+)
+_YOUTUBE_COVER_MD_RE = re.compile(
+    rf"\[!\[[^\]]*\]\(https://img\.youtube\.com/vi/{_VIDEO_ID}/hqdefault\.jpg\)\]"
+    r"\([^)\s]+\)"
+)
+
 
 def forum_message_preview_text(raw: str, max_length: int = 140) -> str:
     """Genera un extracto plano para listas (sin sintaxis markdown)."""
@@ -54,6 +90,7 @@ def forum_message_preview_text(raw: str, max_length: int = 140) -> str:
         return ""
 
     text = enriched
+    text = _YOUTUBE_COVER_MD_RE.sub(" ", text)
     text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
     text = re.sub(r"\*([^*]+)\*", r"\1", text)
@@ -82,6 +119,8 @@ def enrich_forum_message_markdown(raw: str) -> str:
     - Convierte shortcodes de emoticonos (:smile:, :heart:, …) a Unicode.
     - Unifica saltos de línea.
     - Si el texto no parece markdown estructurado, mejora párrafos y viñetas simples.
+    - Bajo cada enlace de YouTube (youtube.com / youtu.be) pone la carátula
+      estática, enlazada al mismo vídeo. El listado usa el extracto y no la lleva.
     """
     text = (raw or "").replace("\r\n", "\n").strip()
     if not text:
@@ -92,7 +131,67 @@ def enrich_forum_message_markdown(raw: str) -> str:
 
     text = _EMOJI_PATTERN.sub(_replace_shortcut, text)
     text = _normalize_plain_text_to_markdown(text)
-    return text
+    return _attach_youtube_covers(text)
+
+
+def _attach_youtube_covers(text: str) -> str:
+    """Inserta la carátula bajo la primera aparición de cada vídeo."""
+    masked = _mask_code_regions(text)
+    inserts: list[tuple[int, str]] = []
+    seen: set[str] = set()
+    for match in _YOUTUBE_URL_RE.finditer(masked):
+        video_id = _youtube_video_id(match)
+        if not video_id or video_id in seen:
+            continue
+        thumb = f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
+        if thumb in text:
+            seen.add(video_id)
+            continue
+        if len(seen) >= _MAX_YOUTUBE_COVERS:
+            break
+        seen.add(video_id)
+        end = match.end()
+        if end < len(text) and text[end] in ")>":
+            end += 1
+        while end < len(text) and text[end] in ".,;!?":
+            end += 1
+        if end < len(text) and text[end] == " ":
+            end += 1
+        inserts.append((end, _youtube_cover_markdown(match.group("url"), thumb)))
+    if not inserts:
+        return text
+    parts: list[str] = []
+    cursor = 0
+    for end, cover in inserts:
+        parts.append(text[cursor:end])
+        parts.append(cover)
+        cursor = end
+    parts.append(text[cursor:])
+    return "".join(parts)
+
+
+def _youtube_video_id(match: re.Match[str]) -> str:
+    for name in _YOUTUBE_ID_GROUPS:
+        value = match.group(name)
+        if value:
+            return value
+    return ""
+
+
+def _youtube_cover_markdown(page_url: str, thumb: str) -> str:
+    """Imagen estática cuyo enlace es el mismo vídeo, en markdown."""
+    return f"\n\n[![Carátula del vídeo]({thumb})]({page_url})\n\n"
+
+
+def _mask_code_regions(text: str) -> str:
+    """Tapa bloques e inline code para no tratar un ejemplo como un vídeo."""
+
+    def _blank(match: re.Match[str]) -> str:
+        return " " * (match.end() - match.start())
+
+    masked = re.sub(r"```.*?```", _blank, text, flags=re.DOTALL)
+    masked = re.sub(r"```.*\Z", _blank, masked, flags=re.DOTALL)
+    return re.sub(r"`[^`\n]*`", _blank, masked)
 
 
 def _normalize_plain_text_to_markdown(text: str) -> str:

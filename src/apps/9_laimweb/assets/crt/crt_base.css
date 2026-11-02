@@ -1168,6 +1168,23 @@ body,
   text-decoration: underline;
 }
 
+/* Carátula de YouTube: el enlace del markdown envuelve la imagen. */
+.forum-message-viewer a:has(img) {
+  display: block;
+  width: min(100%, 480px);
+  margin: 0.7em 0 0.35em;
+  line-height: 0;
+  text-decoration: none !important;
+}
+
+.forum-message-viewer a:has(img) img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
 .forum-message-viewer blockquote {
   color: #e5e5e5;
 }
