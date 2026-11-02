@@ -155,38 +155,26 @@ def forum_new_thread_form() -> rx.Component:
             min_height="120px",
             margin_bottom="0.5em",
         ),
-        rx.hstack(
-            rx.input(
-                type="file",
-                id="forum_thread_file_input",
-                accept="image/*",
-            ),
-            rx.button(
-                "Adjuntar imagen",
-                on_click=LaimWebState.forum_request_thread_attachment,
-                class_name="crt-btn crt-btn-inline",
-            ),
-            rx.cond(
-                LaimWebState.forum_new_attachment_count > 0,
-                rx.text(
-                    rx.fragment(
-                        LaimWebState.forum_new_attachment_count,
-                        " adjunto(s)",
-                    ),
-                    color=COLORS["accent"],
-                    font_size=FONT_SIZE_SMALL,
+        _forum_image_picker("forum_thread_upload"),
+        rx.cond(
+            LaimWebState.forum_new_attachment_count > 0,
+            rx.text(
+                rx.fragment(
+                    LaimWebState.forum_new_attachment_count,
+                    " adjunto(s) listos",
                 ),
-                rx.fragment(),
+                color=COLORS["accent"],
+                font_size=FONT_SIZE_SMALL,
+                margin_bottom="0.5em",
             ),
-            spacing="2",
-            align_items="center",
-            flex_wrap="wrap",
-            margin_bottom="0.5em",
+            rx.fragment(),
         ),
         rx.hstack(
             rx.button(
                 "Publicar",
-                on_click=LaimWebState.forum_create_thread,
+                on_click=LaimWebState.forum_create_thread(
+                    rx.upload_files(upload_id="forum_thread_upload")
+                ),
                 class_name="crt-btn crt-btn-inline",
             ),
             rx.button(
@@ -201,6 +189,47 @@ def forum_new_thread_form() -> rx.Component:
         border=f"1px solid {COLORS['border']}",
         border_radius="4px",
         spacing="2",
+        width="100%",
+    )
+
+
+_FORUM_IMAGE_ACCEPT = {
+    "image/png": [".png"],
+    "image/jpeg": [".jpg", ".jpeg"],
+    "image/webp": [".webp"],
+    "image/gif": [".gif"],
+}
+_FORUM_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+
+
+def _forum_image_picker(upload_id: str) -> rx.Component:
+    """Selector de imagen. El fichero viaja con Publicar, no en un segundo clic."""
+    return rx.vstack(
+        rx.upload(
+            rx.text(
+                "Elegir imagen (PNG, JPG, WEBP o GIF, hasta 5 MB). Se envía con el mensaje.",
+                font_size=FONT_SIZE_SMALL,
+                color=COLORS["muted"],
+            ),
+            id=upload_id,
+            accept=_FORUM_IMAGE_ACCEPT,
+            max_files=3,
+            multiple=True,
+            max_size=_FORUM_IMAGE_MAX_BYTES,
+            border=f"1px dashed {COLORS['border']}",
+            padding="0.55em 0.75em",
+            width="100%",
+            border_radius="6px",
+        ),
+        rx.foreach(
+            rx.selected_files(upload_id),
+            lambda name: rx.text(
+                name,
+                font_size=FONT_SIZE_SMALL,
+                color=COLORS["accent"],
+            ),
+        ),
+        spacing="1",
         width="100%",
     )
 
@@ -488,13 +517,10 @@ def _post_row(post) -> rx.Component:
             rx.box(flex_grow="1"),
             rx.cond(
                 is_author & ~is_editing,
-                rx.icon(
-                    "pencil",
-                    size=14,
-                    color=COLORS["muted"],
-                    cursor="pointer",
-                    _hover={"color": COLORS["accent"]},
+                rx.button(
+                    "Editar",
                     on_click=LaimWebState.forum_start_edit_post(post_id, post["cuerpo_md"]),
+                    class_name="crt-btn crt-btn-inline",
                 ),
                 rx.fragment(),
             ),
@@ -581,6 +607,16 @@ def forum_thread_content_panel() -> rx.Component:
                     ),
                     rx.box(flex_grow="1"),
                     rx.cond(
+                        LaimWebState.forum_is_thread_author
+                        & ~LaimWebState.forum_edit_thread_open,
+                        rx.button(
+                            "Editar",
+                            on_click=LaimWebState.forum_start_edit_thread,
+                            class_name="crt-btn crt-btn-inline",
+                        ),
+                        rx.fragment(),
+                    ),
+                    rx.cond(
                         LaimWebState.forum_show_moderation,
                         rx.hstack(
                             rx.button(
@@ -650,6 +686,13 @@ def forum_thread_content_panel() -> rx.Component:
                     LaimWebState.forum_edit_thread_open,
                     rx.box(
                         rx.vstack(
+                            rx.input(
+                                value=LaimWebState.forum_edit_thread_title,
+                                on_change=LaimWebState.forum_set_edit_thread_title,
+                                placeholder="Título",
+                                class_name="crt-input",
+                                width="100%",
+                            ),
                             rx.el.textarea(
                                 value=LaimWebState.forum_edit_thread_body,
                                 on_change=LaimWebState.forum_set_edit_thread_body,
@@ -689,19 +732,6 @@ def forum_thread_content_panel() -> rx.Component:
                                     class_name="forum-post-body forum-thread-op-body",
                                 ),
                                 flex="1",
-                            ),
-                            rx.cond(
-                                LaimWebState.forum_is_thread_author,
-                                rx.icon(
-                                    "pencil",
-                                    size=14,
-                                    color=COLORS["muted"],
-                                    cursor="pointer",
-                                    flex_shrink="0",
-                                    _hover={"color": COLORS["accent"]},
-                                    on_click=LaimWebState.forum_start_edit_thread,
-                                ),
-                                rx.fragment(),
                             ),
                             width="100%",
                             align_items="flex-start",
@@ -764,23 +794,14 @@ def forum_thread_content_panel() -> rx.Component:
                             width="100%",
                             min_height="80px",
                         ),
+                        _forum_image_picker("forum_reply_upload"),
                         rx.hstack(
-                            rx.input(
-                                type="file",
-                                id="forum_reply_file_input",
-                                accept="image/*",
-                            ),
-                            rx.button(
-                                "Adjuntar imagen",
-                                on_click=LaimWebState.forum_request_reply_attachment,
-                                class_name="crt-btn crt-btn-inline",
-                            ),
                             rx.cond(
                                 LaimWebState.forum_reply_attachment_count > 0,
                                 rx.text(
                                     rx.fragment(
                                         LaimWebState.forum_reply_attachment_count,
-                                        " adjunto(s)",
+                                        " adjunto(s) listos",
                                     ),
                                     color=COLORS["accent"],
                                     font_size=FONT_SIZE_SMALL,
@@ -789,7 +810,9 @@ def forum_thread_content_panel() -> rx.Component:
                             ),
                             rx.button(
                                 "Enviar respuesta",
-                                on_click=LaimWebState.forum_submit_reply,
+                                on_click=LaimWebState.forum_submit_reply(
+                                    rx.upload_files(upload_id="forum_reply_upload")
+                                ),
                                 class_name="crt-btn crt-btn-inline",
                             ),
                             spacing="2",

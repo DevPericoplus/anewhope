@@ -15,6 +15,21 @@ from laim_web.dynamic_import import load_module_from_path
 
 EventHandlerReturn = Any
 
+FORUM_THREAD_UPLOAD_ID = "forum_thread_upload"
+FORUM_REPLY_UPLOAD_ID = "forum_reply_upload"
+
+
+def forum_attachment_payload(file_name: str, mime_type: str, data: bytes) -> dict[str, Any]:
+    """Cuerpo de subida de un adjunto de mensaje al daemon del foro."""
+    name = (file_name or "").strip() or "imagen"
+    mime = (mime_type or "").strip() or "application/octet-stream"
+    return {
+        "file_name": name,
+        "mime_type": mime,
+        "data_base64": base64.b64encode(data).decode("ascii"),
+        "image_kind": "post_attachment",
+    }
+
 _BORING_AVATARS = load_module_from_path(
     Path(__file__).resolve().parents[3]
     / "2_shared_application"
@@ -221,6 +236,7 @@ class LaimForumMixin(rx.State, mixin=True):
 
     # Edición de hilo / respuesta
     forum_edit_thread_open: bool = False
+    forum_edit_thread_title: str = ""
     forum_edit_thread_body: str = ""
     forum_edit_post_id: int = 0
     forum_edit_post_body: str = ""
@@ -718,64 +734,6 @@ class LaimForumMixin(rx.State, mixin=True):
     def forum_thread_has_attachments(self) -> bool:
         """True si el hilo activo tiene adjuntos."""
         return len(self.forum_thread_attachments) > 0
-
-    _FORUM_THREAD_ATTACHMENT_SCRIPT = """
-(() => {
-  const input = document.getElementById('forum_thread_file_input');
-  if (!input || !input.files || input.files.length === 0) {
-    return { attachment: null };
-  }
-  const file = input.files[0];
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result || '';
-      const base64 = typeof result === 'string' && result.includes(',')
-        ? result.split(',')[1]
-        : '';
-      resolve({
-        attachment: {
-          file_name: file.name,
-          mime_type: file.type || 'application/octet-stream',
-          data_base64: base64,
-          target: 'thread',
-        },
-      });
-    };
-    reader.onerror = () => resolve({ attachment: null });
-    reader.readAsDataURL(file);
-  });
-})()
-"""
-
-    _FORUM_REPLY_ATTACHMENT_SCRIPT = """
-(() => {
-  const input = document.getElementById('forum_reply_file_input');
-  if (!input || !input.files || input.files.length === 0) {
-    return { attachment: null };
-  }
-  const file = input.files[0];
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result || '';
-      const base64 = typeof result === 'string' && result.includes(',')
-        ? result.split(',')[1]
-        : '';
-      resolve({
-        attachment: {
-          file_name: file.name,
-          mime_type: file.type || 'application/octet-stream',
-          data_base64: base64,
-          target: 'reply',
-        },
-      });
-    };
-    reader.onerror = () => resolve({ attachment: null });
-    reader.readAsDataURL(file);
-  });
-})()
-"""
 
     _FORUM_AVATAR_SCRIPT = """
 (() => {
@@ -1402,6 +1360,11 @@ class LaimForumMixin(rx.State, mixin=True):
             laim_forum_list_posts,
         )
 
+        self.forum_edit_thread_open = False
+        self.forum_edit_thread_title = ""
+        self.forum_edit_thread_body = ""
+        self.forum_edit_post_id = 0
+        self.forum_edit_post_body = ""
         access, session = self._forum_auth_tokens()
         thread_result = laim_forum_get_thread(thread_id, access, session)
         if not thread_result.get("success"):
@@ -1458,6 +1421,7 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_thread_image_ids = []
         self.forum_thread_attachments = []
         self.forum_edit_thread_open = False
+        self.forum_edit_thread_title = ""
         self.forum_edit_thread_body = ""
         self.forum_edit_post_id = 0
         self.forum_edit_post_body = ""
@@ -1520,9 +1484,35 @@ class LaimForumMixin(rx.State, mixin=True):
     def forum_set_reply_body(self, value: str) -> None:
         self.forum_reply_body = value
 
+    async def _forum_upload_attachments(
+        self, files: list[rx.UploadFile]
+    ) -> tuple[list[int], str]:
+        """Sube las imágenes elegidas. Si una falla, no devuelve ids parciales."""
+        from laim_web.adapters.laim_api_client import laim_forum_upload_image
+
+        ids: list[int] = []
+        access, session = self._forum_auth_tokens()
+        for upload in files or []:
+            data = await upload.read()
+            if not data:
+                return [], "La imagen está vacía."
+            payload = forum_attachment_payload(
+                str(getattr(upload, "filename", "") or ""),
+                str(getattr(upload, "content_type", "") or ""),
+                data,
+            )
+            result = laim_forum_upload_image(payload, access, session)
+            if not result.get("success"):
+                return [], str(result.get("error") or "No se pudo subir la imagen.")
+            image_id = int((result.get("image") or {}).get("id") or 0)
+            if image_id <= 0:
+                return [], "Respuesta de imagen inválida."
+            ids.append(image_id)
+        return ids, ""
+
     @forum_event
-    def forum_create_thread(self) -> EventHandlerReturn:
-        """Crea un hilo en la subcategoría activa."""
+    async def forum_create_thread(self, files: list[rx.UploadFile]) -> EventHandlerReturn:
+        """Crea un hilo en la subcategoría activa, con las imágenes elegidas."""
         from laim_web.adapters.laim_api_client import laim_forum_create_thread
 
         if not self.forum_selected_subcategory_id:
@@ -1535,11 +1525,17 @@ class LaimForumMixin(rx.State, mixin=True):
             self._forum_set_error("El contenido es obligatorio.")
             return None
 
+        uploaded, upload_error = await self._forum_upload_attachments(files)
+        if upload_error:
+            self._forum_set_error(upload_error)
+            return None
+        image_ids = [*self.forum_new_thread_image_ids, *uploaded]
+
         payload: dict[str, Any] = {
             "subcategory_id": self.forum_selected_subcategory_id,
             "titulo": self.forum_new_title.strip(),
             "cuerpo_md": self.forum_new_body.strip(),
-            "image_ids": list(self.forum_new_thread_image_ids),
+            "image_ids": image_ids,
         }
         if self.forum_new_prefix_id.strip():
             payload["prefix_id"] = self.forum_new_prefix_id.strip()
@@ -1547,8 +1543,10 @@ class LaimForumMixin(rx.State, mixin=True):
         access, session = self._forum_auth_tokens()
         result = laim_forum_create_thread(payload, access, session)
         if not result.get("success"):
+            if uploaded:
+                self.forum_new_thread_image_ids = image_ids
             self._forum_set_error(result.get("error", "No se pudo crear el hilo"))
-            return None
+            return rx.clear_selected_files(FORUM_THREAD_UPLOAD_ID)
 
         thread_id = int(result.get("thread_id", 0))
         self.forum_new_thread_open = False
@@ -1560,11 +1558,11 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_load_threads(open_first=False)
         if thread_id > 0:
             self.forum_open_thread(thread_id)
-        return None
+        return rx.clear_selected_files(FORUM_THREAD_UPLOAD_ID)
 
     @forum_event
-    def forum_submit_reply(self) -> EventHandlerReturn:
-        """Publica respuesta en el hilo activo."""
+    async def forum_submit_reply(self, files: list[rx.UploadFile]) -> EventHandlerReturn:
+        """Publica respuesta en el hilo activo, con las imágenes elegidas."""
         from laim_web.adapters.laim_api_client import laim_forum_create_post
 
         if self.forum_active_thread_id <= 0:
@@ -1576,28 +1574,37 @@ class LaimForumMixin(rx.State, mixin=True):
             self._forum_set_error("Escriba una respuesta.")
             return None
 
+        uploaded, upload_error = await self._forum_upload_attachments(files)
+        if upload_error:
+            self._forum_set_error(upload_error)
+            return None
+        image_ids = [*self.forum_reply_image_ids, *uploaded]
+
         access, session = self._forum_auth_tokens()
         result = laim_forum_create_post(
             self.forum_active_thread_id,
-            {"cuerpo_md": self.forum_reply_body.strip(), "image_ids": list(self.forum_reply_image_ids)},
+            {"cuerpo_md": self.forum_reply_body.strip(), "image_ids": image_ids},
             access,
             session,
         )
         if not result.get("success"):
+            if uploaded:
+                self.forum_reply_image_ids = image_ids
             self._forum_set_error(result.get("error", "No se pudo publicar la respuesta"))
-            return None
+            return rx.clear_selected_files(FORUM_REPLY_UPLOAD_ID)
 
         self.forum_reply_body = ""
         self.forum_reply_image_ids = []
         self.forum_error = ""
         self.forum_open_thread(self.forum_active_thread_id)
-        return None
+        return rx.clear_selected_files(FORUM_REPLY_UPLOAD_ID)
 
     # --- Edición de hilo ---
 
     @forum_event
     def forum_start_edit_thread(self) -> None:
-        """Abre el formulario de edición del cuerpo del hilo."""
+        """Abre el formulario de edición del título y del texto del hilo."""
+        self.forum_edit_thread_title = self.forum_thread_title
         self.forum_edit_thread_body = self.forum_thread_body
         self.forum_edit_thread_open = True
 
@@ -1605,7 +1612,12 @@ class LaimForumMixin(rx.State, mixin=True):
     def forum_cancel_edit_thread(self) -> None:
         """Cancela la edición del hilo."""
         self.forum_edit_thread_open = False
+        self.forum_edit_thread_title = ""
         self.forum_edit_thread_body = ""
+
+    @forum_event
+    def forum_set_edit_thread_title(self, value: str) -> None:
+        self.forum_edit_thread_title = value
 
     @forum_event
     def forum_set_edit_thread_body(self, value: str) -> None:
@@ -1613,10 +1625,14 @@ class LaimForumMixin(rx.State, mixin=True):
 
     @forum_event
     def forum_save_edit_thread(self) -> None:
-        """Guarda la edición del cuerpo del hilo."""
+        """Guarda la edición del título y del texto del hilo."""
         from laim_web.adapters.laim_api_client import laim_forum_update_thread
 
+        new_title = self.forum_edit_thread_title.strip()
         new_body = self.forum_edit_thread_body.strip()
+        if not new_title:
+            self._forum_set_error("El título no puede estar vacío.")
+            return
         if not new_body:
             self._forum_set_error("El contenido no puede estar vacío.")
             return
@@ -1624,12 +1640,13 @@ class LaimForumMixin(rx.State, mixin=True):
         access, session = self._forum_auth_tokens()
         result = laim_forum_update_thread(
             self.forum_active_thread_id,
-            {"cuerpo_md": new_body},
+            {"titulo": new_title, "cuerpo_md": new_body},
             access,
             session,
         )
-        if result.get("success") or (isinstance(result, dict) and "error" not in result):
+        if result.get("success"):
             self.forum_edit_thread_open = False
+            self.forum_edit_thread_title = ""
             self.forum_edit_thread_body = ""
             self.forum_error = ""
             self.forum_open_thread(self.forum_active_thread_id)
@@ -2341,80 +2358,6 @@ class LaimForumMixin(rx.State, mixin=True):
                     break
                 self.forum_poll_tick()
             await asyncio.sleep(interval)
-
-    @forum_event
-    def forum_request_thread_attachment(self) -> EventHandlerReturn:
-        """Lee adjunto del formulario de nuevo hilo."""
-        from laim_web.laim_state import LaimWebState
-
-        return rx.call_script(
-            self._FORUM_THREAD_ATTACHMENT_SCRIPT,
-            callback=LaimWebState.forum_process_attachment_upload,
-        )
-
-    @forum_event
-    def forum_request_reply_attachment(self) -> EventHandlerReturn:
-        """Lee adjunto del formulario de respuesta."""
-        from laim_web.laim_state import LaimWebState
-
-        return rx.call_script(
-            self._FORUM_REPLY_ATTACHMENT_SCRIPT,
-            callback=LaimWebState.forum_process_attachment_upload,
-        )
-
-    @forum_event
-    def forum_process_attachment_upload(
-        self, payload: dict[str, object] | None
-    ) -> None:
-        """Sube adjunto y lo añade a la lista pendiente."""
-        from laim_web.adapters.laim_api_client import laim_forum_upload_image
-
-        if not isinstance(payload, dict):
-            return
-        raw = payload.get("attachment")
-        if not isinstance(raw, dict):
-            self._forum_set_error("No se seleccionó ningún archivo.")
-            return
-
-        file_name = str(raw.get("file_name", "")).strip()
-        mime_type = str(raw.get("mime_type", "")).strip()
-        data_base64 = str(raw.get("data_base64", "")).strip()
-        target = str(raw.get("target", "thread"))
-        if not file_name or not mime_type or not data_base64:
-            self._forum_set_error("Archivo adjunto no válido.")
-            return
-
-        access, session = self._forum_auth_tokens()
-        result = laim_forum_upload_image(
-            {
-                "file_name": file_name,
-                "mime_type": mime_type,
-                "data_base64": data_base64,
-                "image_kind": "post_attachment",
-            },
-            access,
-            session,
-        )
-        if not result.get("success"):
-            self._forum_set_error(result.get("error", "No se pudo subir el adjunto."))
-            return
-
-        image = result.get("image", {})
-        image_id = int(image.get("id", 0))
-        if image_id <= 0:
-            self._forum_set_error("Respuesta de imagen inválida.")
-            return
-
-        if target == "reply":
-            if image_id not in self.forum_reply_image_ids:
-                self.forum_reply_image_ids = [*self.forum_reply_image_ids, image_id]
-        else:
-            if image_id not in self.forum_new_thread_image_ids:
-                self.forum_new_thread_image_ids = [
-                    *self.forum_new_thread_image_ids,
-                    image_id,
-                ]
-        self.forum_error = ""
 
     @forum_event
     def forum_moderate_pin(self) -> None:
