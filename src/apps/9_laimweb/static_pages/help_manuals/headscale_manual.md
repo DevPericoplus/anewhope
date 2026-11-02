@@ -703,7 +703,7 @@ nc -zv 100.64.0.X 22
 #### 2. Importar el nodo como equipo LAIM
 
 4. En la pantalla **Ver nodos**, pulsa el botón **"⮞ Importar nodos como equipos LAIM"**.
-   - LAIM crea automáticamente un registro de equipo en **Gestión de equipos** con `ConnectionMode=tailscale` y la IP Tailscale asignada.
+   - LAIM crea automáticamente un registro de equipo en **Gestión de equipos** con `ConnectionMode=tailscale` y la IP Tailscale asignada. Desde pkg39 la malla es la alternativa: LAIM prueba primero la red local y pregunta antes de usar la malla (Manual de administración §9.2).
    - El nombre del equipo se toma del nombre que Headscale asignó al nodo (`given_name`).
 
 > **⚠️ Importante — credenciales SSH:** Los equipos importados automáticamente **no tienen credenciales SSH configuradas**. El registro se crea con la IP de Tailscale pero sin usuario remoto ni contraseña/clave RSA. Si intentas abrir una sesión SSH sin configurarlas, recibirás el error:
@@ -889,7 +889,7 @@ sudo tailscale up --login-server http://192.168.0.198:8080 --authkey <preauth_ke
 
 ---
 
-## Enrutamiento de subred (Subnet Routing)
+## Enrutamiento de subred
 
 El **subnet routing** permite que un nodo (p. ej. el Linux coordinador) anuncie su red LAN a la malla. Otros nodos (un Mac en un hotel) alcanzan NAS, Share `:4322` u otros hosts **sin** Tailscale, a través del túnel. **Por defecto DESACTIVADO** en LAIM: expone toda la subred a los nodos autenticados.
 
@@ -905,7 +905,7 @@ El **subnet routing** permite que un nodo (p. ej. el Linux coordinador) anuncie 
 1. **Config › Acceso remoto › WireGuard mesh › Estado del servidor**.
 2. Sección **Enrutamiento de subred**. Lee el aviso naranja.
 3. CIDR auto-detectado (p. ej. `192.168.1.0/24`) o introdúcelo a mano.
-4. **Activar subnet routing**. Para quitarlo: **Desactivar**.
+4. **Activar enrutamiento de subred**. Para quitarlo: **Desactivar enrutamiento de subred**.
 
 ### Activar a mano (CLI en el Linux)
 
@@ -997,7 +997,7 @@ Internet
 | Listar nodos WireGuard | Nodos conectados › Actualizar | `headscale nodes list` (IP `100.x`) |
 | Copiar `100.x` a Equipos | **Sincronizar IPs** | `tailscale_ip` en la ficha |
 | OpenSSH en Windows | Ayuda › Configurar Windows | Activar automáticamente + UAC |
-| Subnet routing | Estado del servidor | Activar / Desactivar (HITL de riesgo) |
+| Enrutamiento de subred | Estado del servidor | Activar / Desactivar (HITL de riesgo) |
 | Rutas (CLI reciente) | Servidor | `headscale nodes list-routes` / `approve-routes` |
 | Health Headscale | Servidor | `curl http://127.0.0.1:8080/health` |
 | Estado del cliente | Nodo | `tailscale status` o CLI de `Tailscale.app` |

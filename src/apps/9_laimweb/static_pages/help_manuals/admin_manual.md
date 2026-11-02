@@ -7,6 +7,7 @@
 ## Indice
 
 1. [Instalacion y primer inicio](#1-instalacion-y-primer-inicio)
+   - [1.5 Registro de la instalacion en laim.app](#15-registro-de-la-instalacion-en-laimapp)
 2. [Navegacion del administrador](#2-navegacion-del-administrador)
 3. [Gestion de usuarios y sesiones](#3-gestion-de-usuarios-y-sesiones)
 4. [Modelos de IA — Tiers y fases](#4-modelos-de-ia--tiers-y-fases)
@@ -110,12 +111,49 @@ laim web       # macOS / Linux
 
 Abre **http://localhost:4321** en el navegador.
 
+> **Direcciones (Web 0.64.33).** Toda dirección que LAIM muestra o abre dice `localhost` (`http://localhost:4321` para la interfaz web, `http://localhost:4320` para la página de arranque, el editor, el diseñador de flujos y las pestañas de terminal). `localhost` es este mismo equipo: los servidores siguen escuchando solo en `127.0.0.1`, y `http://127.0.0.1:4321` sigue funcionando — la página de inicio de sesión lo lleva a `http://localhost:4321` para que la sesión quede bajo un solo nombre. Si tenías la sesión abierta en `127.0.0.1`, inicia sesión una vez más.
+
 `laim web` realiza estas acciones automaticamente:
 1. Inicia la API REST en `127.0.0.1:4320`
 2. Diagnostica e instala/reinstala `.venv_314` si esta corrupto o es de otro SO
 3. Lanza Reflex (interfaz web) en el puerto 4321
 
 **Ejemplo.** Tras `laim web`, el API queda en `127.0.0.1:4320` y Reflex en `:4321`. Si Connect apunta a un Share, el selector de ruta IA del chat muestra Localhost y el nombre del perfil alcanzable.
+
+> **Las pruebas automáticas nunca tocan este LAIM** (Web 0.64.18). Bajo `go test`, cada `laim web` / `laim webdebug` que arranca una prueba lleva `LAIM_TEST_WEB_ISOLATED=1`: no revisa los puertos 4320/4321, no cierra ningún proceso que no haya arrancado (nunca «cerrando procesos residuales de LAIM web»), su API escucha en un puerto libre de `127.0.0.1` y no arranca Share, mesh, Reflex ni el navegador. El LAIM instalado se comporta exactamente como se describe arriba.
+
+### 1.5 Registro de la instalacion en laim.app
+
+Asocie cada copia de LAIM de su equipo a su cuenta del portal ([https://www.laim.app](https://www.laim.app) › **Registro**). Puede registrar varias (casa, oficina, laboratorio). Hay **dos caminos**; elija uno por instalacion. En el portal, el boton **Instrucciones de Registro** abre esta misma guia.
+
+Cada serial solo puede registrarse una vez. La clave maestra de la instalacion **nunca** sale del equipo.
+
+#### Registro manual (desde el portal)
+
+Ideal si acaba de instalar LAIM y tiene delante la pantalla de login.
+
+1. Abra LAIM en ese equipo (`laim web` → http://localhost:4321). En la **ventana de login**, debajo del boton de entrar, aparece el numero de serie, por ejemplo `2-K3MP-9QRA-LW7N-4BXT-M8HJ12C`.
+2. Pulse el boton **⎘** (Copiar serial). Queda en el portapapeles; no hace falta transcribirlo a mano.
+3. Entre en [https://www.laim.app](https://www.laim.app) con su cuenta (p. ej. usuario `ana`, correo `ana@empresa.com`) y abra **Registro**.
+4. Pulse **Registro manual** y pegue el serial. Cuando sea autentico vera **✅ Validado**.
+5. Nombre de maquina: el que muestra el equipo, p. ej. `PORTATIL-CASA`. Alias opcional: `Portatil de casa`. Sistema operativo: `windows`, `mac` o `linux`.
+6. Pulse **Guardar**. La fila queda **Registrada**.
+
+El serial y el nombre de maquina no se pueden cambiar despues. El alias si.
+
+#### Desde LAIM (propuesta automatica)
+
+Ideal cuando ya ha iniciado sesion en LAIM.
+
+1. En LAIM: **Configuracion › Internal › Local › Registro en laim.app › Registrar**.
+2. Escriba el **usuario** y el **e-mail** de **esta** cuenta del portal, los mismos del alta. Ejemplo: usuario `ana`, correo `ana@empresa.com`.
+3. Pulse **Enviar propuesta** **una sola vez**.
+4. En el portal, pagina **Registro** (o **Actualizar**). Vera la fila **Pendiente de reconocer**.
+5. Pulse **✅ Reconocer**. Con eso confirma que esa instalacion es suya.
+
+Si pulsa Enviar propuesta otra vez con el mismo serial, el portal dira que ya esta registrado: no es un fallo, es que la propuesta ya llego. **Rechazar** descarta la propuesta; despues puede volver a registrarla.
+En LAIM, **Internal › Local › Registro en laim.app** muestra un emoji: **⚪ No registrada** o **✅ Registrada**, guardado en `identity.dat`. Pulse **Registrar**: si ya esta reconocida en el portal, solo se actualiza el emoji (sin formulario); si el serial no esta, se abre el formulario. Si `identity.dat` ya dice que esta verificada, el boton no hace nada. Tras enviar la propuesta, reconozca en laim.app y pulse Registrar otra vez para verificar.
+
 
 ---
 
@@ -147,16 +185,34 @@ El menu de configuracion tiene 9 secciones principales:
 | **6. Share** | Servicio master Share (red local) |
 | **7. Connect** | Perfiles Share (la ruta IA se elige en chat / Direct) |
 | **8. Gestion de equipos remotos** | Equipos, grupos, accesos, Headscale |
-| **9. Internal** | Import/Export, configuracion local, API Info |
+| **9. Internal** | Import/Export, configuracion local, API Info, monitor de sistema, colas, programador, plugins, aprobaciones, revision del alma, **Comandos** |
 
 ### Accesos directos administrativos
 
-En la parte inferior del sidebar para admins:
+En **Configuración › Asistente de configuración**, debajo del menú numerado, la sección **Accesos directos** muestra los **5 botones que eligió el administrador** (desde web 0.64.23, pkg81), cada uno con su emoji encima del nombre. Los de por defecto y las alternativas que admite cualquier posición:
+
+| Posición por defecto | Botón | Abre (página existente) |
+|---|---|---|
+| 1 | 👤 Nuevo usuario | Gestión de usuarios › Crear usuario |
+| 2 | 💻 Nuevo equipo | Gestión de equipos remotos › Equipos › Añadir equipo |
+| 3 | 🔐 Acceso de usuarios | Gestión de equipos remotos › Acceso de usuarios |
+| 4 | 🦙 Modelos Ollama | Modelos IA › Listar modelos Ollama |
+| 5 | 🤖 Listar agentes | Gestión de agentes › Listar agentes |
+| — | 🖥️ Configuración de instalación | Internal › Local |
+| — | 📊 Monitor de sistema | Internal › Monitor de sistema |
+| — | 🕐 Programador de tareas | Internal › Programador de tareas |
+| — | ⚙️ Gestor de trabajos | Internal › Gestor de colas |
+
+Se eligen en **Internal › Local → Accesos directos** (posiciones 1 a 5, un selector cada una; ver [11.3](#113-local--configuracion-de-instalacion)). Cada página que abre un acceso directo tiene su botón **Volver**, que regresa al Asistente de configuración, para saltar enseguida a otro acceso directo. La elección se guarda con identificadores que no dependen del idioma: en español o en inglés se ven los mismos botones, en el mismo orden, con el nombre traducido.
+
+La sección muestra solo estos accesos directos dinámicos. Los comandos de administración que no están en la barra lateral pasan a **Internal › 11. ⌨️ Comandos** (mismos botones, mismo comportamiento, **Volver** a Interno):
 
 ```
-[localmodels]  [catalog]  [init]
-[connect]      [share]    [agents]  [update]
+[language]  [localmodels]  [catalog]  [eval]  [compare]
+[init]      [connect]      [share]    [agents]  [update]
 ```
+
+**Ruta de navegación activa.** El título de cada página de configuración es su ruta, por ejemplo **Configuración › Asistente de configuración › Interno**, y cada tramo es un enlace: **Configuración** y **Asistente de configuración** abren el asistente, **Interno** abre el menú Interno. El último tramo es la página en la que está (texto sin enlace). Las páginas de Internal con vista propia (Gestor de trabajos, Programador de tareas, Plugins, Aprobación de desarrollos, Revisión del alma) muestran la misma ruta. El clic va por página, no por texto, así que funciona igual en los dos idiomas.
 
 Equivalentes CLI:
 
@@ -208,6 +264,7 @@ Desde **config → 1 → 2. Gestionar sesiones** puedes ver:
 - **Sesiones activas**: quien esta conectado ahora, hora de inicio, canal (web/cli/remote)
 - **Sesiones cerradas**: historial de sesiones con `closed_at`
 - Opciones: cerrar una sesion remota activa, reanudar una sesion cerrada
+- La lista muestra una **referencia de sesión** corta (`sr-` + 16 caracteres hexadecimales), nunca el token de la sesión; cerrar y reanudar usan esa referencia (pkg90).
 
 ---
 
@@ -485,7 +542,7 @@ Ejemplo de salida:
 
 #### Uso web
 
-En el panel **Inferencia directa**, pulsa **Comparar Modelos**:
+En el panel **Inferencia directa**, pulsa **Comparar modelos**:
 - Dos selectores de modelo (A y B) con mini-resumen de cada evaluación.
 - Barras horizontales por métrica con indicador KPI (✓ verde = ganador, ✗ rojo = perdedor).
 - Si un modelo aún no está evaluado, LAIM pregunta si evaluarlo ahora. Al aceptar se abre **Evaluar**; al terminar, vuelve a **Comparar** con las métricas (si el otro modelo también falta, pregunta de nuevo). Puedes declinar y pulsar **Evaluar ahora** en la tarjeta más tarde.
@@ -994,6 +1051,7 @@ Accede desde **config → 3. Gestion de agentes**.
 | **audit** | Accountability y uso de recursos (awesome-auditable-ai). Perfil Agent Box `localsystem_host`. API `/api/v1/audit-agent/*` (no confundir con `GET /api/v1/audit`). Panel Config › Tecnico › Audit. Heuristica `audit_request`. Acciones trail/attribute/resources/suggest_brief. Distinto de SecOps y del panel Internal › Auditoria. Informes opcionales `reports/audit_*`. | Medio |
 | **calibrate** | Firma vocal y gate STT (ARTPARK Calibrate / Audio LLM Judge). Perfil Agent Box `localsystem_host`. Almacen `voice.dat` cifrado; enrollment 20s; verify MATCH/MISMATCH con tier Sound antes de transcribir. API `/api/v1/calibrate/*` + `/speech/enroll/*`. Panel Config › Tecnico › Calibrate. Heuristica `calibrate_request`. Distinto de Evaluator y del STT plano. Informes opcionales `reports/calibrate_*`. | Sound (juez) |
 | **images** | Vision y OCR con el tier Imagenes (Ollama multimodal). Perfil Agent Box `read_only`. PNG/JPEG/GIF/WebP/BMP via `images[]`; no Tesseract. API `/api/v1/images/*`. Panel Config › Tecnico › Images. Heuristica `images_request` (chat solo status). Distinto de Compare (frameworks) y del adjunto Direct (mismo payload). Informes opcionales `reports/images_*`. | Imagenes |
+| **file_to_md** | Fichero → Markdown como contexto para otros procesos agenticos. Tool `Read_upload_file` (recibe el fichero: ruta en este equipo o bytes) + skill `read_by_format` (firma, contenedor ZIP, texto/binario WHATWG, MIME y extension → lector Go: PDF, DOCX/XLSX/PPTX, ODF, EPUB, RTF, HTML, EML/mbox, CSV, JSON, codigo…). Perfil Agent Box `read_only`. Lo usa Inferencia directa (Adjuntar fichero › **Subir**): cualquier usuario sube un fichero desde su navegador (multipart, guardado en memoria para su envio, 2 h, solo para el); **leer y explorar rutas del equipo LAIM es solo para administradores** (`GET /api/v1/direct/attachment/list`, `POST /api/v1/file-to-md/upload` con `path`, `attachment_path` del job Direct → 403 para el resto). API `POST /api/v1/file-to-md/upload` (`convert=true` devuelve el Markdown). Los documentos pasan por el modelo de su tier con control de fidelidad; si el agente se desactiva o el tier no tiene modelo, solo extraccion determinista. **Chat (pkg51c):** caso heuristico `file_to_markdown` (es/en) o un turno de `POST /api/v1/chat/stream` con `attachment_upload_id` / `attachment_path` (ruta solo admin, 403 si no; rechazado en Connect/Share) → «convertir» responde con el Markdown, una pregunta se contesta solo con el documento; sin fichero → respuesta honesta «adjúntalo». **Panel del Chat (pkg51d):** **📄** para todos los usuarios (subida desde el navegador, como **⬆ Subir** de Direct) y **🗂** solo para administradores (el explorador del equipo LAIM de Direct; el resto ve solo el aviso «solo administradores» sobre 📄); el job de chat en cola (`POST /api/v1/queue/submit`, tipo `chat`) lleva `attachment_upload_id` + `attachment_name`, o `attachment_path` (solo admin, 403 si no, comprobado de nuevo al ejecutar el job; rechazado en Connect/Share), solo para ese turno. **Pipelines / flujos:** un paso `file_to_md` lee el fichero de la ejecucion (`attachment_upload_id` / `attachment_path` en `POST /api/v1/config/agent-pipelines-run`, el adjunto del chat en un turno de flujo, o un upload_id / ruta en la entrada del paso) y pasa al siguiente la entrada + `## File context (file_to_md)`; misma regla de propietario/admin. Modo de automatizacion **direct** (lo llaman Direct, el chat, los pasos de pipeline/flujo y REST; sin bus de eventos). Triggers es/en («pdf a markdown / pdf to markdown», «fichero adjunto / attached file»…) para Pattern Composer. | Medio |
 | **example** | Pedagogia de una inferencia (pregunta + resultado presentado): analogias cotidianas y tabla de mapeo. Perfil Agent Box `read_only`. API `/api/v1/example/*`. Panel Config › Tecnico › Example. Boton F8 **Ejemplo** del chat (Complemento). Heuristica `example_request` (chat solo status). Distinto de F8 Codigo/script y de `suggestion_example`. Informes opcionales `reports/example_*`. | Medio |
 | **pi** | Apoyo a la inferencia: localiza el caso heuristico vivo y los comandos nativos. Perfil Agent Box `read_only`. Ecosystem supervisa. localsystem y remotesystem ejecutan. API `/api/v1/pi/*`. Panel Config › Tecnico › Pi. Direct y Suggestions reciben un bloque de direccion en preguntas de inventario de host. Heuristica `pi_request` (chat solo status). Informes opcionales `reports/pi_*`. | Rapido (sin LLM) |
 | **sniffer** | Captura y analisis de paquetes en una NIC o un pcap. Perfil Agent Box `localsystem_host`. Cableado a **network** (inventario LAN ≠ paquetes). Captura viva con HITL. API `/api/v1/sniffer/*`. Panel Config › Tecnico › Sniffer. Heuristica `sniffer_request` (chat solo status/interfaces). Distinto de `net_scan` y SecOps. Informes opcionales `reports/sniffer_*`. | Rapido (sin LLM) |
@@ -1007,7 +1065,7 @@ Accede desde **config → 3. Gestion de agentes**.
 | **parser** | Hoja del diagnostico: parsea un unico log (syslog, JSON, eventos Windows, nginx…). Tier rapido, nucleo determinista. API `/api/v1/parser/parse`. | Rapido |
 | **remotesystem** | Ejecucion en equipos remotos via SSH (en desarrollo) | Medio |
 
-Los agentes builtin (`localsystem`, `reprocessing`, `devops`, `secops`, `compare`, `pipeline`, `planner`, `evaluator`, `optimizator`, `audit`, `calibrate`, `images`, `example`, `pi`, `sniffer`, `ecosystem`, `agent_r1`, `developer`, `mlx`, `scheduler`, `logic`, `diagnose`, `parser`, `router`, …) **no pueden eliminarse**. Solo pueden modificarse sus parametros.
+Los agentes builtin (`localsystem`, `reprocessing`, `devops`, `secops`, `compare`, `pipeline`, `planner`, `evaluator`, `optimizator`, `audit`, `calibrate`, `images`, `file_to_md`, `example`, `pi`, `sniffer`, `ecosystem`, `agent_r1`, `developer`, `mlx`, `scheduler`, `logic`, `diagnose`, `parser`, `router`, …) **no pueden eliminarse**. Solo pueden modificarse sus parametros.
 
 **Ejemplo.** Un usuario pide «valida el ecosistema de agentes». Gana `ecosystem_request` (no Router). Un admin abre Config › Tecnico › Ecosystem → `inventory`. Para crear un agente nuevo: AgentBuilder + gate Ecosystem + HITL `commit`.
 
@@ -1536,9 +1594,12 @@ Desde **config → 6. Share** o acceso directo `share`:
 - **Puerto de escucha** (por defecto **4322**)
 - **Clave de conexion**: genera o regenera la clave compartida
 - **Handoff para clientes**: los valores `user_connection` y `password_connection` que debes dar a cada cliente Connect
+- **Regenerar credenciales** (pkg90, Share 0.5.66) cierra todas las sesiones Connect abiertas con la clave anterior e indica cuántas: cada cliente Connect deja de funcionar hasta que su administrador pegue los valores nuevos (§8.4.3).
 - **Abrir regla de firewall**: configura automaticamente la regla TCP entrante en el firewall del SO
 
 > Si el cliente Connect no puede conectar, comprueba que el firewall permite TCP entrante en el puerto 4322 (o el que hayas configurado). Para el panel completo de monitorizacion y reparacion (catalogo, hardening OS, boton Reparar), vea [11.3.0 Firewall y puertos LAIM](#1130-firewall-y-puertos-laim).
+
+> **Las pruebas automáticas nunca tocan el firewall de este equipo** (Share 0.5.63). Bajo `go test`, activar Share (Config › Share, arranque de `share_api`) omite el paso del sistema operativo — ni `socketfilterfw`, ni `netsh`, ni `ufw`, ni el aviso de administrador de macOS — y responde «unsupported» con la pista *go test: el firewall del equipo no se modifica en las pruebas*. Solo una prueba viva explícita con `LAIM_TEST_ALLOW_REAL_INSTALL=1` aplica la regla real. LAIM instalado se comporta exactamente como se describe arriba.
 
 ### 8.4 Configurar el modo Connect (cliente)
 
@@ -1560,6 +1621,7 @@ Puede haber **varios perfiles** (un Share por perfil): por ejemplo Windows GPU y
 |---|---|
 | Crear / eliminar / editar perfiles | Config → Connect (admin) o `laim config` → Connect |
 | Elegir Localhost o un Share | Banner de chat / Direct / Acceso remoto (`PUT /api/v1/ia-route`) |
+| Elegirla desde el CLI | `laim chat --ruta-ia <localhost\|n\|nombre\|id>`, `/ruta` dentro de `laim chat`, `laim connect ruta [<n\|nombre\|id>]` |
 | Probar el perfil del formulario | Config → Connect **Probar** (`POST /config/connect/test`) |
 | API perfiles | `GET/POST /api/v1/config/connect/profiles`, `DELETE …/profiles/{id}` |
 
@@ -1567,6 +1629,7 @@ Comportamiento:
 
 - El selector de ruta IA lista **siempre Localhost** y solo los Shares **alcanzables**. Si ninguno responde, el valor por defecto es Localhost.
 - La eleccion (`Connect.IARoute`) aplica a chat, Direct, Suggestions, STT, editor y traduccion hasta que se cambie en cualquiera de esas pantallas.
+- **CLI (Connect 0.4.72, chat 0.24.168):** `laim chat --ruta-ia <valor>` (alias `--ia-route`) fija la ruta antes de empezar el chat; dentro del chat `/ruta` (alias `/route`) lista las rutas numeradas y `/ruta <n|nombre|id>` la cambia, reiniciando el chat en la nueva ruta; `laim connect ruta [<valor>]` (alias `route`) hace lo mismo para scripts, sin la comprobacion rapida del sistema. El valor es el numero de la lista (1 = Localhost), `localhost`, el id de un perfil o su nombre (sin distinguir mayusculas). Las reglas son las de la web: `SetIARoute` sobre el mismo `Connect.IARoute` (el selector web muestra el cambio), solo se aceptan Shares alcanzables, y un nodo que no es cliente Connect recibe el mismo motivo que en la web («Share y Connect están activos a la vez…» / «configure al menos un perfil Share…»), en el idioma del CLI y con la lista de opciones validas. Permiso: una sesion iniciada, no admin (la web solo pide sesion web); `laim connect` sin `ruta` sigue siendo solo admin. Cada cambio registra un evento de auditoria (grupo `connect`, accion `update`, objetivo `ia_route`, canal `cli`). `laim chat` muestra «Ruta IA: <nombre — host:puerto>» al empezar, y `laim connect` / `laim config` → Connect muestran «Ruta IA:», «Perfiles Share:» y «Puerto share_api:» en el idioma del CLI.
 - Heartbeat (8 s) y la inferencia usan el **slot de esa ruta**, no el perfil que este abierto en el formulario Config.
 - No se puede eliminar el ultimo perfil. Un perfil nuevo copia el live como plantilla. Configuraciones antiguas (un solo host) migran a un perfil llamado `Share`.
 
@@ -1577,6 +1640,37 @@ En un nodo Connect, el menu de configuracion queda en modo protegido (`connect_o
 - Los usuarios no-admin no ven el interruptor y siguen en modo protegido.
 
 Si la ruta IA es un Share, la transcripcion de voz y el juez de firma vocal usan el tier Sonido del **master**. El enrollment (`voice.dat`) sigue en este equipo. Configure Sonido local como fallback si el master no esta disponible (TCP caido o ruta 404).
+
+#### 8.4.2 Las credenciales Connect son de solo escritura (pkg88, Connect 0.4.73)
+
+El cliente Connect nunca devuelve sus credenciales en claro por la API web:
+
+- **`GET /api/v1/status`** (sin iniciar sesión), **`PUT /api/v1/ia-route`** y el cambio de perfil activo de un usuario no administrador muestran cada perfil Share solo como resumen: nombre, host, puerto, dirección, etiqueta, si responde y los indicadores `has_user_connection` / `has_password_connection` / `has_session`. Sin `user_connection`, `password_connection`, `id_session` ni la cuenta remota.
+- **Configuración › Connect** (administrador) muestra `user_connection` como `••••••` más sus 4 últimos caracteres, y `password_connection` e `id_session` como `••••••`. Si deja un campo enmascarado como está (o vacío), se conserva el valor guardado; para cambiarlo, pegue el valor nuevo con 📥. La máscara nunca se guarda. Cada guardado queda en la auditoría con el nombre de las credenciales cambiadas (nunca sus valores).
+- `laim connect` y `laim config` › Connect también muestran y piden estos valores enmascarados; pulse Intro para conservarlos.
+- La pantalla de administración **Share** (Configuración › Share) sigue mostrando `user_connection` y `password_connection` en claro, porque desde ahí se copian a cada cliente Connect. Es solo para administradores, y cada vez que se abre queda en la auditoría (grupo Share, acción `credentials_view`).
+
+Otras correcciones del mismo paquete:
+
+- `GET /api/v1/local/sessions` solo lista sus propias consolas locales, y `DELETE` solo cierra las suyas (un administrador ve todas).
+- Las rutas del plugin SentFileToRemote exigen iniciar sesión en LAIM.
+
+**Después de actualizar, rote las credenciales.** Antes de pkg88, cualquier proceso local o cualquier usuario de LAIM podía leer el handoff y el `id_session` de un cliente Connect. Esos valores pueden haber acabado en informes de QA, capturas o logs. En cada master Share:
+
+1. Abra Configuración › Share y pulse **Regenerar credenciales** (o, en `laim config` › Share, responda que sí a regenerar la clave). El `id_session` de todos los clientes deja de valer.
+2. En cada cliente Connect, abra Configuración › Connect, elija cada perfil que apunta a ese Share, pegue el `user_connection` y el `password_connection` nuevos con 📥 y pulse **Guardar y probar conexión**.
+
+#### 8.4.3 Pegar el handoff y mantener el canal (pkg90, Connect 0.4.74)
+
+**Pegar.** Configuración › Connect limpia lo que pega antes de guardar: quita espacios, tabuladores y saltos de línea (también en medio del valor, como cuando un chat o un PDF lo parte), comillas alrededor y las etiquetas `user_connection:` / `password_connection:`. También puede pegar la **clave de conexión completa** (44 caracteres, las dos mitades juntas) en cualquiera de los dos campos: LAIM la divide. Si los dos valores están intercambiados, LAIM los coloca en su sitio (la clave siempre termina en `=`, que es el final de `user_connection`). Si los valores no pueden formar una clave Share (demasiado cortos, caracteres que una clave nunca tiene), no se guarda y el mensaje dice qué volver a copiar. Un valor de **otro** Share no se puede detectar sin conectar: lo indica **Guardar y probar conexión**.
+
+**Clave equivocada o antigua.** Cuando el Share no puede descifrar una petición (credenciales regeneradas en el Share, valores intercambiados o copiados de otro Share), el cliente ahora lo dice en el idioma de la interfaz — «El Share no acepta esta clave de conexión…» — y qué hacer (copiar de nuevo los dos valores en Configuración › Share, pegarlos con 📥, **Guardar y probar conexión**). El aviso de chat/Directo lo trata como un problema de credenciales, no como una caída de red.
+
+**Recuperación automática.** Si el Share ya no conoce la sesión de este cliente (caducada, cerrada por el administrador del Share o tras una rotación con la misma clave), el cliente vuelve a autenticarse **una vez** y reenvía la petición, así que el heartbeat y la siguiente petición se recuperan sin que el usuario haga nada. Un Share que sigue rechazando se informa, nunca se reintenta en bucle. La sesión nueva se guarda en el perfil que usó el cliente (la ruta IA), no en el perfil abierto en el formulario de Configuración.
+
+**Disponibilidad en el selector.** Los selectores del chat web, Directo y Acceso remoto y la CLI (`--ia-route`, `/route`, `laim connect route`) muestran Localhost y los Share que responden. Cada dirección `share_api` se sondea como mucho una vez cada 3 s (una sola conexión TCP para todas las pestañas y sondeos), y un Share que respondió sigue en la lista 8 s después de un sondeo fallido, para que una sola conexión perdida no cambie la ruta a Localhost entre dos turnos. Un Share realmente caído desaparece pasado ese margen: la ruta muestra Localhost y `GET /api/v1/status` devuelve `ia_route_unavailable` con un aviso («El Share «silicon» no responde…»). Su elección se conserva y vuelve sola cuando el Share responde de nuevo.
+
+**A mitad de turno.** Si el Share cae durante una respuesta, el cliente reintenta el stream (turno reanudable) y, si no lo alcanza, termina con «se perdió la conexión con Share… — vuelve a intentarlo (el turno no se ha repetido en Localhost)». Un turno nunca pasa en silencio a los modelos locales.
 
 ### 8.5 Seguridad de claves
 
@@ -1686,17 +1780,26 @@ Comprobacion: `ssh-keygen -lf` sobre el `.pub` y sobre `authorized_keys` deben m
 - Si LAIM no puede cargar las credenciales guardadas (fallo al descifrar), muestra: **"LAIM no pudo cargar las credenciales guardadas de este equipo; un administrador debe revisarlas"** y registra `credential_load_failed computer=… kind=password|rsa_key` en `console.log` (nunca el secreto). Revise el equipo en Config > Equipos e introduzca de nuevo la credencial.
 - `attempted methods [none]` significa que el equipo no aceptó **ninguno** de los métodos que LAIM ofreció — no se llegó a probar ninguna credencial, así que no es una contraseña incorrecta y no se pide a nadie. `console.log` muestra `auth_no_method_accepted computer=… offered=password,keyboard-interactive` (o `publickey`): revise los métodos que permite el `sshd` del equipo (`PasswordAuthentication`, `PubkeyAuthentication`, bloques `Match`) o guarde la credencial correspondiente.
 
-### 9.2 Resolucion de host SSH
+### 9.2 Resolución de host SSH: primero la red local, Headscale con permiso (pkg39)
 
-LAIM resuelve el host del equipo en este orden de prioridad:
+LAIM llega igual a todos los equipos:
 
-1. Si hay `TailscaleIP` **y** (`ConnectionMode="tailscale"` **o** este host ya tiene una IP de malla `100.x` — `tailscale ip -4`) → usa la IP Tailscale. University / un portátil ya unido no necesita marcar cada Computer como `tailscale`.
-2. Si `Host` es una IP → la usa directamente
-3. Si `Host` es un hostname → intenta resolucion DNS
-4. Si DNS falla y hay `HostIP` definido → usa la IP directa (registra aviso en log)
-5. Sin fallback → devuelve `Host` tal cual; el error TCP informa al usuario
+1. **Primero la red local.**
+   - `Host`, tal cual si es una IP o si su nombre resuelve.
+   - `HostIP` si el nombre no resuelve.
+   - LAIM espera 3 segundos a que la red local responda.
+2. **Headscale como alternativa.** Si la red local no responde y el equipo tiene `TailscaleIP`, LAIM pregunta: «No se llega a «tibet» por la red local (…). ¿Intento la conexión por Headscale (100.x)?»
+   - **Sí:** el permiso se recuerda **para ese equipo y ese usuario durante una hora**. Se olvida cuando la red local vuelve a responder, así que el siguiente fallo vuelve a preguntar.
+   - **No:** no se intenta nada más.
+3. **Sin nadie a quien preguntar** (tareas programadas, llamadas a la API como las de University): la malla solo se usa si quien llama lo autorizó antes (`allow_mesh: true` en la petición). Si no, la conexión falla con un mensaje que dice qué se intentó y cómo autorizarlo.
+4. **Un equipo cuya única ruta es la malla** (`Host` vacío o igual a su IP `100.x`) la usa sin preguntar.
 
-**Ejemplo.** Silicon ya está en la malla. El Windows `pc-lab` sigue en `connection_mode=direct` pero tiene `tailscale_ip`. Chat SSH va a `100.x`, no a la IP del hotel.
+Otras reglas:
+- `ConnectionMode="tailscale"`, que LAIM pone al unir un equipo a Headscale, solo indica que el equipo tiene ruta de malla. Ya no se salta la red local.
+- Un inicio de sesión rechazado en la red local nunca lleva a probar la malla: solo un fallo de red.
+- `console.log` anota la ruta usada: `connected … route=lan|mesh addr=…`, `mesh_fallback needs_consent …`, `mesh_fallback use …`.
+
+**Ejemplo.** `tibet` tiene `Host=tibet.house.loc` y `TailscaleIP=100.64.0.4`, y Tailscale está parado en el equipo de LAIM. LAIM conecta a `192.168.0.198:22` (red local). Antes de pkg39 solo probaba `100.64.0.4` y fallaba con `i/o timeout`.
 
 ### 9.3 Grupos de equipos
 
@@ -1756,6 +1859,7 @@ Hay **dos caminos**:
 3. Selector **Ejecutar como servicio** (solo preferencia) y controles ▶️ Ejecutar / ⏹ Parar / 🔄 Reiniciar.
 4. Indique la URL del coordinador `http://<host-laim>:4324` (p. ej. `http://tibet.house.loc:4324`) y **Solicitar unirse**. Otro modal muestra cifrado `KeyMeshEnrollment` y el POST a `mesh_api`. *Connection refused* en el 4324 significa que en el coordinador no corre `mesh_api`: hace falta `laim web` + interruptor **Este LAIM es el coordinador de la malla** (Headscale en `:8080` no abre este puerto). El cuerpo va cifrado con **`KeyMeshEnrollment`** (clave global del major; **no** es `KeyInternalTranslator` ni la clave Share). El **mismo equipo coordinador** puede ser también cliente/nodo (`tailscale up` contra su Headscale). No pulse **Solicitar unirse** otra vez si ya hay una solicitud *aprobada*: reutiliza el mismo `request_id`. Si se creó otra fila *solicitada*, **Aplicar unión** recupera la hermana aprobada del mismo host.
 5. En el LAIM coordinador: **Solicitudes de unión** — estado *Solicitado* y botones ✅ aprobar / ❌ rechazar / ⏸ suspender / ▶️ reanudar. Tras decidir, el panel muestra el resultado y **instrucciones para el cliente** (qué pulsar en el otro LAIM). No copie claves preauth por chat: el cliente las obtiene cifradas al aplicar.
+   **Aprobación sellada (pkg90, Remote 0.17.9):** `KeyMeshEnrollment` está en todos los binarios LAIM, así que solo oculta el tráfico. Cada solicitud de unión lleva ahora su propia clave pública X25519 (`enroll_pub`; la privada se queda en el cliente, cifrada con su clave maestra) y el coordinador sella la clave preauth de Headscale con ella (ECDH + HKDF-SHA256 + AES-256-GCM). Solo el equipo que la pidió puede abrir la aprobación; quien la capture en la LAN o conozca el id de la solicitud, no. Los dos paneles muestran una **huella de la clave** (`abcd-1234-…`): antes de aprobar, pida al usuario del cliente que lea la de su pantalla y compruebe que coincide con la de la solicitud. Una solicitud de un LAIM antiguo muestra «Solicitud de un LAIM antiguo sin clave de unión»: sigue recibiendo la clave en claro hasta el **31-01-2027**; después se le pide actualizar LAIM. Los nodos ya unidos no se ven afectados.
 6. De vuelta en el cliente: **Actualizar estado** muestra la fase de enrollment **y** el plano de datos (dirección Tailscale `100.x` y backend). El ACK a `mesh_api` **no** es lo mismo que aparecer en Headscale. **Aplicar unión** si hay clave pendiente ejecuta `tailscale up`; si el daemon ya apuntaba a otro login-server, reintenta con `--force-reauth` y la preauth. Si la solicitud ya está *validada*, **no** relanza el up: comprueba si hay IP `100.x` y muestra el estado de la conexión. Solo hay unión real con esa IP. Si no hay dirección, pida **Aprobar de nuevo** en el coordinador (clave nueva) y vuelva a Aplicar. En el coordinador: **Headscale en marcha** → **Nodos conectados → Actualizar**. Luego **Sincronizar IPs con equipos LAIM**. Si el servidor suspende, el cliente muestra **Interrumpida temporalmente** y el mismo botón hace `tailscale down`.
 
 **B — Preauth clásica (manual).** Desde **Registrar equipo**: genera una clave 24 h y ejecuta `tailscale up --login-server=… --authkey=…` en el destino. Sigue siendo válida para nodos sin LAIM.
@@ -1792,18 +1896,46 @@ Con `tailscale_ip` sincronizada, el **selector de equipo del chat** y **`laim re
 
 Accede desde **config → 9. Internal**.
 
-### 11.0 Programador de tareas
+### 11.0a Gestor de colas
 
-Pagina a pantalla completa (**Internal › Programador de tareas**), junto al Gestor de colas.
+Pagina a pantalla completa (**Internal › Gestor de colas**). Carga los trabajos al abrirla; **⟳ Actualizar** los vuelve a pedir.
 
-- **Sistemas:** lista crontab (Linux/macOS) o `schtasks` (Windows) del equipo seleccionado (Localhost o un equipo remoto). Crear/editar exige confirmacion (HITL). El boton Ejecutar corre el comando ahora y avisa en Notificaciones (igual que una tarea LAIM).
-- **LAIM:** tareas propias (prompt + flujo, agentes o `invoke_kind=job`) con estados planificada / activa / inactiva. **Modificar** reabre el prompt y, al guardar, el Core lo reinterpreta. Ventanas positivas (`de lunes a viernes`, `en la proxima semana`), paridad (`dias impares` / `dias pares`) y exclusiones (`no ejecutar sabados`) se pintan en el calendario y gobiernan el ticker. «Luego ha de quedar desactivada» apaga la tarea tras el ultimo dia permitido. Si `laim web` esta en marcha, al vencer se encolan solas. Al terminar recibe una notificacion y, si hay analisis, un informe en el grupo **Tareas programadas**. El calendario de la pestana **Sistemas** muestra crontab/schtasks, no estas tareas.
-- **Descargas de modelos (larga duracion):** catalogo, Asesor y **Programar** encolan `JobTypeModelDownload` en el pool **network**. La UI solo muestra progreso (modal + chip); cambiar de pagina **no** cancela. Si se pulsa **Programar** con un pull en curso, LAIM **detiene esa descarga** (sin `ollama rm`) y abre el formulario. Fallo o incompleto → notificacion para reanudar. Crea una tarea LAIM **activa** titulada `Descarga del modelo: {modelo}` (`invoke_kind=job`). Recomendado para pulls grandes en horas valle. Otras funciones reutilizan `ScheduleLongRunningJob` / `RegisterSchedulableLongJob`.
-- **Calendario:** selectores de mes y año; cabecera lunes–domingo en el idioma de la UI. Al abrir, el mes y el día marcado son los de la fecha del sistema. Sábados y domingos tienen otro fondo en todos los temas. Colores, textos del día y nombres los calcula el Core; la web solo los muestra.
+- **Quien ve que:** el administrador ve y gestiona todos los trabajos: los de todos los usuarios y los del sistema (instalacion, actualizaciones, programador, descargas encadenadas; no tienen sesion web). Un usuario ve solo los suyos, desde cualquiera de sus sesiones. El **📋 Listado de trabajos (N)** del chat muestra siempre solo los tuyos.
+- **Cancelar:** un trabajo en cola o esperando respuesta lo puede cancelar siempre su dueno o el administrador. Uno en ejecucion solo se cancela si su trabajo se detiene de verdad (chat, Direct, teacher, sugerencias remotas, comprobar actualizacion, descarga de parche). Una descarga de modelo, una tarea programada, la instalacion de Ollama o la aplicacion de un parche en marcha terminan su paso; para parar la cola, usa la pausa global. Un trabajo cancelado sigue cancelado aunque su ejecucion termine despues.
+- **Orden y prioridad:** prioridad 1 (alta), 2 (media), 3 (baja); despues, el mas antiguo. Un trabajo nuevo de prioridad 1 es el siguiente, pero nunca detiene el que esta en marcha. El dueno (los suyos) o el administrador (cualquiera) pueden subir o bajar la prioridad de un trabajo en cola: `POST /api/v1/queue/jobs/{id}/priority` con `{"priority": 1}`. El valor explicito gana al del tipo (teacher 3, sugerencias remotas 1).
+- **Pausa global (administrador):** `PUT /api/v1/queue/state` con `{"state": "paused", "reason": "…"}` impide que empiecen trabajos nuevos; los que estan en marcha terminan su paso (estado «pausing» y despues «paused»). `{"state": "running"}` la reanuda. Lo que se encola mientras tanto, tambien tareas programadas, instalacion y actualizaciones, espera en la cola; no se descarta nada. La pausa se conserva al reiniciar: si el administrador la dejo en pausa, vuelve en pausa; si no, arranca. Cualquier usuario consulta el estado con `GET /api/v1/queue/state`.
+- **Reintentar:** una descarga de modelo, un teacher, unas sugerencias remotas, una tarea programada, la instalacion de Ollama, una comprobacion de actualizacion o una descarga de parche fallidos o cancelados los puede volver a encolar su dueno o el administrador: `POST /api/v1/queue/jobs/{id}/retry`. Chat y Direct no se reintentan (se vuelve a enviar el mensaje) y la aplicacion de un parche nunca se repite desde la cola. No hay reintento automatico.
+- **Ficha:** `GET /api/v1/queue/jobs/{id}` devuelve el trabajo con su origen (chat, direct, ui, scheduler, install, update, connect, agent:…), trabajo padre, numero de intento, ultimo progreso y linea de tiempo (en cola, iniciado, esperando respuesta, reanudado, cambios de prioridad, reintentos, terminado, fallido con su error, cancelado y por quien). `GET /api/v1/queue/overview` devuelve los recuentos por estado, tipo, grupo de recursos y origen, y un texto resumen.
+- **Que se puede encolar por la API:** `POST /api/v1/queue/submit` admite chat, direct, teacher y sugerencias remotas para cualquier usuario, y descargas de modelos para el administrador. Instalacion, actualizaciones, tareas programadas y auto-correccion las encola LAIM (sus pantallas y tickers); enviarlas devuelve 403.
+- **API:** `GET /api/v1/queue/jobs` lista tus trabajos; `?scope=all` (administrador) lista todos. La respuesta nunca incluye ids de sesion. El flujo de eventos (`/api/v1/queue/events`) envia a cada uno solo lo que puede ver: los tokens de un trabajo en marcha van solo a su sesion.
+- **Auditoria:** encolar, cancelar, responder, reintentar, cambiar la prioridad, pausar y reanudar quedan en **Audit Log**, grupo **Cola de trabajos**.
 
-Sin `laim web` las tareas LAIM no corren. Las del sistema operativo si.
+### 11.0 Tareas programadas
 
-**Ejemplo.** En Asesor pulsas **Programar** sobre `qwen3.5:9b` «todos los dias impares a las 02:00, no ejecutar sabados, luego desactivada». Se crea una tarea LAIM `invoke_kind=job` en el pool network. El calendario Sistemas no la muestra (solo crontab/schtasks).
+Pagina a pantalla completa (**Configuracion › Asistente de configuracion › Interno › 7. Tareas programadas 🗓️**), justo debajo del Gestor de colas. Sustituye al antiguo «Programador de tareas» (pkg38). El acceso directo «Tareas programadas» del Asistente abre la misma pagina y su **Volver** regresa al Asistente; la barra de titulo es la ruta de navegacion clicable.
+
+Un solo programador: toda accion con hora de LAIM es una tarea de `scheduler.dat` (cifrado, con bloqueo de fichero y escritura atomica; un fichero por instalacion) y solo se ejecuta por la cola, con la prioridad de su origen.
+
+- **Quien ve que (D1):** cada tarea pertenece al usuario que la creo. Un usuario ve y gestiona solo las suyas (en la pagina, la API, el chat y el CLI). Un administrador ve el calendario de todos, con el propietario en cada tarea, y puede actuar sobre cualquiera. Las tareas del sistema y las del sistema operativo son solo de administradores.
+- **Mes:** selectores de **Ano** y **Mes** (por defecto, el mes actual), **Hoy**, **Nueva tarea** y **Actualizar**. Columnas de lunes a domingo; el dia de hoy marcado, fines de semana sombreados y los dias de otros meses atenuados. Cada ejecucion es una ficha con un punto de color, la hora en **24 horas** (nunca am/pm), un icono (💬 prompt, 🔀 flujo, 🤖 agente, 📦 trabajo, ⚙️ sistema) y el titulo; caben 4 por dia y luego «+N mas». Una tarea que se repite mas de 4 veces en un dia sale como una franja «Titulo ×N». Las fichas pasadas toman el color del registro (correcta, fallida, no realizada, en pausa, en cola, en curso, cancelada); las futuras, el de la tarea (activa o en pausa). Todos los colores son variables del tema (`--crt-cal-*`) en los cinco temas, con contraste WCAG AA.
+- **Clic en un dia:** si esta vacio abre **Nueva tarea** con esa fecha; si tiene tareas, la lista del dia (tambien las de «+N mas»).
+- **Detalle de una tarea:** resumen, propietario, origen, que ejecuta, programacion en palabras, zona horaria, proximas 5 ejecuciones, prioridad, informe, privilegios avanzados, estado y las 10 ultimas ejecuciones (estado, retraso, trabajo de la cola, informe). Acciones: **Ejecutar ahora** (a la cola con la prioridad de su origen), **Pausar / Reanudar**, **Editar**, **Clonar** (otra fecha y hora, por ejemplo para corregir los privilegios), **Borrar** (con confirmacion; el historial se conserva) y **Ver en Gestor de colas**.
+- **Editor:** titulo, resumen corto (sale en los avisos), que ejecuta (un prompt de chat, un flujo avanzado o un agente, elegidos entre los que existen), se repite (una vez, cada dia, cada semana, cada mes), hora `HH:MM` de 24 horas, fecha, dia de la semana o del mes, zona horaria IANA (vacia = la de este equipo), **informe tras cada ejecucion** y **privilegios avanzados**. La prioridad no se pide: la da el origen (pagina, chat, CLI y Asesor P2; Sugerencias por SSH P1; informes y tareas del sistema P3). El Core valida en el idioma del usuario (una hora «9pm» o «25:00», un dia 32, una fecha o una zona invalidas, falta el prompt, el flujo o el agente). Apagar o reiniciar el ordenador nunca es una tarea programada (regla CMD-FBD-010).
+- **Pausa:** una tarea en pausa no se ejecuta; al reanudarla espera a su siguiente hora (lo pausado no se recupera).
+- **Privilegios avanzados (D17):** si al disenar la tarea das tu consentimiento, cuando un paso desatendido pide autorizacion LAIM la concede en tu nombre con tus privilegios (auditado). Sin ese consentimiento el paso hace fallar la ejecucion y llega «Tarea programada sin privilegios», desde donde puedes clonarla.
+- **Avisos:** al crear una tarea y en cada ejecucion (correcta, fallida o no realizada) reciben un aviso el propietario y los administradores, en el idioma del propietario. Si la tarea tiene informe, un trabajo hijo P3 lo escribe cifrado (`reports/scheduler_<fecha>_<id>.md.enc`, 0600) y llega «Informe disponible»; en **Informes › Tareas programadas** cada usuario ve solo los suyos.
+- **Ejecuciones no realizadas:** si el equipo estaba apagado o dormido o LAIM parado, una ejecucion que no ocurre a su hora ni en los 60 minutos siguientes queda como «no realizada» y se avisa; nunca se recupera.
+- **LAIM parado:** el binario `scheduler`, junto a `laim`, se instala solo al arrancar `laim web` (crontab en Linux, LaunchAgent en macOS, schtasks en Windows, en un bloque propio que nunca toca otras lineas). Cada hora revisa las tareas y, a su minuto, despierta a LAIM: si `laim web` responde se lo encarga; si no, arranca `laim worker`, que ejecuta la tarea, deja registro, avisos e informe, y termina. Al arrancar `laim web` todo eso aparece en la pagina. `laim scheduler uninstall` la retira y se respeta; `laim scheduler status` y `laim version` muestran su estado.
+- **Tareas del sistema (D13, solo administradores):** **Comprobacion de actualizaciones** (cada 15 minutos), **Rotacion de logs** (cada 6 horas) y **Sesiones caducadas** (cada noche a las 04:00). No se pueden borrar; si pausar, reanudar, reprogramar y ejecutar ahora. Solo corren con `laim web` arrancado y solo avisan si fallan.
+- **Agentes programados:** un agente con automatizacion «programada» y su cron activo tiene su tarea «agent-<id>». Se aceptan `M H * * *`, `M H * * D`, `M H * * MON-FRI` y `M H D * *`; otro cron se rechaza al guardar el agente.
+- **Tareas del sistema operativo (solo administradores, D12):** casilla **Mostrar tareas del sistema** y selector de equipo (Localhost o un equipo remoto). Las entradas del crontab o de schtasks salen como franjas (nunca el bloque propio de LAIM). Su detalle permite **Ejecutar**, **Editar**, **Borrar** y **Anadir tarea del sistema**: primero se muestra la diferencia y LAIM emite una confirmacion de un solo uso (10 minutos, mismo usuario); al aplicar se hace antes una copia del crontab o de la entrada de schtasks y no se escribe si el crontab cambio entretanto o su lectura llego cortada. En Windows solo tareas diarias o semanales, con su hora real.
+- **Consentimiento de los comandos de riesgo (pkg62):** antes del plan, LAIM lista cada comando de riesgo — el de la tarea y el propio registro (crontab / schtasks, CMD-RSK-023) — con su regla y su motivo en el idioma del usuario en el dialogo **«Consentimiento de comandos de riesgo»**; sin ese consentimiento no hay plan. El consentimiento del comando se guarda (equipo, comando exacto, regla, quien, cuando) y se audita (`scheduler:risky_consent`); un comando editado u otro equipo vuelven a preguntar. Una ejecucion programada de un comando de riesgo solo corre con un consentimiento guardado que coincida; si no, se rechaza y se registra (`scheduler:risky_refused`) — nunca pregunta. **Ejecutar** con el usuario delante acepta ademas su exencion verificada o una confirmacion explicita de esa ejecucion (auditada, no guardada). Lo prohibido se rechaza siempre.
+- **Desde el chat:** «¿que tareas tengo manana?», «calendario de noviembre», «¿se ejecuto la tarea copia?», «pausa la tarea copia», «muevela a las 06:00», «programa una comprobacion del disco cada lunes a las 09:00». Antes de cambiar o crear, LAIM pregunta lo que falta (nunca usa valores de ejemplo; «a las 5» pregunta 05:00 o 17:00), lee la tarea y pide un si.
+- **CLI:** `laim scheduler list|show|calendar|history|create|edit|pause|resume|run|delete` (las propias; un administrador, todas) e `install|uninstall|status` (administrador).
+- **Descargas de modelos programadas:** el catalogo y el Asesor (**Programar**) crean una tarea de una vez `Descarga del modelo: {modelo}` (`invoke_kind=job`, pool network), recomendada en horas valle.
+- **API:** `GET /api/v1/scheduler/month?year=&month=&lang=&system=1&computer_id=`, `POST /api/v1/scheduler/task`, `GET|PUT|DELETE /api/v1/scheduler/task/{id}`, `POST /api/v1/scheduler/task/{id}/run|pause|resume|clone`, `GET /api/v1/scheduler/os`, `POST /api/v1/scheduler/os/install|uninstall` (administrador) y `POST /api/v1/scheduler/request` (agente: `history`, `draft`, `system_apply`, `system_run`…). Toda modificacion queda en **Audit Log**.
+
+**Ejemplo.** En el chat: «programa una comprobacion del espacio libre cada lunes a las 9». LAIM pregunta «¿A las 09:00 o a las 21:00?», si quieres informe y si puede usar privilegios avanzados; lee la tarea («Cada lunes a las 09:00, P2») y, con tu si, la crea y te avisa. Aparece en el calendario de todos los lunes; un administrador la ve con tu nombre.
 
 ### 11.1 Import/Export
 
@@ -1812,8 +1944,10 @@ Desde **config → 9 → 1. Import/Export**:
 **Export**: exporta la configuracion a `config/laim_config_clear.json` sin secretos locales.
 - Selecciona que familias exportar (ver tabla). Incluye Share, Connect (con perfiles), Headscale, Direct, tareas programadas, alertas MRTG y catalogo DevOps.
 - Las contrasenas de usuario y las credenciales SSH de equipos se exportan vacias.
-- **Share:** se exporta el handoff (`user_connection` + `password_connection`); `connection_key_cipher` va vacio (se reconstruye al importar).
-- **Connect:** se exportan host, puerto, handoff y **perfiles Share**; `password_cipher` e `id_session` van vacios.
+- **Share:** solo los ajustes. El handoff (`user_connection` + `password_connection`, es decir, la clave de conexión completa) y `connection_key_cipher` **no** se exportan (pkg90): `laim_config_clear.json` es un fichero en claro (0600). El import conserva la clave propia de este Share.
+- **Connect:** host, puerto y **perfiles Share**; el handoff, `password_cipher` e `id_session` van vacios. El import conserva el handoff y la contraseña ya guardados para el mismo id de perfil; en un equipo nuevo pegue el handoff con 📥.
+- Las **herramientas** se exportan sin `api_key_cipher` y los **equipos** sin `tailscale_node_key` (y, como antes, sin contraseñas ni claves SSH). Un import con *overwrite* nunca borra las credenciales ya guardadas aquí.
+- Para llevar secretos a otro equipo use **Backup/Restore** (§11.2): va cifrado e incluye `identity.dat`. Export no tiene opción «incluir secretos».
 - **Headscale:** se exporta URL/puerto/opciones de servidor; `api_key_cipher` y `binary_path` van vacios (la API key es local; los nodos van en `computers`).
 - **Direct:** modelo/prompt/umbral; sin estados de conversacion.
 
@@ -1846,7 +1980,9 @@ Desde **config → 9 → 2. Local** (o **Internal › Local** en la web):
 | **Ventana de Contexto y Cache** | objeto | ver abajo | Limites de historial y KV cache aplicativo |
 | **Paralelismo Ollama** | objeto | adaptador del host (x64: 2/2; Silicon: segun RAM) | Concurrencia LAIM vs `OLLAMA_NUM_PARALLEL` (ver [11.3.2](#1132-paralelismo-ollama)) |
 | **Configuracion MLX** | objeto `mlx` | context 16384, max_tokens 2048, temp 0.7, top_p 0.95, guardrail `balanced`, max_concurrent 1 | Direct MLX nativo en Apple Silicon (ver [11.3.3](#1133-configuracion-mlx-apple-silicon)). Distinto de la ventana Ollama. |
+| **Registro en laim.app** | boton Registrar | — | Asocia esta instalacion a su cuenta del portal (ver [1.5](#15-registro-de-la-instalacion-en-laimapp)) |
 | **Editor IA** | objeto | - | Modelos Ollama para acciones inline y chat del Editor |
+| **Accesos directos** (pkg81) | 5 posiciones | Nuevo usuario, Nuevo equipo, Acceso de usuarios, Modelos Ollama, Listar agentes | Botones de «Accesos directos» del Asistente de configuración. Cada posición tiene un selector con las 9 opciones o **— Vacía —** (esa posición no muestra botón). Una opción solo puede elegirse una vez: si se repite, se rechaza indicando la posición. **Guardar accesos directos** guarda la elección en `laim.dat` (`local_settings.config_shortcuts`); **Restaurar por defecto** la borra y vuelven los de por defecto (revertir). Solo admin; API `GET`/`PUT /api/v1/config/internal/shortcuts`, `POST …/shortcuts/restore`. |
 | **TTS (Orpheus)** | objeto `tts` | voces EN/ES (`tara` / `maria`) | Modelos en Tiers **TTS EN** y **TTS ES**. Direct: espanol si la UI o la respuesta lo son (el default `en` de ficha de usuario no anglifica). University fuerza `lang=es`. Distinto del tier Sonido (STT). |
 
 #### 11.3.2 Paralelismo Ollama
@@ -2085,7 +2221,99 @@ Referencias de modelado: [OWASP LLM Top 10](https://genai.owasp.org/llm-top-10/)
 
 **Excepcion:** elevacion con `sudo` (Linux/macOS) o UAC/`runas` (Windows) **no** se rechaza aqui; queda a criterio del usuario en F6 (RISKY + consentimiento).
 
-**Comandos que LAIM nunca ejecuta o que siempre preguntan (F6, 0.58.32):** un comando con un hueco sin rellenar (`<PID>`, `<interfaz>`) o con un valor de documentación (`YourProcessName`, `/path/to/…`, `example.com`) y los programas interactivos (editores, `htop`, `top` sin modo batch) se rechazan (FORBIDDEN): no hay nada que consentir, LAIM primero averigua el valor real. Cambiar la prioridad, la clase de E/S o la afinidad de procesos (`renice`, `ionice -c`, `chrt`, `taskset -p` con valor, `.PriorityClass =`, `wmic … setpriority`) pide siempre consentimiento (RISKY, CMD-RSK-025). Desde 0.58.33 tambien liberar espacio borrando datos (`apt-get clean`, `journalctl --vacuum-*`, `docker … prune`, `Clear-RecycleBin`, `truncate -s`…) y crear swap (`fallocate`, `mkswap`) piden consentimiento (RISKY, CMD-RSK-026). Desde 0.58.35 **LAIM nunca reinicia el equipo**: CMD-FBD-010 (FORBIDDEN) cubre tambien `softwareupdate -R/--restart` y `Install-WindowsUpdate … -AutoReboot/-ForceReboot`, ademas de `shutdown`, `reboot`, `systemctl reboot` y `Restart-Computer`. Las actualizaciones se instalan sin reiniciar y LAIM avisa cuando hace falta un reinicio (`Action: restart`, `RebootRequired`, `needrestart -b`).
+**Comandos que LAIM nunca ejecuta o que siempre preguntan (F6, 0.58.32):** un comando con un hueco sin rellenar (`<PID>`, `<interfaz>`) o con un valor de documentación (`YourProcessName`, `/path/to/…`, `example.com`) y los programas interactivos (editores, `htop`, `top` sin modo batch) se rechazan (FORBIDDEN): no hay nada que consentir, LAIM primero averigua el valor real. Cambiar la prioridad, la clase de E/S o la afinidad de procesos (`renice`, `ionice -c`, `chrt`, `taskset -p` con valor, `.PriorityClass =`, `wmic … setpriority`) pide siempre consentimiento (RISKY, CMD-RSK-025). Desde 0.58.33 tambien liberar espacio borrando datos (`apt-get clean`, `journalctl --vacuum-*`, `docker … prune`, `Clear-RecycleBin`, `truncate -s`…) y crear swap (`fallocate`, `mkswap`) piden consentimiento (RISKY, CMD-RSK-026). Desde 0.58.35 **LAIM nunca reinicia el equipo**: CMD-FBD-010 (FORBIDDEN) cubre tambien `softwareupdate -R/--restart` y `Install-WindowsUpdate … -AutoReboot/-ForceReboot`, ademas de `shutdown`, `reboot`, `systemctl reboot` y `Restart-Computer`. Las actualizaciones se instalan sin reiniciar y LAIM avisa cuando hace falta un reinicio (`Action: restart`, `RebootRequired`, `needrestart -b`). Desde 0.58.37 todo cambio de red pide consentimiento y nunca se ejecuta como lectura (RISKY, CMD-RSK-021):
+- `nmcli` en todas sus formas: `con mod`/`m`/`add`/`del`/`up`/`reload`, `device set`/`reapply`/`connect`, `wifi connect`, `general hostname <nombre>`, `radio … on`;
+- `nmtui`, `resolvectl dns <interfaz> <servidores>`, `netplan apply`;
+- `ifconfig <interfaz>` con dirección, `up`, `mtu` o `alias`.
+
+Leerlos (`nmcli … show`, `resolvectl status`, `ifconfig en0`) sigue siendo una lectura. Un `Remove-Item` recursivo sobre la raíz de una unidad o una ruta del sistema (`C:`, `$Disk.DeviceID`, `$env:SystemDrive`, `$env:SystemRoot`), con los flags en cualquier orden, está prohibido (FORBIDDEN, CMD-FBD-008).
+
+**Desde 0.58.42 (pkg34m):**
+
+- **Texto entre comillas:** LAIM nunca ejecuta como orden lo que el usuario escribe entre comillas. Lo que va tras `;`, `&&`, `||`, `$(` o una comilla invertida dentro de un nombre entre comillas, y cualquier `$(…)` de la pregunta, está prohibido (FORBIDDEN, CMD-INJ-001), aunque sea una lectura como `id`. Un cambio sobre un nombre así (`instala 'htop; id'`) se responde diciendo que el nombre no es válido, sin proponer nada.
+- **Herramientas de macOS en Linux:** `vm_stat`, `diskutil`, `launchctl`, `networksetup` y otras están prohibidas en Linux (FORBIDDEN, CMD-PLT-007).
+- **Cambios de red:** usan solo los valores de la pregunta. Una puerta de enlace, unos DNS o una conexión de NetworkManager que el usuario no dio se le preguntan; si no los da, el comando no se propone.
+- **Reiniciar el equipo:** «Reinicia el equipo» se responde con la regla CMD-FBD-010 (LAIM nunca reinicia ni apaga el equipo), sin proponer comandos.
+
+**Desde 0.58.43 (pkg34n):**
+
+- **Escribir en un fichero:** una redirección a un fichero (`>`, `>>`, `&>`) pide consentimiento (RISKY, CMD-RSK-027), sea cual sea la ruta. `2>/dev/null`, `>$null`, `> NUL` y `2>&1` no escriben nada y siguen siendo lecturas.
+- **Valores de ejemplo:** las etiquetas de launchd de la documentación (`com.example.…`, `com.yourcompany.…`) están prohibidas igual que los dominios de ejemplo (FORBIDDEN, CMD-FBD-020).
+- **Salida de ejemplo:** una línea de salida de `sysctl` (`kern.ostype = Darwin`) o una ruta suelta a un fichero de datos (`/Users/…/script.log`) que escriba el modelo nunca se ejecuta.
+- **Lecturas que se hicieron:** ese bloque de una petición de cambio lista solo los comandos que se ejecutaron, nunca los que rechazó una regla o denegó el usuario.
+- **Windows:** cada comando va en su propia sesión de PowerShell. Se quitan las líneas que solo asignan una variable y los comandos que usan una variable que no asignan ellos mismos.
+
+**Desde 0.58.44 (pkg36a):**
+
+- **Comandos que no terminan:** `journalctl -f`, `tail -f`, `watch`, `log stream`, `ping` sin `-c` (en Windows, `ping -t`), `tcpdump` sin `-c` y `Get-Content -Wait` están prohibidos (FORBIDDEN, CMD-FBD-023): LAIM espera a que cada comando acabe. En macOS `top` necesita `-l` (`-n` es el número de procesos); si no, es interactivo (CMD-FBD-022).
+- **Órdenes inventadas:** un `systemctl` o `launchctl` con una orden que el programa no tiene (`systemctl set-rp-expensive-journal`) está prohibido (FORBIDDEN, CMD-FBD-024).
+- **No son lecturas:** `source <fichero>` / `. <fichero>` ejecuta el código del fichero (RISKY, CMD-RSK-028); `open`, `xdg-open`, `Start-Process`, `Invoke-Item`, `explorer` y `start` abren una ventana en el escritorio del equipo (RISKY, CMD-RSK-029).
+- **Herramientas de Linux en macOS:** `systemctl`, `journalctl`, `apt`, `dnf`, `nmcli`, `ufw`, `ip addr`, `ss`, `free`, `lsblk`, `useradd` y `ps --sort` de GNU están prohibidos en macOS (FORBIDDEN, CMD-PLT-008).
+- **Opciones que el programa no tiene (pkg96):** en macOS una opción larga (`--…`) de `df` (salvo `--libxo`), `du`, `stat`, `date` o `ps` de BSD, y `stat -c` / `date -d`, están prohibidas (FORBIDDEN, CMD-PLT-009: use `df -h`, `du -d N`, `stat -f`, `date -v`); en Linux una opción larga que `df` / `du` de GNU no tienen (`df --output-size`, `du --show-size`; un prefijo no ambiguo como `du --summ` es válido) está prohibida (FORBIDDEN, CMD-PLT-010). Solo cuenta el programa que empieza un comando (también tras `;`, `&&`, `|`, `(`, `sudo` o `env`); el texto entre comillas nunca. Las respuestas y las Sugerencias remotas nunca proponen esos comandos; en macOS `du --max-depth=N` se reescribe como `du -d N`.
+- **Opciones cortas de BSD y editores (pkg98):** en macOS cada opción corta de `df`, `du`, `stat` y `date` se comprueba con el uso de macOS (`df -B` y `du -b` son solo de GNU), y `top` con el suyo (`top -b` no existe; use `top -l 1`): prohibidas (FORBIDDEN, CMD-PLT-009). `crontab -e`, `visudo` y `vipw` abren un editor y son interactivos (FORBIDDEN, CMD-FBD-022); `visudo -c` solo comprueba y está permitido. Las respuestas y las Sugerencias remotas ya no proponen comandos que necesitan un terminal (como `top` sin `-l` en macOS).
+- **Valores de ejemplo y salidas de otro sistema (pkg99):** las respuestas y las Sugerencias remotas ya no proponen un comando con un valor copiado de la documentación (`/path/to/…`, `YourProcessName`, `example.com`; CMD-FBD-020); un comando con un hueco `<…>` sin rellenar se queda, porque LAIM pregunta el valor real. Un bloque de salida que nombra un proceso que el sistema del equipo no ejecuta (`systemd` en macOS, `launchd` o `WindowServer` en Linux) se quita como salida inventada.
+- **Orden y lecturas dependientes:** los comandos se ejecutan en el orden propuesto, así que una comprobación va después de su cambio. Una lectura que usa un fichero o carpeta que solo habría creado un cambio que no se ejecutó (una copia de seguridad, una carpeta nueva) se deja fuera y se lista con CMD-DEP-001.
+
+**Desde 0.58.45 (pkg36bc):**
+
+- **Comprobaciones de un cambio que no se hizo:** una lectura posterior que nombra el mismo fichero, unidad o PID que un cambio denegado (su comprobación) también se deja fuera (CMD-DEP-001), y la respuesta del chat no la informa.
+- **Abrir una ventana nunca es un cambio verificado:** una propuesta cuyo único cambio abre una ventana (`Start-Process ncpa.cpl`) no se ofrece como procedimiento verificado de LAIM.
+- **El proceso con más CPU:** terminar o cambiar la prioridad de «el proceso que más CPU usa» nunca apunta a un proceso que el sistema necesita (`System`, `csrss`, `lsass`, `svchost`, `kernel_task`, `launchd`, `WindowServer`, `opendirectoryd`, `systemd`, hilos del kernel); la respuesta dice cuáles se dejaron fuera.
+- **Los cambios de red y de cortafuegos** usan solo valores reales: los de la pregunta o una lectura del equipo (la interfaz de la ruta por defecto, su conexión de NetworkManager o su servicio de red de macOS, el cortafuegos activo). Una dirección de documentación (RFC 5737) recibe una explicación, no una regla.
+
+**Desde 0.58.47 (pkg37):**
+
+- **Peticiones de cambio en el chat sin procedimiento verificado:** responde LAIM (el aviso, o el dato que falta, y las lecturas); el modelo ya no propone sus propios comandos de cambio, ni en este equipo ni en un equipo remoto.
+- **Indicios de un minero de criptomonedas oculto** (`crypto_miner_check`, solo lectura): los procesos con más CPU, las líneas de órdenes que nombran un minero o un pool stratum, las conexiones establecidas a los puertos habituales de pools (3333, 4444, 5555, 7777, 14444) y, en Linux, los programas que se ejecutan desde una carpeta temporal o borrados del disco. Un programa del sistema (`/usr`, `/opt`, `/snap`…) que una actualización reemplazó mientras se ejecutaba no es un indicio: se dice aparte, como un reinicio pendiente. La tabla de CPU deja fuera los procesos de la propia lectura. No se para ni se borra nada.
+
+**Desde 0.58.46 (pkg36def):**
+
+- **Nueva regla CMD-RSK-030 (RISKY):** las escrituras CIM (`Set-CimInstance`, `New-CimInstance`, `Invoke-CimMethod`), `Rename-Computer`, las tareas programadas (`Register-ScheduledTask`…), el entorno de máquina (`[Environment]::SetEnvironmentVariable`), `Copy-Item`/`Move-Item`, `docker`/`podman` `restart`/`stop`/`rm`… y `Dism /Cleanup-Image` piden consentimiento.
+- **Claves del kernel:** una escritura de `sysctl` sobre una clave que la pregunta no nombra no se propone nunca; una clave nombrada se lee antes (`sysctl -n`), y si no existe se dice.
+- **Procedimientos verificados:** PATH para todos los usuarios, tamaño de journald, sysctl persistente, fichero de swap, archivo de paginación, nombre del equipo, zona horaria, servicio systemd, tareas programadas (Windows `Register-ScheduledTask` como SYSTEM, `/etc/cron.d`, LaunchAgent), grupo de administradores (en Windows por SID S-1-5-32-544), deshabilitar una cuenta, endurecer SSH (`sshd_config.d`, `sshd -t`; nunca sin una clave en `authorized_keys`), copia de un fichero de configuración, limpieza, reiniciar el contenedor que más memoria usa. Los valores salen de la pregunta o de una lectura; si falta uno (la ruta de un script), LAIM lo pide en vez de inventarlo. Crear una cuenta con contraseña no se propone desde Suggestions: la contraseña se teclea en la ventana de contraseña de LAIM.
+- **Solo actualizaciones de seguridad:** en Linux con `unattended-upgrade` (apt) o `dnf --security` hay una «Opción S».
+
+**Desde 0.58.86 (pkg64d, decisión del usuario 2026-10-28: cambiar la zona horaria cuenta como «cambiar la hora»):**
+
+- **Todo cambio de zona horaria es RISKY** con la regla de reloj de su plataforma, motivo «cambio de la zona horaria del sistema»: **CMD-RSK-011** (macOS) `systemsetup -settimezone`; **CMD-RSK-010** (Linux) `dpkg-reconfigure tzdata`, `setup-timezone`, `zic -l`; en ambas, cualquier escritura en `/etc/localtime` o `/etc/timezone` (`ln -s[f] … /etc/localtime`, `cp`/`mv`/`install` sobre él, `rm`/`unlink`/`truncate`, `tee`, `>`/`>>`, `sed -i`, `dd of=`); **CMD-RSK-009** (Windows) `tzutil /s` y `Set-TimeZone`. Antes `systemsetup -settimezone` sin sudo, `dpkg-reconfigure tzdata`, `unlink /etc/localtime` y `tzutil /s` se permitían; `Set-TimeZone` era CMD-RSK-021 y las escrituras de ficheros CMD-RSK-016. `timedatectl set-timezone` conserva CMD-RSK-010; `rm -f /etc/localtime` en macOS sigue Prohibido (CMD-FBD-001); `sudo …` sigue siendo CMD-RSK-001.
+- **Siguen siendo lecturas:** `systemsetup -gettimezone`, `readlink /etc/localtime`, `ls -l /etc/localtime`, `cat /etc/timezone`, `timedatectl` / `show` / `list-timezones`, `tzutil /g`, `Get-TimeZone`, `date +%Z` y un prefijo `TZ=… orden` (solo afecta a ese proceso). Un único analizador (`IsTimeZoneSetCommand`, `internal/inference/timezone_set_pkg64d.go`) decide la regla y la vista de solo lectura.
+- **Reversión en la pregunta:** los agentes local y remoto leen antes la zona actual (`readlink /etc/localtime`, `timedatectl show -p Timezone --value`, `tzutil /g`; solo lectura) y la pregunta dice «La zona actual es Europe/Madrid. Para deshacerlo: `sudo timedatectl set-timezone Europe/Madrid`.»; en macOS también Ajustes del Sistema › General › Fecha y hora › «Establecer la zona horaria automáticamente según tu ubicación», en Windows Configuración › Hora e idioma › Fecha y hora › «Establecer la zona horaria automáticamente» o `tzutil /s "<zona>"`. Si no se leyó nada (tareas programadas) dice «<zona anterior>» y nombra la lectura. El `remote-exec` de University rechaza estas órdenes como cualquier comando de riesgo.
+
+**Desde 0.58.84 (pkg64c, decisión del usuario 2026-10-28: «en caso de querer cambiar la hora en un sistema necesitamos el consentimiento del usuario»):**
+
+- **Todo comando que pone la hora del sistema es RISKY** con la regla de reloj de su plataforma: **CMD-RSK-010** (Linux), **CMD-RSK-011** (macOS) y **CMD-RSK-009** (Windows, motivo «cambio del reloj del sistema»). Cubre `date` / `gdate` / `busybox date` con un operando de hora (`date 102812002026`, `date -u 1028`), con `-s` / `--set`, o BSD `date -f formato 'fecha'` (sin `-j`); `rdate` (salvo `-p` solo), `ntpd -q`, `hwclock --set`; en Windows `Set-Date`, `net time … /set` y `date <valor>` / `time <valor>` de cmd. Antes `date 102812002026` y `date -s '…'` sin sudo se permitían y contaban como lectura. Ya eran RISKY `timedatectl set-time`, `systemsetup -settime`, `sntp -s`, `w32tm /config` y cualquier `sudo …`.
+- **Siguen siendo lecturas:** `date`, `date -u`, `date +%s` (cualquier `+FORMATO`), `date -R`, `date -I…`, `date -r fichero`, `date -v-1d`, `date -j -f "%Y" 2026 +%s` (`-j` = no poner la hora), GNU `date -d yesterday`, `date /t`, `time /t`, `Get-Date`. Un único analizador (`IsClockSetCommand`, `internal/inference/clock_set_pkg64c.go`) decide la regla y la vista de solo lectura (`IsReadOnlyCommand` es falso para esas formas); el filtro «must_not» de pkg64b lo usa en lugar de su expresión propia.
+- **Reversión en la pregunta:** la pregunta de consentimiento de un cambio de reloj añade bajo el motivo cómo volver a la hora automática: macOS «Ajustes del Sistema › General › Fecha y hora › Ajustar la hora automáticamente» o `sudo systemsetup -setusingnetworktime on`; Linux `sudo timedatectl set-ntp true`; Windows «Configuración › Hora e idioma › Fecha y hora › Establecer la hora automáticamente» o `w32tm /resync` (en inglés si el usuario usa inglés). El `remote-exec` de University rechaza estas órdenes como cualquier comando de riesgo.
+
+**Desde 0.58.79 (pkg62, decision del usuario 2026-10-27: «Toda orden arriesgada debe de llevar consentimiento por parte del usuario, salvo que en algunas ocasiones esto lo pueda cambiar el usuario con la opción "Sugerir mejora" de LAIM»):**
+
+- **El camino de laboratorio de University rechaza los comandos de riesgo.** `POST /api/v1/university/remote-exec` (loopback) solo bloqueaba los Prohibidos, asi que uno De riesgo se ejecutaba sin el consentimiento de nadie. University nunca consiente un cambio en un equipo del laboratorio, asi que un comando De riesgo tiene ahora el mismo resultado que un consentimiento denegado: 400 «remotesystem: comando de riesgo (CMD-RSK-xxx: motivo): University nunca autoriza cambios en los equipos del laboratorio; no se ejecuta», registrado en `console.log` (`remote_exec refused risky …`, y `refused forbidden` para los Prohibidos). Las lecturas se siguen ejecutando. University envuelve cada comando (`bash -lc '…'`, PowerShell `-EncodedCommand`); command_security clasifica ahora la **carga** (`UniversityExecPayload`), porque a traves del envoltorio un `Restart-Service` codificado o `bash -lc 'sudo apt install htop'` parecian permitidos y `bash -lc 'diskutil list'` parecia de riesgo. Una consulta de existencia de un programa (`command -v ifconfig`, `Get-Command winget`, la sonda de University) nunca dispara una regla por el nombre de ese programa.
+- **Las tareas programadas necesitan el consentimiento de sus comandos de riesgo** (§11.0) y **una exencion de consentimiento verificada de soul.dat** es la unica excepcion a «un comando de riesgo pregunta cada vez» (§13.3.2). Lo prohibido sigue prohibido en todas partes.
+
+**Desde 0.58.78 (pkg60b):**
+
+- **La pregunta de consentimiento de un comando de riesgo sigue el idioma del usuario.** A un usuario en inglés la pregunta de los agentes localsystem y remotesystem le dice «⚠️ Risky command [ID] on <equipo>: …», «Reason: …», «Do you authorize running it (remotely)? (y/n)», y el detalle de CMD-RSK-033 «Current value (read with …)», «New value», «To revert it», «From the graphical interface». El idioma es el del turno (el mismo que el bloque «Cómo deshacer este cambio»); si no se conoce (Connect, pipelines) la pregunta sigue en español. La tabla de reglas conserva sus motivos en español: el motivo en inglés se genera solo para la pregunta, por ID de regla. Las respuestas no cambian: s / si / sí / y / yes son sí. El diálogo ▶ Ejecutar de Sugerencias envía su idioma y el texto 409, el motivo y la reversión lo siguen.
+
+**Desde 0.58.77 (pkg60):**
+
+- **Nueva regla CMD-RSK-033 (RISKY): los ajustes del escritorio y de las aplicaciones del usuario piden consentimiento**, como las escrituras HKCU del registro de Windows (CMD-RSK-017). Cubre `gsettings set` / `reset` / `reset-recursively`, `dconf write` / `reset` / `load`, `defaults write` / `delete` (macOS), `kwriteconfig5` / `kwriteconfig6` y `xfconf-query` con `-s` / `--set`, `-r` / `--reset`, `-n` / `--create` o `-T` / `--toggle`. Antes de esta regla se ejecutaban como lecturas: en el caso #1191 de University el modelo ejecutó `dconf write /org/gnome/desktop/notifications/enabled false` en el equipo del laboratorio sin preguntar. Las lecturas mantienen su veredicto y siguen ejecutándose en la autoejecución de solo lectura: `gsettings get` / `list-*` / `range` / `describe` / `monitor`, `dconf read` / `list` / `dump` / `watch`, `defaults read` / `read-type` / `domains` / `find`, `kreadconfig5/6`, `xfconf-query` sin fijar ni restablecer; una mención dentro de una cadena de `echo` o `grep` no es una escritura (vista sin comillas).
+- **Reversión en colaboración con el usuario.** Antes de la pregunta de consentimiento de una de estas escrituras LAIM ejecuta la lectura de solo lectura correspondiente en el mismo equipo (`gsettings get`, `dconf read` / `dconf dump`, `defaults read-type` + `defaults read`, `kreadconfig … --default LAIM_SIN_VALOR`, `xfconf-query -c … -p …`), que aparece entre los comandos ejecutados, y la pregunta muestra el valor actual, el valor nuevo y la reversión exacta: la escritura con el valor anterior, o `dconf reset` / `defaults delete` / `kwriteconfig --delete` / `xfconf-query -r` si la clave no tenía valor propio (`gsettings` no lo distingue: muestra el valor anterior y `gsettings reset` para el valor por defecto), y la ruta en la interfaz gráfica cuando una guía de LAIM cubre la petición. Tras un cambio aprobado, la respuesta (chat) o el resultado de ▶ Ejecutar (Sugerencias) repite cómo deshacerlo. Una lectura que necesitaría su propio consentimiento (`sudo -u …`) no se ejecuta: la pregunta dice que no se pudo leer el valor. Solo cambia el consentimiento de esta regla; el resto de comandos de riesgo se preguntan como antes.
+
+**Desde 0.58.69 (pkg56):**
+
+- **CMD-FBD-021 prohíbe también un hueco entre comillas.** Un `<hueco>` entre comillas dobles o simples o dentro de una ruta (`Get-ChildItem -Path "<ruta>"`, `'<host>'`, `C:\Users\<usuario>`, `/proc/<pid>/fd`) es un valor sin rellenar: Prohibido, nunca ejecución automática, ▶ Ejecutar lo deniega aunque se confirme, y todo ejecutor (local, SSH, el bosque remoto y la puerta de solo lectura de Sugerencias) lo veta justo antes del shell. No son huecos: los literales regex de un programa entre comillas (`awk '/<GROUP>/'`), una carga XML entre comillas (`'<?xml …>'`), el marcado con su etiqueta de cierre (`echo "<b>…</b>"`) y los comentarios. Tanda 9 de University, caso #963: el carril disk_usage de Windows ejecutó `-Path "<ruta>"` en un equipo de laboratorio.
+- **Las letras de unidad son rutas reales.** «disco C», «unidad D:», «partición E», "drive C", "C: drive", "the E drive", `D:\` (es/en, sin acentos; las palabras de una letra como «a», «y», "I" solo con dos puntos o escritas en mayúscula) se convierten en la raíz de la unidad en el carril disk_usage de Windows; si no se nombra unidad ni ruta, el hueco se mantiene y LAIM lo pide.
+- **Nueva regla CMD-RSK-032 (RISKY): llamadas estáticas de .NET en PowerShell.** `[Tipo]::Método(…)`, `[Tipo]::new(…)`, un miembro con nombre de verbo que cambia algo (`[Win32API]::PostMessage`, caso #917) y cualquier miembro de los tipos del registro, interop, carga de ensamblados, WebClient/HttpClient, ZipFile, SendKeys o Clipboard piden consentimiento. Una lista de permitidos conservadora sigue siendo de solo lectura: tipos puros (`[math]`, `[datetime]`, `[timespan]`, `[convert]`, `[regex]`, `[guid]`, `[IO.Path]`, `[Text.Encoding]`, `[Console]`, enumeraciones como `[IO.FileMode]`), lecturas de `[Environment]` (`OSVersion`, `MachineName`, `GetEnvironmentVariable(s)`, `GetFolderPath`…), lecturas de `[IO.File]`/`[IO.Directory]` (`Exists`, `ReadAllText`, `GetFiles`…), `[IO.DriveInfo]::GetDrives`, `[WindowsIdentity]::GetCurrent`, `[Diagnostics.Process]::GetProcesses`, `[Net.Dns]::GetHostName`. Cualquier otra llamada `[Tipo]::Método(` es RISKY; el único `[System.Diagnostics.Process]::Start($psi)` que sigue siendo lectura es la lectura verificada de WSL de LAIM (`System32\wsl.exe --list --verbose / --status / --version`, ese tramo exacto).
+
+**Desde 0.58.66 (pkg50c):**
+
+- **Nueva regla CMD-RSK-031 (RISKY): los editores de administración de Windows piden consentimiento.** El editor del registro (`regedit`, `regedt32`), las directivas de grupo y de seguridad local (`gpedit.msc`, `secpol.msc`), toda consola MMC (`mmc`, cualquier `*.msc`: `services.msc`, `compmgmt.msc`, `lusrmgr.msc`…), Configuración del sistema (`msconfig`), las cuentas de usuario (`netplwiz`, `control userpasswords2`), el Panel de control y sus applets (`control`, cualquier `*.cpl`) y `rundll32` no son lecturas: lanzados por su nombre estaban permitidos y la ejecución automática de Sugerencias podía abrirlos en un equipo del laboratorio. Ahora cada uno se pregunta aparte, también por `.exe`, por ruta, con `&` o tras `cmd /c`; la ejecución automática de solo lectura los salta y los informa y, en un equipo remoto, nada se ejecuta sin tu sí. Las lecturas que solo los nombran (`Get-Process regedit`) siguen siendo lecturas. Las guías gráficas siguen proponiendo sus órdenes de apertura, sin ejecutarlas nunca.
+
+**Desde remote 0.16.80 (pkg36-build): compilación nativa de todas las plataformas**
+
+- `laim remote list` lista los equipos a los que puedes acceder (nombre, SO, dirección; nunca credenciales).
+- `laim remote exec <equipo> [--timeout <s>] [--ps] -- <comando>` (administradores) ejecuta un comando en un equipo registrado con las credenciales que guarda LAIM, muestra su salida y devuelve su código de salida. `--ps` lo envuelve para PowerShell. El registro de auditoría guarda el equipo y un hash del comando.
+- `bash scripts/compile_core_multiplatform.sh --yes` (en el Mac Apple Silicon, con sesión de administrador): en este Mac y luego en cada equipo del laboratorio, uno tras otro, para LAIM y lo que escucha en sus puertos, hace `git pull --ff-only`, compila con su script nativo, arranca `laim web` hasta que responde y lo para, y hace commit de `bin/<plataforma>/` y push. Escribe los nombres LAIM de los equipos en `scripts/compile_core_multiplatform.conf` (copia `.conf.example`; no se versiona) o pásalos con `--mac`, `--linux`, `--windows`. `--only`, `--no-push` y `--dry-run` lo limitan. Se para si un equipo tiene cambios locales fuera de su `bin/<plataforma>/`.
 
 **Donde configurarlo (web):**
 
@@ -2338,35 +2566,125 @@ El agente **teacher** aprende del feedback de los usuarios sobre comandos incorr
 ### 13.1 Como funciona
 
 ```
-Usuario → "Sugerir mejora" → Modal SSE → Teacher Agent
+Usuario → "Sugerir mejora" → trabajo de cola «teacher» (P3) → Teacher Agent
                                                ↓
-                                    Verifica heuristica estatica
+                         Extrae primero la leccion (bloque de cierre)
                                                ↓
-                                    Pregunta al usuario (si necesita aclaracion)
+                Pregunta al usuario solo si no hay leccion (max. 2)
+                — el trabajo se aparca: no ocupa un worker GPU mientras espera
                                                ↓
                                     Almacena en soul.dat (cifrado)
                                                ↓
-                              Proximas inferencias usan soul.dat como fallback
+          Prompts al instante; caminos deterministas solo verificada (§13.3)
 ```
+
+**Desde pkg54a (VersionAgent 0.58.67, VersionWeb 0.64.10):**
+
+- **Bloque de cierre.** `teacher.md` pide exactamente `summary:` / `keywords:` / `category:` / `wrong:` / `correct:` / `repair_cmds:` (separados por `;;`) / `interest_tokens:`, con palabras clave y tokens de interes en espanol e ingles, y prohibe las preguntas de cortesia al final. El parser lee tambien las claves en espanol (`resumen:`, `palabras clave:`, `categoría:`, `incorrecto:`, `correcto:`, `comandos:`, `tokens de interés:`). Un prompt de administrador sin el bloque recibe el contrato anadido. El prompt de sistema (teacher.md, plataforma, contexto de soul.dat) llega de verdad al modelo — antes de pkg54a se perdia.
+- **Primero la leccion.** Una respuesta con `summary:` o un par `wrong:`→`correct:` se guarda aunque termine en «?». Solo una respuesta sin leccion es una pregunta; tras **2** preguntas se guarda lo que dijo el usuario con confianza ≤ 0,4.
+- **Pregunta aparcada.** Una pregunta deja el trabajo en `paused_input` y libera su worker GPU y su slot de Ollama; la conversacion vive en el payload del trabajo. La respuesta (`POST /api/v1/queue/jobs/{id}/respond`, el modal, la respuesta a la notificacion, la pagina SSH) lo vuelve a encolar. La pregunta caduca a las **2 h**: el trabajo falla con «pregunta caducada, no se guardó nada / question expired, nothing was saved». Un teacher en marcha ahora **se puede cancelar** (atiende el contexto del trabajo); cancelar avisa «no se guardo nada». Tras un reinicio la pregunta pendiente se vuelve a aparcar con el tiempo que le quedaba.
+- **Contexto y plataforma.** El primer turno lleva el contexto del chat (o de la pagina SSH); la plataforma de la leccion es la del equipo destino de la conversacion (`computer_id`), nunca la de la maquina que pinta la web.
+- **Connect.** El esclavo es dueno de la conversacion (pregunta, respuesta, caducidad, cancelacion, notificacion); cada turno corre en el master Share con la historia (`/api/v1/share/remote/teacher/feedback`, sin estado). El `learn_action` del master lleva la `entry` guardada, el esclavo la sincroniza en su `soul.dat`, y su `created_by` es el usuario del esclavo, no la credencial Connect.
+
+**Como se usa soul.dat (pkg54b, VersionAgent 0.58.70):**
+
+- **Prompts del modelo — toda entrada, al instante.** Las entradas relevantes para la pregunta del usuario (BM25 con acentos plegados, equivalentes en espanol e ingles, incluidos los `interest_tokens` del teacher) y para la **plataforma del equipo destino** llegan a los prompts del modelo del chat: la via rapida y F3 (junto a la *Knowledge reference* de library.dat, seccion `## Learned from users (soul.dat)`), el enriquecimiento F6 de los agentes local y remoto, F7 y las Sugerencias remotas (ordenadas por el mensaje del usuario o, en el primer turno, por la pantalla). Como maximo **3 entradas / ~1500 bytes** por prompt, cada una marcada `verified` o `pending admin review`; si ninguna es relevante no se inyecta nada. Una entrada nunca autoriza un comando: command_security y el consentimiento siguen aplicando. La unica excepcion (pkg62) es una exencion de consentimiento verificada (§13.3.2): sustituye el consentimiento de un usuario a un comando de riesgo exacto en un equipo y nunca cambia el veredicto de command_security.
+- **Caminos deterministas — solo entradas verificadas (D2).** Marca `"verified": true` (y, si hace falta, `"priority"`, `"keywords"`, `"repair_cmds"`) con `PUT /api/v1/teacher/soul/{id}` tras revisar la entrada, o desde la pagina **Revision del alma** (§13.3, pkg54c). Solo entonces cambia: el filtro de comandos conocidos como malos (CMD-SOUL-001 tambien toma el comando `wrong:` del teacher) y el orden de reparacion. Una entrada sin verificar solo llega al texto que escribe el modelo. **Desde pkg54d ninguna leccion cambia un presentador determinista** (decision del usuario 2026-10-25: «el caso del tamaño en MB es solo un ejemplo de solicitud de un usuario, no hemos de tocar el código de LAIM por este ejemplo»): el caso especial de la unidad de memoria de pkg54b/pkg54c ya no existe y el carril de memoria vuelve a ser `free -h` / CIM en GB, mostrado tal cual lo imprimio el comando (la fila de intercambio en español `Inter:` se sigue leyendo y un valor redondeado nunca se reconvierte). Una leccion como «la memoria muestramela en MB» abre ahora el **modal de contradiccion** (§13.3.1).
+- **Prioridad (D3).** Una entrada **verificada** con prioridad **> 7** va **antes** de la guia/reparacion estatica del caso (comandos de la primera pasada y F6.3R). Las no verificadas mantienen la guia estatica primero y solo se usan si no hay reparacion estatica. Las correcciones del teacher (`wrong:` + `correct:`) se guardan con prioridad 8 y los consejos con 5.
+- Las plataformas se comparan normalizadas (`darwin`/`macos` → `mac`, `win*` → `windows`), las escrituras de soul.dat se serializan en el proceso y F6.3R remoto cuenta el uso/exito de las entradas que ejecuto.
 
 ### 13.2 Configuracion del agente Teacher
 
-Desde **config → 9 → 2. Local** puedes configurar:
+Desde **Configuracion → 9. Internal → 2. Local** (seccion «Agente Teacher») puedes configurar:
 
-- **Tier del modelo**: que tier usa el teacher (por defecto `medium`)
-- **Prompt del teacher**: el prompt de sistema del agente (editable por admin)
-- **Limite de feedback**: numero maximo de peticiones de feedback por usuario por sesion
+- **Teacher activo** (`Teacher.Enabled`, desde pkg54c **se aplica**): desactivado, el boton **«Sugerir mejora»** desaparece del chat, de la pagina del terminal SSH y de un esclavo Connect, y `POST /api/v1/queue/submit {type:"teacher"}` (y el SSE heredado `/api/v1/teacher/feedback`) se rechazan con el codigo `teacher_disabled` y un mensaje en el idioma del usuario. En un master Share desactivado, la «Sugerir mejora» de sus esclavos tambien se rechaza («desactivado en el master Share»). Una instalacion que nunca guardo este valor lo tiene **activo** (antes de pkg54c la casilla desmarcada no se guardaba); solo un «desactivado» guardado explicitamente lo apaga.
+- **Desactivar no borra ni oculta nada**: las entradas de `soul.dat` se siguen usando en los prompts y en los caminos deterministas (decision conservadora: lo aprendido sigue valiendo) y siguen en la pagina de revision. Un trabajo «Sugerir mejora» que ya estaba en cola o esperando tu respuesta termina normalmente.
+- **Tier del modelo**: que tier usa el teacher (por defecto `medium`).
+- **Prompt del teacher**: el prompt de sistema del agente (editable por admin).
 
-### 13.3 Gestion de soul.dat desde la API
+### 13.3 Revision del alma (soul.dat) — pagina de administrador
 
-Como administrador puedes:
-- Listar las entradas de `soul.dat` via API
-- Anadir, actualizar o eliminar entradas manualmente
-- Ver que feedback ha aprendido el sistema
+**Configuracion → 9. Internal → 10. Revision del alma (soul.dat)** (solo administradores: el menu no la muestra a otros roles y la API responde 403). El menu muestra entre parentesis cuantas entradas estan **pendientes de revision**, en este elemento y en «Internal». No hay notificacion por cada entrada nueva (decision conservadora: el contador basta).
 
-### 13.4 Integracion con la heuristica
+- **Filtros:** pendientes / verificadas, plataforma, categoria, origen (`user_feedback`, `teacher`, `auto_correct`, `contrastive_learn`, `presenter_learn`, `connect_sync`, …) y texto (sin distinguir mayusculas ni acentos: «servício» encuentra «servicio»). Primero las pendientes, despues las mas recientes.
+- **Cada entrada** muestra resumen, palabras clave, `wrong` / `correct`, comandos de reparacion con el veredicto de **command_security** (`CheckCommand`: permitido, de riesgo, prohibido, con regla y motivo; para `all` el peor de Windows, macOS y Linux), tokens de interes, prioridad, confianza, origen, autor (`created_by`), plataforma, fechas, usos / exitos, quien la verifico y cuando, y **«Al verificarla»**: los efectos deterministas que activa.
+- **Que significa verificar.** Una entrada sin verificar ya llega a los prompts del modelo (marcada `pending admin review`) y **no cambia nada determinista**. **Verificarla** activa sus efectos deterministas: su comando `wrong:` entra en el filtro de comandos conocidos como malos (CMD-SOUL-001), sus comandos de reparacion entran en el orden de reparacion (con prioridad **> 7**, **antes** de la guia/reparacion estatica del caso: la pagina lo avisa). Ninguna leccion cambia como presenta LAIM un valor (pkg54d). **Volver a pendiente** los quita al instante. Los comandos de reparacion siguen pasando por command_security y por el consentimiento del usuario al ejecutarse.
+- **Contraste con Ecosystem antes de verificar** («contrastar todo con ecosystem»). Verificar (o editar una entrada ya verificada) ejecuta primero una comprobacion **de solo lectura**: `validate` y `consistency` de Ecosystem (nunca `apply` ni `propose`) y command_security sobre `repair_cmds`, `wrong` y `correct`. Se **rechaza** (422 `ecosystem_refused`, mensaje es/en) si aparece un error o aviso **nuevo**, es decir causado por la entrada: un comando de reparacion o `correct` prohibido (error), un `wrong` que filtraria una lectura propia de LAIM (aviso), o un error/aviso de Ecosystem sobre el agente dueño del alma (`agent:teacher`). **Desde pkg54d un comando de reparacion o `correct` de riesgo ya no lo impide** (decision del usuario 2026-10-25: «permitir verificarlo, y asegurarse de que está en el log»): es un aviso visible en la pagina (`risky_commands` en el contraste, categoria `command_risk`), la verificacion sigue adelante y queda en el registro de auditoria con los comandos de riesgo y sus reglas; al ejecutarse sigue pidiendo consentimiento **cada vez** (la unica excepcion es una exencion de consentimiento verificada de ese comando exacto, usuario y equipo, §13.3.2). Lo prohibido sigue impidiendolo. Los demas hallazgos de Ecosystem no dependen de soul.dat: se muestran como contexto y no bloquean. El boton **Contrastar con Ecosystem** de cada entrada lo ejecuta sin verificar (`POST /api/v1/teacher/soul/{id}/ecosystem`).
+- **Editar:** resumen, palabras clave, categoria, `wrong`, `correct`, comandos de reparacion (uno por linea), tokens de interes, prioridad 1–10 y plataforma. Un campo vacio lo borra. **Comprobar comandos** muestra el veredicto antes de guardar; al guardar se vuelve a comprobar en Go. Un comando **prohibido** impide guardar comandos nuevos y verificar la entrada (422 con todos los veredictos); uno **de riesgo** se acepta y se avisa (pedira consentimiento).
+- **Borrar** pide confirmacion en la misma pagina («¿Borrar esta entrada definitivamente?»), nunca un dialogo del navegador.
+- **Registro de auditoria (pkg54d).** Cada **verificacion, vuelta a pendiente, edicion y borrado** (y el alta manual, que queda verificada) se escribe en el registro de auditoria de LAIM (`audit.dat`, `laim audit` y Configuracion › Auditoria, grupo **«Alma (soul.dat)»**, acciones `soul_verify` / `soul_unverify` / `soul_edit` / `soul_delete`): quien y cuando, el id de la entrada, su prioridad y plataforma, sus comandos de riesgo con sus reglas y los hallazgos de Ecosystem del contraste. Las contradicciones detectadas (`soul_contradiction`) y lo que eligen los usuarios (`soul_choice`) van al mismo grupo.
+- **Marca de contradiccion (pkg54d).** Una entrada que el detector encontro muestra **«⚡ Contradiccion ×N»** con los tipos vistos, cuantas veces los usuarios la **rechazaron** (mantuvieron la respuesta de LAIM o eligieron la otra leccion), la **aplicaron** en un turno o la **enviaron a revision**, y la ultima fecha. El filtro de estado tiene **«contradiction»**. Enviarla a revision no cambia si esta verificada: decides tu.
+- **Connect / Share.** Un esclavo guarda de cada leccion que le llega del master el id y la fecha de creacion de la entrada del master. Cada 10 minutos (desde el latido Connect) pregunta al master por esas entradas (`POST /api/v1/share/teacher/soul/review`, cifrado; el master solo contesta si coinciden id **y** fecha) y aplica la revision del master: **verificar, editar y borrar** en el master llegan a las copias de sus esclavos. Una edicion local en el esclavo se mantiene hasta que el master vuelva a cambiar la entrada. Una copia verificada (`connect_sync`) cuenta como correccion del teacher en CMD-SOUL-001.
 
-La heuristica dinamica de `soul.dat` actua como **fallback** despues de la busqueda en la heuristica estatica de `heuristic_guide.go`. La heuristica estatica tiene siempre precedencia; `soul.dat` completa lo que la estatica no cubre.
+### 13.3.1 Contradicciones (pkg54d)
+
+Decision del usuario 2026-10-25: «si LAIM detecta alguna contradicción, avisar en un modal proponiendo alternativas para que el usuario elija». Con la respuesta ya entregada, LAIM compara el turno con sus lecciones **relevantes** y, si una lo contradice, el usuario ve un modal. Go detecta y construye las alternativas (`internal/utils/soul_contradiction_pkg54d.go`); Reflex y la pagina SSH solo las presentan.
+
+**Que lecciones.** Las entradas que enseñan los usuarios (`user_feedback`, `teacher`, `connect_sync`; las medidas `auto_correct` / `contrastive_learn` no son lecciones) que el BM25 de soul.dat devuelve para la pregunta en la plataforma del equipo destino (las 10 primeras) **y** que comparten su tema: al menos una palabra no generica de la pregunta (sin acentos, con su equivalente en español/ingles) es una de sus palabras clave / tokens de interes, o dos estan en cualquier parte de la entrada. Las palabras genericas («equipo», «computer», «sistema», «servidor», «cuánta», «how», «show»…) nunca cuentan solas. Verificada o no: la deteccion solo **muestra**; una leccion sin verificar sigue sin cambiar ningun camino determinista.
+
+**Reglas de deteccion** (deterministas; campos estructurados + palabras clave sin acentos; nunca un modelo; en caso de duda no se avisa):
+
+| Tipo | Regla | Se avisa cuando |
+|---|---|---|
+| 1 leccion vs respuesta | `unit` | respondio un carril determinista (su caso, o el caso heuristico cuyas lecturas se ejecutaron) **y** la leccion pide una unidad de bytes (un verbo de mostrar o «en/in/a/to» antes de MB/MiB/GB/GiB/KB/KiB/TB/TiB, es/en; una unidad tras «no», «not», «instead of», «en lugar de», «en vez de», «rather than» es rechazada, no pedida) **y** la respuesta muestra una cantidad en otra escala (una que la leccion rechaza, o cualquier otra si no rechaza ninguna) |
+| 1 | `wrong_ran` | un comando que se ejecuto en el turno es el `wrong` de la leccion (el comparador de CMD-SOUL-001: mismo comando; mismo binario en una leccion «not found»; patrones de metodo) |
+| 1 | `other_form` | el comando de la leccion (`correct` si es una linea de comando, `repair_cmds`) ejecuta el mismo programa que uno que se ejecuto, con otros argumentos, y no esta entre ellos |
+| 2 leccion vs leccion | `wrong_is_correct` | el `wrong` de A coincide con un comando de B |
+| 2 | `opposing_correct` | las dos tienen el mismo `wrong` y distinto `correct` |
+| 2 | `opposing_unit` | las dos piden una unidad de bytes de distinta escala, o una rechaza la de la otra |
+| 3 leccion vs guia/reparacion estatica (cualquier prioridad) | `wrong_static` | el `wrong` de la leccion coincide con un comando de la reparacion estatica del caso (`HeuristicStaticRepairCommands`) |
+| 3 | `static_other` | un comando de la leccion ejecuta un programa de la reparacion estatica con otros argumentos |
+| 3 | `wrong_guide` | el `wrong` de la leccion coincide con el comando de apertura o la alternativa CLI de la guia grafica certificada (la del carril de cambios, si no la de detras de una lectura) |
+| 3 | `guide_must_not` | el programa de un comando de la leccion (≥ 3 letras, sin `.exe`/`.cpl`) es una palabra completa de una linea «no hacer» de la guia |
+| 4 leccion vs seguridad | `forbidden` / `risky` | un comando de la leccion es Prohibido / De riesgo para command_security en la plataforma del turno |
+
+**`risky` se avisa una sola vez por leccion y usuario (pkg54e, agent 0.58.74).** Decision del usuario 2026-10-25: «avisar solo una vez». El primer turno que avisa `risky` de una leccion avisa al usuario y queda registrado en la entrada de soul.dat (`risky_warned`, cifrado con el resto de la entrada, escrito bajo el bloqueo de escritura de soul.dat; sobrevive a un reinicio y nunca se envia a un esclavo Connect). Los turnos siguientes del mismo usuario no avisan nada de esa leccion; un turno cuyos unicos conflictos eran esas repeticiones no abre ningun modal. Se avisa **otra vez** cuando cambia el conjunto de comandos de riesgo de la leccion en esa plataforma (SHA-256 de la evidencia «comando (id de regla)» ordenada: una edicion del administrador de `correct` / `repair_cmds`, o un cambio de reglas de command_security) o cuando la leccion se ha verificado desde entonces (sin verificar → verificada, o verificada de nuevo por el administrador). Claves (`SoulRiskyWarnKey`, nombre de usuario en minusculas, mas la plataforma del turno): `user:<usuario>@<plataforma>` para el chat web y la pagina de Sugerencias SSH (la misma cuenta se avisa una vez en cualquiera de las dos); `connect:<usuario>@<plataforma>` para el turno de un esclavo Connect en el master Share (la cuenta de la sesion remota; su aviso se muestra en otra instalacion, por eso se cuenta aparte); un turno anonimo con solo id de sesion: `session:<id>@<plataforma>`, solo en memoria; sin usuario ni sesion: sin clave, se avisa siempre. **No cambia:** todos los demas tipos y reglas (`forbidden` incluida) avisan en cada turno como antes, y un comando de riesgo sigue pidiendo consentimiento **cada vez que se ejecuta** (salvo con una exencion de consentimiento verificada, §13.3.2) — «una vez» es solo el aviso del modal. **Auditoria:** el primer aviso (`soul_contradiction`) y la eleccion del usuario (`soul_choice`) se registran como antes; una repeticion suprimida **no** se escribe en el registro de auditoria, solo se cuenta en el registro del usuario (`repeats`, `last_repeat`). La pagina **Revision del alma** añade «usuarios avisados una vez (riesgo): N» al marcador de contradiccion de la entrada (solo el numero; quien fue avisado se queda en soul.dat).
+
+**El modal** muestra lo que hizo LAIM (su caso determinista y los comandos ejecutados), lo que dice cada leccion (verificada o pendiente), por que chocan y las alternativas, en el idioma del usuario:
+
+- **Mantener la respuesta de LAIM** — siempre.
+- **Usar la leccion X en este turno (con tu consentimiento)** — solo si la leccion tiene comandos y **ninguno es Prohibido** (un comando prohibido nunca se ofrece como ejecutable; con dos lecciones se ofrecen A y B por separado). En el chat encola un trabajo de chat de seguimiento que ejecuta los comandos por el flujo normal: command_security, la pregunta de consentimiento de cada comando de riesgo y la del lote (`Workflow.RunSoulLessonTurn`); no se ejecuta nada donde LAIM no puede ejecutar comandos. El trabajo solo nombra la contradiccion: los comandos se quedan en el servidor para ese usuario. En la pagina de Sugerencias SSH cada comando abre el dialogo de ejecucion de la pagina (la confirmacion de riesgo del Core y el rechazo de lo prohibido).
+- **Enviar al administrador para revision** — siempre; se cuenta en la entrada.
+- Una leccion sin comandos (p. ej. una preferencia de presentacion) solo ofrece mantener / revision (conservador: LAIM no reescribe una respuesta medida).
+
+**Transporte.** Evento SSE `soul_contradiction` en el flujo del trabajo **despues** de «done» (el worker GPU nunca espera la eleccion); `POST /api/v1/teacher/contradictions/{id}/respond {choice}` (solo su dueño, una vez, una de las alternativas; 2 h). Conectado en el chat Reflex (ruta de la cola), la pagina de Sugerencias SSH (respuestas deterministas y del modelo) y un esclavo Connect: el turno del esclavo corre en el master Share, que registra la contradiccion y envia un **aviso no modal** (`notice_only`) que se muestra en el chat del esclavo, sin alternativas (no se pueden aplicar desde el esclavo). La ruta SSE directa `/api/v1/chat/stream` no lo avisa.
+
+**Registro.** Cada deteccion (`soul_contradiction`: superficie, plataforma, trabajo, equipo, pregunta, cada conflicto con su tipo, regla, entradas y evidencia literal) y cada eleccion (`soul_choice`: quien, la eleccion, las lecciones, los comandos y cuales son de riesgo) va al registro de auditoria; las entradas reciben `contradiction_count`, `contradiction_kinds`, `last_contradiction`, `rejected_count`, `applied_count`, `review_requests`.
+
+### 13.3.2 Exenciones de consentimiento (pkg62)
+
+Decision del usuario 2026-10-27: «Toda orden arriesgada debe de llevar consentimiento por parte del usuario, salvo que en algunas ocasiones esto lo pueda cambiar el usuario con la opción "Sugerir mejora" de LAIM.» Una **exencion de consentimiento** es la unica excepcion a «un comando de riesgo pide consentimiento cada vez que se ejecuta». Es de Go (`internal/utils/soul_consent_waiver_pkg62.go`, `internal/inference/consent_waiver_pkg62.go`); Reflex solo la presenta.
+
+- **Solicitud (usuario).** Solo desde **Sugerir mejora**, solo para un comando de riesgo que el usuario **aprobo** en su ultimo turno (cada punto de consentimiento informa de la respuesta del usuario; un turno es la pregunta hecha, una pausa de 30 minutos empieza otro, la opcion desaparece a las 2 h). La ventana muestra **«🔓 No volver a preguntarme por este comando»** con una casilla por comando (`GET /api/v1/teacher/waiver/candidates`); marcarla guarda una entrada **pendiente** de soul.dat (`POST /api/v1/teacher/waiver`, origen `consent_waiver`, auditoria `soul_waiver_request`). El texto de la sugerencia nunca se analiza para esto (conservador: una opcion explicita, no NLP). La entrada no tiene palabras clave ni comandos y nunca llega a los prompts del modelo ni a los caminos deterministas.
+- **Verificacion (administrador).** La entrada muestra **🔓 Exencion de consentimiento** en esta pagina: comando, usuario, equipo y plataforma, la regla al pedirla, command_security ahora y si esta activa. Solo **Verificar** la activa, tras el mismo contraste de solo lectura con Ecosystem (añade un aviso visible `command_risk`) y la auditoria (`soul_verify` + `soul_waiver_verify`); guarda la regla en ese momento. Verificar se **rechaza** si el comando ahora es **prohibido** («un comando prohibido nunca se exime»), ya no es de riesgo, o su regla ha cambiado desde la solicitud (el usuario debe volver a pedirla).
+- **Alcance.** Ese comando exacto (espacios colapsados, mayusculas respetadas), ese usuario (sin distinguir mayusculas) y ese equipo (id de `laim.dat`, o `localhost` para esta maquina), en esa plataforma, con la regla verificada. Todo lo demas sigue preguntando. El agente local del turno de un cliente Connect (localsystem en el cliente) y un nodo de inferencia Share nunca usan una exencion.
+- **Uso.** Solo se comprueba donde LAIM preguntaria: localsystem, remotesystem, el carril de cambios, ▶ Ejecutar de Sugerencias SSH y el «Ejecutar» del programador con el usuario delante. command_security clasifica primero; lo Prohibido nunca llega a un punto de consentimiento. Cada uso se registra (registro de decisiones `soul_consent_waiver`, `console.log`) y se audita (`soul_consent_waiver`: entrada, usuario, equipo, comando, regla, carril); la respuesta del chat termina con «🔓 Exencion de consentimiento aplicada» y el resultado de ▶ Ejecutar muestra la misma linea. Una ejecucion programada desatendida nunca usa una exencion.
+- **Revocacion, al instante.** **Volver a pendiente** la desactiva (una nueva verificacion la activa otra vez con la regla de ese momento); **editar** la entrada le quita la exencion; **Borrar** la elimina; cualquier otra escritura la desactiva. Cada una se audita (`soul_waiver_revoke`, con el motivo). Un cambio de regla la anula sin hacer nada.
+
+### 13.4 Gestion de soul.dat desde la API
+
+Todas solo admin, salvo `status`:
+
+| Metodo | Ruta | Uso |
+|---|---|---|
+| GET | `/api/v1/teacher/status` | `{enabled}` para cualquier sesion; los admin reciben tambien `pending_review` |
+| GET | `/api/v1/teacher/soul?status=&platform=&category=&source=&q=` | Lista de revision con efectos, aviso «antes de la estatica» y veredictos |
+| GET | `/api/v1/teacher/soul/summary` | `{total, pending, verified}` |
+| POST | `/api/v1/teacher/soul` | Alta manual (verificada; 422 si un comando esta prohibido) |
+| POST | `/api/v1/teacher/soul/check` | Veredicto de `{platform, repair_cmds}` |
+| POST | `/api/v1/teacher/soul/{id}/verify` · `/unverify` | Verificar (tras el contraste con Ecosystem) / volver a pendiente |
+| POST | `/api/v1/teacher/soul/{id}/ecosystem` | Contraste de solo lectura con Ecosystem |
+| PUT | `/api/v1/teacher/soul/{id}` | Edicion validada (prioridad 1–10, categoria y plataforma conocidas, CheckCommand) |
+| DELETE | `/api/v1/teacher/soul/{id}` | Borrar |
+| POST | `/api/v1/teacher/contradictions/{id}/respond` | Eleccion del usuario en el modal de contradiccion (cualquier sesion, solo su dueño; pkg54d) |
+| GET | `/api/v1/teacher/waiver/candidates` | Los comandos de riesgo que el usuario de la sesion aprobo en su ultimo turno (cualquier sesion; pkg62) |
+| POST | `/api/v1/teacher/waiver` | `{candidate_id}` → una exencion de consentimiento pendiente (cualquier sesion, solo sus candidatos; 404 si no; pkg62) |
+
+`GET /api/v1/teacher/soul?status=contradiction` lista las entradas con marca de contradiccion.
+
+### 13.5 Integracion con la heuristica
+
+Desde pkg54b la guia estatica de `heuristic_guide.go` ya no gana siempre: una entrada **verificada** con prioridad > 7 y comandos de reparacion va **antes** de la reparacion estatica del caso; las no verificadas solo se usan despues de la estatica (o si no hay). Auto-correct, contrastive_learn y presenter_learn tambien escriben entradas (sin HITL) con su propio `source`; las de auto_correct / contrastive_learn alimentan CMD-SOUL-001 siempre (se midieron), las del teacher solo verificadas.
 
 ---
 
@@ -2594,6 +2912,7 @@ Los manuales de Ayuda viven en el arbol de fuentes (y se embeben en el binario):
 | Admin cierra sesion de otro usuario | `CloseManagedSession` registra `ClosedAt=now`, `state=closed` |
 | Admin reanuda sesion | `ResumeManagedSession` pone `state=active`, `ClosedAt=nil` |
 | Expiracion automatica | `ExpireSessionsIfConfigured` verifica `max_session_hours` |
+| University (loopback) | `MintLoopbackUniversitySession` — sin contraseña; **ámbito University** (§16.5) |
 
 ### 16.3 Panel de sesiones activas
 
@@ -2607,6 +2926,18 @@ Desde **config → 9 → 2. Local**:
 - `max_session_hours`: numero de horas maximas por sesion (0 = infinito)
 - Se aplica a todas las sesiones del sistema
 - Se verifica en cada carga de sesion y en cada login web
+
+### 16.5 Ámbito de la sesión University (pkg90, Web 0.64.32)
+
+`POST /api/v1/session/university` da a cualquier proceso de este equipo una sesión con la identidad del usuario LAIM activo (así habla con LAIM, sin contraseña, la herramienta de entrenamiento University). Esa sesión tiene ahora el **ámbito University**: solo puede llamar a lo que usa University — estado, su propia sesión, chat (inicio, stream, respuesta a avisos, equipos), Sugerencias remotas, relevancia heurística, el agente Ecosystem en modo de solo lectura (`inspect`, `validate`, `consistency`; nunca aprobado, sin parches, sin fichero de informe), voz (grabar, TTS), el panel del cliente mesh local y `/api/v1/university/*`. Todo lo demás — configuración, usuarios, sesiones, credenciales, ajustes Share/Connect, consola local, Import/Export — responde **403** con código `university_scope`. Los endpoints de esa lista que necesitan administrador se conceden de forma explícita: la relevancia heurística y las acciones de solo lectura de Ecosystem funcionan para el ámbito sea cual sea el rol del usuario; el cliente mesh local sigue necesitando un administrador, como antes. Una sesión duplicada a partir de ella conserva el ámbito.
+
+`/api/v1/university/remote-exec` ahora exige una sesión web (la de University o una de operador), solo ejecuta en los equipos a los que esa sesión tiene acceso y sigue rechazando comandos de riesgo (de cambio). Cada sesión University queda en el log y en la auditoría (grupo `sessions`, objetivo `university_session`) con referencias `sr-` cortas, nunca el token.
+
+### 16.6 Protección de la API web local (pkg90)
+
+La API web (`127.0.0.1:4320`) solo responde a peticiones cuyo `Host` es `127.0.0.1`, `localhost` o `[::1]` en su propio puerto (o la dirección de escucha configurada), y cuyo `Origin`, si lo hay, es una página servida desde este equipo (la interfaz web en `:4321`, el editor). Lo demás — una web que usa DNS rebinding o la petición CORS previa de una página ajena — recibe **403**. `share_api` (4322), los servicios de voz/Directo del Share y `mesh_api` (4324) son servicios de LAN y siguen autenticando con sus propias credenciales.
+
+Los monitores de red **Share** y **Remoto** identifican también cada cliente Connect y cada sesión remota por su referencia `sr-`; ningún token de sesión llega al navegador.
 
 ---
 
@@ -2630,7 +2961,7 @@ config/laim_install_YYYY-MM-DD_HH-MM.bak  # Backup de instalacion (tar.gz)
 
 `users`, `model_tiers`, `tier_families`, `agents`, `computers`, `computer_groups`, `computer_access`, `skills`, `tools`, `pipelines`, `profiles`, `flows`, `flow_skills`, `local_settings`, `model_warmup`, `share`, `connect`, `headscale`, `direct`, `scheduled_tasks`, `mrtg_alerts`, `devops_catalog`
 
-**Siempre excluidos**: `identity.dat`, `JobQueue`, serial, `WebAPIEnabled` (Backup/Restore). Los ciphers locales (`connection_key_cipher`, `password_cipher` Connect, `api_key_cipher` Headscale, hashes de usuario, SSH) se exportan vacios; el handoff Share/Connect si viaja.
+**Siempre excluidos**: `identity.dat`, `JobQueue`, serial, `WebAPIEnabled` (Backup/Restore). Los ciphers locales (`connection_key_cipher`, `password_cipher` Connect, `api_key_cipher` Headscale y de herramientas, `tailscale_node_key`, hashes de usuario, SSH) se exportan vacios, y desde pkg90 tampoco viaja el handoff Share/Connect.
 
 ---
 
@@ -2746,6 +3077,32 @@ El visor agrupa los eventos por seccion. Cada grupo muestra un contador de event
 - Solo el binario LAIM de esa instalacion puede leer y escribir `audit.dat`.
 - No copiar `audit.dat` entre equipos (cada instalacion tiene su propia clave maestra).
 - Si `audit.dat` no existe, se crea automaticamente en el primer evento registrado.
+
+### 17bis.5bis Robustez, copias, registros apartados y recuperación (pkg97)
+
+**Por qué.** Hasta LAIM 0.66.5 cada evento reescribía `audit.dat` entero en su sitio (truncar y escribir) sin bloqueo entre procesos. Cuando `laim web`, un comando de la CLI y un trabajo de Ecosystem registraban eventos a la vez, el fichero podía quedar con bytes de dos escritores: dejaba de autenticarse («audit: decrypt: decrypt failed: cipher: message authentication failed») y todos los eventos posteriores se perdían.
+
+**Ahora (`audit.dat`, `identity.dat`, `laim.dat`):**
+
+- **Bloqueo entre procesos.** Cada escritura mantiene `<almacén>.lock` (junto al almacén, en `data/`) desde que carga hasta que guarda; los lectores lo toman compartido. Se escribe en un fichero temporal que se renombra sobre el almacén: un lector ve el fichero anterior o el nuevo, nunca uno a medias. Los `.lock` están vacíos y pueden quedarse.
+- **Última copia buena.** `audit.dat.bak` es la versión anterior del registro, `laim.dat.bak` + `laim.dat.bak.sig` el `laim.dat` anterior con su firma e `identity.dat.bak` la identidad actual. Son el propio cifrado del almacén (misma clave maestra, permisos 0600). Si el fichero principal no se puede leer, LAIM lee la copia y lo anota en `logs/secure.log`. Las instalaciones anteriores a pkg97 obtienen sus copias en el primer guardado (identity.dat y laim.dat también al leerlos).
+- **laim.dat y su firma.** La firma nueva se escribe antes como `laim.dat.sig.pending`, después `laim.dat`, y por último la firma se renombra sobre `laim.dat.sig`: tras un corte entre los dos pasos la firma pendiente sigue verificando el fichero nuevo. Un `laim.dat` que descifra pero no casa con su firma se sigue informando como manipulado; solo uno que no se puede autenticar ni descifrar pasa a la copia.
+- **La clave maestra nunca se sustituye.** Si `identity.dat` falta o no se puede leer, LAIM lo restaura desde `identity.dat.bak` (apartando el ilegible). Sin copia legible, LAIM se detiene con un error explícito en lugar de crear una clave maestra nueva (una clave nueva dejaría ilegibles todos los almacenes cifrados). `laim init` sin `laim.md` conserva la clave de un `identity.dat` existente. Si ocurre, restaure `identity.dat` desde una copia de la instalación (§ Backup).
+
+**Registro de auditoría ilegible (se aparta, nunca se borra).** El primer evento tras volverse ilegible `audit.dat` lo renombra `audit.dat.unreadable-<AAAAMMDDThhmmssZ>` (UTC), empieza un registro nuevo desde `audit.dat.bak` si descifra y registra primero un evento de **Seguridad** (`store_quarantined`) con el nombre del fichero, su tamaño, la clase de error (`authentication_failed`, `too_short`, `parse`) y cuántos eventos vinieron de la copia. El registro continúa. Los visores (`laim audit`, la página web) nunca mueven nada: muestran la copia y explican la situación.
+
+**Página web.** Interno › Registro de auditoría muestra, en su idioma, «El registro de auditoría anterior no se pudo leer y se apartó como <fichero>; los eventos nuevos se están registrando» (o que está mostrando la última copia buena), lista los ficheros apartados con **Recuperar eventos** y los recuperados con **Ver**, y **Volver al registro actual**.
+
+**CLI (administrador):**
+
+```bash
+laim audit                    # el registro; explica un almacén ilegible o apartado
+laim audit status             # audit.dat, audit.dat.bak, apartados y recuperados: tamaño, fecha, si descifra, eventos
+laim audit recover <fichero>  # p. ej. laim audit recover audit.dat.unreadable-20261013T004300Z
+laim audit show <fichero>     # los eventos de un fichero del registro (p. ej. audit.dat.recovered-…)
+```
+
+**Recuperación y qué significa «SIN VERIFICAR».** `recover` nunca modifica el fichero de origen. Escribe un almacén **nuevo** cifrado `audit.dat.recovered-<UTC>` y anota la recuperación en el registro actual (`store_recovered`) y en `secure.log`. Si el fichero aún se autentica, la copia es exacta (verificada). Si no, LAIM lo descifra sin la etiqueta de autenticación (el flujo de contador de AES-GCM, con la clave de la instalación) y conserva cada evento completo que encuentra; las zonas escritas por otro escritor o dañadas salen como basura y se descartan. Esos eventos quedan marcados **SIN VERIFICAR** (`recovered`, `*` en la CLI, una etiqueta en la web): nada prueba que no se alteraran, así que úselos como indicio a contrastar (con `logs/activity.log` y `logs/secure.log`), no como registro de auditoría. Los eventos que un segundo escritor sobrescribió en la cabecera del fichero no se pueden recuperar. Con una clave errónea no se recupera nada.
 
 ### 17bis.6 Integracion con laim config (CLI)
 
@@ -2874,6 +3231,8 @@ laim language       # Idioma del CLI (EN o ES)
 laim login          # Autenticacion (crea laim.session)
 laim chat           # Chat interactivo (tier mode)
 laim chat <modelo>  # Chat con override de modelo global
+laim chat --ruta-ia <localhost|n|nombre|id>  # Fija antes la ruta IA (/ruta dentro del chat)
+laim connect ruta [<n|nombre|id>]            # Muestra o cambia la ruta IA (usuario con sesion)
 laim remote         # Gestion SSH remota
 laim web            # Arrancar interfaz web (API + Reflex)
 
@@ -2887,6 +3246,11 @@ laim share          # Master Share
 laim agents         # Modo agente autonomo
 laim update         # Actualizar LAIM
 ```
+
+**Idioma de `laim info`, `laim version` y `laim agents`:** todas las etiquetas, unidades, «N/D» y sí/no siguen el idioma del CLI (español por defecto, inglés tras `laim language EN`): p. ej. «Tiempo activo │ 1 día, 2 horas, 5 minutos» / «Uptime │ 1 day, 2 hours, 5 mins», «Versiones por funcionalidad:» / «Feature versions:», «Habilitado: sí» / «Enabled: yes». Los nombres de producto y funcionalidad (LAIM Core, Chat, Connect, Share, Direct, CPU, GPU, RAM, Ollama) no se traducen. `soulmachine.dat` guarda sus valores en inglés.
+
+**`laim info` en Windows:** el hardware se lee con PowerShell `Get-CimInstance` (solo lectura: `Win32_Processor`, `Win32_ComputerSystem`, `Win32_LogicalDisk` discos fijos, `Win32_VideoController`; `laim init` también `Win32_PnPEntity` y `Win32_DiskDrive`). `wmic`, que Windows 11 24H2 y posteriores ya no instalan, solo se usa como respaldo cuando la consulta CIM no devuelve nada y `wmic.exe` sigue presente.
+
 
 ### Ejemplos avanzados
 
@@ -3504,13 +3868,13 @@ headscale routes enable -r <ID_de_la_ruta>
 
 O desde la UI de LAIM: **Config > Acceso remoto > WireGuard mesh > Estado del servidor > Enrutamiento de subred**.
 
-### Paso 3 — Activar subnet routing desde la UI de LAIM (metodo recomendado)
+### Paso 3 — Activar el enrutamiento de subred desde la UI de LAIM (metodo recomendado)
 
 1. Navega a: **Config > Acceso remoto > WireGuard mesh (Headscale) > Estado del servidor**.
-2. Desplazate hasta la seccion **"Enrutamiento de subred (Subnet Routing)"**.
+2. Desplazate hasta la seccion **"Enrutamiento de subred"**.
 3. Lee el aviso de seguridad: al activar esta opcion, **todos los miembros autenticados** de la malla podran alcanzar cualquier equipo de tu LAN.
 4. El campo CIDR se pre-rellena con la subred detectada automaticamente (p. ej. `192.168.1.0/24`). Verificalo o escribe el CIDR correcto.
-5. Pulsa **"▶ Activar subnet routing"**.
+5. Pulsa **"▶ Activar enrutamiento de subred"**.
 6. Comprueba en los logs que aparece `✅ Subnet routing activado`.
 
 > **Seguridad:** Desactiva esta opcion cuando no necesites acceso remoto desde el exterior. Solo debe estar activo mientras el escenario de red externa este en uso.
@@ -3586,7 +3950,7 @@ MacBook (100.64.0.2)
 
 | Riesgo | Mitigacion |
 |--------|-----------|
-| Exposicion de toda la LAN a la malla | Activar subnet routing solo cuando sea necesario; desactivarlo al terminar |
+| Exposicion de toda la LAN a la malla | Activar el enrutamiento de subred solo cuando sea necesario; desactivarlo al terminar |
 | Acceso no autorizado al servidor Share | Mantener `user_connection` y `password_connection` seguros; usar contrasenas fuertes |
 | Exposicion del puerto Headscale (8080) | Considerar HTTPS con certificado; restringir acceso por IP si el conjunto de usuarios es fijo |
 | Nodos no autorizados en la malla | Usar PreAuth Keys de un solo uso y caducidad corta (24h) |
