@@ -1,6 +1,6 @@
 # Red Mesh WireGuard con Headscale
 
-Este manual cubre el coordinador Headscale en LAIM, el alta cifrada (`mesh_api` **:4324**), el cliente Tailscale oficial y el SSH de chat / `laim remote` / Suggestions. Los bloques **Ejemplo.** son escenarios reales (nombres de lab: `tibet.house.loc`, `silicon.house.loc`).
+Este manual cubre el coordinador Headscale en LAIM, el alta cifrada (`mesh_api` **:4324**), el cliente Tailscale oficial y el SSH de chat / `laim remote` / Suggestions. Los bloques **Ejemplo.** son escenarios reales (nombres de lab: `server1.example.com`, `mac1.example.com`).
 
 ## ¿Qué es Headscale?
 
@@ -136,7 +136,7 @@ Las políticas viven en el coordinador y se **aplican en cada nodo** al descifra
 
 **Nodos conectados** en el coordinador = `headscale nodes list` (plano WireGuard, IP `100.x`). **No** es el ACK de `mesh_api` (`validated`). Sin IP `100.x` el nodo no está en la malla aunque la solicitud esté aprobada.
 
-**Ejemplo.** En Silicon pulsas **Solicitar unirse** → en tibet el admin da ✅. El inbox marca *aprobada* / `validated` tras el ACK. Hasta que Silicon pulse **Aplicar unión** y Headscale liste el nodo con `100.64.0.4`, el chat SSH a Silicon **no** tiene camino de malla.
+**Ejemplo.** En Silicon pulsas **Solicitar unirse** → en server1 el admin da ✅. El inbox marca *aprobada* / `validated` tras el ACK. Hasta que Silicon pulse **Aplicar unión** y Headscale liste el nodo con `100.64.0.4`, el chat SSH a Silicon **no** tiene camino de malla.
 
 ---
 
@@ -150,7 +150,7 @@ Las políticas viven en el coordinador y se **aplican en cada nodo** al descifra
 
 Windows destino: OpenSSH (manual *Configurar Windows para laim remote*). La malla **no** abre el 22 por magia: hace falta `sshd` y la regla de firewall (perfil **Any**).
 
-**Ejemplo.** Un Windows de laboratorio **sin** LAIM: el admin genera preauth 24 h en tibet; en el PC `tailscale up --login-server http://tibet.house.loc:8080 --authkey hskey-auth-…`. En Equipos se registra host, usuario SSH y `tailscale_ip`. Suggestions «cuánta RAM hay» corre `remotesystem` por `100.x`, igual que un nodo con LAIM.
+**Ejemplo.** Un Windows de laboratorio **sin** LAIM: el admin genera preauth 24 h en server1; en el PC `tailscale up --login-server http://server1.example.com:8080 --authkey hskey-auth-…`. En Equipos se registra host, usuario SSH y `tailscale_ip`. Suggestions «cuánta RAM hay» corre `remotesystem` por `100.x`, igual que un nodo con LAIM.
 
 ---
 
@@ -162,7 +162,7 @@ Windows destino: OpenSSH (manual *Configurar Windows para laim remote*). La mall
 4. **`laim remote`:** la misma ficha; Suggestions usa los mismos orquestadores que el chat (inventario, red, procesos).
 5. El **ACK** `validated` no basta: hace falta fila en **Nodos conectados** y ping/SSH a `100.x`.
 
-**Ejemplo.** Equipo destino `tibet`, pregunta «¿cuánto disco libre hay?». F6 no corre en el Mac que abre el chat: corre por SSH en Ubuntu. La ruta IA (Localhost vs Share) es independiente: la GPU puede estar en tibet y el disco medido también, o la GPU en Silicon y el disco en tibet.
+**Ejemplo.** Equipo destino `server1`, pregunta «¿cuánto disco libre hay?». F6 no corre en el Mac que abre el chat: corre por SSH en Ubuntu. La ruta IA (Localhost vs Share) es independiente: la GPU puede estar en server1 y el disco medido también, o la GPU en Silicon y el disco en server1.
 
 ---
 
@@ -189,7 +189,7 @@ Headscale integrado en LAIM te permite:
 | Windows/Linux **sin** LAIM | Cliente Tailscale + OpenSSH; se registra en Equipos con IP `100.x`; chat y Suggestions igual |
 | IA en `laim remote` | Suggestions sobre la sesión SSH usa las mismas inferencias que el chat (orquestadores Go) |
 
-**Ejemplo.** Desde un hotel (4G) el Mac Silicon pide en chat el inventario del servidor tibet. Tailscale ya está «conectado» (icono de menú). SSH va a `100.64.0.1`. No hace falta VPN corporativa ni abrir el 22 a Internet.
+**Ejemplo.** Desde un hotel (4G) el Mac Silicon pide en chat el inventario del servidor server1. Tailscale ya está «conectado» (icono de menú). SSH va a `100.64.0.1`. No hace falta VPN corporativa ni abrir el 22 a Internet.
 
 ---
 
@@ -353,15 +353,15 @@ tailscale up --login-server http://<IP_SERVIDOR>:8080 --authkey <preauth_key>
 1. Ve a **Configuración › Gestión de equipos remotos › Red mesh WireGuard (Headscale)**.
 2. Haz clic en **Configurar servidor Headscale**.
 3. Introduce la **URL del servidor** (la URL que usarán los equipos remotos para conectarse):
-   - LAN: `http://192.168.0.198:8080` (IP local del servidor LAIM)
+   - LAN: `http://192.0.2.198:8080` (IP local del servidor LAIM)
    - Internet: `http://mi-servidor.ejemplo.com:8080` (FQDN o IP pública)
    - HTTPS recomendado en internet: `https://mi-servidor.ejemplo.com:8080`
 4. Introduce el **puerto** (por defecto: `8080`).
 5. LAIM genera el archivo `config.yaml` en `<directorio_laim>/headscale_data/config.yaml`.
 
-**Ejemplo de URL del servidor** (entorno de prueba en `tibet.house.loc`):
+**Ejemplo de URL del servidor** (entorno de prueba en `server1.example.com`):
 ```
-http://192.168.0.198:8080
+http://192.0.2.198:8080
 ```
 
 ### 2. Arrancar el servidor
@@ -377,7 +377,7 @@ http://192.168.0.198:8080
 
 6. Activa **Este LAIM es el coordinador de la malla** para que `mesh_api` escuche en **4324**. Abre el firewall (**LAIM mesh_api**). Deja `laim web` en marcha; si no, las solicitudes de unión dan *connection refused*.
 
-**Ejemplo.** En tibet: Descargar Headscale → Configurar `http://tibet.house.loc:8080` → Arrancar → interruptor coordinador ON. Desde Silicon, `curl -v http://tibet.house.loc:4324` debe conectar (aunque el cuerpo vaya cifrado). `curl http://tibet.house.loc:8080/health` comprueba Headscale, no el enrollment.
+**Ejemplo.** En server1: Descargar Headscale → Configurar `http://server1.example.com:8080` → Arrancar → interruptor coordinador ON. Desde Silicon, `curl -v http://server1.example.com:4324` debe conectar (aunque el cuerpo vaya cifrado). `curl http://server1.example.com:8080/health` comprueba Headscale, no el enrollment.
 
 ### 3. Registrar un equipo en la malla
 
@@ -389,14 +389,14 @@ En el equipo que se une (p. ej. Silicon):
 
 1. **Configuración › Equipos remotos › Red mesh › Cliente Tailscale (este equipo)**.
 2. **Instalar** si falta (modal de progreso). Linux `install.sh`; macOS `.pkg`; Windows MSI.
-3. URL del coordinador `http://tibet.house.loc:4324` → **Solicitar unirse**. El POST va cifrado con **`KeyMeshEnrollment`** (no la clave del traductor ni Share).
+3. URL del coordinador `http://server1.example.com:4324` → **Solicitar unirse**. El POST va cifrado con **`KeyMeshEnrollment`** (no la clave del traductor ni Share).
 4. En el coordinador: **Solicitudes de unión** ✅ / ❌ / ⏸ / ▶️. Tras decidir, el operador del cliente pulsa **Actualizar estado** y **Aplicar unión**. No pegues preauth por chat.
 5. **Aplicar unión** ejecuta `tailscale up` contra Headscale `:8080` con la clave de un solo uso. Si el enrollment ya está `validated`, **no** relanza `up`: comprueba la IP `100.x` viva. Sin `100.x` → el admin **Aprueba de nuevo** (clave nueva) y el cliente vuelve a Aplicar. Si el daemon ya apuntaba a Tailscale.com, LAIM reintenta con `--force-reauth`.
 6. Coordinador: **Nodos conectados → Actualizar** (`headscale nodes list`). Luego **Sincronizar IPs**.
 
 El coordinador puede unirse también como nodo. No pulses **Solicitar unirse** otra vez si ya hay una solicitud *aprobada*: se reutiliza el `request_id`. **Aplicar unión** recupera la hermana aprobada del mismo hostname.
 
-**Ejemplo.** Primera unión Silicon→tibet: Solicitar → ✅ → Aplicar → `tailscale status` muestra `100.64.0.4` y el nodo `tibet`. Segunda vez (ya `validated`): Aplicar solo verifica; no vuelve a pedir VPN.
+**Ejemplo.** Primera unión Silicon→server1: Solicitar → ✅ → Aplicar → `tailscale status` muestra `100.64.0.4` y el nodo `server1`. Segunda vez (ya `validated`): Aplicar solo verifica; no vuelve a pedir VPN.
 
 #### B — Preauth clásica (nodos sin LAIM)
 
@@ -418,7 +418,7 @@ tailscale up --login-server http://<IP_SERVIDOR>:8080 --authkey <preauth_key>
 Ejemplo con el lab:
 
 ```bash
-sudo tailscale up --login-server http://192.168.0.198:8080 --authkey hskey-auth-XXXX...
+sudo tailscale up --login-server http://192.0.2.198:8080 --authkey hskey-auth-XXXX...
 ```
 
 3. **Sincronizar IPs** en LAIM para copiar `100.64.x.x` a las fichas de **Equipos**.
@@ -434,7 +434,7 @@ tailscale status
 
 Salida de ejemplo:
 ```
-100.64.0.1  tibet         laim        linux   idle
+100.64.0.1  server1         laim        linux   idle
 100.64.0.2  mi-portatil   laim        windows active; direct 192.168.0.X:41641
 ```
 
@@ -453,7 +453,7 @@ El archivo `config.yaml` generado por LAIM cubre las opciones más comunes. A co
 La URL pública completa que los clientes Tailscale usan para contactar con el servidor de control. Debe ser accesible desde todos los equipos remotos.
 
 ```yaml
-server_url: http://192.168.0.198:8080
+server_url: http://192.0.2.198:8080
 # o con HTTPS:
 server_url: https://mi-servidor.ejemplo.com:8080
 ```
@@ -716,7 +716,7 @@ nc -zv 100.64.0.X 22
 5. Ve a **Configuración › Gestión de equipos remotos › Equipos**.
 6. Busca el equipo importado (tendrá el badge `◎ Tailscale`) y pulsa el icono de editar ✏️.
 7. Rellena los campos:
-   - **Usuario remoto**: el usuario SSH del equipo (p. ej. `perico`, `ubuntu`, `pi`).
+   - **Usuario remoto**: el usuario SSH del equipo (p. ej. `admin`, `ubuntu`, `pi`).
    - **Contraseña** o **Clave RSA**: las credenciales para autenticarte en ese equipo.
 8. Guarda los cambios.
 
@@ -804,7 +804,7 @@ tailscale up --login-server http://<URL_SERVIDOR>:8080 --authkey <clave>
 
 4. `tailscale status` debe listar tu equipo y el coordinador.
 
-**Ejemplo.** El admin te dice: «coordinador `tibet.house.loc`, ya te aprobé; en tu LAIM pulsa Aplicar unión». No te pega la preauth por WhatsApp.
+**Ejemplo.** El admin te dice: «coordinador `server1.example.com`, ya te aprobé; en tu LAIM pulsa Aplicar unión». No te pega la preauth por WhatsApp.
 
 ### Verificar que estás conectado
 
@@ -847,24 +847,24 @@ Si el coordinador **suspende** tu nodo (⏸), el cliente LAIM muestra **Interrum
 
 ---
 
-## Ejemplo de configuración completa (tibet.house.loc)
+## Ejemplo de configuración completa (server1.example.com)
 
 Esta es la configuración usada en el servidor de pruebas de LAIM:
 
-- **Servidor**: `tibet.house.loc` (Ubuntu 26.04 LTS, IP LAN: `192.168.0.198`)
+- **Servidor**: `server1.example.com` (Ubuntu 26.04 LTS, IP LAN: `192.0.2.198`)
 - **Headscale**: v0.29.2
-- **URL del servidor**: `http://192.168.0.198:8080`
+- **URL del servidor**: `http://192.0.2.198:8080`
 - **Usuario LAIM en Headscale**: `laim` (ID: 1)
 - **Nodos registrados**: 0 (listo para conectar equipos)
 
 ```yaml
 # config.yaml generado por LAIM
-server_url: http://192.168.0.198:8080
+server_url: http://192.0.2.198:8080
 listen_addr: 0.0.0.0:8080
 database:
   type: sqlite
   sqlite:
-    path: /home/perico/develop/laim/bin/linux/headscale_data/db.sqlite
+    path: /home/admin/develop/laim/bin/linux/headscale_data/db.sqlite
 prefixes:
   v4: 100.64.0.0/10
   v6: fd7a:115c:a1e0::/48
@@ -876,12 +876,12 @@ node:
     inactivity_timeout: 30m
 ```
 
-Para conectar un equipo **con LAIM** a este servidor: Cliente Tailscale → URL `http://tibet.house.loc:4324` → Solicitar unirse → el admin Aprueba → Aplicar unión.
+Para conectar un equipo **con LAIM** a este servidor: Cliente Tailscale → URL `http://server1.example.com:4324` → Solicitar unirse → el admin Aprueba → Aplicar unión.
 
 Para un nodo **sin LAIM**:
 
 ```bash
-sudo tailscale up --login-server http://192.168.0.198:8080 --authkey <preauth_key>
+sudo tailscale up --login-server http://192.0.2.198:8080 --authkey <preauth_key>
 ```
 
 ---
@@ -944,7 +944,7 @@ ping 192.168.1.50
 
 ```
 LAN oficina 192.168.1.0/24
-  Linux tibet  192.168.1.50
+  Linux server1  192.168.1.50
                Headscale :8080  ·  Share :4322 (LAN)
                Tailscale 100.64.0.1
                (opcional) subnet 192.168.1.0/24
@@ -959,10 +959,10 @@ Internet
 
 ### Pasos (una vez)
 
-1. En tibet: `laim web` → Descarga Headscale → URL pública o LAN → Arrancar → coordinador ON (`mesh_api` :4324 en LAN).
+1. En server1: `laim web` → Descarga Headscale → URL pública o LAN → Arrancar → coordinador ON (`mesh_api` :4324 en LAN).
 2. Une el propio Linux a la malla (`tailscale up` local). Si hace falta Connect por IP LAN, activa subnet routing en la UI.
-3. En Silicon: Cliente Tailscale → Solicitar unirse a `http://tibet.house.loc:4324` (en casa) → Apruebas en tibet → **Aplicar unión**. En el hotel basta con que Tailscale.app esté conectado.
-4. Connect: host `192.168.1.50` puerto `4322` **si** hay subnet routing; o usa chat con Equipo destino `tibet` por `100.x` sin Share.
+3. En Silicon: Cliente Tailscale → Solicitar unirse a `http://server1.example.com:4324` (en casa) → Apruebas en server1 → **Aplicar unión**. En el hotel basta con que Tailscale.app esté conectado.
+4. Connect: host `192.168.1.50` puerto `4322` **si** hay subnet routing; o usa chat con Equipo destino `server1` por `100.x` sin Share.
 
 **Ejemplo.** University en Silicon (solo Internet, sin LAN de oficina): el Mac ya tiene `100.x`. Chat → Windows del lab usa `tailscale_ip` aunque la ficha siga en `direct`.
 

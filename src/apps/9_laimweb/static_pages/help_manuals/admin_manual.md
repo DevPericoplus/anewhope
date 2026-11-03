@@ -1104,7 +1104,7 @@ Los agentes builtin (`localsystem`, `reprocessing`, `devops`, `secops`, `compare
 5. **Que NO es:** no sustituye a `localsystem` para ejecutar cada comando F6 ni a `developer` para generar una app pequena; orquesta el plan y recomienda tools LAIM.
 6. **Salud del host:** `GET /api/v1/devops/health` resume metricas utiles antes de un assess/diagnose; combinalo con el contexto de sesion.
 7. **Sandbox en DevOps:** puede proponer o invocar scripts en el sandbox (Python/Shell/Go) como apoyo a runbooks; la frontera de ficheros sigue siendo la del sandbox (§22). No uses DevOps para «crear una calculadora»: eso es Developer.
-8. **Panel web:** **Configuracion › Asistente › 10. Tecnico** (solo admin) → boton **DevOps**. Elige accion (`assess|plan|diagnose|runbook|context|deploy|run`), escribe la peticion; para `deploy`/`run` indica `app_slug` y computer (p. ej. `dirsize` + `tibet`). El resultado aparece al completar el job.
+8. **Panel web:** **Configuracion › Asistente › 10. Tecnico** (solo admin) → boton **DevOps**. Elige accion (`assess|plan|diagnose|runbook|context|deploy|run`), escribe la peticion; para `deploy`/`run` indica `app_slug` y computer (p. ej. `dirsize` + `server1`). El resultado aparece al completar el job.
 9. **Historial / Repetir:** al pie del panel hay una tabla con los ultimos trabajos (persistidos en `laim.dat`). **Repetir** (🔄) solo recarga el formulario; hay que pulsar Ejecutar de nuevo. `GET /api/v1/devops/history`.
 10. **Apps generadas:** el panel Tecnico lista binarios registrados (`laim.dat`); ver §23.9.
 
@@ -1113,7 +1113,7 @@ Skills propias: infra, CI/CD, observabilidad, security ops, recovery. Tools prop
 #### Usar el agente SecOps
 
 1. **Cuando:** auditorias de seguridad, deteccion de vulnerabilidades, hardening o informes SecOps (local o equipo registrado en Computers).
-2. **Panel web (admin):** **Configuracion › Asistente › 10. Tecnico** → boton **SecOps**. Acciones: `assess`, `scan_plan`, `audit`, `report`, `harden_plan`, `remediate`, `context`. Indica el computer (ej. `tibet`) para probes SSH; vacio = host local. `assess`/`audit` ejecutan checks de solo lectura y analizan con el tier **medio**; el panel muestra la evidencia. Marca **Aprobado** para `remediate` (HITL).
+2. **Panel web (admin):** **Configuracion › Asistente › 10. Tecnico** → boton **SecOps**. Acciones: `assess`, `scan_plan`, `audit`, `report`, `harden_plan`, `remediate`, `context`. Indica el computer (ej. `server1`) para probes SSH; vacio = host local. `assess`/`audit` ejecutan checks de solo lectura y analizan con el tier **medio**; el panel muestra la evidencia. Marca **Aprobado** para `remediate` (HITL).
 3. **API:** `POST /api/v1/secops/request` → **202** + `job_id`; resultado en `GET /api/v1/secops/result/{job_id}` (incluye `probe_evidence`, `findings`). Contexto: `GET/PUT /api/v1/secops/context`. Historial: `GET /api/v1/secops/history`.
 4. **Chat:** frases tipo «auditoria de seguridad», «agente secops», «plan de deteccion de vulnerabilidades» → heuristica `secops_request` (assess o scan_plan; **nunca** remedia sola).
 5. **Informes:** se guardan en `reports/secops_*.md` (con evidencia de probes) y aparecen en el panel Informes bajo el grupo **Secops**.
@@ -1747,10 +1747,10 @@ Opcion A — desde el equipo que tiene el par de claves, si el usuario remoto ac
 ssh-copy-id -i ~/.ssh/id_rsa.pub usuario@servidor
 ```
 
-Opcion B — saltando por un usuario con sudo (p. ej. `perico` en Linux), cuando el `.pub` ya esta en el servidor. Sustituya `ansible`, `perico` y las rutas por el `remote_user` y el administrador del host:
+Opcion B — saltando por un usuario con sudo (p. ej. `admin` en Linux), cuando el `.pub` ya esta en el servidor. Sustituya `ansible`, `admin` y las rutas por el `remote_user` y el administrador del host:
 
 ```bash
-ssh perico@servidor 'sudo bash -c "
+ssh admin@servidor 'sudo bash -c "
   cat /home/ansible/.ssh/id_rsa.pub >> /home/ansible/.ssh/authorized_keys
   chown ansible:ansible /home/ansible/.ssh/id_rsa.pub /home/ansible/.ssh/authorized_keys
   chmod 700 /home/ansible/.ssh
@@ -1788,7 +1788,7 @@ LAIM llega igual a todos los equipos:
    - `Host`, tal cual si es una IP o si su nombre resuelve.
    - `HostIP` si el nombre no resuelve.
    - LAIM espera 3 segundos a que la red local responda.
-2. **Headscale como alternativa.** Si la red local no responde y el equipo tiene `TailscaleIP`, LAIM pregunta: «No se llega a «tibet» por la red local (…). ¿Intento la conexión por Headscale (100.x)?»
+2. **Headscale como alternativa.** Si la red local no responde y el equipo tiene `TailscaleIP`, LAIM pregunta: «No se llega a «server1» por la red local (…). ¿Intento la conexión por Headscale (100.x)?»
    - **Sí:** el permiso se recuerda **para ese equipo y ese usuario durante una hora**. Se olvida cuando la red local vuelve a responder, así que el siguiente fallo vuelve a preguntar.
    - **No:** no se intenta nada más.
 3. **Sin nadie a quien preguntar** (tareas programadas, llamadas a la API como las de University): la malla solo se usa si quien llama lo autorizó antes (`allow_mesh: true` en la petición). Si no, la conexión falla con un mensaje que dice qué se intentó y cómo autorizarlo.
@@ -1799,7 +1799,7 @@ Otras reglas:
 - Un inicio de sesión rechazado en la red local nunca lleva a probar la malla: solo un fallo de red.
 - `console.log` anota la ruta usada: `connected … route=lan|mesh addr=…`, `mesh_fallback needs_consent …`, `mesh_fallback use …`.
 
-**Ejemplo.** `tibet` tiene `Host=tibet.house.loc` y `TailscaleIP=100.64.0.4`, y Tailscale está parado en el equipo de LAIM. LAIM conecta a `192.168.0.198:22` (red local). Antes de pkg39 solo probaba `100.64.0.4` y fallaba con `i/o timeout`.
+**Ejemplo.** `server1` tiene `Host=server1.example.com` y `TailscaleIP=100.64.0.4`, y Tailscale está parado en el equipo de LAIM. LAIM conecta a `192.0.2.198:22` (red local). Antes de pkg39 solo probaba `100.64.0.4` y fallaba con `i/o timeout`.
 
 ### 9.3 Grupos de equipos
 
@@ -1852,12 +1852,12 @@ Desde **config → 8 → 8 → 2. Ver nodos conectados**:
 
 Hay **dos caminos**:
 
-**A — Cliente LAIM (recomendado).** En el equipo que se une (p. ej. `silicon.house.loc`): Config → Equipos → Red mesh → **Cliente Tailscale (este equipo)**.
+**A — Cliente LAIM (recomendado).** En el equipo que se une (p. ej. `mac1.example.com`): Config → Equipos → Red mesh → **Cliente Tailscale (este equipo)**.
 
 1. LAIM comprueba si el cliente Tailscale existe (mac Intel / Apple Silicon, Linux o Windows), si corre como servicio y si ya es funcional. El probe es de **unos segundos** (`pgrep` / `tailscale status`, sin `brew services list`) para que el menú Config no se quede congelado.
 2. Si no está instalado, **Instalar** abre un **modal de progreso** (pasos: detectar, descargar, instalador, servicio, verificar) con el log de lo que ejecuta LAIM. Recetas oficiales ([Install Tailscale](https://tailscale.com/docs/install)): Linux `install.sh` + `systemd`; macOS paquete **`.pkg` standalone** (Homebrew solo si falla el pkg); Windows MSI silencioso (`TS_UNATTENDEDMODE=always`). El interruptor «Ejecutar como servicio» **no** cambia a `brew install`.
 3. Selector **Ejecutar como servicio** (solo preferencia) y controles ▶️ Ejecutar / ⏹ Parar / 🔄 Reiniciar.
-4. Indique la URL del coordinador `http://<host-laim>:4324` (p. ej. `http://tibet.house.loc:4324`) y **Solicitar unirse**. Otro modal muestra cifrado `KeyMeshEnrollment` y el POST a `mesh_api`. *Connection refused* en el 4324 significa que en el coordinador no corre `mesh_api`: hace falta `laim web` + interruptor **Este LAIM es el coordinador de la malla** (Headscale en `:8080` no abre este puerto). El cuerpo va cifrado con **`KeyMeshEnrollment`** (clave global del major; **no** es `KeyInternalTranslator` ni la clave Share). El **mismo equipo coordinador** puede ser también cliente/nodo (`tailscale up` contra su Headscale). No pulse **Solicitar unirse** otra vez si ya hay una solicitud *aprobada*: reutiliza el mismo `request_id`. Si se creó otra fila *solicitada*, **Aplicar unión** recupera la hermana aprobada del mismo host.
+4. Indique la URL del coordinador `http://<host-laim>:4324` (p. ej. `http://server1.example.com:4324`) y **Solicitar unirse**. Otro modal muestra cifrado `KeyMeshEnrollment` y el POST a `mesh_api`. *Connection refused* en el 4324 significa que en el coordinador no corre `mesh_api`: hace falta `laim web` + interruptor **Este LAIM es el coordinador de la malla** (Headscale en `:8080` no abre este puerto). El cuerpo va cifrado con **`KeyMeshEnrollment`** (clave global del major; **no** es `KeyInternalTranslator` ni la clave Share). El **mismo equipo coordinador** puede ser también cliente/nodo (`tailscale up` contra su Headscale). No pulse **Solicitar unirse** otra vez si ya hay una solicitud *aprobada*: reutiliza el mismo `request_id`. Si se creó otra fila *solicitada*, **Aplicar unión** recupera la hermana aprobada del mismo host.
 5. En el LAIM coordinador: **Solicitudes de unión** — estado *Solicitado* y botones ✅ aprobar / ❌ rechazar / ⏸ suspender / ▶️ reanudar. Tras decidir, el panel muestra el resultado y **instrucciones para el cliente** (qué pulsar en el otro LAIM). No copie claves preauth por chat: el cliente las obtiene cifradas al aplicar.
    **Aprobación sellada (pkg90, Remote 0.17.9):** `KeyMeshEnrollment` está en todos los binarios LAIM, así que solo oculta el tráfico. Cada solicitud de unión lleva ahora su propia clave pública X25519 (`enroll_pub`; la privada se queda en el cliente, cifrada con su clave maestra) y el coordinador sella la clave preauth de Headscale con ella (ECDH + HKDF-SHA256 + AES-256-GCM). Solo el equipo que la pidió puede abrir la aprobación; quien la capture en la LAN o conozca el id de la solicitud, no. Los dos paneles muestran una **huella de la clave** (`abcd-1234-…`): antes de aprobar, pida al usuario del cliente que lea la de su pantalla y compruebe que coincide con la de la solicitud. Una solicitud de un LAIM antiguo muestra «Solicitud de un LAIM antiguo sin clave de unión»: sigue recibiendo la clave en claro hasta el **31-01-2027**; después se le pide actualizar LAIM. Los nodos ya unidos no se ven afectados.
 6. De vuelta en el cliente: **Actualizar estado** muestra la fase de enrollment **y** el plano de datos (dirección Tailscale `100.x` y backend). El ACK a `mesh_api` **no** es lo mismo que aparecer en Headscale. **Aplicar unión** si hay clave pendiente ejecuta `tailscale up`; si el daemon ya apuntaba a otro login-server, reintenta con `--force-reauth` y la preauth. Si la solicitud ya está *validada*, **no** relanza el up: comprueba si hay IP `100.x` y muestra el estado de la conexión. Solo hay unión real con esa IP. Si no hay dirección, pida **Aprobar de nuevo** en el coordinador (clave nueva) y vuelva a Aplicar. En el coordinador: **Headscale en marcha** → **Nodos conectados → Actualizar**. Luego **Sincronizar IPs con equipos LAIM**. Si el servidor suspende, el cliente muestra **Interrumpida temporalmente** y el mismo botón hace `tailscale down`.
@@ -1888,7 +1888,7 @@ Para llegar desde otra red: una el Windows a Headscale (cliente LAIM o `tailscal
 
 Con `tailscale_ip` sincronizada, el **selector de equipo del chat** y **`laim remote`** usan SSH a `100.x` si el modo es `tailscale` **o** este host ya está en la malla. Suggestions reutiliza los orquestadores del chat (`remotesystem`, inventario). Python solo pinta Markdown. Equipos **sin** LAIM: mismo registro SSH; la malla solo aporta el camino.
 
-**Ejemplo.** Equipo destino `tibet`, «¿cuánto disco libre?»: F6 corre en Ubuntu por SSH, no en el Mac que abre el chat. La ruta IA (Localhost vs Share) es independiente.
+**Ejemplo.** Equipo destino `server1`, «¿cuánto disco libre?»: F6 corre en Ubuntu por SSH, no en el Mac que abre el chat. La ruta IA (Localhost vs Share) es independiente.
 
 ---
 
@@ -1925,8 +1925,8 @@ Un solo programador: toda accion con hora de LAIM es una tarea de `scheduler.dat
 - **Privilegios avanzados (D17):** si al disenar la tarea das tu consentimiento, cuando un paso desatendido pide autorizacion LAIM la concede en tu nombre con tus privilegios (auditado). Sin ese consentimiento el paso hace fallar la ejecucion y llega «Tarea programada sin privilegios», desde donde puedes clonarla.
 - **Avisos:** al crear una tarea y en cada ejecucion (correcta, fallida o no realizada) reciben un aviso el propietario y los administradores, en el idioma del propietario. Si la tarea tiene informe, un trabajo hijo P3 lo escribe cifrado (`reports/scheduler_<fecha>_<id>.md.enc`, 0600) y llega «Informe disponible»; en **Informes › Tareas programadas** cada usuario ve solo los suyos.
 - **Ejecuciones no realizadas:** si el equipo estaba apagado o dormido o LAIM parado, una ejecucion que no ocurre a su hora ni en los 60 minutos siguientes queda como «no realizada» y se avisa; nunca se recupera.
-- **LAIM parado:** el binario `scheduler`, junto a `laim`, se instala solo al arrancar `laim web` (crontab en Linux, LaunchAgent en macOS, schtasks en Windows, en un bloque propio que nunca toca otras lineas). Cada hora revisa las tareas y, a su minuto, despierta a LAIM: si `laim web` responde se lo encarga; si no, arranca `laim worker`, que ejecuta la tarea, deja registro, avisos e informe, y termina. Al arrancar `laim web` todo eso aparece en la pagina. `laim scheduler uninstall` la retira y se respeta; `laim scheduler status` y `laim version` muestran su estado.
-- **Tareas del sistema (D13, solo administradores):** **Comprobacion de actualizaciones** (cada 15 minutos), **Rotacion de logs** (cada 6 horas) y **Sesiones caducadas** (cada noche a las 04:00). No se pueden borrar; si pausar, reanudar, reprogramar y ejecutar ahora. Solo corren con `laim web` arrancado y solo avisan si fallan.
+- **LAIM parado:** el binario `scheduler`, junto a `laim`, se instala solo al arrancar `laim web` (crontab en Linux, LaunchAgent en macOS, schtasks en Windows, en un bloque propio que nunca toca otras lineas). Cada hora revisa las tareas y, a su minuto, despierta a LAIM: si `laim web` responde se lo encarga; si no, ejecuta las tareas del sistema que tocan y, si hay una tarea de usuario pendiente, arranca `laim worker`, que ejecuta la tarea, deja registro, avisos e informe, y termina. Al arrancar `laim web` todo eso aparece en la pagina. `laim scheduler uninstall` la retira y se respeta; `laim scheduler status` y `laim version` muestran su estado.
+- **Tareas del sistema (D13, solo administradores):** **Comprobacion de actualizaciones** (cada 15 minutos), **Rotacion de logs** (cada 6 horas) y **Sesiones caducadas** (cada noche a las 04:00). No se pueden borrar; si pausar, reanudar, reprogramar y ejecutar ahora. Corren a su hora tambien con LAIM parado (pkg100): tienen despertador del sistema como cualquier tarea y, si `laim web` no responde, el propio binario `scheduler` las ejecuta en su proceso, rapido y sin arrancar `laim worker` (la comprobacion de actualizaciones solo consulta el canal cuando toca segun su intervalo, con 10 s de limite y sin reintentos: reintenta el siguiente turno de 15 minutos). Con `laim web` arrancado van por la cola, como antes; un turno nunca se ejecuta dos veces. Nunca quedan como «no realizadas» y solo avisan si fallan.
 - **Agentes programados:** un agente con automatizacion «programada» y su cron activo tiene su tarea «agent-<id>». Se aceptan `M H * * *`, `M H * * D`, `M H * * MON-FRI` y `M H D * *`; otro cron se rechaza al guardar el agente.
 - **Tareas del sistema operativo (solo administradores, D12):** casilla **Mostrar tareas del sistema** y selector de equipo (Localhost o un equipo remoto). Las entradas del crontab o de schtasks salen como franjas (nunca el bloque propio de LAIM). Su detalle permite **Ejecutar**, **Editar**, **Borrar** y **Anadir tarea del sistema**: primero se muestra la diferencia y LAIM emite una confirmacion de un solo uso (10 minutos, mismo usuario); al aplicar se hace antes una copia del crontab o de la entrada de schtasks y no se escribe si el crontab cambio entretanto o su lectura llego cortada. En Windows solo tareas diarias o semanales, con su hora real.
 - **Consentimiento de los comandos de riesgo (pkg62):** antes del plan, LAIM lista cada comando de riesgo — el de la tarea y el propio registro (crontab / schtasks, CMD-RSK-023) — con su regla y su motivo en el idioma del usuario en el dialogo **«Consentimiento de comandos de riesgo»**; sin ese consentimiento no hay plan. El consentimiento del comando se guarda (equipo, comando exacto, regla, quien, cuando) y se audita (`scheduler:risky_consent`); un comando editado u otro equipo vuelven a preguntar. Una ejecucion programada de un comando de riesgo solo corre con un consentimiento guardado que coincida; si no, se rechaza y se registra (`scheduler:risky_refused`) — nunca pregunta. **Ejecutar** con el usuario delante acepta ademas su exencion verificada o una confirmacion explicita de esa ejecucion (auditada, no guardada). Lo prohibido se rechaza siempre.
@@ -2252,6 +2252,7 @@ Leerlos (`nmcli … show`, `resolvectl status`, `ifconfig en0`) sigue siendo una
 - **Opciones que el programa no tiene (pkg96):** en macOS una opción larga (`--…`) de `df` (salvo `--libxo`), `du`, `stat`, `date` o `ps` de BSD, y `stat -c` / `date -d`, están prohibidas (FORBIDDEN, CMD-PLT-009: use `df -h`, `du -d N`, `stat -f`, `date -v`); en Linux una opción larga que `df` / `du` de GNU no tienen (`df --output-size`, `du --show-size`; un prefijo no ambiguo como `du --summ` es válido) está prohibida (FORBIDDEN, CMD-PLT-010). Solo cuenta el programa que empieza un comando (también tras `;`, `&&`, `|`, `(`, `sudo` o `env`); el texto entre comillas nunca. Las respuestas y las Sugerencias remotas nunca proponen esos comandos; en macOS `du --max-depth=N` se reescribe como `du -d N`.
 - **Opciones cortas de BSD y editores (pkg98):** en macOS cada opción corta de `df`, `du`, `stat` y `date` se comprueba con el uso de macOS (`df -B` y `du -b` son solo de GNU), y `top` con el suyo (`top -b` no existe; use `top -l 1`): prohibidas (FORBIDDEN, CMD-PLT-009). `crontab -e`, `visudo` y `vipw` abren un editor y son interactivos (FORBIDDEN, CMD-FBD-022); `visudo -c` solo comprueba y está permitido. Las respuestas y las Sugerencias remotas ya no proponen comandos que necesitan un terminal (como `top` sin `-l` en macOS).
 - **Valores de ejemplo y salidas de otro sistema (pkg99):** las respuestas y las Sugerencias remotas ya no proponen un comando con un valor copiado de la documentación (`/path/to/…`, `YourProcessName`, `example.com`; CMD-FBD-020); un comando con un hueco `<…>` sin rellenar se queda, porque LAIM pregunta el valor real. Un bloque de salida que nombra un proceso que el sistema del equipo no ejecuta (`systemd` en macOS, `launchd` o `WindowServer` en Linux) se quita como salida inventada.
+- **sw_vers y sysctl en macOS (pkg101):** `sw_vers` solo admite `--productName`, `--productVersion`, `--productVersionExtra`, `--buildVersion` y `--help` (o un prefijo único; `sw_vers -p` es ambiguo), y `sysctl` solo nombres de un nivel superior de macOS (`kern.boottime`, `hw.memsize`; `sysctl NVRAM` falla): lo demás está prohibido (CMD-PLT-009) y nunca se propone, tampoco cuando una frase pide ejecutarlo.
 - **Orden y lecturas dependientes:** los comandos se ejecutan en el orden propuesto, así que una comprobación va después de su cambio. Una lectura que usa un fichero o carpeta que solo habría creado un cambio que no se ejecutó (una copia de seguridad, una carpeta nueva) se deja fuera y se lista con CMD-DEP-001.
 
 **Desde 0.58.45 (pkg36bc):**
@@ -3056,7 +3057,7 @@ Ejemplo de salida:
   Fecha/Hora             Usuario       Acción     Destino               Detalle
   ——————————————————————————————————————————————————————————————————
   2026-07-29 09:15:33    bootstrap     create     admin                 Usuario creado (rol: admin)
-  2026-07-29 09:18:44    admin         create     perico                Usuario creado (rol: user)
+  2026-07-29 09:18:44    admin         create     maria                 Usuario creado (rol: user)
   ...
 ```
 
@@ -3085,6 +3086,8 @@ El visor agrupa los eventos por seccion. Cada grupo muestra un contador de event
 **Ahora (`audit.dat`, `identity.dat`, `laim.dat`):**
 
 - **Bloqueo entre procesos.** Cada escritura mantiene `<almacén>.lock` (junto al almacén, en `data/`) desde que carga hasta que guarda; los lectores lo toman compartido. Se escribe en un fichero temporal que se renombra sobre el almacén: un lector ve el fichero anterior o el nuevo, nunca uno a medias. Los `.lock` están vacíos y pueden quedarse.
+- **Los cambios simultáneos en `laim.dat` ya no se pierden (pkg102).** Un cambio hecho a la vez por varios procesos (`laim web`, un comando de la CLI, el programador / `laim worker`, Ecosystem) o por dos peticiones conservaba solo el último que se guardaba. Los cambios de equipos y grupos, inscripciones de la malla y Headscale, la API de Configuración (agentes, skills, tools, pipelines, perfiles, tiers de modelos), flujos, notas, la cola de trabajos, los consentimientos del programador, la cadena de actualización y las alertas MRTG se aplican ahora sobre el `laim.dat` actual uno detrás de otro bajo `laim.dat.update.lock` (junto a `laim.dat`; guarda el pid y la operación del cambio en curso y puede quedarse). Leer `laim.dat` nunca lo espera. Si un cambio no puede empezar en 15 s la acción falla con «laim.dat is busy: another change is still being saved (held by pid …, op …)»: repítala; nada queda guardado a medias.
+- **Todos los cambios de `laim.dat` van ya uno detrás de otro (pkg103, fase 2 de pkg102).** El resto de cambios —los menús de `laim config` (perfiles, tiers y familias de modelos, temperaturas, agentes, skills, tools, pipelines, Share y Connect), el resto de la API de Configuración (temperaturas, familias, Share/Connect, ajustes locales, idioma, profesor, especificación de la API), usuarios, reglas de seguridad de inferencia, rotación de logs, apps generadas y su gobierno, Direct, Headscale, el número de serie, el «apply» de Ecosystem, el constructor de agentes, la importación y los valores de fábrica— se aplican también sobre el `laim.dat` actual bajo `laim.dat.update.lock`. Un menú interactivo o un flujo largo (un modelo, Ecosystem) guarda solo los valores que cambió, así que se conserva lo que otro proceso guardó mientras tanto; si dos cambian a la vez la misma lista, gana el último. Se aplican el mismo mensaje «laim.dat is busy…» y la misma espera de 15 s.
 - **Última copia buena.** `audit.dat.bak` es la versión anterior del registro, `laim.dat.bak` + `laim.dat.bak.sig` el `laim.dat` anterior con su firma e `identity.dat.bak` la identidad actual. Son el propio cifrado del almacén (misma clave maestra, permisos 0600). Si el fichero principal no se puede leer, LAIM lee la copia y lo anota en `logs/secure.log`. Las instalaciones anteriores a pkg97 obtienen sus copias en el primer guardado (identity.dat y laim.dat también al leerlos).
 - **laim.dat y su firma.** La firma nueva se escribe antes como `laim.dat.sig.pending`, después `laim.dat`, y por último la firma se renombra sobre `laim.dat.sig`: tras un corte entre los dos pasos la firma pendiente sigue verificando el fichero nuevo. Un `laim.dat` que descifra pero no casa con su firma se sigue informando como manipulado; solo uno que no se puede autenticar ni descifrar pasa a la copia.
 - **La clave maestra nunca se sustituye.** Si `identity.dat` falta o no se puede leer, LAIM lo restaura desde `identity.dat.bak` (apartando el ilegible). Sin copia legible, LAIM se detiene con un error explícito en lugar de crear una clave maestra nueva (una clave nueva dejaría ilegibles todos los almacenes cifrados). `laim init` sin `laim.md` conserva la clave de un `identity.dat` existente. Si ocurre, restaure `identity.dat` desde una copia de la instalación (§ Backup).
@@ -3153,6 +3156,16 @@ powershell -File scripts\distribute_common_files.ps1 -DryRun
 powershell -File scripts\distribute_common_files.ps1
 powershell -File scripts\distribute_common_files.ps1 -From silicon
 ```
+
+### 18.3bis Datos de producto sin datos del laboratorio (pkg104)
+
+Las versiones que se publican («Generar versión» de laim_maintenance, instaladores y parches) llevan `library.dat`, `translate.dat`, `plugins.dat`, `prompts.dat` y `default.dat` **sin ningún nombre, dominio, usuario ni dirección del laboratorio** donde se construyen. Los ejemplos de la Ayuda y de la biblioteca usan valores reservados: `server1` / `server1.example.com`, `mac1.example.com`, `example.com`, `192.0.2.x` / `198.51.100.x` (rangos de documentación) y los usuarios `admin` / `maria`. LAIM nunca ejecuta un comando con ellos (CMD-FBD-020): pide el valor real.
+
+- **Lista de exclusión del laboratorio:** `internal/utils/security/lab_denylist.txt` (carpeta `security/`, fuera de git; se copia a mano a cada equipo de compilación como `cipher.go`). Una regla por línea: `nombre = sustituto` (literal, sin distinguir mayúsculas, nombre completo; el más largo primero) o `red IPv4 = red IPv4` con el mismo prefijo (se conserva la parte de host). Una dirección seguida de un prefijo más ancho (`192.168.0.0/16`, un rango que se describe) no se toca.
+- **Comprobar** (solo lectura): `laim release check-dat bin/<plataforma>/data --denylist internal/utils/security/lab_denylist.txt` — sale con 0 si está limpio y con 1 nombrando cada fichero, regla y valor encontrado. Siempre busca además secretos (claves de Headscale/Tailscale, tokens de GitHub/OpenAI/AWS/Slack, claves privadas).
+- **Sanear** (copias nuevas): `laim release sanitize-dat --in bin/<plataforma>/data --out <dir> --denylist …` — escribe en `<dir>` las copias con los sustitutos (fichero temporal + renombrado, firma `.sig` nueva si el original la tenía); un fichero sin hallazgos se copia byte a byte. Nunca modifica la carpeta de entrada.
+- **laim_maintenance:** «Generar versión» ejecuta `check-dat` sobre el `data/` de cada payload con el `laim` del equipo de compilación; un hallazgo, la falta de la lista o un `laim` anterior a pkg104 detienen la versión.
+- **Dominio de búsqueda:** el producto no supone ninguno (`DefaultDNSSearchDomains` vacío); sale del FQDN de los equipos registrados o LAIM lo pregunta.
 
 ### 18.4 Logs
 
@@ -3784,7 +3797,7 @@ Este escenario describe como un usuario puede utilizar LAIM Chat con acceso a la
 │  Red LAN de la oficina / casa (p. ej. 192.168.1.0/24) │
 │                                                        │
 │  ┌─────────────────────────────────────────────┐      │
-│  │   Servidor Linux (tibet.house.loc)           │      │
+│  │   Servidor Linux (server1.example.com)           │      │
 │  │   · Headscale (control Tailscale, :8080)     │      │
 │  │   · LAIM Share (Ollama + API, :4322)         │      │
 │  │   · IP local: 192.168.1.50                   │      │
@@ -3819,7 +3832,7 @@ El **Mac** esta en una red publica (sin acceso directo a `192.168.1.x`). Con Hea
 
 | Componente | Maquina | Funcion |
 |------------|---------|---------|
-| **Headscale** (servidor control) | Linux (tibet.house.loc) | Controla la malla WireGuard, registra y autoriza nodos |
+| **Headscale** (servidor control) | Linux (server1.example.com) | Controla la malla WireGuard, registra y autoriza nodos |
 | **Tailscale** (cliente) | Linux + Mac | Cliente WireGuard que forma la malla |
 | **LAIM Share** | Linux (o Windows) | Servidor de IA, Ollama, share_api :4322 |
 | **LAIM Connect** | MacBook | Cliente fino que usa la IA del Share |
@@ -3836,7 +3849,7 @@ El **Mac** esta en una red publica (sin acceso directo a `192.168.1.x`). Con Hea
 ### Paso 1 — Configurar Headscale en el servidor Linux
 
 ```bash
-# En tibet.house.loc
+# En server1.example.com
 laim web   # arranca la UI de administracion
 # Navega a: Config > Acceso remoto > WireGuard mesh (Headscale)
 # → Estado del servidor > Configurar con:
@@ -3854,7 +3867,7 @@ laim config   # menu > Acceso remoto > Headscale
 ### Paso 2 — Registrar el servidor Linux en la malla como nodo subnet router
 
 ```bash
-# En tibet.house.loc
+# En server1.example.com
 tailscale up --login-server=https://mi-dominio-publico.com:8080 \
              --advertise-routes=192.168.1.0/24 \
              --accept-routes
@@ -4882,18 +4895,18 @@ Las apps helper en Go (p. ej. `dirsize`) se compilan a `LAIMConfigDir()/<goos>/<
 | Capacidad | Detalle |
 |-----------|---------|
 | Build | Developer / `BuildGoBinary`; contrato CLI tipico: stdout JSON |
-| Deploy / run | DevOps `action=deploy\|run` con `app_slug` + nombre de equipo (`tibet`) |
+| Deploy / run | DevOps `action=deploy\|run` con `app_slug` + nombre de equipo (`server1`) |
 | Chat | Heuristica `generated_app_assist`: HITL crear → desplegar → ejecutar; si rechazas, fallback a `du`/`find` |
 | API | `GET/POST /api/v1/apps`, `GET /api/v1/apps/{id\|slug}` |
 | UI | Configuracion › Tecnico: tabla de apps; DevOps: campos slug/computer |
 
-#### 23.9.1 Ejemplo de uso: tamaño y ficheros de `/var/log` en `tibet.house.loc`
+#### 23.9.1 Ejemplo de uso: tamaño y ficheros de `/var/log` en `server1.example.com`
 
 Este es el flujo de referencia de **apps generadas** de extremo a extremo (probado en E2E real). Sirve para medir, en un Linux remoto, el **tamaño recursivo** de una carpeta y el **número de ficheros** sin depender de pipelines lentos o frágiles (`du` + `find`).
 
 **Prerrequisitos**
 
-1. Equipo remoto registrado en LAIM (`laim remote` / Config › Computers) con nombre `tibet` o host `tibet.house.loc`, credenciales SSH y `OSType=linux`.
+1. Equipo remoto registrado en LAIM (`laim remote` / Config › Computers) con nombre `server1` o host `server1.example.com`, credenciales SSH y `OSType=linux`.
 2. Toolchain **Go** instalado en el host LAIM (el que construye el binario; p. ej. Windows de desarrollo).
 3. Sesion autenticada (chat CLI o web). Para paneles Tecnico / DevOps / Developer: rol **admin**.
 
@@ -4913,16 +4926,16 @@ LAIM no asume un hostname fijo. Cruza el texto del prompt (y el target remoto de
 
 | Forma | Ejemplo | Como se interpreta |
 |-------|---------|-------------------|
-| Nombre corto / NetBIOS | `tibet` | Coincide con `Computer.Name` o la primera etiqueta de `Host` |
-| FQDN | `tibet.house.loc` | Coincide con `Computer.Host` |
-| Expansion por dominio | `tibet` → `tibet.house.loc` | Sufijos desde Hosts del inventario + `local_settings.dns_search_domains` (p. ej. `house.loc`) |
+| Nombre corto / NetBIOS | `server1` | Coincide con `Computer.Name` o la primera etiqueta de `Host` |
+| FQDN | `server1.example.com` | Coincide con `Computer.Host` |
+| Expansion por dominio | `server1` → `server1.example.com` | Sufijos desde Hosts del inventario + `local_settings.dns_search_domains` (p. ej. `example.com`) |
 
-Si hay **una** coincidencia, AppAssist pregunta: *¿La consulta se refiere al equipo tibet (tibet.house.loc)?*  
+Si hay **una** coincidencia, AppAssist pregunta: *¿La consulta se refiere al equipo server1 (server1.example.com)?*  
 Si hay **varias**, pide el nombre corto o FQDN exacto.  
 Si el chat web ya tiene target remoto (`SetRemoteTarget`) y el texto no nombra host, pregunta: *El chat apunta a … ¿Usar ese equipo?*  
 Si la ruta es Unix (`/var/log`) y no hay equipo, pide el nombre corto/FQDN antes de caer a shell.
 
-Puedes decir solo `tibet` o el FQDN completo; ambos son validos.
+Puedes decir solo `server1` o el FQDN completo; ambos son validos.
 
 LAIM clasifica el turno con la heurística **`generated_app_assist`** (`isAgentTrigger`) en las tres plataformas. Antes de F4–F6, el workflow llama a **AppAssist** (`RunAppAssist`):
 
@@ -5019,7 +5032,7 @@ Cuando AppAssist (o el admin) confirma el deploy:
 |------------------|-------|
 | `action` | `deploy` |
 | `app_slug` | `dirsize` |
-| `computer_name` | `tibet` (o `tibet.house.loc`) |
+| `computer_name` | `server1` (o `server1.example.com`) |
 
 **API:**
 
@@ -5028,7 +5041,7 @@ POST /api/v1/devops/request
 {
   "action": "deploy",
   "app_slug": "dirsize",
-  "computer_name": "tibet"
+  "computer_name": "server1"
 }
 ```
 
@@ -5042,7 +5055,7 @@ En el panel Tecnico › DevOps: accion `deploy`, campos `app_slug` y computer.
 4. Actualiza `Deployments[]` en el registro `GeneratedApp` (`computer_id`, `host`, `remote_path`, `deployed_at`).
 5. Auditoria / `console.log` sin credenciales SSH.
 
-Para ejecutar a mano sin AppAssist: accion DevOps `run` con `app_slug=dirsize`, computer `tibet` y en la peticion el argumento `/var/log` (`remote_args`).
+Para ejecutar a mano sin AppAssist: accion DevOps `run` con `app_slug=dirsize`, computer `server1` y en la peticion el argumento `/var/log` (`remote_args`).
 
 ---
 

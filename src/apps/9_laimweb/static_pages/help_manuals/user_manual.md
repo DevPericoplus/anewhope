@@ -220,7 +220,7 @@ Si pides un **cambio** en el equipo del chat («Vacia la cache DNS», «Baja la 
 - Si no los tiene, LAIM te lo dice («LAIM no tiene un procedimiento verificado para este cambio…», o te pide el dato que falta, como la ruta de un script) y, debajo, lo que haya leido; el modelo nunca propone el cambio (desde 0.58.47). Una lectura (`df`, `ps`, `cat /etc/hosts`…) nunca se presenta como si fuera la respuesta al cambio.
 - Una pregunta de cómo hacer un cambio concreto («¿Cómo activo la opción del kernel 'turbo-cache'?», «How do I change the DNS servers to 1.1.1.1?») se responde como la orden que describe: el procedimiento verificado, que solo se ejecuta con tu consentimiento, o la misma nota honesta (desde 0.58.50). Para una opción del kernel por su nombre, LAIM lee antes `sysctl -a` y te dice si no existe ninguna clave parecida.
 - En **Windows**, si lo que pides se hace con una herramienta gráfica («quiero cambiar la resolución, se ve todo muy grande», «poner un proxy», «que el portátil gaste menos»), LAIM te dice qué herramienta usar **en tu versión de Windows**, la orden que la abre y los pasos numerados (desde 0.58.52). Primero lee la versión del equipo, con tu permiso. Los pasos están certificados en Windows 11 25H2; en otras versiones (Windows 10, Windows 7…) la guía va marcada «orientativa, no certificada por LAIM», y si la opción no existe en tu versión te lo dice. LAIM no abre la ventana ni cambia nada: lo haces tú en la herramienta. Si lo prefieres por comandos, pídelo «con PowerShell». Por ahora las guías están solo en español.
-- **Los valores siempre son tuyos (desde 0.58.59).** LAIM nunca toma una palabra de tu pregunta como valor: «cómo cambio el nombre del ordenador y el dominio por defecto en la resolución de nombres» ya no renombra el equipo «la». Cuando un cambio necesita un valor que no has dado (el nombre nuevo, el dominio de búsqueda DNS…), LAIM te lo pide, te enseña la ranura `<nombre>` / `<dominio>` en los comandos que propondrá y no cambia nada. Dalo así: «cambia el nombre del equipo a lab-srv02 y el dominio de búsqueda a house.loc». Entonces LAIM propone, para que lo confirmes, los comandos verificados del sistema del equipo: en Windows `Rename-Computer` (el nombre nuevo se aplica al reiniciar, y eso lo decides tú) y `Set-DnsClientGlobalSetting -SuffixSearchList`; en macOS `scutil --set …` y `networksetup -setsearchdomains` en el servicio de red principal del Mac; en Linux `hostnamectl set-hostname` y, para el dominio, NetworkManager o systemd-resolved, el que use el equipo (LAIM lo lee antes). «Resolución de nombres» o «DNS» ya no sacan la guía de la resolución de pantalla.
+- **Los valores siempre son tuyos (desde 0.58.59).** LAIM nunca toma una palabra de tu pregunta como valor: «cómo cambio el nombre del ordenador y el dominio por defecto en la resolución de nombres» ya no renombra el equipo «la». Cuando un cambio necesita un valor que no has dado (el nombre nuevo, el dominio de búsqueda DNS…), LAIM te lo pide, te enseña la ranura `<nombre>` / `<dominio>` en los comandos que propondrá y no cambia nada. Dalo así: «cambia el nombre del equipo a lab-srv02 y el dominio de búsqueda a example.com». Entonces LAIM propone, para que lo confirmes, los comandos verificados del sistema del equipo: en Windows `Rename-Computer` (el nombre nuevo se aplica al reiniciar, y eso lo decides tú) y `Set-DnsClientGlobalSetting -SuffixSearchList`; en macOS `scutil --set …` y `networksetup -setsearchdomains` en el servicio de red principal del Mac; en Linux `hostnamectl set-hostname` y, para el dominio, NetworkManager o systemd-resolved, el que use el equipo (LAIM lo lee antes). «Resolución de nombres» o «DNS» ya no sacan la guía de la resolución de pantalla.
 - Desde 0.58.56, en **Windows**, cuando describes una necesidad que resuelve una herramienta complementaria de Microsoft (Sysinternals, PowerToys: «quiero ver todo lo que se ejecuta al iniciar», «no puedo borrar un archivo porque está en uso», «quiero que una ventana se quede siempre encima»), LAIM te dice qué herramienta es, si basta con lo que trae Windows, cómo instalarla desde el origen oficial (`winget install --id …`, la descarga de Microsoft o la Store) y los pasos, y te avisa cuando la herramienta cambia o borra datos o apaga el equipo. Nunca instala nada: pídelo y LAIM te propone la orden para que la confirmes. Si LAIM ya tiene una respuesta verificada (la herramienta gráfica de Windows o un cambio que propone), la herramienta va detrás como alternativa. Por ahora los pasos están en español y la guía es orientativa (sacada de la documentación de Microsoft, no certificada por LAIM en un equipo).
 - Desde 0.58.58 la herramienta gráfica y la herramienta de Microsoft llegan también **después de una lectura**: cuando preguntas algo que LAIM responde leyendo el equipo, pero lo que necesitas es una herramienta («¿Qué consultas hace una aplicación cuando tarda muchísimo en validar usuarios contra el dominio?», «quiero saber en qué disco físico está realmente mi unidad D:», «quiero saber cuántos núcleos reales y cuántos hilos tiene mi procesador»), LAIM te enseña primero lo que ha leído y después la herramienta (AdInsight, DiskExt, Coreinfo, TCPView, Disk Usage…) con su instalación y sus pasos. Una pregunta simple por un dato («¿Cuánta memoria RAM libre tiene el equipo?») recibe solo la lectura. Antes de proponerte `winget install …`, LAIM comprueba con una lectura (`Get-Command winget` y su ruta de alias, con tu permiso) que winget funciona de verdad en ese equipo; si no, te da la descarga oficial (download.sysinternals.com, Sysinternals Live o la Store), nunca una orden que el equipo no tiene.
 - Desde 0.58.60, cuando pides instalar un programa en **Windows** («Instala 7zip»), LAIM también comprueba antes con una lectura (con tu permiso) que winget funciona en ese equipo. Si funciona, te propone `winget install …` para que lo confirmes (por su ruta completa si no está en el PATH); si no funciona o no lo ha podido comprobar, no te propone ninguna orden: te indica que lo instales desde la web oficial del programa y te da la página oficial de winget de Microsoft. Las herramientas que pueden cambiar el sistema o borrar datos (Autoruns, Handle, Junction, PsFile, Streams, ProcDump, Process Explorer) llevan su aviso de precaución.
@@ -651,14 +651,14 @@ El panel **SESIONES ACTIVAS** en la interfaz web muestra en tiempo real **todas 
 
 ### 8.4 Ejemplo practico: trabajo simultaneo web + CLI
 
-Imagina que tienes un servidor `tibet` y quieres:
+Imagina que tienes un servidor `server1` y quieres:
 - Un administrador trabajando con la terminal web.
 - Tu mismo usando `laim remote` desde PowerShell para tareas de mantenimiento.
 
 El panel SESIONES ACTIVAS mostraria algo como:
 
 ```
-🖥️  tibet.house.loc  [icono-cli]  ....  [Abrir sesion]
+🖥️  server1.example.com  [icono-cli]  ....  [Abrir sesion]
 ```
 
 - El emoji `🖥️` representa la sesion web del administrador.
@@ -734,11 +734,11 @@ Lo que elijas queda registrado para el administrador. Ejemplo: tras enseñar «l
 
 ### No volver a preguntarme por un comando (0.58.79)
 
-Cuando tu **último turno** te pidió permiso para un comando de riesgo y lo **aprobaste** (por ejemplo `sudo systemctl restart nginx` en `tibet`), la ventana **Sugerir mejora** muestra también **🔓 No volver a preguntarme por este comando**, con una casilla por cada comando aprobado: `sudo systemctl restart nginx` en tibet [CMD-RSK-001: elevación de privilegios con sudo]. Puedes marcarla con o sin escribir una sugerencia.
+Cuando tu **último turno** te pidió permiso para un comando de riesgo y lo **aprobaste** (por ejemplo `sudo systemctl restart nginx` en `server1`), la ventana **Sugerir mejora** muestra también **🔓 No volver a preguntarme por este comando**, con una casilla por cada comando aprobado: `sudo systemctl restart nginx` en server1 [CMD-RSK-001: elevación de privilegios con sudo]. Puedes marcarla con o sin escribir una sugerencia.
 
 - **No hace nada hasta que un administrador la verifica** en «Revisión del alma». Mientras tanto LAIM sigue preguntando. La ventana lo dice: «Solicitud registrada: no tendrá efecto hasta que un administrador la verifique en «Revisión del alma».»
 - **Solo ese comando exacto, tú y ese equipo.** Otro comando (aunque sea `restart apache2`), otro equipo, otro usuario o este equipo (Localhost) siguen preguntando. Si las reglas de seguridad de LAIM cambian la regla de ese comando, vuelve a preguntar.
-- **Cuando se usa**, el comando se ejecuta sin la pregunta y la respuesta termina con **🔓 Exención de consentimiento aplicada**: «`sudo systemctl restart nginx` en tibet [CMD-RSK-001] se ejecutó sin preguntar, por tu exención de consentimiento verificada (soul.dat soul-0042).» En Sugerencias SSH ▶ Ejecutar el resultado muestra la misma línea. Cada uso queda en el registro de auditoría.
+- **Cuando se usa**, el comando se ejecuta sin la pregunta y la respuesta termina con **🔓 Exención de consentimiento aplicada**: «`sudo systemctl restart nginx` en server1 [CMD-RSK-001] se ejecutó sin preguntar, por tu exención de consentimiento verificada (soul.dat soul-0042).» En Sugerencias SSH ▶ Ejecutar el resultado muestra la misma línea. Cada uso queda en el registro de auditoría.
 - **Los comandos prohibidos nunca se eximen**, y la exención nunca vale para una ejecución programada desatendida.
 - El administrador puede revocarla en cualquier momento (volver a pendiente, editarla o borrarla); entonces LAIM vuelve a preguntar.
 
@@ -980,7 +980,7 @@ El selector aparece en **chat**, **Direct** e **Acceso remoto** (IA SSH). Siempr
 | Dentro de `laim chat` | `/ruta` lista las rutas numeradas y marca la actual; `/ruta 2` o `/ruta silicon` la cambia (alias `/route`). El chat se reinicia en la nueva ruta |
 | Desde un script | `laim connect ruta` muestra la ruta y las opciones; `laim connect ruta silicon` la fija (alias `laim connect route`) |
 
-`laim chat` muestra la ruta al empezar: «Ruta IA: silicon — 192.168.0.40:4322». Cualquier usuario con sesion puede cambiarla (igual que en el selector web). Un nombre que no existe, un Share que no responde o un equipo que no es cliente Connect dan un error con la lista de opciones validas. Cada cambio queda en la auditoria (canal `cli`).
+`laim chat` muestra la ruta al empezar: «Ruta IA: silicon — 192.0.2.40:4322». Cualquier usuario con sesion puede cambiarla (igual que en el selector web). Un nombre que no existe, un Share que no responde o un equipo que no es cliente Connect dan un error con la lista de opciones validas. Cada cambio queda en la auditoria (canal `cli`).
 
 El administrador crea y edita los perfiles en **config → Connect**. «Probar conexion» comprueba el handoff; no es lo que te pinta en el monitor del Share. El Share solo muestra este cliente mientras usas **su** ruta IA (unos segundos de margen si dejas de usarlo).
 
@@ -1069,14 +1069,14 @@ Sin LAIM (preauth del administrador):
   --authkey=<tu-preauth-key>
 ```
 
-Sustituye `<IP_O_FQDN_SERVIDOR>` por el coordinador (p. ej. `tibet.house.loc`) y `<tu-preauth-key>` por la clave que te facilite el administrador. No mezcles este `--login-server` con `login.tailscale.com` en el mismo daemon.
+Sustituye `<IP_O_FQDN_SERVIDOR>` por el coordinador (p. ej. `server1.example.com`) y `<tu-preauth-key>` por la clave que te facilite el administrador. No mezcles este `--login-server` con `login.tailscale.com` en el mismo daemon.
 
 **Paso 4 — Verificar:**
 
 ```bash
 /Applications/Tailscale.app/Contents/MacOS/Tailscale status
 # Debes ver tu Mac y el servidor Linux ambos como "online"
-# y la ruta de subred (p. ej. 192.168.0.0/24) si el admin la anunció
+# y la ruta de subred (p. ej. 192.0.2.0/24) si el admin la anunció
 ping 100.64.0.2   # ping al servidor Linux por su IP mesh
 ```
 
@@ -1123,14 +1123,14 @@ sudo tailscale up \
 
 **Paso 3b — Si el nodo Linux es el servidor Headscale (anuncia la subred):**
 
-Este es el caso del servidor `tibet.house.loc`. Ademas de unirse, **anuncia** su LAN local a la malla:
+Este es el caso del servidor `server1.example.com`. Ademas de unirse, **anuncia** su LAN local a la malla:
 
 ```bash
 sudo tailscale up \
   --login-server=http://localhost:8080 \
   --accept-routes \
-  --advertise-routes=192.168.0.0/24 \
-  --hostname=tibet \
+  --advertise-routes=192.0.2.0/24 \
+  --hostname=server1 \
   --reset
 
 # A continuacion, aprueba la ruta en Headscale:
@@ -1141,7 +1141,7 @@ sudo tailscale up \
 ./bin/linux/headscale nodes approve-routes \
   --config bin/linux/headscale_data/config.yaml \
   --identifier <ID_NODO> \
-  --routes 192.168.0.0/24
+  --routes 192.0.2.0/24
 ```
 
 **Paso 4 — Verificar:**
