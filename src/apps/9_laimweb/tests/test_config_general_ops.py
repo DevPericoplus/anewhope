@@ -151,6 +151,16 @@ def test_general_ui_reuses_support_paths_and_admin_gate() -> None:
     assert "session_token" not in ops
     assert "mint_support_token" in ops
     assert 'item["estado"] == ""' in panel
+    assert "submit_cfg_users_search" in panel
+    assert 'type="submit"' in panel or "type_=\"submit\"" in panel or 'type="submit"' in panel
+    assert "ask_cfg_user_status" in panel
+    assert "¿Bloquear la cuenta" in panel or "Bloquear" in panel
+    assert "Este entorno no tiene instalaciones registradas." in panel
+    assert '_labeled_field(\n                    "Usuario"' in panel
+    assert '"Nombre completo"' in panel
+    assert '"Email"' in panel
+    assert '"Móvil"' in panel
+    assert "confirm_cfg_user_status" in mixin
     assert "/laim/support/users/" in mixin
     assert "/password" in mixin
     assert "/status" in mixin

@@ -678,6 +678,37 @@ def forum_admin_extended_panel() -> rx.Component:
             rx.text(LaimWebState.forum_admin_message, color=COLORS["accent"]),
             rx.fragment(),
         ),
+        rx.dialog.root(
+            rx.dialog.content(
+                rx.dialog.title("Confirmar", color=COLORS["title"]),
+                rx.text(LaimWebState.forum_confirm_prompt),
+                rx.hstack(
+                    rx.button(
+                        rx.cond(
+                            LaimWebState.forum_confirm_kind == "moderator",
+                            "Desactivar",
+                            rx.cond(
+                                LaimWebState.forum_confirm_kind == "word-off",
+                                "Desactivar",
+                                "Eliminar",
+                            ),
+                        ),
+                        on_click=LaimWebState.forum_accept_confirm,
+                        class_name="crt-btn",
+                    ),
+                    rx.button(
+                        "Cancelar",
+                        on_click=LaimWebState.forum_cancel_confirm,
+                        class_name="crt-btn",
+                    ),
+                    spacing="2",
+                ),
+                background=COLORS["panel_bg"],
+                border=f"1px solid {COLORS['border']}",
+            ),
+            open=LaimWebState.forum_confirm_open,
+            on_open_change=LaimWebState.forum_cancel_confirm,
+        ),
         rx.cond(
             LaimWebState.forum_admin_tab == "settings",
             rx.vstack(
@@ -860,7 +891,9 @@ def forum_admin_extended_panel() -> rx.Component:
                                             ),
                                             rx.button(
                                                 "Eliminar",
-                                                on_click=LaimWebState.forum_admin_delete_prefix(item["id"]),
+                                                on_click=LaimWebState.forum_ask_confirm(
+                                                    "prefix", item["id"], item["texto"]
+                                                ),
                                                 class_name="crt-btn crt-btn-inline",
                                             ),
                                             spacing="2",
@@ -877,12 +910,19 @@ def forum_admin_extended_panel() -> rx.Component:
                 rx.cond(
                     LaimWebState.forum_admin_tab == "word-rules",
                     rx.vstack(
+                        rx.el.label("Palabra", color=COLORS["title"]),
                         rx.input(
-                            placeholder="Palabra",
+                            placeholder="ejemplo",
                             value=LaimWebState.forum_admin_word_palabra,
                             on_change=LaimWebState.forum_admin_set_word_palabra,
                             class_name="crt-input",
                         ),
+                        rx.text(
+                            "Texto que la regla busca en el mensaje.",
+                            color=COLORS["muted"],
+                            font_size=FONT_SIZE_SMALL,
+                        ),
+                        rx.el.label("Acción", color=COLORS["title"]),
                         rx.select(
                             LaimWebState.forum_rule_action_options,
                             value=LaimWebState.forum_admin_word_accion,
@@ -890,8 +930,14 @@ def forum_admin_extended_panel() -> rx.Component:
                             class_name="crt-input",
                             width="100%",
                         ),
+                        rx.text(
+                            "Qué hace el foro cuando aparece la palabra.",
+                            color=COLORS["muted"],
+                            font_size=FONT_SIZE_SMALL,
+                        ),
+                        rx.el.label("Mensaje al usuario", color=COLORS["title"]),
                         rx.input(
-                            placeholder="Mensaje al usuario",
+                            placeholder="Esa palabra no está permitida",
                             value=LaimWebState.forum_admin_word_mensaje,
                             on_change=LaimWebState.forum_admin_set_word_mensaje,
                             class_name="crt-input",
@@ -938,15 +984,15 @@ def forum_admin_extended_panel() -> rx.Component:
                                 ),
                                 rx.button(
                                     rx.cond(rule["activo"], "Desactivar", "Activar"),
-                                    on_click=LaimWebState.forum_admin_toggle_word_rule(
-                                        rule["id"]
+                                    on_click=LaimWebState.forum_admin_ask_word_active(
+                                        rule["id"], rule["palabra"], rule["activo"]
                                     ),
                                     class_name="crt-btn crt-btn-inline",
                                 ),
                                 rx.button(
                                     "Eliminar",
-                                    on_click=LaimWebState.forum_admin_delete_word_rule(
-                                        rule["id"]
+                                    on_click=LaimWebState.forum_ask_confirm(
+                                        "word", rule["id"], rule["palabra"]
                                     ),
                                     class_name="crt-btn crt-btn-inline",
                                 ),
@@ -1035,8 +1081,8 @@ def forum_admin_extended_panel() -> rx.Component:
                                                     ),
                                                     rx.button(
                                                         "Eliminar",
-                                                        on_click=LaimWebState.forum_admin_delete_allowed_url(
-                                                            url["id"]
+                                                        on_click=LaimWebState.forum_ask_confirm(
+                                                            "url", url["id"], url["dominio"]
                                                         ),
                                                         class_name="crt-btn crt-btn-inline",
                                                     ),
@@ -1106,8 +1152,8 @@ def forum_admin_extended_panel() -> rx.Component:
                                                         mod["activo"],
                                                         rx.button(
                                                             "Desactivar",
-                                                            on_click=LaimWebState.forum_admin_deactivate_moderator(
-                                                                mod["id"]
+                                                            on_click=LaimWebState.forum_ask_confirm(
+                                                                "moderator", mod["id"], mod["user_name"]
                                                             ),
                                                             class_name="crt-btn crt-btn-inline",
                                                         ),
@@ -1134,42 +1180,131 @@ def forum_admin_extended_panel() -> rx.Component:
                                 LaimWebState.forum_admin_tab == "avatars",
                                 rx.vstack(
                                     rx.text(
-                                        "Catálogo de avatares que el usuario puede elegir en su perfil. El identificador es el de una imagen ya subida.",
+                                        "Sube la imagen desde aquí. La miniatura y la etiqueta quedan en el catálogo; puedes ordenarla, marcarla por defecto, desactivarla o quitarla.",
                                         color=COLORS["muted"],
                                         font_size=FONT_SIZE_SMALL,
                                     ),
-                                    rx.text("Identificador de la imagen", color=COLORS["title"]),
+                                    rx.el.label("Etiqueta", color=COLORS["title"]),
                                     rx.input(
-                                        placeholder="Image ID (subida previamente)",
-                                        value=LaimWebState.forum_admin_avatar_image_id_text,
-                                        on_change=LaimWebState.forum_admin_set_avatar_image_id,
-                                        class_name="crt-input",
-                                    ),
-                                    rx.text("Nombre que verá el usuario", color=COLORS["title"]),
-                                    rx.input(
-                                        placeholder="Etiqueta",
+                                        placeholder="Retrato azul",
                                         value=LaimWebState.forum_admin_avatar_label,
                                         on_change=LaimWebState.forum_admin_set_avatar_label,
                                         class_name="crt-input",
                                     ),
+                                    rx.text(
+                                        "Nombre que verá el usuario al elegir el avatar.",
+                                        color=COLORS["muted"],
+                                        font_size=FONT_SIZE_SMALL,
+                                    ),
+                                    rx.upload(
+                                        rx.text(
+                                            "Elegir imagen (PNG, JPG, WEBP o GIF).",
+                                            font_size=FONT_SIZE_SMALL,
+                                            color=COLORS["muted"],
+                                        ),
+                                        id="forum_catalog_avatar_upload",
+                                        accept={
+                                            "image/png": [".png"],
+                                            "image/jpeg": [".jpg", ".jpeg"],
+                                            "image/webp": [".webp"],
+                                            "image/gif": [".gif"],
+                                        },
+                                        max_files=1,
+                                        border=f"1px dashed {COLORS['border']}",
+                                        padding="0.75em",
+                                        width="100%",
+                                    ),
+                                    rx.cond(
+                                        LaimWebState.forum_admin_avatar_preview != "",
+                                        rx.image(
+                                            src=LaimWebState.forum_admin_avatar_preview,
+                                            width="64px",
+                                            height="64px",
+                                            alt="Vista previa",
+                                        ),
+                                        rx.fragment(),
+                                    ),
                                     rx.button(
-                                        "Añadir al catálogo",
-                                        on_click=LaimWebState.forum_admin_add_catalog_avatar,
+                                        "Subir y añadir al catálogo",
+                                        on_click=LaimWebState.forum_admin_upload_catalog_avatar(
+                                            rx.upload_files(upload_id="forum_catalog_avatar_upload")
+                                        ),
                                         class_name="crt-btn",
+                                    ),
+                                    rx.hstack(
+                                        rx.button(
+                                            "Anterior",
+                                            on_click=LaimWebState.forum_admin_avatar_page_step(-1),
+                                            class_name="crt-btn",
+                                        ),
+                                        rx.text(LaimWebState.forum_admin_avatar_page_label),
+                                        rx.button(
+                                            "Siguiente",
+                                            on_click=LaimWebState.forum_admin_avatar_page_step(1),
+                                            class_name="crt-btn",
+                                        ),
+                                        spacing="2",
+                                        align="center",
                                     ),
                                     rx.el.table(
                                         rx.el.thead(
                                             rx.el.tr(
-                                                rx.el.th("Nombre"),
-                                                rx.el.th("Imagen"),
+                                                rx.el.th("Avatar"),
+                                                rx.el.th("Etiqueta"),
+                                                rx.el.th("Orden"),
+                                                rx.el.th("Estado"),
+                                                rx.el.th("Acciones"),
                                             )
                                         ),
                                         rx.el.tbody(
                                             rx.foreach(
-                                                LaimWebState.forum_avatar_catalog,
+                                                LaimWebState.forum_admin_avatar_page_rows,
                                                 lambda item: rx.el.tr(
+                                                    rx.el.td(
+                                                        rx.image(
+                                                            src=item["preview_url"],
+                                                            width="40px",
+                                                            height="40px",
+                                                            alt=item["label"],
+                                                        )
+                                                    ),
                                                     rx.el.td(item["label"]),
-                                                    rx.el.td(item["image_id"]),
+                                                    rx.el.td(
+                                                        rx.input(
+                                                            default_value=item["sort_order"],
+                                                            on_blur=LaimWebState.forum_admin_avatar_set_sort(item["id"]),
+                                                            width="5em",
+                                                        )
+                                                    ),
+                                                    rx.el.td(
+                                                        rx.cond(item["active"], "Activo", "Inactivo")
+                                                    ),
+                                                    rx.el.td(
+                                                        rx.hstack(
+                                                            rx.button(
+                                                                "Por defecto",
+                                                                on_click=LaimWebState.forum_admin_avatar_make_default(
+                                                                    item["id"]
+                                                                ),
+                                                                class_name="crt-btn crt-btn-inline",
+                                                            ),
+                                                            rx.button(
+                                                                rx.cond(item["active"], "Desactivar", "Activar"),
+                                                                on_click=LaimWebState.forum_admin_avatar_set_active(
+                                                                    item["id"], item["active"]
+                                                                ),
+                                                                class_name="crt-btn crt-btn-inline",
+                                                            ),
+                                                            rx.button(
+                                                                "Quitar del catálogo",
+                                                                on_click=LaimWebState.forum_ask_confirm(
+                                                                    "avatar", item["id"], item["label"]
+                                                                ),
+                                                                class_name="crt-btn crt-btn-inline",
+                                                            ),
+                                                            spacing="2",
+                                                        )
+                                                    ),
                                                 ),
                                             )
                                         ),

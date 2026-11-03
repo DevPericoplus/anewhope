@@ -222,6 +222,52 @@ class LaimForumRepository:
             items.append(item)
         return items
 
+    def update_avatar_catalog_item(
+        self,
+        item_id: int,
+        *,
+        is_default: bool | None = None,
+        active: bool | None = None,
+        sort_order: int | None = None,
+    ) -> bool:
+        """Actualiza por defecto, activo u orden de una fila del catálogo."""
+        sets: list[str] = []
+        params: dict[str, Any] = {"id": item_id}
+        if is_default is not None:
+            sets.append("is_default = :is_default")
+            params["is_default"] = int(is_default)
+        if active is not None:
+            sets.append("active = :active")
+            params["active"] = int(active)
+        if sort_order is not None:
+            sets.append("sort_order = :sort_order")
+            params["sort_order"] = sort_order
+        if not sets:
+            return False
+        with self._engine.begin() as conn:
+            if is_default:
+                conn.execute(
+                    text(
+                        "UPDATE laim_forum_avatar_catalog SET is_default = 0 WHERE is_default = 1"
+                    )
+                )
+            result = conn.execute(
+                text(
+                    f"UPDATE laim_forum_avatar_catalog SET {', '.join(sets)} WHERE id = :id"
+                ),
+                params,
+            )
+        return result.rowcount > 0
+
+    def delete_avatar_catalog_item(self, item_id: int) -> bool:
+        """Quita la fila del catálogo. La imagen subida se conserva."""
+        with self._engine.begin() as conn:
+            result = conn.execute(
+                text("DELETE FROM laim_forum_avatar_catalog WHERE id = :id"),
+                {"id": item_id},
+            )
+        return result.rowcount > 0
+
     # -------------------------------------------------------------- perfil foro
     def get_user_forum(self, user_id: int) -> dict[str, Any] | None:
         """Obtiene perfil de foro del usuario."""

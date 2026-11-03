@@ -53,6 +53,10 @@ class LaimConfigMixin(rx.State, mixin=True):
     cfg_password_open: bool = False
     cfg_password: str = ""
     cfg_password_confirm: str = ""
+    cfg_status_open: bool = False
+    cfg_status_user_id: int = 0
+    cfg_status_user_name: str = ""
+    cfg_status_blocked: bool = False
     cfg_registro_open: bool = False
     cfg_registro_loading: bool = False
     cfg_registro_error: str = ""
@@ -168,6 +172,23 @@ class LaimConfigMixin(rx.State, mixin=True):
         await self._load_cfg_users_body()
 
     @config_background_event
+    async def submit_cfg_users_search(self, form_data: dict):
+        """Intro y el botón Buscar usan el mismo listado."""
+        del form_data
+        await self._load_cfg_users_body()
+
+    @config_event
+    def ask_cfg_user_status(self, user_id: int, user_name: str, blocked: bool):
+        self.cfg_status_user_id = int(user_id)
+        self.cfg_status_user_name = str(user_name or "")
+        self.cfg_status_blocked = _as_bool(blocked)
+        self.cfg_status_open = True
+
+    @config_event
+    def cancel_cfg_user_status(self):
+        self.cfg_status_open = False
+
+    @config_background_event
     async def open_cfg_user(self, user_id: int):
         async with self:
             self.cfg_users_loading = True
@@ -255,8 +276,19 @@ class LaimConfigMixin(rx.State, mixin=True):
                 self.cfg_users = [visible_account(item) for item in listing.get("items") or []]
 
     @config_background_event
+    async def confirm_cfg_user_status(self):
+        async with self:
+            user_id = int(self.cfg_status_user_id)
+            blocked = self.cfg_status_blocked
+            self.cfg_status_open = False
+        await self._toggle_cfg_user_status_body(user_id, blocked)
+
+    @config_background_event
     async def toggle_cfg_user_status(self, user_id: int, blocked: bool):
         """Envía el estado contrario. Si el remoto falla, la fila se queda igual."""
+        await self._toggle_cfg_user_status_body(user_id, blocked)
+
+    async def _toggle_cfg_user_status_body(self, user_id: int, blocked: bool):
         async with self:
             self.cfg_users_loading = True
             self.cfg_users_error = ""

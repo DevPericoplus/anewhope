@@ -733,12 +733,47 @@ def laim_forum_update_profile(
 
 
 def laim_forum_list_avatar_catalog(
-    access_token: str, session_token: str
+    access_token: str,
+    session_token: str,
+    include_inactive: bool = False,
 ) -> dict[str, Any]:
     """Lista avatares del catálogo."""
+    path = "/laim/forum/avatars/catalog"
+    if include_inactive:
+        path += "?include_inactive=true"
     return _request_forum(
         "GET",
-        "/laim/forum/avatars/catalog",
+        path,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_update_avatar_catalog(
+    item_id: int,
+    payload: dict[str, Any],
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Actualiza una fila del catálogo de avatares."""
+    return _request_forum(
+        "PATCH",
+        f"/laim/forum/avatars/catalog/{int(item_id)}",
+        payload=payload,
+        access_token=access_token,
+        session_token=session_token,
+    )
+
+
+def laim_forum_delete_avatar_catalog(
+    item_id: int,
+    access_token: str,
+    session_token: str,
+) -> dict[str, Any]:
+    """Quita un avatar del catálogo."""
+    return _request_forum(
+        "DELETE",
+        f"/laim/forum/avatars/catalog/{int(item_id)}",
         access_token=access_token,
         session_token=session_token,
     )

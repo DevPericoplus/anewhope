@@ -87,6 +87,7 @@ def forum_service_hub() -> rx.Component:
             _service_action_button("Reglas automáticas", "list-checks", "word-rules"),
             _service_action_button("URLs autorizadas", "link", "allowed-urls"),
             _service_action_button("Visor de logs", "scroll-text", "logs"),
+            _service_action_button("Avatares", "image", "avatars"),
             _service_action_button("Estadísticas", "bar-chart-2", "stats"),
             rx.button(
                 rx.hstack(
@@ -228,7 +229,7 @@ def forum_bans_admin_view() -> rx.Component:
     )
 
 
-def _log_date_modal(title: str, opened, value, on_apply, on_close) -> rx.Component:
+def _log_date_modal(title: str, opened, value, on_apply, on_close, min_value="", max_value="") -> rx.Component:
     """Calendario nativo dentro de un modal."""
     return rx.cond(
         opened,
@@ -238,6 +239,8 @@ def _log_date_modal(title: str, opened, value, on_apply, on_close) -> rx.Compone
                 rx.input(
                     type="date",
                     value=value,
+                    min=min_value,
+                    max=max_value,
                     on_change=on_apply,
                     class_name="crt-input",
                     width="100%",
@@ -341,7 +344,18 @@ def forum_logs_admin_view() -> rx.Component:
                 on_click=LaimWebState.forum_log_open_to,
                 class_name="crt-btn",
             ),
+            rx.button(
+                "Quitar filtros",
+                on_click=LaimWebState.forum_log_clear_filters,
+                class_name="crt-btn",
+            ),
             spacing="3",
+        ),
+        rx.text(LaimWebState.forum_log_active_summary, color=COLORS["muted"], font_size=FONT_SIZE_SMALL),
+        rx.cond(
+            LaimWebState.forum_log_range_error != "",
+            rx.text(LaimWebState.forum_log_range_error, color="#b91c1c"),
+            rx.fragment(),
         ),
         _log_date_modal(
             "Desde",
@@ -349,6 +363,7 @@ def forum_logs_admin_view() -> rx.Component:
             LaimWebState.forum_log_from,
             LaimWebState.forum_log_apply_from,
             LaimWebState.forum_log_close_from,
+            max_value=LaimWebState.forum_log_to,
         ),
         _log_date_modal(
             "Hasta",
@@ -356,6 +371,7 @@ def forum_logs_admin_view() -> rx.Component:
             LaimWebState.forum_log_to,
             LaimWebState.forum_log_apply_to,
             LaimWebState.forum_log_close_to,
+            min_value=LaimWebState.forum_log_from,
         ),
         _activity_table(),
         rx.heading("Moderación", size="5", color=COLORS["title"]),

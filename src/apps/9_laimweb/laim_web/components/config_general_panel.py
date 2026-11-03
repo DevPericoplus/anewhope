@@ -34,6 +34,17 @@ def _modal(title: str, body: rx.Component, on_close, wide: bool = False) -> rx.C
     )
 
 
+def _labeled_field(label: str, control: rx.Component, hint: str) -> rx.Component:
+    return rx.vstack(
+        rx.el.label(label),
+        control,
+        rx.text(hint, font_size="0.8rem"),
+        spacing="1",
+        width="100%",
+        align="start",
+    )
+
+
 def _users_table() -> rx.Component:
     return rx.el.table(
         rx.el.thead(
@@ -58,13 +69,20 @@ def _users_table() -> rx.Component:
                         rx.cond(
                             item["estado"] == "",
                             rx.text("—"),
-                            rx.button(
-                                item["estado"],
-                                on_click=LaimWebState.toggle_cfg_user_status(
-                                    item["user_id"], item["blocked"]
+                            rx.hstack(
+                                rx.text(
+                                    item["estado"],
+                                    color=rx.cond(item["blocked"], "#b91c1c", "#15803d"),
                                 ),
-                                class_name="crt-btn",
-                                color=rx.cond(item["blocked"], "#b91c1c", "#15803d"),
+                                rx.button(
+                                    rx.cond(item["blocked"], "Activar", "Bloquear"),
+                                    on_click=LaimWebState.ask_cfg_user_status(
+                                        item["user_id"], item["user_name"], item["blocked"]
+                                    ),
+                                    class_name="crt-btn",
+                                ),
+                                spacing="2",
+                                align="center",
                             ),
                         )
                     ),
@@ -88,33 +106,49 @@ def _user_detail_modal() -> rx.Component:
         _modal(
             "Usuario",
             rx.vstack(
-                rx.input(
-                    placeholder="Usuario",
-                    value=LaimWebState.cfg_user_name,
-                    on_change=LaimWebState.set_cfg_user_name,
-                    class_name="crt-input",
-                    width="100%",
+                _labeled_field(
+                    "Usuario",
+                    rx.input(
+                        placeholder="ana",
+                        value=LaimWebState.cfg_user_name,
+                        on_change=LaimWebState.set_cfg_user_name,
+                        class_name="crt-input",
+                        width="100%",
+                    ),
+                    "Al menos 3 caracteres. Es el nombre con el que entra.",
                 ),
-                rx.input(
-                    placeholder="Nombre completo",
-                    value=LaimWebState.cfg_user_full_name,
-                    on_change=LaimWebState.set_cfg_user_full_name,
-                    class_name="crt-input",
-                    width="100%",
+                _labeled_field(
+                    "Nombre completo",
+                    rx.input(
+                        placeholder="Ana López",
+                        value=LaimWebState.cfg_user_full_name,
+                        on_change=LaimWebState.set_cfg_user_full_name,
+                        class_name="crt-input",
+                        width="100%",
+                    ),
+                    "Nombre y apellidos, como deben verse en el portal.",
                 ),
-                rx.input(
-                    placeholder="Email",
-                    value=LaimWebState.cfg_user_email,
-                    on_change=LaimWebState.set_cfg_user_email,
-                    class_name="crt-input",
-                    width="100%",
+                _labeled_field(
+                    "Email",
+                    rx.input(
+                        placeholder="ana@laim.app",
+                        value=LaimWebState.cfg_user_email,
+                        on_change=LaimWebState.set_cfg_user_email,
+                        class_name="crt-input",
+                        width="100%",
+                    ),
+                    "Dirección de correo. Es la clave de la cuenta.",
                 ),
-                rx.input(
-                    placeholder="Móvil",
-                    value=LaimWebState.cfg_user_mobile,
-                    on_change=LaimWebState.set_cfg_user_mobile,
-                    class_name="crt-input",
-                    width="100%",
+                _labeled_field(
+                    "Móvil",
+                    rx.input(
+                        placeholder="600000000",
+                        value=LaimWebState.cfg_user_mobile,
+                        on_change=LaimWebState.set_cfg_user_mobile,
+                        class_name="crt-input",
+                        width="100%",
+                    ),
+                    "Opcional. Hasta 20 caracteres.",
                 ),
                 rx.hstack(
                     rx.button("Guardar", on_click=LaimWebState.save_cfg_user, class_name="crt-btn"),
@@ -177,18 +211,23 @@ def _users_modal() -> rx.Component:
             "Usuarios",
             rx.vstack(
                 rx.text(
-                    "Cuentas de este portal. Pulsar el estado lo cambia en el servidor; si falla, la fila no se modifica.",
+                    "Cuentas de este portal. Bloquear o activar pide confirmación; si el servidor falla, la fila no cambia.",
                     font_size="0.9rem",
                 ),
-                rx.hstack(
-                    rx.input(
-                        placeholder="Buscar usuario o email",
-                        value=LaimWebState.cfg_users_query,
-                        on_change=LaimWebState.set_cfg_users_query,
-                        class_name="crt-input",
+                rx.form(
+                    rx.hstack(
+                        rx.input(
+                            placeholder="ana o ana@laim.app",
+                            value=LaimWebState.cfg_users_query,
+                            on_change=LaimWebState.set_cfg_users_query,
+                            class_name="crt-input",
+                            width="100%",
+                        ),
+                        rx.button("Buscar", type="submit", class_name="crt-btn"),
                         width="100%",
                     ),
-                    rx.button("Buscar", on_click=LaimWebState.load_cfg_users, class_name="crt-btn"),
+                    on_submit=LaimWebState.submit_cfg_users_search,
+                    reset_on_submit=False,
                     width="100%",
                 ),
                 rx.cond(
@@ -202,6 +241,41 @@ def _users_modal() -> rx.Component:
                     rx.fragment(),
                 ),
                 _users_table(),
+                rx.cond(
+                    LaimWebState.cfg_status_open,
+                    _modal(
+                        "Confirmar estado",
+                        rx.vstack(
+                            rx.text(
+                                rx.fragment(
+                                    rx.cond(
+                                        LaimWebState.cfg_status_blocked,
+                                        "¿Activar la cuenta «",
+                                        "¿Bloquear la cuenta «",
+                                    ),
+                                    LaimWebState.cfg_status_user_name,
+                                    "»?",
+                                )
+                            ),
+                            rx.hstack(
+                                rx.button(
+                                    rx.cond(LaimWebState.cfg_status_blocked, "Activar", "Bloquear"),
+                                    on_click=LaimWebState.confirm_cfg_user_status,
+                                    class_name="crt-btn",
+                                ),
+                                rx.button(
+                                    "Cancelar",
+                                    on_click=LaimWebState.cancel_cfg_user_status,
+                                    class_name="crt-btn",
+                                ),
+                                spacing="2",
+                            ),
+                            spacing="3",
+                        ),
+                        LaimWebState.cancel_cfg_user_status,
+                    ),
+                    rx.fragment(),
+                ),
                 spacing="3",
                 width="100%",
             ),
@@ -327,7 +401,11 @@ def _registro_modal() -> rx.Component:
                     rx.text(LaimWebState.cfg_registro_error, class_name="crt-error"),
                     rx.fragment(),
                 ),
-                _registro_table(),
+                rx.cond(
+                    LaimWebState.cfg_registro_rows.length() == 0,
+                    rx.text("Este entorno no tiene instalaciones registradas."),
+                    _registro_table(),
+                ),
                 spacing="3",
                 width="100%",
             ),

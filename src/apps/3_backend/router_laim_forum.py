@@ -184,12 +184,44 @@ def laim_forum_list_prefixes(
 
 @router.get("/avatars/catalog")
 def laim_forum_list_avatar_catalog(
+    include_inactive: bool = False,
     authorization: Annotated[str | None, Header()] = None,
     session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
 ) -> dict[str, Any]:
     """Catálogo de avatares."""
     _require_session(authorization, session_token)
-    return _raise_if_failed(get_laim_forum_service().list_avatar_catalog())
+    return _raise_if_failed(
+        get_laim_forum_service().list_avatar_catalog(include_inactive=include_inactive)
+    )
+
+
+@router.patch("/avatars/catalog/{item_id}")
+def laim_forum_update_avatar_catalog(
+    item_id: int,
+    payload: dict[str, Any],
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Actualiza por defecto, activo u orden de un avatar del catálogo."""
+    session = _require_session(authorization, session_token)
+    return _raise_if_failed(
+        get_laim_forum_service().update_avatar_catalog_item(item_id, payload, session),
+        default_status=status.HTTP_403_FORBIDDEN,
+    )
+
+
+@router.delete("/avatars/catalog/{item_id}")
+def laim_forum_delete_avatar_catalog(
+    item_id: int,
+    authorization: Annotated[str | None, Header()] = None,
+    session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
+) -> dict[str, Any]:
+    """Quita un avatar del catálogo."""
+    session = _require_session(authorization, session_token)
+    return _raise_if_failed(
+        get_laim_forum_service().delete_avatar_catalog_item(item_id, session),
+        default_status=status.HTTP_403_FORBIDDEN,
+    )
 
 
 @router.post("/categories")

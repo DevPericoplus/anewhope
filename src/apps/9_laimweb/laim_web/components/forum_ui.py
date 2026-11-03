@@ -533,7 +533,7 @@ def _post_row(post) -> rx.Component:
             is_editing,
             rx.vstack(
                 rx.el.textarea(
-                    value=LaimWebState.forum_edit_post_body,
+                    default_value=LaimWebState.forum_edit_post_body,
                     on_change=LaimWebState.forum_set_edit_post_body,
                     class_name="crt-input",
                     width="100%",
@@ -686,15 +686,17 @@ def forum_thread_content_panel() -> rx.Component:
                     LaimWebState.forum_edit_thread_open,
                     rx.box(
                         rx.vstack(
+                            _field_label("Título"),
                             rx.input(
-                                value=LaimWebState.forum_edit_thread_title,
+                                default_value=LaimWebState.forum_edit_thread_title,
                                 on_change=LaimWebState.forum_set_edit_thread_title,
-                                placeholder="Título",
+                                placeholder="Cómo instalar LAIM",
                                 class_name="crt-input",
                                 width="100%",
                             ),
+                            _field_label("Mensaje"),
                             rx.el.textarea(
-                                value=LaimWebState.forum_edit_thread_body,
+                                default_value=LaimWebState.forum_edit_thread_body,
                                 on_change=LaimWebState.forum_set_edit_thread_body,
                                 class_name="crt-input",
                                 width="100%",
@@ -1191,9 +1193,9 @@ def _cat_tree_category_row(node) -> rx.Component:
 
 def _cat_tree_add_sub_dialog() -> rx.Component:
     """Diálogo para crear subcategoría desde el árbol."""
-    return rx.cond(
+    return _forum_dialog(
         LaimWebState.forum_cat_tree_add_sub_open,
-        rx.box(
+        LaimWebState.forum_cat_tree_close_add_sub,
             rx.box(
                 rx.text(
                     "Nueva subcategoría",
@@ -1211,31 +1213,34 @@ def _cat_tree_add_sub_dialog() -> rx.Component:
                     font_size=FONT_SIZE_SMALL,
                     margin_bottom="0.5em",
                 ),
-                rx.text("Orden de aparición. 0 aparece el primero.", color=COLORS["muted"], font_size=FONT_SIZE_SMALL),
+                _field_label("Identificador", "Clave interna, sin espacios."),
                 rx.input(
-                    placeholder="ID (ej: anuncios)",
+                    placeholder="anuncios",
                     value=LaimWebState.forum_cat_tree_add_sub_id,
                     on_change=LaimWebState.forum_cat_tree_set_add_sub_id,
                     class_name="crt-input",
                     width="100%",
                     margin_bottom="0.5em",
                 ),
+                _field_label("Nombre"),
                 rx.input(
-                    placeholder="Nombre",
+                    placeholder="Anuncios",
                     value=LaimWebState.forum_cat_tree_add_sub_name,
                     on_change=LaimWebState.forum_cat_tree_set_add_sub_name,
                     class_name="crt-input",
                     width="100%",
                     margin_bottom="0.5em",
                 ),
+                _field_label("Descripción"),
                 rx.input(
-                    placeholder="Descripción (opcional)",
+                    placeholder="Avisos del equipo",
                     value=LaimWebState.forum_cat_tree_add_sub_desc,
                     on_change=LaimWebState.forum_cat_tree_set_add_sub_desc,
                     class_name="crt-input",
                     width="100%",
                     margin_bottom="0.5em",
                 ),
+                _field_label("Orden de aparición", "0 aparece el primero."),
                 rx.input(
                     placeholder="0",
                     type="number",
@@ -1251,6 +1256,7 @@ def _cat_tree_add_sub_dialog() -> rx.Component:
                     checked=LaimWebState.forum_admin_subcategory_activa,
                     on_change=LaimWebState.forum_admin_set_subcategory_activa,
                 ),
+                _field_label("Duración del ban (segundos)", "86400 es un día."),
                 rx.input(
                     placeholder="86400",
                     type="number",
@@ -1262,6 +1268,7 @@ def _cat_tree_add_sub_dialog() -> rx.Component:
                     margin_top="0.5em",
                     margin_bottom="0.5em",
                 ),
+                _field_label("Rotación del log", "weekly, daily o none."),
                 rx.select(
                     ["weekly", "daily", "none"],
                     value=LaimWebState.forum_admin_subcategory_log_rotation,
@@ -1290,26 +1297,14 @@ def _cat_tree_add_sub_dialog() -> rx.Component:
                 width="380px",
                 max_width="90vw",
             ),
-            position="fixed",
-            top="0",
-            left="0",
-            width="100vw",
-            height="100vh",
-            background="rgba(0,0,0,0.7)",
-            display="flex",
-            align_items="center",
-            justify_content="center",
-            z_index="900",
-        ),
-        rx.fragment(),
     )
 
 
 def _cat_tree_rename_dialog() -> rx.Component:
     """Diálogo para renombrar subcategoría."""
-    return rx.cond(
+    return _forum_dialog(
         LaimWebState.forum_cat_tree_rename_open,
-        rx.box(
+        LaimWebState.forum_cat_tree_close_rename,
             rx.box(
                 rx.text(
                     "Renombrar subcategoría",
@@ -1317,6 +1312,7 @@ def _cat_tree_rename_dialog() -> rx.Component:
                     font_size="1.1em",
                     margin_bottom="0.75em",
                 ),
+                _field_label("Nombre"),
                 rx.input(
                     value=LaimWebState.forum_cat_tree_rename_name,
                     on_change=LaimWebState.forum_cat_tree_set_rename_name,
@@ -1345,26 +1341,14 @@ def _cat_tree_rename_dialog() -> rx.Component:
                 width="380px",
                 max_width="90vw",
             ),
-            position="fixed",
-            top="0",
-            left="0",
-            width="100vw",
-            height="100vh",
-            background="rgba(0,0,0,0.7)",
-            display="flex",
-            align_items="center",
-            justify_content="center",
-            z_index="900",
-        ),
-        rx.fragment(),
     )
 
 
 def _cat_tree_delete_dialog() -> rx.Component:
     """Diálogo de confirmación para eliminar categoría o subcategoría."""
-    return rx.cond(
+    return _forum_dialog(
         LaimWebState.forum_cat_tree_delete_open,
-        rx.box(
+        LaimWebState.forum_cat_tree_close_delete,
             rx.box(
                 rx.text(
                     "Confirmar eliminación",
@@ -1419,18 +1403,6 @@ def _cat_tree_delete_dialog() -> rx.Component:
                 width="380px",
                 max_width="90vw",
             ),
-            position="fixed",
-            top="0",
-            left="0",
-            width="100vw",
-            height="100vh",
-            background="rgba(0,0,0,0.7)",
-            display="flex",
-            align_items="center",
-            justify_content="center",
-            z_index="900",
-        ),
-        rx.fragment(),
     )
 
 
@@ -1492,29 +1464,32 @@ def _subcategory_editor() -> rx.Component:
     """Formulario de alta y edición de subcategoría."""
     return rx.vstack(
         rx.text("Subcategoría", class_name="crt-title", font_size="1em"),
+        _field_label("Identificador", "Clave interna, sin espacios. No se cambia al editar."),
         rx.input(
-            placeholder="ID (ej: anuncios)",
+            placeholder="anuncios",
             value=LaimWebState.forum_admin_subcategory_id,
             on_change=LaimWebState.forum_admin_set_subcategory_id,
             disabled=True,
             class_name="crt-input",
             width="100%",
         ),
+        _field_label("Nombre"),
         rx.input(
-            placeholder="Nombre",
+            placeholder="Anuncios",
             value=LaimWebState.forum_admin_subcategory_name,
             on_change=LaimWebState.forum_admin_set_subcategory_name,
             class_name="crt-input",
             width="100%",
         ),
+        _field_label("Descripción"),
         rx.input(
-            placeholder="Descripción",
+            placeholder="Avisos del equipo",
             value=LaimWebState.forum_admin_subcategory_desc,
             on_change=LaimWebState.forum_admin_set_subcategory_desc,
             class_name="crt-input",
             width="100%",
         ),
-        rx.text("Orden de aparición. 0 aparece el primero.", color=COLORS["muted"], font_size=FONT_SIZE_SMALL),
+        _field_label("Orden de aparición", "0 aparece el primero."),
         rx.input(
             placeholder="0",
             type="number",
@@ -1529,10 +1504,9 @@ def _subcategory_editor() -> rx.Component:
             checked=LaimWebState.forum_admin_subcategory_activa,
             on_change=LaimWebState.forum_admin_set_subcategory_activa,
         ),
-        rx.text(
-            "Duración del ban automático de esta subcategoría, en segundos. 86400 es un día.",
-            color=COLORS["muted"],
-            font_size=FONT_SIZE_SMALL,
+        _field_label(
+            "Duración del ban (segundos)",
+            "86400 es un día.",
         ),
         rx.input(
             placeholder="86400",
@@ -1543,11 +1517,7 @@ def _subcategory_editor() -> rx.Component:
             class_name="crt-input",
             width="100%",
         ),
-        rx.text(
-            "Rotación del log de esta subcategoría: weekly, daily o none.",
-            color=COLORS["muted"],
-            font_size=FONT_SIZE_SMALL,
-        ),
+        _field_label("Rotación del log", "weekly, daily o none."),
         rx.select(
             ["weekly", "daily", "none"],
             value=LaimWebState.forum_admin_subcategory_log_rotation,
@@ -1565,35 +1535,68 @@ def _subcategory_editor() -> rx.Component:
     )
 
 
+def _forum_dialog(opened, on_open_change, body: rx.Component) -> rx.Component:
+    """Ventana con Escape y foco atrapado. Cerrar no guarda."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            body,
+            background=COLORS["panel_bg"],
+            border=f"1px solid {COLORS['border']}",
+            max_width="480px",
+            max_height="85vh",
+            overflow_y="auto",
+        ),
+        open=opened,
+        on_open_change=on_open_change,
+    )
+
+
+def _field_label(title: str, hint: str = "") -> rx.Component:
+    return rx.vstack(
+        rx.el.label(title, color=COLORS["title"], font_size=FONT_SIZE_SMALL),
+        rx.cond(
+            hint != "",
+            rx.text(hint, color=COLORS["muted"], font_size=FONT_SIZE_SMALL),
+            rx.fragment(),
+        ),
+        spacing="1",
+        align_items="start",
+        width="100%",
+    )
+
+
 def _category_modal() -> rx.Component:
     """Alta y edición de categoría. Se abre desde el árbol."""
-    return rx.cond(
+    return _forum_dialog(
         LaimWebState.forum_category_modal_open,
-        rx.box(
-            rx.vstack(
+        LaimWebState.forum_cat_tree_close_category_modal,
+        rx.vstack(
                 rx.text("Categoría", class_name="crt-title", font_size="1.1em"),
                 rx.text(
                     "El identificador es la clave interna, sin espacios. El nombre es el que ve el usuario.",
                     color=COLORS["muted"],
                     font_size=FONT_SIZE_SMALL,
                 ),
+                _field_label("Identificador", "Clave interna, sin espacios."),
                 rx.input(
-                    placeholder="ID (ej: general)",
+                    placeholder="general",
                     value=LaimWebState.forum_admin_category_id,
                     on_change=LaimWebState.forum_admin_set_category_id,
                     disabled=~LaimWebState.forum_admin_category_creating,
                     class_name="crt-input",
                     width="100%",
                 ),
+                _field_label("Nombre"),
                 rx.input(
-                    placeholder="Nombre",
+                    placeholder="General",
                     value=LaimWebState.forum_admin_category_name,
                     on_change=LaimWebState.forum_admin_set_category_name,
                     class_name="crt-input",
                     width="100%",
                 ),
+                _field_label("Descripción"),
                 rx.input(
-                    placeholder="Descripción",
+                    placeholder="Temas generales del foro",
                     value=LaimWebState.forum_admin_category_desc,
                     on_change=LaimWebState.forum_admin_set_category_desc,
                     class_name="crt-input",
@@ -1631,35 +1634,18 @@ def _category_modal() -> rx.Component:
                     ),
                     spacing="2",
                 ),
-                padding="1.5em",
-                background=COLORS["panel_bg"],
-                border=f"1px solid {COLORS['border']}",
-                border_radius="4px",
-                width="420px",
-                max_width="90vw",
                 spacing="2",
+                width="100%",
             ),
-            position="fixed",
-            top="0",
-            left="0",
-            width="100vw",
-            height="100vh",
-            background="rgba(0,0,0,0.7)",
-            display="flex",
-            align_items="center",
-            justify_content="center",
-            z_index="900",
-        ),
-        rx.fragment(),
     )
 
 
 def _subcategory_modal() -> rx.Component:
     """Edición de subcategoría desde el árbol. El alta sigue en su diálogo."""
-    return rx.cond(
+    return _forum_dialog(
         LaimWebState.forum_subcategory_modal_open,
-        rx.box(
-            rx.box(
+        LaimWebState.forum_cat_tree_close_subcategory_modal,
+        rx.vstack(
                 _subcategory_editor(),
                 rx.button(
                     "Cancelar",
@@ -1667,26 +1653,9 @@ def _subcategory_modal() -> rx.Component:
                     class_name="crt-btn crt-btn-inline",
                     margin_top="0.5em",
                 ),
-                padding="1.5em",
-                background=COLORS["panel_bg"],
-                border=f"1px solid {COLORS['border']}",
-                border_radius="4px",
-                width="420px",
-                max_width="90vw",
+                spacing="2",
+                width="100%",
             ),
-            position="fixed",
-            top="0",
-            left="0",
-            width="100vw",
-            height="100vh",
-            background="rgba(0,0,0,0.7)",
-            display="flex",
-            align_items="center",
-            justify_content="center",
-            z_index="900",
-            overflow_y="auto",
-        ),
-        rx.fragment(),
     )
 
 

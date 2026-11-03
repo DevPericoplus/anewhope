@@ -17,6 +17,31 @@ EventHandlerReturn = Any
 
 FORUM_THREAD_UPLOAD_ID = "forum_thread_upload"
 FORUM_REPLY_UPLOAD_ID = "forum_reply_upload"
+FORUM_CATALOG_UPLOAD_ID = "forum_catalog_avatar_upload"
+FORUM_AVATAR_PAGE_SIZE = 24
+
+
+def prefer_general_category_id(categories: list, current: str = "") -> str:
+    """Si no hay categoría elegida, abre General; si no existe, la primera."""
+    chosen = str(current or "").strip()
+    if chosen:
+        return chosen
+    for cat in categories or []:
+        name = str(cat.get("nombre") or cat.get("name") or "").strip().casefold()
+        if name == "general":
+            return str(cat.get("id") or "")
+    if categories:
+        return str((categories[0] or {}).get("id") or "")
+    return ""
+
+
+def forum_log_range_message(date_from: str, date_to: str) -> str:
+    """Avisa cuando Hasta es anterior a Desde. Las fechas ISO se comparan como texto."""
+    start = (date_from or "").strip()
+    end = (date_to or "").strip()
+    if start and end and start > end:
+        return "La fecha Hasta es anterior a Desde"
+    return ""
 
 
 def forum_attachment_payload(file_name: str, mime_type: str, data: bytes) -> dict[str, Any]:
@@ -283,6 +308,13 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_profile_notify_replies: bool = True
     forum_profile_message: str = ""
     forum_avatar_catalog: list[dict[str, Any]] = []
+    forum_admin_avatar_rows: list[dict[str, Any]] = []
+    forum_admin_avatar_page: int = 0
+    forum_admin_avatar_preview: str = ""
+    forum_confirm_open: bool = False
+    forum_confirm_prompt: str = ""
+    forum_confirm_kind: str = ""
+    forum_confirm_target: str = ""
     forum_avatar_catalog_style: str = "laim"
     forum_avatar_variant: str = "marble"
     forum_avatar_palette_id: str = "crt"
@@ -362,6 +394,7 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_log_subcategory: str = "ALL"
     forum_log_from: str = ""
     forum_log_to: str = ""
+    forum_log_range_error: str = ""
     forum_log_from_open: bool = False
     forum_log_to_open: bool = False
     forum_admin_logs_rows: list[dict[str, str]] = []
@@ -1052,6 +1085,15 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_log_to_open = False
         self.forum_load_admin_logs()
 
+    @forum_event
+    def forum_log_clear_filters(self) -> None:
+        self.forum_log_category = "ALL"
+        self.forum_log_subcategory = "ALL"
+        self.forum_log_from = ""
+        self.forum_log_to = ""
+        self.forum_log_range_error = ""
+        self.forum_load_admin_logs()
+
     def _forum_load_admin_catalog(self) -> None:
         """Categorías y subcategorías completas para los selectores del backoffice."""
         from laim_web.adapters.laim_api_client import (
@@ -1069,6 +1111,36 @@ class LaimForumMixin(rx.State, mixin=True):
         if subs.get("success"):
             self.forum_admin_all_subcategories = subs.get("items") or []
 
+    @rx.var
+    def forum_log_active_summary(self) -> str:
+        parts: list[str] = []
+        if self.forum_log_category not in ("", "ALL"):
+            parts.append("categoría " + self.forum_log_category)
+        if self.forum_log_subcategory not in ("", "ALL"):
+            parts.append("subcategoría " + self.forum_log_subcategory)
+        if self.forum_log_from:
+            parts.append("desde " + self.forum_log_from)
+        if self.forum_log_to:
+            parts.append("hasta " + self.forum_log_to)
+        if not parts:
+            return "Sin filtros"
+        return "Filtros activos: " + ", ".join(parts)
+
+    @rx.var
+    def forum_admin_avatar_page_rows(self) -> list[dict[str, Any]]:
+        start = max(self.forum_admin_avatar_page, 0) * FORUM_AVATAR_PAGE_SIZE
+        return self.forum_admin_avatar_rows[start : start + FORUM_AVATAR_PAGE_SIZE]
+
+    @rx.var
+    def forum_admin_avatar_page_label(self) -> str:
+        total = len(self.forum_admin_avatar_rows)
+        if total == 0:
+            return "0 avatares"
+        page = max(self.forum_admin_avatar_page, 0)
+        start = page * FORUM_AVATAR_PAGE_SIZE + 1
+        end = min(total, start + FORUM_AVATAR_PAGE_SIZE - 1)
+        return f"{start}–{end} de {total}"
+
     def forum_load_admin_logs(self) -> None:
         """Carga moderación y actividad de hilos con los mismos filtros."""
         from laim_web.adapters.laim_api_client import (
@@ -1076,6 +1148,13 @@ class LaimForumMixin(rx.State, mixin=True):
             laim_forum_admin_logs,
         )
 
+        self.forum_log_range_error = forum_log_range_message(
+            self.forum_log_from, self.forum_log_to
+        )
+        if self.forum_log_range_error:
+            self.forum_admin_logs_rows = []
+            self.forum_admin_activity_rows = []
+            return
         self._forum_load_admin_catalog()
         access, session = self._forum_auth_tokens()
         category_id = self._forum_catalog_id(
@@ -1230,7 +1309,9 @@ class LaimForumMixin(rx.State, mixin=True):
             self.forum_prefixes = prefix_result.get("items", [])
 
         if self.forum_categories and not self.forum_selected_category_id:
-            self.forum_selected_category_id = str(self.forum_categories[0].get("id", ""))
+            self.forum_selected_category_id = prefer_general_category_id(
+                self.forum_categories
+            )
 
         if self.forum_selected_category_id:
             sub_result = laim_forum_list_subcategories(
@@ -1780,8 +1861,8 @@ class LaimForumMixin(rx.State, mixin=True):
         if cat_result.get("success"):
             self.forum_categories = cat_result.get("items", [])
             if self.forum_categories and not self.forum_selected_category_id:
-                self.forum_selected_category_id = str(
-                    self.forum_categories[0].get("id", "")
+                self.forum_selected_category_id = prefer_general_category_id(
+                    self.forum_categories
                 )
 
         all_subs = laim_forum_list_subcategories(
@@ -2070,7 +2151,9 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_admin_subcategory_log_rotation = "weekly"
 
     @forum_event
-    def forum_cat_tree_close_add_sub(self) -> None:
+    def forum_cat_tree_close_add_sub(self, opened: bool = False) -> None:
+        if opened:
+            return
         self.forum_cat_tree_add_sub_open = False
 
     @forum_event
@@ -2085,11 +2168,15 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_admin_category_activa = True
 
     @forum_event
-    def forum_cat_tree_close_category_modal(self) -> None:
+    def forum_cat_tree_close_category_modal(self, opened: bool = False) -> None:
+        if opened:
+            return
         self.forum_category_modal_open = False
 
     @forum_event
-    def forum_cat_tree_close_subcategory_modal(self) -> None:
+    def forum_cat_tree_close_subcategory_modal(self, opened: bool = False) -> None:
+        if opened:
+            return
         self.forum_subcategory_modal_open = False
 
     @forum_event
@@ -2162,7 +2249,9 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_cat_tree_rename_cat_id = cat_id
 
     @forum_event
-    def forum_cat_tree_close_rename(self) -> None:
+    def forum_cat_tree_close_rename(self, opened: bool = False) -> None:
+        if opened:
+            return
         self.forum_cat_tree_rename_open = False
 
     @forum_event
@@ -2225,7 +2314,9 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_cat_tree_delete_is_cat = is_cat
 
     @forum_event
-    def forum_cat_tree_close_delete(self) -> None:
+    def forum_cat_tree_close_delete(self, opened: bool = False) -> None:
+        if opened:
+            return
         self.forum_cat_tree_delete_open = False
 
     @forum_event
@@ -3168,9 +3259,11 @@ class LaimForumMixin(rx.State, mixin=True):
         if self.forum_admin_tab == "moderators":
             self._forum_load_mod_users()
 
-        avatars = laim_forum_list_avatar_catalog(access, session)
+        avatars = laim_forum_list_avatar_catalog(
+            access, session, include_inactive=True
+        )
         if avatars.get("success"):
-            self.forum_avatar_catalog = self._forum_enrich_avatar_catalog(
+            self.forum_admin_avatar_rows = self._forum_enrich_avatar_catalog(
                 avatars.get("items", []), access, session
             )
 
@@ -3188,6 +3281,58 @@ class LaimForumMixin(rx.State, mixin=True):
                 "Mensaje eliminado por moderación. Motivo: {motivo}"
             )
         self.forum_admin_save_settings()
+
+    @forum_event
+    def forum_admin_ask_word_active(self, rule_id: int, palabra: str, activo: bool) -> None:
+        if activo:
+            self.forum_ask_confirm("word-off", str(rule_id), palabra)
+            return
+        self.forum_admin_toggle_word_rule(int(rule_id))
+
+    @forum_event
+    def forum_ask_confirm(self, kind: str, target: str, name: str) -> None:
+        """Abre la confirmación antes de borrar o desactivar."""
+        label = str(name or target or "")
+        prompts = {
+            "prefix": f"¿Eliminar el prefijo «{label}»?",
+            "word": f"¿Eliminar la palabra «{label}»?",
+            "word-off": f"¿Desactivar la palabra «{label}»?",
+            "url": f"¿Eliminar el dominio «{label}»?",
+            "moderator": f"¿Desactivar al moderador «{label}»?",
+            "avatar": f"¿Quitar del catálogo el avatar «{label}»?",
+        }
+        self.forum_confirm_kind = kind
+        self.forum_confirm_target = str(target)
+        self.forum_confirm_prompt = prompts.get(kind, "¿Confirmar?")
+        self.forum_confirm_open = True
+
+    @forum_event
+    def forum_cancel_confirm(self, opened: bool = False) -> None:
+        if opened:
+            return
+        self.forum_confirm_open = False
+        self.forum_confirm_kind = ""
+        self.forum_confirm_target = ""
+
+    @forum_event
+    def forum_accept_confirm(self) -> None:
+        kind = self.forum_confirm_kind
+        target = self.forum_confirm_target
+        self.forum_confirm_open = False
+        self.forum_confirm_kind = ""
+        self.forum_confirm_target = ""
+        if kind == "prefix":
+            self.forum_admin_delete_prefix(target)
+        elif kind == "word":
+            self.forum_admin_delete_word_rule(int(target or 0))
+        elif kind == "word-off":
+            self.forum_admin_toggle_word_rule(int(target or 0))
+        elif kind == "url":
+            self.forum_admin_delete_allowed_url(int(target or 0))
+        elif kind == "moderator":
+            self.forum_admin_deactivate_moderator(int(target or 0))
+        elif kind == "avatar":
+            self.forum_admin_remove_catalog_avatar(int(target or 0))
 
     @forum_event
     def forum_admin_delete_prefix(self, prefix_id: str) -> None:
@@ -3369,10 +3514,14 @@ class LaimForumMixin(rx.State, mixin=True):
         from laim_web.adapters.laim_api_client import laim_forum_admin_delete_word_rule
 
         access, session = self._forum_auth_tokens()
-        laim_forum_admin_delete_word_rule(rule_id, access, session)
+        result = laim_forum_admin_delete_word_rule(rule_id, access, session)
+        self.forum_admin_message = (
+            "Regla eliminada." if result.get("success") else result.get("error", "Error")
+        )
         if int(self.forum_admin_word_rule_id or 0) == int(rule_id):
             self._forum_admin_reset_word_form()
-        self.forum_load_admin_extended()
+        if result.get("success"):
+            self.forum_load_admin_extended()
 
     @forum_event
     def forum_admin_save_allowed_url(self) -> None:
@@ -3411,8 +3560,12 @@ class LaimForumMixin(rx.State, mixin=True):
         from laim_web.adapters.laim_api_client import laim_forum_admin_delete_allowed_url
 
         access, session = self._forum_auth_tokens()
-        laim_forum_admin_delete_allowed_url(url_id, access, session)
-        self.forum_load_admin_extended()
+        result = laim_forum_admin_delete_allowed_url(url_id, access, session)
+        self.forum_admin_message = (
+            "Dominio eliminado." if result.get("success") else result.get("error", "Error")
+        )
+        if result.get("success"):
+            self.forum_load_admin_extended()
 
     @forum_event
     def forum_admin_assign_moderator(self) -> None:
@@ -3459,8 +3612,14 @@ class LaimForumMixin(rx.State, mixin=True):
         from laim_web.adapters.laim_api_client import laim_forum_admin_deactivate_moderator
 
         access, session = self._forum_auth_tokens()
-        laim_forum_admin_deactivate_moderator(moderator_id, access, session)
-        self.forum_load_admin_extended()
+        result = laim_forum_admin_deactivate_moderator(moderator_id, access, session)
+        self.forum_admin_message = (
+            "Moderador desactivado."
+            if result.get("success")
+            else result.get("error", "Error")
+        )
+        if result.get("success"):
+            self.forum_load_admin_extended()
 
     @forum_event
     def forum_admin_reactivate_moderator(
@@ -3502,6 +3661,127 @@ class LaimForumMixin(rx.State, mixin=True):
         )
         self.forum_admin_message = (
             "Avatar de catálogo añadido."
+            if result.get("success")
+            else result.get("error", "Error")
+        )
+        if result.get("success"):
+            self.forum_admin_avatar_image_id = 0
+            self.forum_admin_avatar_label = ""
+            self.forum_admin_avatar_preview = ""
+            self.forum_load_admin_extended()
+
+    @forum_event
+    def forum_admin_avatar_page_step(self, delta: int) -> None:
+        total = len(self.forum_admin_avatar_rows)
+        pages = max(1, (total + FORUM_AVATAR_PAGE_SIZE - 1) // FORUM_AVATAR_PAGE_SIZE)
+        nxt = self.forum_admin_avatar_page + int(delta)
+        self.forum_admin_avatar_page = min(pages - 1, max(0, nxt))
+
+    @forum_event
+    async def forum_admin_upload_catalog_avatar(
+        self, files: list[rx.UploadFile]
+    ) -> EventHandlerReturn:
+        """Sube la imagen, la registra como catálogo y muestra la vista previa."""
+        from laim_web.adapters.laim_api_client import (
+            laim_forum_add_avatar_catalog,
+            laim_forum_upload_image,
+        )
+
+        label = self.forum_admin_avatar_label.strip()
+        if not label:
+            self.forum_admin_message = "Escribe la etiqueta antes de subir la imagen."
+            return None
+        if not files:
+            self.forum_admin_message = "Elige una imagen."
+            return None
+        upload = files[0]
+        data = await upload.read()
+        if not data:
+            self.forum_admin_message = "La imagen está vacía."
+            return None
+        payload = forum_attachment_payload(
+            str(getattr(upload, "filename", "") or ""),
+            str(getattr(upload, "content_type", "") or ""),
+            data,
+        )
+        payload["image_kind"] = "avatar_catalog"
+        mime = str(payload["mime_type"])
+        self.forum_admin_avatar_preview = f"data:{mime};base64,{payload['data_base64']}"
+        access, session = self._forum_auth_tokens()
+        uploaded = laim_forum_upload_image(payload, access, session)
+        if not uploaded.get("success"):
+            self.forum_admin_message = str(
+                uploaded.get("error") or "No se pudo subir la imagen."
+            )
+            return rx.clear_selected_files(FORUM_CATALOG_UPLOAD_ID)
+        image_id = int((uploaded.get("image") or {}).get("id") or 0)
+        if image_id <= 0:
+            self.forum_admin_message = "Respuesta de imagen inválida."
+            return rx.clear_selected_files(FORUM_CATALOG_UPLOAD_ID)
+        added = laim_forum_add_avatar_catalog(
+            {
+                "image_id": image_id,
+                "label": label,
+                "is_default": False,
+                "sort_order": len(self.forum_admin_avatar_rows),
+            },
+            access,
+            session,
+        )
+        self.forum_admin_message = (
+            "Avatar de catálogo añadido."
+            if added.get("success")
+            else added.get("error", "Error")
+        )
+        if added.get("success"):
+            self.forum_admin_avatar_label = ""
+            self.forum_admin_avatar_preview = ""
+            self.forum_load_admin_extended()
+        return rx.clear_selected_files(FORUM_CATALOG_UPLOAD_ID)
+
+    def _forum_admin_patch_avatar(self, item_id: int, payload: dict[str, Any], ok: str) -> None:
+        from laim_web.adapters.laim_api_client import laim_forum_update_avatar_catalog
+
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_update_avatar_catalog(item_id, payload, access, session)
+        self.forum_admin_message = ok if result.get("success") else result.get("error", "Error")
+        if result.get("success"):
+            self.forum_load_admin_extended()
+
+    @forum_event
+    def forum_admin_avatar_make_default(self, item_id: int) -> None:
+        self._forum_admin_patch_avatar(
+            int(item_id), {"is_default": True}, "Avatar marcado por defecto."
+        )
+
+    @forum_event
+    def forum_admin_avatar_set_active(self, item_id: int, active: bool) -> None:
+        desired = not bool(active)
+        self._forum_admin_patch_avatar(
+            int(item_id),
+            {"active": desired},
+            "Avatar activado." if desired else "Avatar desactivado.",
+        )
+
+    @forum_event
+    def forum_admin_avatar_set_sort(self, item_id: int, value: str) -> None:
+        try:
+            order = int(str(value).strip())
+        except ValueError:
+            self.forum_admin_message = "El orden tiene que ser un número."
+            return
+        self._forum_admin_patch_avatar(
+            int(item_id), {"sort_order": order}, "Orden actualizado."
+        )
+
+    @forum_event
+    def forum_admin_remove_catalog_avatar(self, item_id: int) -> None:
+        from laim_web.adapters.laim_api_client import laim_forum_delete_avatar_catalog
+
+        access, session = self._forum_auth_tokens()
+        result = laim_forum_delete_avatar_catalog(int(item_id), access, session)
+        self.forum_admin_message = (
+            "Avatar quitado del catálogo."
             if result.get("success")
             else result.get("error", "Error")
         )

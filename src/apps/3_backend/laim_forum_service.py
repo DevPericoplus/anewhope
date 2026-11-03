@@ -717,11 +717,40 @@ class LaimForumService:
             "items": self._repository.list_prefixes(active_only=not include_inactive),
         }
 
-    def list_avatar_catalog(self) -> dict[str, Any]:
-        """Catálogo de avatares."""
-        if not self.is_forum_active():
-            return self._forum_disabled_error()
-        return {"success": True, "items": self._repository.list_avatar_catalog()}
+    def list_avatar_catalog(self, include_inactive: bool = False) -> dict[str, Any]:
+        """Catálogo de avatares. El admin puede pedir también los inactivos."""
+        return {
+            "success": True,
+            "items": self._repository.list_avatar_catalog(
+                active_only=not include_inactive
+            ),
+        }
+
+    def update_avatar_catalog_item(
+        self, item_id: int, payload: dict[str, Any], session: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Marca por defecto, activa o reordena un avatar del catálogo."""
+        if not self.is_forum_admin(session["identity_type_id"]):
+            return {"success": False, "error": "Sin permisos de administración."}
+        updated = self._repository.update_avatar_catalog_item(
+            item_id,
+            is_default=payload.get("is_default") if "is_default" in payload else None,
+            active=payload.get("active") if "active" in payload else None,
+            sort_order=int(payload["sort_order"]) if "sort_order" in payload else None,
+        )
+        if not updated:
+            return {"success": False, "error": "No se pudo actualizar el avatar."}
+        return {"success": True}
+
+    def delete_avatar_catalog_item(
+        self, item_id: int, session: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Quita un avatar del catálogo."""
+        if not self.is_forum_admin(session["identity_type_id"]):
+            return {"success": False, "error": "Sin permisos de administración."}
+        if not self._repository.delete_avatar_catalog_item(item_id):
+            return {"success": False, "error": "No se pudo quitar el avatar."}
+        return {"success": True}
 
     # ----------------------------------------------------------- catálogo admin
     def upsert_category(
