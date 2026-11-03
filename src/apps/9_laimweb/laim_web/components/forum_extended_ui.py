@@ -707,7 +707,7 @@ def forum_admin_extended_panel() -> rx.Component:
                 border=f"1px solid {COLORS['border']}",
             ),
             open=LaimWebState.forum_confirm_open,
-            on_open_change=LaimWebState.forum_cancel_confirm,
+            on_open_change=LaimWebState.forum_confirm_open_changed,
         ),
         rx.cond(
             LaimWebState.forum_admin_tab == "settings",

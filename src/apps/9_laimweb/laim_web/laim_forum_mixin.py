@@ -2151,10 +2151,14 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_admin_subcategory_log_rotation = "weekly"
 
     @forum_event
-    def forum_cat_tree_close_add_sub(self, opened: bool = False) -> None:
+    def forum_cat_tree_close_add_sub(self) -> None:
+        self.forum_cat_tree_add_sub_open = False
+
+    @forum_event
+    def forum_cat_tree_add_sub_open_changed(self, opened: bool) -> None:
         if opened:
             return
-        self.forum_cat_tree_add_sub_open = False
+        self.forum_cat_tree_close_add_sub()
 
     @forum_event
     def forum_cat_tree_open_add_category(self) -> None:
@@ -2168,16 +2172,24 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_admin_category_activa = True
 
     @forum_event
-    def forum_cat_tree_close_category_modal(self, opened: bool = False) -> None:
-        if opened:
-            return
+    def forum_cat_tree_close_category_modal(self) -> None:
         self.forum_category_modal_open = False
 
     @forum_event
-    def forum_cat_tree_close_subcategory_modal(self, opened: bool = False) -> None:
+    def forum_cat_tree_category_modal_changed(self, opened: bool) -> None:
         if opened:
             return
+        self.forum_cat_tree_close_category_modal()
+
+    @forum_event
+    def forum_cat_tree_close_subcategory_modal(self) -> None:
         self.forum_subcategory_modal_open = False
+
+    @forum_event
+    def forum_cat_tree_subcategory_modal_changed(self, opened: bool) -> None:
+        if opened:
+            return
+        self.forum_cat_tree_close_subcategory_modal()
 
     @forum_event
     def forum_cat_tree_set_add_sub_id(self, value: str) -> None:
@@ -2249,10 +2261,14 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_cat_tree_rename_cat_id = cat_id
 
     @forum_event
-    def forum_cat_tree_close_rename(self, opened: bool = False) -> None:
+    def forum_cat_tree_close_rename(self) -> None:
+        self.forum_cat_tree_rename_open = False
+
+    @forum_event
+    def forum_cat_tree_rename_open_changed(self, opened: bool) -> None:
         if opened:
             return
-        self.forum_cat_tree_rename_open = False
+        self.forum_cat_tree_close_rename()
 
     @forum_event
     def forum_cat_tree_set_rename_name(self, value: str) -> None:
@@ -2314,10 +2330,14 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_cat_tree_delete_is_cat = is_cat
 
     @forum_event
-    def forum_cat_tree_close_delete(self, opened: bool = False) -> None:
+    def forum_cat_tree_close_delete(self) -> None:
+        self.forum_cat_tree_delete_open = False
+
+    @forum_event
+    def forum_cat_tree_delete_open_changed(self, opened: bool) -> None:
         if opened:
             return
-        self.forum_cat_tree_delete_open = False
+        self.forum_cat_tree_close_delete()
 
     @forum_event
     def forum_cat_tree_confirm_delete(self) -> None:
@@ -3307,12 +3327,16 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_confirm_open = True
 
     @forum_event
-    def forum_cancel_confirm(self, opened: bool = False) -> None:
-        if opened:
-            return
+    def forum_cancel_confirm(self) -> None:
         self.forum_confirm_open = False
         self.forum_confirm_kind = ""
         self.forum_confirm_target = ""
+
+    @forum_event
+    def forum_confirm_open_changed(self, opened: bool) -> None:
+        if opened:
+            return
+        self.forum_cancel_confirm()
 
     @forum_event
     def forum_accept_confirm(self) -> None:

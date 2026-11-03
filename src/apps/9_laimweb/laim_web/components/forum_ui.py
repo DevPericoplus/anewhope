@@ -1195,7 +1195,7 @@ def _cat_tree_add_sub_dialog() -> rx.Component:
     """Diálogo para crear subcategoría desde el árbol."""
     return _forum_dialog(
         LaimWebState.forum_cat_tree_add_sub_open,
-        LaimWebState.forum_cat_tree_close_add_sub,
+        LaimWebState.forum_cat_tree_add_sub_open_changed,
             rx.box(
                 rx.text(
                     "Nueva subcategoría",
@@ -1304,7 +1304,7 @@ def _cat_tree_rename_dialog() -> rx.Component:
     """Diálogo para renombrar subcategoría."""
     return _forum_dialog(
         LaimWebState.forum_cat_tree_rename_open,
-        LaimWebState.forum_cat_tree_close_rename,
+        LaimWebState.forum_cat_tree_rename_open_changed,
             rx.box(
                 rx.text(
                     "Renombrar subcategoría",
@@ -1348,7 +1348,7 @@ def _cat_tree_delete_dialog() -> rx.Component:
     """Diálogo de confirmación para eliminar categoría o subcategoría."""
     return _forum_dialog(
         LaimWebState.forum_cat_tree_delete_open,
-        LaimWebState.forum_cat_tree_close_delete,
+        LaimWebState.forum_cat_tree_delete_open_changed,
             rx.box(
                 rx.text(
                     "Confirmar eliminación",
@@ -1569,7 +1569,7 @@ def _category_modal() -> rx.Component:
     """Alta y edición de categoría. Se abre desde el árbol."""
     return _forum_dialog(
         LaimWebState.forum_category_modal_open,
-        LaimWebState.forum_cat_tree_close_category_modal,
+        LaimWebState.forum_cat_tree_category_modal_changed,
         rx.vstack(
                 rx.text("Categoría", class_name="crt-title", font_size="1.1em"),
                 rx.text(
@@ -1644,7 +1644,7 @@ def _subcategory_modal() -> rx.Component:
     """Edición de subcategoría desde el árbol. El alta sigue en su diálogo."""
     return _forum_dialog(
         LaimWebState.forum_subcategory_modal_open,
-        LaimWebState.forum_cat_tree_close_subcategory_modal,
+        LaimWebState.forum_cat_tree_subcategory_modal_changed,
         rx.vstack(
                 _subcategory_editor(),
                 rx.button(

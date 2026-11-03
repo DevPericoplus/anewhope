@@ -38,6 +38,11 @@ def test_forum_ui_labels_dialogs_and_uncontrolled_editor() -> None:
     assert "\n                                value=LaimWebState.forum_edit_thread_title" not in ui
     assert "\n                                value=LaimWebState.forum_edit_thread_body" not in ui
     assert "_forum_dialog(" in ui
+    assert "forum_cat_tree_add_sub_open_changed" in ui
+    assert "on_click=LaimWebState.forum_cat_tree_close_add_sub" in ui
+    mixin = (_ROOT / "laim_web" / "laim_forum_mixin.py").read_text(encoding="utf-8")
+    assert "def forum_cat_tree_close_add_sub(self)" in mixin
+    assert "def forum_cat_tree_add_sub_open_changed(self, opened: bool)" in mixin
     assert '_field_label("Nombre")' in ui
     assert '_field_label("Descripción")' in ui
     assert "Orden de aparición" in ui
@@ -61,6 +66,8 @@ def test_extended_admin_confirms_and_avatar_catalog() -> None:
     assert 'forum_ask_confirm(\n                                                    "prefix"' in extended or 'forum_ask_confirm(' in extended
     assert "¿Eliminar el prefijo" not in extended
     assert "forum_confirm_prompt" in extended
+    assert "on_open_change=LaimWebState.forum_confirm_open_changed" in extended
+    assert "on_click=LaimWebState.forum_cancel_confirm" in extended
     assert "Quitar del catálogo" in extended
     assert "forum_admin_upload_catalog_avatar" in extended
     assert "forum_catalog_avatar_upload" in extended
