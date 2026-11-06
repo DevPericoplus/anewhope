@@ -89,7 +89,7 @@ def test_register_modal_does_not_load_cap_until_open() -> None:
     assert "cdn.jsdelivr.net/npm/cap-widget" not in widget
     assert "/crt/cap-widget-0.1.58.js" in widget
     assert (laimweb_root / "assets" / "crt" / "cap-widget-0.1.58.js").is_file()
-    assert 'data-cap-lang="es"' in widget
+    assert 'setAttribute("data-cap-lang", "es")' in widget
     assert 'addEventListener("error"' in widget
     state = (laimweb_root / "laim_web" / "laim_state.py").read_text(encoding="utf-8")
     assert "No se ha podido comprobar que eres una persona." in state

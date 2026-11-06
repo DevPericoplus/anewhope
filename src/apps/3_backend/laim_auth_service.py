@@ -12,8 +12,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import httpx
-
 
 def _load_module(relative_path: str, module_name: str) -> Any:
     """Carga módulo desde ruta relativa al repo."""
@@ -42,6 +40,10 @@ _storage_adapter = _load_module(
 )
 _env_settings = _load_module(
     "src/2_shared_application/config/env_settings.py", "laim_env_settings_auth"
+)
+_cap_siteverify = _load_module(
+    "src/apps/3_backend/4_infrastructure/captcha/cap_siteverify.py",
+    "laim_cap_siteverify",
 )
 
 JwtService = _jwt_mod.JwtService
@@ -567,40 +569,44 @@ class LaimAuthService:
         """Valida token Cap CAPTCHA contra el servidor self-hosted.
 
         Mantiene el nombre ``_verify_hcaptcha`` por compatibilidad con
-        las llamadas existentes en ``register()``.
+        las llamadas existentes en ``register()``. La lógica (ruta interna,
+        proxy, CA, motivos en el registro) vive en ``cap_siteverify``.
         """
-        cap_api_endpoint = str(
-            _env_settings.get_env_value("laim_cap_api_endpoint", "") or ""
-        ).strip()
-        protected = _env_settings.load_protected_settings() or {}
-        secret = protected.get("laim_cap_secret") or protected.get("laim_hcaptcha_secret")
-        if not cap_api_endpoint or not secret:
+        result = _cap_siteverify.verify_token(token, self._cap_config(), self._logger)
+        if not result.ok:
             self._logger.warning(
-                "Cap CAPTCHA no configurado — registro sin verificación"
+                "Alta rechazada por Cap (ip=%s): %s", remote_ip or "-", result.reason
             )
-            return True
-        if not token:
-            return False
-        siteverify_url = cap_api_endpoint.rstrip("/") + "/siteverify"
-        proxy_url = str(_env_settings.get_env_value("proxy_url", "") or "").strip()
-        try:
-            client_kwargs: dict[str, Any] = {"timeout": 10.0}
-            if proxy_url:
-                client_kwargs["proxy"] = proxy_url
-            with httpx.Client(**client_kwargs) as client:
-                response = client.post(
-                    siteverify_url,
-                    json={
-                        "secret": secret,
-                        "response": token,
-                    },
-                )
-            response.raise_for_status()
-            payload = response.json()
-            return bool(payload.get("success"))
-        except httpx.HTTPError as exc:
-            self._logger.error("Error verificando Cap CAPTCHA: %s", exc)
-            return False
+        return result.ok
+
+    @staticmethod
+    def _cap_config() -> Any:
+        """Valores de Cap del entorno; las variables del proceso ganan."""
+
+        def pick(env_name: str, file_value: object) -> str:
+            from_env = os.environ.get(env_name, "")
+            if not _cap_siteverify.is_placeholder(from_env):
+                return from_env.strip()
+            return str(file_value or "").strip()
+
+        protected = _env_settings.load_protected_settings() or {}
+        return _cap_siteverify.CapConfig(
+            public_endpoint=pick(
+                "LAIM_CAP_API_ENDPOINT",
+                _env_settings.get_env_value("laim_cap_api_endpoint", ""),
+            ),
+            verify_endpoint=pick(
+                "LAIM_CAP_VERIFY_ENDPOINT",
+                _env_settings.get_env_value("laim_cap_verify_endpoint", ""),
+            ),
+            secret=pick(
+                "LAIM_CAP_SECRET",
+                protected.get("laim_cap_secret") or protected.get("laim_hcaptcha_secret"),
+            ),
+            proxy_url=str(_env_settings.get_env_value("proxy_url", "") or "").strip(),
+            no_proxy=str(_env_settings.get_env_value("proxy_no_proxy", "") or "").strip(),
+            ca_bundle=str(_env_settings.get_env_value("laim_cap_ca_bundle", "") or "").strip(),
+        )
 
     def resolve_optional_session_context(
         self,
