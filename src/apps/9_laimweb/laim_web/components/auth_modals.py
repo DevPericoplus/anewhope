@@ -5,7 +5,7 @@ from __future__ import annotations
 import reflex as rx
 
 from laim_web.components.hcaptcha import hcaptcha_widget
-from laim_web.laim_state import LaimWebState
+from laim_web.laim_state import MSG_CAPTCHA_UNAVAILABLE, LaimWebState
 
 FONT_SIZE_SMALL = "0.85em"
 
@@ -188,6 +188,26 @@ def register_modal() -> rx.Component:
                         rx.box(width="100%", min_height="78px"),
                     ),
                     rx.cond(
+                        LaimWebState.reg_cap_service == "down",
+                        rx.hstack(
+                            rx.text(
+                                MSG_CAPTCHA_UNAVAILABLE,
+                                class_name="crt-error",
+                                font_size=FONT_SIZE_SMALL,
+                            ),
+                            rx.button(
+                                "Reintentar",
+                                on_click=LaimWebState.retry_cap_service,
+                                class_name="crt-btn crt-btn-link",
+                            ),
+                            id="laim-cap-unavailable",
+                            spacing="2",
+                            align_items="center",
+                            width="100%",
+                            flex_wrap="wrap",
+                        ),
+                    ),
+                    rx.cond(
                         LaimWebState.error_message != "",
                         rx.text(
                             LaimWebState.error_message,
@@ -200,7 +220,8 @@ def register_modal() -> rx.Component:
                         on_click=LaimWebState.handle_register,
                         class_name="crt-btn",
                         width="100%",
-                        disabled=LaimWebState.loading,
+                        disabled=LaimWebState.loading
+                        | (LaimWebState.reg_cap_service == "down"),
                     ),
                     rx.hstack(
                         rx.text("¿Ya tiene cuenta?", class_name="crt-muted", font_size=FONT_SIZE_SMALL),

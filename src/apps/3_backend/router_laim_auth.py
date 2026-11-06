@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import sys
+import time
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -171,6 +172,36 @@ def laim_status() -> dict[str, Any]:
     """Estado del subsistema LAIM."""
     service = get_laim_auth_service()
     return service.get_status()
+
+
+CAP_HEALTH_CACHE_S = 15.0
+_cap_health_cache: dict[str, Any] = {"at": 0.0, "status": ""}
+
+
+@router.get("/captcha/health")
+def laim_captcha_health() -> dict[str, str]:
+    """Estado de Cap para el formulario de alta (público).
+
+    Solo devuelve ``status`` (ok, down, unknown u off): hosts y motivos van
+    al registro. El resultado se reutiliza unos segundos para que una
+    ráfaga de visitas no consulte Cap en cada apertura del formulario.
+    """
+    now = time.monotonic()
+    cached = _cap_health_cache.get("status")
+    if cached and now - float(_cap_health_cache.get("at", 0.0)) < CAP_HEALTH_CACHE_S:
+        return {"status": cached}
+    try:
+        config = LaimAuthService._cap_config()
+        result = _laim_auth_module._cap_siteverify.check_health(config, logger)
+        status_value = result.status
+        if status_value != "ok":
+            logger.warning("Cap health %s: %s", status_value, result.reason)
+    except Exception as exc:  # noqa: BLE001 - el formulario nunca debe romperse
+        logger.error("Cap health no se pudo comprobar: %s", exc)
+        status_value = "unknown"
+    _cap_health_cache["at"] = now
+    _cap_health_cache["status"] = status_value
+    return {"status": status_value}
 
 
 @router.post("/password-reset/request")

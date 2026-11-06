@@ -4906,6 +4906,17 @@ def laim_status(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@app.get("/laim/captcha/health", tags=["laim-auth"])
+def laim_captcha_health(
+    router: BrokerBackendRouter = Depends(get_router_broker),
+) -> dict[str, str]:
+    """Estado de Cap para el formulario de alta (ok/down/unknown/off)."""
+    try:
+        return router.laim_captcha_health()
+    except Exception:  # noqa: BLE001 - nunca 5xx: el alta no depende de esto
+        return {"status": "unknown"}
+
+
 @app.post("/laim/password-reset/request", tags=["laim-auth"])
 def laim_password_reset_request(
     request: Request,

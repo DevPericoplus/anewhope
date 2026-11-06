@@ -1336,6 +1336,24 @@ def laim_get_session_permissions(
     )
 
 
+CAP_SERVICE_STATUSES = ("ok", "down", "unknown", "off")
+
+
+def laim_captcha_health() -> str:
+    """Estado de Cap para el formulario de alta: ok, down, unknown u off.
+
+    Flujo: LAIM Web → Middleware /laim/captcha/health → Broker → Backend Core,
+    que consulta Cap por la ruta interna. Cualquier fallo de esta consulta
+    es ``unknown``: el alta no se bloquea por la monitorización.
+    """
+    try:
+        result = _request_middleware("GET", "/laim/captcha/health", timeout=8.0)
+    except Exception:  # noqa: BLE001
+        return "unknown"
+    status_value = str((result or {}).get("status") or "unknown")
+    return status_value if status_value in CAP_SERVICE_STATUSES else "unknown"
+
+
 def laim_get_status(
     access_token: str, session_token: str
 ) -> dict[str, Any]:

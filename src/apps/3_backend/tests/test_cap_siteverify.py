@@ -184,6 +184,101 @@ def test_env_yaml_of_every_deployed_env_has_internal_verify_endpoint() -> None:
             if line.startswith("laim_cap_verify_endpoint:")
         ]
         assert len(public) == 1 and not cap.is_placeholder(public[0]), env
-        assert len(internal) == 1 and internal[0].startswith("http://"), env
-        # Misma site key en la ruta pública y en la interna.
-        assert public[0].rstrip("/").rsplit("/", 1)[1] == internal[0].rstrip("/").rsplit("/", 1)[1], env
+        assert len(internal) == 1, env
+        site_key = public[0].rstrip("/").rsplit("/", 1)[1]
+        routes = cap.CapConfig(verify_endpoint=internal[0]).internal_endpoints
+        # 3301 (nginx interno) primero; 3300 (Cap directo) solo de transición.
+        assert [r.split("://", 1)[1].split("/", 1)[0].rsplit(":", 1)[1] for r in routes] == [
+            "3301",
+            "3300",
+        ], env
+        for route in routes:
+            assert route.startswith("http://"), env
+            # Misma site key en la ruta pública y en cada interna.
+            assert route.rstrip("/").rsplit("/", 1)[1] == site_key, env
+
+
+INTERNAL_LIST = "http://frontend.example.loc:3301/abc123/,http://frontend.example.loc:3300/abc123/"
+
+
+def test_internal_list_tries_next_route_on_connection_error() -> None:
+    def handler(req: httpx.Request, internal: bool) -> httpx.Response:
+        if req.url.port == 3301:
+            raise httpx.ConnectError("refused", request=req)
+        return httpx.Response(200, json={"success": True})
+
+    rec = _Recorder(handler)
+    result = cap.verify_token(TOKEN, _config(verify_endpoint=INTERNAL_LIST), logging.getLogger("t"), rec)
+    assert result.ok is True
+    assert [url for url, _, _ in rec.calls] == [
+        "http://frontend.example.loc:3301/abc123/siteverify",
+        "http://frontend.example.loc:3300/abc123/siteverify",
+    ]
+
+
+def test_internal_list_never_retries_after_cap_answered() -> None:
+    rec = _Recorder(lambda req, internal: httpx.Response(404, json={"error": "Token not found"}))
+    result = cap.verify_token(TOKEN, _config(verify_endpoint=INTERNAL_LIST), logging.getLogger("t"), rec)
+    assert result.ok is False
+    assert len(rec.calls) == 1
+
+
+def _health(handler, **overrides):
+    rec = _Recorder(handler)
+    config = _config(verify_endpoint=INTERNAL_LIST, **overrides)
+    return cap.check_health(config, logging.getLogger("t"), rec), rec
+
+
+def test_health_ok_on_200() -> None:
+    result, rec = _health(lambda req, internal: httpx.Response(200, json={"status": "ok"}))
+    assert result.status == "ok"
+    assert rec.calls[0][0] == "http://frontend.example.loc:3301/health"
+
+
+def test_health_down_on_503() -> None:
+    result, _ = _health(lambda req, internal: httpx.Response(503, json={"status": "unavailable"}))
+    assert result.status == "down"
+
+
+def test_health_old_cap_without_health_uses_challenge() -> None:
+    def handler(req: httpx.Request, internal: bool) -> httpx.Response:
+        if req.url.path == "/health":
+            return httpx.Response(404, json={"error": "NOT_FOUND"})
+        assert req.method == "POST" and req.url.path == "/abc123/challenge"
+        return httpx.Response(200, json={"challenge": {"c": 1, "s": 1, "d": 1}})
+
+    result, _ = _health(handler)
+    assert result.status == "ok"
+
+
+def test_health_skips_refused_route_and_uses_next() -> None:
+    def handler(req: httpx.Request, internal: bool) -> httpx.Response:
+        if req.url.port == 3301:
+            raise httpx.ConnectError("refused", request=req)
+        return httpx.Response(200, json={"status": "ok"})
+
+    result, rec = _health(handler)
+    assert result.status == "ok"
+    assert [url for url, _, _ in rec.calls] == [
+        "http://frontend.example.loc:3301/health",
+        "http://frontend.example.loc:3300/health",
+    ]
+
+
+def test_health_down_when_no_route_connects() -> None:
+    def handler(req: httpx.Request, internal: bool) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=req)
+
+    result, _ = _health(handler)
+    assert result.status == "down"
+
+
+def test_health_unknown_on_unexpected_answer() -> None:
+    result, _ = _health(lambda req, internal: httpx.Response(500, text="boom"))
+    assert result.status == "unknown"
+
+
+def test_health_off_without_cap() -> None:
+    config = cap.CapConfig(public_endpoint="", verify_endpoint="")
+    result = cap.check_health(config, logging.getLogger("t"))
+    assert result.status == "off"

@@ -5582,6 +5582,17 @@ async def laim_status_endpoint(
         ) from exc
 
 
+@app.get("/laim/captcha/health")
+async def laim_captcha_health_endpoint(
+    router: Annotated[RouterMiddleware, Depends(get_router_middleware)],
+) -> dict[str, str]:
+    """Estado de Cap para el formulario de alta (ok/down/unknown/off)."""
+    try:
+        return router.laim_captcha_health()
+    except Exception:  # noqa: BLE001 - nunca 5xx: el alta no depende de esto
+        return {"status": "unknown"}
+
+
 @app.post("/laim/contact/messages")
 async def laim_create_contact_message_endpoint(
     request: LaimContactMessageRequest,

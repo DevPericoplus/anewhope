@@ -11,8 +11,11 @@ Por qué así (QA laimweb 0.12.65, 2026-11-06):
 Reglas:
 
 1. Si el entorno define ``laim_cap_verify_endpoint`` (Cap por la red
-   interna, p. ej. ``http://frontend.<dominio>:3300/<site-key>/``), se
+   interna, p. ej. ``http://frontend.<dominio>:3301/<site-key>/``), se
    verifica ahí, sin proxy y sin heredar variables de proxy del proceso.
+   Puede ser una lista separada por comas: se prueban en orden mientras
+   la conexión no llegue a abrirse (3301 = server interno de nginx, 3300 =
+   puerto directo del Cap anterior, mientras dure la transición).
 2. Si no, o si la conexión interna no llega a abrirse, se usa el
    endpoint público ``laim_cap_api_endpoint``. El proxy solo se aplica
    si el host no está en ``proxy_no_proxy``. ``laim_cap_ca_bundle``
@@ -62,9 +65,24 @@ class CapConfig:
     @property
     def enabled(self) -> bool:
         """Cap está activo si hay un endpoint (el widget se pinta con él)."""
-        return not is_placeholder(self.public_endpoint) or not is_placeholder(
-            self.verify_endpoint
-        )
+        return not is_placeholder(self.public_endpoint) or bool(self.internal_endpoints)
+
+    @property
+    def internal_endpoints(self) -> list[str]:
+        """Rutas internas en orden (``verify_endpoint`` admite comas)."""
+        return [
+            part.strip()
+            for part in (self.verify_endpoint or "").split(",")
+            if not is_placeholder(part)
+        ]
+
+
+@dataclass(frozen=True)
+class CapHealthResult:
+    """Estado de Cap visto por backend_core: ok, down, unknown u off."""
+
+    status: str
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -146,9 +164,9 @@ def verify_token(
     if not (token or "").strip():
         return CapVerifyResult(False, "sin token")
 
-    targets: list[tuple[str, bool]] = []
-    if not is_placeholder(config.verify_endpoint):
-        targets.append((_siteverify_url(config.verify_endpoint), True))
+    targets: list[tuple[str, bool]] = [
+        (_siteverify_url(endpoint), True) for endpoint in config.internal_endpoints
+    ]
     if not is_placeholder(config.public_endpoint):
         targets.append((_siteverify_url(config.public_endpoint), False))
 
@@ -194,3 +212,68 @@ def verify_token(
         logger.warning("Cap CAPTCHA rechazado: %s", reason)
         return CapVerifyResult(False, reason)
     return CapVerifyResult(False, last_reason)
+
+
+HEALTH_TIMEOUT_S = 3.0
+
+
+def _health_client(url: str, config: CapConfig, internal: bool) -> httpx.Client:
+    return httpx.Client(timeout=HEALTH_TIMEOUT_S, trust_env=False)
+
+
+def _origin(endpoint: str) -> str:
+    parts = urlsplit(endpoint.strip())
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def check_health(
+    config: CapConfig,
+    logger: logging.Logger,
+    client_factory: Callable[[str, CapConfig, bool], httpx.Client] = _health_client,
+) -> CapHealthResult:
+    """Estado de Cap por las rutas internas. Nunca lanza excepción.
+
+    - ``ok``: ``/health`` 200, o (Cap < 3.1.13 sin ``/health``) un
+      ``POST <endpoint>challenge`` 200, que solo firma un reto sin estado.
+    - ``down``: ``/health`` 503 (Valkey no contesta) o ninguna ruta interna
+      abre conexión.
+    - ``unknown``: cualquier otra respuesta (se registra el motivo).
+    - ``off``: Cap no está configurado en este entorno.
+    """
+    if not config.enabled:
+        return CapHealthResult("off", "cap no configurado")
+    endpoints = config.internal_endpoints
+    if not endpoints:
+        return CapHealthResult("unknown", "sin ruta interna (laim_cap_verify_endpoint)")
+    reasons: list[str] = []
+    for endpoint in endpoints:
+        host = urlsplit(endpoint).netloc
+        try:
+            with client_factory(endpoint, config, True) as client:
+                response = client.get(_origin(endpoint) + "/health")
+                if response.status_code == 200:
+                    return CapHealthResult("ok", f"/health 200 en {host}")
+                if response.status_code == 503:
+                    reason = f"Cap {host}: /health 503 (Valkey no responde)"
+                    logger.error("Cap no disponible para el alta: %s", reason)
+                    return CapHealthResult("down", reason)
+                if response.status_code == 404:
+                    probe = client.post(endpoint.rstrip("/") + "/challenge", json={})
+                    if probe.status_code == 200:
+                        return CapHealthResult("ok", f"challenge 200 en {host} (sin /health)")
+                    reason = f"Cap {host}: challenge respondió HTTP {probe.status_code}"
+                    logger.warning("Estado de Cap desconocido: %s", reason)
+                    return CapHealthResult("unknown", reason)
+                reason = f"Cap {host}: /health respondió HTTP {response.status_code}"
+                logger.warning("Estado de Cap desconocido: %s", reason)
+                return CapHealthResult("unknown", reason)
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            reasons.append(f"sin conexión con {host}: {exc}")
+            continue
+        except httpx.HTTPError as exc:
+            reason = f"{type(exc).__name__} con Cap {host}: {exc}"
+            logger.warning("Estado de Cap desconocido: %s", reason)
+            return CapHealthResult("unknown", reason)
+    reason = "; ".join(reasons) or "sin rutas internas"
+    logger.error("Cap no disponible para el alta: %s", reason)
+    return CapHealthResult("down", reason)
