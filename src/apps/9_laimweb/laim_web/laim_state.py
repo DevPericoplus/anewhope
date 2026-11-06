@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from typing import Any
 
@@ -35,6 +36,10 @@ RESET_LAIM_HCAPTCHA_SCRIPT = (
     "if (typeof window.resetLaimHcaptcha === 'function') { window.resetLaimHcaptcha(); }"
 )
 
+MSG_CAPTCHA_UNAVAILABLE = (
+    "La verificación anti-bot no está disponible en este momento. "
+    "Inténtalo de nuevo en unos minutos."
+)
 MSG_CAPTCHA_REPEAT = "Vuelve a pulsar «Verifica que eres humano» y después «Registrarse»."
 MSG_CAPTCHA_REQUIRED = "Debe completar la verificación anti-bot antes de registrarse."
 MSG_CAPTCHA_REJECTED = (
@@ -63,6 +68,9 @@ SCHEDULE_LAIM_HCAPTCHA_RENDER_SCRIPT = """
   tryRender();
 })();
 """
+
+_cap_logger = logging.getLogger("laimweb.cap")
+
 
 def register_failure_message(detail: object, captcha_on: bool) -> str:
     """Texto del alta fallida.
@@ -371,6 +379,9 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
     reg_full_name: str = ""
     reg_mobile: str = ""
     reg_hcaptcha_token: str = ""
+    # Estado de Cap que da backend_core: ok, down, unknown u off. Solo
+    # «down» bloquea el alta; un fallo de la consulta es «unknown».
+    reg_cap_service: str = "unknown"
 
     # Recuperación de contraseña
     forgot_modal_open: bool = False
@@ -439,6 +450,10 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
             return None
 
         self.error_message = ""
+
+        if self.reg_cap_service == "down":
+            self.error_message = MSG_CAPTCHA_UNAVAILABLE
+            return None
 
         if not is_hcaptcha_configured():
             return LaimWebState.complete_register_background
@@ -525,6 +540,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
 
         auto_login_started = False
         reset_captcha = False
+        recheck_cap = False
         async with self:
             try:
                 if result.get("success"):
@@ -563,11 +579,17 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
                         result.get("error", "Error en registro"), captcha_on
                     )
                     reset_captcha = captcha_on
+                    recheck_cap = captcha_on and "captcha" in str(
+                        result.get("error", "")
+                    ).lower()
             finally:
                 self.loading = False
 
         if reset_captcha:
             yield rx.call_script(RETRY_LAIM_HCAPTCHA_SCRIPT)
+        if recheck_cap:
+            # Si Cap está caído, el aviso de servicio sustituye al de repetir.
+            yield LaimWebState.check_cap_service
         if auto_login_started:
             yield LaimWebState.auto_renew_tokens_loop
 
@@ -592,7 +614,42 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
         self.error_message = ""
         self.register_message = ""
         self.reg_hcaptcha_token = ""
-        return rx.call_script(SCHEDULE_LAIM_HCAPTCHA_RENDER_SCRIPT)
+        return [
+            rx.call_script(SCHEDULE_LAIM_HCAPTCHA_RENDER_SCRIPT),
+            LaimWebState.check_cap_service,
+        ]
+
+    @rx.event(background=True)
+    async def check_cap_service(self) -> None:
+        """Pregunta a backend_core (middleware → broker) si Cap responde."""
+        from laim_web.adapters.laim_api_client import laim_captcha_health
+        from laim_web.components.hcaptcha import is_hcaptcha_configured
+
+        if not is_hcaptcha_configured():
+            async with self:
+                self.reg_cap_service = "off"
+            return
+        try:
+            status_value = await asyncio.to_thread(laim_captcha_health)
+        except Exception:  # noqa: BLE001 - nunca bloquea el alta
+            status_value = "unknown"
+        if status_value == "down":
+            _cap_logger.error("Cap no disponible para el alta (backend_core: down)")
+        async with self:
+            self.reg_cap_service = status_value
+            if status_value == "down" and self.error_message.startswith(
+                "No se ha podido comprobar que eres una persona"
+            ):
+                self.error_message = ""
+
+    @event
+    def retry_cap_service(self) -> EventHandlerReturn:
+        """Botón «Reintentar» del aviso de verificación no disponible."""
+        self.error_message = ""
+        return [
+            LaimWebState.check_cap_service,
+            rx.call_script(RESET_LAIM_HCAPTCHA_SCRIPT),
+        ]
 
     @event
     def close_register_modal(self) -> EventHandlerReturn:
@@ -610,7 +667,10 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
         self.error_message = ""
         self.register_message = ""
         self.reg_hcaptcha_token = ""
-        return rx.call_script(SCHEDULE_LAIM_HCAPTCHA_RENDER_SCRIPT)
+        return [
+            rx.call_script(SCHEDULE_LAIM_HCAPTCHA_RENDER_SCRIPT),
+            LaimWebState.check_cap_service,
+        ]
 
     @event
     def switch_to_login_modal(self) -> None:

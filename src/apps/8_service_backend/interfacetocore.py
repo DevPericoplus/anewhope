@@ -1591,6 +1591,10 @@ class CoreBackendClient:
         """Estado del subsistema LAIM."""
         return dict(self._request("GET", "/laim/status") or {})
 
+    def laim_captcha_health(self) -> dict[str, Any]:
+        """Estado de Cap para el formulario de alta."""
+        return dict(self._request("GET", "/laim/captcha/health") or {})
+
     def laim_password_reset_request(
         self,
         payload: dict[str, Any],

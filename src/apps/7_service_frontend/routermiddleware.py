@@ -6174,6 +6174,20 @@ class RouterMiddleware:
         except BrokerBackendCommunicationError as exc:
             raise BusinessRuleError(f"No se pudo consultar estado LAIM: {exc}") from exc
 
+    def laim_captcha_health(self) -> dict[str, str]:
+        """Estado de Cap; ``unknown`` si el broker no contesta.
+
+        El formulario de alta no se bloquea por un fallo de esta consulta.
+        """
+        try:
+            payload = self._broker_client.laim_captcha_health()
+        except BrokerBackendCommunicationError:
+            return {"status": "unknown"}
+        status_value = str((payload or {}).get("status") or "unknown")
+        if status_value not in ("ok", "down", "unknown", "off"):
+            status_value = "unknown"
+        return {"status": status_value}
+
     def laim_mail_send(
         self,
         to: str,

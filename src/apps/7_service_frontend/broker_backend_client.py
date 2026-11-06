@@ -1823,6 +1823,10 @@ class BrokerBackendClient:
         """Estado del subsistema LAIM."""
         return dict(self._request("GET", "/laim/status") or {})
 
+    def laim_captcha_health(self) -> dict[str, Any]:
+        """Estado de Cap para el formulario de alta."""
+        return dict(self._request("GET", "/laim/captcha/health") or {})
+
     def laim_create_contact_message(
         self,
         payload: dict[str, Any],

@@ -2366,6 +2366,21 @@ class BrokerBackendRouter:
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(f"Error consultando estado LAIM: {exc}") from exc
 
+    def laim_captcha_health(self) -> dict[str, str]:
+        """Estado de Cap; ``unknown`` si backend_core no contesta.
+
+        El formulario de alta no se bloquea por un fallo de esta consulta.
+        """
+        try:
+            payload = self._core_client.laim_captcha_health()
+        except CoreBackendCommunicationError as exc:
+            self._logger.warning("Estado de Cap no disponible desde backend_core: %s", exc)
+            return {"status": "unknown"}
+        status_value = str((payload or {}).get("status") or "unknown")
+        if status_value not in ("ok", "down", "unknown", "off"):
+            status_value = "unknown"
+        return {"status": status_value}
+
     def laim_password_reset_request(
         self,
         payload: dict[str, Any],
