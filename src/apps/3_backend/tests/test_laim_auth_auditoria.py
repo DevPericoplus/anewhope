@@ -86,3 +86,26 @@ def test_login_success_writes_login() -> None:
     kwargs = auditoria.safe_record_usuario.call_args.kwargs
     assert kwargs["accion"] == "login"
     assert kwargs["session_id"] == "sess-9"
+
+
+def test_verify_hcaptcha_uses_environment_cap_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Las variables del proceso ganan y la ruta interna llega a siteverify."""
+    module = _load_auth()
+    monkeypatch.setenv("LAIM_CAP_API_ENDPOINT", "https://laim.example.loc/cap/abc/")
+    monkeypatch.setenv("LAIM_CAP_VERIFY_ENDPOINT", "http://frontend.example.loc:3300/abc/")
+    monkeypatch.setenv("LAIM_CAP_SECRET", "real-secret")
+    seen = {}
+
+    def fake_verify(token, config, logger):
+        seen["token"] = token
+        seen["config"] = config
+        return module._cap_siteverify.CapVerifyResult(True, "ok")
+
+    monkeypatch.setattr(module._cap_siteverify, "verify_token", fake_verify)
+    service = module.LaimAuthService.__new__(module.LaimAuthService)
+    service._logger = MagicMock()
+    assert service._verify_hcaptcha("tok", "1.2.3.4") is True
+    assert seen["token"] == "tok"
+    assert seen["config"].verify_endpoint == "http://frontend.example.loc:3300/abc/"
+    assert seen["config"].public_endpoint == "https://laim.example.loc/cap/abc/"
+    assert seen["config"].secret == "real-secret"

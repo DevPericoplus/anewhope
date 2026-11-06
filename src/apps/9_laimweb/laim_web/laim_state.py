@@ -7,6 +7,7 @@ con prefijo ``laim:``.
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from typing import Any
 
@@ -34,6 +35,20 @@ RESET_LAIM_HCAPTCHA_SCRIPT = (
     "if (typeof window.resetLaimHcaptcha === 'function') { window.resetLaimHcaptcha(); }"
 )
 
+MSG_CAPTCHA_REPEAT = "Vuelve a pulsar «Verifica que eres humano» y después «Registrarse»."
+MSG_CAPTCHA_REQUIRED = "Debe completar la verificación anti-bot antes de registrarse."
+MSG_CAPTCHA_REJECTED = (
+    "No se ha podido comprobar que eres una persona. " + MSG_CAPTCHA_REPEAT
+)
+
+# Cada token de Cap vale para un solo envío: tras un alta fallida el widget
+# se reinicia y el aviso pide repetir la verificación.
+RETRY_LAIM_HCAPTCHA_SCRIPT = (
+    "if (typeof window.resetLaimHcaptcha === 'function') { window.resetLaimHcaptcha("
+    + json.dumps(MSG_CAPTCHA_REPEAT, ensure_ascii=False)
+    + "); }"
+)
+
 SCHEDULE_LAIM_HCAPTCHA_RENDER_SCRIPT = """
 (function() {
   var attempts = 0;
@@ -49,11 +64,27 @@ SCHEDULE_LAIM_HCAPTCHA_RENDER_SCRIPT = """
 })();
 """
 
+def register_failure_message(detail: object, captcha_on: bool) -> str:
+    """Texto del alta fallida.
+
+    Con Cap activo cualquier fallo después de enviar gasta el token, así
+    que el texto siempre pide repetir la verificación.
+    """
+    text = str(detail or "Error en registro").strip()
+    if "captcha" in text.lower():
+        return MSG_CAPTCHA_REJECTED
+    if "HTTP 400" in text:
+        text = "Datos de registro inválidos o usuario ya existente"
+    if captcha_on:
+        return f"{text.rstrip('.')}. {MSG_CAPTCHA_REPEAT}"
+    return text
+
+
 READ_LAIM_HCAPTCHA_TOKEN_SCRIPT = """
 (function() {
-  var input = document.getElementById('laim-hcaptcha-token-input');
-  var token = window.__LAIM_CAP_TOKEN__ || (input && input.value) || '';
-  return String(token).trim();
+  var cap = window.__LAIM_CAP__;
+  var token = cap && typeof cap.token === 'function' ? cap.token() : '';
+  return String(token || '').trim();
 })();
 """
 
@@ -398,11 +429,6 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
         self.reg_mobile = value
 
     @event
-    def set_reg_hcaptcha_token_value(self, value: str) -> None:
-        """Sincroniza el token hCaptcha desde el widget (input oculto)."""
-        self.reg_hcaptcha_token = value
-
-    @event
     def handle_register(self) -> EventHandlerReturn:
         """Inicia registro; usa hCaptcha solo si está configurado en el entorno."""
         from laim_web.components.hcaptcha import is_hcaptcha_configured
@@ -417,9 +443,9 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
         if not is_hcaptcha_configured():
             return LaimWebState.complete_register_background
 
-        if self.reg_hcaptcha_token.strip():
-            return LaimWebState.complete_register_background
-
+        # El token se lee del widget en cada envío: nunca se reenvía uno
+        # guardado de un intento anterior (Cap los gasta al verificarlos).
+        self.reg_hcaptcha_token = ""
         return rx.call_script(
             READ_LAIM_HCAPTCHA_TOKEN_SCRIPT,
             callback=LaimWebState.set_reg_hcaptcha_token,
@@ -448,9 +474,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
 
         resolved_token = (token or "").strip()
         if is_hcaptcha_configured() and not resolved_token:
-            self.error_message = (
-                "Debe completar la verificación anti-bot antes de registrarse."
-            )
+            self.error_message = MSG_CAPTCHA_REQUIRED
             return None
 
         self.reg_hcaptcha_token = resolved_token
@@ -469,9 +493,7 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
                 return
 
             if is_hcaptcha_configured() and not self.reg_hcaptcha_token.strip():
-                self.error_message = (
-                    "Debe completar la verificación anti-bot antes de registrarse."
-                )
+                self.error_message = MSG_CAPTCHA_REQUIRED
                 return
 
             self.loading = True
@@ -485,6 +507,8 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
             full_name = self.reg_full_name
             mobile = self.reg_mobile.strip() or None
             hcaptcha_token = self.reg_hcaptcha_token
+            # Enviado: ya no se puede volver a usar.
+            self.reg_hcaptcha_token = ""
 
         try:
             result = laim_register(
@@ -534,22 +558,16 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
                         self.reg_mobile = ""
                         self.reg_hcaptcha_token = ""
                 else:
-                    detail = result.get("error", "Error en registro")
-                    lowered = str(detail).lower()
-                    if "captcha" in lowered:
-                        detail = (
-                            "No se ha podido comprobar que eres una persona. "
-                            "Pulsa de nuevo la verificación e inténtalo otra vez."
-                        )
-                        reset_captcha = True
-                    elif "HTTP 400" in str(detail):
-                        detail = "Datos de registro inválidos o usuario ya existente"
-                    self.error_message = str(detail)
+                    captcha_on = is_hcaptcha_configured()
+                    self.error_message = register_failure_message(
+                        result.get("error", "Error en registro"), captcha_on
+                    )
+                    reset_captcha = captcha_on
             finally:
                 self.loading = False
 
         if reset_captcha:
-            yield rx.call_script(RESET_LAIM_HCAPTCHA_SCRIPT)
+            yield rx.call_script(RETRY_LAIM_HCAPTCHA_SCRIPT)
         if auto_login_started:
             yield LaimWebState.auto_renew_tokens_loop
 

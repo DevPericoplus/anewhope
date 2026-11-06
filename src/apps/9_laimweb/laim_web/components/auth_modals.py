@@ -187,12 +187,6 @@ def register_modal() -> rx.Component:
                         hcaptcha_widget(),
                         rx.box(width="100%", min_height="78px"),
                     ),
-                    rx.input(
-                        id="laim-hcaptcha-token-input",
-                        value=LaimWebState.reg_hcaptcha_token,
-                        on_change=LaimWebState.set_reg_hcaptcha_token_value,
-                        display="none",
-                    ),
                     rx.cond(
                         LaimWebState.error_message != "",
                         rx.text(
