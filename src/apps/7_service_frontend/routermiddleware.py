@@ -503,6 +503,14 @@ def _load_common_security_module(module_path: Path) -> Any:
     return module
 
 
+# QA 3.2.8 (usuario, 2026-11-10): ningún script copiado desde laimweb llegó a
+# instalar LAIM. Este script delega siempre en el instalador que publica
+# laim_maintenance — en Mac el `install-laim.sh` del DMG (comprueba macOS 12,
+# deja el PATH y pregunta idioma), en Linux el .deb/.rpm con el gestor del
+# sistema (que instala sus dependencias) — y no imprime un éxito propio: el
+# instalador ya dice cómo seguir (`laim init`). Con `curl | bash` la entrada
+# estándar es el propio script, así que las preguntas del instalador se leen de
+# /dev/tty cuando hay terminal, y si no, de /dev/null (valores por defecto).
 _LAIM_INSTALL_SCRIPT_HEADER = """#!/usr/bin/env bash
 set -euo pipefail
 
@@ -510,62 +518,89 @@ LAIM_INSTALL_URL={url}
 LAIM_INSTALL_FILE={filename}
 
 tmp_dir="$(mktemp -d)"
-trap 'rm -rf "$tmp_dir"' EXIT
+laim_mount=""
+laim_cleanup() {{
+  if [ -n "$laim_mount" ]; then
+    hdiutil detach "$laim_mount" -quiet 2>/dev/null || hdiutil detach "$laim_mount" -force -quiet 2>/dev/null || true
+  fi
+  rm -rf "$tmp_dir"
+}}
+trap laim_cleanup EXIT
+
+laim_has_tty() {{
+  [ -r /dev/tty ] && (: </dev/tty) 2>/dev/null
+}}
+
+laim_interactive() {{
+  if laim_has_tty; then
+    "$@" </dev/tty
+  else
+    "$@" </dev/null
+  fi
+}}
 
 echo "Descargando $LAIM_INSTALL_FILE..."
 curl -fsSL "$LAIM_INSTALL_URL" -o "$tmp_dir/$LAIM_INSTALL_FILE"
 """
 
+_LAIM_INSTALL_SCRIPT_LINUX_ROOT = """
+laim_as_root() {
+  if [ "$(id -u)" -eq 0 ]; then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  else
+    echo "Para instalar LAIM hace falta ser root o tener sudo. Ejecute este script como root." >&2
+    exit 1
+  fi
+}
+
+# apt descarga como el usuario _apt: el paquete tiene que poder leerse.
+chmod 755 "$tmp_dir"
+chmod 644 "$tmp_dir/$LAIM_INSTALL_FILE"
+"""
+
 _LAIM_INSTALL_SCRIPT_BODY_BY_PLATFORM: dict[str, str] = {
-    "linux_deb": """
+    "linux_deb": _LAIM_INSTALL_SCRIPT_LINUX_ROOT + """
 if ! command -v apt-get >/dev/null 2>&1; then
   echo "Este instalador requiere un sistema basado en Debian/Ubuntu (apt)." >&2
   exit 1
 fi
-echo "Instalando con dpkg..."
-sudo dpkg -i "$tmp_dir/$LAIM_INSTALL_FILE" || sudo apt-get install -f -y
+echo "Instalando con apt..."
+laim_interactive laim_as_root apt-get install -y "$tmp_dir/$LAIM_INSTALL_FILE"
 """,
-    "linux_rpm": """
+    "linux_rpm": _LAIM_INSTALL_SCRIPT_LINUX_ROOT + """
 if command -v dnf >/dev/null 2>&1; then
   echo "Instalando con dnf..."
-  sudo dnf install -y "$tmp_dir/$LAIM_INSTALL_FILE"
+  laim_interactive laim_as_root dnf install -y "$tmp_dir/$LAIM_INSTALL_FILE"
+elif command -v yum >/dev/null 2>&1; then
+  echo "Instalando con yum..."
+  laim_interactive laim_as_root yum install -y "$tmp_dir/$LAIM_INSTALL_FILE"
 elif command -v rpm >/dev/null 2>&1; then
   echo "Instalando con rpm..."
-  sudo rpm -i "$tmp_dir/$LAIM_INSTALL_FILE"
+  laim_interactive laim_as_root rpm -i "$tmp_dir/$LAIM_INSTALL_FILE"
 else
-  echo "Este instalador requiere un sistema basado en RHEL/Fedora (dnf o rpm)." >&2
+  echo "Este instalador requiere un sistema basado en RHEL/Fedora (dnf, yum o rpm)." >&2
   exit 1
 fi
 """,
     "mac_intel": """
 echo "Montando la imagen de disco..."
-# -quiet suprime TODA la salida de hdiutil attach (probado en real: con
-# -quiet no hay nada que parsear, mount_point queda vacío). Sin -quiet,
-# imprime una línea por partición (GPT, EFI, HFS+...) — el punto de montaje
-# no es fiablemente la última línea ni el último campo, así que se busca
-# /Volumes/ en cualquier línea. La tabla queda capturada en la variable
-# (command substitution), nunca llega a la terminal del usuario.
-mount_point="$(hdiutil attach "$tmp_dir/$LAIM_INSTALL_FILE" -nobrowse | grep -o '/Volumes/.*' | head -1)"
-if [ -z "$mount_point" ]; then
+laim_mount="$tmp_dir/mnt"
+mkdir -p "$laim_mount"
+if ! hdiutil attach "$tmp_dir/$LAIM_INSTALL_FILE" -nobrowse -readonly -quiet -mountpoint "$laim_mount"; then
+  laim_mount=""
   echo "No se pudo montar la imagen .dmg." >&2
   exit 1
 fi
-app_path="$(find "$mount_point" -maxdepth 1 -name '*.app' | head -1)"
-if [ -z "$app_path" ]; then
-  echo "No se encontró la aplicación dentro de la imagen .dmg." >&2
-  hdiutil detach "$mount_point" -quiet
+if [ ! -f "$laim_mount/install-laim.sh" ]; then
+  echo "La imagen .dmg no contiene install-laim.sh." >&2
   exit 1
 fi
-echo "Copiando a /Applications..."
-cp -R "$app_path" /Applications/
-hdiutil detach "$mount_point" -quiet
+laim_interactive bash "$laim_mount/install-laim.sh"
 """,
 }
 _LAIM_INSTALL_SCRIPT_BODY_BY_PLATFORM["mac_silicon"] = _LAIM_INSTALL_SCRIPT_BODY_BY_PLATFORM["mac_intel"]
-
-_LAIM_INSTALL_SCRIPT_FOOTER = """
-echo "laim instalado correctamente."
-"""
 
 
 def _laim_install_script_body(platform: str, download_url: str, filename: str) -> str:
@@ -579,7 +614,7 @@ def _laim_install_script_body(platform: str, download_url: str, filename: str) -
         url=shlex.quote(download_url), filename=shlex.quote(filename)
     )
     body = _LAIM_INSTALL_SCRIPT_BODY_BY_PLATFORM[platform]
-    return header + body + _LAIM_INSTALL_SCRIPT_FOOTER
+    return header + body
 
 
 class RouterMiddleware:
