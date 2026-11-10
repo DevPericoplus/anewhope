@@ -748,13 +748,14 @@ def laim_forum_create_ban(
 @router.post("/moderation/bans/{ban_id}/revoke")
 def laim_forum_revoke_ban(
     ban_id: int,
+    disculpa: bool = False,
     authorization: Annotated[str | None, Header()] = None,
     session_token: Annotated[str | None, Header(alias="X-Session-Token")] = None,
 ) -> dict[str, Any]:
-    """Revoca baneo."""
+    """Revoca baneo. disculpa=1 deja al usuario el texto de falso positivo."""
     session = _require_session(authorization, session_token)
     return _raise_if_failed(
-        get_laim_forum_service().revoke_ban(ban_id, session),
+        get_laim_forum_service().revoke_ban(ban_id, session, disculpa=disculpa),
         default_status=status.HTTP_403_FORBIDDEN,
     )
 

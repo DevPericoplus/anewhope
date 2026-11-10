@@ -234,6 +234,29 @@ def _forum_image_picker(upload_id: str) -> rx.Component:
     )
 
 
+def forum_ban_modal() -> rx.Component:
+    """Aviso de baneo: motivo y cuándo puede volver a publicar."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                rx.dialog.title(LaimWebState.forum_ban_modal_title, color=COLORS["title"]),
+                rx.text(LaimWebState.forum_ban_modal_reason, color=COLORS["text"]),
+                rx.text(
+                    LaimWebState.forum_ban_modal_until,
+                    color=COLORS["muted"],
+                    font_size=FONT_SIZE_SMALL,
+                ),
+                rx.dialog.close(
+                    rx.button("Entendido", class_name="crt-btn"),
+                ),
+                spacing="3",
+            ),
+        ),
+        open=LaimWebState.forum_ban_modal_open,
+        on_open_change=LaimWebState.forum_set_ban_modal,
+    )
+
+
 def forum_error_banner() -> rx.Component:
     """Muestra error del foro si existe."""
     return rx.cond(
@@ -870,6 +893,7 @@ def forum_thread_detail() -> rx.Component:
 def forum_main_layout() -> rx.Component:
     """Layout principal del foro: selectores arriba + hilos protagonistas."""
     return rx.box(
+        forum_ban_modal(),
         rx.vstack(
             _forum_toolbar(),
             forum_error_banner(),

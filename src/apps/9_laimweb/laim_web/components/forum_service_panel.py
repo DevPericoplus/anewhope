@@ -210,10 +210,36 @@ def forum_bans_admin_view() -> rx.Component:
                         color=COLORS["muted"],
                         font_size=FONT_SIZE_SMALL,
                     ),
-                    rx.button(
-                        "Revocar",
-                        on_click=LaimWebState.forum_revoke_ban(ban["id"]),
-                        class_name="crt-btn crt-btn-inline",
+                    rx.cond(
+                        ban["palabra"] != "",
+                        rx.text(
+                            rx.fragment("Palabra: ", ban["palabra"]),
+                            color=COLORS["text"],
+                            font_size=FONT_SIZE_SMALL,
+                        ),
+                        rx.fragment(),
+                    ),
+                    rx.cond(
+                        ban["fragmento"] != "",
+                        rx.text(
+                            rx.fragment("Contexto: ", ban["fragmento"]),
+                            color=COLORS["muted"],
+                            font_size=FONT_SIZE_SMALL,
+                        ),
+                        rx.fragment(),
+                    ),
+                    rx.hstack(
+                        rx.button(
+                            "Revocar",
+                            on_click=LaimWebState.forum_revoke_ban(ban["id"]),
+                            class_name="crt-btn crt-btn-inline",
+                        ),
+                        rx.button(
+                            "Revocar y disculpar",
+                            on_click=LaimWebState.forum_revoke_ban_with_apology(ban["id"]),
+                            class_name="crt-btn crt-btn-inline",
+                        ),
+                        spacing="2",
                         margin_top="0.35em",
                     ),
                     padding="0.75em",

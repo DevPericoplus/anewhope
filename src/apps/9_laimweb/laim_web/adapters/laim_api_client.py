@@ -1032,11 +1032,15 @@ def laim_forum_revoke_ban(
     ban_id: int,
     access_token: str,
     session_token: str,
+    disculpa: bool = False,
 ) -> dict[str, Any]:
-    """Revoca baneo."""
+    """Revoca baneo. Con disculpa, el foro deja el texto al usuario."""
+    path = f"/laim/forum/moderation/bans/{ban_id}/revoke"
+    if disculpa:
+        path += "?disculpa=true"
     return _request_forum(
         "POST",
-        f"/laim/forum/moderation/bans/{ban_id}/revoke",
+        path,
         access_token=access_token,
         session_token=session_token,
     )
