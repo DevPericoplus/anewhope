@@ -3150,9 +3150,12 @@ class LaimForumMixin(rx.State, mixin=True):
         else:
             self.forum_mod_message = result.get("error", "No se pudo banear.")
 
-    @forum_event
-    def forum_revoke_ban(self, ban_id: int, disculpa: bool = False) -> None:
-        """Revoca un baneo. Con disculpa, el usuario recibe el texto en el foro."""
+    def _forum_revoke_ban(self, ban_id: int, disculpa: bool) -> None:
+        """Revoca un baneo. Con disculpa, el usuario recibe el texto en el foro.
+
+        No es un evento de Reflex: on_click rellenaría el hueco de
+        disculpa con el evento del puntero y la página no arranca.
+        """
         from laim_web.adapters.laim_api_client import laim_forum_revoke_ban
 
         access, session = self._forum_auth_tokens()
@@ -3170,9 +3173,14 @@ class LaimForumMixin(rx.State, mixin=True):
             self.forum_mod_message = result.get("error", "No se pudo revocar.")
 
     @forum_event
+    def forum_revoke_ban(self, ban_id: int) -> None:
+        """Revoca un baneo sin enviar la disculpa."""
+        self._forum_revoke_ban(ban_id, False)
+
+    @forum_event
     def forum_revoke_ban_with_apology(self, ban_id: int) -> None:
         """Levanta el baneo y deja la disculpa de falso positivo."""
-        self.forum_revoke_ban(ban_id, True)
+        self._forum_revoke_ban(ban_id, True)
 
     @rx.var
     def forum_stats_valoracion_promedio_text(self) -> str:
