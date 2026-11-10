@@ -191,6 +191,13 @@ def get_laim_product_script_url(edition: str, platform: str) -> str:
     return f"{base_url}/laim/product/install-script?edition={edition}&platform={platform}"
 
 
+def get_laim_product_script_command(edition: str, platform: str) -> str:
+    """Comando que se copia en el terminal. La URL va entre comillas: sin
+    ellas el `&` manda curl a segundo plano y la petición sale sin
+    `platform` (422; QA 3.2.8, 2026-11-10)."""
+    return f'curl -fsSL "{get_laim_product_script_url(edition, platform)}" | bash'
+
+
 def _request_middleware(
     method: str,
     endpoint: str,

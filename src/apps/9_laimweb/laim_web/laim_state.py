@@ -1916,10 +1916,9 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
     def installers_script_command(self) -> str:
         """Comando de terminal: curl|bash (mac/linux) o curl.exe -o (Windows)."""
         if self.installers_platform in ("mac_intel", "mac_silicon", "linux_deb", "linux_rpm"):
-            from laim_web.adapters.laim_api_client import get_laim_product_script_url
+            from laim_web.adapters.laim_api_client import get_laim_product_script_command
 
-            url = get_laim_product_script_url(self.installers_edition, self.installers_platform)
-            return f"curl -fsSL {url} | bash"
+            return get_laim_product_script_command(self.installers_edition, self.installers_platform)
         if self.installers_platform == "windows":
             url = self.installers_download_url
             filename = self.installers_filename
