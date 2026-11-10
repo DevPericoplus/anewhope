@@ -229,6 +229,9 @@ class LaimForumWordRuleDto(BaseModel):
     accion: str
     mensaje: str = ""
     activo: bool = True
+    excepcion_tiene: str = ""
+    excepcion_no_tiene: str = ""
+    patron: str = ""
 
 
 class LaimForumWordRuleUpsertDto(BaseModel):
@@ -240,6 +243,9 @@ class LaimForumWordRuleUpsertDto(BaseModel):
     accion: str = Field(..., min_length=1, max_length=50)
     mensaje: str = Field(default="", max_length=500)
     activo: bool = True
+    excepcion_tiene: str = Field(default="", max_length=500)
+    excepcion_no_tiene: str = Field(default="", max_length=500)
+    patron: str = Field(default="", max_length=500)
 
 
 class LaimForumAllowedUrlDto(BaseModel):
@@ -293,6 +299,8 @@ class LaimForumBanDto(BaseModel):
     expires_at: str | None = None
     activo: bool = True
     automatico: bool = False
+    palabra: str = ""
+    fragmento: str = ""
 
 
 class LaimForumNotificationDto(BaseModel):

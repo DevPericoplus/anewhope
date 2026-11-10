@@ -351,6 +351,74 @@ def test_config_log_migration_targets_laim_core_db() -> None:
         assert "laim_forum_moderation_logs" in text
 
 
+def test_context_exception_does_not_ban_and_a_repeat_opens_the_notice() -> None:
+    module = _load_forum_service()
+    repository = MagicMock()
+    repository.get_active_ban.return_value = None
+    repository.is_user_banned.return_value = False
+    repository.get_thread.return_value = {
+        "id": 4,
+        "subcategory_id": "general",
+        "cerrado": False,
+        "user_id": 10,
+        "titulo": "Modelos",
+    }
+    repository.get_subcategory.return_value = {"id": "general", "activa": True, "ban_seconds": 3600}
+    repository.list_allowed_urls.return_value = []
+    repository.list_word_rules.return_value = [{
+        "palabra": "crack",
+        "accion": "Ban",
+        "mensaje": "Esa palabra no está permitida",
+        "activo": True,
+        "excepcion_tiene": "modelo",
+        "excepcion_no_tiene": "ilegal",
+        "patron": "",
+    }]
+    repository.increment_daily_infraction.return_value = 2
+    repository.create_post.return_value = 9
+    service = module.LaimForumService(repository=repository, image_storage=MagicMock())
+
+    allowed = service.create_post(4, {"cuerpo_md": "el modelo mlx no es un crack de disco"}, _session())
+    assert allowed["success"] is True
+    repository.create_ban.assert_not_called()
+
+    blocked = service.create_post(4, {"cuerpo_md": "esto es un crack ilegal"}, _session())
+    assert blocked["success"] is False
+    assert blocked["ban_notice"]["titulo"] == "No puede publicar en el foro"
+    assert "hora peninsular" in blocked["ban_notice"]["hasta"]
+    repository.create_ban.assert_called()
+    assert repository.create_ban.call_args.kwargs["palabra"] == "crack"
+    assert "crack ilegal" in repository.create_ban.call_args.kwargs["fragmento"]
+
+
+def test_revoke_with_apology_notifies_the_user() -> None:
+    module = _load_forum_service()
+    repository = MagicMock()
+    repository.get_ban.return_value = {
+        "user_id": 3,
+        "subcategory_id": "general",
+        "palabra": "crack",
+        "fragmento": "el modelo mlx no es un crack",
+    }
+    repository.user_display_name.return_value = "Ana"
+    repository.revoke_ban.return_value = True
+    service = module.LaimForumService(repository=repository, image_storage=MagicMock())
+    result = service.revoke_ban(7, _admin_session(), disculpa=True)
+    assert result["success"] is True
+    assert "Ana" in result["disculpa"]["cuerpo"]
+    assert "falso positivo" in result["disculpa"]["cuerpo"]
+    repository.create_notification.assert_called()
+    assert repository.create_notification.call_args.kwargs["tipo"] == "ban_disculpa"
+
+
+def test_ban_context_migration_adds_the_columns() -> None:
+    root = Path(__file__).resolve().parents[4] / "infrastructure" / "database" / "migrations"
+    text = (root / "035_forum_ban_context.sql").read_text(encoding="utf-8")
+    assert "USE `laim_core_db`" in text
+    for column in ("excepcion_tiene", "excepcion_no_tiene", "patron", "palabra", "fragmento"):
+        assert column in text
+
+
 def test_ban_template_uses_the_visible_name() -> None:
     module = _load_forum_service()
     repository = MagicMock()

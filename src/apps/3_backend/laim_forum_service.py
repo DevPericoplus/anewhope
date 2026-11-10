@@ -101,6 +101,10 @@ load_laim_mariadb_settings = _storage.load_laim_mariadb_settings
 get_env_value = _env_settings.get_env_value
 find_matching_rule = _content_rules.find_matching_rule
 evaluate_rule_match = _content_rules.evaluate_rule_match
+rule_hit = _content_rules.rule_hit
+excerpt_around = _content_rules.excerpt_around
+ban_notice = _content_rules.ban_notice
+false_positive_apology = _content_rules.false_positive_apology
 POSITIVE_ACTIONS = _content_rules.POSITIVE_ACTIONS
 find_unauthorized_urls = _content_rules.find_unauthorized_urls
 
@@ -344,8 +348,10 @@ class LaimForumService:
         subcategory_id: str,
         motivo: str,
         ban_seconds: int,
-    ) -> None:
-        """Aplica baneo automático por moderación."""
+        palabra: str = "",
+        fragmento: str = "",
+    ) -> datetime:
+        """Aplica baneo automático por moderación. Devuelve cuándo expira."""
         expires = datetime.now(timezone.utc) + timedelta(seconds=max(1, ban_seconds))
         self._repository.create_ban(
             user_id=user_id,
@@ -355,6 +361,8 @@ class LaimForumService:
             moderador_user_name="Moderación automática",
             expires_at=expires,
             automatico=True,
+            palabra=palabra,
+            fragmento=fragmento,
         )
         self._log_moderation_event(
             subcategory_id=subcategory_id,
@@ -363,6 +371,7 @@ class LaimForumService:
             user_id=user_id,
             moderator_user_name="Moderación automática",
         )
+        return expires
 
     def _validate_urls(
         self,
@@ -480,22 +489,30 @@ class LaimForumService:
                 subcategory_id=subcategory_id,
                 thread_id=thread_id or None,
             )
+        span = rule_hit(text, matched)
+        fragmento = excerpt_around(text, *span) if span else ""
+        palabra = str(matched.get("palabra") or "")
+        expires = None
         if outcome.escalation in ("ban", "kick"):
             ban_seconds = int(sub.get("ban_seconds") or 86400)
-            self._apply_automatic_ban(
+            expires = self._apply_automatic_ban(
                 user_id=user_id,
                 subcategory_id=subcategory_id,
                 motivo=outcome.notify_user or "Ban automático por palabra prohibida",
                 ban_seconds=ban_seconds,
+                palabra=palabra,
+                fragmento=fragmento,
             )
         if outcome.block_message:
-            return {
-                "success": False,
-                "error": (
-                    outcome.notify_user
-                    or "Mensaje no permitido por moderación automática."
-                ),
-            }
+            reason = outcome.notify_user or "Mensaje no permitido por moderación automática."
+            result: dict[str, Any] = {"success": False, "error": reason}
+            if expires is not None:
+                result["ban_notice"] = ban_notice(
+                    motivo=reason,
+                    expires_at=expires,
+                    subcategory=subcategory_id,
+                )
+            return result
         return None
 
     def _validate_user_content(
@@ -559,11 +576,24 @@ class LaimForumService:
                     return "No puede usar imágenes subidas por otro usuario."
         return None
 
-    def _check_ban(self, user_id: int, subcategory_id: str) -> str | None:
-        """Comprueba baneo activo."""
-        if self._repository.is_user_banned(user_id, subcategory_id):
-            return "Está baneado en esta subcategoría."
-        return None
+    def _check_ban(self, user_id: int, subcategory_id: str) -> dict[str, Any] | None:
+        """Comprueba baneo activo y arma el aviso con motivo y vuelta."""
+        getter = getattr(self._repository, "get_active_ban", None)
+        row = getter(user_id, subcategory_id) if callable(getter) else None
+        if not isinstance(row, dict):
+            if not self._repository.is_user_banned(user_id, subcategory_id):
+                return None
+            row = {
+                "motivo": "Está baneado en esta subcategoría.",
+                "expires_at": None,
+                "subcategory_id": subcategory_id,
+            }
+        notice = ban_notice(
+            motivo=str(row.get("motivo") or ""),
+            expires_at=row.get("expires_at"),
+            subcategory=str(row.get("subcategory_id") or subcategory_id),
+        )
+        return {"success": False, "error": notice["motivo"], "ban_notice": notice}
 
     # ------------------------------------------------------------------ health
     def get_health(self) -> dict[str, Any]:
@@ -923,7 +953,7 @@ class LaimForumService:
 
         ban_error = self._check_ban(session["user_id"], dto.subcategory_id)
         if ban_error:
-            return {"success": False, "error": ban_error}
+            return ban_error
 
         content_error = self._validate_user_content(
             dto.cuerpo_md,
@@ -1086,7 +1116,7 @@ class LaimForumService:
         subcategory_id = str(thread["subcategory_id"])
         ban_error = self._check_ban(session["user_id"], subcategory_id)
         if ban_error:
-            return {"success": False, "error": ban_error}
+            return ban_error
 
         try:
             dto = LaimForumPostCreateDto.model_validate(payload)
@@ -1355,6 +1385,9 @@ class LaimForumService:
             accion=dto.accion,
             mensaje=dto.mensaje,
             activo=dto.activo,
+            excepcion_tiene=dto.excepcion_tiene,
+            excepcion_no_tiene=dto.excepcion_no_tiene,
+            patron=dto.patron,
         )
         self._audit_config(
             session,
@@ -1516,12 +1549,37 @@ class LaimForumService:
             )
         return {"success": True, "ban_id": ban_id}
 
-    def revoke_ban(self, ban_id: int, session: dict[str, Any]) -> dict[str, Any]:
-        """Revoca baneo."""
+    def revoke_ban(
+        self, ban_id: int, session: dict[str, Any], disculpa: bool = False
+    ) -> dict[str, Any]:
+        """Revoca baneo. Con disculpa, deja el texto al usuario en el foro."""
         if not self.is_forum_admin(session["identity_type_id"]):
             return {"success": False, "error": "Sin permisos de administración."}
+        letter = None
+        if disculpa:
+            getter = getattr(self._repository, "get_ban", None)
+            loaded = getter(ban_id) if callable(getter) else None
+            ban = loaded if isinstance(loaded, dict) else {}
+            user_id = int(ban.get("user_id") or 0)
+            name = self._repository.user_display_name(user_id) if user_id else ""
+            letter = false_positive_apology(
+                user_name=name,
+                palabra=str(ban.get("palabra") or ""),
+                fragmento=str(ban.get("fragmento") or ""),
+            )
+            if user_id:
+                self._repository.create_notification(
+                    user_id=user_id,
+                    tipo="ban_disculpa",
+                    titulo=letter["asunto"],
+                    mensaje=letter["cuerpo"],
+                    subcategory_id=str(ban.get("subcategory_id") or "") or None,
+                )
         ok = self._repository.revoke_ban(ban_id, session["user_id"])
-        return {"success": ok}
+        result: dict[str, Any] = {"success": ok}
+        if letter:
+            result["disculpa"] = letter
+        return result
 
     def list_moderation_logs(
         self, subcategory_id: str, session: dict[str, Any]

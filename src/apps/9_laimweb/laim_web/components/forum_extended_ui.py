@@ -935,6 +935,42 @@ def forum_admin_extended_panel() -> rx.Component:
                             color=COLORS["muted"],
                             font_size=FONT_SIZE_SMALL,
                         ),
+                        rx.el.label("Permitida si el mensaje tiene", color=COLORS["title"]),
+                        rx.input(
+                            placeholder="modelo, mlx",
+                            value=LaimWebState.forum_admin_word_tiene,
+                            on_change=LaimWebState.forum_admin_set_word_tiene,
+                            class_name="crt-input",
+                        ),
+                        rx.text(
+                            "Frases separadas por coma. Si están todas, la palabra se permite.",
+                            color=COLORS["muted"],
+                            font_size=FONT_SIZE_SMALL,
+                        ),
+                        rx.el.label("…y no tiene", color=COLORS["title"]),
+                        rx.input(
+                            placeholder="ilegal",
+                            value=LaimWebState.forum_admin_word_no_tiene,
+                            on_change=LaimWebState.forum_admin_set_word_no_tiene,
+                            class_name="crt-input",
+                        ),
+                        rx.text(
+                            "Si aparece alguna de estas frases, la excepción no vale.",
+                            color=COLORS["muted"],
+                            font_size=FONT_SIZE_SMALL,
+                        ),
+                        rx.el.label("Expresión del corte", color=COLORS["title"]),
+                        rx.input(
+                            placeholder="(?i)\\bpalabra\\b",
+                            value=LaimWebState.forum_admin_word_patron,
+                            on_change=LaimWebState.forum_admin_set_word_patron,
+                            class_name="crt-input",
+                        ),
+                        rx.text(
+                            "Vacía, se busca la palabra. Si la escribe, esa expresión decide el corte y puede afinarla.",
+                            color=COLORS["muted"],
+                            font_size=FONT_SIZE_SMALL,
+                        ),
                         rx.el.label("Mensaje al usuario", color=COLORS["title"]),
                         rx.input(
                             placeholder="Esa palabra no está permitida",

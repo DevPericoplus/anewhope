@@ -1183,14 +1183,24 @@ class LaimForumRepository:
             rows = conn.execute(
                 text(
                     f"""
-                    SELECT id, palabra, accion, mensaje, activo
+                    SELECT id, palabra, accion, mensaje, activo,
+                           excepcion_tiene, excepcion_no_tiene, patron
                     FROM laim_forum_word_rules
                     {clause}
                     ORDER BY palabra ASC
                     """
                 )
             ).mappings().all()
-        return [{**dict(r), "activo": _bool_value(r["activo"])} for r in rows]
+        return [
+            {
+                **dict(r),
+                "activo": _bool_value(r["activo"]),
+                "excepcion_tiene": str(r.get("excepcion_tiene") or ""),
+                "excepcion_no_tiene": str(r.get("excepcion_no_tiene") or ""),
+                "patron": str(r.get("patron") or ""),
+            }
+            for r in rows
+        ]
 
     def upsert_word_rule(
         self,
@@ -1200,6 +1210,9 @@ class LaimForumRepository:
         accion: str,
         mensaje: str = "",
         activo: bool = True,
+        excepcion_tiene: str = "",
+        excepcion_no_tiene: str = "",
+        patron: str = "",
     ) -> int:
         """Inserta o actualiza regla de palabra."""
         with self._engine.begin() as conn:
@@ -1209,7 +1222,10 @@ class LaimForumRepository:
                         """
                         UPDATE laim_forum_word_rules
                         SET palabra = :palabra, accion = :accion,
-                            mensaje = :mensaje, activo = :activo
+                            mensaje = :mensaje, activo = :activo,
+                            excepcion_tiene = :excepcion_tiene,
+                            excepcion_no_tiene = :excepcion_no_tiene,
+                            patron = :patron
                         WHERE id = :id
                         """
                     ),
@@ -1219,14 +1235,23 @@ class LaimForumRepository:
                         "accion": accion,
                         "mensaje": mensaje or None,
                         "activo": int(activo),
+                        "excepcion_tiene": excepcion_tiene or None,
+                        "excepcion_no_tiene": excepcion_no_tiene or None,
+                        "patron": patron or None,
                     },
                 )
                 return rule_id
             result = conn.execute(
                 text(
                     """
-                    INSERT INTO laim_forum_word_rules (palabra, accion, mensaje, activo)
-                    VALUES (:palabra, :accion, :mensaje, :activo)
+                    INSERT INTO laim_forum_word_rules (
+                        palabra, accion, mensaje, activo,
+                        excepcion_tiene, excepcion_no_tiene, patron
+                    )
+                    VALUES (
+                        :palabra, :accion, :mensaje, :activo,
+                        :excepcion_tiene, :excepcion_no_tiene, :patron
+                    )
                     """
                 ),
                 {
@@ -1234,6 +1259,9 @@ class LaimForumRepository:
                     "accion": accion,
                     "mensaje": mensaje or None,
                     "activo": int(activo),
+                    "excepcion_tiene": excepcion_tiene or None,
+                    "excepcion_no_tiene": excepcion_no_tiene or None,
+                    "patron": patron or None,
                 },
             )
             return int(result.lastrowid)
@@ -1351,6 +1379,8 @@ class LaimForumRepository:
         moderador_user_name: str | None = None,
         expires_at: datetime | None = None,
         automatico: bool = False,
+        palabra: str = "",
+        fragmento: str = "",
     ) -> int:
         """Registra baneo activo."""
         with self._engine.begin() as conn:
@@ -1372,11 +1402,11 @@ class LaimForumRepository:
                     INSERT INTO laim_forum_bans (
                         user_id, subcategory_id, motivo,
                         moderador_user_id, moderador_user_name,
-                        expires_at, activo, automatico
+                        expires_at, activo, automatico, palabra, fragmento
                     ) VALUES (
                         :user_id, :subcategory_id, :motivo,
                         :moderador_user_id, :moderador_user_name,
-                        :expires_at, 1, :automatico
+                        :expires_at, 1, :automatico, :palabra, :fragmento
                     )
                     """
                 ),
@@ -1388,9 +1418,63 @@ class LaimForumRepository:
                     "moderador_user_name": moderador_user_name,
                     "expires_at": expires_at,
                     "automatico": int(automatico),
+                    "palabra": (palabra or "")[:100],
+                    "fragmento": (fragmento or "")[:500],
                 },
             )
             return int(result.lastrowid)
+
+    def get_ban(self, ban_id: int) -> dict[str, Any] | None:
+        """Un baneo, activo o ya revocado, con la palabra y el fragmento."""
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT id, user_id, subcategory_id, motivo, expires_at,
+                           palabra, fragmento, activo
+                    FROM laim_forum_bans
+                    WHERE id = :id
+                    """
+                ),
+                {"id": ban_id},
+            ).mappings().first()
+        if row is None:
+            return None
+        return {
+            **dict(row),
+            "palabra": str(row.get("palabra") or ""),
+            "fragmento": str(row.get("fragmento") or ""),
+            "expires_at": _timestamp_value(row.get("expires_at")),
+            "activo": _bool_value(row.get("activo", 0)),
+        }
+
+    def get_active_ban(self, user_id: int, subcategory_id: str) -> dict[str, Any] | None:
+        """Baneo vigente de ese usuario en esa subcategoría."""
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT id, user_id, subcategory_id, motivo, expires_at,
+                           palabra, fragmento
+                    FROM laim_forum_bans
+                    WHERE user_id = :user_id
+                      AND subcategory_id = :subcategory_id
+                      AND activo = 1
+                      AND (expires_at IS NULL OR expires_at > NOW())
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """
+                ),
+                {"user_id": user_id, "subcategory_id": subcategory_id},
+            ).mappings().first()
+        if row is None:
+            return None
+        return {
+            **dict(row),
+            "palabra": str(row.get("palabra") or ""),
+            "fragmento": str(row.get("fragmento") or ""),
+            "expires_at": _timestamp_value(row.get("expires_at")),
+        }
 
     def revoke_ban(self, ban_id: int, revocado_por_user_id: int) -> bool:
         """Revoca baneo."""
@@ -1557,6 +1641,7 @@ class LaimForumRepository:
                     SELECT b.id, b.user_id, b.subcategory_id, b.motivo,
                            b.moderador_user_id, b.moderador_user_name,
                            b.expires_at, b.automatico, b.created_at,
+                           b.palabra, b.fragmento,
                            s.nombre AS subcategory_name
                     FROM laim_forum_bans b
                     LEFT JOIN laim_forum_subcategories s ON s.id = b.subcategory_id
@@ -1572,6 +1657,8 @@ class LaimForumRepository:
                 "automatico": _bool_value(row.get("automatico", 0)),
                 "expires_at": _timestamp_value(row.get("expires_at")),
                 "created_at": _timestamp_value(row.get("created_at")),
+                "palabra": str(row.get("palabra") or ""),
+                "fragmento": str(row.get("fragmento") or ""),
             }
             for row in rows
         ]

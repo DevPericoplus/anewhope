@@ -231,6 +231,10 @@ class LaimForumMixin(rx.State, mixin=True):
     # Estado general del foro
     forum_loading: bool = False
     forum_error: str = ""
+    forum_ban_modal_open: bool = False
+    forum_ban_modal_title: str = ""
+    forum_ban_modal_reason: str = ""
+    forum_ban_modal_until: str = ""
     forum_service_active: bool = True
     forum_notifications_count: int = 0
 
@@ -333,6 +337,9 @@ class LaimForumMixin(rx.State, mixin=True):
     forum_admin_prefixes: list[dict[str, Any]] = []
     forum_admin_word_rule_id: int = 0
     forum_admin_word_palabra: str = ""
+    forum_admin_word_tiene: str = ""
+    forum_admin_word_no_tiene: str = ""
+    forum_admin_word_patron: str = ""
     forum_admin_word_accion: str = "Amonestaciones"
     forum_admin_word_mensaje: str = ""
     forum_admin_word_activo: bool = True
@@ -442,6 +449,23 @@ class LaimForumMixin(rx.State, mixin=True):
     def _forum_set_error(self, message: str) -> None:
         """Registra error visible en UI del foro."""
         self.forum_error = message
+
+    def _forum_note_result_error(self, result: dict, fallback: str) -> None:
+        """Un baneo abre el modal con el motivo y la vuelta. El resto, el aviso rojo."""
+        notice = result.get("ban_notice") if isinstance(result, dict) else None
+        if isinstance(notice, dict) and notice.get("titulo"):
+            self.forum_ban_modal_open = True
+            self.forum_ban_modal_title = str(notice.get("titulo") or "")
+            self.forum_ban_modal_reason = str(notice.get("motivo") or "")
+            self.forum_ban_modal_until = str(notice.get("hasta") or "")
+            self.forum_error = ""
+            return
+        self._forum_set_error(str(result.get("error") or fallback) if isinstance(result, dict) else fallback)
+
+    @forum_event
+    def forum_set_ban_modal(self, opened: bool) -> None:
+        """Cierra el aviso de baneo."""
+        self.forum_ban_modal_open = bool(opened)
 
     def _forum_session_rejected(self, result: dict) -> bool:
         """Un 401/sesión del foro renueva el access token o abre el login.
@@ -1626,7 +1650,7 @@ class LaimForumMixin(rx.State, mixin=True):
         if not result.get("success"):
             if uploaded:
                 self.forum_new_thread_image_ids = image_ids
-            self._forum_set_error(result.get("error", "No se pudo crear el hilo"))
+            self._forum_note_result_error(result, "No se pudo crear el hilo")
             return rx.clear_selected_files(FORUM_THREAD_UPLOAD_ID)
 
         thread_id = int(result.get("thread_id", 0))
@@ -1671,7 +1695,7 @@ class LaimForumMixin(rx.State, mixin=True):
         if not result.get("success"):
             if uploaded:
                 self.forum_reply_image_ids = image_ids
-            self._forum_set_error(result.get("error", "No se pudo publicar la respuesta"))
+            self._forum_note_result_error(result, "No se pudo publicar la respuesta")
             return rx.clear_selected_files(FORUM_REPLY_UPLOAD_ID)
 
         self.forum_reply_body = ""
@@ -1732,7 +1756,7 @@ class LaimForumMixin(rx.State, mixin=True):
             self.forum_error = ""
             self.forum_open_thread(self.forum_active_thread_id)
         else:
-            self._forum_set_error(result.get("error", "No se pudo guardar la edición"))
+            self._forum_note_result_error(result, "No se pudo guardar la edición")
 
     # --- Edición de respuesta (post) ---
 
@@ -1775,7 +1799,7 @@ class LaimForumMixin(rx.State, mixin=True):
             self.forum_error = ""
             self.forum_open_thread(self.forum_active_thread_id)
         else:
-            self._forum_set_error(result.get("error", "No se pudo guardar la edición"))
+            self._forum_note_result_error(result, "No se pudo guardar la edición")
 
     @forum_event
     def forum_rate_thread(self, rating: int) -> None:
@@ -3127,19 +3151,28 @@ class LaimForumMixin(rx.State, mixin=True):
             self.forum_mod_message = result.get("error", "No se pudo banear.")
 
     @forum_event
-    def forum_revoke_ban(self, ban_id: int) -> None:
-        """Revoca un baneo."""
+    def forum_revoke_ban(self, ban_id: int, disculpa: bool = False) -> None:
+        """Revoca un baneo. Con disculpa, el usuario recibe el texto en el foro."""
         from laim_web.adapters.laim_api_client import laim_forum_revoke_ban
 
         access, session = self._forum_auth_tokens()
-        result = laim_forum_revoke_ban(ban_id, access, session)
+        result = laim_forum_revoke_ban(ban_id, access, session, disculpa=disculpa)
         if result.get("success"):
-            self.forum_mod_message = "Baneo revocado."
+            self.forum_mod_message = (
+                "Baneo revocado. La disculpa queda en el foro del usuario."
+                if disculpa
+                else "Baneo revocado."
+            )
             self.forum_load_moderation_data()
             if self.forum_admin_view == "bans":
                 self.forum_load_admin_bans()
         else:
             self.forum_mod_message = result.get("error", "No se pudo revocar.")
+
+    @forum_event
+    def forum_revoke_ban_with_apology(self, ban_id: int) -> None:
+        """Levanta el baneo y deja la disculpa de falso positivo."""
+        self.forum_revoke_ban(ban_id, True)
 
     @rx.var
     def forum_stats_valoracion_promedio_text(self) -> str:
@@ -3206,6 +3239,9 @@ class LaimForumMixin(rx.State, mixin=True):
         self.forum_admin_word_palabra = ""
         self.forum_admin_word_mensaje = ""
         self.forum_admin_word_activo = True
+        self.forum_admin_word_tiene = ""
+        self.forum_admin_word_no_tiene = ""
+        self.forum_admin_word_patron = ""
 
     def _forum_admin_reset_url_form(self) -> None:
         self.forum_admin_url_id = 0
@@ -3469,7 +3505,22 @@ class LaimForumMixin(rx.State, mixin=True):
             self.forum_admin_word_accion = str(rule.get("accion") or "Amonestaciones")
             self.forum_admin_word_mensaje = str(rule.get("mensaje") or "")
             self.forum_admin_word_activo = bool(rule.get("activo", True))
+            self.forum_admin_word_tiene = str(rule.get("excepcion_tiene") or "")
+            self.forum_admin_word_no_tiene = str(rule.get("excepcion_no_tiene") or "")
+            self.forum_admin_word_patron = str(rule.get("patron") or "")
             return
+
+    @forum_event
+    def forum_admin_set_word_tiene(self, value: str) -> None:
+        self.forum_admin_word_tiene = value
+
+    @forum_event
+    def forum_admin_set_word_no_tiene(self, value: str) -> None:
+        self.forum_admin_word_no_tiene = value
+
+    @forum_event
+    def forum_admin_set_word_patron(self, value: str) -> None:
+        self.forum_admin_word_patron = value
 
     @forum_event
     def forum_admin_toggle_word_rule(self, rule_id: int) -> None:
@@ -3487,6 +3538,9 @@ class LaimForumMixin(rx.State, mixin=True):
                     "accion": str(rule.get("accion") or "Amonestaciones"),
                     "mensaje": str(rule.get("mensaje") or ""),
                     "activo": not bool(rule.get("activo", True)),
+                    "excepcion_tiene": str(rule.get("excepcion_tiene") or ""),
+                    "excepcion_no_tiene": str(rule.get("excepcion_no_tiene") or ""),
+                    "patron": str(rule.get("patron") or ""),
                 },
                 access,
                 session,
@@ -3517,6 +3571,9 @@ class LaimForumMixin(rx.State, mixin=True):
             "accion": self.forum_admin_word_accion.strip() or "Amonestaciones",
             "mensaje": self.forum_admin_word_mensaje.strip(),
             "activo": bool(self.forum_admin_word_activo),
+            "excepcion_tiene": self.forum_admin_word_tiene.strip(),
+            "excepcion_no_tiene": self.forum_admin_word_no_tiene.strip(),
+            "patron": self.forum_admin_word_patron.strip(),
         }
         if self.forum_admin_word_rule_id > 0:
             result = laim_forum_admin_update_word_rule(
