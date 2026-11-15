@@ -13,9 +13,9 @@ version_global: 1.0.63
 # Incrementar con: python scripts/bump_service_version.py <servicio> --level fix|minor|major
 version_frontend: 0.8.28
 version_backoffice: 0.8.12
-version_middleware: 0.8.16
-version_broker: 0.8.12
-version_backend_core: 0.8.34
+version_middleware: 0.8.17
+version_broker: 0.8.13
+version_backend_core: 0.8.35
 version_backend_ia: 0.8.5
 version_fmanagement: 0.8.1
 version_laimweb: 0.12.70

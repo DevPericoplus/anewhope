@@ -2212,7 +2212,7 @@ class BrokerBackendRouter:
             ) from exc
 
     def check_last_version(
-        self, edition: str, platform: str, current_version: str, plugin_name: str = ""
+        self, edition: str, platform: str, current_version: str, plugin_name: str = "", artifact: str = ""
     ) -> dict[str, Any]:
         """Compara current_version contra el último parche publicado."""
         self._logger.info(
@@ -2220,7 +2220,7 @@ class BrokerBackendRouter:
             self._client_app, edition, platform, current_version, plugin_name,
         )
         try:
-            return self._core_client.check_last_version(edition, platform, current_version, plugin_name)
+            return self._core_client.check_last_version(edition, platform, current_version, plugin_name, artifact)
         except CoreBackendCommunicationError as exc:
             raise BrokerBusinessError(
                 f"Error comprobando última versión: {str(exc)}"

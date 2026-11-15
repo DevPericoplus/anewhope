@@ -4560,6 +4560,7 @@ def check_last_version_endpoint(
     platform: str,
     current_version: str,
     plugin_name: str = "",
+    artifact: str = "",
     router: BrokerBackendRouter = Depends(get_router_broker),
 ) -> dict[str, Any]:
     """Compara current_version contra el último parche publicado.
@@ -4567,7 +4568,7 @@ def check_last_version_endpoint(
     Flujo: Middleware → Broker → Backend Core → Filesystem
     """
     try:
-        return router.check_last_version(edition, platform, current_version, plugin_name)
+        return router.check_last_version(edition, platform, current_version, plugin_name, artifact)
     except BrokerBusinessError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

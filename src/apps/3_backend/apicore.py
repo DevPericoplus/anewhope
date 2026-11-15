@@ -4594,7 +4594,10 @@ def download_model_package(
 # ========================================================================
 
 _LAIM_PRODUCT_EDITIONS = {"community_edition", "advance"}
-_LAIM_PRODUCT_ARTIFACT_TYPES = {"installer", "patch"}
+_LAIM_PRODUCT_ARTIFACT_TYPES = {"installer", "patch", "package"}
+# AW3 (LAIM pkg148): el .deb/.rpm firmado con el que se actualiza una
+# instalación deb/rpm. Solo núcleo (sin plugin) y solo en Linux.
+_LAIM_PACKAGE_EXTENSIONS = {"linux_deb": ".deb", "linux_rpm": ".rpm"}
 _LAIM_PRODUCT_PLATFORMS = {"windows", "linux_deb", "linux_rpm", "mac_intel", "mac_silicon"}
 _LAIM_PRODUCT_SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9_.-]+$")
 
@@ -4667,6 +4670,8 @@ def _laim_product_leaf_dir(edition: str, artifact_type: str, platform: str, plug
         raise HTTPException(status_code=400, detail=f"Plataforma inválida: {platform!r}")
     if plugin_name and not _LAIM_PRODUCT_SAFE_SEGMENT.match(plugin_name):
         raise HTTPException(status_code=400, detail=f"Nombre de plugin inválido: {plugin_name!r}")
+    if artifact_type == "package" and (platform not in _LAIM_PACKAGE_EXTENSIONS or plugin_name):
+        raise HTTPException(status_code=400, detail="Los paquetes solo existen para el núcleo en linux_deb/linux_rpm")
 
     base = _laim_product_storage_base()
     edition_root = (base / edition).resolve()
@@ -4674,7 +4679,7 @@ def _laim_product_leaf_dir(edition: str, artifact_type: str, platform: str, plug
     leaf_dir = edition_root
     if plugin_name:
         leaf_dir = leaf_dir / "plugins" / plugin_name
-    leaf_dir = leaf_dir / ("patches" if artifact_type == "patch" else "installers")
+    leaf_dir = leaf_dir / {"patch": "patches", "package": "packages"}.get(artifact_type, "installers")
     platform_segments = {
         "linux_deb": ("linux", "deb"),
         "linux_rpm": ("linux", "rpm"),
@@ -4849,17 +4854,25 @@ def check_last_version(
     platform: str,
     current_version: str,
     plugin_name: str = "",
+    artifact: str = "",
 ):
     """Compara current_version contra la última versión de parche publicada
     (símlink `latest` bajo .../patches/<platform>) y, si hay uno disponible,
     firma la respuesta con HMAC-SHA256 usando la clave de
     laim_exchange_keys vigente para el major_version del cliente. Ver
     AGENTS.md § 37.1/37.2. artifact_type es siempre "patch" aquí — el flujo
-    de actualización descarga parches, nunca el instalador completo."""
+    de actualización descarga parches, nunca el instalador completo.
+
+    AW3: con `artifact=package` (LAIM pkg148, instalación deb/rpm) ofrece el
+    paquete firmado de .../packages/linux/{deb,rpm}; la carga firmada dice
+    `package` en lugar de `patch`."""
     if not _LAIM_PRODUCT_SAFE_SEGMENT.match(current_version):
         raise HTTPException(status_code=400, detail="current_version inválida")
+    kind = artifact or "patch"
+    if kind not in ("patch", "package"):
+        raise HTTPException(status_code=400, detail=f"artifact inválido: {artifact!r}")
 
-    leaf_dir = _laim_product_leaf_dir(edition, "patch", platform, plugin_name)
+    leaf_dir = _laim_product_leaf_dir(edition, kind, platform, plugin_name)
     latest_target: str | None = None
     if leaf_dir.is_dir():
         latest_link = leaf_dir / "latest"
@@ -4870,7 +4883,7 @@ def check_last_version(
                 latest_target = None
 
     if not latest_target or "/" not in latest_target:
-        return {"has_update": False, "latest_version": None, "artifact_type": "patch", "filename": None}
+        return _no_update_offer(kind)
 
     latest_version, filename = latest_target.split("/", 1)
     has_update = _version_is_newer(latest_version, current_version)
@@ -4878,34 +4891,44 @@ def check_last_version(
     response: dict[str, Any] = {
         "has_update": has_update,
         "latest_version": latest_version,
-        "artifact_type": "patch",
+        "artifact_type": kind,
         "filename": filename if has_update else None,
     }
     if not has_update:
         return response
+    if kind == "package" and not filename.endswith(_LAIM_PACKAGE_EXTENSIONS[platform]):
+        logging.getLogger(__name__).warning(
+            "check_last_version: %s no es un paquete %s para %s, no se ofrece",
+            filename, _LAIM_PACKAGE_EXTENSIONS[platform], platform,
+        )
+        return _no_update_offer(kind)
 
     download_url = (
-        f"/laim/product/download?edition={edition}&artifact_type=patch"
+        f"/laim/product/download?edition={edition}&artifact_type={kind}"
         f"&platform={platform}&version={latest_version}&filename={filename}"
     )
     if plugin_name:
         download_url += f"&plugin_name={plugin_name}"
     key = _resolve_update_exchange_key(current_version.split(".", 1)[0])
     if key is None:
-        return _no_update_offer()
+        return _no_update_offer(kind)
     sha = _patch_sha_cache.sha256(served) if (served := _served_patch_path(leaf_dir, latest_version, filename)) else None
     if sha is None:
         logging.getLogger(__name__).warning(
             "check_last_version: sin SHA-256 de %s/%s/%s, no se ofrece", platform, latest_version, filename
         )
-        return _no_update_offer()
+        return _no_update_offer(kind)
     signed_payload = _update_signing.signed_update_payload(edition, platform, latest_version, filename, sha)
+    if kind == "package":
+        # Misma carga que el parche con «package» en el tercer campo (LAIM
+        # SignedPackagePayload); el SHA ya está validado arriba.
+        signed_payload = signed_payload.replace(f"{edition}|{platform}|patch|", f"{edition}|{platform}|package|", 1)
     try:
         signature = _update_signing.sign_update_payload(key.key_value, signed_payload)
         fingerprint = _update_signing.exchange_key_fingerprint(key.key_value)
     except Exception:  # noqa: BLE001 - clave mal formada, no debe tumbar el endpoint
         logging.getLogger(__name__).error("check_last_version: clave de intercambio con formato inválido")
-        return _no_update_offer()
+        return _no_update_offer(kind)
 
     response["download_url"] = download_url
     response["signed_payload"] = signed_payload
@@ -4930,10 +4953,10 @@ def _served_patch_path(leaf_dir: Path, version: str, filename: str) -> Path | No
     return file_path
 
 
-def _no_update_offer() -> dict[str, Any]:
-    """Un parche que no se puede firmar no se ofrece (LAIM 3.2.10 lo
-    rechazaría): nunca una respuesta sin firma. Ver AGENTS.md § 37.2."""
-    return {"has_update": False, "latest_version": None, "artifact_type": "patch", "filename": None}
+def _no_update_offer(kind: str = "patch") -> dict[str, Any]:
+    """Un parche (o paquete) que no se puede firmar no se ofrece (LAIM 3.2.10
+    lo rechazaría): nunca una respuesta sin firma. Ver AGENTS.md § 37.2."""
+    return {"has_update": False, "latest_version": None, "artifact_type": kind, "filename": None}
 
 
 def _resolve_update_exchange_key(major_version: str) -> Any:
