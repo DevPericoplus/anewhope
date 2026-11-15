@@ -1,5 +1,21 @@
 # Changelog
 
+## [2026-11-15] - Cap de dev con la site key nueva (como silicon y pre)
+
+**Síntoma:** en `infrastructure/environments/dev/env.yaml` la ruta pública de
+Cap ya usaba la site key nueva de dev (`4d019fa90c`), pero
+`laim_cap_verify_endpoint` (siteverify interno, :3301 y :3300) seguía con la
+antigua (`6f5eec940d`). El navegador pedía el reto con una clave y el backend
+lo verificaba con otra: el alta fallaba, `test_cap_siteverify` también y el
+despliegue de dev se paraba en la comprobación de `backend.yml`
+(anh_ansible_environments: misma site key en las dos rutas).
+
+**Fix:** las dos rutas de dev usan `4d019fa90c`. El secret de esa site key va
+en el vault de dev (`laim_cap_secret`, anh_ansible_environments
+`env/dev/backend.yml`).
+
+**Archivos:** `infrastructure/environments/dev/env.yaml`.
+
 ## [2026-11-15] - /check_last_version firmado con el SHA del parche (LAIM 3.2.10)
 
 **Síntoma:** producción respondía «hay actualización» sin firma: no existía la
