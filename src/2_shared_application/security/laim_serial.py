@@ -123,6 +123,11 @@ def product_serial_signing_key() -> str:
     return _PRODUCT_SERIAL_SIGNING_KEY
 
 
+# Major de LAIM al que pertenece _PRODUCT_EXCHANGE_KEY (KeyExchageLaimApp de
+# laim 3.x): solo se siembra para ese major; otro major necesita su fila.
+PRODUCT_EXCHANGE_MAJOR = "3"
+
+
 def product_exchange_key() -> str:
     """KeyExchageLaimApp de producto: AES del propose / HMAC de updates."""
     return _PRODUCT_EXCHANGE_KEY

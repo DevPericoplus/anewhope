@@ -11272,6 +11272,30 @@ base de datos con un `INSERT` manual (nunca una migración con el valor en
 claro comiteada a git), extra-var/fichero temporal nunca impreso en
 terminal, mismo patrón ya usado con `jwt_access_secret_key`.
 
+**[x] Implementado** (siembra y firma con SHA, 2026-11-15, LAIM 3.2.10 pkg139):
+- **Siembra de `exchange`** (`_resolve_update_exchange_key` en apicore.py,
+  `ensure_exchange_key` del repositorio): fila vigente del major →
+  `LAIM_EXCHANGE_KEY` (vault `laim_exchange_key`, override de rotación) →
+  constante de producto (`product_exchange_key()`), y se siembra en
+  `laim_exchange_keys` en el primer `/check_last_version`. Igual que
+  `serial_signing`: un Update no inserta SQL y nunca un INSERT a mano desde un
+  agente. La env y la constante solo valen para `PRODUCT_EXCHANGE_MAJOR`
+  (`laim_serial.py`, hoy «3»); otro major necesita su fila.
+- **Carga firmada** (`laim_update_signing.py`), la única que acepta LAIM
+  3.2.10: `edition|platform|patch|<latest_version>|<filename>|sha256=<hex>`,
+  con el SHA-256 del fichero exacto que serviría `/product/download` (misma
+  guarda de ruta; caché por ruta real, tamaño y mtime). HMAC-SHA256 hex con
+  la clave `exchange` del major.
+- **Nunca sin firma:** sin clave para ese major, con clave mal formada o sin
+  SHA, `/check_last_version` no ofrece la actualización
+  (`has_update: false`) y lo registra.
+- **Huella** (`key_fingerprint` en cada respuesta con actualización):
+  HMAC-SHA256(clave, `laim-exchange-key-fingerprint/v1`) recortado a 16 hex.
+  Compara la clave de laimweb con la de LAIM sin revelar ninguna;
+  `scripts/laim_exchange_key_fingerprint.py --laim-repo ../laim` imprime la
+  del producto y la de `KeyExchageLaimApp` (código de salida 1 si difieren).
+  LAIM debe implementar la misma función para comparar con `key_fingerprint`.
+
 ### 37.3. Caché de ficheros en laimweb + integridad
 
 Los ficheros de producto/parches/plugins viven en el storage del backend
