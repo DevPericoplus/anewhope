@@ -5773,6 +5773,7 @@ class RouterMiddleware:
         platform: str,
         current_version: str,
         plugin_name: str = "",
+        artifact: str = "",
     ) -> dict[str, Any]:
         """Compara current_version contra el último parche publicado.
 
@@ -5789,7 +5790,7 @@ class RouterMiddleware:
         )
 
         try:
-            return self._broker_client.check_last_version(edition, platform, current_version, plugin_name)
+            return self._broker_client.check_last_version(edition, platform, current_version, plugin_name, artifact)
         except BrokerBackendCommunicationError as exc:
             raise BusinessRuleError(
                 f"No se pudo comprobar la última versión: {exc}"

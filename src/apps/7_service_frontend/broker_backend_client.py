@@ -1618,7 +1618,7 @@ class BrokerBackendClient:
         return dict(data or {})
 
     def check_last_version(
-        self, edition: str, platform: str, current_version: str, plugin_name: str = ""
+        self, edition: str, platform: str, current_version: str, plugin_name: str = "", artifact: str = ""
     ) -> dict[str, Any]:
         """Compara current_version contra el último parche publicado."""
         from urllib.parse import quote
@@ -1628,6 +1628,9 @@ class BrokerBackendClient:
         )
         if plugin_name:
             params += f"&plugin_name={quote(plugin_name)}"
+        if artifact:
+            # AW3: «package» para una instalación deb/rpm (LAIM pkg148).
+            params += f"&artifact={quote(artifact)}"
         data = self._request("GET", f"/check_last_version{params}")
         return dict(data or {})
 

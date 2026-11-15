@@ -11296,6 +11296,25 @@ terminal, mismo patrón ya usado con `jwt_access_secret_key`.
   del producto y la de `KeyExchageLaimApp` (código de salida 1 si difieren).
   LAIM debe implementar la misma función para comparar con `key_fingerprint`.
 
+**[x] Implementado** (canal de paquetes Linux, AW3, 2026-11-15, LAIM pkg148):
+- Una instalación deb/rpm (en `/opt/laim`, de root) no se actualiza con un
+  parche sino con su paquete firmado. LAIM pide
+  `/laim/check_last_version?…&artifact=package` (solo núcleo, sin
+  `plugin_name`, y solo `linux_deb`/`linux_rpm`; otro caso responde 400).
+  Sin `artifact` (o `artifact=patch`) todo sigue igual que antes.
+- **Almacén:** `<LAIM_PRODUCT_STORAGE>/<edición>/packages/linux/{deb,rpm}/<versión>/<fichero .deb|.rpm>`
+  con un enlace `latest` → `<versión>/<fichero>`, igual que `patches/`.
+  laim_maintenance publica ahí los paquetes de cada versión; el nombre del
+  paquete debe ser `laim` y su versión la de LAIM (`3.2.11`, `3.2.11-1` o
+  `1:3.2.11-1`).
+- **Respuesta:** `artifact_type: "package"`, `download_url` de
+  `/laim/product/download?…&artifact_type=package…` (misma guarda de ruta) y
+  la carga firmada `edition|platform|package|<versión>|<fichero>|sha256=<hex>`,
+  con la misma clave y huella que el parche.
+- **Nunca sin firma:** sin paquete, sin SHA, con extensión que no es la del
+  formato (`.deb` en `linux_deb`, `.rpm` en `linux_rpm`) o sin clave →
+  `has_update: false` con `artifact_type: "package"`, registrado.
+
 ### 37.3. Caché de ficheros en laimweb + integridad
 
 Los ficheros de producto/parches/plugins viven en el storage del backend

@@ -1430,7 +1430,7 @@ class CoreBackendClient:
         return dict(data or {})
 
     def check_last_version(
-        self, edition: str, platform: str, current_version: str, plugin_name: str = ""
+        self, edition: str, platform: str, current_version: str, plugin_name: str = "", artifact: str = ""
     ) -> dict[str, Any]:
         """Compara current_version contra el último parche publicado — ver
         apicore.py::check_last_version y AGENTS.md § 37.1/37.2."""
@@ -1441,6 +1441,9 @@ class CoreBackendClient:
         )
         if plugin_name:
             params += f"&plugin_name={quote(plugin_name)}"
+        if artifact:
+            # AW3: «package» para una instalación deb/rpm (LAIM pkg148).
+            params += f"&artifact={quote(artifact)}"
         data = self._request("GET", f"/check_last_version{params}")
         return dict(data or {})
 

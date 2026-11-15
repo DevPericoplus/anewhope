@@ -1,5 +1,24 @@
 # Changelog
 
+## [2026-11-15] - Canal de paquetes Linux en /check_last_version (LAIM pkg148)
+
+**Por qué:** una instalación deb/rpm de LAIM está en `/opt/laim`, de root, y
+no puede reemplazarse con un parche: LAIM 3.2.10 (pkg148) se actualiza con el
+paquete firmado y la confirmación sudo del administrador.
+
+**Qué:** `/check_last_version` acepta `artifact=package` en `linux_deb` y
+`linux_rpm` (núcleo, sin plugin) y ofrece el `.deb`/`.rpm` de
+`<storage>/<edición>/packages/linux/{deb,rpm}/latest` con la carga firmada
+`edition|platform|package|<versión>|<fichero>|sha256=<hex>`. `/product/download`
+sirve `artifact_type=package` con la misma guarda de ruta. Middleware y broker
+pasan `artifact`; sin él, el canal de parches no cambia. Sin paquete, sin SHA o
+con extensión equivocada no hay oferta.
+
+**Archivos:** `src/apps/3_backend/apicore.py`, `src/apps/7_service_frontend/{apife,routermiddleware,broker_backend_client}.py`,
+`src/apps/8_service_backend/{apibe,routerbroker,interfacetocore}.py`, tests
+nuevos en las tres apps, `versions.yml` (backend_core 0.8.35, broker 0.8.13,
+middleware 0.8.17), `AGENTS.md` § 37.2.
+
 ## [2026-11-15] - Cap de dev con la site key nueva (como silicon y pre)
 
 **Síntoma:** en `infrastructure/environments/dev/env.yaml` la ruta pública de

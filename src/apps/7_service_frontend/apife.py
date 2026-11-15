@@ -4534,6 +4534,7 @@ def check_last_version_endpoint(
     platform: str,
     current_version: str,
     plugin_name: str = "",
+    artifact: str = "",
     session: SessionContext | None = Depends(get_optional_session_context),
     router: RouterMiddleware = Depends(get_router_middleware),
 ) -> dict[str, Any]:
@@ -4542,7 +4543,7 @@ def check_last_version_endpoint(
     resto de /laim/product/*), ver AGENTS.md § 37.1/37.2."""
     _require_session_for_advance(edition, session)
     try:
-        return router.check_last_version(session, edition, platform, current_version, plugin_name)
+        return router.check_last_version(session, edition, platform, current_version, plugin_name, artifact)
     except BusinessRuleError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
