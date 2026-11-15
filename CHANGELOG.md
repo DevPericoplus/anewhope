@@ -1,5 +1,30 @@
 # Changelog
 
+## [2026-11-15] - /check_last_version firmado con el SHA del parche (LAIM 3.2.10)
+
+**Síntoma:** producción respondía «hay actualización» sin firma: no existía la
+clave `exchange` del major 3 en `laim_exchange_keys` y nada la sembraba. LAIM
+descarta una respuesta sin firma, así que nunca se ofrecía la actualización.
+
+**Fix:**
+- La clave `exchange` se siembra en el primer `/check_last_version`, igual que
+  `serial_signing` (fila → `LAIM_EXCHANGE_KEY` → constante de producto, solo
+  para el major de producto).
+- La carga firmada lleva el SHA-256 del parche servido
+  (`…|<fichero>|sha256=<hex>`), como exige LAIM 3.2.10 (pkg139).
+- Sin clave o sin SHA, no se ofrece la actualización (nunca una respuesta sin
+  firma).
+- `key_fingerprint` en la respuesta y
+  `scripts/laim_exchange_key_fingerprint.py` para comparar la clave de
+  laimweb con la de LAIM sin revelarlas.
+
+**Archivos:** `src/2_shared_application/security/laim_update_signing.py`
+(nuevo), `adapters/laim_exchange_key.py`, `security/laim_serial.py`,
+`src/apps/3_backend/apicore.py`, `scripts/laim_exchange_key_fingerprint.py`,
+tests en `src/apps/3_backend/tests/test_laim_update_signing.py`.
+
+---
+
 ## [2026-06-29] - Fix refresco del explorador tras operaciones de menú contextual
 
 ### Bug 4: El explorador no refresca la vista al crear carpetas

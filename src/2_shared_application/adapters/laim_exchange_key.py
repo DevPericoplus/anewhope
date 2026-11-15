@@ -92,6 +92,37 @@ class LaimExchangeKeyRepository:
             key_value=str(row["key_value_cipher"]),
         )
 
+    def ensure_exchange_key(self, major_version: str, key_value: str) -> ExchangeKey:
+        """Idempotente: crea la fila `exchange` de ese major si no hay ninguna
+        vigente; nunca sustituye una existente (la rotación es otra fila con
+        su valid_from). Mismo criterio que serial_signing: el deploy no
+        inserta secretos en SQL, backend_core siembra en el primer
+        /check_last_version."""
+        existing = self.get_current_key(major_version)
+        if existing is not None:
+            return existing
+        value = (key_value or "").strip()
+        if not value:
+            raise ValueError("KeyExchageLaimApp vacía")
+        with self._engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO laim_exchange_keys (major_version, key_kind, key_value_cipher)
+                    SELECT :mv, 'exchange', :val
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM laim_exchange_keys
+                        WHERE major_version = :mv AND key_kind = 'exchange'
+                    )
+                    """
+                ),
+                {"mv": major_version, "val": value},
+            )
+        got = self.get_current_key(major_version)
+        if got is None:
+            raise RuntimeError("KeyExchageLaimApp no quedó persistida")
+        return got
+
     def ensure_serial_signing_key(self, key_value: str, major_version: str = "2") -> ExchangeKey:
         """Idempotente: crea la fila serial_signing si no existe. El deploy
         no inserta secretos en SQL; backend_core siembra en el primer HMAC."""

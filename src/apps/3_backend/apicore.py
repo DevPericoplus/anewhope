@@ -4610,6 +4610,17 @@ _laim_session_repo_for_checksum = _load_backend_module("laim_mariadb_session_rep
 _exchange_key_module_path = _REPO_ROOT / "src/2_shared_application/adapters/laim_exchange_key.py"
 _laim_exchange_key = _load_backend_module("laim_exchange_key_core", _exchange_key_module_path)
 
+_update_signing = _load_backend_module(
+    "laim_update_signing_core", _REPO_ROOT / "src/2_shared_application/security/laim_update_signing.py"
+)
+_laim_serial_for_updates = _load_backend_module(
+    "laim_serial_for_updates", _REPO_ROOT / "src/2_shared_application/security/laim_serial.py"
+)
+# Override de rotación de KeyExchageLaimApp (vault `laim_exchange_key`), igual
+# que LAIM_SERIAL_SIGNING_KEY para serial_signing.
+_EXCHANGE_KEY_ENV = "LAIM_EXCHANGE_KEY"
+_patch_sha_cache = _update_signing.FileSha256Cache()
+
 _checksum_repo: Any = None
 _exchange_key_repo: Any = None
 
@@ -4879,31 +4890,71 @@ def check_last_version(
     )
     if plugin_name:
         download_url += f"&plugin_name={plugin_name}"
-    response["download_url"] = download_url
-    response["signed_payload"] = None
-    response["signature"] = None
-    response["key_id"] = None
-
-    major_version = current_version.split(".", 1)[0]
-    key = _get_exchange_key_repo().get_current_key(major_version)
+    key = _resolve_update_exchange_key(current_version.split(".", 1)[0])
     if key is None:
+        return _no_update_offer()
+    sha = _patch_sha_cache.sha256(served) if (served := _served_patch_path(leaf_dir, latest_version, filename)) else None
+    if sha is None:
         logging.getLogger(__name__).warning(
-            "check_last_version: sin clave de intercambio vigente para major_version=%s", major_version
+            "check_last_version: sin SHA-256 de %s/%s/%s, no se ofrece", platform, latest_version, filename
         )
-        return response
-
-    signed_payload = "|".join([edition, platform, "patch", latest_version, filename])
+        return _no_update_offer()
+    signed_payload = _update_signing.signed_update_payload(edition, platform, latest_version, filename, sha)
     try:
-        padded = key.key_value + "=" * (-len(key.key_value) % 4)
-        key_bytes = base64.urlsafe_b64decode(padded)
+        signature = _update_signing.sign_update_payload(key.key_value, signed_payload)
+        fingerprint = _update_signing.exchange_key_fingerprint(key.key_value)
     except Exception:  # noqa: BLE001 - clave mal formada, no debe tumbar el endpoint
         logging.getLogger(__name__).error("check_last_version: clave de intercambio con formato inválido")
-        return response
+        return _no_update_offer()
 
+    response["download_url"] = download_url
     response["signed_payload"] = signed_payload
-    response["signature"] = hmac.new(key_bytes, signed_payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    response["signature"] = signature
     response["key_id"] = key.key_id
+    response["key_fingerprint"] = fingerprint
     return response
+
+
+def _served_patch_path(leaf_dir: Path, version: str, filename: str) -> Path | None:
+    """El fichero exacto que serviría /product/download, con la misma guarda
+    (nunca fuera de leaf_dir/<version>/). None si no es seguro."""
+    if not _LAIM_PRODUCT_SAFE_SEGMENT.match(version) or not _LAIM_PRODUCT_SAFE_SEGMENT.match(filename):
+        return None
+    leaf = leaf_dir.resolve()
+    version_dir = (leaf / version).resolve()
+    if version_dir.parent != leaf:
+        return None
+    file_path = (version_dir / filename).resolve()
+    if file_path.parent != version_dir:
+        return None
+    return file_path
+
+
+def _no_update_offer() -> dict[str, Any]:
+    """Un parche que no se puede firmar no se ofrece (LAIM 3.2.10 lo
+    rechazaría): nunca una respuesta sin firma. Ver AGENTS.md § 37.2."""
+    return {"has_update": False, "latest_version": None, "artifact_type": "patch", "filename": None}
+
+
+def _resolve_update_exchange_key(major_version: str) -> Any:
+    """Clave `exchange` del major: fila vigente → LAIM_EXCHANGE_KEY →
+    constante de producto, sembrada en laim_exchange_keys la primera vez.
+    Las dos últimas solo valen para el major de la constante de producto."""
+    repo = _get_exchange_key_repo()
+    key = repo.get_current_key(major_version)
+    if key is not None:
+        return key
+    if major_version == _laim_serial_for_updates.PRODUCT_EXCHANGE_MAJOR:
+        value = (os.environ.get(_EXCHANGE_KEY_ENV) or "").strip() or _laim_serial_for_updates.product_exchange_key()
+        try:
+            return repo.ensure_exchange_key(major_version, value)
+        except Exception:  # noqa: BLE001 - sin clave no se ofrece, nunca 500
+            logging.getLogger(__name__).exception("check_last_version: no se pudo sembrar la clave de intercambio")
+            return None
+    logging.getLogger(__name__).warning(
+        "check_last_version: sin clave de intercambio vigente para major_version=%s", major_version
+    )
+    return None
 
 
 # ========================================================================
