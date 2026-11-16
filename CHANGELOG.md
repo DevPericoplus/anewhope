@@ -1,5 +1,15 @@
 # Changelog
 
+## [2026-11-16] - Cap de silicon con la site key nueva (como dev)
+
+**Por qué:** el `env.yaml` de silicon ya usaba la site key nueva (`3f9ea24d4c`)
+en la ruta pública, pero el siteverify interno seguía con la anterior
+(`dcbb5f3bb8`): el despliegue paraba en «misma site key» y el alta fallaba.
+
+**Qué:** las dos rutas de silicon usan `3f9ea24d4c`, igual que dev. El secret
+de esa clave se rota con el job `silicon/Rotate_Cap_Secret` y se guarda en el
+vault (`env/silicon/backend.yml › laim_cap_secret`).
+
 ## [2026-11-15] - Canal de paquetes Linux en /check_last_version (LAIM pkg148)
 
 **Por qué:** una instalación deb/rpm de LAIM está en `/opt/laim`, de root, y
