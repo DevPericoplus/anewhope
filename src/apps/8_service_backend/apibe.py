@@ -29,7 +29,11 @@ _hardening_spec.loader.exec_module(_api_hardening)
 try:
     from .interfacetocore import CoreBackendClient
     from .interfacetotrainer import TrainerBackendClient
-    from .routerbroker import BrokerBackendRouter, BrokerBusinessError
+    from .routerbroker import (
+        BrokerBackendRouter,
+        BrokerBusinessError,
+        laim_login_http_status,
+    )
 except ImportError:  # pragma: no cover - soporte para ejecuciones fuera de paquete
     import importlib.util
     from pathlib import Path
@@ -53,6 +57,7 @@ except ImportError:  # pragma: no cover - soporte para ejecuciones fuera de paqu
     TrainerBackendClient = _trainer_module.TrainerBackendClient
     BrokerBackendRouter = _router_module.BrokerBackendRouter
     BrokerBusinessError = _router_module.BrokerBusinessError
+    laim_login_http_status = _router_module.laim_login_http_status
 
 
 class OrganizationCheckRequest(BaseModel):
@@ -4838,7 +4843,10 @@ def laim_login(
     try:
         return router.laim_login(payload.model_dump(), _laim_forward_headers(request))
     except BrokerBusinessError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        detail = str(exc)
+        raise HTTPException(
+            status_code=laim_login_http_status(detail), detail=detail
+        ) from exc
 
 
 @app.post("/laim/register", tags=["laim-auth"])

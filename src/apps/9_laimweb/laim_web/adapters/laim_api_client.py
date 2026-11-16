@@ -23,7 +23,17 @@ from laim_web.dynamic_import import load_module_from_path
 
 RENEWAL_THRESHOLD_SECONDS = 300
 MSG_INVALID_CREDENTIALS = "Credenciales no válidas"
-MSG_AUTH_UNAVAILABLE = "No se pudo conectar con el servicio de autenticación."
+MSG_LOGIN_UNAVAILABLE = "No se pudo iniciar sesión. Inténtelo más tarde."
+MSG_LOGIN_FIELDS_REQUIRED = "Introduzca su usuario y su contraseña."
+MSG_LOGIN_USERNAME_REQUIRED = "Introduzca su usuario."
+MSG_LOGIN_PASSWORD_REQUIRED = "Introduzca su contraseña."
+MSG_USER_DISABLED = "El usuario no está habilitado. Contacta con soporte."
+# Menú público «Contacto» y su botón «Contactar» (components/contact_form.py).
+MSG_ACCOUNT_LOCKED = (
+    "Su cuenta está bloqueada por seguridad tras demasiados intentos fallidos "
+    "de inicio de sesión. Puede pedir el desbloqueo desde el menú «Contacto», "
+    "con el botón «Contactar»."
+)
 
 # Cargar env_settings para obtener URL del middleware
 _env_settings_path = (
@@ -1176,24 +1186,48 @@ def laim_forum_get_poll_interval_seconds() -> int:
 
 
 def _sanitize_login_error(raw: object) -> str:
-    """Oculta la cadena técnica broker/backend/core en fallos de login."""
+    """Oculta la cadena técnica broker/backend/core en fallos de login.
+
+    «Credenciales no válidas» solo cuando backend_core rechazó la clave; red,
+    5xx, 422 o cualquier otro fallo es «Inténtelo más tarde». Usuario
+    inexistente y clave errónea comparten mensaje (sin enumeración).
+    """
     text = str(raw or "").lower()
+    if "bloqueada por seguridad" in text:
+        return MSG_ACCOUNT_LOCKED
     if "no está habilitado" in text or "no esta habilitado" in text:
-        return "El usuario no está habilitado. Contacta con soporte."
-    if "error de conexión" in text or "no se pudo contactar" in text:
-        return MSG_AUTH_UNAVAILABLE
-    return MSG_INVALID_CREDENTIALS
+        return MSG_USER_DISABLED
+    if "credenciales no válidas" in text or "credenciales inválidas" in text:
+        return MSG_INVALID_CREDENTIALS
+    return MSG_LOGIN_UNAVAILABLE
+
+
+def login_fields_error(username: str, password: str) -> str:
+    """Mensaje si falta usuario o contraseña; "" si están los dos."""
+    missing_user = not (username or "").strip()
+    missing_password = not (password or "")
+    if missing_user and missing_password:
+        return MSG_LOGIN_FIELDS_REQUIRED
+    if missing_user:
+        return MSG_LOGIN_USERNAME_REQUIRED
+    if missing_password:
+        return MSG_LOGIN_PASSWORD_REQUIRED
+    return ""
 
 
 def laim_login(username: str, password: str) -> dict[str, Any]:
     """Autentica un usuario a través del middleware.
 
-    Flujo: LAIM Web → Middleware /laim/login → Broker → Backend Core
+    Flujo: LAIM Web → Middleware /laim/login → Broker → Backend Core.
+    Con un campo vacío no se llama al middleware.
     """
+    missing = login_fields_error(username, password)
+    if missing:
+        return {"success": False, "error": missing}
     result = _request_middleware(
         "POST",
         "/laim/login",
-        payload={"username": username, "password": password},
+        payload={"username": username.strip(), "password": password},
     )
     if result.get("success"):
         return result

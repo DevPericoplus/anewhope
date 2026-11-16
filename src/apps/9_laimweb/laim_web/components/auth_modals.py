@@ -47,43 +47,58 @@ def login_modal() -> rx.Component:
                         "Acceda al portal con sus credenciales de usuario.",
                         class_name="crt-muted",
                     ),
-                    rx.input(
-                        placeholder="Usuario",
-                        value=LaimWebState.login_username,
-                        on_change=LaimWebState.set_login_username,
-                        class_name="crt-input",
-                        width="100%",
-                    ),
-                    rx.input(
-                        placeholder="Contraseña",
-                        type="password",
-                        value=LaimWebState.login_password,
-                        on_change=LaimWebState.set_login_password,
-                        class_name="crt-input",
-                        width="100%",
-                    ),
-                    rx.cond(
-                        LaimWebState.error_message != "",
-                        rx.text(
-                            LaimWebState.error_message,
-                            class_name="crt-error",
-                            font_size=FONT_SIZE_SMALL,
+                    rx.form(
+                        rx.vstack(
+                            rx.input(
+                                placeholder="Usuario",
+                                name="username",
+                                custom_attrs={"autoComplete": "username"},
+                                value=LaimWebState.login_username,
+                                on_change=LaimWebState.set_login_username,
+                                class_name="crt-input",
+                                width="100%",
+                            ),
+                            rx.input(
+                                placeholder="Contraseña",
+                                type="password",
+                                name="password",
+                                custom_attrs={"autoComplete": "current-password"},
+                                value=LaimWebState.login_password,
+                                on_change=LaimWebState.set_login_password,
+                                class_name="crt-input",
+                                width="100%",
+                            ),
+                            rx.cond(
+                                LaimWebState.error_message != "",
+                                rx.text(
+                                    LaimWebState.error_message,
+                                    class_name="crt-error",
+                                    font_size=FONT_SIZE_SMALL,
+                                ),
+                            ),
+                            rx.cond(
+                                LaimWebState.register_message != "",
+                                rx.text(
+                                    LaimWebState.register_message,
+                                    class_name="crt-success",
+                                    font_size=FONT_SIZE_SMALL,
+                                ),
+                            ),
+                            rx.button(
+                                rx.cond(LaimWebState.loading, "Conectando…", "Iniciar sesión"),
+                                type="submit",
+                                class_name="crt-btn",
+                                width="100%",
+                                disabled=LaimWebState.loading,
+                            ),
+                            spacing="3",
+                            width="100%",
                         ),
-                    ),
-                    rx.cond(
-                        LaimWebState.register_message != "",
-                        rx.text(
-                            LaimWebState.register_message,
-                            class_name="crt-success",
-                            font_size=FONT_SIZE_SMALL,
-                        ),
-                    ),
-                    rx.button(
-                        rx.cond(LaimWebState.loading, "Conectando…", "Iniciar sesión"),
-                        on_click=LaimWebState.handle_login,
-                        class_name="crt-btn",
+                        # El envío lee los campos reales (autorrelleno sin
+                        # on_change incluido); Enter también envía.
+                        on_submit=LaimWebState.handle_login_submit,
+                        reset_on_submit=False,
                         width="100%",
-                        disabled=LaimWebState.loading,
                     ),
                     rx.hstack(
                         rx.text("¿Sin cuenta?", class_name="crt-muted", font_size=FONT_SIZE_SMALL),

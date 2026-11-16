@@ -43,6 +43,11 @@ class LaimResetTokenRecord:
 
 RESET_TOKEN_TTL = timedelta(minutes=15)
 
+# Marcas literales de ``details`` (json.dumps con separadores por defecto),
+# las mismas en MariaDB y SQLite: JSON_VALUE no existe en SQLite.
+_INVALID_PASSWORD_LIKE = '%"error_code": "INVALID_PASSWORD"%'
+_RESET_SKIPPED_LIKE = '%"reason": "password_reset_skipped"%'
+
 
 def hash_reset_token(raw_token: str) -> str:
     """SHA-256 hex del secreto opaco (64 caracteres)."""
@@ -222,11 +227,16 @@ class LaimUserRepository:
                 {"blocked": 1 if blocked else 0, "user_name": user_name},
             )
 
-    def count_recent_failed_attempts(
-        self, user_name: str, minutes: int = 10, max_attempts: int = 3
-    ) -> int:
-        """Cuenta intentos fallidos recientes."""
-        since = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    def count_failed_password_attempts(self, user_name: str) -> int:
+        """Fallos de contraseña seguidos desde el último reinicio del contador.
+
+        Reinician: login correcto, bloqueo o desbloqueo (``login_blocked``,
+        también el del operador) y cambio de clave. Sin ventana de tiempo
+        (esperar no borra los fallos) y por ``id``, no por ``timestamp``: la
+        columna es la hora de la sesión MariaDB y no se compara con un
+        ``datetime`` de Python. Solo cuenta ``INVALID_PASSWORD``: usuario
+        inexistente, cuenta bloqueada o clave ilegible no son fallos de clave.
+        """
         with self._engine.connect() as conn:
             row = conn.execute(
                 text(
@@ -234,15 +244,60 @@ class LaimUserRepository:
                     SELECT COUNT(*) AS total
                     FROM laim_auth_logs
                     WHERE user_name = :user_name
-                      AND event IN ('login_attempt', 'login_failed')
-                      AND status IN ('failed', 'failure')
-                      AND timestamp >= :since
+                      AND event = 'login_attempt'
+                      AND status = 'failed'
+                      AND details LIKE :invalid_password
+                      AND id > (
+                          SELECT COALESCE(MAX(id), 0)
+                          FROM laim_auth_logs
+                          WHERE user_name = :user_name
+                            AND (
+                                event = 'login_success'
+                                OR (event = 'login_blocked'
+                                    AND COALESCE(details, '') NOT LIKE :reset_skipped)
+                                OR (event = 'password_change' AND status = 'success')
+                            )
+                      )
                     """
                 ),
-                {"user_name": user_name, "since": since.replace(tzinfo=None)},
+                {
+                    "user_name": user_name,
+                    "invalid_password": _INVALID_PASSWORD_LIKE,
+                    "reset_skipped": _RESET_SKIPPED_LIKE,
+                },
             ).mappings().fetchone()
-        total = int(row["total"]) if row else 0
-        return total if total < max_attempts else max_attempts
+        return int(row["total"]) if row else 0
+
+    def last_block_reason(self, user_name: str) -> str:
+        """``reason`` del último bloqueo, o "" si lo último fue un desbloqueo.
+
+        La recuperación pedida por una cuenta bloqueada deja un
+        ``login_blocked`` (``password_reset_skipped``) que no cambia el estado:
+        no cuenta ni aquí ni como reinicio del contador.
+        """
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT status, details
+                    FROM laim_auth_logs
+                    WHERE user_name = :user_name
+                      AND event = 'login_blocked'
+                      AND status IN ('blocked', 'success')
+                      AND COALESCE(details, '') NOT LIKE :reset_skipped
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """
+                ),
+                {"user_name": user_name, "reset_skipped": _RESET_SKIPPED_LIKE},
+            ).mappings().fetchone()
+        if row is None or row["status"] != "blocked":
+            return ""
+        try:
+            details = json.loads(row["details"] or "{}")
+        except (TypeError, ValueError):
+            return ""
+        return str(details.get("reason") or "") if isinstance(details, dict) else ""
 
     def append_auth_log(
         self,

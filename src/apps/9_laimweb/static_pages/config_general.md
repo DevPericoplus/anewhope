@@ -20,6 +20,12 @@ Abre las cuentas de este portal.
   **Guardar** aplica esos datos.
 - **Actualizar contraseña** pide la contraseña y su confirmación. No
   muestra la clave anterior.
+- Una cuenta se bloquea sola tras **5 contraseñas erróneas seguidas**
+  desde su último inicio de sesión correcto (no caducan con el tiempo).
+  El usuario ve que su cuenta está bloqueada por seguridad y que puede
+  pedir el desbloqueo desde **Contacto**. **Activar** la desbloquea y
+  pone el contador a cero: los fallos anteriores ya no cuentan.
+  **Actualizar contraseña** también la desbloquea.
 
 ### Registro
 

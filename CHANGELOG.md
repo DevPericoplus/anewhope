@@ -1,5 +1,40 @@
 # Changelog
 
+## [2026-11-17] - Login de laimweb: bloqueo tras 5 claves erróneas y mensajes honestos
+
+**Por qué:** en pre, `laimone` veía «Credenciales no válidas» una y otra vez
+sin ningún fallo suyo en `laim_auth_logs`. Las peticiones no llegaban a
+comprobar la clave en backend_core (campos vacíos por autorrelleno → 422 del
+middleware, o fallos de servicio) y toda la cadena los rotulaba como clave
+errónea: laimweb (`_sanitize_login_error`) por defecto y broker/middleware por
+cualquier «400» (que además tapaba «El usuario no está habilitado»).
+
+**Qué:**
+- **Seguridad:** 5 contraseñas erróneas seguidas desde el último login correcto,
+  bloqueo/desbloqueo o cambio de clave bloquean la cuenta (`login_blocked`,
+  `TOO_MANY_ATTEMPTS`); sin ventana de 10 minutos que se pueda esperar. El
+  contador va por `id` (la comparación de `timestamp` con un `datetime` UTC
+  dependía de la zona horaria de MariaDB). «Activar» en Configuración ›
+  General › Usuarios pone el contador a cero.
+- La cuenta bloqueada por intentos ve que está bloqueada por seguridad y que
+  puede pedir el desbloqueo en el menú **Contacto** (botón **Contactar**).
+- «Credenciales no válidas» solo cuando backend_core rechaza la clave (mismo
+  texto para usuario inexistente). Red/5xx/422: «No se pudo iniciar sesión.
+  Inténtelo más tarde.». Campos vacíos: se piden sin llamar al middleware.
+  Broker y middleware responden 400/403/502 según el caso.
+- El modal de login es un formulario: envía los valores reales de los campos
+  (autorrelleno) y Enter envía.
+- Páginas `config_general.md` y `contacto.md`; `AGENTS.md` § 34.10.1.
+
+**Archivos:** `src/2_shared_application/adapters/laim_user_repository.py`,
+`src/apps/3_backend/laim_auth_service.py`, `src/apps/8_service_backend/{apibe,routerbroker}.py`,
+`src/apps/7_service_frontend/{apife,routermiddleware}.py`,
+`src/apps/9_laimweb/laim_web/{adapters/laim_api_client,laim_state,components/auth_modals}.py`,
+tests nuevos en backend, broker, middleware y laimweb. Sin cambio de esquema
+ni migración. `versions.yml` (capa compartida → todas las apps Python):
+backend_core 0.8.36, broker 0.8.14, middleware 0.8.18, laimweb 0.12.72,
+frontend 0.8.30, backoffice 0.8.13, backend_ia 0.8.6, laim_forum 0.7.22.
+
 ## [2026-11-16] - Cap de silicon con la site key nueva (como dev)
 
 **Por qué:** el `env.yaml` de silicon ya usaba la site key nueva (`3f9ea24d4c`)

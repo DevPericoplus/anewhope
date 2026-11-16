@@ -77,6 +77,13 @@ decrypt_password = _laim_crypto_mod.decrypt_password
 encrypt_password = _laim_crypto_mod.encrypt_password
 
 MSG_INVALID_CREDENTIALS = "Usuario o credenciales inválidas"
+# La cadena middleware/broker reconoce «bloqueada por seguridad» y laimweb lo
+# muestra con la vía de desbloqueo (menú Contacto).
+MSG_ACCOUNT_LOCKED = (
+    "Cuenta bloqueada por seguridad tras demasiados intentos fallidos"
+)
+MSG_USER_DISABLED = "El usuario no está habilitado"
+LOCK_REASON_TOO_MANY_ATTEMPTS = "TOO_MANY_ATTEMPTS"
 MSG_RESET_MISMATCH = "Las contraseñas no coinciden"
 MSG_RESET_TOO_SHORT = "La contraseña debe tener al menos 8 caracteres"
 MSG_RESET_INVALID = "El enlace no es válido o ha caducado"
@@ -129,7 +136,8 @@ class LaimAuthService:
 
     DEFAULT_ORG_NAME = "laim"
     DEFAULT_IDENTITY_TYPE_ID = 4
-    MAX_FAILED_ATTEMPTS = 3
+    # Fallos de clave seguidos desde el último login correcto o desbloqueo.
+    MAX_FAILED_ATTEMPTS = 5
 
     def __init__(self, user_repo: Any | None = None, auditoria: Any | None = None) -> None:
         self._logger = logging.getLogger("LaimAuthService")
@@ -199,15 +207,26 @@ class LaimAuthService:
         ip_address: str = "",
         user_agent: str = "",
     ) -> LaimTokenResponse:
-        """Autentica usuario LAIM (sin OTP)."""
+        """Autentica usuario LAIM (sin OTP).
+
+        Cada clave errónea queda en ``laim_auth_logs`` con el nombre de la
+        cuenta; la quinta seguida bloquea (``login_blocked``).
+        """
         user = self._user_repo.get_user_by_name(user_name.strip())
         if user is None:
             self._log_failure(user_name, "USER_NOT_FOUND", "Usuario no existe", ip_address, user_agent)
             return LaimTokenResponse(success=False, error=MSG_INVALID_CREDENTIALS)
+        user_name = user.user_name
 
         if not user.active or user.blocked:
             self._log_failure(user_name, "USER_BLOCKED", "Usuario bloqueado o inactivo", ip_address, user_agent)
-            return LaimTokenResponse(success=False, error="El usuario no está habilitado")
+            if (
+                user.blocked
+                and self._user_repo.last_block_reason(user_name)
+                == LOCK_REASON_TOO_MANY_ATTEMPTS
+            ):
+                return LaimTokenResponse(success=False, error=MSG_ACCOUNT_LOCKED)
+            return LaimTokenResponse(success=False, error=MSG_USER_DISABLED)
 
         try:
             decrypted = decrypt_password(user.user_password)
@@ -217,10 +236,8 @@ class LaimAuthService:
 
         if decrypted != password:
             self._log_failure(user_name, "INVALID_PASSWORD", "Contraseña inválida", ip_address, user_agent)
-            if (
-                self._user_repo.count_recent_failed_attempts(user_name)
-                >= self.MAX_FAILED_ATTEMPTS
-            ):
+            failed = self._user_repo.count_failed_password_attempts(user_name)
+            if failed >= self.MAX_FAILED_ATTEMPTS:
                 self._user_repo.set_user_blocked(user_name, blocked=True)
                 self._user_repo.append_auth_log(
                     user_name=user_name,
@@ -228,11 +245,15 @@ class LaimAuthService:
                     status="blocked",
                     ip_address=ip_address,
                     user_agent=user_agent,
-                    details={"reason": "TOO_MANY_ATTEMPTS"},
+                    details={
+                        "reason": LOCK_REASON_TOO_MANY_ATTEMPTS,
+                        "failed_attempts": failed,
+                    },
                 )
                 self._record_auditoria_usuario(
                     "bloqueo", user_name=user_name, user_id=user.user_id
                 )
+                return LaimTokenResponse(success=False, error=MSG_ACCOUNT_LOCKED)
             return LaimTokenResponse(success=False, error=MSG_INVALID_CREDENTIALS)
 
         try:

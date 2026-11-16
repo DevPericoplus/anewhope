@@ -154,6 +154,10 @@ MSG_UNSUPPORTED_TOKEN_ALGORITHM = "Algoritmo de token no soportado"
 MSG_INVALID_CREDENTIALS = "Usuario o credenciales inválidas"
 MSG_LAIM_INVALID_CREDENTIALS = "Credenciales no válidas"
 MSG_LAIM_LOGIN_UNAVAILABLE = "No se pudo iniciar sesión. Inténtelo más tarde."
+MSG_LAIM_ACCOUNT_LOCKED = (
+    "Cuenta bloqueada por seguridad tras demasiados intentos fallidos"
+)
+MSG_LAIM_USER_DISABLED = "El usuario no está habilitado. Contacta con soporte."
 MSG_USER_BLOCKED_OR_INACTIVE = "Usuario bloqueado o inactivo"
 MSG_USER_BLOCKED_TOO_MANY_ATTEMPTS = "Usuario bloqueado por intentos fallidos"
 MSG_INVALID_OTP = "OTP inválido"
@@ -179,13 +183,29 @@ def _otp_codes_match(stored: str | int | None, submitted: str | int | None) -> b
 
 
 def _laim_login_user_message(detail: str) -> str:
-    """Traduce fallos de login LAIM a un mensaje seguro para el usuario."""
+    """Traduce fallos de login LAIM a un mensaje seguro para el usuario.
+
+    «Credenciales no válidas» solo cuando el broker devolvió 400 con
+    «credenciales» (backend_core rechazó la clave). Bloqueo e inhabilitación
+    pasan; red, 5xx, 422 o fallo de sesión son «inténtelo más tarde».
+    """
     lowered = detail.lower()
+    if "bloqueada por seguridad" in lowered:
+        return MSG_LAIM_ACCOUNT_LOCKED
     if "no está habilitado" in lowered or "no esta habilitado" in lowered:
-        return "El usuario no está habilitado. Contacta con soporte."
-    if "400" in detail or "credenciales" in lowered:
+        return MSG_LAIM_USER_DISABLED
+    if " 400 - " in detail and "credenciales" in lowered:
         return MSG_LAIM_INVALID_CREDENTIALS
     return MSG_LAIM_LOGIN_UNAVAILABLE
+
+
+def laim_login_http_status(message: str) -> int:
+    """Código HTTP de /laim/login para cada mensaje de `_laim_login_user_message`."""
+    if message == MSG_LAIM_INVALID_CREDENTIALS:
+        return 400
+    if message in (MSG_LAIM_ACCOUNT_LOCKED, MSG_LAIM_USER_DISABLED):
+        return 403
+    return 502
 
 
 @dataclass(frozen=True)

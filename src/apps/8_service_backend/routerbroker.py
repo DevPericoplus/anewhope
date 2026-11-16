@@ -37,14 +37,36 @@ except ImportError:  # pragma: no cover - soporte para ejecuciones fuera de paqu
 
 MSG_LAIM_INVALID_CREDENTIALS = "Credenciales no válidas"
 MSG_LAIM_LOGIN_UNAVAILABLE = "No se pudo iniciar sesión. Inténtelo más tarde."
+MSG_LAIM_ACCOUNT_LOCKED = (
+    "Cuenta bloqueada por seguridad tras demasiados intentos fallidos"
+)
+MSG_LAIM_USER_DISABLED = "El usuario no está habilitado"
 
 
 def _laim_login_user_message(detail: str) -> str:
-    """Traduce fallos de login LAIM a un mensaje seguro para el usuario."""
+    """Traduce fallos de login LAIM a un mensaje seguro para el usuario.
+
+    «Credenciales no válidas» solo si backend_core rechazó la clave (400 con
+    «credenciales»); bloqueo e inhabilitación pasan tal cual; lo demás (red,
+    5xx, 422, fallo de sesión) es «inténtelo más tarde», nunca clave errónea.
+    """
     lowered = detail.lower()
-    if "400" in detail or "credenciales" in lowered:
+    if "bloqueada por seguridad" in lowered:
+        return MSG_LAIM_ACCOUNT_LOCKED
+    if "no está habilitado" in lowered or "no esta habilitado" in lowered:
+        return MSG_LAIM_USER_DISABLED
+    if " 400 - " in detail and "credenciales" in lowered:
         return MSG_LAIM_INVALID_CREDENTIALS
     return MSG_LAIM_LOGIN_UNAVAILABLE
+
+
+def laim_login_http_status(message: str) -> int:
+    """Código HTTP del broker para cada mensaje de `_laim_login_user_message`."""
+    if message == MSG_LAIM_INVALID_CREDENTIALS:
+        return 400
+    if message in (MSG_LAIM_ACCOUNT_LOCKED, MSG_LAIM_USER_DISABLED):
+        return 403
+    return 502
 
 
 class BrokerBusinessError(Exception):

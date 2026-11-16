@@ -54,6 +54,7 @@ try:
         TokenValidationError,
         UserCreationResult,
         get_jwt_settings,
+        laim_login_http_status,
     )
 except ImportError:  # pragma: no cover - soporte para ejecuciones fuera de paquete
     from broker_backend_client import BrokerBackendClient
@@ -67,6 +68,7 @@ except ImportError:  # pragma: no cover - soporte para ejecuciones fuera de paqu
         TokenValidationError,
         UserCreationResult,
         get_jwt_settings,
+        laim_login_http_status,
     )
 
 
@@ -5388,12 +5390,9 @@ async def laim_login_endpoint(
         return result
     except BusinessRuleError as exc:
         detail = str(exc)
-        status_code = (
-            status.HTTP_400_BAD_REQUEST
-            if detail == MSG_LAIM_INVALID_CREDENTIALS
-            else status.HTTP_502_BAD_GATEWAY
-        )
-        raise HTTPException(status_code=status_code, detail=detail) from exc
+        raise HTTPException(
+            status_code=laim_login_http_status(detail), detail=detail
+        ) from exc
 
 
 @app.post("/laim/register")
