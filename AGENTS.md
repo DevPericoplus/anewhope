@@ -10805,6 +10805,31 @@ from src.2_shared_application.services.laim_model_service import Laim_ModelServi
 - Los permisos se verifican en Backend Core antes de ejecutar
 - `X-Client-App: laimweb` identifica las peticiones LAIM en logs
 
+#### 34.10.1. Login de laimweb: bloqueo por intentos y mensajes (2026-11-17)
+
+- **Cada clave errónea** queda en `laim_auth_logs` (`login_attempt`/`failed`,
+  `details.error_code=INVALID_PASSWORD`) con el `user_name` de la cuenta.
+- **5 fallos de clave seguidos** (`LaimAuthService.MAX_FAILED_ATTEMPTS`) desde
+  el último reinicio bloquean la cuenta y escriben `login_blocked`/`blocked`
+  (`reason=TOO_MANY_ATTEMPTS`). Reinician el contador: `login_success`,
+  cualquier `login_blocked` (bloqueo o «Activar» del operador; no el
+  `password_reset_skipped`) y `password_change`/`success`. **Sin ventana de
+  tiempo** y por `id`, nunca por `timestamp` (hora de sesión MariaDB frente a
+  `datetime` UTC de Python). `LaimUserRepository.count_failed_password_attempts`.
+- Mensajes (iguales para usuario inexistente y clave errónea):
+  | Caso | Core (400) | Broker / middleware | laimweb |
+  |------|-----------|---------------------|---------|
+  | Clave o usuario | `Usuario o credenciales inválidas` | 400 `Credenciales no válidas` | `Credenciales no válidas` |
+  | Bloqueo por intentos | `Cuenta bloqueada por seguridad…` | 403, igual | pide el desbloqueo en menú «Contacto» (botón «Contactar») |
+  | Bloqueo manual / inactivo | `El usuario no está habilitado` | 403 | `…Contacta con soporte.` |
+  | Red, 5xx, 422, sesión | — | 502 `No se pudo iniciar sesión. Inténtelo más tarde.` | igual |
+  | Campo vacío | — | — | `Introduzca su usuario…` sin llamar al middleware |
+- **Prohibido** volver a clasificar por `"400" in detail`: escondía bloqueos y
+  caídas como «Credenciales no válidas».
+- El modal es un `rx.form` (`on_submit=handle_login_submit`, `name`
+  `username`/`password`, `autoComplete`): envía lo que hay en los campos
+  aunque el autorrelleno no dispare `on_change`; Enter envía.
+
 ### 34.11. Entorno Virtual Dedicado
 
 | Variable | Valor |

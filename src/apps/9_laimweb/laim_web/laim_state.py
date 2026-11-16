@@ -2034,14 +2034,30 @@ class LaimWebState(LaimSharedSessionState, LaimForumMixin, LaimConfigMixin):
 
     @event
     def handle_login(self) -> EventHandlerReturn:
-        """Procesa login contra middleware LAIM."""
+        """Procesa login contra middleware LAIM con los valores del estado."""
+        return self._perform_login(self.login_username, self.login_password)
+
+    @event
+    def handle_login_submit(self, form_data: dict[str, Any]) -> EventHandlerReturn:
+        """Envío del formulario de login (botón o Enter).
+
+        Usa los valores reales de los campos: el autorrelleno del navegador
+        puede no disparar on_change y dejar el estado vacío.
+        """
+        username = str(form_data.get("username", self.login_username) or "").strip()
+        password = str(form_data.get("password", self.login_password) or "")
+        self.login_username = username
+        self.login_password = password
+        return self._perform_login(username, password)
+
+    def _perform_login(self, username: str, password: str) -> EventHandlerReturn:
         from laim_web.adapters.laim_api_client import laim_login
 
         self.loading = True
         self.error_message = ""
         self.login_error = ""
 
-        result = laim_login(self.login_username, self.login_password)
+        result = laim_login(username, password)
 
         if self._apply_laim_login_success(result):
             self.loading = False

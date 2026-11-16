@@ -39,3 +39,50 @@ def test_unknown_400_stays_invalid_credentials() -> None:
         "Error del backend core: 400 - Usuario o credenciales inválidas"
     )
     assert message == routermiddleware.MSG_LAIM_INVALID_CREDENTIALS
+
+
+BROKER = "Error del broker backend: "
+
+
+def test_broker_credential_rejection_stays_invalid_credentials() -> None:
+    message = routermiddleware._laim_login_user_message(
+        BROKER + "400 - Credenciales no válidas"
+    )
+    assert message == "Credenciales no válidas"
+
+
+def test_account_lock_passes_through_to_laimweb() -> None:
+    message = routermiddleware._laim_login_user_message(
+        BROKER + "403 - Cuenta bloqueada por seguridad tras demasiados intentos fallidos"
+    )
+    assert message == "Cuenta bloqueada por seguridad tras demasiados intentos fallidos"
+    assert message == routermiddleware.MSG_LAIM_ACCOUNT_LOCKED
+
+
+def test_service_failures_are_unavailable_not_bad_credentials() -> None:
+    for detail in (
+        BROKER + "502 - No se pudo iniciar sesión. Inténtelo más tarde.",
+        BROKER + "400 - No se pudo iniciar sesión. Inténtelo más tarde.",
+        BROKER + "500 - Internal Server Error",
+        BROKER + "422 - [{'type': 'missing'}]",
+        "No se pudo contactar con el broker backend",
+    ):
+        assert (
+            routermiddleware._laim_login_user_message(detail)
+            == "No se pudo iniciar sesión. Inténtelo más tarde."
+        ), detail
+
+
+def test_http_status_follows_the_kind_of_failure() -> None:
+    status = routermiddleware.laim_login_http_status
+    assert status("Credenciales no válidas") == 400
+    assert status(routermiddleware.MSG_LAIM_ACCOUNT_LOCKED) == 403
+    assert status("El usuario no está habilitado. Contacta con soporte.") == 403
+    assert status("No se pudo iniciar sesión. Inténtelo más tarde.") == 502
+
+
+def test_login_endpoint_uses_the_status_helper() -> None:
+    api = (Path(__file__).resolve().parents[1] / "apife.py").read_text(encoding="utf-8")
+    start = api.index('@app.post("/laim/login")')
+    body = api[start : api.index('@app.post("/laim/register")')]
+    assert "status_code=laim_login_http_status(detail)" in body

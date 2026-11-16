@@ -22,6 +22,12 @@ Incluye siempre:
 
 Pulse **Contactar** para abrir el formulario.
 
+### Cuenta bloqueada
+
+Tras **5 contraseñas erróneas seguidas** la cuenta se bloquea por
+seguridad. Para pedir el desbloqueo, pulse **Contactar** e indique su
+usuario y su e-mail. **No escriba su contraseña** en el mensaje.
+
 ---
 
 > Utiliza el formulario para poder enviar comodamente cualquier consulta,sugerencia o mejora, vuestra colaboracion siempre aporta informacion valiosa para evolucionar. Tenemos claro que estamos `Agradecidos por el feedbak`.No olvides incluir tu e-mail para poder obtener respuesta.
